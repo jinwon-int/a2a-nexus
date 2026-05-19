@@ -1916,7 +1916,9 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
     assert.equal(state.operator.terminalOutbox.lastNotificationAttempt.receiptStatus, "pending");
     assert.equal(state.operator.terminalOutbox.deployPreflight.mode, "dry-run-projection");
     assert.equal(state.operator.terminalOutbox.deployPreflight.status, "blocked");
-    assert.equal(state.operator.terminalOutbox.deployPreflight.cursor, outboxEvent.id);
+    assert.equal(state.operator.terminalOutbox.deployPreflight.cursor, undefined);
+    assert.equal(state.operator.terminalOutbox.lastPoll.firstPendingId, outboxEvent.id);
+    assert.equal(state.operator.terminalOutbox.lastPoll.cursorBlockedByUnacked, true);
     assert.equal(state.operator.terminalOutbox.deployPreflight.backlog.pendingUnacknowledged, 1);
     assert.equal(state.operator.terminalOutbox.deployPreflight.backlog.reconciledUnacked, 1);
     assert.equal(state.operator.terminalOutbox.deployPreflight.lastNotificationAttempt.receiptStatus, "pending");
@@ -2911,6 +2913,104 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
     assert.equal(state.operator.terminalOutbox.lastPoll.pendingUnacknowledged, 3);
     assert.equal(state.operator.terminalOutbox.deployPreflight.status, "blocked");
     assert.equal(state.operator.terminalOutbox.deployPreflight.receiptGate.providerGatewaySendSuccess, "not_ack_evidence");
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator terminal outbox cursor stops at the first unacknowledged row", async () => {
+  let nowMs = Date.parse("2026-05-06T00:00:00.000Z");
+  const firstAcked = {
+    id: "terminal:first-acked:succeeded:2026-05-06T00%3A00%3A01.000Z",
+    createdAt: "2026-05-06T00:00:01.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "first-acked",
+      status: "succeeded",
+      worker: "yukson",
+      testSummary: "first row receives operator-visible receipt",
+      completedAt: "2026-05-06T00:00:01.000Z",
+    },
+  };
+  const middlePending = {
+    id: "terminal:middle-pending:failed:2026-05-06T00%3A00%3A02.000Z",
+    createdAt: "2026-05-06T00:00:02.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "middle-pending",
+      status: "failed",
+      worker: "sogyo",
+      testSummary: "middle row does not yet have a visible receipt",
+      completedAt: "2026-05-06T00:00:02.000Z",
+    },
+  };
+  const thirdFresh = {
+    id: "terminal:third-fresh:succeeded:2026-05-06T00%3A00%3A03.000Z",
+    createdAt: "2026-05-06T00:00:03.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "third-fresh",
+      status: "succeeded",
+      worker: "nosuk",
+      testSummary: "third row must not be processed while middle is pending",
+      completedAt: "2026-05-06T00:00:03.000Z",
+    },
+  };
+  const events = [firstAcked, middlePending, thirdFresh];
+  const sent = [];
+  const acks = [];
+  const listCalls = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => nowMs,
+    terminalOutboxPollMs: 5,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox(params = {}) {
+        listCalls.push(params);
+        const startIndex = params.afterId ? events.findIndex((event) => event.id === params.afterId) + 1 : 0;
+        return {
+          kind: "task.terminal.outbox",
+          count: events.length - startIndex,
+          cursor: thirdFresh.id,
+          reconciledUnacked: params.reconcileUnacked ? 1 : 0,
+          events: events.slice(startIndex),
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        const event = events.find((candidate) => candidate.id === params.id);
+        return { ...event, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      if (envelope.taskId === "middle-pending") {
+        return { ackTerminalEvent: false, reason: "receipt still pending for middle row" };
+      }
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState();
+    await eventually(() => sent.length, (value) => value >= 2, "expected first and middle terminal outbox notifications");
+    await eventually(() => listCalls.length, (value) => value >= 2, "expected repeated polling while middle row is pending");
+    assert.deepEqual(sent.map((item) => item.taskId), ["first-acked", "middle-pending"]);
+    assert.deepEqual(acks.map((item) => item.id), [firstAcked.id], "third row must not ACK before the middle row");
+
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, firstAcked.id);
+    assert.equal(state.operator.terminalOutbox.lastPoll.firstPendingId, middlePending.id);
+    assert.equal(state.operator.terminalOutbox.lastPoll.cursorBlockedByUnacked, true);
+    assert.equal(state.operator.terminalOutbox.pendingUnacknowledged[0].taskId, "middle-pending");
+    assert.equal(
+      state.operator.terminalOutbox.pendingUnacknowledged.some((event) => event.taskId === "third-fresh"),
+      true,
+      "monitor should still show later rows as pending while cursor is blocked",
+    );
   } finally {
     bridge.shutdown();
     await bridge.waitForIdle();
