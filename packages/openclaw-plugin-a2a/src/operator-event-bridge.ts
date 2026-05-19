@@ -201,6 +201,8 @@ export type A2AOperatorTerminalOutboxProjection = {
     reconciledUnacked: number;
     backlogDrain: boolean;
     pendingUnacknowledged: number;
+    firstPendingId?: string;
+    cursorBlockedByUnacked?: boolean;
   };
   pendingUnacknowledged?: A2AOperatorTerminalOutboxEventProjection[];
   lastEvent?: A2AOperatorTerminalOutboxEventProjection;
@@ -542,17 +544,22 @@ export function createA2AOperatorEventBridge(
       reconcileUnacked,
       limit,
     });
-    recordTerminalOutboxPoll(state, response, { afterId, limit, now });
+    let nextContiguousCursor = afterId;
+    let firstPendingId: string | undefined;
     let sawUnconfirmedReplayableEvent = false;
     for (const event of response.events) {
-      if (event.ack?.status === "receipt_confirmed" || event.deliveredAt) continue;
+      if (event.ack?.status === "receipt_confirmed" || event.deliveredAt) {
+        nextContiguousCursor = event.id;
+        continue;
+      }
       const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(event, {
         dryRun: options.dryRunNotifications,
         maxTextChars: options.notificationMaxTextChars,
       });
       if (!envelope) {
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       const taskNotificationKey = buildTaskNotificationKey(envelope);
       if (shouldSuppressHistoricalTerminalOutboxReplay(event, {
@@ -585,8 +592,9 @@ export function createA2AOperatorEventBridge(
           },
           now,
         });
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       if (state.notifiedDedupeKeys.has(envelope.dedupeKey) || state.notifiedTaskKeys.has(taskNotificationKey)) {
         const acknowledgedAt = new Date(now()).toISOString();
@@ -604,16 +612,19 @@ export function createA2AOperatorEventBridge(
           now,
         });
         state.notifiedDedupeKeys.add(envelope.dedupeKey);
+        nextContiguousCursor = event.id;
         continue;
       }
       if (state.pendingNotificationDedupeKeys.has(envelope.dedupeKey) || state.pendingNotificationTaskKeys.has(taskNotificationKey)) {
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       const retryAfter = state.terminalOutboxRetryAfterByDedupeKey.get(envelope.dedupeKey) ?? 0;
       if (retryAfter > now()) {
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       state.pendingNotificationDedupeKeys.add(envelope.dedupeKey);
       state.pendingNotificationTaskKeys.add(taskNotificationKey);
@@ -629,13 +640,15 @@ export function createA2AOperatorEventBridge(
       if (!decision.ackTerminalEvent) {
         state.terminalOutboxNotificationFuseTripped = true;
         state.terminalOutboxRetryAfterByDedupeKey.set(envelope.dedupeKey, now() + DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS);
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       const evidence = terminalOutboxAckEvidenceFromDecision(decision);
       if (!evidence) {
+        firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
-        continue;
+        break;
       }
       const acknowledgedAt = new Date(now()).toISOString();
       await options.broker.ackTerminalOutbox({
@@ -656,10 +669,21 @@ export function createA2AOperatorEventBridge(
       state.notifiedDedupeKeys.add(envelope.dedupeKey);
       state.notifiedTaskKeys.add(taskNotificationKey);
       state.terminalOutboxRetryAfterByDedupeKey.delete(envelope.dedupeKey);
+      nextContiguousCursor = event.id;
     }
-    if (response.cursor && !sawUnconfirmedReplayableEvent) {
+    if (nextContiguousCursor && nextContiguousCursor !== afterId) {
+      state.terminalOutboxCursor = nextContiguousCursor;
+    } else if (response.cursor && !sawUnconfirmedReplayableEvent) {
       state.terminalOutboxCursor = response.cursor;
     }
+    recordTerminalOutboxPoll(state, response, {
+      afterId,
+      limit,
+      now,
+      cursor: state.terminalOutboxCursor,
+      firstPendingId,
+      cursorBlockedByUnacked: sawUnconfirmedReplayableEvent,
+    });
   }
 
   async function runTerminalOutboxLoop(): Promise<void> {
@@ -876,13 +900,20 @@ export function buildUnavailableA2AOperatorEventBridgeState(params: {
 function recordTerminalOutboxPoll(
   state: InternalState,
   response: A2ATerminalOutboxListResponse,
-  params: { afterId?: string; limit: number; now: () => number },
+  params: {
+    afterId?: string;
+    limit: number;
+    now: () => number;
+    cursor?: string;
+    firstPendingId?: string;
+    cursorBlockedByUnacked?: boolean;
+  },
 ): void {
   const pending = response.events
     .filter((event) => event.ack?.status !== "receipt_confirmed" && !event.deliveredAt)
     .map(projectTerminalOutboxEvent)
     .slice(0, 10);
-  const cursor = normalizeOptionalString(response.cursor) ?? state.terminalOutboxCursor;
+  const cursor = normalizeOptionalString(params.cursor) ?? state.terminalOutboxCursor;
   state.terminalOutbox = {
     ...state.terminalOutbox,
     ...(cursor ? { cursor } : {}),
@@ -894,6 +925,8 @@ function recordTerminalOutboxPoll(
       reconciledUnacked: response.reconciledUnacked ?? 0,
       backlogDrain: (response.reconciledUnacked ?? 0) > 0,
       pendingUnacknowledged: pending.length,
+      ...(params.firstPendingId ? { firstPendingId: params.firstPendingId } : {}),
+      ...(params.cursorBlockedByUnacked ? { cursorBlockedByUnacked: true } : {}),
     },
     ...(pending.length ? { pendingUnacknowledged: pending } : { pendingUnacknowledged: undefined }),
     ...(pending[0] ? { lastEvent: pending[0] } : {}),
