@@ -1,0 +1,254 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Approval-Gated Auto-Closeout Action Reconciliation Schema",
+  "schemaVersion": 1,
+  "description": "Schema for cross-repo action reconciliation records between a2a-broker closeout reconciler and a2a-plane go/no-go matrix. Defines the structure of a reconciliation record that maps go/no-go decisions to concrete closeout actions, with approval boundaries, idempotency keys, and rollback/no-op criteria.",
+  "definitions": {
+    "parentRoundId": {
+      "type": "string",
+      "description": "Stable parent round id minted at round creation. Used as part of the idempotency key derivation.",
+      "pattern": "^a2a-[a-z0-9-]+T[0-9]{6}Z$"
+    },
+    "actionKind": {
+      "type": "string",
+      "enum": ["comment_post", "issue_close", "metadata_update", "idempotency_register", "rollback_record"],
+      "description": "Type of closeout action being reconciled."
+    },
+    "reconciliationState": {
+      "type": "string",
+      "enum": ["PENDING", "RECONCILED", "APPROVED", "DISPATCHED", "CONFIRMED", "REJECTED", "FAILED"],
+      "description": "Current state of this reconciliation record in the lifecycle."
+    },
+    "brokerId": {
+      "type": "string",
+      "description": "Broker identifier (e.g. seoseo, gwakga).",
+      "pattern": "^[a-z]+$"
+    },
+    "actionRecord": {
+      "type": "object",
+      "required": ["actionKind", "parentRoundId", "brokerOfRecord", "reconciliationState", "idempotencyKey", "createdAt", "updatedAt"],
+      "properties": {
+        "actionKind": { "$ref": "#/definitions/actionKind" },
+        "parentRoundId": { "$ref": "#/definitions/parentRoundId" },
+        "brokerOfRecord": { "$ref": "#/definitions/brokerId" },
+        "reconciliationState": { "$ref": "#/definitions/reconciliationState" },
+        "idempotencyKey": {
+          "type": "string",
+          "description": "Derived key: reconcile:<parentRoundId>:<actionKind>:<brokerOfRecord>",
+          "pattern": "^reconcile:[a-zA-Z0-9_-]+:[a-z_]+:[a-z]+$"
+        },
+        "actionPayload": {
+          "type": "object",
+          "description": "Action-specific payload. Varies by actionKind.",
+          "properties": {
+            "terminalEvidenceUrl": { "type": "string", "format": "uri" },
+            "issueUrl": { "type": "string", "format": "uri" },
+            "closeOnConfirm": { "type": "boolean" },
+            "evidencePayloadHash": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "blockerMatrixDecision": {
+          "type": "string",
+          "enum": ["NO_GO", "BLOCKED"],
+          "description": "When set, indicates the go/no-go matrix prevented reconciliation."
+        },
+        "blockedGate": {
+          "type": "string",
+          "description": "Specific gate id that blocked reconciliation (from go/no-go matrix)."
+        },
+        "operatorActionRequired": { "type": "boolean" },
+        "github403Detected": { "type": "boolean" },
+        "github403Operation": { "type": "string" },
+        "brokerOfRecordMismatch": { "type": "boolean" },
+        "reconcilingBroker": { "$ref": "#/definitions/brokerId" },
+        "duplicateSuppressed": { "type": "boolean" },
+        "conflictDetected": { "type": "boolean" },
+        "conflictingRecordId": { "type": "string" },
+        "staleKey": { "type": "boolean" },
+        "rollbackType": {
+          "type": "string",
+          "enum": ["metadata-only", "reset-to-pending", "revoke-approval"],
+          "description": "Type of rollback applied, when applicable."
+        },
+        "liveProviderSend": { "type": "boolean", "const": false },
+        "terminalOutboxAckMutated": { "type": "boolean", "const": false },
+        "isApproval": { "type": "boolean", "const": false },
+        "isTerminalAck": { "type": "boolean", "const": false },
+        "isReadReceipt": { "type": "boolean", "const": false },
+        "operatorApprovedBy": { "type": "string" },
+        "operatorApprovedAt": { "type": "string", "format": "date-time" },
+        "operatorApprovalCommentUrl": { "type": "string", "format": "uri" },
+        "failureReason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "confirmedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "reconciliationRecord": {
+      "type": "object",
+      "required": ["recordId", "parentRoundId", "brokerOfRecord", "matrixDecision", "matrixVersion", "actions", "createdAt", "updatedAt"],
+      "properties": {
+        "recordId": {
+          "type": "string",
+          "description": "Unique record identifier. Derived from parentRoundId and a sequence counter.",
+          "pattern": "^recon-[a-zA-Z0-9_-]+-[0-9]+$"
+        },
+        "parentRoundId": { "$ref": "#/definitions/parentRoundId" },
+        "originBrokerId": { "$ref": "#/definitions/brokerId" },
+        "parentBrokerId": { "$ref": "#/definitions/brokerId" },
+        "brokerOfRecord": { "$ref": "#/definitions/brokerId" },
+        "matrixDecision": {
+          "type": "string",
+          "enum": ["GO", "NO_GO", "BLOCKED"],
+          "description": "Decision from the go/no-go matrix evaluation."
+        },
+        "matrixVersion": {
+          "type": "string",
+          "description": "Version identifier for the go/no-go matrix contract used for this evaluation."
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/actionRecord" },
+          "minItems": 1
+        },
+        "lastActionState": {
+          "type": "string",
+          "enum": ["PENDING", "RECONCILED", "APPROVED", "DISPATCHED", "CONFIRMED", "REJECTED", "FAILED"],
+          "description": "Aggregate state across all actions. The least-advanced non-terminal state among all actions."
+        },
+        "syntheticFixtureOnly": { "type": "boolean" },
+        "noLiveProviderSend": { "type": "boolean", "const": true },
+        "noTerminalOutboxAckMutation": { "type": "boolean", "const": true },
+        "runtimeBootstrapHygieneConfirmed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "syntheticFixture": {
+      "type": "object",
+      "required": ["fixtureId", "parentRoundId", "brokerOfRecord", "scenarios"],
+      "properties": {
+        "fixtureId": { "type": "string" },
+        "contract": { "type": "string" },
+        "schema": { "type": "string" },
+        "description": { "type": "string" },
+        "parentIssue": { "type": "string", "format": "uri" },
+        "issue": { "type": "string", "format": "uri" },
+        "run": { "type": "string" },
+        "lane": { "type": "string" },
+        "parentRoundId": { "type": "string" },
+        "brokerOfRecord": { "$ref": "#/definitions/brokerId" },
+        "canaryMode": { "type": "string", "enum": ["synthetic", "no-live-synthetic-projection"] },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "description", "given", "when", "then"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "given": {
+                "type": "object",
+                "required": ["matrixDecision", "actions", "gitHubPermissionOk", "brokerOfRecord"],
+                "properties": {
+                  "matrixDecision": { "type": "string", "enum": ["GO", "NO_GO", "BLOCKED"] },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["actionKind", "payloadHash"],
+                      "properties": {
+                        "actionKind": { "type": "string" },
+                        "payloadHash": { "type": "string" },
+                        "existingState": { "$ref": "#/definitions/reconciliationState" },
+                        "existingKey": { "type": "string" }
+                      }
+                    }
+                  },
+                  "gitHubPermissionOk": { "type": "boolean" },
+                  "brokerOfRecord": { "type": "string" },
+                  "reconcilingBroker": { "type": "string" },
+                  "operatorApproved": { "type": "boolean" },
+                  "replayKey": { "type": "string" },
+                  "conflictingPayload": { "type": "boolean" }
+                }
+              },
+              "when": {
+                "type": "object",
+                "required": ["operation"],
+                "properties": {
+                  "operation": { "type": "string", "enum": ["reconciliation.evaluate", "reconciliation.approve", "reconciliation.replay", "reconciliation.rollback"] }
+                }
+              },
+              "then": {
+                "type": "object",
+                "required": ["reconciliationState", "expectedLastActionState"],
+                "properties": {
+                  "reconciliationState": { "type": "string" },
+                  "expectedLastActionState": { "type": "string" },
+                  "operatorActionRequired": { "type": "boolean" },
+                  "duplicateSuppressed": { "type": "boolean" },
+                  "conflictDetected": { "type": "boolean" },
+                  "github403Detected": { "type": "boolean" },
+                  "brokerOfRecordMismatch": { "type": "boolean" },
+                  "liveProviderSend": { "type": "boolean", "const": false }
+                }
+              }
+            }
+          }
+        },
+        "evidenceRequirements": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "validationCommands": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "safetyConfirmations": {
+          "type": "object",
+          "properties": {
+            "syntheticFixtureOnly": { "type": "boolean" },
+            "noProductionDeployOrRestart": { "type": "boolean" },
+            "noProductionDatabaseMutation": { "type": "boolean" },
+            "noLiveProviderSend": { "type": "boolean" },
+            "noTerminalOutboxAckMutation": { "type": "boolean" },
+            "noSecretRotationOrDisclosure": { "type": "boolean" },
+            "noHostSpecificPrivatePath": { "type": "boolean" },
+            "noProductionAutoCloseoutEnabled": { "type": "boolean" },
+            "runtimeBootstrapHygieneRequiredBeforePublication": { "type": "boolean" },
+            "operatorApprovalRequiredForProduction": { "type": "boolean" }
+          },
+          "required": [
+            "syntheticFixtureOnly",
+            "noProductionDeployOrRestart",
+            "noProductionDatabaseMutation",
+            "noLiveProviderSend",
+            "noTerminalOutboxAckMutation",
+            "noSecretRotationOrDisclosure",
+            "noHostSpecificPrivatePath",
+            "noProductionAutoCloseoutEnabled",
+            "runtimeBootstrapHygieneRequiredBeforePublication",
+            "operatorApprovalRequiredForProduction"
+          ]
+        },
+        "v0Freeze": {
+          "type": "object",
+          "properties": {
+            "frozenAt": { "type": "string" },
+            "round": { "type": "string" },
+            "scope": { "type": "string" },
+            "nonAckBoundary": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/reconciliationRecord" },
+    { "$ref": "#/definitions/syntheticFixture" }
+  ]
+}

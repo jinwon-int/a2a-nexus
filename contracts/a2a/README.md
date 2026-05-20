@@ -19,6 +19,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [R20 stability gate](./r20-stability-gate.md) — hot-table persistence, queue/outbox hygiene, no-live canary boundaries, stale R14 PR reconciliation
 - [R31 worker capability profile](./worker-capability-profile.md) — worker capability profile schema, assignment recommendation semantics, capacity-limited slow lane phrasing
 - [Embedded execution stability policy](./embedded-execution-stability-policy.md) — container isolation, config domain sanitization, workspace hygiene, session store guard, post-completion fail-closed checks for Docker Runner embedded OpenClaw execution
+- [Approval-gated auto-closeout action reconciliation](./action-reconciliation.md) — cross-repo contract between a2a-broker and a2a-plane for approval-gated auto-closeout action reconciliation, idempotency keys, rollback/no-op criteria, and canary gate
 
 ## Compatibility
 
@@ -39,6 +40,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [R20 stability gate](../../fixtures/contract/r20-stability-gate.json) — machine-readable R20 gate fixture
 - [R31 worker capability profile](../../fixtures/contract/worker-capability-profile.json) — worker capability profile fixture
 - [Embedded execution stability policy](../../fixtures/contract/embedded-execution-stability-policy.json) — machine-readable embedded execution stability policy fixture
+- [Action reconciliation](../../fixtures/contract/action-reconciliation.json) — approval-gated auto-closeout action reconciliation scenarios
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
