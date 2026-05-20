@@ -23,7 +23,8 @@
     "fixtures/contract/second-worker-replay-trace.json",
     "fixtures/contract/live-canary-replay-approval-boundary.json",
     "fixtures/contract/r20-stability-gate.json",
-    "fixtures/contract/worker-capability-profile.json"
+    "fixtures/contract/worker-capability-profile.json",
+    "fixtures/contract/embedded-execution-stability-policy.json"
   ],
   "validationCommand": "node test/conformance/check-contract-fixtures.mjs",
   "intentionallyExcluded": [

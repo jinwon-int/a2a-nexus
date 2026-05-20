@@ -1,0 +1,325 @@
+{
+  "fixtureId": "a2a-plane.contract.embedded-execution-stability-policy.v0",
+  "contract": "contracts/a2a/embedded-execution-stability-policy.md",
+  "description": "Machine-readable fixture for the embedded execution stability policy: container isolation (E1), config domain sanitization (E2), workspace hygiene (E3), session store guard (E4), and post-completion fail-closed checks (E5).",
+  "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/838",
+  "originWorker": "Team1/nosuk",
+  "targetPackage": "packages/docker-runner/",
+  "v0Freeze": {
+    "frozenAt": "2026-05-20",
+    "round": "a2a-embedded-execution-stability-20260520T131631Z",
+    "note": "Embedded execution stability gates, container isolation invariants, config domain sanitization requirements, workspace hygiene deny patterns, session store guard preconditions, and post-completion fail-closed checks are frozen as the Contract v0 embedded execution stability baseline."
+  },
+  "references": [
+    "contracts/a2a/r20-stability-gate.md",
+    "contracts/a2a/terminal-semantics.md",
+    "contracts/a2a/task-lifecycle.md",
+    "packages/docker-runner/src/config.ts",
+    "packages/docker-runner/src/engine-contract.test.ts",
+    "packages/docker-runner/docs/artifact-manifest.schema.json"
+  ],
+
+  "containerIsolation": {
+    "gateId": "E1",
+    "processIsolation": [
+      {
+        "invariant": "single-process agent",
+        "passCondition": "the embedded agent process runs as PID 1 inside the container namespace",
+        "failClosedCondition": "agent runs as a child of a process outside the container"
+      },
+      {
+        "invariant": "container engine only",
+        "passCondition": "execution uses docker run --rm or podman run --rm; no host-side agent launch",
+        "failClosedCondition": "agent is launched via a direct host exec path"
+      },
+      {
+        "invariant": "config copy is file-scoped",
+        "passCondition": "only authentication/config files are copied into the container; no entire workspace trees",
+        "failClosedCondition": "broad cp -a of the full ~/.openclaw tree without per-file scoping"
+      }
+    ],
+    "filesystemIsolation": [
+      {
+        "invariant": "explicit mount paths",
+        "passCondition": "all host paths mounted into the container are declared via explicit extraMounts or runner-internal mount construction",
+        "failClosedCondition": "implicit host path access via bind propagation or unix socket sharing"
+      },
+      {
+        "invariant": "OpenClaw config is read-only",
+        "passCondition": "the mounted host OpenClaw config directory is mounted :ro",
+        "failClosedCondition": "config directory is writable inside the container"
+      },
+      {
+        "invariant": "workdir is the checkout",
+        "passCondition": "the container workdir (/work) is the checked-out repository, not the host workspace",
+        "failClosedCondition": "workdir points to the host ~/\u002eopenclaw/workspace or a non-repo path"
+      }
+    ],
+    "networkIsolation": [
+      {
+        "invariant": "no-live by default",
+        "passCondition": "network mode defaults to bridge; host mode requires explicit PATCH_COMMAND_PROFILE=openclaw",
+        "failClosedCondition": "default configuration permits host-network access without documented profile override"
+      },
+      {
+        "invariant": "no live provider send",
+        "passCondition": "embedded agent is configured with no live Telegram, Signal, or provider notification channel",
+        "failClosedCondition": "agent config contains live channel wiring or provider targets that could trigger sends"
+      },
+      {
+        "invariant": "provider API calls are task-scoped",
+        "passCondition": "the agent's only external API calls are to the model provider for the current task",
+        "failClosedCondition": "agent performs unprompted external API calls not scoped to the current task"
+      }
+    ],
+    "safetyConfirmations": {
+      "containerIsolationProvidedByEngine": true,
+      "filesystemIsolationReliesOnExplicitMounts": true,
+      "noLiveDefaultForNetworkIsolation": true,
+      "noVisibilityOrDeployChange": true
+    },
+    "aggregateDecision": "PASS/Active"
+  },
+
+  "configDomain": {
+    "gateId": "E2",
+    "configSanitization": {
+      "stripHostGatewayPluginChannelCron": {
+        "required": true,
+        "passCondition": "plugins, channels, gateway, cron, bindings, hooks are deleted from the config before agent start",
+        "failClosedCondition": "any of these sections remains in the sanitized config"
+      },
+      "keepOnlyOpenaiCodexProvider": {
+        "required": true,
+        "passCondition": "model providers are pruned to openai-codex only; all other providers removed",
+        "failClosedCondition": "a non-openai-codex provider remains that could route to a different API"
+      },
+      "removeHeartbeatDefaults": {
+        "required": true,
+        "passCondition": "agents.defaults.heartbeat and per-agent heartbeat are deleted",
+        "failClosedCondition": "heartbeat configuration could trigger unprompted periodic work"
+      },
+      "removeAgentRuntimeFallback": {
+        "required": true,
+        "passCondition": "agents.defaults.agentRuntime.fallback and per-agent runtime fallback are deleted",
+        "failClosedCondition": "fallback model could trigger unprompted API calls"
+      },
+      "clearModelFallbacks": {
+        "required": true,
+        "passCondition": "model.fallbacks is set to an empty array",
+        "failClosedCondition": "fallback model list could trigger unprompted retries"
+      }
+    },
+    "credentialScoping": {
+      "onlyAuthFilesCopied": {
+        "required": true,
+        "passCondition": "only openclaw.json, node.json, credentials/*, auth-profiles.json, auth-state.json, models.json are copied from the host config",
+        "failClosedCondition": "worker workspace, caches, plugin runtimes, archives, or session logs are copied"
+      },
+      "ghTokenIsEphemeralTaskToken": {
+        "required": true,
+        "passCondition": "only the ephemeral GH_TOKEN or GITHUB_TOKEN set by the task payload is injected; no permanent host token",
+        "failClosedCondition": "a permanent host token from the host config is used instead of the task-scoped token"
+      },
+      "tokenLivesOnlyInContainerMemory": {
+        "required": true,
+        "passCondition": "the injected token exists only in the disposable container's config file and is never written to artifacts",
+        "failClosedCondition": "token appears in summary.txt, patch-command.log, or any artifact file"
+      }
+    },
+    "safetyConfirmations": {
+      "sanitizationBeforeAgentStart": true,
+      "fileLevelCredentialScoping": true,
+      "ephemeralTokenNotCommittedToRepo": true,
+      "inlineScriptNoExternalDependencies": true
+    },
+    "aggregateDecision": "PASS/Active"
+  },
+
+  "workspaceHygiene": {
+    "gateId": "E3",
+    "workspaceAlignment": [
+      {
+        "invariant": "OPENCLAW_WORKSPACE_DIR equals checkout",
+        "passCondition": "OPENCLAW_WORKSPACE_DIR is set to $PWD (the repository checkout root)",
+        "failClosedCondition": "OPENCLAW_WORKSPACE_DIR points to the host agent workspace or is unset"
+      },
+      {
+        "invariant": "in-container config workspace matches",
+        "passCondition": "the disposable in-container openclaw.json has agents.defaults.workspace and active agent workspace set to checkout path",
+        "failClosedCondition": "config workspace entry is missing, stale, or points to a non-checkout path"
+      },
+      {
+        "invariant": "host workspace is never deleted",
+        "passCondition": "the runner never deletes or recreates ~/\u002eopenclaw/workspace as a sandbox alignment mechanism",
+        "failClosedCondition": "runner deletes or recreates the host workspace path"
+      }
+    ],
+    "denyPaths": [
+      "\u0041GENTS.md",
+      "\u0053OUL.md",
+      "\u0055SER.md",
+      "\u0054OOLS.md",
+      "\u0048EARTBEAT.md",
+      "\u0049DENTITY.md",
+      "\u002eopenclaw/**"
+    ],
+    "preExecutionHygiene": [
+      {
+        "check": "workspace config points to checkout",
+        "passCondition": "before agent start, the in-container config is verified to point workspace at the checkout",
+        "failClosedCondition": "config workspace entry does not point to the checkout path"
+      },
+      {
+        "check": "host workspace path is not swept",
+        "passCondition": "before agent start, the summary records openclaw_workspace=$PWD",
+        "failClosedCondition": "workspace path in summary is a host path or the default agent workspace"
+      }
+    ],
+    "postExecutionHygiene": [
+      {
+        "check": "bootstrap leak detection",
+        "passCondition": "after agent completion, git status --porcelain is checked for any deny path files; if found, exits 4 with error",
+        "failClosedCondition": "deny path files are present and the runner does not detect them"
+      },
+      {
+        "check": "leak summary recording",
+        "passCondition": "if bootstrap leaks are detected, each leak path is recorded in summary.txt with bootstrap_leak= prefix",
+        "failClosedCondition": "leaks are detected but not recorded in summary evidence"
+      }
+    ],
+    "safetyConfirmations": {
+      "denyPathsAreUntracked": true,
+      "preExecutionWorkspaceRecorded": true,
+      "postExecutionIsLastCheck": true,
+      "hostWorkspaceNeverDeleted": true
+    },
+    "aggregateDecision": "PASS/Active"
+  },
+
+  "sessionStoreGuard": {
+    "gateId": "E4",
+    "readOnlyMountEnforcement": [
+      {
+        "invariant": "session store is mounted read-only",
+        "passCondition": "the extraMount for the OpenClaw config directory has readOnly: true",
+        "failClosedCondition": "session store mount is writable"
+      },
+      {
+        "invariant": "no container-side session mutation",
+        "passCondition": "the container never writes to the mounted config directory",
+        "failClosedCondition": "container writes to any path under the mounted config directory"
+      },
+      {
+        "invariant": "session state guard runs first",
+        "passCondition": "the session store guard is evaluated before the agent starts",
+        "failClosedCondition": "agent starts without session store guard evaluation"
+      }
+    ],
+    "emptySessionDetection": [
+      {
+        "invariant": "active-agent sessions registry is non-empty",
+        "passCondition": "the sessions registry for the active agent must have entries",
+        "failClosedCondition": "active-agent sessions registry is empty -- execution is blocked"
+      },
+      {
+        "invariant": "non-active-agent empty registries are warnings",
+        "passCondition": "empty session registries for non-active agents produce a warning, not a block",
+        "failClosedCondition": "empty non-active-agent session registries silently ignored or block execution"
+      },
+      {
+        "invariant": "warning is recorded in summary",
+        "passCondition": "empty non-active-agent registries are recorded in summary.txt with warning= prefix",
+        "failClosedCondition": "warnings are suppressed and not recorded"
+      }
+    ],
+    "backupBuildupDetection": {
+      "maxBackupCount": 50,
+      "backupCountUnit": "files",
+      "maxBackupBytes": 134217728,
+      "backupBytesUnit": "128 MB",
+      "invariants": [
+        {
+          "invariant": "session backup count is bounded",
+          "passCondition": "total .jsonl.bak-* files below documented threshold (default: 50)",
+          "failClosedCondition": "backup count at or above threshold produces a warning"
+        },
+        {
+          "invariant": "session backup bytes are bounded",
+          "passCondition": "total backup file bytes below documented threshold (default: 128 MB)",
+          "failClosedCondition": "backup bytes at or above threshold produces a warning"
+        },
+        {
+          "invariant": "backup warnings are recorded",
+          "passCondition": "buildup warnings include count=, bytes= and recorded in summary.txt with warning= prefix",
+          "failClosedCondition": "buildup warnings are suppressed"
+        }
+      ]
+    },
+    "safetyConfirmations": {
+      "purelyDiagnosticNoMutation": true,
+      "emptyActiveSessionsBlocksExecution": true,
+      "backupBuildupWarningsInformationalOnly": true,
+      "guardEvaluatedBeforeConfigCopyOrAgentStart": true
+    },
+    "aggregateDecision": "PASS/Active"
+  },
+
+  "postCompletionFailClosed": {
+    "gateId": "E5",
+    "failureModes": [
+      {
+        "mode": "bootstrap leak",
+        "exitCode": 4,
+        "evidenceKind": "error=openclaw_workspace_bootstrap_leak",
+        "description": "bootstrap or persona file detected in checkout after agent completion",
+        "failClosedCondition": "any deny path present in checkout after agent completion"
+      },
+      {
+        "mode": "no changes produced",
+        "exitCode": 2,
+        "evidenceKind": "error=openclaw_completed_without_changes",
+        "description": "agent produced no repository changes; false Done refused",
+        "failClosedCondition": "agent completed but checkout has no file changes"
+      },
+      {
+        "mode": "config mount missing",
+        "exitCode": 2,
+        "evidenceKind": "error=openclaw_config_mount_missing",
+        "description": "OpenClaw config directory not mounted or empty",
+        "failClosedCondition": "openclaw.json is absent inside the mounted config dir"
+      }
+    ],
+    "safetyConfirmations": {
+      "failClosedBeforeSuccess": true,
+      "evidenceWrittenBeforeFailClosedExit": true,
+      "noAutomaticRetryAfterFailClosed": true,
+      "noExitCodeZeroWithoutRepoChangesAndCleanHygiene": true
+    },
+    "aggregateDecision": "PASS/Active"
+  },
+
+  "aggregateGateDecision": "PASS/Active",
+
+  "safetyConfirmations": {
+    "noProductionDeployOrRestart": true,
+    "noLiveProviderTelegramSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noProductionDbMutationPruneMigrationOrWalOperation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noRawSessionDumpOrHostPrivatePath": true,
+    "noRepositoryVisibilityChange": true,
+    "noForcePushOrHistoryRewrite": true,
+    "noAutomaticMergeOrReleasePublication": true,
+    "isApprovalFalse": true,
+    "isTerminalAckFalse": true,
+    "isReadReceiptFalse": true
+  },
+
+  "validationCommands": [
+    "npm -w packages/docker-runner run test",
+    "node test/conformance/check-contract-fixtures.mjs"
+  ],
+
+  "redacted": true
+}
