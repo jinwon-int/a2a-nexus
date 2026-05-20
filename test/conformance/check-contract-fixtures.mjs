@@ -20,6 +20,7 @@ const fixtureFiles = {
   liveCanaryApprovalBoundary: 'live-canary-replay-approval-boundary.json',
   stabilityGate: 'r20-stability-gate.json',
   workerCapabilityProfile: 'worker-capability-profile.json',
+  embeddedExecutionStability: 'embedded-execution-stability-policy.json',
 };
 
 const forbiddenRuntimePaths = [
@@ -89,6 +90,7 @@ const {
   liveCanaryApprovalBoundary,
   stabilityGate,
   workerCapabilityProfile,
+  embeddedExecutionStability,
 } = fixtures;
 
 assert.deepEqual(lifecycle.terminalStates.sort(), ['blocked', 'cancelled', 'done', 'pr']);
@@ -1209,6 +1211,160 @@ for (const [key, value] of Object.entries(stabilityGate.safetyConfirmations)) {
 assert.ok(Array.isArray(stabilityGate.validationCommands) && stabilityGate.validationCommands.length >= 1);
 assert.ok(stabilityGate.validationCommands.includes('node test/conformance/check-contract-fixtures.mjs'));
 assert.equal(stabilityGate.redacted, true);
+
+// --- Embedded Execution Stability Policy fixture validation ---
+
+assert.ok(embeddedExecutionStability.fixtureId, 'embeddedExecutionStability fixture must carry fixtureId');
+assert.match(embeddedExecutionStability.fixtureId, /^a2a-plane\.contract\.embedded-execution-stability-policy\.v0$/, 'fixtureId must match a2a-plane.contract.embedded-execution-stability-policy.v0');
+assert.equal(embeddedExecutionStability.contract, 'contracts/a2a/embedded-execution-stability-policy.md');
+assert.equal(embeddedExecutionStability.parentIssue, 'https://github.com/jinwon-int/a2a-broker/issues/838');
+assert.equal(embeddedExecutionStability.originWorker, 'Team1/nosuk');
+assert.equal(embeddedExecutionStability.targetPackage, 'packages/docker-runner/');
+assert.ok(embeddedExecutionStability.v0Freeze, 'embeddedExecutionStability must carry v0Freeze marker');
+assert.ok(embeddedExecutionStability.v0Freeze.frozenAt, 'v0Freeze must include frozenAt');
+assert.ok(embeddedExecutionStability.v0Freeze.round, 'v0Freeze must include round');
+
+// References must include the contract document and at least the runner config source
+assert.ok(Array.isArray(embeddedExecutionStability.references) && embeddedExecutionStability.references.length >= 3);
+assert.ok(embeddedExecutionStability.references.includes('packages/docker-runner/src/config.ts'), 'references must include the runner config source');
+
+// Container isolation gate (E1)
+assert.ok(embeddedExecutionStability.containerIsolation, 'must contain containerIsolation');
+assert.equal(embeddedExecutionStability.containerIsolation.gateId, 'E1');
+assert.ok(Array.isArray(embeddedExecutionStability.containerIsolation.processIsolation) && embeddedExecutionStability.containerIsolation.processIsolation.length >= 3);
+assert.ok(Array.isArray(embeddedExecutionStability.containerIsolation.filesystemIsolation) && embeddedExecutionStability.containerIsolation.filesystemIsolation.length >= 3);
+assert.ok(Array.isArray(embeddedExecutionStability.containerIsolation.networkIsolation) && embeddedExecutionStability.containerIsolation.networkIsolation.length >= 3);
+for (const invariant of embeddedExecutionStability.containerIsolation.processIsolation) {
+  assert.ok(invariant.invariant, 'processIsolation invariant must have a name');
+  assert.ok(invariant.passCondition, 'processIsolation invariant must have a passCondition');
+  assert.ok(invariant.failClosedCondition, 'processIsolation invariant must have a failClosedCondition');
+}
+for (const invariant of embeddedExecutionStability.containerIsolation.filesystemIsolation) {
+  assert.ok(invariant.invariant, 'filesystemIsolation invariant must have a name');
+  assert.ok(invariant.passCondition, 'filesystemIsolation invariant must have a passCondition');
+  assert.ok(invariant.failClosedCondition, 'filesystemIsolation invariant must have a failClosedCondition');
+}
+for (const invariant of embeddedExecutionStability.containerIsolation.networkIsolation) {
+  assert.ok(invariant.invariant, 'networkIsolation invariant must have a name');
+  assert.ok(invariant.passCondition, 'networkIsolation invariant must have a passCondition');
+  assert.ok(invariant.failClosedCondition, 'networkIsolation invariant must have a failClosedCondition');
+}
+for (const [key, value] of Object.entries(embeddedExecutionStability.containerIsolation.safetyConfirmations)) {
+  assert.equal(value, true, 'containerIsolation safety confirmation ' + key + ' must be true');
+}
+assert.equal(embeddedExecutionStability.containerIsolation.aggregateDecision, 'PASS/Active');
+
+// Config domain gate (E2)
+assert.ok(embeddedExecutionStability.configDomain, 'must contain configDomain');
+assert.equal(embeddedExecutionStability.configDomain.gateId, 'E2');
+assert.ok(embeddedExecutionStability.configDomain.configSanitization, 'must contain configSanitization');
+const sanitizationRules = embeddedExecutionStability.configDomain.configSanitization;
+for (const [ruleName, rule] of Object.entries(sanitizationRules)) {
+  assert.ok(rule.required === true, ruleName + ' sanitization rule must be required');
+  assert.ok(rule.passCondition, ruleName + ' must have passCondition');
+  assert.ok(rule.failClosedCondition, ruleName + ' must have failClosedCondition');
+}
+assert.ok(embeddedExecutionStability.configDomain.credentialScoping, 'must contain credentialScoping');
+const scopingRules = embeddedExecutionStability.configDomain.credentialScoping;
+for (const [ruleName, rule] of Object.entries(scopingRules)) {
+  assert.ok(rule.required === true, ruleName + ' scoping rule must be required');
+  assert.ok(rule.passCondition, ruleName + ' must have passCondition');
+  assert.ok(rule.failClosedCondition, ruleName + ' must have failClosedCondition');
+}
+for (const [key, value] of Object.entries(embeddedExecutionStability.configDomain.safetyConfirmations)) {
+  assert.equal(value, true, 'configDomain safety confirmation ' + key + ' must be true');
+}
+assert.equal(embeddedExecutionStability.configDomain.aggregateDecision, 'PASS/Active');
+
+// Workspace hygiene gate (E3)
+assert.ok(embeddedExecutionStability.workspaceHygiene, 'must contain workspaceHygiene');
+assert.equal(embeddedExecutionStability.workspaceHygiene.gateId, 'E3');
+assert.ok(Array.isArray(embeddedExecutionStability.workspaceHygiene.workspaceAlignment) && embeddedExecutionStability.workspaceHygiene.workspaceAlignment.length >= 3);
+for (const alignment of embeddedExecutionStability.workspaceHygiene.workspaceAlignment) {
+  assert.ok(alignment.invariant, 'workspaceAlignment must have an invariant');
+  assert.ok(alignment.passCondition, 'workspaceAlignment must have a passCondition');
+  assert.ok(alignment.failClosedCondition, 'workspaceAlignment must have a failClosedCondition');
+}
+assert.ok(Array.isArray(embeddedExecutionStability.workspaceHygiene.denyPaths) && embeddedExecutionStability.workspaceHygiene.denyPaths.length >= 5);
+assert.ok(embeddedExecutionStability.workspaceHygiene.denyPaths.includes('AGENTS.md'), 'denyPaths must include AGENTS.md');
+assert.ok(embeddedExecutionStability.workspaceHygiene.denyPaths.includes('.openclaw/**'), 'denyPaths must include .openclaw/**');
+assert.ok(Array.isArray(embeddedExecutionStability.workspaceHygiene.preExecutionHygiene) && embeddedExecutionStability.workspaceHygiene.preExecutionHygiene.length >= 2);
+assert.ok(Array.isArray(embeddedExecutionStability.workspaceHygiene.postExecutionHygiene) && embeddedExecutionStability.workspaceHygiene.postExecutionHygiene.length >= 2);
+for (const check of embeddedExecutionStability.workspaceHygiene.preExecutionHygiene) {
+  assert.ok(check.check, 'preExecutionHygiene must have a check name');
+  assert.ok(check.passCondition, 'preExecutionHygiene must have a passCondition');
+  assert.ok(check.failClosedCondition, 'preExecutionHygiene must have a failClosedCondition');
+}
+for (const check of embeddedExecutionStability.workspaceHygiene.postExecutionHygiene) {
+  assert.ok(check.check, 'postExecutionHygiene must have a check name');
+  assert.ok(check.passCondition, 'postExecutionHygiene must have a passCondition');
+  assert.ok(check.failClosedCondition, 'postExecutionHygiene must have a failClosedCondition');
+}
+for (const [key, value] of Object.entries(embeddedExecutionStability.workspaceHygiene.safetyConfirmations)) {
+  assert.equal(value, true, 'workspaceHygiene safety confirmation ' + key + ' must be true');
+}
+assert.equal(embeddedExecutionStability.workspaceHygiene.aggregateDecision, 'PASS/Active');
+
+// Session store guard gate (E4)
+assert.ok(embeddedExecutionStability.sessionStoreGuard, 'must contain sessionStoreGuard');
+assert.equal(embeddedExecutionStability.sessionStoreGuard.gateId, 'E4');
+assert.ok(Array.isArray(embeddedExecutionStability.sessionStoreGuard.readOnlyMountEnforcement) && embeddedExecutionStability.sessionStoreGuard.readOnlyMountEnforcement.length >= 3);
+assert.ok(Array.isArray(embeddedExecutionStability.sessionStoreGuard.emptySessionDetection) && embeddedExecutionStability.sessionStoreGuard.emptySessionDetection.length >= 3);
+for (const invariant of embeddedExecutionStability.sessionStoreGuard.readOnlyMountEnforcement) {
+  assert.ok(invariant.invariant, 'readOnlyMountEnforcement must have an invariant');
+  assert.ok(invariant.passCondition, 'readOnlyMountEnforcement must have a passCondition');
+  assert.ok(invariant.failClosedCondition, 'readOnlyMountEnforcement must have a failClosedCondition');
+}
+for (const invariant of embeddedExecutionStability.sessionStoreGuard.emptySessionDetection) {
+  assert.ok(invariant.invariant, 'emptySessionDetection must have an invariant');
+  assert.ok(invariant.passCondition, 'emptySessionDetection must have a passCondition');
+  assert.ok(invariant.failClosedCondition, 'emptySessionDetection must have a failClosedCondition');
+}
+assert.ok(embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection, 'must contain backupBuildupDetection');
+assert.ok(typeof embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.maxBackupCount === 'number' && embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.maxBackupCount > 0);
+assert.ok(typeof embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.maxBackupBytes === 'number' && embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.maxBackupBytes > 0);
+assert.ok(Array.isArray(embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.invariants) && embeddedExecutionStability.sessionStoreGuard.backupBuildupDetection.invariants.length >= 3);
+for (const [key, value] of Object.entries(embeddedExecutionStability.sessionStoreGuard.safetyConfirmations)) {
+  assert.equal(value, true, 'sessionStoreGuard safety confirmation ' + key + ' must be true');
+}
+assert.equal(embeddedExecutionStability.sessionStoreGuard.aggregateDecision, 'PASS/Active');
+
+// Post-completion fail-closed gate (E5)
+assert.ok(embeddedExecutionStability.postCompletionFailClosed, 'must contain postCompletionFailClosed');
+assert.equal(embeddedExecutionStability.postCompletionFailClosed.gateId, 'E5');
+assert.ok(Array.isArray(embeddedExecutionStability.postCompletionFailClosed.failureModes) && embeddedExecutionStability.postCompletionFailClosed.failureModes.length >= 3);
+const failureModeSet = new Set(embeddedExecutionStability.postCompletionFailClosed.failureModes.map((m) => m.mode));
+assert.ok(failureModeSet.has('bootstrap leak'), 'failureModes must include bootstrap leak');
+assert.ok(failureModeSet.has('no changes produced'), 'failureModes must include no changes produced');
+assert.ok(failureModeSet.has('config mount missing'), 'failureModes must include config mount missing');
+for (const mode of embeddedExecutionStability.postCompletionFailClosed.failureModes) {
+  assert.ok(typeof mode.exitCode === 'number', mode.mode + ' must have a numeric exitCode');
+  assert.ok(mode.evidenceKind, mode.mode + ' must have evidenceKind');
+  assert.ok(mode.description, mode.mode + ' must have a description');
+  assert.ok(mode.failClosedCondition, mode.mode + ' must have a failClosedCondition');
+}
+for (const [key, value] of Object.entries(embeddedExecutionStability.postCompletionFailClosed.safetyConfirmations)) {
+  assert.equal(value, true, 'postCompletionFailClosed safety confirmation ' + key + ' must be true');
+}
+assert.equal(embeddedExecutionStability.postCompletionFailClosed.aggregateDecision, 'PASS/Active');
+
+// Aggregate gate decision
+assert.equal(embeddedExecutionStability.aggregateGateDecision, 'PASS/Active');
+for (const [key, value] of Object.entries(embeddedExecutionStability.safetyConfirmations)) {
+  assert.equal(value, true, 'embeddedExecutionStability safety confirmation ' + key + ' must be true');
+}
+assert.ok(Array.isArray(embeddedExecutionStability.validationCommands) && embeddedExecutionStability.validationCommands.length >= 1);
+assert.ok(embeddedExecutionStability.validationCommands.includes('node test/conformance/check-contract-fixtures.mjs'));
+assert.equal(embeddedExecutionStability.redacted, true);
+
+// Forbidden runtime paths check for embedded execution stability fixture
+const eesFixtureText = fs.readFileSync(path.join(fixtureDir, 'embedded-execution-stability-policy.json'), 'utf8');
+for (const forbiddenPath of forbiddenRuntimePaths) {
+  assert.ok(
+    !eesFixtureText.includes(forbiddenPath),
+    'embedded-execution-stability-policy fixture must not reference OpenClaw runtime/bootstrap path ' + forbiddenPath,
+  );
+}
 
 // --- Worker Capability Profile fixture validation ---
 
