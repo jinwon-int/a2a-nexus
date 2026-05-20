@@ -1,0 +1,505 @@
+{
+  "fixtureId": "a2a-plane.contract.parent-round-closeout-go-nogo-matrix.v0",
+  "contract": "contracts/a2a/parent-round-closeout-go-nogo-matrix.md",
+  "schema": "docs/specs/a2a-parent-round-closeout-go-nogo/schema.json",
+  "description": "Synthetic fixture for parent-round closeout go/no-go matrix validation. Covers Go, No-Go, and Blocked scenarios including idempotency replay, GitHub 403, metadata violations, and runtime bootstrap hygiene failure.",
+  "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/841",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+  "run": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
+  "lane": "team1-nosuk",
+  "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
+  "parentRoundTotal": 4,
+  "parentRoundOrder": 4,
+  "parentRoundProgress": 4,
+  "originBrokerId": "seoseo",
+  "brokerOfRecordId": "seoseo",
+  "parentBrokerId": "seoseo",
+  "canaryMode": "no-live-synthetic-projection",
+  "scenarios": [
+    {
+      "name": "go-all-gates-pass",
+      "description": "All 10 gates PASS. The matrix should return GO.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "GO",
+        "decisionOutput": "GO",
+        "gateResults": {
+          "allLanesTerminal": "PASS",
+          "laneEvidenceCompleteness": "PASS",
+          "requiredMetadataPresent": "PASS",
+          "evidenceRedaction": "PASS",
+          "runtimeBootstrapHygiene": "PASS",
+          "noLiveActionLeak": "PASS",
+          "gitHubPermissionCheck": "PASS",
+          "idempotencyCheck": "PASS",
+          "seoseoFinalizer": "PASS",
+          "crossLaneProjectionStatus": "PASS"
+        },
+        "blockers": [],
+        "closeoutAllowed": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "isApproval": false,
+        "isTerminalAck": false,
+        "isReadReceipt": false
+      }
+    },
+    {
+      "name": "no-go-lane-still-running",
+      "description": "A lane is still running; parentRoundProgress < parentRoundTotal. The matrix should return NO_GO.",
+      "given": {
+        "parentRoundProgress": 3,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": null, "laneState": "running", "evidenceComplete": false }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "NO_GO",
+        "decisionOutput": "NO_GO",
+        "gateResults": {
+          "allLanesTerminal": "FAIL"
+        },
+        "closeoutAllowed": false,
+        "blockersPresent": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "no-go-missing-evidence",
+      "description": "A terminal lane has no evidence URL. The matrix should return NO_GO.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "block", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": false, "terminalEvidenceUrl": null, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "NO_GO",
+        "decisionOutput": "NO_GO",
+        "gateResults": {
+          "laneEvidenceCompleteness": "FAIL"
+        },
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "blocked-unredacted-evidence",
+      "description": "A lane's terminal evidence contains unredacted secrets. The matrix should return BLOCKED.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "block", "evidenceComplete": true, "redacted": false, "evidenceContainsSecrets": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "evidenceRedaction": "BLOCKED"
+        },
+        "closeoutAllowed": false,
+        "operatorActionRequired": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "blocked-runtime-bootstrap-hygiene",
+      "description": "Runtime/bootstrap files found in branch diff. The matrix should return BLOCKED.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": false,
+        "bootstrapLeakPaths": ["AGENTS.md", "SOUL.md"],
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "runtimeBootstrapHygiene": "BLOCKED"
+        },
+        "closeoutAllowed": false,
+        "operatorActionRequired": true,
+        "blockerPaths": ["AGENTS.md", "SOUL.md"],
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "blocked-github-403",
+      "description": "GitHub API returns 403 on comment post. The matrix should return BLOCKED.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": true,
+        "gitHub403Operation": "issue_comment_create",
+        "gitHub403Summary": "HTTP 403: token lacks issue:write scope",
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "gitHubPermissionCheck": "BLOCKED"
+        },
+        "closeoutAllowed": false,
+        "commentPosted": false,
+        "issueCloseAttempted": false,
+        "operatorActionRequired": true,
+        "github403Detected": true,
+        "closeoutState": "comment_failed",
+        "rollbackMetadataOnly": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "idempotency-duplicate-suppressed",
+      "description": "Same idempotency key and same payload as an existing closeout. Should return GO with duplicateSuppressed: true.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "idempotencyKeyExists": true,
+        "idempotencyKeyPayloadMatches": true,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "GO",
+        "decisionOutput": "GO",
+        "duplicateSuppressed": true,
+        "newPostCreated": false,
+        "issueCloseNotRepeated": true,
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "idempotency-conflict",
+      "description": "Same idempotency key but different payload. Should return BLOCKED with conflictDetected: true.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "block", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "blocked" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": true,
+        "existingPayload": {
+          "decision": "NO_GO",
+          "lanes": [
+            { "laneId": 1, "terminalKind": "pr" },
+            { "laneId": 2, "terminalKind": "pr" },
+            { "laneId": 3, "terminalKind": "done" },
+            { "laneId": 4, "terminalKind": "done" }
+          ]
+        },
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "idempotencyCheck": "BLOCKED"
+        },
+        "conflictDetected": true,
+        "operatorActionRequired": true,
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "no-go-non-seoseo-evaluator",
+      "description": "Non-Seoseo broker attempts closeout evaluation. Matrix should return NO_GO because Seoseo finalizer gate fails.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "gwakga"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "NO_GO",
+        "decisionOutput": "NO_GO",
+        "gateResults": {
+          "seoseoFinalizer": "FAIL"
+        },
+        "closeoutAllowed": false,
+        "evaluatingBrokerNotSeoseo": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "go-with-cancelled-lane",
+      "description": "One lane was cancelled with confirmation that no partial work was promoted. Matrix should return GO.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "cancelled", "cancellationSource": "operator", "partialWorkNotPromoted": true, "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "GO",
+        "decisionOutput": "GO",
+        "closeoutAllowed": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "github-403-issue-close-rollback",
+      "description": "Comment posted successfully but issue close returns 403. Matrix should return BLOCKED with close_failed state.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": true,
+        "gitHub403Operation": "issue_close",
+        "gitHub403Summary": "HTTP 403: token lacks issues:write scope",
+        "commentPosted": true,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "gitHubPermissionCheck": "BLOCKED"
+        },
+        "closeoutAllowed": false,
+        "commentPosted": true,
+        "issueCloseAttempted": true,
+        "closeoutSucceeded": false,
+        "closeoutState": "close_failed",
+        "operatorActionRequired": true,
+        "github403Detected": true,
+        "rollbackMetadataOnly": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "no-go-live-action-leak",
+      "description": "A lane's evidence shows liveProviderSend: true. Matrix should return NO_GO (permanently, not blocked — requires operator decision).",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": false, "liveProviderSend": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo"
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "NO_GO",
+        "decisionOutput": "NO_GO",
+        "gateResults": {
+          "noLiveActionLeak": "FAIL"
+        },
+        "closeoutAllowed": false,
+        "permanentFail": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    }
+  ],
+  "rollbackGuidance": {
+    "rollbackType": "metadata-only",
+    "deleteChildEvidence": false,
+    "overwriteExistingProjection": false,
+    "createNewChildTaskForCloseoutFailure": false,
+    "markProjectionBlockedOrConflict": true,
+    "preserveProjectionKey": true,
+    "noAutoRetryOn403": true
+  },
+  "evidenceRequirements": [
+    "Contract document path",
+    "Schema path",
+    "Fixture path",
+    "Validation script path",
+    "parentRoundId, originBrokerId, parentBrokerId used in the synthetic proof",
+    "Go matrix output showing all gates PASS",
+    "No-Go matrix output showing specific FAIL gate(s)",
+    "Blocked matrix output showing specific BLOCKED gate(s) with operatorActionRequired",
+    "Idempotency replay suppression proof (duplicateSuppressed: true)",
+    "Idempotency conflict detection proof (conflictDetected: true)",
+    "GitHub 403 comment post rollback proof (closeoutState: comment_failed)",
+    "GitHub 403 issue close rollback proof (closeoutState: close_failed)",
+    "Runtime/bootstrap hygiene violation detection with exact offending paths",
+    "Non-Seoseo evaluator rejection proof",
+    "Live action leak detection proof",
+    "Cancelled lane acceptance proof",
+    "No live provider send, production DB mutation, terminal-outbox ACK mutation, restart, visibility change, force-push, release, or automatic merge occurred",
+    "Runtime/bootstrap hygiene confirmed before PR or artifact evidence publication"
+  ],
+  "validationCommands": [
+    "node scripts/check-parent-round-closeout-go-nogo-matrix.mjs --spec docs/specs/a2a-parent-round-closeout-go-nogo/schema.json --fixture fixtures/contract/parent-round-closeout-go-nogo-matrix.json",
+    "node test/conformance/check-contract-fixtures.mjs"
+  ],
+  "safetyConfirmations": {
+    "syntheticFixtureOnly": true,
+    "noProductionDeployOrRestart": true,
+    "noProductionDatabaseMutation": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noHostSpecificPrivatePath": true,
+    "noProductionAutoCloseoutEnabled": true,
+    "runtimeBootstrapHygieneRequiredBeforePublication": true,
+    "seoseoFinalizerRequired": true,
+    "defaultDecisionNO_GO": true,
+    "sourcePublicExecutionNO_GO": true
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-05-20T17:43:00Z",
+    "round": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
+    "scope": "Parent-round closeout go/no-go matrix with state machine, metadata, evidence requirements, idempotency, and GitHub 403 rollback/no-op behavior",
+    "nonAckBoundary": "Closeout evidence is evidence ledger entries only, not approval, read receipt, or terminal ACK"
+  }
+}
