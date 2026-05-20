@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "description": "Parent-round closeout go/no-go matrix schema. Defines gates, metadata, evidence requirements, idempotency, and GitHub 403 rollback/no-op behavior for automatic parent-round closeout. Source-only/no-live; never executes production auto-closeout.",
+  "contract": "contracts/a2a/parent-round-closeout-go-nogo-matrix.md",
+  "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/841",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+  "run": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
+  "lane": "team1-nosuk",
+  "failClosed": true,
+  "defaultDecision": "NO_GO",
+  "decisionOutputs": ["GO", "NO_GO", "BLOCKED"],
+  "sourcePublicExecution": "NO_GO",
+  "allowedModes": ["dry-run", "simulate"],
+  "roundRequiredMetadata": [
+    "parentRoundId",
+    "parentRoundTotal",
+    "parentRoundOrder",
+    "parentRoundProgress",
+    "originBrokerId",
+    "brokerOfRecordId",
+    "parentBrokerId"
+  ],
+  "goDecisionRequires": [
+    "allLanesTerminal",
+    "laneEvidenceCompleteness",
+    "requiredMetadataPresent",
+    "evidenceRedaction",
+    "runtimeBootstrapHygiene",
+    "noLiveActionLeak",
+    "gitHubPermissionCheck",
+    "idempotencyCheck",
+    "seoseoFinalizer",
+    "crossLaneProjectionStatus"
+  ],
+  "runtimeBootstrapDenyPaths": [
+    "AGENTS.md",
+    "SOUL.md",
+    "USER.md",
+    "TOOLS.md",
+    "HEARTBEAT.md",
+    "IDENTITY.md",
+    ".openclaw/**"
+  ],
+  "forbiddenLiveFlags": [
+    "approvalExecution",
+    "releasePublication",
+    "repositoryVisibilityChange",
+    "productionDeploy",
+    "gatewayRestart",
+    "brokerRestart",
+    "workerRestart",
+    "terminalAck",
+    "liveProviderSend",
+    "productionDbMutation",
+    "forcePush",
+    "communityPost",
+    "automaticMerge",
+    "automaticApproval",
+    "parentIssueClose",
+    "credentialMovement",
+    "secretDisclosure",
+    "historicalOutboxReplay",
+    "releaseTagPublish"
+  ],
+  "gates": [
+    {
+      "id": "allLanesTerminal",
+      "title": "All lanes terminal",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": null,
+      "failedWhenMissing": "One or more child lanes are still in queued, claimed, or running state.",
+      "evidence": [
+        "Lane status overview shows each lane as PR/Done/Block/Cancelled.",
+        "parentRoundProgress >= parentRoundTotal.",
+        "No lane in queued/claimed/running state; no stuck lanes."
+      ]
+    },
+    {
+      "id": "laneEvidenceCompleteness",
+      "title": "Lane evidence completeness",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": null,
+      "failedWhenMissing": "One or more terminal lanes are missing evidence URL, terminal summary, or required projection fields.",
+      "evidence": [
+        "Every terminal lane has terminalEvidenceUrl (PR/Done/Block URL or valid evidence reference).",
+        "Every projection includes all required fields: projectionKey, terminalKind, terminalSummary, redacted, isApproval=false, isTerminalAck=false, isReadReceipt=false.",
+        "No lane has an empty/null evidence field."
+      ]
+    },
+    {
+      "id": "requiredMetadataPresent",
+      "title": "Required metadata present",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": null,
+      "failedWhenMissing": "Required metadata field is missing or invalid.",
+      "evidence": [
+        "parentRoundId is set and non-empty.",
+        "parentRoundTotal is a positive integer.",
+        "parentRoundOrder is a positive integer ≤ parentRoundTotal.",
+        "parentRoundProgress is an integer ≤ parentRoundTotal.",
+        "originBrokerId, brokerOfRecordId, parentBrokerId are set and non-empty.",
+        "No metadata field contains placeholder or empty values."
+      ]
+    },
+    {
+      "id": "evidenceRedaction",
+      "title": "Evidence redaction check",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "Terminal evidence contains unredacted secrets, runtime/bootstrap files, provider IDs, host-private paths, or raw session dumps.",
+      "evidence": [
+        "All lane terminal evidence has been scanned for unredacted secrets (token shapes, private SSH keys, AWS keys).",
+        "No provider identifiers, chat IDs, or raw session content pasted in evidence.",
+        "No host-specific home-directory paths in evidence.",
+        "Runtime/bootstrap deny paths are absent from all evidence."
+      ]
+    },
+    {
+      "id": "runtimeBootstrapHygiene",
+      "title": "OpenClaw runtime/bootstrap hygiene",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "Runtime/bootstrap context files would enter branch diff, PR text, issue comment, or artifact evidence.",
+      "denyPaths": [
+        "AGENTS.md",
+        "SOUL.md",
+        "USER.md",
+        "TOOLS.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        ".openclaw/**"
+      ],
+      "evidence": [
+        "Branch diff excludes all denyPaths.",
+        "Artifact and PR/issue evidence exclude all denyPaths and raw runtime/session context.",
+        "Block output reports exact repo-relative offending paths when detected."
+      ]
+    },
+    {
+      "id": "noLiveActionLeak",
+      "title": "No live action leak",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": null,
+      "failedWhenMissing": "One or more lane evidence entries show liveProviderSend: true, terminalOutboxAckMutated: true, isApproval: true, isTerminalAck: true, or isReadReceipt: true.",
+      "evidence": [
+        "All lane evidence records show liveProviderSend: false, terminalOutboxAckMutated: false.",
+        "All lane evidence records show isApproval: false, isTerminalAck: false, isReadReceipt: false.",
+        "No evidence contains references to production deploys, restarts, or DB mutations."
+      ]
+    },
+    {
+      "id": "gitHubPermissionCheck",
+      "title": "GitHub permission check",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "GitHub API returned 403 on comment post or issue close attempt.",
+      "evidence": [
+        "Preflight GitHub permission check passes: token has issue:write and issues:write scopes.",
+        "Repository is not archived.",
+        "No 403 errors from GitHub API during preflight check.",
+        "If 403 detected, rollback is metadata-only and operatorActionRequired is true."
+      ]
+    },
+    {
+      "id": "idempotencyCheck",
+      "title": "Idempotency check",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "Conflicting idempotency key: same key but different payload detected. Requires operator review.",
+      "evidence": [
+        "Derived idempotency key is unique for this parentRoundId.",
+        "No prior closeout record with the same key exists, OR existing record has identical payload.",
+        "If duplicate exists with identical payload, duplicateSuppressed: true.",
+        "If conflict (same key, different payload), conflictDetected: true and operatorActionRequired: true."
+      ]
+    },
+    {
+      "id": "seoseoFinalizer",
+      "title": "Seoseo finalizer check",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": null,
+      "failedWhenMissing": "The broker attempting closeout is not Seoseo. Only Seoseo may close the parent issue.",
+      "evidence": [
+        "The evaluating broker matches the designated finalizer (Seoseo).",
+        "Non-Seoseo evaluation is informational only and does not produce a closeout action.",
+        "Seoseo operator identity is confirmed before closeout execution."
+      ]
+    },
+    {
+      "id": "crossLaneProjectionStatus",
+      "title": "Cross-lane projection status",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "One or more lane parent projections have state blocked.",
+      "evidence": [
+        "All lane parent projections have state projected or done.",
+        "No lane projection has state pending or conflict.",
+        "If any projection is blocked, the blocker reason is documented for operator review.",
+        "If any projection is pending, the round is NO_GO (not BLOCKED)."
+      ]
+    }
+  ],
+  "roundLanes": {
+    "a2a-plane-nosuk": {
+      "owner": "team1-nosuk",
+      "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+      "role": "Parent-round closeout go/no-go matrix spec/runbook and validation fixture"
+    }
+  }
+}
