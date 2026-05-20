@@ -1,0 +1,317 @@
+{
+  "fixtureId": "a2a-plane.contract.action-reconciliation.v0",
+  "contract": "contracts/a2a/action-reconciliation.md",
+  "schema": "docs/specs/a2a-action-reconciliation/schema.json",
+  "description": "Synthetic fixture for approval-gated auto-closeout action reconciliation canary. Covers GO/NO_GO/BLOCKED matrix decisions, operator approval gating, idempotency replay suppression, conflict detection, GitHub 403 blocking, and broker of record mismatch. All scenarios are purely deterministic and require no provider API calls, production DB state, or live action execution.",
+  "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/844",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/402",
+  "run": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+  "lane": "team1-nosuk",
+  "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+  "brokerOfRecord": "seoseo",
+  "canaryMode": "synthetic",
+  "scenarios": [
+    {
+      "name": "go-actions-reconciled",
+      "description": "Matrix outputs GO for a parent round with 4/4 terminal lanes. PENDING comment_post action should transition to RECONCILED. No operator approval yet — stays RECONCILED, not APPROVED.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": false
+      },
+      "when": {
+        "operation": "reconciliation.evaluate"
+      },
+      "then": {
+        "reconciliationState": "RECONCILED",
+        "expectedLastActionState": "RECONCILED",
+        "operatorActionRequired": false,
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false
+      }
+    },
+    {
+      "name": "nogo-blocks-reconciliation",
+      "description": "Matrix returns NO_GO with a specific failing gate (laneEvidenceCompleteness). All actions remain PENDING. Blocker gate info is surfaced.",
+      "given": {
+        "matrixDecision": "NO_GO",
+        "blockedGate": "laneEvidenceCompleteness",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": false
+      },
+      "when": {
+        "operation": "reconciliation.evaluate"
+      },
+      "then": {
+        "reconciliationState": "PENDING",
+        "expectedLastActionState": "PENDING",
+        "operatorActionRequired": false,
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false,
+        "blockerMatrixDecision": "NO_GO",
+        "blockedGate": "laneEvidenceCompleteness"
+      }
+    },
+    {
+      "name": "blocked-blocks-reconciliation",
+      "description": "Matrix returns BLOCKED with operator action required (matrix-level gate failure). All actions remain PENDING and operator action required is surfaced.",
+      "given": {
+        "matrixDecision": "BLOCKED",
+        "blockedGate": "evidenceRedaction",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": false
+      },
+      "when": {
+        "operation": "reconciliation.evaluate"
+      },
+      "then": {
+        "reconciliationState": "PENDING",
+        "expectedLastActionState": "PENDING",
+        "operatorActionRequired": true,
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false,
+        "blockerMatrixDecision": "BLOCKED",
+        "blockedGate": "evidenceRedaction"
+      }
+    },
+    {
+      "name": "operator-approval-required",
+      "description": "Matrix says GO and actions are RECONCILED, but operator has not yet approved. The matrix gate reports actionReconciliationGate: PENDING_APPROVAL. Actions do not advance to APPROVED without explicit approval.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": false,
+        "actionsReconciled": true
+      },
+      "when": {
+        "operation": "reconciliation.approve"
+      },
+      "then": {
+        "reconciliationState": "RECONCILED",
+        "expectedLastActionState": "RECONCILED",
+        "operatorActionRequired": true,
+        "actionReconciliationGate": "PENDING_APPROVAL",
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false
+      }
+    },
+    {
+      "name": "idempotency-duplicate-suppressed",
+      "description": "Same action key and same payload as an existing CONFIRMED reconciliation action. Should return duplicateSuppressed: true with no new provider dispatch.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1",
+            "existingState": "CONFIRMED",
+            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": true,
+        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+      },
+      "when": {
+        "operation": "reconciliation.replay"
+      },
+      "then": {
+        "reconciliationState": "CONFIRMED",
+        "expectedLastActionState": "CONFIRMED",
+        "duplicateSuppressed": true,
+        "newDispatchCreated": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "idempotency-conflict-detected",
+      "description": "Same action key but different payload (different terminal evidence URL). Should return conflictDetected: true and block dispatch.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffconflictingPayload",
+            "existingState": "CONFIRMED",
+            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": true,
+        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo",
+        "conflictingPayload": true
+      },
+      "when": {
+        "operation": "reconciliation.replay"
+      },
+      "then": {
+        "reconciliationState": "FAILED",
+        "expectedLastActionState": "FAILED",
+        "conflictDetected": true,
+        "duplicateSuppressed": false,
+        "newDispatchCreated": false,
+        "github403Detected": false,
+        "brokerOfRecordMismatch": false,
+        "liveProviderSend": false,
+        "operatorActionRequired": true
+      }
+    },
+    {
+      "name": "github-403-blocks-all",
+      "description": "GitHub API permission check returns 403 for the reconciling broker. All actions remain PENDING regardless of matrix decision. No dispatch occurs. Operator action required.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          },
+          {
+            "actionKind": "issue_close",
+            "payloadHash": "sha256:1111111111111111111111111111111111111111111111111111closeEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": false,
+        "github403Operation": "issue_comment_create",
+        "github403Summary": "HTTP 403: token lacks issue:write scope",
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "seoseo",
+        "operatorApproved": false
+      },
+      "when": {
+        "operation": "reconciliation.evaluate"
+      },
+      "then": {
+        "reconciliationState": "PENDING",
+        "expectedLastActionState": "PENDING",
+        "github403Detected": true,
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "brokerOfRecordMismatch": false,
+        "operatorActionRequired": true,
+        "liveProviderSend": false
+      }
+    },
+    {
+      "name": "broker-of-record-mismatch",
+      "description": "Reconciling broker (gwakga) differs from brokerOfRecord (seoseo). All actions remain PENDING. Mismatch surfaced for operator resolution.",
+      "given": {
+        "matrixDecision": "GO",
+        "actions": [
+          {
+            "actionKind": "comment_post",
+            "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1"
+          }
+        ],
+        "gitHubPermissionOk": true,
+        "brokerOfRecord": "seoseo",
+        "reconcilingBroker": "gwakga",
+        "operatorApproved": false
+      },
+      "when": {
+        "operation": "reconciliation.evaluate"
+      },
+      "then": {
+        "reconciliationState": "PENDING",
+        "expectedLastActionState": "PENDING",
+        "brokerOfRecordMismatch": true,
+        "operatorActionRequired": true,
+        "duplicateSuppressed": false,
+        "conflictDetected": false,
+        "github403Detected": false,
+        "liveProviderSend": false
+      }
+    }
+  ],
+  "evidenceRequirements": [
+    "Contract document path",
+    "Schema path",
+    "Fixture path",
+    "Validation script path",
+    "parentRoundId, brokerOfRecord used in the synthetic proof",
+    "GO + actions reconciled proof (expectedLastActionState: RECONCILED)",
+    "NO_GO blocking proof (blockerMatrixDecision: NO_GO)",
+    "BLOCKED blocking proof (operatorActionRequired: true)",
+    "Operator approval gating proof (actionReconciliationGate: PENDING_APPROVAL)",
+    "Idempotency duplicate suppression proof (duplicateSuppressed: true)",
+    "Idempotency conflict detection proof (conflictDetected: true)",
+    "GitHub 403 blocking proof (github403Detected: true)",
+    "Broker of record mismatch proof (brokerOfRecordMismatch: true)",
+    "No live provider send, production DB mutation, terminal-outbox ACK mutation, restart, visibility change, force-push, release, or automatic merge occurred",
+    "Runtime/bootstrap hygiene confirmed before PR or artifact evidence publication"
+  ],
+  "validationCommands": [
+    "node scripts/check-action-reconciliation.mjs --spec docs/specs/a2a-action-reconciliation/schema.json --fixture fixtures/contract/action-reconciliation.json",
+    "node test/conformance/check-contract-fixtures.mjs"
+  ],
+  "safetyConfirmations": {
+    "syntheticFixtureOnly": true,
+    "noProductionDeployOrRestart": true,
+    "noProductionDatabaseMutation": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noHostSpecificPrivatePath": true,
+    "noProductionAutoCloseoutEnabled": true,
+    "runtimeBootstrapHygieneRequiredBeforePublication": true,
+    "operatorApprovalRequiredForProduction": true
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-05-20T18:09:55Z",
+    "round": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+    "scope": "Cross-repo approval-gated auto-closeout action reconciliation with approval boundaries, idempotency keys, rollback/no-op criteria, and canary gate",
+    "nonAckBoundary": "Action reconciliation records are non-terminal evidence of reconciliation lifecycle state. They are not approval, read receipt, or terminal ACK."
+  }
+}
