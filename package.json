@@ -61,7 +61,8 @@
     "check:team1-yukson-r25-team2-terminal-brief-ops-readiness-libero": "node --test scripts/check-team1-yukson-r25-team2-terminal-brief-ops-readiness-libero.test.mjs",
     "check:team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal": "node --test scripts/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs",
     "check:team1-yukson-r27-canary-hardening-libero": "node --test scripts/check-team1-yukson-r27-canary-hardening-libero.test.mjs",
-    "check:team1-nosuk-residue-cleanup-go-nogo": "node --test scripts/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs"
+    "check:team1-nosuk-residue-cleanup-go-nogo": "node --test scripts/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs",
+    "check:gongyung-hermes-worker-profile": "node --test scripts/check-gongyung-hermes-worker-profile.test.mjs"
   },
   "license": "MIT"
 }
