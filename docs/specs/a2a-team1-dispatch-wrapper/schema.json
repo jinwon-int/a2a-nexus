@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "A2A Team1 Dispatch Round Spec",
+  "description": "Round spec schema for the Team1 dispatch wrapper. Passed via --spec round.json.",
+  "type": "object",
+  "required": [
+    "$schemaVersion",
+    "team",
+    "brokerOfRecordId",
+    "originBrokerId",
+    "parentBrokerId",
+    "lanes"
+  ],
+  "properties": {
+    "$schemaVersion": {
+      "type": "string",
+      "enum": ["a2a.team1.dispatch-round.v1"],
+      "description": "Schema version identifier."
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^a2a-team1-[a-zA-Z0-9-]+-[0-9TZ]+$",
+      "description": "Run ID. Generated if not provided."
+    },
+    "team": {
+      "type": "string",
+      "enum": ["team1"],
+      "description": "Team identifier."
+    },
+    "brokerOfRecordId": {
+      "type": "string",
+      "enum": ["seoseo"],
+      "description": "Broker of record for the round."
+    },
+    "originBrokerId": {
+      "type": "string",
+      "enum": ["seoseo"],
+      "description": "Origin broker identifier."
+    },
+    "parentBrokerId": {
+      "type": "string",
+      "enum": ["seoseo"],
+      "description": "Parent broker identifier."
+    },
+    "parentTitle": {
+      "type": "string",
+      "description": "Short parent round title for the GitHub issue."
+    },
+    "parentBody": {
+      "type": "string",
+      "description": "Parent GitHub issue body (markdown)."
+    },
+    "policyContext": {
+      "type": "string",
+      "default": "source-only",
+      "description": "Default policy context. Must be explicitly overridden for live-impact actions."
+    },
+    "dryRunDefault": {
+      "type": "boolean",
+      "default": true,
+      "description": "Indicates that --dry-run is the default execution mode."
+    },
+    "lanes": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["order", "worker", "repo", "issueTitle", "role"],
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "1-based lane order."
+          },
+          "worker": {
+            "type": "string",
+            "description": "Worker identifier (e.g. bangtong, sogyo, nosuk, yukson)."
+          },
+          "repo": {
+            "type": "string",
+            "pattern": "^[\\w-]+/[\\w-]+$",
+            "description": "GitHub repository (org/repo)."
+          },
+          "issueTitle": {
+            "type": "string",
+            "description": "Lane GitHub issue title."
+          },
+          "focus": {
+            "type": "string",
+            "description": "Task prompt or focus text for the lane."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["broker", "plugin", "runner", "libero"],
+            "description": "Role of this lane."
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "GitHub issue labels."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Exactly 4 child lanes (broker, plugin, runner, libero)."
+    }
+  },
+  "additionalProperties": false
+}
