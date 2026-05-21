@@ -1,0 +1,60 @@
+{
+  "workerName": "gongyung-lightweight-worker",
+  "kind": "hermes-poll-worker",
+  "runtime": "hermes-agent",
+  "brokerUrl": "http://127.0.0.1:8787",
+  "capabilities": [
+    "docs",
+    "research",
+    "issue-triage",
+    "reporting",
+    "canary-ops"
+  ],
+  "policyVersion": "public-safe-local-v1",
+  "workerMode": "mobile",
+  "terminalResults": [
+    "done",
+    "pr",
+    "blocked"
+  ],
+  "admissionRules": {
+    "rejectedFlags": [
+      "dockerRequired",
+      "buildRequired",
+      "testRequired",
+      "repoPatch",
+      "untrustedCode"
+    ],
+    "rejectionOutcome": "blocked",
+    "rejectionEvidenceRequired": true
+  },
+  "evidenceRules": {
+    "redactedOnly": true,
+    "manifestRequired": true,
+    "artifactRoot": "~/.hermes/a2a/artifacts/<task-id>/",
+    "allowed": [
+      "summary",
+      "findings",
+      "changedFiles",
+      "validationCommands",
+      "pullRequestUrl",
+      "blockReason"
+    ],
+    "forbidden": [
+      "rawSessionDump",
+      "secretValue",
+      "privateHostPath",
+      "providerDeliveryAsAck",
+      "terminalOutboxAckMutation",
+      "runtimeBootstrapFileNames",
+      "runtimeBootstrapDir",
+      "agentWorkspaceDump"
+    ]
+  },
+  "openClawRequired": false,
+  "dockerAvailable": false,
+  "liveProviderSendRequired": false,
+  "productionInfrastructureRequired": false,
+  "deviceClass": "android-termux",
+  "workerProfile": "lightweight"
+}

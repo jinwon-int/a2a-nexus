@@ -1,0 +1,74 @@
+{
+  "nodeId": "gongyung",
+  "role": "analyst",
+  "displayName": "Gongyung Hermes Lightweight Worker",
+  "brokerUrl": "http://127.0.0.1:8787",
+  "workerMode": "mobile",
+  "capabilities": {
+    "canAnalyze": true,
+    "canBackfill": false,
+    "canPatchWorkspace": false,
+    "canPromoteLive": false,
+    "workspaceIds": ["hermes-gongyung"],
+    "environments": ["research"]
+  },
+  "metadata": {
+    "runtime": "hermes-agent",
+    "openClawRequired": "false",
+    "transport": "http-poll",
+    "workerProfile": "lightweight",
+    "dockerAvailable": "false",
+    "deviceClass": "android-termux"
+  },
+  "forbiddenProfileFields": [
+    "hostName",
+    "ipAddress",
+    "networkTopology",
+    "privatePath",
+    "providerToken",
+    "apiKey",
+    "secret",
+    "rawSessionDump",
+    "fullLog",
+    "runtimeBootstrapFileNames",
+    "runtimeBootstrapDirName",
+    "workspaceContextFiles"
+  ],
+  "rejectedTaskFlags": [
+    "dockerRequired",
+    "buildRequired",
+    "testRequired",
+    "repoPatch",
+    "untrustedCode"
+  ],
+  "artifactRoot": "~/.hermes/a2a/artifacts/<task-id>/",
+  "evidenceManifestFields": [
+    "taskId",
+    "workerId",
+    "status",
+    "filesProduced",
+    "redactionStatement",
+    "limitations",
+    "timestamp"
+  ],
+  "evidenceManifestFixture": {
+    "taskId": "gongyung-lightweight-1",
+    "workerId": "gongyung",
+    "status": "accepted",
+    "filesProduced": ["summary.md"],
+    "redactionStatement": "All output was inspected for secrets, tokens, and private paths before submission. No AGENTS.md, SOUL.md, USER.md, TOOLS.md, HEARTBEAT.md, IDENTITY.md, or .openclaw/ context files are included.",
+    "limitations": "Android Termux: no Docker, no build tools, no untrusted code execution. Memory-constrained (small class).",
+    "timestamp": "2026-05-21T03:20:00Z"
+  },
+  "safetyConfirmations": {
+    "noDeployOrRestart": true,
+    "noLiveCanary": true,
+    "noDbMutation": true,
+    "noTerminalAckMutation": true,
+    "noReplay": true,
+    "noHistoricalReplay": true,
+    "noSecretCollection": true,
+    "evidenceIsRedactedForPublic": true,
+    "rejectedTasksProduceBlockedEvidence": true
+  }
+}
