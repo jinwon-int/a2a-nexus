@@ -28,18 +28,18 @@
 ### Default (known total)
 
 ```
-A2A Terminal Brief <상태>: <worker>(<n>/<N>)
+A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(4/7)`
+Example: `A2A Terminal Brief 완료: yukson(완료 3/7)`
 
 ### Unknown-total fallback
 
 ```
-A2A Terminal Brief <상태>: <worker>(<n>)
+A2A Terminal Brief <상태>: <worker>(<상태> <n>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(2)` (no denominator)
+Example: `A2A Terminal Brief 완료: yukson(완료 2)` (no denominator)
 
 ### Non-completed status
 
@@ -194,7 +194,7 @@ This checklist must be evaluated before any PR/Done/Block evidence publication f
 | # | Check | How | Fail-closed |
 | --- | --- | --- | --- |
 | P1 | Metadata completeness | Every fixture, spec, and contract carries `parentRoundId`, `originBrokerId`, `parentBrokerId`, `parentRoundTotal`, `parentRoundOrder`. Handoff fixtures also carry `handoffBrokerId`. | Block if any fixture/spec field missing |
-| P2 | Title format conformance | Title ≤80 chars; follows `A2A Terminal Brief <상태>: <worker>(<n>/<N>)` or unknown-total fallback; forbidden content absent | Block if title exceeds limit or contains forbidden content |
+| P2 | Title format conformance | Title ≤80 chars; follows `A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)` or unknown-total fallback; forbidden content absent | Block if title exceeds limit or contains forbidden content |
 | P3 | Body/evidence separation | Verifiable separation in projection schema: title and body are distinct fields | Block if concatenated |
 | P4 | Parent-only ownership | No fixture, spec, or contract states that a handoff/child broker may send the parent-round aggregate notification | Block if ownership ambiguous |
 | P5 | ACK boundary | Every reference to provider send success, message IDs, `providerAccepted` is labeled as accepted-send-only, never ACK | Block if promotion detected |

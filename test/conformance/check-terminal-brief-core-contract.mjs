@@ -26,6 +26,8 @@ assert('Contains title format section', /## 1\. Title format/.test(contractText)
 // Title format rules
 assert('Contains default known-total format',
   /A2A Terminal Brief.*worker.*N/.test(contractText) || /default.*known.total/i.test(contractText));
+assert('Contains canonical raw compact title example',
+  /A2A Terminal Brief 완료: yukson\(완료 3\/7\)/.test(contractText));
 assert('Contains unknown-total fallback',
   /unknown-total fallback|unknown total/i.test(contractText) || /no denominator/.test(contractText));
 assert('Contains 80 char max constraint', /80 characters|80 chars/.test(contractText));
