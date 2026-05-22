@@ -69,12 +69,12 @@ requires explicit operator approval.
 Default known-total completed-worker title:
 
 ```
-A2A Terminal Brief <상태>: <worker>(<n>/<N>)
+A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(4/7)` (known total=7).  
-Unknown-total fallback: `A2A Terminal Brief 완료: yukson(2)` (no denominator).  
-Non-completed status: `A2A Terminal Brief <상태>: <worker>(<n>/<N>)` — bounded status labels defined
+Example: `A2A Terminal Brief 완료: yukson(완료 3/7)` (known total=7).
+Unknown-total fallback: `A2A Terminal Brief 완료: yukson(완료 2)` (no denominator).
+Non-completed status: `A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)` — bounded status labels defined
 by the parent contract.
 
 Constraints:
@@ -326,7 +326,7 @@ and must not render or dispatch that round's aggregate notification.
 | --- | --- | --- | --- | --- |
 | G1 | Parent metadata propagation | Every child task (Team1 direct + Team2 handoff) carries `parentRoundId`, `originBrokerId`, `parentBrokerId`, `parentRoundTotal`, `parentRoundOrder`. Handoff children also carry `handoffBrokerId`. No field is missing, rewritten, or inconsistent across children. | Broker task query, lane issue bodies, handoff envelope inspection | Block if any field missing or mismatched |
 | G2 | Four-case routing invariant | The four routing cases (Seoseo-Team1-only, Seoseo-Team1+2, Gwakga-Team2-only, Gwakga-Team1+2) each produce correct parent/origin/handoff/child-broker assignments. `initiatingBroker == originBrokerId == parentBrokerId` for standard operator-facing cases. | `contracts/a2a/parent-terminal-brief-aggregation.md` v1 four-case matrix, `fixtures/contract/terminal-brief-parent-origin-routing.json` | Block if any case violates the invariant |
-| G3 | Concise title format | Each per-child terminal transition renders `A2A Terminal Brief <상태>: <worker>(<n>/<N>)` with known total, or `<상태>: <worker>(<n>)` unknown-total fallback. Title ≤80 chars; forbidden content absent. | Title evidence from parent aggregation ledger or test fixture | Block if title exceeds 80 chars or contains forbidden content |
+| G3 | Concise title format | Each per-child terminal transition renders `A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)` with known total, or `<상태>: <worker>(<상태> <n>)` unknown-total fallback. Title ≤80 chars; forbidden content absent. | Title evidence from parent aggregation ledger or test fixture | Block if title exceeds 80 chars or contains forbidden content |
 | G4 | Body/evidence separation | Title and body are separate fields. Title has no evidence content, URLs, broker IDs, or ACK state. Body has no `terminalBriefTitle`. | Projection schema test, notification adapter test | Block if concatenated or leaking |
 | G5 | Parent-only notification ownership | Only the broker matching `parentBrokerId` may render/dispatch parent-round aggregate Terminal Brief. Handoff/child brokers must not send their own parent notification. | Broker routing contract test (`terminal-brief-routing-contract.ts`), handoff scenario tests | Block if handoff broker sends parent notification |
 | G6 | No-local-send for parent-owned rows | Gwakga does NOT render/send parent-round Terminal Brief for Seoseo-origin rows. Seoseo does NOT render/send Gwakga-origin parent-round Terminal Brief. | Cross-broker handoff test, safety matrix test | Block if any local send detected for non-own round |
@@ -459,6 +459,7 @@ Each PR or validation lane referencing this spec must produce evidence that incl
 | Artifact | Path | Purpose |
 | --- | --- | --- |
 | Core feature spec (this document) | `docs/specs/a2a-terminal-brief-core-feature/spec.md` | Canonical Terminal Brief core feature definition |
+| Core contract v1 (concise reference) | `contracts/a2a/terminal-brief-core-contract.md` | Concise reference for Team1/Team2 dispatches; consolidates title format, ownership matrix, handoff metadata, ACK rules, legacy residue handling, and source-to-deploy checklist |
 | Parent-origin routing spec | `docs/specs/a2a-terminal-brief-parent-origin-routing/spec.md` | Four-case routing contract |
 | Canary spec | `docs/specs/a2a-terminal-brief-canary/spec.md` | Live-canary hardening protocol |
 | Parent aggregation contract | `contracts/a2a/parent-terminal-brief-aggregation.md` | Aggregation lifecycle, projection fields, title semantics |
