@@ -21,6 +21,7 @@ const fixtureFiles = {
   stabilityGate: 'r20-stability-gate.json',
   workerCapabilityProfile: 'worker-capability-profile.json',
   embeddedExecutionStability: 'embedded-execution-stability-policy.json',
+  adapterReceiptCapability: 'adapter-receipt-capability.json',
 };
 
 const forbiddenRuntimePaths = [
@@ -91,6 +92,7 @@ const {
   stabilityGate,
   workerCapabilityProfile,
   embeddedExecutionStability,
+  adapterReceiptCapability,
 } = fixtures;
 
 assert.deepEqual(lifecycle.terminalStates.sort(), ['blocked', 'cancelled', 'done', 'pr']);
@@ -1445,6 +1447,194 @@ for (const forbiddenPath of forbiddenRuntimePaths) {
   assert.ok(
     !wcpFixtureText.includes(forbiddenPath),
     'worker-capability-profile fixture must not reference OpenClaw runtime/bootstrap path ' + forbiddenPath,
+  );
+}
+
+
+// ─── Adapter receipt capability ──────────────────────────────────────
+
+assert.equal(
+  adapterReceiptCapability.contract,
+  'contracts/a2a/adapter-receipt-capability.md',
+  'adapterReceiptCapability must reference adapter-receipt-capability.md',
+);
+assert.equal(adapterReceiptCapability.fixtureId, 'a2a-plane.adapter-receipt-capability.v0');
+assert.ok(adapterReceiptCapability.v0Freeze, 'must carry v0Freeze marker');
+assert.equal(adapterReceiptCapability.v0Freeze.lane, '6/7');
+assert.equal(adapterReceiptCapability.v0Freeze.run, 'a2a-terminal-brief-productization-20260522T225813Z');
+assert.ok(adapterReceiptCapability.v0Freeze.frozenAt, 'v0Freeze must include frozenAt');
+
+// Adapter types
+assert.ok(Array.isArray(adapterReceiptCapability.adapterTypes)
+  && adapterReceiptCapability.adapterTypes.length >= 3);
+const adapterTypeIds = new Set(adapterReceiptCapability.adapterTypes.map((t) => t.id));
+assert.ok(adapterTypeIds.has('python-telegram-bot'), 'must include python-telegram-bot adapter');
+assert.ok(adapterTypeIds.has('go-webhook-bridge'), 'must include go-webhook-bridge adapter');
+assert.ok(adapterTypeIds.has('cli-file-outbox'), 'must include cli-file-outbox adapter');
+
+// Capability levels (C1–C6, exactly 6 levels)
+assert.ok(Array.isArray(adapterReceiptCapability.capabilityLevels)
+  && adapterReceiptCapability.capabilityLevels.length === 6,
+  'must define exactly 6 capability levels (C1–C6)',
+);
+const levelById = new Map(adapterReceiptCapability.capabilityLevels.map((l) => [l.level, l]));
+for (const id of ['C1', 'C2', 'C3', 'C4', 'C5', 'C6']) {
+  assert.ok(levelById.has(id), 'must define level ' + id);
+}
+
+// C1 (produced) and C2 (spooled) are receipt level 0, not ACK-safe
+assert.equal(levelById.get('C1').receiptLevel, 0, 'C1 produced must map to receipt level 0');
+assert.equal(levelById.get('C1').ackSafe, false, 'C1 must not be ACK-safe');
+assert.equal(levelById.get('C2').receiptLevel, 0, 'C2 spooled must map to receipt level 0');
+assert.equal(levelById.get('C2').ackSafe, false, 'C2 must not be ACK-safe');
+
+// C3 (provider_only) maps to receipt level 1 (accepted-send)
+assert.equal(levelById.get('C3').receiptLevel, 1, 'C3 provider_only must map to receipt level 1');
+assert.equal(levelById.get('C3').ackSafe, false, 'C3 must not be ACK-safe');
+
+// C4 (requester_visible) maps to receipt level 2
+assert.equal(levelById.get('C4').receiptLevel, 2, 'C4 requester_visible must map to receipt level 2');
+assert.equal(levelById.get('C4').ackSafe, false);
+
+// C5 (operator_visible) maps to receipt level 3
+assert.equal(levelById.get('C5').receiptLevel, 3, 'C5 operator_visible must map to receipt level 3');
+assert.equal(levelById.get('C5').ackSafe, false);
+
+// C6 (operator_confirmed) maps to receipt level 4 and is ACK-safe
+assert.equal(levelById.get('C6').receiptLevel, 4, 'C6 operator_confirmed must map to receipt level 4');
+assert.equal(levelById.get('C6').ackSafe, true, 'C6 must be ACK-safe');
+
+// No new receipt levels introduced beyond {0, 1, 2, 3, 4}
+const mappedLevels = new Set(adapterReceiptCapability.capabilityLevels.map((l) => l.receiptLevel));
+assert.deepEqual([...mappedLevels].sort(), [0, 1, 2, 3, 4],
+  'capability levels must only map to existing receipt levels {0, 1, 2, 3, 4}',
+);
+
+// Scenarios
+assert.ok(Array.isArray(adapterReceiptCapability.scenarios)
+  && adapterReceiptCapability.scenarios.length >= 8,
+  'must define at least 8 scenarios',
+);
+
+const adapterScenarioByName = new Map(
+  adapterReceiptCapability.scenarios.map((s) => [s.name, s]),
+);
+
+// cli-produced-only-no-send: receiptLevel 0, not ack-safe
+const producedScenario = adapterScenarioByName.get('cli-produced-only-no-send');
+assert.ok(producedScenario, 'must define cli-produced-only-no-send scenario');
+assert.equal(producedScenario.expect.receiptLevel, 0);
+assert.equal(producedScenario.expect.ackSafe, false);
+assert.equal(producedScenario.expect.terminalOutboxAckMutated, false);
+
+// spooled-to-sqlite-not-delivered: receiptLevel 0, not ack-safe
+const spooledScenario = adapterScenarioByName.get('spooled-to-sqlite-not-delivered');
+assert.ok(spooledScenario, 'must define spooled-to-sqlite-not-delivered scenario');
+assert.equal(spooledScenario.expect.receiptLevel, 0);
+assert.equal(spooledScenario.expect.ackSafe, false);
+assert.equal(spooledScenario.given.spoolDurable, true, 'spool must be durable for C2');
+
+// provider-only-accepted-send-non-ack: receiptLevel 1, not ack-safe
+const providerOnlyScenario = adapterScenarioByName.get('provider-only-accepted-send-non-ack');
+assert.ok(providerOnlyScenario, 'must define provider-only-accepted-send-non-ack scenario');
+assert.equal(providerOnlyScenario.expect.receiptLevel, 1);
+assert.equal(providerOnlyScenario.expect.ackSafe, false);
+assert.equal(providerOnlyScenario.expect.terminalAckMayBeRecorded, false);
+assert.ok(providerOnlyScenario.expect.reasonCodes.includes('manual-or-visible-receipt-required'));
+
+// provider-only-go-webhook-non-ack: receiptLevel 1, not ack-safe
+const webhookScenario = adapterScenarioByName.get('provider-only-go-webhook-non-ack');
+assert.ok(webhookScenario, 'must define provider-only-go-webhook-non-ack scenario');
+assert.equal(webhookScenario.expect.receiptLevel, 1);
+assert.equal(webhookScenario.expect.ackSafe, false);
+
+// requester-visible-github-comment: receiptLevel 2, not ack-safe
+const requesterVisibleScenario = adapterScenarioByName.get('requester-visible-github-comment');
+assert.ok(requesterVisibleScenario, 'must define requester-visible-github-comment scenario');
+assert.equal(requesterVisibleScenario.expect.receiptLevel, 2);
+assert.equal(requesterVisibleScenario.expect.ackSafe, false);
+assert.ok(requesterVisibleScenario.given.commentUrl, 'requester visible must include commentUrl');
+
+// operator-visible-manual-receipt: receiptLevel 3, not ack-safe
+const operatorVisibleScenario = adapterScenarioByName.get('operator-visible-manual-receipt');
+assert.ok(operatorVisibleScenario, 'must define operator-visible-manual-receipt scenario');
+assert.equal(operatorVisibleScenario.expect.receiptLevel, 3);
+assert.equal(operatorVisibleScenario.expect.ackSafe, false);
+assert.equal(operatorVisibleScenario.expect.terminalAckMayBeRecorded, false);
+assert.ok(operatorVisibleScenario.expect.reasonCodes.includes('parent-broker-required-for-ack-mutation'));
+
+// operator-confirmed-with-ack-safe-proof: receiptLevel 4, ack-safe
+const confirmedScenario = adapterScenarioByName.get('operator-confirmed-with-ack-safe-proof');
+assert.ok(confirmedScenario, 'must define operator-confirmed-with-ack-safe-proof scenario');
+assert.equal(confirmedScenario.expect.receiptLevel, 4);
+assert.equal(confirmedScenario.expect.ackSafe, true);
+assert.equal(confirmedScenario.expect.terminalAckMayBeRecorded, true);
+assert.equal(confirmedScenario.expect.terminalOutboxAckMutated, false);
+assert.ok(confirmedScenario.given.ackSafeReceiptProof, 'C6 scenario must have ackSafeReceiptProof');
+assert.equal(confirmedScenario.given.ackSafeReceiptProof.receiptType, 'manual_operator_receipt');
+
+// skip-to-ack-violation: violation detected
+const skipToAckScenario = adapterScenarioByName.get('skip-to-ack-violation');
+assert.ok(skipToAckScenario, 'must define skip-to-ack-violation scenario');
+assert.equal(skipToAckScenario.expect.violation, true);
+assert.equal(skipToAckScenario.expect.receiptLevel, 0, 'skip-to-ack must default to receipt level 0');
+assert.ok(skipToAckScenario.expect.reasonCodes.includes('ack-safe-receipt-proof-required'));
+
+// provider-message-id-is-non-ack-even-at-C6: even at ACK-capable level, providerMessageId is non-ACK
+const providerMsgIdScenario = adapterScenarioByName.get('provider-message-id-is-non-ack-even-at-C6');
+assert.ok(providerMsgIdScenario, 'must define provider-message-id-is-non-ack-even-at-C6 scenario');
+assert.equal(providerMsgIdScenario.expect.providerAcceptedIsAck, false);
+assert.equal(providerMsgIdScenario.expect.providerMessageIdIsAck, false);
+
+// adapter-cannot-mutate-terminal-outbox-ack: violation detected
+const outboxMutationScenario = adapterScenarioByName.get('adapter-cannot-mutate-terminal-outbox-ack');
+assert.ok(outboxMutationScenario, 'must define adapter-cannot-mutate-terminal-outbox-ack scenario');
+assert.equal(outboxMutationScenario.expect.violation, true);
+assert.equal(outboxMutationScenario.expect.ackSafe, false);
+assert.equal(outboxMutationScenario.expect.terminalOutboxAckMutated, false, 'must force to false');
+assert.ok(outboxMutationScenario.expect.reasonCodes.includes('non-openclaw-adapter-cannot-claim-ack-mutation'));
+
+// Every scenario must have terminalOutboxAckMutated: false
+for (const scenario of adapterReceiptCapability.scenarios) {
+  assert.equal(scenario.expect.terminalOutboxAckMutated, false,
+    scenario.name + ': terminalOutboxAckMutated must be false for all non-OpenClaw adapters',
+  );
+}
+
+// C3+ scenarios must not claim receipt level 4 unless they have ackSafeReceiptProof
+for (const scenario of adapterReceiptCapability.scenarios) {
+  if (scenario.given.adapterReceiptLevel === 'provider_only'
+      && scenario.given.ackSafeReceiptProof === null) {
+    assert.ok(scenario.expect.receiptLevel <= 2,
+      scenario.name + ': provider_only without ackSafeReceiptProof must not claim receiptLevel > 2',
+    );
+  }
+}
+
+// Safety confirmations
+for (const [key, value] of Object.entries(adapterReceiptCapability.safetyConfirmations)) {
+  assert.equal(value, true,
+    'adapterReceiptCapability safety confirmation ' + key + ' must be true',
+  );
+}
+
+// Forbidden runtime paths from fixture
+const arcFixtureText = fs.readFileSync(
+  path.join(fixtureDir, 'adapter-receipt-capability.json'),
+  'utf8',
+);
+for (const forbiddenPath of forbiddenRuntimePaths) {
+  assert.ok(
+    !arcFixtureText.includes(forbiddenPath),
+    'adapter-receipt-capability fixture must not reference OpenClaw runtime/bootstrap path ' + forbiddenPath,
+  );
+}
+
+// No secret patterns in adapter-receipt-capability fixture
+for (const pattern of secretLikePatterns) {
+  assert.ok(
+    !pattern.test(arcFixtureText),
+    'adapter-receipt-capability fixture matched forbidden secret pattern ' + pattern,
   );
 }
 

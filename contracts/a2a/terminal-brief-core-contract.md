@@ -18,6 +18,7 @@
 | Broker handoff protocol | Envelope shape, peer permissions | `contracts/a2a/broker-handoff-protocol.md` |
 | GitHub evidence projection | Manifest-bound comment model | `contracts/a2a/github-evidence-projection.md` |
 | ACK boundary compatibility | Accepted-send non-ACK fixture | `contracts/compatibility/terminal-evidence-ack-boundary.md` |
+| **Adapter receipt capability** | **Non-OpenClaw/Hermes/spool adapter receipt levels, produced/spooled/provider-only non-ACK boundary** | **`contracts/a2a/adapter-receipt-capability.md`** |
 | Parent-origin routing spec | Four-case routing contract | `docs/specs/a2a-terminal-brief-parent-origin-routing/spec.md` |
 | Canary spec | Live-canary hardening protocol | `docs/specs/a2a-terminal-brief-canary/spec.md` |
 

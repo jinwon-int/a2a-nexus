@@ -1,0 +1,305 @@
+{
+  "fixtureId": "a2a-plane.adapter-receipt-capability.v0",
+  "contract": "contracts/a2a/adapter-receipt-capability.md",
+  "description": "Receipt capability contract fixture for non-OpenClaw/Hermes/spool Terminal Brief adapters. Defines six capability levels (C1–C6) mapped to the four frozen receipt levels. Each scenario demonstrates an adapter state transition and validates that produced/spooled/provider-only states are not mistaken for operator-visible ACK.",
+  "v0Freeze": {
+    "frozenAt": "2026-05-22",
+    "round": "a2a-terminal-brief-productization-20260522T225813Z",
+    "run": "a2a-terminal-brief-productization-20260522T225813Z",
+    "lane": "6/7",
+    "note": "Adapter capability levels C1–C6 and their mapping to receipt levels are v0. No new receipt levels are introduced. The four-level receipt model (accepted-send, requester-visible, operator-visible, terminal ACK) remains frozen per the v0 freeze (2026-05-09)."
+  },
+  "adapterTypes": [
+    { "id": "python-telegram-bot", "description": "Standalone Python Telegram Bot adapter for Terminal Brief dispatch" },
+    { "id": "go-webhook-bridge", "description": "Go-based webhook bridge consuming A2A task events and dispatching via custom provider" },
+    { "id": "cli-file-outbox", "description": "CLI-based adapter that writes Terminal Brief evidence to a file-based outbox" },
+    { "id": "external-notification-service", "description": "External notification service adapter with its own provider integration" }
+  ],
+  "capabilityLevels": [
+    {
+      "level": "C1",
+      "adapterReceiptLevel": "produced",
+      "receiptLevel": 0,
+      "ackSafe": false,
+      "description": "Adapter serialized payload to local buffer. No send attempt."
+    },
+    {
+      "level": "C2",
+      "adapterReceiptLevel": "spooled",
+      "receiptLevel": 0,
+      "ackSafe": false,
+      "description": "Adapter queued payload to external spool/outbox. Durable beyond process lifetime but not delivered."
+    },
+    {
+      "level": "C3",
+      "adapterReceiptLevel": "provider_only",
+      "receiptLevel": 1,
+      "ackSafe": false,
+      "description": "Adapter dispatched to provider and received HTTP 2xx acceptance. Maps to accepted-send (level 1)."
+    },
+    {
+      "level": "C4",
+      "adapterReceiptLevel": "requester_visible",
+      "receiptLevel": 2,
+      "ackSafe": false,
+      "description": "Payload appeared in requester-visible channel (e.g., GitHub comment). Maps to requester-visible receipt (level 2)."
+    },
+    {
+      "level": "C5",
+      "adapterReceiptLevel": "operator_visible",
+      "receiptLevel": 3,
+      "ackSafe": false,
+      "description": "Operator explicitly confirmed seeing the Terminal Brief. Maps to operator-visible receipt (level 3)."
+    },
+    {
+      "level": "C6",
+      "adapterReceiptLevel": "operator_confirmed",
+      "receiptLevel": 4,
+      "ackSafe": true,
+      "description": "ACK-safe receipt proof recorded. Maps to terminal ACK (level 4). Requires ackSafeReceiptProof."
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "cli-produced-only-no-send",
+      "adapterType": "cli-file-outbox",
+      "given": {
+        "adapterReceiptLevel": "produced",
+        "providerAccepted": false,
+        "providerMessageId": null,
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 0,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "reasonCodes": [
+          "produced-is-zero-receipt-evidence",
+          "no-send-attempt"
+        ]
+      }
+    },
+    {
+      "name": "spooled-to-sqlite-not-delivered",
+      "adapterType": "python-telegram-bot",
+      "given": {
+        "adapterReceiptLevel": "spooled",
+        "providerAccepted": false,
+        "providerMessageId": null,
+        "spoolType": "sqlite",
+        "spoolDurable": true,
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 0,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "reasonCodes": [
+          "spooled-is-zero-receipt-evidence",
+          "spool-durable-not-delivered"
+        ]
+      }
+    },
+    {
+      "name": "provider-only-accepted-send-non-ack",
+      "adapterType": "python-telegram-bot",
+      "given": {
+        "adapterReceiptLevel": "provider_only",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_msg_001_accept",
+        "dispatchMethod": "telegram_bot_api",
+        "responseCode": 200,
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 1,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "terminalAckMayBeRecorded": false,
+        "reasonCodes": [
+          "provider-only-is-accepted-send",
+          "provider-accepted-is-non-ack",
+          "manual-or-visible-receipt-required"
+        ]
+      }
+    },
+    {
+      "name": "provider-only-go-webhook-non-ack",
+      "adapterType": "go-webhook-bridge",
+      "given": {
+        "adapterReceiptLevel": "provider_only",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_webhook_002",
+        "dispatchMethod": "webhook_post",
+        "responseCode": 202,
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 1,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "terminalAckMayBeRecorded": false,
+        "reasonCodes": [
+          "provider-only-is-accepted-send",
+          "provider-accepted-is-non-ack",
+          "webhook-accepted-is-not-delivery"
+        ]
+      }
+    },
+    {
+      "name": "requester-visible-github-comment",
+      "adapterType": "external-notification-service",
+      "given": {
+        "adapterReceiptLevel": "requester_visible",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_gh_003",
+        "commentUrl": "https://github.com/jinwon-int/a2a-plane/issues/424#issuecomment-4523236705",
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 2,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "terminalAckMayBeRecorded": false,
+        "reasonCodes": [
+          "requester-visible-is-evidence-ledger",
+          "github-comment-is-not-ack"
+        ]
+      }
+    },
+    {
+      "name": "operator-visible-manual-receipt",
+      "adapterType": "python-telegram-bot",
+      "given": {
+        "adapterReceiptLevel": "operator_visible",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_tg_004",
+        "operatorReceiptEvidence": {
+          "type": "manual_operator_receipt",
+          "receiptId": "adapter_operator_receipt_001",
+          "provenance": "operator-recorded-from-adapter-log"
+        },
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 3,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "terminalAckMayBeRecorded": false,
+        "reasonCodes": [
+          "operator-visible-is-evidence-not-ack",
+          "adapter-cannot-self-ack",
+          "parent-broker-required-for-ack-mutation"
+        ]
+      }
+    },
+    {
+      "name": "operator-confirmed-with-ack-safe-proof",
+      "adapterType": "cli-file-outbox",
+      "given": {
+        "adapterReceiptLevel": "operator_confirmed",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_cli_005",
+        "ackSafeReceiptProof": {
+          "receiptType": "manual_operator_receipt",
+          "receiptProofId": "adapter_ack_proof_001",
+          "provenance": "operator-confirmed-via-cli"
+        }
+      },
+      "expect": {
+        "receiptLevel": 4,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": true,
+        "terminalAckMayBeRecorded": true,
+        "requiredReceiptType": "manual_operator_receipt",
+        "reasonCodes": [
+          "operator-confirmed-is-ack-safe-evidence",
+          "adapter-evidence-is-ack-input-not-ack-mutation",
+          "parent-broker-performs-actual-ack-mutation"
+        ]
+      }
+    },
+    {
+      "name": "skip-to-ack-violation",
+      "adapterType": "go-webhook-bridge",
+      "given": {
+        "adapterReceiptLevel": "operator_confirmed",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_skip_006",
+        "ackSafeReceiptProof": null
+      },
+      "expect": {
+        "receiptLevel": 0,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": false,
+        "violation": true,
+        "reasonCodes": [
+          "skip-to-ack-violation",
+          "ack-safe-receipt-proof-required"
+        ]
+      }
+    },
+    {
+      "name": "provider-message-id-is-non-ack-even-at-C6",
+      "adapterType": "python-telegram-bot",
+      "given": {
+        "adapterReceiptLevel": "operator_confirmed",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_msg_007",
+        "ackSafeReceiptProof": {
+          "receiptType": "current_session_visible",
+          "receiptProofId": "adapter_session_proof_002",
+          "provenance": "runtime-user-visible-receipt"
+        }
+      },
+      "expect": {
+        "receiptLevel": 4,
+        "terminalOutboxAckMutated": false,
+        "ackSafe": true,
+        "terminalAckMayBeRecorded": true,
+        "requiredReceiptType": "current_session_visible",
+        "providerAcceptedIsAck": false,
+        "providerMessageIdIsAck": false,
+        "reasonCodes": [
+          "operator-confirmed-is-ack-safe-evidence",
+          "provider-message-id-is-non-ack-even-at-ack-capable-level"
+        ]
+      }
+    },
+    {
+      "name": "adapter-cannot-mutate-terminal-outbox-ack",
+      "adapterType": "external-notification-service",
+      "given": {
+        "adapterReceiptLevel": "operator_confirmed",
+        "providerAccepted": true,
+        "providerMessageId": "adapter_outbox_008",
+        "ackSafeReceiptProof": {
+          "receiptType": "manual_operator_receipt",
+          "receiptProofId": "adapter_ack_proof_003",
+          "provenance": "operator-confirmed"
+        },
+        "claimedOutboxAckMutation": true
+      },
+      "expect": {
+        "receiptLevel": 4,
+        "terminalOutboxAckMutated": false,
+        "violation": true,
+        "ackSafe": false,
+        "reasonCodes": [
+          "non-openclaw-adapter-cannot-claim-ack-mutation",
+          "adapter-must-report-terminalOutboxAckMutated-as-false"
+        ]
+      }
+    }
+  ],
+  "safetyConfirmations": {
+    "syntheticFixtureOnly": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noRawSessionDump": true,
+    "noHostSpecificPrivatePath": true,
+    "noOpenClawRuntimeBootstrapArtifact": true,
+    "noNonOpenClawHermesSpoolAdapterDeployed": true
+  }
+}

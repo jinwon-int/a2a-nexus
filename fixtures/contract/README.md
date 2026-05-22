@@ -15,5 +15,6 @@ Fixture set:
 - `second-worker-replay-trace.json` — public-safe second-reference-worker replay proof showing a replay returns existing terminal evidence with zero duplicate sends, zero duplicate ACKs, and compact redacted trace fields.
 - `a2a-spec-first-taskflow-bridge.json` — design fixture for mapping a spec-first A2A packet into managed TaskFlow state without enabling runtime automation.
 - `a2a-spec-first-taskflow-runtime-dryrun.json` — dry-run runtime rehearsal packet that validates the managed flow draft without creating live TaskFlow jobs.
+- `adapter-receipt-capability.json` — six-level adapter receipt capability contract fixture (C1–C6) for non-OpenClaw/Hermes/spool Terminal Brief adapters, mapping adapter states to the four frozen receipt levels and enforcing the produced/spooled/provider-only non-ACK boundary.
 
 Do not add secrets, host-specific paths, OpenClaw runtime/bootstrap files, raw session dumps, live provider payloads, or terminal ACK mutation records to these fixtures.
