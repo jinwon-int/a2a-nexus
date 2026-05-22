@@ -1,54 +1,47 @@
-# Spec Analysis: Gongyung Hermes Lightweight Worker Profile
+# Analysis: Gongyung Hermes Lightweight A2A Worker Profile
 
-## Inputs
+## Existing broker support
 
-- Spec: `docs/specs/gongyung-hermes-worker-profile/spec.md`
-- Plan: `docs/specs/gongyung-hermes-worker-profile/plan.md`
-- Tasks: `docs/specs/gongyung-hermes-worker-profile/tasks.md`
-- Related issues/PRs:
-  - jinwon-int/a2a-plane#393 — parent issue
-  - jinwon-int/a2a-plane#384 — Hermes broker-agnostic worker contract (prior art)
-  - jinwon-int/a2a-plane#410 — previous attempt rehomed here
+Repository inspection confirms the broker already supports the lightweight worker pattern through existing infrastructure:
 
-## Consistency checks
+- `packages/broker/src/core/types.ts`: `RegisterWorkerRequest` accepts arbitrary `metadata` (string-to-string map), `WorkerCapabilities` with boolean flags, and `workerMode`, allowing Gongyung's lightweight profile to register without new fields.
+- `packages/broker/src/core/broker.ts`: `registerWorker` and `heartbeatWorker` store and refresh metadata without validation against specific OpenClaw fields.
+- `packages/broker/src/server.ts`: `POST /workers/register`, `POST /workers/:nodeId/heartbeat`, `GET /tasks?worker=`, `POST /tasks/:id/evidence` all accept Hermes-style workers without modification.
+- `contracts/a2a/worker-registration.md` already documents `runtime=hermes-agent`, `transport=http-poll`, and `openClawRequired=false` metadata patterns.
 
-- [x] Problem statement matches the proposed scope: Gongyung needs a documented lightweight non-Docker worker profile.
-- [x] User/operator stories are covered by success criteria.
-- [x] In-scope and out-of-scope sections do not conflict.
-- [x] Plan covers every affected repo/component named in the spec.
-- [x] Tasks cover every implementation and validation item in the plan.
-- [x] Rollback/failure handling exists: revert the PR, no production state created.
+## Gap closed by this spec
 
-## Safety checks
+Before this spec, Gongyung had no documented operating mode:
 
-- [x] Secrets/private data handling is explicit: artifact contract requires redaction statement and no-credential-output rule.
-- [x] Approval-sensitive actions are named and not silently included: out-of-scope lists every production action.
-- [x] Broker foreground liveness risk is addressed: spec-only, no foreground session impact.
-- [x] Worker isolation boundary is addressed: non-Docker constraints documented with admission rules.
-- [x] Evidence requirements are sufficient for finalizer judgment: manifest fields specified.
-- [x] Wiki/runbook follow-up is planned for separate approval step.
+- Gongyung was an Android Termux node with OpenClaw retired; the device's capabilities and restrictions were not written down.
+- Workers with `dockerAvailable=false`, `workerProfile=lightweight`, and `deviceClass=android-termux` had no guidance on task admission, artifact output, or evidence manifest requirements.
+- The existing Hermes integration (#384) proved a generic non-OpenClaw worker could participate in the broker lifecycle, but it did not define a specific lightweight profile.
 
-## A2A routing / ownership checks
+This spec closes the gap by:
 
-- [x] Exactly one broker of record/finalizer is named: Seoseo remains broker/finalizer of record per issue requirements.
-- [x] Team1/Team2/cross-team ownership is unambiguous: Team2 (jingun/gwakga/soonwook) owns the Gongyung worker profile.
-- [x] Handoff/cross-broker behavior is explicit when relevant: rejected tasks may be handed off to VPS Docker Runner workers.
-- [x] Duplicate operator-facing notifications are prevented: out-of-scope prohibits live notification.
-- [x] Failure fallback behavior is explicit: revert path documented.
-
-## Coverage gaps
-
-| Gap | Severity | Required fix before implementation? | Owner |
-|---|---|---|---|
-| No production Hermes worker enablement step | low | no | Operator (future) |
-| Cross-reference to a2a-plane#407/#408/#409/#410 added as "obsoleted approaches" | low | no | jingun |
+1. Defining the Gongyung/Hermes lightweight worker identity.
+2. Enumerating allowed and rejected task classes with explicit flag names.
+3. Specifying a fixed artifact output root.
+4. Requiring a structured evidence manifest with redaction boundary.
+5. Referencing #384 as the prior Hermes integration baseline.
 
 ## Analysis outcome
 
-- [x] Ready for task execution.
-- [ ] Needs spec update.
-- [ ] Needs plan update.
-- [ ] Needs task update.
-- [ ] Blocked pending operator decision.
+- Ready for task execution.
+- The spec packet is source-only and can be reviewed without live broker,
+  Gateway, Hermes, DB, provider-send, ACK/replay, release, or secret action.
 
-Summary: The spec packet is complete, consistent, and addresses the Gongyung Hermes lightweight worker profile requirements. All safety and approval boundaries are documented. The profile correctly inherits the Hermes worker contract (jinwon-int/a2a-plane#384) while adding Gongyung-specific admission rules, artifact requirements, and secret redaction rules.
+## Safety boundary
+
+This analysis used repository inspection and local tests only. It did not perform:
+
+- production Gongyung worker registration
+- production broker deploy/restart
+- Gateway restart
+- live provider/Telegram send
+- production database or terminal-outbox mutation
+- manual ACK/replay
+- release/tag publication
+- repository visibility changes
+- secret movement
+- credential disclosure

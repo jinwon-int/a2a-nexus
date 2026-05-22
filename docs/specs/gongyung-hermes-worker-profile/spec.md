@@ -1,128 +1,341 @@
-# Feature Spec: Gongyung Hermes Lightweight Worker Profile
+# Feature Spec: Gongyung Hermes Lightweight A2A Worker Profile
 
 ## Problem
 
-Gongyung is a Hermes-only / Hermes-dedicated Android Termux device. OpenClaw was retired from Gongyung on 2026-05-20 KST. The existing `docs/specs/hermes-worker-integration/` packet (jinwon-int/a2a-plane#384) defines a broker-agnostic worker contract for Hermes-style workers, but it does not define Gongyung's *limited, durable operating mode* as a lightweight A2A worker that cannot use Docker Runner isolation.
+Gongyung runs as an Android/Termux Hermes-style worker on a mobile-constrained
+node (limited memory, Doze/suspend windows, no Docker, no direct GitHub push).
+The existing Hermes broker-agnostic worker contract
+(`docs/specs/hermes-worker-integration/`, jinwon-int/a2a-plane#384) defines the base HTTP transport but
+does not distinguish mobile workers from Docker-runner or desktop workers. A
+mobile worker needs a narrower admission envelope to avoid being assigned tasks
+it cannot safely execute.
 
-Gongyung cannot practically obtain Docker Runner benefits for:
+## Worker identity
 
-- worker-local contamination prevention
-- reproducible containerized execution
-- dependency isolation
-- resource/cleanup boundaries
+- **NodeId in practice:** `gongyung` (Android Termux)
+- **Runtime:** Hermes Agent (non-OpenClaw, non-Docker-runner)
+- **Transport:** HTTP polling over Tailscale or local loopback
+- **workerMode:** `mobile` (30 s stale threshold, 1-3 capacity slots)
+- **dockerAvailable:** `false`
+- **openClawRequired:** `false`
+- **mustTreatAsDockerRunner:** `false`
 
-Therefore a Gongyung-specific profile is needed that documents allowed/rejected task classes, fixed artifact paths, evidence manifest requirements, and secret redaction rules.
-
-## Prior art
-
-This profile builds on the Hermes broker-agnostic worker contract defined in `docs/specs/hermes-worker-integration/` (jinwon-int/a2a-plane#384). Gongyung inherits the same registration, heartbeat, polling, and evidence submission API defined there, while adding the admission rules and artifact contract specific to a lightweight non-Docker worker on Termux.
-
-## User / operator stories
-
-- As a broker operator, I can distinguish Gongyung/Hermes lightweight workers from VPS Docker Runner workers by their capability profile.
-- As a Gongyung worker, I can accept lightweight non-Docker tasks and reject or hand off tasks that require Docker isolation.
-- As a finalizer, I can verify that Gongyung's admission rules prevent Docker/build/test/untrusted-code tasks from executing on a non-isolated Termux device.
-- As a task author, I can check whether a task is suitable for Gongyung dispatch by reviewing its capability flags.
+Gongyung MUST NOT be treated as a Docker Runner patch/build/test worker.
+Any task whose intent, payload, or target implies `executorMode=docker`,
+`runnerScope=github`, `WORKER_HANDLER_COMMAND=docker`, or
+`A2A_EXECUTOR_MODE=auto-with-docker-fallback` MUST be rejected at admission
+time.
 
 ## Scope
 
 ### In scope
 
-- Define the Gongyung Hermes lightweight worker capability profile.
-- Document allowed task classes and rejected/handoff task classes.
-- Require a fixed artifact root: `~/.hermes/a2a/artifacts/<task-id>/`.
-- Require an `evidence.json` manifest with: task id, worker id `gongyung`, accepted/rejected/handoff status, files produced, redaction statement, limitations, and timestamp.
-- Require secret redaction rules: no token, secret, password, private key, or session cookie value may be copied into evidence.
-- Reference the completed jinwon-int/a2a-plane#384 Hermes/non-OpenClaw worker integration as prior art.
-- Add admission test that asserts the expected spec path and reject/handoff rules for `dockerRequired`, `buildRequired`, `testRequired`, `repoPatch`, and `untrustedCode`.
+- Define the Gongyung Hermes worker capability profile.
+- Specify allowed lightweight task classes.
+- Specify rejected/handoff task classes.
+- Specify fixed artifact/evidence manifest requirements.
+- Specify redaction rules for evidence output.
+- Specify fail-closed admission semantics.
+- Add a local validation test for admission semantics.
+- Source-only changes; live runtime actions remain out of scope.
 
 ### Out of scope
 
-- Production Gongyung worker registration, deploy, or restart.
-- Broker/Gateway/Hermes restart, DB mutation/prune/migration.
-- Live provider/Telegram canary or terminal ACK/replay.
-- Secret movement, token changes, credential disclosure.
-- Release/tag publication or repository visibility changes.
-- Any change that requires production liveness checking or operator handoff.
-- Docker Runner profile changes.
+- Live registration of a Gongyung worker against a production broker.
+- Production broker/Gateway/worker restart or deploy.
+- Live provider or Telegram canary.
+- Production database, queue, or terminal-outbox mutation (DB mutation/prune/replay).
+- Manual terminal ACK/replay or historical replay.
+- OpenClaw plugin SDK changes.
+- Secret movement, credential disclosure, release/tag, repository visibility.
+- Actual Hermes Agent native tooling implementation for Gongyung.
+- Docker-runner worker or CI worker profile changes.
 
-## Gongyung Worker Capability Profile
+## Allowed lightweight task classes
 
-### Identity
+A task is admissible for Gongyung only when **all** of the following hold.
 
-- **workerId**: `gongyung`
-- **runtime**: `hermes-agent`
-- **platform**: `android-termux`
-- **dockerAvailable**: `false`
-- **openClawRequired**: `false`
+### Admissible intents
 
-### Allowed task classes
+| Intent | Rationale |
+|--------|-----------|
+| `analyze` | Read-only review of logs, diffs, or evidence. No mutation. |
+| `research` | Read-only research and issue triage. |
+| `report` | Small structured reports and status summaries. |
+| `review` | Lightweight code/doc review. No heavy gate or regression. |
+| `clarify` | Ask clarifying questions. |
+| `observe` | Status-only monitoring; no proof submission. |
+| `check_readiness` | Lightweight readiness scan. |
+| `cross_check` | Cross-reference two data sources (read-only). |
+| `hermes-ops` | Telegram/Hermes-specific operational checks. |
+| `canary` | Non-mutating A2A canary/reporting work. |
 
-Tasks whose `intent` or `payload.capabilities` match one of:
+### Admissible team modes (from mobile-safety-lane.ts)
 
-- `analyze` — documentation cleanup or synthesis
-- `research` — read-only research and issue triage
-- `report` — small structured reports
-- `review` — proof/evidence review
-- `hermes-ops` — Telegram/Hermes-specific operational checks
-- `canary` — non-mutating A2A canary/reporting work
+| Mode | Lane | Proof level |
+|------|------|-------------|
+| `fanout` | `full` | `lightweight` |
+| `review` | `full` | `lightweight` |
+| `swarm` | `observe` | `none` |
+| *(any other)* | NO-GO | — |
 
-### Rejected or handoff task classes
+### Resource constraints
 
-Tasks with any of the following flags set MUST be rejected (with evidence) or handed off to a VPS Docker Runner worker:
+| Constraint | Value |
+|------------|-------|
+| `maxConcurrentTasks` | 1 (overridable to 2 with explicit config) |
+| `canRunHeavyProof` | `false` |
+| `canPushToGitHub` | `false` |
+| `workerMode` | `mobile` |
+| Heartbeat stale threshold | 30 s |
+| Max capacity slots | 3 |
 
-- `dockerRequired` — Docker isolation required
-- `buildRequired` — code build or compilation
-- `testRequired` — test execution requiring sandbox
-- `repoPatch` — git patch or code modification on the repo
-- `untrustedCode` — execution of untrusted or user-supplied code
-- `dependencyHeavy` — dependency-heavy installs requiring isolation
-- `serviceRestart` — service restart/deploy/migration
-- `brokerDBMutation` — broker DB mutation/prune/replay
-- `credentialMovement` — credential movement or token changes
-- `productionACK` — anything needing production ACK/replay or live notification semantics
+## Rejected / handoff task classes
 
-### Artifact contract
+A task MUST be rejected with a structured `NO-GO` signal or handed off to a
+capable target when any of the following match.
+
+### Rejected outright (admission → fail-closed)
+
+| Pattern | Reason |
+|---------|--------|
+| `intent` includes `docker`, `patch_repo`, `build_repo`, `test_repo` | Gongyung is not a Docker Runner |
+| `executorMode` is `docker` or `auto-with-docker-fallback` | Gongyung has no Docker daemon |
+| `runnerScope` is `all-github` or `github-patch` | Gongyung has no GitHub push capability |
+| `intent` is `split` or `swarm` (non-observe) | Mobile profile blocks these at lane level |
+| `canRunHeavyProof` required by task metadata | Gongyung cannot run full E2E gates |
+| Task payload contains `forceFullGate: true` | Explicit heavy gate not allowed |
+| Task requires `capabilities.canPatchWorkspace` with workspace type `docker` | Docker workspace not available |
+| Task requires `capabilities.canPromoteLive` | No live promotion from mobile |
+
+Equivalent capability flags MUST also reject or hand off the task before
+execution:
+
+- `dockerRequired`
+- `buildRequired`
+- `testRequired`
+- `repoPatch`
+- `untrustedCode`
+- `dependencyHeavy`
+- `serviceRestart`
+- `brokerDBMutation`
+- `credentialMovement`
+- `productionACK`
+
+### Handoff classes (admission → delegate to hub)
+
+| Pattern | Handoff target | Rationale |
+|---------|----------------|-----------|
+| `intent` is `propose_patch` or `propose_params` | `node-hub`, `seoseo`, or `soonwook` | Proposal creation needs a persistent writer |
+| `intent` is `apply_local_change` targeting a workspace Gongyung cannot reach | Configured handoff target | Workspace not on mobile filesystem |
+| GitHub write required (commit, push, PR create) | Configured `githubWriteHandoff` | `canPushToGitHub: false` |
+| Full proof gate (`full_gate`, `full_proof_loop`, `full_regression`) | `node-hub` or CI runner | Heavy proof delegated |
+
+### Handoff when Docker runner semantics detected
+
+If the task payload or metadata contains ANY of:
+
+- `executorMode` field set to `docker`, `auto`, or `auto-with-docker-fallback`
+- `runnerScope` field set to `all-github`, `github-patch`, or `all`
+- `WORKER_HANDLER_COMMAND` environment variable (explicit or inferred)
+- `A2A_EXECUTOR_MODE` environment variable reference
+- `A2A_DOCKER_RUNNER_SCOPE` environment variable reference
+
+Then the task MUST be **rejected** (not silently ignored). The rejection MUST
+include a structured NO-GO signal with reason
+`"gongyung_not_docker_runner"`.
+
+This is a **hard boundary**: Gongyung runs on Android/Termux with no Docker
+daemon, no `docker` CLI, and no GitHub credential store. Any task that expects
+Docker execution, GitHub patch/build/test workflow, or CI-level runner semantics
+cannot execute on Gongyung and must not be admitted.
+
+### Base contract rejection semantics
+
+A task that matches the above rejection criteria MUST NOT be silently dropped.
+The worker MUST respond with a structured `NoGoSignal` (or equivalent error
+envelope) so the broker can:
+
+1. Record the NO-GO admission decision in the audit log.
+2. Requeue the task for a capable worker (e.g. Docker runner).
+3. Increment the task's `requeueCount`. When `requeueCount` exceeds
+   `BROKER_MAX_REQUEUE_ATTEMPTS` (default 5), the task is dead-lettered
+   with `error.code = "exceeded_requeue_limit"`.
+
+This preserves the broker's existing stale-reaper and dead-letter semantics.
+
+## Fixed artifact / evidence manifest requirements
+
+Fixed artifact root:
+
+```text
+~/.hermes/a2a/artifacts/<task-id>/
+```
+
+Admission evidence manifest:
+
+```text
+~/.hermes/a2a/artifacts/<task-id>/evidence.json
+```
+
+The admission evidence manifest MUST include:
+
+- `taskId`
+- `workerId` set to `gongyung`
+- `status` set to `accepted`, `rejected`, or `handoff`
+- `files`
+- `redactionStatement`
+- `limitations` when relevant
+- `timestamp`
+
+Every Gongyung worker evidence submission MUST include exactly these fields:
+
+```json
+{
+  "workerId": "gongyung",
+  "outcome": "done" | "blocked" | "failed",
+  "result": {
+    "summary": "<one-line human-readable summary>",
+    "output": {
+      "gongyungProfile": "hermes-worker",
+      "openClawRequired": false,
+      "runtimeFlavor": "termux-hermes",
+      "profileVersion": 1
+    },
+    "artifacts": [
+      {
+        "path": "<repo-relative path to artifact>",
+        "kind": "evidence" | "manifest" | "log" | "diff" | "test_output",
+        "redacted": true
+      }
+    ]
+  }
+}
+```
+
+### Requirements
+
+1. **`workerId`** MUST match the registered Gongyung node id.
+2. **`outcome`** MUST be one of `done`, `blocked`, or `failed`. `pr` is not
+   supported because Gongyung cannot push GitHub branches.
+3. **`openClawRequired`** MUST be `false`.
+4. **`runtimeFlavor`** MUST be `"termux-hermes"`.
+5. **`profileVersion`** MUST be `1` for this profile.
+6. **`artifacts`** MUST be present (may be empty). Each artifact MUST declare
+   `redacted: true` when the artifact may contain private paths, hostnames,
+   device identifiers, or session metadata.
+
+### Manifest inline check
+
+The evidence MUST pass an inline schema validation before submission.
+A `manifest ok` check MUST verify that:
+
+- `workerId` is present and non-empty.
+- `outcome` is one of the three allowed values.
+- `result.output.gongyungProfile` equals `"hermes-worker"`.
+- `result.output.openClawRequired` is `false`.
+- `result.output.runtimeFlavor` equals `"termux-hermes"`.
+- `result.output.profileVersion` is `1`.
+- Every artifact in `artifacts` has `path`, `kind`, and `redacted` fields.
+- No evidence field contains a raw device identifier (IMEI, Android ID,
+  Tailscale node key), raw session dump, or provider token.
+
+If any check fails, the evidence MUST NOT be submitted. The worker MUST report
+a structured `blocked` outcome with `summary` describing the manifest failure.
+
+## Redaction rules
+
+### Must redact (before any artifact, issue, or PR evidence)
+
+- Device identifiers: IMEI, Android ID, device serial, hardware UUID.
+- Network identifiers: Tailscale node key, Tailscale machine name beyond
+  the `nodeId`, MAC addresses.
+- Session metadata: raw OpenClaw session dumps, execution trace IDs that
+  embed host or device identifiers.
+- Provider tokens: Telegram bot tokens, API keys, edge secrets.
+- Host-specific private paths: `/data/data/com.termux/...` paths, internal
+  storage paths.
+- Runtime environment variables that contain secrets.
+
+### Must keep (safe evidence content)
+
+- `nodeId` (`gongyung` is a public-safe handle).
+- Outcome, summary, artifact paths, artifact kinds, profile metadata.
+- Test output summaries, exit codes, assertion results.
+- `manifest ok` or manifest failure descriptions without raw values.
+- Commit SHAs, repo-relative paths, diff fragments without secrets.
+
+### Redaction strategy
+
+- Replace each redacted value with `<redacted>`.
+- Do not omit the field entirely; the presence of `<redacted>` signals that
+  redaction was applied.
+- When a whole artifact is redacted, set `redacted: true` on its entry.
+
+## Fail-closed admission semantics
+
+The Gongyung Hermes worker SHALL implement a fail-closed admission function
+with the following semantics.
+
+### Signature
 
 ```
-Fixed artifact root:  ~/.hermes/a2a/artifacts/<task-id>/
-Evidence manifest:    evidence.json
+admit(task: AdmittableTask) → AdmissionDecision
 ```
 
-`evidence.json` fields:
+### AdmissionDecision
 
-| Field | Required | Description |
-|---|---|---|
-| `taskId` | yes | The A2A task identifier |
-| `workerId` | yes | Always `"gongyung"` |
-| `status` | yes | `"accepted"`, `"rejected"`, or `"handoff"` |
-| `files` | yes | Array of file paths produced (relative to artifact root) |
-| `redactionStatement` | yes | Statement that no secrets/credentials/tokens were included |
-| `limitations` | no | Any limitation notes relevant to the evidence |
-| `timestamp` | yes | ISO 8601 timestamp of evidence generation |
+```typescript
+type AdmissionDecision =
+  | { ok: true; lane: "full" | "observe"; proofLevel: "lightweight" | "none" }
+  | { ok: false; noGoSignal: NoGoSignal };
+```
 
-### Secret redaction rules
+### Decision rules (in order)
 
-- No token, secret, password, private key, or session cookie value may be copied into evidence.
-- Any output that could contain credential values must be redacted or excluded.
-- The `redactionStatement` in `evidence.json` must explicitly confirm compliance.
+1. **Runtime guard:** If the task payload or metadata contains Docker runner
+   indicators (see "Rejected / handoff task classes" above), return
+   `{ ok: false, noGoSignal: { reason: "gongyung_not_docker_runner", ... } }`.
+   This check is evaluated first so Docker runner tasks are never assigned
+   to a mobile Hermes worker regardless of other fields.
+2. **Intent guard:** If the task `intent` is in the rejected set (docker,
+   patch_repo, build_repo, test_repo), return NO-GO.
+3. **Mode guard:** Evaluate the team mode against the mobile profile (see
+   `mobile-safety-lane.ts`). If the mode is not in `allowedModes` or
+   `observeOnlyModes`, return NO-GO.
+4. **Capability guard:** If the task requires capabilities Gongyung does not
+   have (heavy proof, GitHub push, Docker workspace, live promotion), return NO-GO.
+5. **Resource guard:** If the task would exceed `maxConcurrentTasks`, return NO-GO
+   with reason `"at_capacity"`.
+6. **Admit:** Return `{ ok: true, lane: ..., proofLevel: ... }`.
+
+### Rejection does not destroy the task
+
+NO-GO from Gongyung is NOT a terminal task failure at the broker level. The
+broker's existing stale-reaper logic handles requeueing. Gongyung does not
+mark the task as `failed`; it simply refuses to claim it. If the broker has
+already assigned the task to Gongyung, Gongyung MUST call
+`POST /tasks/:id/evidence` with `outcome: "blocked"` and
+`summary: "Gongyung Hermes worker: task not admitted (gongyung_not_docker_runner)"`
+(adjusted for the specific rejection reason).
+
+### Unknown mode default
+
+Any task mode, intent, or capability that is not explicitly listed in the
+allowed or handoff sets MUST default to NO-GO. This ensures that new task
+classes are not silently accepted by an out-of-date worker profile.
 
 ## Success criteria
 
-- [x] Gongyung Hermes worker profile is documented under `docs/specs/gongyung-hermes-worker-profile/`.
-- [x] Allowed task classes are explicitly listed.
-- [x] Rejected/handoff task classes are explicitly listed with flag names.
-- [x] Artifact output path and evidence manifest fields are specified.
-- [x] Secret redaction and no-credential-output boundaries are explicit.
-- [x] The profile references the completed jinwon-int/a2a-plane#384 as prior art.
-- [x] Admission test asserts expected path and reject/handoff rules.
-- [x] No live broker/Gateway/Hermes restart, DB mutation, replay, deploy, token movement, or production notification is required.
+- [ ] The Gongyung profile gives a clear answer for every task class:
+      admit with lightweight proof, observe only, handoff, or reject.
+- [ ] The admission function rejects Docker runner tasks before any other check.
+- [ ] The artifact/evidence manifest schema is validated by a local test.
+- [ ] Redaction rules are documented and enforceable.
+- [ ] All profile spec, plan, and tasks are under `docs/specs/gongyung-hermes-worker-profile/`.
+- [ ] The change performs no live production action.
 
 ## Safety and approval boundaries
-
-### Secrets and private data
-
-This is a spec-only document. It does not contain or produce credentials. The artifact contract mandates secret redaction rules for any future Gongyung worker evidence.
 
 ### Human approval required for
 
@@ -136,28 +349,16 @@ This is a spec-only document. It does not contain or produce credentials. The ar
 - [ ] force push/history rewrite
 - [x] none of the above
 
-### Broker foreground liveness
+- No production registration, broker/Gateway/worker deploy or restart.
+- No live provider sends, Telegram notifications, or canary.
+- No database or terminal-outbox mutation.
+- No manual ACK/replay.
+- No release/tag publication.
+- No repository visibility changes.
+- No secret rotation or credential disclosure.
+- All changes are source-only (docs/specs + validation tests under
+  `packages/openclaw-plugin-a2a/tests/`).
 
-This spec packet documents a worker profile only. No foreground session impact.
+## Rollback
 
-## Evidence contract
-
-Each change must produce:
-
-- affected repos/files list;
-- PR link;
-- test/lint/check results;
-- CI status when available;
-- risk notes;
-- rollback/failure notes;
-- final recommendation or blocker.
-
-## Rollback / failure handling
-
-- Revert this PR.
-- No production state is created.
-- Existing worker registration behavior is unaffected.
-
-## Wiki/runbook follow-up
-
-- Operator documentation should reference this profile when Gongyung worker enablement is separately approved.
+Revert the spec docs and test additions. No production state is created.

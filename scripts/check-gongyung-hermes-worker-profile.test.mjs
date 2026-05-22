@@ -42,14 +42,14 @@ test('spec packet exists at docs/specs/gongyung-hermes-worker-profile/', () => {
   }
 });
 
-test('spec.md references title "Gongyung Hermes Lightweight Worker Profile"', async () => {
+test('spec.md references Gongyung Hermes lightweight worker profile title', async () => {
   const spec = await readFile(join(profileDir, 'spec.md'), 'utf8');
-  assert.match(spec, /Gongyung Hermes Lightweight Worker Profile/);
+  assert.match(spec, /Gongyung Hermes Lightweight (A2A )?Worker Profile/);
 });
 
-test('plan.md references title "Gongyung Hermes Lightweight Worker Profile"', async () => {
+test('plan.md references Gongyung Hermes lightweight worker profile title', async () => {
   const plan = await readFile(join(profileDir, 'plan.md'), 'utf8');
-  assert.match(plan, /Gongyung Hermes Lightweight Worker Profile/);
+  assert.match(plan, /Gongyung Hermes Lightweight (A2A )?Worker Profile/);
 });
 
 // ──────────────────────────────────────────────────────────
