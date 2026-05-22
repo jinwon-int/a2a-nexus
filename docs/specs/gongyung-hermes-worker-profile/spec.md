@@ -5,7 +5,7 @@
 Gongyung runs as an Android/Termux Hermes-style worker on a mobile-constrained
 node (limited memory, Doze/suspend windows, no Docker, no direct GitHub push).
 The existing Hermes broker-agnostic worker contract
-(`docs/specs/hermes-worker-integration/`) defines the base HTTP transport but
+(`docs/specs/hermes-worker-integration/`, jinwon-int/a2a-plane#384) defines the base HTTP transport but
 does not distinguish mobile workers from Docker-runner or desktop workers. A
 mobile worker needs a narrower admission envelope to avoid being assigned tasks
 it cannot safely execute.
@@ -16,6 +16,7 @@ it cannot safely execute.
 - **Runtime:** Hermes Agent (non-OpenClaw, non-Docker-runner)
 - **Transport:** HTTP polling over Tailscale or local loopback
 - **workerMode:** `mobile` (30 s stale threshold, 1-3 capacity slots)
+- **dockerAvailable:** `false`
 - **openClawRequired:** `false`
 - **mustTreatAsDockerRunner:** `false`
 
@@ -36,14 +37,14 @@ time.
 - Specify redaction rules for evidence output.
 - Specify fail-closed admission semantics.
 - Add a local validation test for admission semantics.
-- Source-only changes: no live registration, no broker restart, no deploy.
+- Source-only changes; live runtime actions remain out of scope.
 
 ### Out of scope
 
 - Live registration of a Gongyung worker against a production broker.
 - Production broker/Gateway/worker restart or deploy.
 - Live provider or Telegram canary.
-- Production database, queue, or terminal-outbox mutation.
+- Production database, queue, or terminal-outbox mutation (DB mutation/prune/replay).
 - Manual terminal ACK/replay or historical replay.
 - OpenClaw plugin SDK changes.
 - Secret movement, credential disclosure, release/tag, repository visibility.
@@ -59,11 +60,15 @@ A task is admissible for Gongyung only when **all** of the following hold.
 | Intent | Rationale |
 |--------|-----------|
 | `analyze` | Read-only review of logs, diffs, or evidence. No mutation. |
+| `research` | Read-only research and issue triage. |
+| `report` | Small structured reports and status summaries. |
 | `review` | Lightweight code/doc review. No heavy gate or regression. |
 | `clarify` | Ask clarifying questions. |
 | `observe` | Status-only monitoring; no proof submission. |
 | `check_readiness` | Lightweight readiness scan. |
 | `cross_check` | Cross-reference two data sources (read-only). |
+| `hermes-ops` | Telegram/Hermes-specific operational checks. |
+| `canary` | Non-mutating A2A canary/reporting work. |
 
 ### Admissible team modes (from mobile-safety-lane.ts)
 
@@ -102,6 +107,20 @@ capable target when any of the following match.
 | Task payload contains `forceFullGate: true` | Explicit heavy gate not allowed |
 | Task requires `capabilities.canPatchWorkspace` with workspace type `docker` | Docker workspace not available |
 | Task requires `capabilities.canPromoteLive` | No live promotion from mobile |
+
+Equivalent capability flags MUST also reject or hand off the task before
+execution:
+
+- `dockerRequired`
+- `buildRequired`
+- `testRequired`
+- `repoPatch`
+- `untrustedCode`
+- `dependencyHeavy`
+- `serviceRestart`
+- `brokerDBMutation`
+- `credentialMovement`
+- `productionACK`
 
 ### Handoff classes (admission → delegate to hub)
 
@@ -146,6 +165,28 @@ envelope) so the broker can:
 This preserves the broker's existing stale-reaper and dead-letter semantics.
 
 ## Fixed artifact / evidence manifest requirements
+
+Fixed artifact root:
+
+```text
+~/.hermes/a2a/artifacts/<task-id>/
+```
+
+Admission evidence manifest:
+
+```text
+~/.hermes/a2a/artifacts/<task-id>/evidence.json
+```
+
+The admission evidence manifest MUST include:
+
+- `taskId`
+- `workerId` set to `gongyung`
+- `status` set to `accepted`, `rejected`, or `handoff`
+- `files`
+- `redactionStatement`
+- `limitations` when relevant
+- `timestamp`
 
 Every Gongyung worker evidence submission MUST include exactly these fields:
 
@@ -295,6 +336,18 @@ classes are not silently accepted by an out-of-date worker profile.
 - [ ] The change performs no live production action.
 
 ## Safety and approval boundaries
+
+### Human approval required for
+
+- [ ] production deploy
+- [ ] Gateway/broker/worker/service restart
+- [ ] live canary/provider send
+- [ ] DB mutation/prune/migration/replay
+- [ ] manual Terminal Brief ACK/replay
+- [ ] release/tag
+- [ ] secret rotation/movement
+- [ ] force push/history rewrite
+- [x] none of the above
 
 - No production registration, broker/Gateway/worker deploy or restart.
 - No live provider sends, Telegram notifications, or canary.

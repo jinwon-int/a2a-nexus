@@ -4,6 +4,7 @@
 
 - [x] Feature spec is linked and accepted: `docs/specs/gongyung-hermes-worker-profile/spec.md`.
 - [x] Implementation plan is linked and accepted: `docs/specs/gongyung-hermes-worker-profile/plan.md`.
+- [x] Finalizer: Seoseo.
 - [x] Size classification is recorded: Medium.
 - [x] Approval-sensitive actions are explicitly out of scope.
 - [x] This task produces docs/spec + validation tests only.
@@ -25,6 +26,10 @@
 - [x] Confirm secret redaction / no sensitive output in spec or tests.
 - [x] Confirm no live production action was performed.
 - [x] Produce terminal evidence packet.
+- [x] Confirm reject/handoff capability flags are listed:
+  `dockerRequired`, `buildRequired`, `testRequired`, `repoPatch`,
+  `untrustedCode`, `dependencyHeavy`, `serviceRestart`, `brokerDBMutation`,
+  `credentialMovement`, `productionACK`.
 
 ## Evidence checklist
 
@@ -39,6 +44,16 @@
 - [x] No live deploy, restart, provider send, DB mutation, terminal ACK/replay,
       secret rotation, credential disclosure performed.
 - [x] Final recommendation: Done (refined PR #407).
+
+## Risk notes
+
+- Gongyung remains a non-Docker Termux/Hermes worker. The profile is suitable
+  only for lightweight read/report/review/canary work.
+- Docker, build, test, repo patch, untrusted code, service restart, DB mutation,
+  credential movement, production ACK, and live notification semantics must be
+  rejected or handed off to a VPS Docker Runner worker.
+- This source/spec PR does not enable live Gongyung registration or change any
+  production broker/Gateway/Hermes service.
 
 ## Final closeout
 
