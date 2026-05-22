@@ -15,6 +15,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Cancellation & idempotency](./cancellation-idempotency.md)
 - [Broker-to-broker handoff protocol](./broker-handoff-protocol.md)
 - [Parent Terminal Brief aggregation](./parent-terminal-brief-aggregation.md)
+- [Terminal Brief core contract v1](./terminal-brief-core-contract.md)
 - [Durable checkpoint & human interrupt](./checkpoint-interrupt.md)
 - [R20 stability gate](./r20-stability-gate.md) — hot-table persistence, queue/outbox hygiene, no-live canary boundaries, stale R14 PR reconciliation
 - [R31 worker capability profile](./worker-capability-profile.md) — worker capability profile schema, assignment recommendation semantics, capacity-limited slow lane phrasing

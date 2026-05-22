@@ -459,6 +459,7 @@ Each PR or validation lane referencing this spec must produce evidence that incl
 | Artifact | Path | Purpose |
 | --- | --- | --- |
 | Core feature spec (this document) | `docs/specs/a2a-terminal-brief-core-feature/spec.md` | Canonical Terminal Brief core feature definition |
+| Core contract v1 (concise reference) | `contracts/a2a/terminal-brief-core-contract.md` | Concise reference for Team1/Team2 dispatches; consolidates title format, ownership matrix, handoff metadata, ACK rules, legacy residue handling, and source-to-deploy checklist |
 | Parent-origin routing spec | `docs/specs/a2a-terminal-brief-parent-origin-routing/spec.md` | Four-case routing contract |
 | Canary spec | `docs/specs/a2a-terminal-brief-canary/spec.md` | Live-canary hardening protocol |
 | Parent aggregation contract | `contracts/a2a/parent-terminal-brief-aggregation.md` | Aggregation lifecycle, projection fields, title semantics |
