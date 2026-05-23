@@ -21,6 +21,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [R31 worker capability profile](./worker-capability-profile.md) — worker capability profile schema, assignment recommendation semantics, capacity-limited slow lane phrasing
 - [Embedded execution stability policy](./embedded-execution-stability-policy.md) — container isolation, config domain sanitization, workspace hygiene, session store guard, post-completion fail-closed checks for Docker Runner embedded OpenClaw execution
 - [Approval-gated auto-closeout action reconciliation](./action-reconciliation.md) — cross-repo contract between a2a-broker and a2a-plane for approval-gated auto-closeout action reconciliation, idempotency keys, rollback/no-op criteria, and canary gate
+- [Adapter receipt capability](./adapter-receipt-capability.md) — capability levels C1–C6 for non-OpenClaw/Hermes/spool Terminal Brief adapters, mapping produced/spooled/provider-only states to the four receipt levels, and explicit non-ACK boundary for adapter-level evidence
 
 ## Compatibility
 
