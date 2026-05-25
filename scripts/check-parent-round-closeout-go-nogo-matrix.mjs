@@ -19,6 +19,7 @@ const { values } = parseArgs({
     spec: { type: 'string', default: 'docs/specs/a2a-parent-round-closeout-go-nogo/schema.json' },
     fixture: { type: 'string' },
     format: { type: 'string', default: 'json' },
+    mode: { type: 'string', default: 'dry-run' },
   },
 });
 
@@ -45,6 +46,9 @@ function validateSpec(spec) {
   }
   if (spec.defaultDecision !== 'NO_GO') failures.push('spec.defaultDecision must be NO_GO');
   if (spec.sourcePublicExecution !== 'NO_GO') failures.push('spec.sourcePublicExecution must be NO_GO');
+  if (!spec.allowedModes || !spec.allowedModes.includes('comment_only')) {
+    failures.push('spec.allowedModes must include comment_only');
+  }
   if (!Array.isArray(spec.goDecisionRequires) || spec.goDecisionRequires.length === 0) {
     failures.push('spec.goDecisionRequires must list required GO gates');
   }
@@ -75,6 +79,8 @@ function validateSpec(spec) {
     'communityPost', 'automaticMerge', 'automaticApproval',
     'parentIssueClose', 'credentialMovement', 'secretDisclosure',
     'historicalOutboxReplay', 'releaseTagPublish',
+    'closeoutIssueClose', 'closeoutPrMerge', 'manualTerminalBriefAck',
+    'historicalOutboxAckReplay',
   ]) {
     if (!forbidden.has(flag)) failures.push(`forbiddenLiveFlags missing ${flag}`);
   }
@@ -197,6 +203,32 @@ function evaluateScenario(spec, scenario) {
     gateResults.crossLaneProjectionStatus = 'PASS';
   }
 
+  // G11: Comment-only gate
+  const closeoutMode = given.closeoutMode || 'dry-run';
+  if (closeoutMode === 'comment_only') {
+    if (!given.draftCommentBody) {
+      gateResults.commentOnlyGate = 'FAIL';
+      blockers.push({
+        gate: 'commentOnlyGate',
+        reason: 'comment_only mode requires a non-empty draft comment body.',
+      });
+    } else if (gateResults.gitHubPermissionCheck === 'BLOCKED') {
+      gateResults.commentOnlyGate = 'BLOCKED';
+      // permission failure already recorded in G7
+    } else if (gateResults.idempotencyCheck === 'BLOCKED') {
+      gateResults.commentOnlyGate = 'BLOCKED';
+      // idempotency conflict already recorded in G8
+    } else if (gateResults.idempotencyCheck === 'PASS' && given.idempotencyKeyExists && given.idempotencyKeyPayloadMatches) {
+      // Duplicate suppression: comment gate passes but no new post
+      gateResults.commentOnlyGate = 'PASS';
+    } else {
+      gateResults.commentOnlyGate = 'PASS';
+    }
+  } else {
+    // Non-comment-only modes always pass the comment gate
+    gateResults.commentOnlyGate = 'PASS';
+  }
+
   // Determine overall decision
   const blockedGates = Object.entries(gateResults).filter(([, v]) => v === 'BLOCKED');
   const failedGates = Object.entries(gateResults).filter(([, v]) => v === 'FAIL');
@@ -211,11 +243,41 @@ function evaluateScenario(spec, scenario) {
   }
 
   const isDuplicate = !!(given.idempotencyKeyExists && given.idempotencyKeyPayloadMatches);
-  const closeoutAllowed = decision === 'GO' && given.evaluatingBroker === 'seoseo' && !given.gitHub403 && !isDuplicate;
+  const isCommentOnly = closeoutMode === 'comment_only';
+
+  // In comment_only mode, closeoutAllowed is always false (no issue close/merge)
+  // But commentPosted may be true if gates pass
+  const closeoutAllowed = decision === 'GO'
+    && given.evaluatingBroker === 'seoseo'
+    && !given.gitHub403
+    && !isDuplicate
+    && !isCommentOnly;
+
+  // In comment_only mode, commentPosted is true if GO and permission passes.
+  // In full closeout mode, commentPosted is true for successful Go closeouts.
+  const canPostComment = decision === 'GO'
+    && !given.gitHub403
+    && !isDuplicate;
+
+  // In comment_only mode: commentPosted depends on draft body and permissions.
+  // In full closeout mode: commentPosted is true when the Go closeout comment would be posted.
+  // Use explicit given.commentPosted from fixture when available (e.g., 403 after comment post).
+  let commentPosted;
+  if (given.commentPosted !== undefined) {
+    commentPosted = given.commentPosted;
+  } else if (isCommentOnly) {
+    commentPosted = canPostComment && given.draftCommentBody;
+  } else {
+    commentPosted = canPostComment && given.evaluatingBroker === 'seoseo';
+  }
+
+  const issueClosed = isCommentOnly ? false : closeoutAllowed;
 
   return {
     decision,
     gateResults,
+    commentPosted,
+    issueClosed,
     blockers,
     closeoutAllowed,
     duplicateSuppressed: isDuplicate,
@@ -264,6 +326,18 @@ function verifyScenarioResult(scenarioName, expected, actual) {
   if (expected.then.closeoutAllowed !== undefined) {
     if (actual.closeoutAllowed !== expected.then.closeoutAllowed) {
       failures.push(`closeoutAllowed mismatch: expected ${expected.then.closeoutAllowed}, got ${actual.closeoutAllowed}`);
+    }
+  }
+
+  if (expected.then.commentPosted !== undefined) {
+    if (actual.commentPosted !== expected.then.commentPosted) {
+      failures.push(`commentPosted mismatch: expected ${expected.then.commentPosted}, got ${actual.commentPosted}`);
+    }
+  }
+
+  if (expected.then.issueClosed !== undefined) {
+    if (actual.issueClosed !== expected.then.issueClosed) {
+      failures.push(`issueClosed mismatch: expected ${expected.then.issueClosed}, got ${actual.issueClosed}`);
     }
   }
 

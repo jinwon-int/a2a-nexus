@@ -1,0 +1,166 @@
+{
+  "fixtureId": "a2a-plane.contract.cursor-outbox-health.v0",
+  "description": "Synthetic fixture for cursor and outbox health acceptance criteria. Covers inbox visibility, cursor state, projection classification, duplicate prevention, per-broker health summary, and explicit non-actions.",
+  "contract": "docs/validation/cursor-outbox-health-acceptance-criteria.md",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/433",
+  "roadmapIssue": "https://github.com/jinwon-int/a2a-plane/issues/438",
+  "ackBoundary": "Provider accepted/message-id evidence is accepted-send only, not terminal ACK",
+  "scenarios": [
+    {
+      "name": "inbox-shows-actionable-unacked",
+      "description": "Broker has unacked rows. Inbox view shows total, acked, raw unacked, actionable unacked, and ack-ineligible counts without mutation.",
+      "given": {
+        "totalOutboxRows": 10,
+        "ackedRows": 4,
+        "rawUnacked": 6,
+        "actionableUnacked": 3,
+        "ackIneligibleUnacked": 3,
+        "crossBrokerProjections": 1
+      },
+      "when": {
+        "operation": "inbox.query"
+      },
+      "then": {
+        "viewProduced": true,
+        "totalVisible": 10,
+        "ackedVisible": 4,
+        "rawUnackedVisible": 6,
+        "actionableUnackedVisible": 3,
+        "ackIneligibleVisible": 3,
+        "crossBrokerVisible": 1,
+        "dbMutated": false,
+        "terminalAckPerformed": false,
+        "providerSendPerformed": false,
+        "replayPerformed": false
+      }
+    },
+    {
+      "name": "cursor-health-ok",
+      "description": "Cursor advancing normally. Health indicator is OK.",
+      "given": {
+        "cursorPosition": 42,
+        "lastCursorUpdateMinutesAgo": 10,
+        "stallThresholdHours": 4
+      },
+      "when": {
+        "operation": "cursor.status"
+      },
+      "then": {
+        "cursorPosition": 42,
+        "healthIndicator": "OK",
+        "lastUpdateMinutesAgo": 10,
+        "cursorAdvancedByRead": false,
+        "replayTriggered": false,
+        "ackPerformed": false
+      }
+    },
+    {
+      "name": "cursor-health-stalled",
+      "description": "Cursor not moving for >4 hours. Health indicator is STALLED.",
+      "given": {
+        "cursorPosition": 10,
+        "lastCursorUpdateMinutesAgo": 300,
+        "stallThresholdHours": 4
+      },
+      "when": {
+        "operation": "cursor.status"
+      },
+      "then": {
+        "cursorPosition": 10,
+        "healthIndicator": "STALLED",
+        "lastUpdateMinutesAgo": 300,
+        "cursorAdvancedByRead": false,
+        "replayTriggered": false,
+        "ackPerformed": false
+      }
+    },
+    {
+      "name": "cross-broker-projection-not-blocker",
+      "description": "Parent-owned projection visible on child broker. Does not show as actionable blocker.",
+      "given": {
+        "projections": [
+          { "parentBrokerId": "seoseo", "childBrokerId": "gwakga", "projectionState": "projected" }
+        ],
+        "viewingBroker": "gwakga"
+      },
+      "when": {
+        "operation": "inbox.query"
+      },
+      "then": {
+        "projectionVisible": true,
+        "shownAsBlocker": false,
+        "shownAsActionable": false,
+        "shownAsAwareness": true
+      }
+    },
+    {
+      "name": "duplicate-replay-suppressed-after-restart",
+      "description": "Duplicate outbox row after restart returns existing projection, does not create new notification.",
+      "given": {
+        "existingProjectionKey": "proj-round-001-seoseo-task-abc-pr",
+        "existingPayload": "identical",
+        "brokerRestartOccurred": true
+      },
+      "when": {
+        "operation": "outbox.replay"
+      },
+      "then": {
+        "newProjectionCreated": false,
+        "duplicateSuppressed": true,
+        "historicalReplayTriggered": false,
+        "autoAckPerformed": false
+      }
+    },
+    {
+      "name": "outbox-health-summary-produces-counts",
+      "description": "Per-broker outbox health summary produces all required counts without live side effects.",
+      "given": {
+        "brokerId": "seoseo",
+        "totalOutboxRows": 25,
+        "ackedRows": 15,
+        "rawUnacked": 10,
+        "actionableUnacked": 4,
+        "ackIneligibleUnacked": 6,
+        "crossBrokerProjections": 2,
+        "mostRecentRowMinutesAgo": 5,
+        "mostRecentAckMinutesAgo": 30
+      },
+      "when": {
+        "operation": "health.summary"
+      },
+      "then": {
+        "summaryProduced": true,
+        "totalRows": 25,
+        "acked": 15,
+        "rawUnacked": 10,
+        "actionableUnacked": 4,
+        "ackIneligible": 6,
+        "crossBrokerProjections": 2,
+        "mostRecentRowMinutesAgo": 5,
+        "mostRecentAckMinutesAgo": 30,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "productionDbMutation": false,
+        "brokerRestart": false,
+        "secretDisclosure": false
+      }
+    }
+  ],
+  "safetyConfirmations": {
+    "syntheticFixtureOnly": true,
+    "noProductionDeployOrRestart": true,
+    "noProductionDatabaseMutation": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noHistoricalOutboxReplay": true,
+    "runtimeBootstrapHygieneRequiredBeforePublication": true
+  },
+  "rollbackGuidance": {
+    "rollbackType": "metadata-only",
+    "deleteOutboxRows": false,
+    "overwriteExistingProjections": false,
+    "autoReplayOnRestart": false,
+    "preserveProjectionKey": true
+  }
+}

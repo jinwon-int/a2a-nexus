@@ -355,6 +355,145 @@ adopted:
 | `contracts/a2a/github-evidence-projection.md` | Add a note referencing the parent-round closeout matrix for how 403 affects evidence projection |
 | `docs/validation/parent-terminal-brief-aggregation-checklist.md` | Add a cross-reference section for closeout gate checks |
 
+## Comment-only mode
+
+`comment_only` is a closeout mode that posts a GitHub comment on the parent issue with the
+go/no-go matrix summary and finalizer draft, but does **not** close the issue, merge any PR,
+ACK terminal outbox rows, or perform any other write action. This addresses the comment_only
+approval gate requirement from [#437](https://github.com/jinwon-int/a2a-plane/issues/437).
+
+### When to use comment_only
+
+- Operator wants a human-readable draft before committing to close.
+- Preflight review of the closeout evidence and matrix decision.
+- Cross-team visibility before the finalizer (Seoseo) closes the issue.
+- Catching permission errors before attempting full closeout.
+
+### What comment_only does
+
+1. Evaluates the full go/no-go matrix (same as `dry-run`/`simulate`).
+2. If the matrix returns GO, produces a draft comment body containing:
+   - The go/no-go matrix decision (GO/NO_GO/BLOCKED).
+   - A summary of each lane's terminal evidence (PR/Done/Block/Cancelled by count).
+   - The parent round metadata (`parentRoundId`, `originBrokerId`, `parentBrokerId`).
+   - A statement confirming all gates passed (or failed/blocked if not GO).
+   - The closeout idempotency key.
+   - A disclaimer that this is a comment-only notification; the issue is **not** closed.
+3. Posts the comment to the parent issue via GitHub API.
+4. Records the comment URL in the closeout ledger.
+5. Returns `commentPosted: true`, `issueClosed: false`.
+
+### What comment_only does NOT do
+
+| Action | Status |
+|--------|--------|
+| Close the parent issue | ❌ Disabled — requires separate operator approval |
+| Merge any PR | ❌ Disabled |
+| ACK terminal outbox rows | ❌ Disabled |
+| Historical outbox replay | ❌ Disabled |
+| Production DB mutation | ❌ Disabled |
+| Gateway/broker/worker restart | ❌ Disabled |
+| Live provider/Telegram send | ❌ Disabled |
+| Secret rotation or disclosure | ❌ Disabled |
+| Force-push or history rewrite | ❌ Disabled |
+
+### comment_only idempotency
+
+The same idempotency key rules apply:
+
+- `idempotencyKey = "a2a-parent-round-closeout:<parentRoundId>:<originBrokerId>:<decisionTimestamp>"`
+- First run: create the closeout record, post the comment.
+- Replay (same key, same payload): return existing record with `duplicateSuppressed: true`. No duplicate comment.
+- Conflict (same key, different payload): reject with `conflictDetected: true`. Operator review required.
+
+### comment_only draft generation
+
+Before posting, the draft must be operator-visible for review. The draft is produced in
+Markdown format and includes:
+
+```markdown
+## A2A Parent Round Closeout — GO (comment-only)
+
+**Parent round:** <parentRoundId>
+**Origin broker:** <originBrokerId>
+**Parent broker:** <parentBrokerId>
+**Decision:** GO (all gates pass)
+**Mode:** comment_only — this issue is **not** closed
+
+### Lane summary
+
+| Lane | Terminal kind | Evidence |
+|------|--------------|----------|
+| 1 | PR | <pr-url> |
+| 2 | PR | <pr-url> |
+| 3 | Done | <done-summary> |
+| 4 | ... | ... |
+
+### Gate results (all PASS)
+
+- All lanes terminal: PASS
+- Lane evidence completeness: PASS
+- ...
+
+### Idempotency
+
+Key: `<idempotency-key>`
+Duplicate suppressed: false
+
+### Safety disclaimer
+
+This is a comment-only notification. The parent issue remains open.
+No PRs were merged. No terminal ACK was performed. No production
+mutation occurred.
+```
+
+### comment_only gate (G11)
+
+The comment_only gate evaluates:
+
+1. Mode is `comment_only` (not `dry-run` or `simulate`).
+2. A non-empty draft comment body is produced and operator-visible.
+3. GitHub permission check passes (can post comments).
+4. Idempotency check passes (no duplicate or conflict).
+5. All other closeout gates pass.
+
+If the gate fails, the overall decision becomes NO_GO (not BLOCKED — the existing
+evaluation is still valid, just not ready for comment posting).
+
+### Rollback from comment_only
+
+If a comment_only post was erroneous:
+
+1. **Do not delete the comment**. Comments are evidence. If the operator determines the
+   draft was incorrect, post a follow-up comment explaining the correction.
+2. **Do not close the issue**. comment_only never closes the issue. The operator retains full
+   control.
+3. **Do not mutate the closeout ledger**. The existing comment posted record stands as
+   evidence. If a new comment_only evaluation produces a corrected draft, it will use a new
+   idempotency key (different timestamp).
+
+## Explicit non-actions (safety boundaries)
+
+Regardless of mode (`dry-run`, `simulate`, `comment_only`), the following actions require
+separate explicit operator approval and are never executed automatically:
+
+| Action | Approval format |
+|--------|----------------|
+| Parent issue close | Comment naming the exact issue URL |
+| PR merge | Comment naming the exact PR URL |
+| Manual terminal ACK/replay | Comment with terminal outbox row IDs |
+| Historical outbox replay | Comment with replay scope justification |
+| Production DB mutation/prune/migration | Comment naming exact mutation scope |
+| Gateway/broker/worker restart | Comment naming the service and window |
+| Live provider/Telegram send | Comment naming exact task ID, round ID, and provider target |
+| Secret rotation/movement/disclosure | Comment with secret reference (not value) |
+| Repository visibility change | Comment |
+| Force-push or history rewrite | Comment |
+| Release, tag, or npm publish | Comment naming exact version |
+
+These non-actions are also recorded in the `forbiddenLiveFlags` array of the closeout schema.
+Any evidence showing any of these flags as `true` causes gate G6 (no live action leak) to fail.
+
 ## Safety gates
 
 1. **source-only**: This contract is source-only documentation and fixture/script code. It does
@@ -364,16 +503,18 @@ adopted:
    restart, live Telegram/provider send, production DB mutation/prune/migration, terminal
    ACK/replay, historical outbox replay, release/tag/publish, credential movement, secret
    disclosure, automatic PR merge, or parent issue close.
-3. **Seoseo finalizer**: Only Seoseo may close the parent issue. No other broker, worker, or
+3. **comment_only gate**: Even in comment_only mode, the draft must be operator-visible before
+   posting. No close/merge/ACK/replay/DB mutation/restart/deploy is performed.
+4. **Seoseo finalizer**: Only Seoseo may close the parent issue. No other broker, worker, or
    automated process may issue the close command.
-4. **Provider accepted/message-id evidence**: Provider accepted/message-id evidence is
+5. **Provider accepted/message-id evidence**: Provider accepted/message-id evidence is
    accepted-send only (receipt level 1). It is never read/visibility proof (level 3), terminal
    ACK (level 4), or operator approval.
-5. **Runtime/bootstrap hygiene**: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`,
+6. **Runtime/bootstrap hygiene**: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`,
    `HEARTBEAT.md`, `IDENTITY.md`, and `.openclaw/**` must not enter the branch, PR text, issue
    comment, or artifact evidence. If detected, block the closeout with exact repo-relative
    offending paths.
-6. **Default NO_GO**: The default decision without explicit input is `NO_GO`. Source-only
+7. **Default NO_GO**: The default decision without explicit input is `NO_GO`. Source-only
    execution mode is `NO_GO` until overridden by a Seoseo operator decision.
 
 ## Activation plan (approval-gated, not executed)
