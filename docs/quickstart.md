@@ -57,6 +57,28 @@ npm run worker:echo
 
 The worker registers as `local-echo-worker` and uses the built-in `echo` handler. Keep it attached only to the loopback broker.
 
+## 2a. Verify broker health
+
+Once the broker is running, confirm the health endpoint responds:
+
+```bash
+curl -s http://127.0.0.1:8787/health | python3 -m json.tool
+```
+
+Expected output includes:
+- `"ok": true`
+- `"service": "a2a-broker"`
+- `"version"` with the broker package version
+- `"uptimeSec"` counting seconds since broker start
+- `"persistence"` describing the state backend
+- `"staleReaper"` with reaper configuration and status
+
+A detailed multi-endpoint probe script is available at:
+
+```bash
+bash examples/demo/health-check.sh
+```
+
 ## 3. Connect the reference OpenClaw plugin locally
 
 Use placeholder-only configuration for local development. This verifies the reference integration path; it does not make OpenClaw a required runtime for A2A Plane itself:
@@ -128,6 +150,42 @@ Also run the quickstart conformance check directly:
 ```bash
 npm run check:quickstart-conformance
 ```
+
+## 6. Teardown
+
+When you are done with the local demo, stop the broker and worker processes.
+
+### If running Node.js directly (npm run start:local)
+
+Press `Ctrl+C` in both terminals. Clean up persisted state and verify the port is released:
+
+```bash
+rm -f /tmp/a2a-broker-state.json
+rm -rf /tmp/a2a-broker-sqlite/
+lsof -i :8787 2>/dev/null || echo "Port 8787 is free"
+```
+
+### If running via Docker Compose
+
+```bash
+docker compose -f packages/broker/docker-compose.yml down -v --remove-orphans
+```
+
+A comprehensive teardown script is available:
+
+```bash
+bash examples/demo/teardown.sh
+```
+
+This script stops Docker stacks, kills local broker processes, cleans state files, and verifies port release.
+
+## Where to go next
+
+- [Demo overview](docs/demo/README.md) — component map, demo paths, health checks, security rules
+- [Two-broker demo](docs/demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
+- [External harness quickstart](docs/external-harness-quickstart.md) — non-OpenClaw harness integration
+- [Canonical demo description](docs/canonical-demo.md) — sequence diagram and evidence rules
+- [Ecosystem guide](docs/ecosystem-guide.md) — full repository map and Korean/English terms
 
 ## Safety checklist
 
