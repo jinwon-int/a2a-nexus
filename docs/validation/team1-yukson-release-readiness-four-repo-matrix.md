@@ -221,7 +221,7 @@ This is lane 4/4 (yukson). The pack covers Team1 release-readiness across 4 chil
 | Lane 1 | bangtong | [a2a-docker-runner#333](https://github.com/jinwon-int/a2a-docker-runner/issues/333) | [a2a-docker-runner#334](https://github.com/jinwon-int/a2a-docker-runner/pull/334) (merged) | `a2a-docker-runner` conformance smoke and runner artifact hygiene |
 | Lane 2 | sogyo | [openclaw-plugin-a2a#446](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/446) | [openclaw-plugin-a2a#447](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/447) (merged) | `openclaw-plugin-a2a` operator install/diagnostics readiness |
 | Lane 3 | nosuk | [a2a-broker#919](https://github.com/jinwon-int/a2a-broker/issues/919) | [a2a-broker#920](https://github.com/jinwon-int/a2a-broker/pull/920) (merged) | `a2a-broker` release-readiness evidence export and status contract |
-| Lane 4 (this) | yukson | [a2a-plane#454](https://github.com/jinwon-int/a2a-plane/issues/454) | [a2a-plane#456](https://github.com/jinwon-int/a2a-plane/pull/456) (this PR) | Four-repo gate matrix, conformance, docs coverage, approval boundaries, rollback/no-op rules, NO-GO items |
+| Lane 4 (this) | yukson | [a2a-plane#454](https://github.com/jinwon-int/a2a-plane/issues/454) | [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) (this PR) | Four-repo gate matrix, conformance, docs coverage, approval boundaries, rollback/no-op rules, NO-GO items |
 
 **Cross-check finding:** Lanes 1-3 each have a merged PR (#334, #447, #920) providing source/docs/tests evidence for the release-readiness pack. No conflict or gap detected between this lane's scope and the expected coverage from lanes 1-3. The four-repo scope (R1-R4) is independently verifiable from the monorepo checkout.
 
@@ -237,7 +237,7 @@ All three sibling lanes have merged PR evidence. Their source/docs/tests outputs
 
 ### 8.3 Existing open PRs
 
-This pack has one open revision PR: [a2a-plane#456](https://github.com/jinwon-int/a2a-plane/pull/456) (this lane, second revision). The superseded first revision PR [#455](https://github.com/jinwon-int/a2a-plane/pull/455) was closed.
+This pack has one open revision PR: [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) (this lane, second revision). The superseded revision PRs [#455](https://github.com/jinwon-int/a2a-plane/pull/455) and [#456](https://github.com/jinwon-int/a2a-plane/pull/456) were not accepted as finalizer evidence.
 
 ### 8.4 Closeout context
 
