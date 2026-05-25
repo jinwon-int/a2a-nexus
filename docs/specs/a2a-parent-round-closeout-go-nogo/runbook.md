@@ -58,6 +58,79 @@ The evaluator outputs a JSON report with:
 | `NO_GO` | One or more gates fail but no unsafe condition. | Proceed to Step 4. |
 | `BLOCKED` | An unsafe condition was detected (evidence not redacted, runtime/bootstrap leak, 403, or conflict). | Proceed to Step 5. |
 
+## Step 2a: Comment-only mode (optional)
+
+For a read-only comment on the parent issue without closing it:
+
+```bash
+node scripts/check-parent-round-closeout-go-nogo-matrix.mjs \
+  --spec docs/specs/a2a-parent-round-closeout-go-nogo/schema.json \
+  --round-metadata <path-to-round-metadata.json> \
+  --lane-evidence <path-to-lane-evidence.json> \
+  --mode comment_only
+```
+
+### When to use comment_only
+
+- You want a human-readable draft on the issue before deciding whether to close.
+- You want cross-team visibility of the closeout matrix.
+- You need to verify GitHub permissions before full closeout.
+
+### What comment_only produces
+
+| Output | Value |
+|--------|-------|
+| `decision` | GO/NO_GO/BLOCKED (same evaluation as dry-run) |
+| `commentPosted` | true (if GO and permission check passes) |
+| `issueClosed` | false (never closes the issue) |
+| `commentUrl` | URL of the posted comment |
+| `idempotencyKey` | Key used for suppression |
+| `duplicateSuppressed` | true if same key/payload already posted |
+
+### Example draft comment (GO decision)
+
+```markdown
+## A2A Parent Round Closeout — GO (comment-only)
+
+**Parent round:** a2a-team1-round-001
+**Origin broker:** seoseo
+**Parent broker:** seoseo
+**Decision:** GO (all gates pass)
+**Mode:** comment_only — this issue is **not** closed
+
+### Lane summary
+
+| Lane | Terminal kind | Evidence |
+|------|--------------|----------|
+| 1 | PR | https://github.com/jinwon-int/a2a-plane/pull/449 |
+| 2 | Done | Resolved all blocking checks |
+| 3 | Done | Updated runbook with rollback section |
+| 4 | PR | https://github.com/jinwon-int/a2a-plane/pull/450 |
+
+### Gate results (all PASS)
+
+[...gate details...]
+
+### Safety disclaimer
+
+This is a comment-only notification. The parent issue remains open.
+No PRs were merged. No terminal ACK was performed. No production
+mutation occurred.
+```
+
+### comment_only NO_GO or BLOCKED
+
+If the matrix returns NO_GO or BLOCKED in comment_only mode, no comment is posted.
+The operator is expected to resolve the gates first, then re-run.
+
+### Rollback from comment_only
+
+If a comment_only post was erroneous:
+
+1. **Do not delete the comment.** Comments are evidence. Post a follow-up correction instead.
+2. **The issue remains open** — no further action needed.
+3. **Do not mutate the closeout ledger.**
+
 ## Step 3: GO — Execute closeout (Seoseo only)
 
 Only Seoseo (or a broker explicitly designated as finalizer) may execute parent issue closeout.
@@ -154,6 +227,8 @@ After closeout (Go → CLOSEOUT state):
 
 ## Rollback considerations
 
+### Closeout rollback
+
 If closeout was erroneous:
 
 1. **Comment rollback**: The Go decision comment is evidence. Do not delete it. If the operator
@@ -162,6 +237,42 @@ If closeout was erroneous:
    This is not automated.
 3. **No data mutation**: Rollback does not delete ledger entries, mutate terminal outbox, or
    restart services.
+
+### comment_only rollback
+
+If a comment_only post was erroneous:
+
+1. **Do not delete the comment.** Comments are evidence. Post a follow-up correction.
+2. **The issue remains open** — no further action needed.
+3. **No ledger mutation.**
+
+### No-op rollback (403 or permission failure)
+
+If GitHub 403 is detected:
+
+1. **No comment was posted or issue was closed** (depending on when the 403 occurred).
+2. Record the 403 in the closeout ledger with `operatorActionRequired: true`.
+3. The round transitions to BLOCKED state. Operator must resolve the permission issue and
+   re-run.
+4. Rollback is **metadata-only**: no evidence is deleted or overwritten.
+
+### Explicit non-actions (always preserved across rollback)
+
+No rollback operation may perform any of:
+
+- Parent issue close
+- PR merge
+- Manual terminal ACK/replay
+- Historical outbox replay
+- Production DB mutation
+- Gateway/broker/worker restart
+- Live provider/Telegram send
+- Secret rotation or disclosure
+- Repository visibility change
+- Force-push or history rewrite
+- Release, tag, or npm publish
+
+If any of these would be needed for recovery, contact the Seoseo operator.
 
 ## Emergency stop
 

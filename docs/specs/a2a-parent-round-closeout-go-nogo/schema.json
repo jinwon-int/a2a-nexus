@@ -10,7 +10,7 @@
   "defaultDecision": "NO_GO",
   "decisionOutputs": ["GO", "NO_GO", "BLOCKED"],
   "sourcePublicExecution": "NO_GO",
-  "allowedModes": ["dry-run", "simulate"],
+  "allowedModes": ["dry-run", "simulate", "comment_only"],
   "roundRequiredMetadata": [
     "parentRoundId",
     "parentRoundTotal",
@@ -30,7 +30,8 @@
     "gitHubPermissionCheck",
     "idempotencyCheck",
     "seoseoFinalizer",
-    "crossLaneProjectionStatus"
+    "crossLaneProjectionStatus",
+    "commentOnlyGate"
   ],
   "runtimeBootstrapDenyPaths": [
     "AGENTS.md",
@@ -60,7 +61,11 @@
     "credentialMovement",
     "secretDisclosure",
     "historicalOutboxReplay",
-    "releaseTagPublish"
+    "releaseTagPublish",
+    "closeoutIssueClose",
+    "closeoutPrMerge",
+    "manualTerminalBriefAck",
+    "historicalOutboxAckReplay"
   ],
   "gates": [
     {
@@ -212,6 +217,22 @@
         "No lane projection has state pending or conflict.",
         "If any projection is blocked, the blocker reason is documented for operator review.",
         "If any projection is pending, the round is NO_GO (not BLOCKED)."
+      ]
+    },
+    {
+      "id": "commentOnlyGate",
+      "title": "Comment-only approval gate",
+      "failClosed": true,
+      "requiredForGo": true,
+      "automated": true,
+      "blockedWhenMissing": "comment_only mode selected but comment body is empty, contains unapproved content, or idempotency check fails.",
+      "failedWhenMissing": "comment_only mode requires a non-empty draft comment body; dry-run or simulate mode does not produce a closeout comment.",
+      "evidence": [
+        "Mode is comment_only and a non-empty draft comment body is produced.",
+        "Draft comment is human-readable before posting (operator may preview).",
+        "GitHub permission check passes before comment attempt.",
+        "Idempotency key prevents duplicate comment posting.",
+        "Close/merge/ACK/replay/DB mutation/restart/deploy remain disabled; comment_only posts a comment only, not a close decision."
       ]
     }
   ],

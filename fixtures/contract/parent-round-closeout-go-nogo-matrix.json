@@ -447,6 +447,167 @@
         "liveProviderSend": false,
         "terminalOutboxAckMutated": false
       }
+    },
+    {
+      "name": "comment-only-go-all-gates-pass",
+      "description": "All gates pass in comment_only mode. Matrix should return GO with commentPosted: true, issueClosed: false.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo",
+        "closeoutMode": "comment_only",
+        "draftCommentBody": true
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "GO",
+        "decisionOutput": "GO",
+        "gateResults": {
+          "allLanesTerminal": "PASS",
+          "laneEvidenceCompleteness": "PASS",
+          "requiredMetadataPresent": "PASS",
+          "evidenceRedaction": "PASS",
+          "runtimeBootstrapHygiene": "PASS",
+          "noLiveActionLeak": "PASS",
+          "gitHubPermissionCheck": "PASS",
+          "idempotencyCheck": "PASS",
+          "seoseoFinalizer": "PASS",
+          "crossLaneProjectionStatus": "PASS",
+          "commentOnlyGate": "PASS"
+        },
+        "commentPosted": true,
+        "issueClosed": false,
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "isApproval": false,
+        "isTerminalAck": false,
+        "isReadReceipt": false
+      }
+    },
+    {
+      "name": "comment-only-no-go-empty-draft",
+      "description": "comment_only mode but no non-empty draft comment body. Matrix should return NO_GO with commentOnlyGate FAIL.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo",
+        "closeoutMode": "comment_only",
+        "draftCommentBody": false
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "NO_GO",
+        "decisionOutput": "NO_GO",
+        "gateResults": {
+          "commentOnlyGate": "FAIL"
+        },
+        "commentPosted": false,
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "comment-only-duplicate-suppressed",
+      "description": "Same comment_only evaluation posted twice. Should return GO with duplicateSuppressed: true, no duplicate comment.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": false,
+        "idempotencyConflict": false,
+        "idempotencyKeyExists": true,
+        "idempotencyKeyPayloadMatches": true,
+        "evaluatingBroker": "seoseo",
+        "closeoutMode": "comment_only",
+        "draftCommentBody": true
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "GO",
+        "decisionOutput": "GO",
+        "duplicateSuppressed": true,
+        "newPostCreated": false,
+        "commentPosted": false,
+        "issueClosed": false,
+        "closeoutAllowed": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
+    },
+    {
+      "name": "comment-only-blocked-403",
+      "description": "comment_only mode but GitHub 403 before comment post. Matrix should return BLOCKED with comment_failed state.",
+      "given": {
+        "parentRoundProgress": 4,
+        "parentRoundTotal": 4,
+        "lanes": [
+          { "laneId": 1, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 2, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 3, "terminalKind": "done", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" },
+          { "laneId": 4, "terminalKind": "pr", "evidenceComplete": true, "redacted": true, "noLiveActionLeak": true, "projectionState": "projected" }
+        ],
+        "metadataComplete": true,
+        "bootstrapHygiene": true,
+        "gitHub403": true,
+        "gitHub403Operation": "issue_comment_create",
+        "gitHub403Summary": "HTTP 403: token lacks issue:write scope",
+        "idempotencyConflict": false,
+        "evaluatingBroker": "seoseo",
+        "closeoutMode": "comment_only",
+        "draftCommentBody": true
+      },
+      "when": {
+        "operation": "closeout.evaluate"
+      },
+      "then": {
+        "decision": "BLOCKED",
+        "decisionOutput": "BLOCKED",
+        "gateResults": {
+          "gitHubPermissionCheck": "BLOCKED"
+        },
+        "commentPosted": false,
+        "issueClosed": false,
+        "closeoutState": "comment_failed",
+        "operatorActionRequired": true,
+        "github403Detected": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false
+      }
     }
   ],
   "rollbackGuidance": {
