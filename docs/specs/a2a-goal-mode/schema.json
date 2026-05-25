@@ -1,0 +1,236 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "A2A Goal Mode Goal Object",
+  "description": "Durable goal object schema for A2A Goal Mode. Defines the persistent state for an operator-defined objective spanning multiple A2A task slices.",
+  "type": "object",
+  "required": [
+    "goalRunId",
+    "schemaVersion",
+    "objective",
+    "state",
+    "stateHistory",
+    "eventLog",
+    "planner",
+    "evidence",
+    "approvalGates",
+    "idempotencyKey",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "goalRunId": {
+      "type": "string",
+      "pattern": "^a2a-goal-[a-zA-Z0-9-]+-[0-9TZ]+$",
+      "description": "Stable unique identifier. Format: a2a-goal-<descriptor>-<utc-timestamp>."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["a2a.goal-mode.v1"],
+      "description": "Schema version identifier."
+    },
+    "objective": {
+      "type": "object",
+      "required": ["name", "description", "scope", "successCriteria", "evidenceRequirements", "budgetLimits", "operatorControls"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Short human-readable goal name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Concise objective statement."
+        },
+        "scope": {
+          "type": "object",
+          "required": ["allowedWorkAreas", "forbiddenActions"],
+          "properties": {
+            "repos": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Allowed GitHub repositories (org/repo)."
+            },
+            "allowedWorkAreas": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["source-patch", "validation-run", "inspection", "fixtures", "evidence-only", "read-only-check"]
+              },
+              "description": "Allowed work area labels."
+            },
+            "forbiddenActions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "deploy", "restart", "live_canary", "db_mutation",
+                  "terminal_ack_replay", "release_tag", "secret_movement",
+                  "force_push", "visibility_change", "issue_close", "pr_merge"
+                ]
+              },
+              "description": "Actions that must trigger approval gates."
+            }
+          }
+        },
+        "successCriteria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Measurable success criteria."
+        },
+        "evidenceRequirements": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Types of evidence each slice must produce."
+        },
+        "budgetLimits": {
+          "type": "object",
+          "properties": {
+            "maxConcurrentWorkers": { "type": "number", "default": 1 },
+            "maxRuntimeSecondsPerSlice": { "type": "number" },
+            "maxTotalSlices": { "type": "number" },
+            "retryPolicy": {
+              "type": "object",
+              "properties": {
+                "maxRetries": { "type": "number", "default": 3 },
+                "baseDelayMs": { "type": "number", "default": 1000 },
+                "maxDelayMs": { "type": "number", "default": 30000 }
+              }
+            },
+            "staleDetectionSeconds": { "type": "number", "default": 3600 }
+          }
+        },
+        "operatorControls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Available control actions (pause, resume, cancel, summarize, force_block, request_next_plan_only)."
+        }
+      }
+    },
+    "state": {
+      "type": "string",
+      "enum": ["idle", "planning", "dispatching", "collecting_evidence", "awaiting_approval", "blocked", "completed", "cancelled"],
+      "description": "Current lifecycle state."
+    },
+    "stateHistory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["previousState", "newState", "transitionReason", "timestamp", "triggeredBy"],
+        "properties": {
+          "previousState": { "type": "string" },
+          "newState": { "type": "string" },
+          "transitionReason": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "triggeredBy": { "type": "string", "enum": ["planner", "operator", "worker", "system"] }
+        }
+      }
+    },
+    "eventLog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["eventId", "eventType", "summary", "timestamp"],
+        "properties": {
+          "eventId": { "type": "string" },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "plan", "dispatch", "evidence_collected", "approval_gate_detected",
+              "approval_granted", "replan", "pause", "resume", "cancel", "block", "complete"
+            ]
+          },
+          "summary": { "type": "string" },
+          "details": { "type": "object" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "planner": {
+      "type": "object",
+      "required": ["loopCount", "lastDecision", "lastDecisionAt"],
+      "properties": {
+        "loopCount": { "type": "number", "description": "Number of planner iterations." },
+        "lastDecision": {
+          "type": "string",
+          "enum": ["start", "continue", "replan_blocked", "await_approval", "complete"]
+        },
+        "lastDecisionAt": { "type": "string", "format": "date-time" },
+        "activeSlices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sliceId", "summary", "status"],
+            "properties": {
+              "sliceId": { "type": "string" },
+              "summary": { "type": "string" },
+              "status": { "type": "string", "enum": ["planned", "dispatched", "collecting", "done", "pr", "blocked", "cancelled"] },
+              "dispatchedAt": { "type": "string", "format": "date-time" },
+              "workerId": { "type": "string" },
+              "taskId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sliceId", "result", "summary"],
+        "properties": {
+          "sliceId": { "type": "string" },
+          "result": { "type": "string", "enum": ["done", "pr", "blocked"] },
+          "summary": { "type": "string" },
+          "prUrl": { "type": "string", "format": "uri" },
+          "checkResults": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "check": { "type": "string" },
+                "status": { "type": "string", "enum": ["pass", "fail"] }
+              }
+            }
+          },
+          "blockerInfo": {
+            "type": "object",
+            "properties": {
+              "category": { "type": "string", "enum": ["safety", "permission", "evidence_gap", "capacity"] },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "approvalGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gateType", "detectedAt", "summary", "status"],
+        "properties": {
+          "gateType": {
+            "type": "string",
+            "enum": [
+              "deploy", "restart", "live_canary", "db_mutation",
+              "terminal_ack_replay", "release_tag", "secret_movement",
+              "force_push", "visibility_change", "issue_close", "pr_merge"
+            ]
+          },
+          "detectedAt": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string" },
+          "scope": { "type": "string" },
+          "proposedActions": { "type": "array", "items": { "type": "string" } },
+          "status": { "type": "string", "enum": ["pending", "approved", "declined", "superseded"] },
+          "decidedAt": { "type": "string", "format": "date-time" },
+          "decisionSource": { "type": "string" }
+        }
+      }
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Goal creation idempotency key. Stable across retries."
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}
