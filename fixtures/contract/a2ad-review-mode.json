@@ -1,0 +1,540 @@
+{
+  "fixtureId": "a2a-plane.contract.a2ad-review-mode.v1",
+  "contract": "docs/specs/a2a-dialectic-review-mode/spec.md",
+  "description": "A2AD dialectic review mode evidence examples covering full review, minimal review, cancellation, synthesis with dissenting notes, and fact/assumption/recommendation separation.",
+  "v0Freeze": null,
+  "evidence": [
+    {
+      "evidenceId": "a2ad-full-review-evidence",
+      "kind": "a2ad.review.v1",
+      "reviewId": "review-design-review-20260525-001",
+      "title": "Design review: Workflow engine migration to state-machine model",
+      "submittedAt": "2026-05-25T12:00:00Z",
+      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "roles": {
+        "reviewer": { "agentId": "bangtong" },
+        "critic": { "agentId": "dengae" },
+        "defender": { "agentId": "bangtong" },
+        "finalizer": { "agentId": "seoseo" }
+      },
+      "phases": {
+        "thesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T10:00:00Z",
+            "title": "Migrate workflow engine to state-machine model",
+            "summary": "Replace the current callback-chain workflow engine with an explicit state-machine model for better observability, testability, and error recovery.",
+            "claims": [
+              "State-machine model reduces unrecoverable failure rate",
+              "Explicit state transitions improve observability",
+              "State-machine is easier to unit test than callback chains",
+              "Migration can be done incrementally per workflow type"
+            ],
+            "evidenceRefs": [
+              "docs/architecture/workflow-migration-analysis.md",
+              "test/perf/state-machine-vs-callback-comparison.mjs"
+            ],
+            "assumptions": [
+              "All current callback-chain workflows have a finite and enumerable state set",
+              "Migration per workflow type takes at most 2 weeks",
+              "The state-machine library supports all required transition guards"
+            ],
+            "risksIdentified": [
+              "Long-running workflows in callback state during migration may need dual-path support",
+              "State-machine library learning curve for the team"
+            ],
+            "recommendation": "Proceed with incremental migration, starting with the order-processing workflow as a pilot",
+            "confidence": 0.8,
+            "testCriteria": [
+              "Order-processing workflow passes 100% of existing E2E tests after migration",
+              "P99 latency does not increase by more than 5%",
+              "Error recovery rate improves by at least 30%"
+            ]
+          }
+        },
+        "antithesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "dengae" },
+            "submittedAt": "2026-05-25T11:00:00Z",
+            "counterClaims": [
+              "State-machine model adds ceremony without proportional benefit for simple workflows",
+              "Migration cost exceeds projected reliability gains for workflows nearing end-of-life",
+              "Incremental migration introduces dual-engine complexity in production"
+            ],
+            "failureModes": [
+              "Dual-engine runtime paths create unexpected interaction bugs",
+              "State-machine library API changes during migration window",
+              "Team productivity drops during the 12-week migration period"
+            ],
+            "contradictions": [
+              "The comparison benchmark only covers 3 of 12 workflow types",
+              "The callback-chain failure rate is already below 0.1% — reduction may not justify migration cost"
+            ],
+            "assumptionsChallenged": [
+              "Not all workflows have a clean finite state set — some have ad-hoc callback logic that does not map to discrete states",
+              "Two weeks per workflow type underestimates testing and validation time"
+            ],
+            "risksRaised": [
+              "Dual-engine cognitive load during migration period",
+              "Regressions in non-migrated workflows due to shared infrastructure changes"
+            ],
+            "blockFlags": [],
+            "evidenceRefs": [
+              "docs/performance/callback-baseline-2026-q2.md",
+              "test/perf/state-machine-vs-callback-comparison.mjs"
+            ],
+            "confidence": 0.7
+          }
+        },
+        "rebuttal": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T11:30:00Z",
+            "response": "The critic raises valid concerns about dual-engine complexity and migration scope. However, the end-of-life concern is addressed by excluding EOL workflows from migration scope.",
+            "defendedClaims": [
+              "State-machine model improves observability — current callback-chain lacks a single source of truth for workflow state",
+              "Incremental migration is feasible with feature flags per workflow type"
+            ],
+            "concededPoints": [
+              "Migration timeline estimate of 2 weeks per type is optimistic; revised to 3 weeks",
+              "Dual-engine complexity during migration needs a detailed coexistence plan"
+            ],
+            "refinedAssumptions": [
+              "Workflows with ad-hoc callback logic that cannot be cleanly state-mapped will be excluded from scope",
+              "Feature flags allow per-workflow-type rollout and instant rollback"
+            ],
+            "residualRisks": [
+              "Shared infrastructure changes during migration may still affect non-migrated workflows",
+              "State-machine library maintenance dependency"
+            ]
+          }
+        },
+        "synthesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "seoseo" },
+            "submittedAt": "2026-05-25T12:00:00Z",
+            "preserved": [
+              "State-machine model improves observability (consensus position)",
+              "Incremental migration with feature flags is feasible",
+              "Excluding EOL and ad-hoc workflows from scope reduces risk"
+            ],
+            "rejected": [
+              "All 12 workflow types must be migrated (revised scope: 8/12, exclude 4 EOL/ad-hoc)",
+              "Two weeks per workflow type (revised estimate: 3 weeks)"
+            ],
+            "dissentingNotes": [
+              "Critic noted that the callback-chain failure rate is already below 0.1%, and the improvement may not justify cost. Overruled because the observability and testability gaps are strategic quality investments, not purely failure-rate driven. This note is preserved for cost-benefit review after phase 1."
+            ],
+            "facts": [
+              "Current workflow engine uses callback chains with no explicit state model",
+              "Order-processing workflow handles 40% of production traffic",
+              "Three of twelve workflow types are nearing end-of-life",
+              "Callback-chain unrecoverable failure rate is 0.08%",
+              "State-machine library v2.1 supports all required transition guards"
+            ],
+            "assumptions": [
+              "Feature flags suffice for coexistence (confidence: medium — needs production testing in phase 0)",
+              "3 weeks per workflow type with dedicated engineer (confidence: medium)",
+              "Order-processing workflow is representative of other target workflows (confidence: high)"
+            ],
+            "risks": [
+              "Dual-engine runtime interaction bugs (phase 0 pilot reduces this)",
+              "Team productivity drop during migration (mitigated by training session before phase 1)",
+              "State-machine library future API stability (low probability, high impact)"
+            ],
+            "tests": [
+              "Phase 0: order-processing workflow migration in staging with 7 days of production traffic replay",
+              "Phase 1 gate: P99 latency delta ≤ 5%, error recovery rate improves ≥ 30%",
+              "Phase 2 gate: 100% E2E pass rate on migrated workflows"
+            ],
+            "recommendation": "Proceed with incremental migration: phase 0 (order-processing pilot, 3 weeks), then phase 1-3 (7 remaining workflows, 3 weeks each) with go/no-go gate after each phase",
+            "recommendationBasis": "The observability and testability benefits justify the migration cost for 8 of 12 workflow types. The phased approach with explicit gates and the order-processing pilot reduces risk. EOL and ad-hoc workflows are excluded.",
+            "verdict": "APPROVE_WITH_CHANGES"
+          }
+        }
+      },
+      "synthesisCard": {
+        "verdict": "APPROVE_WITH_CHANGES",
+        "facts": [
+          "Current workflow engine uses callback chains with no explicit state model",
+          "Order-processing workflow handles 40% of production traffic",
+          "Three of twelve workflow types are nearing end-of-life",
+          "Callback-chain unrecoverable failure rate is 0.08%",
+          "State-machine library v2.1 supports all required transition guards"
+        ],
+        "assumptions": [
+          "Feature flags suffice for coexistence (confidence: medium)",
+          "3 weeks per workflow type with dedicated engineer (confidence: medium)",
+          "Order-processing workflow is representative (confidence: high)"
+        ],
+        "risks": [
+          "Dual-engine runtime interaction bugs",
+          "Team productivity drop during migration",
+          "State-machine library future API stability"
+        ],
+        "tests": [
+          "Phase 0: order-processing pilot in staging with traffic replay",
+          "Phase 1 gate: P99 latency delta ≤ 5%, error recovery rate improves ≥ 30%",
+          "Phase 2 gate: 100% E2E pass rate on migrated workflows"
+        ],
+        "dissentingNotes": [
+          "Critic noted callback-chain failure rate is already below 0.1%. Overruled because observability and testability are strategic quality investments."
+        ],
+        "recommendation": "Proceed with phased migration (8 of 12 workflow types), starting with order-processing pilot"
+      }
+    },
+    {
+      "evidenceId": "a2ad-minimal-review-evidence",
+      "kind": "a2ad.review.v1",
+      "reviewId": "review-config-update-20260525-002",
+      "title": "Config change: Increase broker task timeout from 10m to 15m",
+      "submittedAt": "2026-05-25T14:00:00Z",
+      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "roles": {
+        "reviewer": { "agentId": "bangtong" },
+        "critic": { "agentId": "dengae" },
+        "defender": null,
+        "finalizer": { "agentId": "seoseo" }
+      },
+      "phases": {
+        "thesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T13:00:00Z",
+            "title": "Increase broker default task timeout to 15 minutes",
+            "summary": "Heavy analysis tasks regularly exceed the 10-minute default timeout. A 15-minute default reduces failure retries without operator intervention.",
+            "claims": [
+              "15-minute timeout covers 95% of current heavy tasks",
+              "Operator overhead decreases by reducing manual timeout overrides"
+            ],
+            "evidenceRefs": [
+              "docs/ops/task-timeout-stats-2026-q2.md"
+            ],
+            "assumptions": [
+              "No task should take more than 15 minutes under normal conditions",
+              "The broker can handle longer task leases without resource exhaustion"
+            ],
+            "risksIdentified": [
+              "Runaway tasks consume worker slots longer"
+            ],
+            "recommendation": "Increase default task timeout from 10 minutes to 15 minutes",
+            "confidence": 0.9,
+            "testCriteria": []
+          }
+        },
+        "antithesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "dengae" },
+            "submittedAt": "2026-05-25T13:30:00Z",
+            "counterClaims": [
+              "Runaway task risk increases with longer timeout",
+              "95% coverage is not enough — the 5% outlier tasks should be individually configured, not by raising the default"
+            ],
+            "failureModes": [
+              "Worker pool exhaustion if multiple runaway tasks coincide"
+            ],
+            "contradictions": [
+              "The statistics document counts completed tasks only, not tasks that timed out at 10m and were retried with 15m — selection bias"
+            ],
+            "assumptionsChallenged": [
+              "Broker resource exhaustion bound is not quantified in the thesis"
+            ],
+            "risksRaised": [
+              "Worker slot starvation under concurrent heavy loads"
+            ],
+            "blockFlags": [],
+            "evidenceRefs": [
+              "docs/ops/task-timeout-stats-2026-q2.md"
+            ],
+            "confidence": 0.6
+          }
+        },
+        "rebuttal": {
+          "present": false,
+          "data": null
+        },
+        "synthesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "seoseo" },
+            "submittedAt": "2026-05-25T14:00:00Z",
+            "preserved": [
+              "15-minute timeout covers 95% of current tasks",
+              "Runaway task risk is real and needs a mitigation"
+            ],
+            "rejected": [
+              "Raising the default unconditionally (mitigated by adding a per-task cap)"
+            ],
+            "dissentingNotes": [
+              "Critic noted selection bias in the timeout statistics. Acknowledged — the 95% figure should be re-validated with uncensored data before making the change permanent."
+            ],
+            "facts": [
+              "Heavy analysis tasks regularly exceed 10 minutes",
+              "The broker supports per-task timeout configuration"
+            ],
+            "assumptions": [
+              "Broker worker slot exhaustion can be monitored via existing dashboards (confidence: high)"
+            ],
+            "risks": [
+              "Runaway tasks consume worker slots longer — mitigated by adding a per-worker max runtime cap of 30 minutes"
+            ],
+            "tests": [
+              "Deploy change to staging and run 100 heavy analysis tasks; verify < 5% exceed 15m"
+            ],
+            "recommendation": "Increase default task timeout to 15 minutes and add a per-worker max runtime cap of 30 minutes. Re-validate the 95% coverage figure after 1 week.",
+            "recommendationBasis": "The change is low-risk and revertible. The per-worker cap prevents runaway exhaustion. The 95% figure should be re-validated as a follow-up task, not a blocker.",
+            "verdict": "APPROVE"
+          }
+        }
+      },
+      "synthesisCard": {
+        "verdict": "APPROVE",
+        "facts": [
+          "Heavy analysis tasks regularly exceed 10 minutes",
+          "Broker supports per-task timeout configuration"
+        ],
+        "assumptions": [
+          "Worker slot exhaustion is monitorable via existing dashboards (confidence: high)"
+        ],
+        "risks": [
+          "Runaway tasks consume slots longer — mitigated by 30-minute per-worker max cap"
+        ],
+        "tests": [
+          "Staging validation with 100 heavy analysis tasks"
+        ],
+        "dissentingNotes": [
+          "Selection bias in 95% figure — re-validate after 1 week"
+        ],
+        "recommendation": "Increase default timeout to 15m with 30m per-worker cap; re-validate 95% coverage"
+      }
+    },
+    {
+      "evidenceId": "a2ad-cancelled-review-evidence",
+      "kind": "a2ad.review.v1",
+      "reviewId": "review-stale-data-20260525-003",
+      "title": "Review: Exchange connectivity migration (CANCELLED)",
+      "submittedAt": "2026-05-25T09:00:00Z",
+      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "roles": {
+        "reviewer": { "agentId": "bangtong" },
+        "critic": { "agentId": "dengae" },
+        "defender": null,
+        "finalizer": null
+      },
+      "phases": {
+        "thesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T08:00:00Z",
+            "title": "Migrate exchange connectivity to new provider API",
+            "summary": "Move from legacy provider X to provider Y for lower latency and better reliability.",
+            "claims": ["Provider Y has lower P99 latency", "Provider Y has better SLA"],
+            "evidenceRefs": ["vendor/comparison-report.md"],
+            "assumptions": ["Provider Y API is stable"],
+            "risksIdentified": ["Migration window constraints"],
+            "recommendation": "Proceed with migration",
+            "confidence": 0.7,
+            "testCriteria": []
+          }
+        },
+        "antithesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "dengae" },
+            "submittedAt": "2026-05-25T08:30:00Z",
+            "counterClaims": ["Provider Y comparison report is based on stale benchmark data"],
+            "failureModes": ["Data feed corruption during migration"],
+            "contradictions": ["Benchmark data was collected before provider Y's SLA update"],
+            "assumptionsChallenged": ["Provider Y SLA is verified against current terms"],
+            "risksRaised": ["No rollback plan documented"],
+            "blockFlags": ["data_stale", "safety_boundary"],
+            "evidenceRefs": ["vendor/provider-y-terms-2025.md"],
+            "confidence": 0.9
+          }
+        },
+        "rebuttal": {
+          "present": false,
+          "data": null
+        },
+        "synthesis": {
+          "present": false,
+          "data": null
+        }
+      },
+      "synthesisCard": {
+        "verdict": null,
+        "facts": [],
+        "assumptions": [],
+        "risks": [],
+        "tests": [],
+        "dissentingNotes": [],
+        "recommendation": "Review cancelled by operator — stale benchmark data identified, fresh comparison required"
+      }
+    },
+    {
+      "evidenceId": "a2ad-dissenting-notes-evidence",
+      "kind": "a2ad.review.v1",
+      "reviewId": "review-incident-response-20260525-004",
+      "title": "Incident analysis: Database connection pool exhaustion on 2026-05-24",
+      "submittedAt": "2026-05-25T16:00:00Z",
+      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "roles": {
+        "reviewer": { "agentId": "bangtong" },
+        "critic": { "agentId": "dengae" },
+        "defender": { "agentId": "bangtong" },
+        "finalizer": { "agentId": "seoseo" }
+      },
+      "phases": {
+        "thesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T15:00:00Z",
+            "title": "Root cause analysis: DB pool exhaustion",
+            "summary": "A sudden spike in connection requests due to a misconfigured connection leak detector caused the pool to exhaust.",
+            "claims": [
+              "Connection leak detector was deployed with overly aggressive thresholds",
+              "Rolling back the detector resolved the issue within 5 minutes"
+            ],
+            "evidenceRefs": ["docs/incidents/20260524-db-pool-exhaustion.md"],
+            "assumptions": [
+              "The leak detector was correctly identified as the root cause",
+              "No ongoing connection leaks remain in the system"
+            ],
+            "risksIdentified": ["Leak detector re-deployment needs better staging validation"],
+            "recommendation": "Increase pool size permanently and re-deploy leak detector with safe defaults",
+            "confidence": 0.85,
+            "testCriteria": []
+          }
+        },
+        "antithesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "dengae" },
+            "submittedAt": "2026-05-25T15:30:00Z",
+            "counterClaims": [
+              "Pool size increase masks the underlying problem rather than fixing it",
+              "The leak detector may have revealed a real leak that needs investigation"
+            ],
+            "failureModes": [
+              "Increasing pool size delays detection of future actual leaks"
+            ],
+            "contradictions": [
+              "5-minute recovery does not prove the detector was the root cause — correlation is not causation"
+            ],
+            "assumptionsChallenged": [
+              "No ongoing connection leak — this is unverified"
+            ],
+            "risksRaised": [
+              "Masking a real leak by increasing pool size could lead to a larger incident later"
+            ],
+            "blockFlags": [],
+            "evidenceRefs": [
+              "docs/incidents/20260524-db-pool-exhaustion.md"
+            ],
+            "confidence": 0.65
+          }
+        },
+        "rebuttal": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "bangtong" },
+            "submittedAt": "2026-05-25T15:45:00Z",
+            "response": "The critic's concern about masking is valid. However, increasing the pool size is a safety margin, not a fix. The leak detector re-deployment with safe defaults is the actual fix.",
+            "defendedClaims": [
+              "The leak detector thresholds were incorrectly configured",
+              "Rollback resolved the immediate incident"
+            ],
+            "concededPoints": [
+              "A thorough leak investigation should precede leak detector re-deployment",
+              "Pool size increase alone is insufficient without root cause verification"
+            ],
+            "refinedAssumptions": [
+              "Leak investigation must confirm no real leak exists before re-deploying the detector"
+            ],
+            "residualRisks": [
+              "Incident may recur if a real leak exists and the detector was falsely triggering"
+            ]
+          }
+        },
+        "synthesis": {
+          "present": true,
+          "data": {
+            "author": { "agentId": "seoseo" },
+            "submittedAt": "2026-05-25T16:00:00Z",
+            "preserved": [
+              "Leak detector thresholds were aggressive — this contributed to the incident",
+              "Rollback resolved the immediate issue",
+              "Pool size increase is a safety margin, not a root cause fix"
+            ],
+            "rejected": [
+              "Leak detector was the sole root cause (unproven — correlation, not causation)",
+              "Pool size increase alone is sufficient mitigation"
+            ],
+            "dissentingNotes": [
+              "Critic argued that pool size increase masks real leaks. This concern has merit. The recommendation below requires a thorough leak investigation before re-deploying the detector. This dissenting note is preserved so the operator sees both positions."
+            ],
+            "facts": [
+              "Connection pool was exhausted at 2026-05-24T14:23Z",
+              "Leak detector was deployed on 2026-05-23 with aggressive thresholds",
+              "Rolling back the detector freed connections within 5 minutes",
+              "No unexplained connection growth has been observed since rollback"
+            ],
+            "assumptions": [
+              "No real connection leak exists (confidence: medium — 24 hours of clean data is promising but not definitive)",
+              "Aggressive leak detector thresholds were the trigger, not a pre-existing leak (confidence: medium)"
+            ],
+            "risks": [
+              "A real leak may exist and was unmasked by the detector (low probability, high impact)",
+              "Increasing pool size without investigation masks future symptoms"
+            ],
+            "tests": [
+              "Leak investigation: instrument connection lifecycle and monitor for 7 days before re-deploying the detector",
+              "Pool size validation: verify no performance regression with increased pool under peak load"
+            ],
+            "recommendation": "Increase pool size by 50% as a safety margin. Before re-deploying the leak detector, run a 7-day connection lifecycle investigation to confirm no real leak exists. Re-deploy the detector with the verified safe thresholds only after investigation passes.",
+            "recommendationBasis": "The immediate safety margin (pool increase) addresses current risk. The investigation (step 2) addresses the critic's valid concern about masking real leaks. The detector re-deployment (step 3) restores the intended monitoring capability.",
+            "verdict": "APPROVE_WITH_CHANGES"
+          }
+        }
+      },
+      "synthesisCard": {
+        "verdict": "APPROVE_WITH_CHANGES",
+        "facts": [
+          "Connection pool exhausted at 2026-05-24T14:23Z",
+          "Leak detector deployed with aggressive thresholds",
+          "Rollback freed connections within 5 minutes"
+        ],
+        "assumptions": [
+          "No real leak exists (confidence: medium)",
+          "Aggressive thresholds were the trigger (confidence: medium)"
+        ],
+        "risks": [
+          "A real leak may exist — investigate before re-deploying detector",
+          "Pool size increase without investigation masks future symptoms"
+        ],
+        "tests": [
+          "7-day connection lifecycle investigation",
+          "Pool size performance regression check"
+        ],
+        "dissentingNotes": [
+          "Critic: pool size increase masks real leaks. Recommendation requires investigation before re-deploying detector. Preserved so both positions are visible to operator."
+        ],
+        "recommendation": "Increase pool 50%; investigate for 7 days before re-deploying leak detector with safe thresholds"
+      }
+    }
+  ],
+  "forbiddenContentCheck": {
+    "requiresNoSecrets": true,
+    "requiresNoPrivatePaths": true,
+    "requiresNoRuntimeBootstrapFiles": true,
+    "note": "No runtime/bootstrap configuration file names or private paths appear in any evidence field above."
+  }
+}
