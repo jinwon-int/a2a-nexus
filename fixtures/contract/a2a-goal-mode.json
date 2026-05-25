@@ -1,0 +1,269 @@
+{
+  "name": "A2A Goal Mode Goal Object Fixture",
+  "contract": "contracts/a2a/goal-mode-lifecycle.md",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/442",
+  "protocol": "a2a-goal-mode",
+  "version": 1,
+  "failClosed": true,
+  "runtimeAutomationEnabled": false,
+  "defaultDecision": "NO_GO",
+  "lifecycleStates": [
+    "idle", "planning", "dispatching", "collecting_evidence",
+    "awaiting_approval", "blocked", "completed", "cancelled"
+  ],
+  "approvalGateTypes": [
+    "deploy", "restart", "live_canary", "db_mutation",
+    "terminal_ack_replay", "release_tag", "secret_movement",
+    "force_push", "visibility_change", "issue_close", "pr_merge"
+  ],
+  "plannerDecisions": ["start", "continue", "replan_blocked", "await_approval", "complete"],
+  "allowedWorkAreas": ["source-patch", "validation-run", "inspection", "fixtures", "evidence-only", "read-only-check"],
+  "requiredStateFields": [
+    "goalRunId", "schemaVersion", "objective", "state",
+    "stateHistory", "eventLog", "planner", "evidence",
+    "approvalGates", "idempotencyKey", "createdAt", "updatedAt"
+  ],
+  "exampleGoalObject": {
+    "goalRunId": "a2a-goal-quickstart-guide-20260525T120000Z",
+    "schemaVersion": "a2a.goal-mode.v1",
+    "objective": {
+      "name": "Add public quickstart guide",
+      "description": "Create and validate a public quickstart guide for a2a-plane.",
+      "scope": {
+        "repos": ["jinwon-int/a2a-plane"],
+        "allowedWorkAreas": ["source-patch", "validation-run", "evidence-only"],
+        "forbiddenActions": ["deploy", "restart", "live_canary", "db_mutation"]
+      },
+      "successCriteria": [
+        "docs/quickstart.md exists",
+        "docs/quickstart.md is linked from README.md",
+        "Example task JSON in examples/ works with the current broker"
+      ],
+      "evidenceRequirements": ["pr-url", "check-results", "safety-confirmation"],
+      "budgetLimits": {
+        "maxConcurrentWorkers": 1,
+        "maxRuntimeSecondsPerSlice": 1800,
+        "maxTotalSlices": 10,
+        "staleDetectionSeconds": 3600
+      },
+      "operatorControls": ["pause", "resume", "cancel", "summarize", "force_block"]
+    },
+    "state": "completed",
+    "stateHistory": [
+      {
+        "previousState": null,
+        "newState": "idle",
+        "transitionReason": "Goal created",
+        "timestamp": "2026-05-25T12:00:00Z",
+        "triggeredBy": "operator"
+      },
+      {
+        "previousState": "idle",
+        "newState": "planning",
+        "transitionReason": "Operator dispatched first plan request",
+        "timestamp": "2026-05-25T12:00:05Z",
+        "triggeredBy": "operator"
+      },
+      {
+        "previousState": "planning",
+        "newState": "dispatching",
+        "transitionReason": "Planner decided slice 1: create quickstart skeleton",
+        "timestamp": "2026-05-25T12:00:10Z",
+        "triggeredBy": "planner"
+      },
+      {
+        "previousState": "dispatching",
+        "newState": "collecting_evidence",
+        "transitionReason": "Slice 1 accepted by worker",
+        "timestamp": "2026-05-25T12:00:15Z",
+        "triggeredBy": "system"
+      },
+      {
+        "previousState": "collecting_evidence",
+        "newState": "planning",
+        "transitionReason": "Slice 1 evidence collected. Re-planning.",
+        "timestamp": "2026-05-25T12:30:00Z",
+        "triggeredBy": "planner"
+      },
+      {
+        "previousState": "planning",
+        "newState": "dispatching",
+        "transitionReason": "Planner decided slices 2 and 3: README link + example validation",
+        "timestamp": "2026-05-25T12:30:05Z",
+        "triggeredBy": "planner"
+      },
+      {
+        "previousState": "dispatching",
+        "newState": "collecting_evidence",
+        "transitionReason": "Slices 2 and 3 accepted by worker",
+        "timestamp": "2026-05-25T12:30:10Z",
+        "triggeredBy": "system"
+      },
+      {
+        "previousState": "collecting_evidence",
+        "newState": "planning",
+        "transitionReason": "All slice evidence collected. Re-planning for final check.",
+        "timestamp": "2026-05-25T13:00:00Z",
+        "triggeredBy": "planner"
+      },
+      {
+        "previousState": "planning",
+        "newState": "completed",
+        "transitionReason": "All 3 success criteria met. Goal complete.",
+        "timestamp": "2026-05-25T13:00:05Z",
+        "triggeredBy": "planner"
+      }
+    ],
+    "eventLog": [
+      {
+        "eventId": "evt-001",
+        "eventType": "plan",
+        "summary": "Plan iteration 1: slice 1 — create quickstart skeleton",
+        "details": {"sliceCount": 1, "workAreas": ["source-patch"]},
+        "timestamp": "2026-05-25T12:00:08Z"
+      },
+      {
+        "eventId": "evt-002",
+        "eventType": "dispatch",
+        "summary": "Slice 1 dispatched to worker",
+        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "workerId": "bangtong"},
+        "timestamp": "2026-05-25T12:00:12Z"
+      },
+      {
+        "eventId": "evt-003",
+        "eventType": "evidence_collected",
+        "summary": "Slice 1: PR #123 — quickstart guide skeleton",
+        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/123"},
+        "timestamp": "2026-05-25T12:30:00Z"
+      },
+      {
+        "eventId": "evt-004",
+        "eventType": "plan",
+        "summary": "Plan iteration 2: slices 2, 3",
+        "details": {"sliceCount": 2, "workAreas": ["source-patch", "validation-run"]},
+        "timestamp": "2026-05-25T12:30:03Z"
+      },
+      {
+        "eventId": "evt-005",
+        "eventType": "dispatch",
+        "summary": "Slices 2 and 3 dispatched to worker",
+        "details": {"sliceIds": ["...slice:2", "...slice:3"], "workerId": "bangtong"},
+        "timestamp": "2026-05-25T12:30:08Z"
+      },
+      {
+        "eventId": "evt-006",
+        "eventType": "evidence_collected",
+        "summary": "Slice 2: PR #124 — README link updated. Slice 3: validation passed.",
+        "details": {
+          "sliceResults": [
+            {"sliceId": "...slice:2", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/124"},
+            {"sliceId": "...slice:3", "result": "done", "summary": "Validation passed against broker v1.2.3"}
+          ]
+        },
+        "timestamp": "2026-05-25T13:00:00Z"
+      },
+      {
+        "eventId": "evt-007",
+        "eventType": "plan",
+        "summary": "All criteria met. Goal complete.",
+        "details": {"decision": "complete", "criteriaMet": 3},
+        "timestamp": "2026-05-25T13:00:03Z"
+      },
+      {
+        "eventId": "evt-008",
+        "eventType": "complete",
+        "summary": "Goal completed: 3 slices, 2 PRs, 0 blocks, 0 approval gates",
+        "details": {"finalState": "completed", "totalSlices": 3, "prCount": 2, "blockCount": 0},
+        "timestamp": "2026-05-25T13:00:05Z"
+      }
+    ],
+    "planner": {
+      "loopCount": 3,
+      "lastDecision": "complete",
+      "lastDecisionAt": "2026-05-25T13:00:03Z",
+      "activeSlices": []
+    },
+    "evidence": [
+      {
+        "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1",
+        "result": "pr",
+        "summary": "Quickstart guide skeleton created",
+        "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/123",
+        "checkResults": [
+          {"check": "npm run check:layout", "status": "pass"},
+          {"check": "npm run test:release-gate", "status": "pass"}
+        ]
+      },
+      {
+        "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:2",
+        "result": "pr",
+        "summary": "README.md updated with quickstart link",
+        "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/124",
+        "checkResults": [
+          {"check": "npm run check:layout", "status": "pass"}
+        ]
+      },
+      {
+        "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:3",
+        "result": "done",
+        "summary": "Example task JSON validated against broker v1.2.3",
+        "checkResults": [
+          {"check": "npm run check:quickstart-conformance", "status": "pass"}
+        ]
+      }
+    ],
+    "approvalGates": [],
+    "idempotencyKey": "a2a-goal-mode:create:seoseo:add-public-quickstart-guide:20260525T120000Z",
+    "createdAt": "2026-05-25T12:00:00Z",
+    "updatedAt": "2026-05-25T13:00:05Z",
+    "completedAt": "2026-05-25T13:00:05Z"
+  },
+  "approvalGateExample": {
+    "gateType": "deploy",
+    "detectedAt": "2026-05-25T14:00:00Z",
+    "summary": "Goal requires production deploy of updated broker to verify changes",
+    "scope": "a2a-broker production deployment",
+    "proposedActions": ["deploy:broker:version-1.3.0:production"],
+    "status": "pending",
+    "decidedAt": null,
+    "decisionSource": null
+  },
+  "evidenceExample": {
+    "goalRunId": "a2a-goal-quickstart-guide-20260525T120000Z",
+    "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1",
+    "workArea": "source-patch",
+    "result": "pr",
+    "summary": "Created docs/quickstart.md with introductory quickstart content",
+    "changedFiles": [
+      {"path": "docs/quickstart.md", "changeType": "added"}
+    ],
+    "evidenceUrls": ["https://github.com/jinwon-int/a2a-plane/pull/123"],
+    "checkResults": [
+      {"check": "npm run check:layout", "status": "pass", "output": "redacted"}
+    ],
+    "safetyConfirmation": {
+      "noProductionDeploy": true,
+      "noGatewayRestart": true,
+      "noBrokerWorkerRestart": true,
+      "noLiveProviderSend": true,
+      "noDbMutation": true,
+      "noTerminalAck": true,
+      "noOutboxReplay": true,
+      "noReleaseTagPublish": true,
+      "noCredentialMovement": true,
+      "noSecretDisclosure": true,
+      "noVisibilityChange": true,
+      "noHistoryRewrite": true,
+      "noForcePush": true
+    },
+    "approvalGateRequired": null
+  },
+  "phaseOneBoundaries": {
+    "automaticGoalCreation": false,
+    "autonomousPlannerExecution": false,
+    "automaticDeployRestartCanary": false,
+    "automaticDbOutboxCleanup": false,
+    "automaticTerminalAckReplay": false,
+    "secretBearingState": false
+  }
+}
