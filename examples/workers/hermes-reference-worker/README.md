@@ -11,6 +11,9 @@ The reference proves that a non-OpenClaw runtime can:
 - poll assigned work through `GET /tasks?worker=<nodeId>&status=pending`;
 - claim/start a local-safe task;
 - post terminal Done evidence through `POST /tasks/:id/evidence`.
+- persist a local redacted evidence manifest under
+  `~/.hermes/a2a/artifacts/<task-id>/evidence.json` before relying on network
+  delivery.
 
 ## Safety boundary
 
@@ -91,3 +94,15 @@ URL loopback unless a separate live canary packet has been approved.
 
 The cron loop must remain `no_agent` style: it should poll broker state and post
 terminal evidence without invoking an LLM just to check for work.
+
+## Android / Termux native profile
+
+For Gongyung/Daegyo-style mobile nodes, use the Android native worker runbook:
+[`docs/hermes-android-native-worker-runbook.md`](../../../docs/hermes-android-native-worker-runbook.md).
+
+The mobile profile keeps the same HTTP worker contract but adds:
+
+- `runtimeFlavor=termux-hermes` and `gatewayRequired=false` registration metadata;
+- local redacted evidence manifests under `~/.hermes/a2a/artifacts/`;
+- a restart-safe loop shape for Termux:Boot, cron, or tmux;
+- no broad OpenClaw Gateway install requirement on the Android node.

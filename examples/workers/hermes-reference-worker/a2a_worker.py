@@ -16,11 +16,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
 SAFE_LOCAL_MODES = {"hermes-reference-dry-run", "local-hermes-smoke"}
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+LOCAL_EVIDENCE_SCHEMA = "a2a.hermesWorker.localEvidence.v1"
 
 
 def env(name: str, default: str) -> str:
@@ -55,6 +58,63 @@ def worker_id() -> str:
 
 def worker_role() -> str:
     return env("A2A_WORKER_ROLE", "analyst")
+
+
+def artifact_root() -> Path:
+    return Path(env("A2A_HERMES_ARTIFACT_ROOT", "~/.hermes/a2a/artifacts")).expanduser()
+
+
+def runtime_flavor() -> str:
+    return env("A2A_HERMES_RUNTIME_FLAVOR", "termux-hermes")
+
+
+def utc_now_iso() -> str:
+    return datetime.fromtimestamp(time.time(), timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def safe_task_dir_name(task_id: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in task_id)
+    return cleaned[:160] if cleaned else "unknown-task"
+
+
+def local_manifest_public_path(task_id: str) -> str:
+    return f"~/.hermes/a2a/artifacts/{safe_task_dir_name(task_id)}/evidence.json"
+
+
+def write_local_evidence_manifest(
+    task_id: str,
+    status: str,
+    evidence: dict[str, Any],
+    limitations: list[str] | None = None,
+) -> str:
+    """Persist redacted receipt/evidence locally before relying on network state."""
+    task_dir = artifact_root() / safe_task_dir_name(task_id)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = task_dir / "evidence.json"
+    manifest = {
+        "schema": LOCAL_EVIDENCE_SCHEMA,
+        "taskId": task_id,
+        "workerId": worker_id(),
+        "status": status,
+        "files": [
+            {
+                "path": "evidence.json",
+                "kind": "manifest",
+                "redacted": True,
+            }
+        ],
+        "redactionStatement": (
+            "Secrets, provider tokens, raw device identifiers, private Termux paths, "
+            "and raw session dumps are redacted before broker evidence."
+        ),
+        "limitations": limitations or [],
+        "timestamp": utc_now_iso(),
+        "evidence": evidence,
+    }
+    tmp_path = manifest_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp_path, manifest_path)
+    return str(manifest_path)
 
 
 def assert_safe_broker_url(url: str) -> None:
@@ -99,8 +159,13 @@ def request_json(method: str, path: str, body: dict[str, Any] | None = None) -> 
 def registration_payload() -> dict[str, Any]:
     metadata = {
         "runtime": "hermes-agent",
+        "runtimeFlavor": runtime_flavor(),
         "openClawRequired": "false",
+        "gatewayRequired": "false",
         "transport": "http-poll",
+        "receiptEvidence": "local-manifest-plus-broker-evidence",
+        "artifactRoot": "~/.hermes/a2a/artifacts",
+        "bootPersistence": env("A2A_HERMES_BOOT_PERSISTENCE", "termux-boot-or-cron"),
         "reference": "phase-2-dry-run",
     }
     metadata.update({str(key): str(value) for key, value in env_json_object("A2A_WORKER_METADATA_JSON").items()})
@@ -173,11 +238,33 @@ def run_once() -> dict[str, Any]:
     if not task_id:
         raise RuntimeError("polled task has no id")
     if not is_safe_local_task(task):
+        refusal_evidence = {
+            "workerId": worker_id(),
+            "outcome": "blocked",
+            "result": {
+                "summary": "Hermes reference worker refused non-local or live-impact task",
+                "output": {
+                    "gongyungProfile": "hermes-worker",
+                    "openClawRequired": False,
+                    "runtimeFlavor": runtime_flavor(),
+                    "profileVersion": 1,
+                    "reason": "task payload is not a local noLive Hermes reference dry-run task",
+                },
+                "artifacts": [],
+            },
+        }
+        manifest_path = write_local_evidence_manifest(
+            task_id,
+            "rejected",
+            refusal_evidence,
+            ["Task was not claimed; broker state was not mutated by this refusal."],
+        )
         return {
             "status": "refused",
             "workerId": worker_id(),
             "taskId": task_id,
             "reason": "task payload is not a local noLive Hermes reference dry-run task",
+            "localEvidenceManifest": manifest_path,
             "processed": 0,
         }
 
@@ -192,15 +279,33 @@ def run_once() -> dict[str, Any]:
             "summary": "Hermes reference worker completed local dry-run evidence",
             "output": {
                 "referenceWorker": "hermes-agent",
+                "gongyungProfile": "hermes-worker",
                 "mode": task_payload(task).get("mode"),
                 "openClawRequired": False,
+                "runtimeFlavor": runtime_flavor(),
+                "profileVersion": 1,
                 "liveProviderSend": False,
                 "productionMutation": False,
             },
+            "artifacts": [
+                {
+                    "path": local_manifest_public_path(task_id),
+                    "kind": "manifest",
+                    "redacted": True,
+                }
+            ],
         },
     }
+    manifest_path = write_local_evidence_manifest(task_id, "accepted", evidence)
     completed = request_json("POST", f"/tasks/{encoded_task_id}/evidence", evidence)
-    return {"status": "processed", "workerId": worker_id(), "taskId": task_id, "task": completed, "processed": 1}
+    return {
+        "status": "processed",
+        "workerId": worker_id(),
+        "taskId": task_id,
+        "localEvidenceManifest": manifest_path,
+        "task": completed,
+        "processed": 1,
+    }
 
 
 def main() -> int:
