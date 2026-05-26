@@ -131,7 +131,7 @@ loop:
     poll_count += 1
     if poll_count > fastPollCount:
       interval = min(interval * backoffFactor, maxIntervalMs)
-  
+
   sleep(interval * (1 + uniform(-jitterRatio, +jitterRatio)))
 ```
 
