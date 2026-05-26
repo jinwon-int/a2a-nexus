@@ -1,0 +1,150 @@
+{
+  "$schemaVersion": "a2a.round-coordinator.root.v1",
+  "description": "A2A round coordinator schema root. Defines the round manifest, cursor, closeout bundle, and worker capability policy formats for coded broker polling and result collection.",
+  "laneIssue": "https://github.com/jinwon-int/a2a-plane/issues/467",
+  "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/927",
+  "run": "a2a-team1-round-coordinator-20260526T201140KST",
+  "laneOwner": "nosuk",
+  "failClosed": true,
+  "defaultFinalizerId": "seoseo",
+  "coordinatorStates": ["SEEDED", "TRACKING", "ALL_DONE", "TIMED_OUT", "COLLECTED", "PARTIAL", "READY", "CLOSED"],
+  "laneStatusValues": ["pending", "running", "succeeded", "failed", "stale", "timeout", "cancelled", "blocked"],
+  "backoffDefaults": {
+    "initialIntervalMs": 5000,
+    "maxIntervalMs": 300000,
+    "backoffFactor": 2.0,
+    "jitterRatio": 0.2,
+    "fastPollCount": 3
+  },
+  "manifest": {
+    "description": "Round coordinator manifest. Defines the round identity, expected workers, deadline, and policy context.",
+    "requiredFields": [
+      "roundId",
+      "parentIssueUrl",
+      "team",
+      "originBrokerId",
+      "brokerOfRecordId",
+      "parentBrokerId"
+    ],
+    "workerRequiredFields": [
+      "order",
+      "workerId",
+      "role"
+    ]
+  },
+  "cursor": {
+    "description": "Cursor checkpoint tracking the coordinator's position in broker task observation history.",
+    "requiredFields": [
+      "roundId",
+      "latestObservedAt",
+      "pollCount",
+      "state"
+    ]
+  },
+  "closeoutBundle": {
+    "description": "Closeout bundle emitted by the coordinator for human finalizer review. Read-only; never triggers automatic closeout.",
+    "requiredBundleFields": [
+      "roundId",
+      "generatedAt",
+      "state",
+      "lanes",
+      "summary",
+      "finalizerAction",
+      "safetyConfirmation"
+    ],
+    "laneRequiredEvidenceFields": [
+      "order",
+      "worker",
+      "status",
+      "taskId"
+    ],
+    "safetyFlags": [
+      "noProductionDeploy",
+      "noGatewayRestart",
+      "noBrokerWorkerRestart",
+      "noLiveProviderSend",
+      "noDbMutation",
+      "noTerminalAck",
+      "noOutboxReplay",
+      "noReleaseTagPublish",
+      "noCredentialMovement",
+      "noSecretDisclosure",
+      "noVisibilityChange",
+      "noHistoryRewrite",
+      "noForcePush",
+      "noAutomaticClose",
+      "noAutomaticMerge",
+      "noAutomaticApproval"
+    ]
+  },
+  "workerCapabilityPolicy": {
+    "description": "Resource-aware worker policy fields. Each worker in the manifest carries these fields.",
+    "requiredFields": ["workerId", "role", "maxConcurrency", "allowedTaskTypes", "noLive", "noMutation", "lowPower", "mobileStandby"],
+    "defaults": {
+      "maxConcurrency": 1,
+      "allowedTaskTypes": ["propose_patch"],
+      "noLive": true,
+      "noMutation": true,
+      "lowPower": false,
+      "mobileStandby": false,
+      "staleAfterMs": 1800000,
+      "timeoutMs": 7200000
+    }
+  },
+  "mobileStandbyDefaults": {
+    "description": "Default capability policy for Gongyung/Hermes-style mobile standby workers.",
+    "maxConcurrency": 1,
+    "allowedTaskTypes": ["monitor", "notify"],
+    "noLive": true,
+    "noMutation": true,
+    "lowPower": true,
+    "mobileStandby": true,
+    "staleAfterMs": 300000,
+    "timeoutMs": 3600000
+  },
+  "alwaysRefusedActions": [
+    "parentIssueClose",
+    "prMerge",
+    "automaticApproval",
+    "automaticAck",
+    "terminalOutboxAckReplay",
+    "historicalOutboxReplay",
+    "productionDatabaseMutation",
+    "gatewayBrokerWorkerRestart",
+    "liveProviderSend",
+    "releaseTagPublish",
+    "credentialMovement",
+    "secretDisclosure",
+    "repositoryVisibilityChange",
+    "historyRewrite",
+    "forcePush"
+  ],
+  "overrideGatedActions": [
+    "childIssueCommentPost",
+    "crossRepoQuery",
+    "deadlineExtension"
+  ],
+  "runtimeBootstrapDenyPaths": [
+    "AGENTS.md",
+    "SOUL.md",
+    "USER.md",
+    "TOOLS.md",
+    "HEARTBEAT.md",
+    "IDENTITY.md",
+    ".openclaw/**"
+  ],
+  "sourcePublicExecution": "NO_GO",
+  "defaultDecision": "NO_GO",
+  "closeoutBundleUses": [
+    "humanFinalizerReview",
+    "goNogoMatrixInput",
+    "cursorVerification",
+    "laneEvidenceAggregation"
+  ],
+  "closeoutBundleProhibitedUses": [
+    "automaticIssueClose",
+    "automaticPrMerge",
+    "automaticApproval",
+    "automaticLiveSend"
+  ]
+}
