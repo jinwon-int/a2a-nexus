@@ -20,6 +20,8 @@
     "check:quickstart-conformance": "node scripts/check-quickstart-conformance.mjs",
     "check:external-harness-conformance": "node scripts/check-external-harness-conformance.mjs",
     "check:hermes-reference-worker": "node --test scripts/check-hermes-reference-worker.test.mjs",
+    "check:hermes": "node --test scripts/check-hermes-reference-worker.test.mjs scripts/check-gongyung-hermes-worker-profile.test.mjs scripts/check-native-worker-conformance.test.mjs",
+    "check:native-worker-conformance": "node --test scripts/check-native-worker-conformance.test.mjs",
     "check:no-diff-closeout-guidance": "node --test scripts/check-no-diff-closeout-guidance.test.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
     "scan:readiness-gates": "node scanner/readiness/fail-closed-gates.mjs --spec docs/readiness/fail-closed-gates.json",
