@@ -1,0 +1,173 @@
+{
+  "schema": "a2a.hermesNativeWorker.noLiveConformance.v1",
+  "mode": "no-live",
+  "fixtureId": "a2a-plane.fixture.hermes-native-worker-no-live-conformance.v1",
+  "description": "Hermes/Android native A2A worker no-live conformance fixture for Gongyung/Daegyo-style Termux nodes. Covers registration, heartbeat/reconnect, bounded task execution, local redacted evidence manifest, and broker-visible result evidence without contacting any live provider, production broker, or private network.",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/465",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/464",
+  "priorArt": [
+    "https://github.com/jinwon-int/a2a-plane/issues/435",
+    "https://github.com/jinwon-int/a2a-plane/issues/441"
+  ],
+  "profiles": ["docs/specs/gongyung-hermes-worker-profile/spec.md"],
+  "runbook": "docs/hermes-android-native-worker-runbook.md",
+  "referenceWorker": "examples/workers/hermes-reference-worker/",
+  "worker": {
+    "id": "gongyung",
+    "displayName": "Gongyung Hermes Worker",
+    "runtime": "hermes-agent",
+    "runtimeFlavor": "termux-hermes",
+    "openClawRequired": false,
+    "dockerAvailable": false,
+    "workerMode": "mobile",
+    "transport": "http-poll",
+    "heartbeatStaleThresholdSec": 30,
+    "maxConcurrentTasks": 1,
+    "bootMechanism": "Termux:Boot",
+    "pollLoopSleepSec": 20,
+    "brokerUrlMode": "loopback-only",
+    "artifactRoot": "~/.hermes/a2a/artifacts",
+    "evidenceSchema": "a2a.hermesWorker.localEvidence.v1",
+    "capabilities": {
+      "canAnalyze": true,
+      "canResearch": true,
+      "canReport": true,
+      "canReview": true,
+      "canObserve": true,
+      "canCheckReadiness": true,
+      "canCrossCheck": true,
+      "canHermesOps": true,
+      "canCanary": true,
+      "canBackfill": false,
+      "canPatchWorkspace": false,
+      "canPromoteLive": false,
+      "canPushToGitHub": false,
+      "canRunHeavyProof": false
+    },
+    "rejectedIntents": ["docker", "patch_repo", "build_repo", "test_repo", "split", "swarm_non_observe"],
+    "rejectedCapabilities": ["dockerRequired", "buildRequired", "testRequired", "repoPatch", "untrustedCode", "dependencyHeavy", "serviceRestart", "brokerDBMutation", "credentialMovement", "productionACK"]
+  },
+  "conformanceSteps": [
+    {
+      "step": 1,
+      "action": "register",
+      "description": "Hermes native worker registers with loopback broker URL and no-secret metadata",
+      "method": "POST /workers/register",
+      "expectedOutcome": "201 Created with worker metadata stored",
+      "noLive": true,
+      "validationScript": "scripts/check-hermes-reference-worker.test.mjs",
+      "referenceFile": "fixtures/contract/hermes-worker-registration.json",
+      "androidCaveat": "Registration uses Tailscale IP or local loopback; never use production broker URL without separate approval"
+    },
+    {
+      "step": 2,
+      "action": "heartbeat",
+      "description": "Worker heartbeats with Termux-hermes flavor metadata and empty secrets",
+      "method": "POST /workers/:nodeId/heartbeat",
+      "expectedOutcome": "200 OK, stale timer refreshed",
+      "noLive": true,
+      "androidCaveat": "Heartbeat interval must account for Android Doze windows; 20s sleep loop with bounded poll is recommended"
+    },
+    {
+      "step": 3,
+      "action": "poll_pending",
+      "description": "Worker polls pending tasks via broker-agnostic alias",
+      "method": "GET /tasks?worker=<nodeId>&status=pending",
+      "expectedOutcome": "200 OK with zero or more pending task records",
+      "noLive": true,
+      "androidCaveat": "Poll while waking; accept empty responses as normal on idle mobile nodes"
+    },
+    {
+      "step": 4,
+      "action": "claim_and_start",
+      "description": "Worker claims and starts an assigned no-live task",
+      "method": "POST /tasks/:id/claim then POST /tasks/:id/start",
+      "expectedOutcome": "200 OK on claim, 200 OK on start",
+      "noLive": true
+    },
+    {
+      "step": 5,
+      "action": "execute_bounded_task",
+      "description": "Worker executes a bounded handler task without Docker, build, GitHub push, or live provider access",
+      "method": "local handler execution",
+      "expectedOutcome": "Deterministic output; no side effects beyond local artifact root",
+      "noLive": true,
+      "allowedIntents": ["analyze", "research", "report", "review", "clarify", "observe", "check_readiness", "cross_check", "hermes-ops", "canary"],
+      "androidCaveat": "Use limited memory budget; avoid subprocesses that exceed Termux resource limits"
+    },
+    {
+      "step": 6,
+      "action": "write_local_evidence",
+      "description": "Worker persists redacted local evidence manifest before network submission",
+      "method": "write ~/.hermes/a2a/artifacts/<task-id>/evidence.json",
+      "expectedOutcome": "File created with schema a2a.hermesWorker.localEvidence.v1",
+      "noLive": true,
+      "requiredEvidenceFields": ["taskId", "workerId", "status", "redactionStatement", "timestamp"],
+      "androidCaveat": "Artifact root on shared storage may be visible to other apps; ensure Termux private directory or 0700 permissions"
+    },
+    {
+      "step": 7,
+      "action": "submit_terminal_evidence",
+      "description": "Worker posts redacted terminal Done/Blocked evidence via broker-agnostic alias",
+      "method": "POST /tasks/:id/evidence",
+      "expectedOutcome": "200 OK, task reaches terminal succeeded/failed state",
+      "noLive": true,
+      "evidenceOutcomes": ["done", "blocked", "failed"],
+      "forbiddenOutcomes": ["pr"],
+      "validationScript": "scripts/check-hermes-reference-worker.test.mjs"
+    },
+    {
+      "step": 8,
+      "action": "reconnect_after_interrupt",
+      "description": "Worker survives network drop or Termux restart by re-registering and re-polling on next loop iteration",
+      "method": "poll loop with re-registration",
+      "expectedOutcome": "Worker re-establishes registration and continues polling",
+      "noLive": true,
+      "androidCaveat": "Termux:Boot script must acquire wake lock before network access; assume TCP drops at any time"
+    },
+    {
+      "step": 9,
+      "action": "reject_unsafe_task",
+      "description": "Worker or admission function rejects tasks with Docker runner indicators or out-of-scope intents",
+      "method": "admission function check",
+      "expectedOutcome": "NO-GO signal returned, task not claimed",
+      "noLive": true,
+      "rejectionReasons": ["gongyung_not_docker_runner", "intent_not_allowed", "mode_not_allowed", "capability_not_satisfied", "at_capacity"],
+      "validationScript": "scripts/check-gongyung-hermes-worker-profile.test.mjs"
+    },
+    {
+      "step": 10,
+      "action": "verify_evidence_redacted",
+      "description": "Local evidence manifest passes redaction check: no device identifiers, provider tokens, private paths, or raw session dumps",
+      "method": "manifest inline validation",
+      "expectedOutcome": "manifest ok or structured blocked with redaction failure details",
+      "noLive": true,
+      "mustRedact": ["IMEI", "Android ID", "device serial", "hardware UUID", "Tailscale node key", "MAC address", "provider token", "API key", "edge secret", "raw session dump", "private Termux path"],
+      "mustKeep": ["nodeId", "outcome", "summary", "artifact paths", "profile metadata", "commit SHA", "repo-relative paths"]
+    }
+  ],
+  "safety": {
+    "liveProviderSend": false,
+    "terminalAckReplay": false,
+    "gatewayRestart": false,
+    "brokerRestart": false,
+    "databaseMutation": false,
+    "releaseOrPublish": false,
+    "secretMovement": false,
+    "liveRegistration": false,
+    "nonLoopbackBrokerContact": false,
+    "forcePush": false,
+    "prMerge": false,
+    "issueClose": false
+  },
+  "androidTermuxCaveats": {
+    "sleepDoze": "Android Doze suspends network access; poll loop must be bounded and tolerate empty responses",
+    "wakeLock": "Termux:Boot script must call termux-wake-lock before accessing network",
+    "networkReconnect": "Assume TCP drops at any time; each loop iteration re-registers and re-polls",
+    "storagePaths": "Use ~/.hermes/a2a/artifacts/ with 0700 permissions; avoid shared Termux storage",
+    "secretHandling": "Store secrets in ~/.config/a2a/hermes-worker.env with chmod 600; never paste into chat or evidence",
+    "resourceLimits": "Termux has limited memory and CPU; avoid Docker, heavy builds, and large subprocesses",
+    "bootPersistence": "Use ~/.termux/boot/a2a-hermes-worker boot script; verify wake lock after reboot",
+    "noGateway": "Hermes native worker does not require OpenClaw Gateway on-device; uses HTTP polling directly"
+  }
+}
