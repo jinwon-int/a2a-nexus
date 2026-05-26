@@ -587,6 +587,48 @@ approval-sensitive actions.
 Any future extension that adds write operations requires explicit operator
 approval and a separate spec update.
 
+### 11.1 Source-only dispatch manifest consumption
+
+The coordinator consumes manifests created by the dispatch wrapper
+([runbook](../a2a-team1-dispatch-wrapper/runbook.md)). The dispatch wrapper sets
+`policyContext: "source-only"` in every manifest by default (see §2 of the
+dispatch-wrapper runbook). The coordinator inherits this safety boundary:
+
+- When `policyContext` is `"source-only"` (or absent, which defaults to
+  source-only), the coordinator enforces that no lane evidence claims
+  approval authority, no safety flag is `false`, and no always-refused
+  action is attempted.
+- The coordinator's closeout bundle (§4) must include a `safetyConfirmation`
+  block with all flags set to `true`. Any override requires explicit operator
+  approval noted in the manifest.
+- The coordinator does **not** produce, distribute, or publish the dispatch
+  manifest — it only consumes it from the path provided at invocation.
+
+### 11.2 Dry-run closeout flow
+
+When invoked in dry-run mode (`--dry-run` flag, or when the manifest carries
+`dryRunDefault: true`), the coordinator produces a closeout bundle with
+`state: "DRY_RUN"` and `dryRun: true`. No broker queries are performed; no
+lane state is transitioned; no cursor is advanced.
+
+The dry-run closeout bundle differs from an execute-mode bundle in these
+fields:
+
+| Field | Dry-run | Execute mode |
+|---|---|---|
+| `state` | `"DRY_RUN"` | `READY`, `READY_PARTIAL`, etc. |
+| `dryRun` | `true` | absent or `false` |
+| `finalizerAction.required` | `false` | `true` |
+| `lanes[]` | Empty or synthetic | Real lane observations |
+| `summary.terminal` | `0` | Actual terminal count |
+
+The dry-run closeout bundle is informational only. It must not trigger any
+finalizer handoff, closeout matrix run, or state transition. The same
+redaction, confidentiality, and safety rules from §4.2 apply.
+
+Detailed operator guidance for dry-run closeout is in the
+[runbook §11](./runbook.md#11-source-only-dispatch-manifest-and-dry-run-closeout-flow).
+
 ## 12. Safety confirmation
 
 | Property | Value |
@@ -605,6 +647,9 @@ approval and a separate spec update.
 | No automatic PR merge | Yes |
 | No automatic approval | Yes |
 | Seoseo retains finalizer authority | Yes |
+| Source-only dispatch manifest consumed without mutation | Yes |
+| Dry-run closeout bundle is informational only | Yes |
+| Dry-run mode does not transition round state | Yes |
 
 ## 13. Related documents
 
