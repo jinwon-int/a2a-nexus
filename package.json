@@ -66,7 +66,9 @@
     "check:team1-nosuk-residue-cleanup-go-nogo": "node --test scripts/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs",
     "check:gongyung-hermes-worker-profile": "node --test scripts/check-gongyung-hermes-worker-profile.test.mjs",
     "check:team1-yukson-go-nogo-evidence-pack": "node --test scripts/check-team1-yukson-go-nogo-evidence-pack.test.mjs",
-    "check:team1-yukson-live-activation-checklist": "node --test scripts/check-team1-yukson-terminal-brief-live-activation-checklist.test.mjs"
+    "check:team1-yukson-live-activation-checklist": "node --test scripts/check-team1-yukson-terminal-brief-live-activation-checklist.test.mjs",
+    "check:team1-dispatch-guard": "node --test scripts/a2a-team1-dispatch-guard.test.mjs",
+    "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input"
   },
   "license": "MIT"
 }
