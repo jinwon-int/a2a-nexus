@@ -45,11 +45,11 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 | Repo | Branch protection | Status checks | PR review requirement | Rulesets |
 |---|---|---|---|---|
 | `jinwon-int/a2a-plane` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
-| `jinwon-int/a2a-broker` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
-| `jinwon-int/a2a-docker-runner` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
-| `jinwon-int/openclaw-plugin-a2a` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
+| `jinwon-int/a2a-broker` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
+| `jinwon-int/a2a-docker-runner` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
+| `jinwon-int/openclaw-plugin-a2a` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
 
-**Finding:** All four public A2A repositories have **no branch protection** on the default (`main`) branch and **no rulesets** defined. There are no required status checks, no required PR reviews, no dismiss-stale-reviews rules, no linear-history requirements, and no signed-commit requirements.
+**Finding:** `a2a-plane` has no branch protection on the default (`main`) branch. The other three repos have a minimal `build` status-check protection, but still have no required PR review. None of the four repos has rulesets defined. `openclaw-plugin-a2a` additionally has linear-history and conversation-resolution protection enabled; `a2a-broker` and `a2a-docker-runner` do not.
 
 ### 2.2 CODEOWNERS presence
 
@@ -208,8 +208,9 @@ If the operator has granted approval in a linked comment, the executing person o
 | Missing issue/PR templates | broker, runner, plugin | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
 | Missing broker public-readiness CI check | broker | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
 | Missing license metadata (package/license fields) | broker, plugin | [#478](https://github.com/jinwon-int/a2a-plane/issues/478), [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | Open |
-| No branch protection on main (all repos) | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
-| No rulesets (all repos) | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
+| No branch protection on main | a2a-plane | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
+| No required PR review | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
+| No rulesets | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
 
 ---
 
@@ -219,7 +220,7 @@ Decision: **baseline documented; settings changes NO-GO / waiting for approval.*
 
 - Current protection-state evidence is recorded (section 2).
 - Proposed baseline is explicit and testable (section 3).
-- All four repos are PUBLIC with **no branch protection** and **no rulesets**.
+- All four repos are PUBLIC. `a2a-plane` has **no branch protection**; `a2a-broker`, `a2a-docker-runner`, and `openclaw-plugin-a2a` have minimal required-`build` branch protection. All four repos have **no rulesets** and **no required PR review**.
 - CODEOWNERS, templates, and CI gaps in broker/runner/plugin are tracked in [#486](https://github.com/jinwon-int/a2a-plane/issues/486).
 - Any GitHub settings or permission changes are held until separate explicit operator approval using the checklist in section 5.
 
