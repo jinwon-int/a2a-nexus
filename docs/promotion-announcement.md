@@ -1,6 +1,6 @@
 # A2A Plane Promotion Announcement Draft
 
-A2A Plane is still an alpha, feedback-welcome project. Use this copy only after the public-readiness gates in [`docs/public-readiness.md`](./public-readiness.md) are closed and an operator explicitly approves repository visibility. Do not post announcements from task automation.
+A2A Plane is still an alpha, feedback-welcome project. The repository is now public (since 2026-05-27), but broader promotion (stable release, public docs site, npm/Docker publication, announcements) remains blocked on the promotion-readiness gates in [`docs/public-readiness.md`](./public-readiness.md). Do not post announcements from task automation.
 
 ## Short Korean copy
 
@@ -8,7 +8,7 @@ A2A Plane은 OpenClaw 작업을 브로커와 워커로 안전하게 나누어 �
 
 ## Short English copy
 
-A2A Plane is an alpha project for routing OpenClaw tasks through a broker/worker flow and collecting terminal evidence such as `Done`, `Block`, or PR links. It is not production-ready yet, and feedback on the design, docs, and safety boundaries is welcome. Public visibility still requires clean readiness evidence and explicit operator approval.
+A2A Plane is an alpha project for routing OpenClaw tasks through a broker/worker flow and collecting terminal evidence such as `Done`, `Block`, or PR links. It is not production-ready yet, and feedback on the design, docs, and safety boundaries is welcome. The repository is GitHub-public (since 2026-05-27); broader promotion still requires clean readiness evidence and explicit operator approval.
 
 ## Repository surface recommendations
 
@@ -25,7 +25,7 @@ Before any announcement is posted:
 
 - Keep the product name as A2A Plane in announcement drafts, repository metadata, and public copy.
 - Keep the tone alpha/feedback-welcome; do not imply production readiness.
-- Confirm `docs/public-readiness.md` no longer records a NO-GO state.
+- Confirm `docs/public-readiness.md` records the current public state and reclassifies remaining NO-GO items as promotion/stable-release blockers.
 - Confirm external secret/history scanner evidence is clean or explicitly dispositioned.
-- Confirm repository visibility approval is separate from any execution step.
+- Confirm promotion authorization is separate from any execution step.
 - Do not include private endpoints, host paths, provider IDs, tokens, raw transcripts, or production evidence.

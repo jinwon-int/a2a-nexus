@@ -12,7 +12,24 @@ Start here:
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
 - [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
 
-> **Status:** public source entrypoint, not a production deployment or release authorization. Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, and provider/Telegram sends remain separate approval-gated actions.
+> **Status:** public GitHub repository — alpha project, not a production deployment or release authorization. See [Current public state](#current-public-state) for what public GitHub visibility means today and what remains blocked before broader promotion.
+
+## Current public state
+
+All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visibility means:
+
+- Code, docs, issues, and PRs are readable by anyone with a GitHub account.
+- The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
+- Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK remain separate approval-gated actions and are **not** authorized by this repository's public visibility.
+
+Remaining blockers before broader promotion (stable release, announcements, public docs site):
+
+- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — split-repo vs monorepo topology decision.
+- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan.
+- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist.
+- [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario.
+
+See [`docs/public-readiness.md`](docs/public-readiness.md) for the full readiness gate record.
 
 ## What A2A Plane does
 
