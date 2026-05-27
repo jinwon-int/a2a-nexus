@@ -12,6 +12,10 @@ const steps = [
   ['readiness-gates', 'npm', ['run', 'scan:readiness-gates']],
   ['external-secrets', 'npm', ['run', 'scan:external-secrets']],
   ['compatibility-baselines', 'node', ['scripts/check-compatibility-baselines.mjs']],
+<<<<<<< HEAD
+=======
+  ['repo-protection-baseline', 'node', ['scripts/check-repo-protection-baseline.mjs']],
+>>>>>>> 93945c9 (Add repo protection baseline for A2A repos (#488))
 ];
 
 for (const [name, command, args] of steps) {
