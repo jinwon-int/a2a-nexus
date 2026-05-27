@@ -96,6 +96,25 @@ for (const field of ['parentRoundId', 'parentRoundTotal']) {
   });
 }
 
+test('validateDispatchSpec blocks runId-only multi-lane dispatch with missing parent metadata', () => {
+  const spec = {
+    runId: 'a2a-team1-runid-only-multilane',
+    team: 'team1',
+    lanes: [
+      { worker: 'bangtong' },
+      { worker: 'sogyo' },
+      { worker: 'nosuk' },
+      { worker: 'yukson' },
+    ],
+  };
+  const result = validateDispatchSpec(spec);
+  assert.equal(result.valid, false);
+  assert.ok(result.blockers.some((b) => b.gate === 'spec.parentRoundId'));
+  assert.ok(result.blockers.some((b) => b.gate === 'spec.parentRoundTotal'));
+  assert.ok(result.blockers.some((b) => b.gate === 'lane[0].parentRoundId'));
+  assert.ok(result.blockers.some((b) => b.gate === 'lane[0].parentRoundOrder'));
+});
+
 test('validateDispatchSpec blocks when parentRoundOrder exceeds parentRoundTotal', () => {
   const lane = makeValidLane({ parentRoundOrder: 5, parentRoundTotal: 4 });
   const spec = specFromLane(lane);
@@ -115,6 +134,20 @@ test('validateDispatchSpec blocks empty string parentRoundId', () => {
 
 test('validateDispatchSpec blocks non-integer parentRoundTotal', () => {
   const lane = makeValidLane({ parentRoundTotal: 'abc' });
+  const spec = specFromLane(lane);
+  const result = validateDispatchSpec(spec);
+  assert.equal(result.valid, false);
+});
+
+test('validateDispatchSpec blocks numeric-string parentRoundTotal', () => {
+  const lane = makeValidLane({ parentRoundTotal: '4' });
+  const spec = specFromLane(lane);
+  const result = validateDispatchSpec(spec);
+  assert.equal(result.valid, false);
+});
+
+test('validateDispatchSpec blocks numeric-string parentRoundOrder', () => {
+  const lane = makeValidLane({ parentRoundOrder: '1' });
   const spec = specFromLane(lane);
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, false);

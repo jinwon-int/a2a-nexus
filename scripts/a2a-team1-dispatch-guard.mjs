@@ -67,14 +67,14 @@ function collectStrings(obj, accumulator = []) {
 
 // ─── Validation: lane metadata ──────────────────────────────────────────────
 
-function validateLaneMetadata(lane, index, { isRetry = false, originalLane = null } = {}) {
+function validateLaneMetadata(lane, index, { isRetry = false, originalLane = null, requireParentRoundMetadata = false } = {}) {
   const blockers = [];
 
   if (!lane || typeof lane !== 'object') {
     return [{ gate: `lane[${index}]`, status: 'MISSING', reason: 'lane object is required' }];
   }
 
-  const hasRoundContext = lane.parentRoundId != null || lane.parentRoundTotal != null || lane.parentRoundOrder != null;
+  const hasRoundContext = requireParentRoundMetadata || lane.parentRoundId != null || lane.parentRoundTotal != null || lane.parentRoundOrder != null;
 
   if (hasRoundContext) {
     for (const field of REQUIRED_PARENT_FIELDS) {
@@ -93,17 +93,17 @@ function validateLaneMetadata(lane, index, { isRetry = false, originalLane = nul
     blockers.push({ gate: `lane[${index}].parentRoundId`, status: 'INVALID', reason: 'parentRoundId must be a non-empty string' });
   }
 
-  if (lane.parentRoundTotal != null && !isPositiveInt(Number(lane.parentRoundTotal))) {
+  if (lane.parentRoundTotal != null && !isPositiveInt(lane.parentRoundTotal)) {
     blockers.push({ gate: `lane[${index}].parentRoundTotal`, status: 'INVALID', reason: 'parentRoundTotal must be a positive integer' });
   }
 
-  if (lane.parentRoundOrder != null && !isPositiveInt(Number(lane.parentRoundOrder))) {
+  if (lane.parentRoundOrder != null && !isPositiveInt(lane.parentRoundOrder)) {
     blockers.push({ gate: `lane[${index}].parentRoundOrder`, status: 'INVALID', reason: 'parentRoundOrder must be a positive integer' });
   }
 
   if (lane.parentRoundTotal != null && lane.parentRoundOrder != null) {
-    const total = Number(lane.parentRoundTotal);
-    const order = Number(lane.parentRoundOrder);
+    const total = lane.parentRoundTotal;
+    const order = lane.parentRoundOrder;
     if (isPositiveInt(total) && isPositiveInt(order) && order > total) {
       blockers.push({ gate: `lane[${index}]`, status: 'INVALID', reason: `parentRoundOrder (${order}) exceeds parentRoundTotal (${total}) on lane ${index}` });
     }
@@ -153,7 +153,10 @@ function validateDispatchSpec(spec) {
     blockers.push({ gate: 'spec.lanes', status: 'MISSING', reason: 'at least one lane is required' });
   }
 
-  const hasRoundContext = spec.parentRoundId != null || spec.parentRoundTotal != null || lanes.some((l) => l.parentRoundId != null || l.parentRoundOrder != null || l.parentRoundTotal != null);
+  const hasRoundContext = spec.parentRoundId != null
+    || spec.parentRoundTotal != null
+    || lanes.length > 1
+    || lanes.some((l) => l.parentRoundId != null || l.parentRoundOrder != null || l.parentRoundTotal != null);
 
   if (hasRoundContext && lanes.length > 1) {
     for (const field of ['parentRoundId', 'parentRoundTotal']) {
@@ -169,7 +172,7 @@ function validateDispatchSpec(spec) {
   for (const [index, lane] of lanes.entries()) {
     const isRetry = isRetryBatch && !!(lane.parentRetryOf || spec.parentRetryOf);
     const originalLane = isRetry && originalRunLanes && index < originalRunLanes.length ? originalRunLanes[index] : null;
-    blockers.push(...validateLaneMetadata(lane, index, { isRetry, originalLane }));
+    blockers.push(...validateLaneMetadata(lane, index, { isRetry, originalLane, requireParentRoundMetadata: hasRoundContext }));
 
     if (!hasText(lane.worker)) {
       blockers.push({ gate: `lane[${index}].worker`, status: 'MISSING', reason: 'lane worker is required' });
