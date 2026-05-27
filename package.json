@@ -68,7 +68,9 @@
     "check:team1-yukson-go-nogo-evidence-pack": "node --test scripts/check-team1-yukson-go-nogo-evidence-pack.test.mjs",
     "check:team1-yukson-live-activation-checklist": "node --test scripts/check-team1-yukson-terminal-brief-live-activation-checklist.test.mjs",
     "check:team1-dispatch-guard": "node --test scripts/a2a-team1-dispatch-guard.test.mjs",
-    "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input"
+    "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input",
+    "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
+    "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs"
   },
   "license": "MIT"
 }

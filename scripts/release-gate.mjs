@@ -12,6 +12,7 @@ const steps = [
   ['readiness-gates', 'npm', ['run', 'scan:readiness-gates']],
   ['external-secrets', 'npm', ['run', 'scan:external-secrets']],
   ['compatibility-baselines', 'node', ['scripts/check-compatibility-baselines.mjs']],
+  ['repo-protection-baseline', 'node', ['scripts/check-repo-protection-baseline.mjs']],
 ];
 
 for (const [name, command, args] of steps) {
