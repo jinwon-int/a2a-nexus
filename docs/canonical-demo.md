@@ -1,6 +1,6 @@
 # Canonical A2A Demo
 
-This demo is a public-safe, no-live-send reference flow for the private A2A monorepo candidate.
+This demo is a public-safe, no-live-send reference flow for the A2A Plane monorepo candidate.
 
 ```mermaid
 sequenceDiagram

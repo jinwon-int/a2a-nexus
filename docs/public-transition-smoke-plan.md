@@ -1,8 +1,8 @@
-# Approval-Gated Public Transition Smoke Plan
+# Approval-Gated Public Transition Smoke Plan (Historical)
 
-Status: **plan only; public visibility remains NO-GO** until 진원님 explicitly approves a later public-transition step.
-
-This checklist is the exact operator sequence to run after approval. Preparing or reviewing this document does not authorize or perform a repository visibility change, release, deploy, Gateway/broker/worker restart, production database mutation, live provider or Telegram send, terminal-outbox ACK, secret rotation or disclosure, history rewrite, or force-push.
+> **Status: transition complete.** `jinwon-int/a2a-plane` became public on 2026-05-27. This document records the pre-public checklist that was executed. Sections 3–6 are archived as a rollback reference and future promotion template.
+>
+> This document does not authorize repository visibility changes, releases, deploys, Gateway/broker/worker restarts, production database mutations, live provider or Telegram sends, terminal-outbox ACKs, secret rotation or disclosure, history rewrites, or force-pushes.
 
 ## 0. Approval gate
 

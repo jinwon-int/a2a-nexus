@@ -1,6 +1,6 @@
 # R3 Release Notes Draft
 
-Status: private/public-readiness candidate. Repository visibility remains private.
+Status: public GitHub repository (since 2026-05-27). Historical release notes from the private-readiness phase.
 
 ## R3 focus
 

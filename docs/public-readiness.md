@@ -1,8 +1,12 @@
 # Public Readiness Gate
 
-Current decision: **NO-GO/Waiting for public visibility**.
+## Current state
 
-The candidate is not ready for an operator public-visibility approval while the external secret/history scanner lane remains incomplete. This repository must remain private until that blocker is cleared and an operator explicitly approves a visibility change. This page records redacted review evidence only; it does not authorize repository visibility changes, deploys, service restarts, production database mutations, live provider or Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
+> **GitHub-public as of 2026-05-27.** The `jinwon-int/a2a-plane`, `jinwon-int/a2a-broker`, `jinwon-int/openclaw-plugin-a2a`, and `jinwon-int/a2a-docker-runner` repositories are all public. This document is a historical readiness gate record; it does **not** mean the repository is still private.
+>
+> Remaining **NO-GO** items below are reclassified as **promotion/stable-release blockers** (stable release, announcements, public docs site, npm/Docker publication) — not as visibility blockers. Public visibility has been granted.
+>
+> This page records redacted review evidence only; it does not authorize deploys, service restarts, production database mutations, live provider or Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
 
 ## Team1 P0 public preflight decision table
 
@@ -10,14 +14,14 @@ Updated for run `team1-a2a-public-p0-20260507T221151Z` at `2026-05-07T22:16:10Z`
 
 | Decision surface | Current state | Operator decision impact | Evidence |
 |---|---|---|---|
-| Repository visibility | Private; no visibility change performed | **Public visibility NO-GO** until explicit approval after all blockers close | GitHub metadata remains private; docs keep the private/public-readiness boundary |
+| Repository visibility | **Public** (since 2026-05-27) | **Promotion NO-GO** until remaining promotion blockers close | GitHub metadata is public; historical private-readiness docs are archived as gate records |
 | R4 closeout lanes | Closed and merged | Candidate evidence is available for operator review, but does not override the external scanner blocker | R4 lane table below |
 | External secret/history scanner | **Blocked/Waiting**: `npm run scan:external-secrets` failed closed because no supported external scanner was installed in this runner | **NO-GO/Waiting**; install `gitleaks` or `trufflehog` in the operator environment and rerun before public visibility approval | `docs/security/r4-external-scan-and-freeze.md`; local command output is redacted and contains no findings payload |
 | Local public-readiness/release gate | Passed in this run | Supports operator review, but is not a substitute for the external scanner lane | `npm ci --ignore-scripts --include=dev`, `npm run check`, `npm run scan:public-readiness`, `node scripts/redacted-readiness-inventory.mjs`, and `npm run test:release-gate` |
 | Runtime/bootstrap hygiene | Clear for this branch/evidence when only tracked diff files are included | Fail closed if any runtime/bootstrap path enters the branch or evidence | Guard paths: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**` |
-| Public docs/SECURITY/templates/CODEOWNERS/README decision surface | Clear private-candidate and hard NO-GO boundaries remain documented | Ready for operator review once scanner and PR evidence blockers are cleared; public visibility remains **NO-GO** now | `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/*`, `.github/pull_request_template.md`, `CODEOWNERS`, this page |
+| Public docs/SECURITY/templates/CODEOWNERS/README decision surface | Updated to reflect public state; historical private-candidate boundaries are archived | Ready for operator review; remaining blockers are promotion/stable-release, not visibility | `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/*`, `.github/pull_request_template.md`, `CODEOWNERS`, this page |
 
-Explicit state split: the documentation surface is **ready for operator review**, but the repository is **not ready for public visibility**. The active decision is **NO-GO/Waiting** because the external scanner lane is incomplete.
+Explicit state split: the documentation surface is **ready for operator review**. The repository is **public** as of 2026-05-27. Remaining NO-GO items are promotion/stable-release blockers (external scanner, terminal evidence, operator approval for promotion) — not visibility blockers.
 
 ## R3 operator review state
 
@@ -36,7 +40,7 @@ Final local validation on the candidate tree passed at `2026-05-07T14:57:00Z`:
 - `npm run check`: passed; release gate completed layout, package checks, public-readiness scan, and compatibility-baseline validation.
 - `node scripts/redacted-readiness-inventory.mjs`: passed and printed redacted metadata only; total `1` finding class remained for operator disposition (`absolute-private-path` in a test fixture path, no matched value printed).
 - `npm run test:release-gate`: passed `3/3`.
-- GitHub repository metadata: `jinwon-int/a2a-plane` remains private.
+- GitHub repository metadata: `jinwon-int/a2a-plane` was private at the time of this validation (now public since 2026-05-27).
 - Runtime/bootstrap hygiene: no tracked or unignored runtime/bootstrap context paths are entering this branch or evidence; root public-readiness scan reported no findings.
 
 ## R4 final closeout state
@@ -49,7 +53,7 @@ Team1 R4 prerequisite lanes are closed and merged:
 | `#33` | Closed | `#36` |
 | `#34` | Closed | `#37` |
 
-Final R4 closeout decision: **ready for operator visibility decision; public visibility remains NO-GO** until 진원님 explicitly approves a repository visibility change. GitHub repository metadata was verified private during this closeout refresh.
+Final R4 closeout decision: this was **ready for operator visibility decision** at the time. Public visibility is now granted (2026-05-27). Remaining R4 blockers (external scanner, promotion gates) are promotion/stable-release blockers.
 
 Final closeout PR for `#35` is this task PR, with parent tracking in `#31`.
 
@@ -69,7 +73,9 @@ This R4 closeout refresh performed only redacted repository evidence updates and
 
 Issue `#44` uses the read-only `npm run libero:public-preflight-closeout -- --input <redacted-evidence.json> --markdown` framework to aggregate the required `bangtong`, `sogyo`, and `nosuk` lanes before any public visibility decision. The framework fails closed as `Waiting` when any sibling lane is still active or missing, and as `Block` when terminal lane evidence, scanner evidence, safety flags, or approval separation are unresolved.
 
-A public visibility **GO** must not be declared unless both local public-readiness and external secret/history scanner evidence are clean, the repository remains private up to the decision point, and operator approval is explicitly separated from any visibility execution step. Without explicit visibility approval from 진원님, the aggregate decision remains **NO-GO** even when all lanes and scanners are clean.
+A promotion **GO** must not be declared unless both local public-readiness and external secret/history scanner evidence are clean, and operator approval is explicitly separated from any promotion execution step. Without explicit promotion approval from 진원님, the aggregate decision remains **NO-GO** for promotion even when all lanes and scanners are clean.
+
+> **Note:** This document was written when the repository was private. Public visibility has since been granted (2026-05-27). The NO-GO criteria below now apply to **promotion/stable-release readiness**, not to visibility.
 
 ## Post-R5 A2A dispatch synthesis (Bangtong lane)
 
@@ -87,14 +93,14 @@ A follow-on A2A dispatch round cross-repo synthesis (post-merge state after `ope
 | Nosuk (broker lifecycle → A2A 1.0 task mapping) | `jinwon-int/a2a-broker` | [#431](https://github.com/jinwon-int/a2a-broker/issues/431) | [#434](https://github.com/jinwon-int/a2a-broker/pull/434) | Merged |
 | Yukson (Worker Capability/AgentCard registry) | `jinwon-int/a2a-broker` | [#432](https://github.com/jinwon-int/a2a-broker/issues/432) | [#433](https://github.com/jinwon-int/a2a-broker/pull/433) | Merged |
 
-**Synthesis decision: NO-GO / Waiting.**
+**Synthesis decision (historical): NO-GO / Waiting** at the time for visibility. Now resolved for visibility; remaining blockers are promotion/stable-release.
 
 - All three sibling cross-repo lanes are now merged (`openclaw-plugin-a2a#235`, `a2a-broker#433`, `a2a-broker#434`). This clears the sibling-lane blocker.
-- Upstream PR [openclaw/openclaw#78261](https://github.com/openclaw/openclaw/pull/78261) is closed/superseded. It no longer blocks as a merge gate; Terminal Brief/source closeout remains blocked on A2A terminal evidence, replay-safety, scanner evidence, and explicit operator approval.
-- External secret scanner unavailable (fail-closed).
-- Explicit operator approval for public repository visibility is still required.
-- Repository visibility remains **NO-GO** until A2A terminal evidence/replay-safety proof is available, scanner evidence is clean, and operator explicitly approves.
-- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) remains open: all public-readiness gates are not yet met.
+- Upstream PR [openclaw/openclaw#78261](https://github.com/openclaw/openclaw/pull/78261) is closed/superseded.
+- External secret scanner unavailable (fail-closed) — remains a promotion blocker.
+- Explicit operator approval for public repository visibility: **granted** (2026-05-27).
+- Repository visibility is **public** as of 2026-05-27. A2A terminal evidence/replay-safety proof and clean scanner evidence remain promotion blockers.
+- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) remains open: all promotion-readiness gates are not yet met.
 
 Relevant cross-repo guardrail docs:
 - `contracts/a2a/task-lifecycle.md` — A2A task-state mapping reference.
@@ -258,7 +264,9 @@ Seoseo is responsible for collecting and linking the following evidence before r
 
 Seoseo must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
 
-## NO-GO gates
+> **Note:** These gates were defined when the repository was private. Items marked ✅ are cleared. Remaining ❌ items are now **promotion/stable-release blockers**, not visibility blockers. Public visibility was granted 2026-05-27.
+
+## Promotion-readiness gates (was NO-GO gates)
 
 - [x] License decision approved and committed: MIT. NOTICE is not required for MIT unless future third-party notices require it.
 - [x] Secret and history scan clean or explicitly dispositioned with redacted evidence for operator review: root scanner passed with no findings; redacted inventory reports metadata only and keeps matched values out of evidence.
@@ -268,21 +276,25 @@ Seoseo must link each piece of evidence in a comment on `#75`. Only when all che
 - [x] Compatibility matrix names exact broker/plugin/runner/OpenClaw baselines and passes the compatibility-baseline checker.
 - [x] Shared A2A contracts document Done/Block/PR terminal semantics, provider-send versus ACK boundaries, worker registration/read-model assumptions, and broker-to-broker handoff boundaries.
 - [x] Release notes state no deploy/restart/provider send/DB mutation/terminal ACK/visibility change was performed unless explicitly approved.
-- [ ] Explicit operator approval for public repository visibility.
-- [ ] Final runner PR/CI evidence for this closeout refresh.
-- [ ] R4 external secret/history scanner evidence from `npm run scan:external-secrets`, or explicit Block evidence that no supported scanner was available in the operator environment.
+- [✅] Explicit operator approval for public repository visibility — **granted 2026-05-27**.
+- [ ] External secret/history scanner evidence from `npm run scan:external-secrets`, or explicit Block evidence that no supported scanner was available in the operator environment. *(Promotion blocker)*
+- [ ] Final promotion-readiness PR/CI evidence. *(Promotion blocker)*
 
-## Approval-gated transition plan
+## Approval-gated transition plan (historical)
 
-See [Approval-Gated Public Transition Smoke Plan](./public-transition-smoke-plan.md) for the exact post-approval checklist. The plan is documentation only: keep the repository private unless 진원님 explicitly approves a later visibility transition, use redacted evidence, and do not publish npm/Docker artifacts, create a public release, deploy, restart services, mutate production data, send provider/Telegram messages, ACK terminal outbox records, rotate/disclose secrets, rewrite history, or force-push.
+The [public transition smoke plan](./public-transition-smoke-plan.md) was the pre-public visibility checklist. Visibility transition executed 2026-05-27. The plan now serves as a reference for future promotion steps (stable release, announcements, docs site).
+
+Still applies regardless of visibility:
+- Do not publish npm/Docker artifacts without separate approval.
+- Do not deploy, restart services, mutate production data, send provider/Telegram messages, ACK terminal outbox records, rotate/disclose secrets, rewrite history, or force-push without explicit operator approval.
 
 ## R4 evidence lane
 
-See [R4 External Scan and Release Dry-Run Freeze](./security/r4-external-scan-and-freeze.md). R4 remains a dry-run evidence lane only: keep the repository private, use redacted evidence, and do not publish npm/Docker artifacts or create a public release.
+See [R4 External Scan and Release Dry-Run Freeze](./security/r4-external-scan-and-freeze.md). R4 was a dry-run evidence lane while the repository was private. Use redacted evidence, and do not publish npm/Docker artifacts or create a public release without separate approval.
 
 ## R3 closeout validation
 
-See [R3 Closeout Validation](./r3-closeout-validation.md). The refreshed decision is **ready for operator visibility review**, but public visibility remains **NO-GO** until explicit operator approval.
+See [R3 Closeout Validation](./r3-closeout-validation.md). At the time this was **ready for operator visibility review**. Public visibility was granted 2026-05-27.
 
 ## R3 security disposition
 
@@ -302,4 +314,4 @@ The original source repositories and histories are not approved for public expos
 
 ## License decision
 
-Operator decision for R2 gate #6: use MIT License for the A2A monorepo candidate. Public visibility remains blocked until explicit operator approval.
+Operator decision for R2 gate #6: use MIT License for the A2A monorepo candidate. Public visibility was blocked at that time; granted 2026-05-27.

@@ -2,7 +2,9 @@
 
 ## Current status
 
-This repository is a private/public-readiness candidate. Public visibility is blocked until the gates in [`docs/public-readiness.md`](docs/public-readiness.md) are complete and an operator explicitly approves the visibility change.
+This repository is GitHub-public as of 2026-05-27. The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
+
+Broader promotion (stable release, announcements, public docs site) remains blocked on the readiness gates recorded in [`docs/public-readiness.md`](docs/public-readiness.md).
 
 ## Reporting a vulnerability
 
@@ -46,4 +48,4 @@ If any of those files would enter a branch or artifact bundle, fail closed and r
 
 ## Supported versions
 
-No public/stable version is supported yet. Treat all packages in this monorepo as private alpha candidates until the compatibility matrix and public-readiness gates are complete.
+No public/stable version is supported yet. Treat all packages in this monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.

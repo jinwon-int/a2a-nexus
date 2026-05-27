@@ -4,7 +4,7 @@ This governance note defines who may turn public-readiness evidence into a visib
 
 ## Boundary principles
 
-- **Private by default:** the repository remains private until a separate, explicit operator approval names the visibility/publication action.
+- **Private by default (historical):** the repository was private until operator approval was granted. Public since 2026-05-27. The governance principles for evidence handling, operator approval, and fail-closed checks remain valid for future promotion steps.
 - **Evidence is not approval:** passing tests, clean scanners, merged PRs, or green CI may support review, but none of them authorizes a visibility change.
 - **No bundled live actions:** visibility approval must not bundle deploys, service restarts, production database mutations, live provider sends, terminal-outbox ACKs, edge-secret rotation, secret disclosure, history rewrite, or force-push.
 - **OpenClaw/A2A receipt boundary remains blocking:** do not claim public-readiness is unblocked by provider message ids or send-result evidence. `openclaw/openclaw#78261` is closed/superseded; A2A Plane must prove terminal evidence, replay safety, scanner readiness, and explicit operator approval instead.
@@ -13,7 +13,7 @@ This governance note defines who may turn public-readiness evidence into a visib
 
 | Gate | Owner | GO condition | NO-GO / Block condition |
 | --- | --- | --- | --- |
-| Public/private boundary | Broker of record (`gwakga`) prepares evidence; operator decides | Repository remains private through review, and proposed public materials contain no private context | Any private endpoint, provider ID, host-specific path, raw session dump, or OpenClaw runtime/bootstrap file would enter branch/artifact/evidence |
+| Public/private boundary | Broker of record (`gwakga`) prepares evidence; operator decides | Public; materials contain no private context. Historical private-readiness evidence is archived. | Any private endpoint, provider ID, host-specific path, raw session dump, or OpenClaw runtime/bootstrap file would enter branch/artifact/evidence |
 | Terminal evidence | Lane owner links redacted terminal evidence | Candidate flow has requester/operator-visible terminal receipt evidence; provider message IDs or accepted-send results are labeled non-terminal | Terminal evidence is missing, stale, ambiguous, or replaced by provider send success/IDs |
 | Replay safety | Lane owner links redacted replay/canary proof | Duplicate sends/retries cannot mint a false terminal ACK, and replay controls are described without secrets/provider IDs | Replay-safety proof is absent, stale, disputed, or exposes sensitive identifiers |
 | Scanner output | Lane owner links redacted scanner output | Supported external scanner evidence is clean or explicitly dispositioned, and local readiness scans pass | External scanner unavailable, stale, or replaced by local-only checks |

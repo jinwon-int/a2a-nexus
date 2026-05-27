@@ -1,6 +1,6 @@
 # Release Gate
 
-The private monorepo release gate is intentionally local and fail-closed. It does not deploy, restart broker/worker services, mutate production data, send live provider messages, or ACK terminal outbox records.
+The monorepo release gate is intentionally local and fail-closed. It does not deploy, restart broker/worker services, mutate production data, send live provider messages, or ACK terminal outbox records.
 
 ## CI install path
 
