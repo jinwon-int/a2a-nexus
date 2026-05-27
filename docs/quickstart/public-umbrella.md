@@ -2,7 +2,7 @@
 
 Use `a2a-plane` as the public start-here repository for A2A. It explains the repo map, safety boundaries, local docs path, and issue routing across the split implementation repos.
 
-The split layout is intentional pending [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473). Do not treat the umbrella docs as a monorepo cutover decision. Until #473 changes the topology, the current public source repositories remain canonical for their own implementation boundaries.
+The split layout is intentional per the [topology decision record](../topology-decision-record.md). Do not treat the umbrella docs as a monorepo cutover decision. Until an operator-initiated re-entry triggers consolidation, the current public source repositories remain canonical for their own implementation boundaries.
 
 ## Repository Map
 
@@ -34,11 +34,11 @@ When a change needs multiple repos, keep the coordinating issue in `a2a-plane` a
 
 ## Current Umbrella Trackers
 
-- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) - decision tracker for split repos vs monorepo vs umbrella topology.
-- [a2a-plane#477](https://github.com/jinwon-int/a2a-plane/issues/477) - public repo map and quickstart umbrella docs.
-- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) - public-source security, secret-history, license, and provenance scan.
-- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) - public release, version, and provenance checklist.
-- [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) - local public demo and quickstart scenario across broker, plugin, and runner.
+- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — topology decision tracker. Decision recorded in [`docs/topology-decision-record.md`](../topology-decision-record.md).
+- [a2a-plane#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and quickstart umbrella docs. 🟢 Merged via #484.
+- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan.
+- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — public release, version, and provenance checklist.
+- [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario across broker, plugin, and runner.
 
 ## Boundaries
 

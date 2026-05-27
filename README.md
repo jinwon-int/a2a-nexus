@@ -4,7 +4,7 @@
 
 A2A Plane is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
 
-The current public source layout remains split across four repositories while [#473](https://github.com/jinwon-int/a2a-plane/issues/473) decides whether A2A should stay split, consolidate into a monorepo, or keep split implementation repos behind a stronger public umbrella. Until that decision changes, each implementation repository remains canonical for its own runtime/package boundary.
+The current public source layout remains split across four repositories. Per the [topology decision record](docs/topology-decision-record.md), the recommendation is to hold full monorepo consolidation and keep split implementation repos with `a2a-plane` as the stronger public umbrella. Until an operator-initiated re-entry triggers consolidation, each implementation repository remains canonical for its own runtime/package boundary.
 
 Start here:
 
@@ -35,7 +35,7 @@ This repository is the public A2A Plane umbrella and coordination workspace for 
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration | OpenClaw Gateway adapter for request/status/cancel, diagnostics, event/wake bridge |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker source | Containerized repository patch execution, PR/Done/Block evidence, artifact capture |
 
-The package paths below mirror those implementation areas in this checkout for integrated validation and docs, but the split repos above remain the public implementation boundaries pending [#473](https://github.com/jinwon-int/a2a-plane/issues/473).
+The package paths below mirror those implementation areas in this checkout for integrated validation and docs, but the split repos above remain the public implementation boundaries per the [topology decision record](docs/topology-decision-record.md).
 
 ## Package Map
 
@@ -76,11 +76,11 @@ Open project-level or ambiguous issues in `a2a-plane` first. Move or mirror impl
 
 Current public umbrella tracker:
 
-- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) - decide split repo vs monorepo/umbrella topology.
-- [#477](https://github.com/jinwon-int/a2a-plane/issues/477) - public repo map and umbrella docs.
-- [#478](https://github.com/jinwon-int/a2a-plane/issues/478) - public-source security, secret-history, license, and provenance scan.
-- [#479](https://github.com/jinwon-int/a2a-plane/issues/479) - release, version, and provenance checklist.
-- [#480](https://github.com/jinwon-int/a2a-plane/issues/480) - local public demo and quickstart scenario.
+- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — topology decision tracker. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
+- [#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and umbrella docs. 🟢 Merged via #484.
+- [#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan.
+- [#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist.
+- [#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario.
 
 ## Five-minute local quickstart
 
@@ -141,7 +141,7 @@ Keep production connection details in private operator configuration, not in rep
 
 Default import mode is **sanitized/squash import**, not full private history preservation.
 
-The split implementation repositories remain canonical for their own boundaries pending [#473](https://github.com/jinwon-int/a2a-plane/issues/473):
+The split implementation repositories remain canonical for their own boundaries per the [topology decision record](docs/topology-decision-record.md):
 
 - `jinwon-int/a2a-broker`
 - `jinwon-int/openclaw-plugin-a2a`

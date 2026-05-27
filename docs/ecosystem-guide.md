@@ -74,12 +74,11 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 
 > [!NOTE]
 > 현재 4개 저장소 체제와 통합 workspace의 사용자 경험을 계속 정리 중입니다.
-> 사용자 경험 개선을 위해 **모노레포 통합**을 진행 중입니다.
+> The current topology decision ([#473](https://github.com/jinwon-int/a2a-plane/issues/473)) recommends **holding full monorepo consolidation** and keeping split implementation repos with `a2a-plane` as the stronger public umbrella. See the [topology decision record](topology-decision-record.md) for the full recommendation, reasoning, and re-entry criteria.
 >
-> *Cutover proof status*: `🟢 9/12 acceptance gates passed` — see the [monorepo architecture & cutover proof](monorepo-migration-checklist.md) for full acceptance gates, versioning strategy, rollback plan, and migration checklist.
+> The [monorepo architecture & cutover proof](monorepo-migration-checklist.md) is preserved as a historical reference — it will be revived if a future operator-initiated re-entry activates full consolidation.
 >
-> 상세 체크리스트: [Monorepo Architecture & Cutover Proof](monorepo-migration-checklist.md)
-> 추적 이슈: [a2a-plane#240](https://github.com/jinwon-int/a2a-plane/issues/240) · [#337](https://github.com/jinwon-int/a2a-plane/issues/337)
+> 추적 이슈: [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) · [#240](https://github.com/jinwon-int/a2a-plane/issues/240) · [#337](https://github.com/jinwon-int/a2a-plane/issues/337)
 
 ## 라이선스
 
