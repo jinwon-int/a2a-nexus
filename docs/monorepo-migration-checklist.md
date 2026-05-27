@@ -1,5 +1,9 @@
-# Monorepo Architecture and Cutover Proof
+# Monorepo Architecture and Cutover Proof (Historical Reference)
 
+> **Status:** 🟢 Preserved as historical reference. The current topology decision ([#473](https://github.com/jinwon-int/a2a-plane/issues/473)) recommends holding full monorepo consolidation for now — see [`topology-decision-record.md`](topology-decision-record.md) for the active recommendation and re-entry criteria.
+>
+> This document remains the canonical migration checklist if a future operator-initiated re-entry activates full monorepo consolidation. Until then, the split repos with `a2a-plane` as the public umbrella are the recommended topology.
+>
 > **목적**: A2A 4개 저장소(`a2a-plane`, `a2a-broker`, `a2a-docker-runner`, `openclaw-plugin-a2a`)를 단일 모노레포로 통합할 때의 경계, CI, 마이그레이션, 호환성 리스크를 단기/중기/장기로 나눠 검토합니다.
 >
 > **문서 위치 판단**: `docs/ecosystem-guide.md`는 저장소 역할과 사용자 관점의 진입점을 설명하는 짧은 개요로 유지하고, 통합 검토 체크리스트는 이 별도 문서에 둡니다. 체크리스트는 반복적으로 갱신될 운영/릴리스 검토 항목이므로 개요 문서에 넣으면 길어지고 목적이 흐려집니다.
