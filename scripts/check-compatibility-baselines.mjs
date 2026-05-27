@@ -18,6 +18,23 @@ for (const [component, pattern] of requiredRows) {
   }
 }
 
+const requiredSplitRepoRows = new Map([
+  ['a2a-plane', /^\| \[`a2a-plane`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
+  ['a2a-broker', /^\| \[`a2a-broker`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
+  ['openclaw-plugin-a2a', /^\| \[`openclaw-plugin-a2a`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
+  ['a2a-docker-runner', /^\| \[`a2a-docker-runner`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
+]);
+
+for (const [repo, pattern] of requiredSplitRepoRows) {
+  if (!pattern.test(text)) {
+    findings.push(`${repo}: missing exact split-repo baseline and source-public marker`);
+  }
+}
+
+if (!/source-public-20260511` markers are source\s+review markers only/.test(text)) {
+  findings.push('source-public marker rationale is missing');
+}
+
 const unsupported = [
   /\bpending\b/i,
   /\btbd\b/i,
