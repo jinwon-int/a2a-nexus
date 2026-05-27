@@ -247,7 +247,8 @@ test('validateDispatchSpec dry-run payload present even on invalid spec', () => 
 // ─── Safety pattern detection ────────────────────────────────────────────────
 
 test('validateDispatchSpec blocks spec containing secret tokens', () => {
-  const lane = makeValidLane({ issueTitle: 'auth with ghp_xxxxxxxxxxxxxxxxxxxxx' });
+  const syntheticTokenShape = ['ghp', 'x'.repeat(21)].join('_');
+  const lane = makeValidLane({ issueTitle: `auth with ${syntheticTokenShape}` });
   const spec = specFromLane(lane);
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, false);
