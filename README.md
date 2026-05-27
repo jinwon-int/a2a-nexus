@@ -2,11 +2,17 @@
 
 [![ci](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml)
 
-A2A Plane is the independent project name for this broker/worker task handoff plane. This private release candidate contains the broker, Docker runner, OpenClaw reference plugin, shared contracts, and public-safe examples used to evaluate A2A Plane from a fresh checkout.
+A2A Plane is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
 
-If you are trying to understand how the historical 4-repository A2A structure maps to this checkout, start with the [A2A Ecosystem Guide](docs/ecosystem-guide.md).
+The current public source layout remains split across four repositories while [#473](https://github.com/jinwon-int/a2a-plane/issues/473) decides whether A2A should stay split, consolidate into a monorepo, or keep split implementation repos behind a stronger public umbrella. Until that decision changes, each implementation repository remains canonical for its own runtime/package boundary.
 
-> **Status:** private/public-readiness candidate. Do not make this repository public until every gate in [`docs/public-readiness.md`](docs/public-readiness.md) is closed and an operator explicitly approves the visibility change.
+Start here:
+
+- [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
+- [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
+- [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
+
+> **Status:** public source entrypoint, not a production deployment or release authorization. Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, and provider/Telegram sends remain separate approval-gated actions.
 
 ## What A2A Plane does
 
@@ -18,9 +24,20 @@ A2A Plane lets an operator-facing integration hand a task to a broker, route it 
 - Workers execute assigned tasks and report evidence back through the broker.
 - The Docker runner provides isolated GitHub patch execution for repository work.
 
-This repository is the A2A Plane consolidation workspace for those components. It is not a production deployment target and it is not public-ready yet.
+This repository is the public A2A Plane umbrella and coordination workspace for those components. It is not a production deployment target.
 
-## Component map
+## Repository Map
+
+| Repository | Public role | Canonical implementation boundary |
+| --- | --- | --- |
+| [`a2a-plane`](https://github.com/jinwon-int/a2a-plane) | Start-here umbrella, cross-repo docs, coordination issues, contracts, examples, readiness and release gates | Project-level docs, contracts, compatibility/readiness policy, cross-repo issue routing |
+| [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service source | Task lifecycle API, worker registry, status/cancel semantics, terminal evidence collection |
+| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration | OpenClaw Gateway adapter for request/status/cancel, diagnostics, event/wake bridge |
+| [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker source | Containerized repository patch execution, PR/Done/Block evidence, artifact capture |
+
+The package paths below mirror those implementation areas in this checkout for integrated validation and docs, but the split repos above remain the public implementation boundaries pending [#473](https://github.com/jinwon-int/a2a-plane/issues/473).
+
+## Package Map
 
 ```text
 packages/broker/                 # A2A Plane broker HTTP/JSON-RPC APIs, worker registry, task lifecycle
@@ -35,7 +52,7 @@ docs/                            # public-readiness gates, quickstart, release n
 
 ## Alpha and safety boundary
 
-This A2A Plane monorepo is an alpha private candidate. Treat every example as local-only unless a document says otherwise.
+Treat every example as local-only unless a document says otherwise.
 
 **NO-GO without explicit operator approval:**
 
@@ -48,10 +65,28 @@ This A2A Plane monorepo is an alpha private candidate. Treat every example as lo
 
 Use redacted evidence in issues, pull requests, logs, and artifacts.
 
+## Issue Routing
+
+Open project-level or ambiguous issues in `a2a-plane` first. Move or mirror implementation-specific follow-up to the owning repo when the boundary is clear:
+
+- Broker API, worker registry, task state, evidence storage, Agent Card/profile, and broker CI belong in `a2a-broker`.
+- OpenClaw adapter configuration, diagnostics, Gateway plugin behavior, and request/status/cancel mapping belong in `openclaw-plugin-a2a`.
+- Container worker execution, repository patch workflow, artifact capture, and PR/Done/Block worker evidence belong in `a2a-docker-runner`.
+- Cross-repo compatibility, public docs, release/provenance gates, security/readiness policy, and topology decisions belong in `a2a-plane`.
+
+Current public umbrella tracker:
+
+- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) - decide split repo vs monorepo/umbrella topology.
+- [#477](https://github.com/jinwon-int/a2a-plane/issues/477) - public repo map and umbrella docs.
+- [#478](https://github.com/jinwon-int/a2a-plane/issues/478) - public-source security, secret-history, license, and provenance scan.
+- [#479](https://github.com/jinwon-int/a2a-plane/issues/479) - release, version, and provenance checklist.
+- [#480](https://github.com/jinwon-int/a2a-plane/issues/480) - local public demo and quickstart scenario.
+
 ## Five-minute local quickstart
 
 Start with the local-only quickstart:
 
+- [`docs/quickstart/public-umbrella.md`](docs/quickstart/public-umbrella.md)
 - [`docs/quickstart.md`](docs/quickstart.md)
 
 The quickstart is designed as the external-reader path for a disposable local A2A Plane broker and dummy/echo worker. If your checkout does not yet include the runnable broker or worker scripts described there, treat that as a documented blocker rather than substituting production services.
@@ -106,7 +141,7 @@ Keep production connection details in private operator configuration, not in rep
 
 Default import mode is **sanitized/squash import**, not full private history preservation.
 
-Existing source repositories remain private rollback/source-of-truth references until the A2A Plane candidate is validated:
+The split implementation repositories remain canonical for their own boundaries pending [#473](https://github.com/jinwon-int/a2a-plane/issues/473):
 
 - `jinwon-int/a2a-broker`
 - `jinwon-int/openclaw-plugin-a2a`
