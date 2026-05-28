@@ -1,0 +1,54 @@
+{
+  "schema": "a2a.splitRepoLocalDemo.evidence.v1",
+  "mode": "no-live",
+  "description": "Deterministic fixture for the split-repo local demo quickstart (a2a-plane#480). Validates that the three-package local story produces expected structural evidence without live brokers, providers, or deployments.",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/473",
+  "trackingIssue": "https://github.com/jinwon-int/a2a-plane/issues/480",
+  "completedIssues": {
+    "brokerAgentCardProfile": "https://github.com/jinwon-int/a2a-broker/issues/951",
+    "pluginDiagnosticsVisibility": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454",
+    "dockerRunnerDryRunEvidence": "https://github.com/jinwon-int/a2a-docker-runner/issues/343"
+  },
+  "broker": {
+    "agentCardUrl": "http://127.0.0.1:8787/.well-known/agent-card.json",
+    "healthUrl": "http://127.0.0.1:8787/health",
+    "workersCapacityUrl": "http://127.0.0.1:8787/workers/capacity",
+    "prod": false,
+    "baseUrl": "http://127.0.0.1:8787"
+  },
+  "plugin": {
+    "configSchemaUrl": "packages/openclaw-plugin-a2a/openclaw.plugin.json",
+    "diagnostics": {
+      "expectedCapabilities": ["baseUrl", "edgeSecret", "requester", "operatorEvents", "wakeOnTask"],
+      "expectedDiagnosticsKeys": []
+    },
+    "prod": false
+  },
+  "dockerRunner": {
+    "dryRunFlag": "--dry-run",
+    "expectedEvidence": {
+      "schema": "a2a.runner.dryRunState.v1",
+      "requiredArtifacts": ["task.json", "run.json", "manifest.json"],
+      "statusOptions": ["done", "failed", "budget_limited"]
+    },
+    "taskFixtures": [
+      "packages/docker-runner/examples/task.canonical.json",
+      "packages/docker-runner/examples/runner-terminal-evidence-fixture.json"
+    ],
+    "prod": false
+  },
+  "expectedTerminalEvidence": ["Done", "Block"],
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "liveProviderSend": false,
+    "dbMutation": false,
+    "terminalOutboxAck": false,
+    "secretExposure": false,
+    "releasePublish": false,
+    "historyRewrite": false,
+    "forcePush": false
+  },
+  "replaySafe": true,
+  "noLive": true
+}

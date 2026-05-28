@@ -13,6 +13,7 @@ const steps = [
   ['external-secrets', 'npm', ['run', 'scan:external-secrets']],
   ['compatibility-baselines', 'node', ['scripts/check-compatibility-baselines.mjs']],
   ['repo-protection-baseline', 'node', ['scripts/check-repo-protection-baseline.mjs']],
+  ['split-repo-local-demo', 'npm', ['run', 'check:split-repo-local-demo']],
 ];
 
 for (const [name, command, args] of steps) {

@@ -36,6 +36,7 @@ External repos (mapped into this monorepo for validation):
 | Single-node quickstart | [`docs/quickstart.md`](../quickstart.md) | Node.js 22+, npm, local checkout | Echo task reaches `succeeded` with Done evidence |
 | Two-broker handoff | [`docs/demo/two-broker-demo.md`](two-broker-demo.md) | Docker, Docker Compose, local checkout | Broker registers peer, cross-broker task reaches terminal state |
 | External harness | [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) | Node.js 22+, npm | Conformance checks pass for non-OpenClaw harness |
+| Split-repo local demo | [`docs/demo/split-repo-local-demo.md`](split-repo-local-demo.md) | Node.js 22+, npm, local checkout | Broker AgentCard, plugin diagnostics, runner dry-run evidence |
 | Canonical demo | [`docs/canonical-demo.md`](../canonical-demo.md) | (Documentation-only) | Sequence diagram and evidence rules |
 
 ## Secret-handling rules
