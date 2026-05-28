@@ -69,6 +69,7 @@
     "docs/public-stable-readiness.md",
     "docs/remote-handoff-visibility-policy.md",
     "docs/operator-terminal-notification-receipts.md",
+    "docs/operator-event-bridge-safety-layers.md",
     "docs/termux-mobile-smoke-test.md",
     "docs/termux-troubleshooting.md"
   ],

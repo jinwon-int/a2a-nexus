@@ -346,11 +346,18 @@ type InternalState = {
   terminalReceipts: Map<string, A2AOperatorTerminalReceiptProjection>;
   openAlerts: Map<string, A2AOperatorEventBridgeAlert>;
   resolvedAlerts: Map<string, A2AOperatorEventBridgeAlert>;
-  notifiedDedupeKeys: Set<string>;
-  pendingNotificationDedupeKeys: Set<string>;
-  notifiedTaskKeys: Set<string>;
-  pendingNotificationTaskKeys: Set<string>;
+  /** Merged Set: raw dedupeKey values and task:-prefixed keys. Replaces former notifiedDedupeKeys + notifiedTaskKeys pair — see docs/operator-event-bridge-safety-layers.md */
+  notifiedKeys: Set<string>;
+  /** Merged Set: in-flight deduplication. Replaces former pendingNotificationDedupeKeys + pendingNotificationTaskKeys pair. */
+  pendingNotificationKeys: Set<string>;
   terminalOutboxRetryAfterByDedupeKey: Map<string, number>;
+  /**
+   * Production-essential one-shot notification fuse (safety layer #3).
+   * Once tripped by a non-acked terminal outbox notification, all subsequent
+   * outbox notifications are blocked until the operator provides a manual
+   * receipt. Prevents runaway notification storms. See
+   * docs/operator-event-bridge-safety-layers.md.
+   */
   terminalOutboxNotificationFuseTripped: boolean;
   terminalOutboxStartedAt: number;
 };
@@ -373,10 +380,8 @@ export function createA2AOperatorEventBridge(
     terminalReceipts: new Map(),
     openAlerts: new Map(),
     resolvedAlerts: new Map(),
-    notifiedDedupeKeys: new Set(),
-    pendingNotificationDedupeKeys: new Set(),
-    notifiedTaskKeys: new Set(),
-    pendingNotificationTaskKeys: new Set(),
+    notifiedKeys: new Set(),
+    pendingNotificationKeys: new Set(),
     terminalOutboxRetryAfterByDedupeKey: new Map(),
     terminalOutboxNotificationFuseTripped: false,
     terminalOutboxStartedAt: now(),
@@ -464,6 +469,15 @@ export function createA2AOperatorEventBridge(
   }
 
 
+  /**
+   * Safety layer activation for live-stream terminal events:
+   *   - Receipt gate (layer #4): operator-terminal-notifier enforces
+   *     receipt-projection presence before building an envelope.
+   *   - Historical replay suppression (layer #6): suppresses events
+   *     created before bridge start.
+   *   - Dedupe (layer #5): single notifiedKeys Set prevents duplicate
+   *     notifications for the same task or dedupe key.
+   */
   async function maybeNotifyOperator(event: A2ABrokerOperatorSseEvent): Promise<A2AOperatorNotificationAckDecision> {
     if (!options.notifyOperator) {
       return { ackTerminalEvent: true, reason: "no operator notification configured" };
@@ -495,20 +509,21 @@ export function createA2AOperatorEventBridge(
       };
     }
     const taskNotificationKey = buildTaskNotificationKey(envelope);
-    if (state.notifiedDedupeKeys.has(envelope.dedupeKey) || state.notifiedTaskKeys.has(taskNotificationKey)) {
-      state.notifiedDedupeKeys.add(envelope.dedupeKey);
+    if (state.notifiedKeys.has(envelope.dedupeKey) || state.notifiedKeys.has(taskNotificationKey)) {
+      state.notifiedKeys.add(envelope.dedupeKey);
+      state.notifiedKeys.add(taskNotificationKey);
       return {
         ackTerminalEvent: true,
         confirmationSource: "current_session_visible",
         reason: "duplicate terminal notification suppressed for already-notified task",
       };
     }
-    if (state.pendingNotificationDedupeKeys.has(envelope.dedupeKey) || state.pendingNotificationTaskKeys.has(taskNotificationKey)) {
+    if (state.pendingNotificationKeys.has(envelope.dedupeKey) || state.pendingNotificationKeys.has(taskNotificationKey)) {
       return { ackTerminalEvent: false, reason: "terminal notification already pending or confirmed" };
     }
 
-    state.pendingNotificationDedupeKeys.add(envelope.dedupeKey);
-    state.pendingNotificationTaskKeys.add(taskNotificationKey);
+    state.pendingNotificationKeys.add(envelope.dedupeKey);
+    state.pendingNotificationKeys.add(taskNotificationKey);
     try {
       const decision = await Promise.resolve(options.notifyOperator(envelope));
       const ackDecision = normalizeNotificationAckDecision(decision, options.dryRunNotifications === true);
@@ -519,22 +534,31 @@ export function createA2AOperatorEventBridge(
         now,
       });
       if (ackDecision.ackTerminalEvent) {
-        state.notifiedDedupeKeys.add(envelope.dedupeKey);
-        state.notifiedTaskKeys.add(taskNotificationKey);
+        state.notifiedKeys.add(envelope.dedupeKey);
+        state.notifiedKeys.add(taskNotificationKey);
       }
-      state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationTaskKeys.delete(taskNotificationKey);
+      state.pendingNotificationKeys.delete(envelope.dedupeKey);
+      state.pendingNotificationKeys.delete(taskNotificationKey);
       return ackDecision;
     } catch {
       // Operator delivery is owned by the OpenClaw plugin notifier.
       // A delivery failure must not break broker processing, but it also must
       // not acknowledge terminal outbox/cursor state without a visible receipt.
-      state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationTaskKeys.delete(taskNotificationKey);
+      state.pendingNotificationKeys.delete(envelope.dedupeKey);
+      state.pendingNotificationKeys.delete(taskNotificationKey);
       return { ackTerminalEvent: false, reason: "operator notification failed before receipt confirmation" };
     }
   }
 
+  /**
+   * Safety layer activation for terminal-outbox backlog processing:
+   *   - One-shot fuse (layer #3): terminalOutboxNotificationFuseTripped
+   *     blocks all downstream sends after a single non-acked notification.
+   *   - Dedupe (layer #5): merged notifiedKeys Set (raw dedupeKey + task:-prefixed).
+   *   - Historical replay suppression (layer #6): outbox events created before
+   *     bridge start are skipped unless explicitly allowed.
+   *   - Cursor gating (layer #7): afterId/cursor advances only on acked events.
+   */
   async function processTerminalOutboxOnce(reconcileUnacked: boolean): Promise<void> {
     if (!options.notifyOperator || !options.broker.listTerminalOutbox || !options.broker.ackTerminalOutbox) return;
     const afterId = state.terminalOutboxCursor;
@@ -596,7 +620,7 @@ export function createA2AOperatorEventBridge(
         sawUnconfirmedReplayableEvent = true;
         break;
       }
-      if (state.notifiedDedupeKeys.has(envelope.dedupeKey) || state.notifiedTaskKeys.has(taskNotificationKey)) {
+      if (state.notifiedKeys.has(envelope.dedupeKey) || state.notifiedKeys.has(taskNotificationKey)) {
         const acknowledgedAt = new Date(now()).toISOString();
         await options.broker.ackTerminalOutbox({
           id: event.id,
@@ -611,11 +635,12 @@ export function createA2AOperatorEventBridge(
           acknowledgedAt,
           now,
         });
-        state.notifiedDedupeKeys.add(envelope.dedupeKey);
+        state.notifiedKeys.add(envelope.dedupeKey);
+        state.notifiedKeys.add(taskNotificationKey);
         nextContiguousCursor = event.id;
         continue;
       }
-      if (state.pendingNotificationDedupeKeys.has(envelope.dedupeKey) || state.pendingNotificationTaskKeys.has(taskNotificationKey)) {
+      if (state.pendingNotificationKeys.has(envelope.dedupeKey) || state.pendingNotificationKeys.has(taskNotificationKey)) {
         firstPendingId = event.id;
         sawUnconfirmedReplayableEvent = true;
         break;
@@ -626,8 +651,8 @@ export function createA2AOperatorEventBridge(
         sawUnconfirmedReplayableEvent = true;
         break;
       }
-      state.pendingNotificationDedupeKeys.add(envelope.dedupeKey);
-      state.pendingNotificationTaskKeys.add(taskNotificationKey);
+      state.pendingNotificationKeys.add(envelope.dedupeKey);
+      state.pendingNotificationKeys.add(taskNotificationKey);
       const decision = normalizeNotificationAckDecision(await Promise.resolve(options.notifyOperator(envelope)), options.dryRunNotifications === true);
       recordTerminalOutboxNotificationAttempt(state, {
         source: "outbox-backlog",
@@ -635,8 +660,8 @@ export function createA2AOperatorEventBridge(
         decision,
         now,
       });
-      state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationTaskKeys.delete(taskNotificationKey);
+      state.pendingNotificationKeys.delete(envelope.dedupeKey);
+      state.pendingNotificationKeys.delete(taskNotificationKey);
       if (!decision.ackTerminalEvent) {
         state.terminalOutboxNotificationFuseTripped = true;
         state.terminalOutboxRetryAfterByDedupeKey.set(envelope.dedupeKey, now() + DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS);
@@ -666,8 +691,8 @@ export function createA2AOperatorEventBridge(
         receiptId: decision.receiptId,
         now,
       });
-      state.notifiedDedupeKeys.add(envelope.dedupeKey);
-      state.notifiedTaskKeys.add(taskNotificationKey);
+      state.notifiedKeys.add(envelope.dedupeKey);
+      state.notifiedKeys.add(taskNotificationKey);
       state.terminalOutboxRetryAfterByDedupeKey.delete(envelope.dedupeKey);
       nextContiguousCursor = event.id;
     }
@@ -707,7 +732,7 @@ export function createA2AOperatorEventBridge(
   async function runLoop(): Promise<void> {
     while (!stopped && !loopAbort.signal.aborted) {
       const resumeCursor = state.cursor ?? state.requestedCursor;
-      state.pendingNotificationDedupeKeys.clear();
+      state.pendingNotificationKeys.clear();
       state.connection = "connecting";
       state.connectedAt = undefined;
 
