@@ -17,7 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, normalize } from 'node:path';
 
 const repoRoot = process.cwd();
 const enrollmentRunbookPath = 'docs/hermes-native-worker-enrollment-runbook.md';
@@ -96,6 +96,22 @@ test('enrollment runbook references prerequisite documents', () => {
   assert.match(content, /no-live-conformance\.json/);
   assert.match(content, /enrollment-evidence\.json/);
   assert.match(content, /platform-adapter-interface/);
+});
+
+test('enrollment runbook relative links resolve to repo files', () => {
+  const content = readFileSync(join(repoRoot, enrollmentRunbookPath), 'utf8');
+  const sourceDir = dirname(enrollmentRunbookPath);
+  const links = Array.from(content.matchAll(/\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)/g))
+    .map(match => match[1])
+    .filter(href => href.endsWith('.md') || href.endsWith('.json'));
+
+  assert.ok(links.length > 0, 'runbook must contain relative repo links');
+
+  for (const href of links) {
+    assert.ok(!href.startsWith('../..'), `link must not escape above repo root: ${href}`);
+    const resolved = normalize(join(sourceDir, href));
+    assert.ok(existsSync(join(repoRoot, resolved)), `broken runbook link: ${href} -> ${resolved}`);
+  }
 });
 
 test('enrollment runbook documents GO/NO-GO matrix with all required gates', () => {

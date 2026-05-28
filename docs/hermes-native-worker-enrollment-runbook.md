@@ -10,13 +10,13 @@
 > **Broker/finalizer of record:** `seoseo`
 >
 > **Prerequisite documents:**
-> - [Hermes/Android native worker runbook](../hermes-android-native-worker-runbook.md) — loopback-only operation
-> - [Hermes native worker conformance checklist](../hermes-native-worker-conformance-checklist.md) — no-live conformance
-> - [Gongyung Hermes lightweight worker profile spec](../specs/gongyung-hermes-worker-profile/spec.md) — capability boundaries
-> - [Hermes broker-agnostic worker contract spec](../specs/hermes-worker-integration/spec.md) — HTTP contract
-> - [No-live conformance fixture](../../fixtures/native-worker/no-live-conformance.json) — baseline fixture
-> - [Enrollment evidence fixture](../../fixtures/native-worker/enrollment-evidence.json) — enrollment-specific fixture
-> - [Platform adapter interface](../../contracts/a2a/platform-adapter-interface.md) — broker-agnostic contract
+> - [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md) — loopback-only operation
+> - [Hermes native worker conformance checklist](hermes-native-worker-conformance-checklist.md) — no-live conformance
+> - [Gongyung Hermes lightweight worker profile spec](specs/gongyung-hermes-worker-profile/spec.md) — capability boundaries
+> - [Hermes broker-agnostic worker contract spec](specs/hermes-worker-integration/spec.md) — HTTP contract
+> - [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json) — baseline fixture
+> - [Enrollment evidence fixture](../fixtures/native-worker/enrollment-evidence.json) — enrollment-specific fixture
+> - [Platform adapter interface](../contracts/a2a/platform-adapter-interface.md) — broker-agnostic contract
 
 ---
 
@@ -89,7 +89,7 @@ npm run check:gongyung-hermes-worker-profile
 - [ ] Worker identity matches `fixtures/native-worker/no-live-conformance.json` worker definition.
 - [ ] `capabilities` and `rejectedIntents` match the Gongyung profile.
 - [ ] `registration` body matches `fixtures/contract/hermes-worker-registration.json` shape.
-- [ ] Terminal evidence matches expected schema (see [conformance checklist §6](../hermes-native-worker-conformance-checklist.md#6-broker-visible-result-evidence)).
+- [ ] Terminal evidence matches expected schema (see [conformance checklist §6](hermes-native-worker-conformance-checklist.md#6-broker-visible-result-evidence)).
 
 ### 2.3 Pre-enrollment evidence inventory
 
@@ -382,7 +382,7 @@ cat ~/.hermes/a2a/artifacts/hermes-enrollment-readiness-check/evidence.json | py
 
 ## 6. Allowed and Rejected Task Classes
 
-These tables are carried forward from the [no-live conformance checklist](../hermes-native-worker-conformance-checklist.md#4-bounded-task-execution).
+These tables are carried forward from the [no-live conformance checklist](hermes-native-worker-conformance-checklist.md#4-bounded-task-execution).
 Enrollment **does not change** the allowed/rejected task classes. The Gongyung
 profile is fixed; only scope of broker connectivity changes.
 
@@ -720,15 +720,15 @@ After completing enrollment (or rollback), the operator should have:
 
 | Document | Relation |
 |----------|----------|
-| [Hermes/Android native worker runbook](../hermes-android-native-worker-runbook.md) | Source-only operation (pre-enrollment baseline) |
-| [Hermes native worker conformance checklist](../hermes-native-worker-conformance-checklist.md) | No-live conformance validation |
-| [Gongyung Hermes lightweight worker profile spec](../specs/gongyung-hermes-worker-profile/spec.md) | Capability boundaries |
-| [Hermes broker-agnostic worker contract spec](../specs/hermes-worker-integration/spec.md) | HTTP contract |
-| [No-live conformance fixture](../../fixtures/native-worker/no-live-conformance.json) | Baseline fixture |
-| [Enrollment evidence fixture](../../fixtures/native-worker/enrollment-evidence.json) | Enrollment-specific fixture |
-| [Platform adapter interface](../../contracts/a2a/platform-adapter-interface.md) | Broker-agnostic contract |
-| [Parent-round closeout go/nogo matrix](../../contracts/a2a/parent-round-closeout-go-nogo-matrix.md) | Closeout decision framework |
-| [Worker registration contract](../../contracts/a2a/worker-registration.md) | Registration semantics |
+| [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md) | Source-only operation (pre-enrollment baseline) |
+| [Hermes native worker conformance checklist](hermes-native-worker-conformance-checklist.md) | No-live conformance validation |
+| [Gongyung Hermes lightweight worker profile spec](specs/gongyung-hermes-worker-profile/spec.md) | Capability boundaries |
+| [Hermes broker-agnostic worker contract spec](specs/hermes-worker-integration/spec.md) | HTTP contract |
+| [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json) | Baseline fixture |
+| [Enrollment evidence fixture](../fixtures/native-worker/enrollment-evidence.json) | Enrollment-specific fixture |
+| [Platform adapter interface](../contracts/a2a/platform-adapter-interface.md) | Broker-agnostic contract |
+| [Parent-round closeout go/nogo matrix](../contracts/a2a/parent-round-closeout-go-nogo-matrix.md) | Closeout decision framework |
+| [Worker registration contract](../contracts/a2a/worker-registration.md) | Registration semantics |
 
 ---
 
