@@ -18,8 +18,9 @@ The split layout is intentional per the [topology decision record](../topology-d
 1. Read [`README.md`](../../README.md) for the current public source status and safety boundary.
 2. Use this page to decide which repository owns your question or change.
 3. Run the local-only [`five-minute quickstart`](../quickstart.md) when you want a disposable loopback broker plus echo worker path.
-4. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) if you are integrating a non-OpenClaw harness.
-5. Check [`docs/compatibility/README.md`](../compatibility/README.md) and [`docs/release-checklist.md`](../release-checklist.md) before making compatibility or release claims.
+4. Use [`docs/demo/split-repo-local-demo.md`](../demo/split-repo-local-demo.md) when you want to inspect the three-package story (broker AgentCard, plugin diagnostics, runner dry-run evidence).
+5. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) if you are integrating a non-OpenClaw harness.
+6. Check [`docs/compatibility/README.md`](../compatibility/README.md) and [`docs/release-checklist.md`](../release-checklist.md) before making compatibility or release claims.
 
 ## Issue Routing
 
