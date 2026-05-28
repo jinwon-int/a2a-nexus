@@ -2,6 +2,10 @@
 
 A2A Plane is GitHub-public as of 2026-05-27. The project is alpha — feedback and contributions are welcome. The public contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
 
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) v2.1. By participating, you agree to uphold its standards. Report unacceptable behavior to the repository maintainers using the approved private channel for this organization.
+
 ## License
 
 Unless explicitly agreed otherwise, contributions to this repository are submitted under the same license as the repository: MIT.
