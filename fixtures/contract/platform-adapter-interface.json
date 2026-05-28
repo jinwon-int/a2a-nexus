@@ -1,0 +1,264 @@
+{
+  "meta": {
+    "contract": "platform-adapter-interface",
+    "version": "v0",
+    "issue": "https://github.com/jinwon-int/a2a-plane/issues/475",
+    "parent": "https://github.com/jinwon-int/a2a-plane/issues/500",
+    "run": "a2a-team1-roadmap-wave3-bridge-adapter-20260528T123200KST",
+    "updatedAt": "2026-05-28T03:32:00.000Z",
+    "redacted": true
+  },
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "liveProviderSend": false,
+    "terminalOutboxAckMutation": false,
+    "databaseMutation": false,
+    "secretMovement": false,
+    "isApproval": false,
+    "isTerminalAck": false,
+    "isReadReceipt": false,
+    "repoVisibilityChange": false,
+    "historyRewrite": false,
+    "forcePush": false
+  },
+  "identities": {
+    "openclawAdapter": {
+      "id": "a2a-openclaw-adapter",
+      "platform": "openclaw",
+      "displayName": "A2A OpenClaw Plugin Adapter"
+    },
+    "hermesAdapter": {
+      "id": "hermes-agent-reference-worker",
+      "platform": "hermes",
+      "displayName": "Hermes Agent Reference Worker"
+    },
+    "cliAdapter": {
+      "id": "cli-minimal-adapter",
+      "platform": "http-cli",
+      "displayName": "CLI Minimal Adapter"
+    },
+    "pythonAdapter": {
+      "id": "python-a2a-adapter",
+      "platform": "custom",
+      "displayName": "Python A2A Adapter Reference"
+    }
+  },
+  "capabilities": {
+    "openclaw": {
+      "supportedIntents": ["chat", "analyze", "backfill", "propose_patch", "validate_change", "apply_local_change"],
+      "transports": [
+        { "kind": "plugin-sdk", "maxConcurrent": 1 },
+        { "kind": "http-poll", "maxConcurrent": 1 }
+      ],
+      "heartbeatSupported": true,
+      "wakeSupported": true,
+      "checkpointSupported": true,
+      "maxReceiptLevel": 3,
+      "custom": {
+        "supportsDelegate": true,
+        "supportsTerminalBrief": true,
+        "supportsGoalMode": false
+      }
+    },
+    "hermes": {
+      "supportedIntents": ["analyze", "backfill", "validate_change"],
+      "transports": [
+        { "kind": "http-poll", "maxConcurrent": 0 }
+      ],
+      "heartbeatSupported": true,
+      "wakeSupported": false,
+      "checkpointSupported": false,
+      "maxReceiptLevel": 2,
+      "custom": {
+        "runtime": "hermes-agent",
+        "openClawRequired": false,
+        "transport": "http-poll"
+      }
+    },
+    "cli": {
+      "supportedIntents": ["analyze", "backfill"],
+      "transports": [
+        { "kind": "http-poll", "maxConcurrent": 0 }
+      ],
+      "heartbeatSupported": true,
+      "wakeSupported": false,
+      "checkpointSupported": false,
+      "maxReceiptLevel": 1,
+      "custom": {
+        "language": "shell"
+      }
+    }
+  },
+  "taskRequests": {
+    "validMinimal": {
+      "taskId": "task-redacted-example-001",
+      "idempotencyKey": "issue-475:contract:adapter-interface",
+      "intent": "analyze",
+      "input": { "query": "Check adapter coverage" },
+      "brokerUrl": "http://127.0.0.1:8787",
+      "correlationId": "corr-redacted-001",
+      "deadline": "PT30M"
+    },
+    "validFull": {
+      "taskId": "task-redacted-example-002",
+      "idempotencyKey": "issue-475:contract:adapter-interface-v2",
+      "intent": "propose_patch",
+      "input": { "path": "contracts/a2a/", "changeType": "add_contract" },
+      "expectedOutput": { "format": "markdown", "maxSize": "50KB" },
+      "brokerUrl": "http://127.0.0.1:8787",
+      "requester": { "id": "operator-redacted", "kind": "user", "role": "operator" },
+      "correlationId": "corr-redacted-002",
+      "parentRunId": "run-redacted-001",
+      "deadline": "PT60M"
+    }
+  },
+  "evidence": {
+    "startEvidence": {
+      "kind": "start",
+      "taskId": "task-redacted-example-001",
+      "summary": "Starting adapter interface conformance check",
+      "dedupeKey": "issue-475:contract:adapter-interface:start",
+      "timestamp": "2026-05-28T03:32:00.000Z",
+      "redacted": true
+    },
+    "prEvidence": {
+      "kind": "pr",
+      "taskId": "task-redacted-example-001",
+      "summary": "PR: Added adapter interface contract and migration path",
+      "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/REDACTED",
+      "dedupeKey": "issue-475:contract:adapter-interface:pr",
+      "timestamp": "2026-05-28T03:32:00.000Z",
+      "redacted": true
+    },
+    "doneEvidence": {
+      "kind": "done",
+      "taskId": "task-redacted-example-002",
+      "summary": "Done: Adapter interface conformance fixture validated",
+      "doneUrl": "https://github.com/jinwon-int/a2a-plane/issues/475#issuecomment-REDACTED",
+      "dedupeKey": "issue-475:contract:adapter-interface-v2:done",
+      "timestamp": "2026-05-28T03:32:00.000Z",
+      "redacted": true
+    },
+    "blockEvidence": {
+      "kind": "block",
+      "taskId": "task-redacted-example-003",
+      "summary": "Block: Adapter could not reach broker endpoint; no production impact",
+      "blockUrl": "https://github.com/jinwon-int/a2a-plane/issues/REDACTED#issuecomment-REDACTED",
+      "dedupeKey": "issue-REDACTED:worker:block",
+      "timestamp": "2026-05-28T03:32:00.000Z",
+      "redacted": true
+    }
+  },
+  "heartbeats": {
+    "valid": {
+      "adapterId": { "id": "a2a-openclaw-adapter", "platform": "openclaw", "displayName": "A2A OpenClaw Plugin Adapter" },
+      "activeTasks": [
+        { "taskId": "task-redacted-example-001", "status": "running" }
+      ],
+      "health": "ok",
+      "timestamp": "2026-05-28T03:32:00.000Z"
+    },
+    "degraded": {
+      "adapterId": { "id": "cli-minimal-adapter", "platform": "http-cli", "displayName": "CLI Minimal Adapter" },
+      "activeTasks": [],
+      "health": "degraded",
+      "timestamp": "2026-05-28T03:32:00.000Z"
+    }
+  },
+  "transportFlows": {
+    "httpPoll": {
+      "description": "HTTP-poll transport: poll → claim → execute → submitEvidence",
+      "steps": [
+        { "action": "pollTasks", "filter": { "status": "pending", "workerId": "hermes-agent-reference-worker" }, "expectedCount": 1 },
+        { "action": "claimTask", "taskId": "task-redacted-example-001", "expectedStatus": "claimed" },
+        { "action": "reportStatus", "taskId": "task-redacted-example-001", "status": "running" },
+        { "action": "submitEvidence", "evidence": "doneEvidence", "expectedAccepted": true },
+        { "action": "reportStatus", "taskId": "task-redacted-example-001", "status": "succeeded" }
+      ]
+    },
+    "ssePush": {
+      "description": "SSE push transport: connect → receive event → claim → execute",
+      "steps": [
+        { "action": "sseConnect", "workerId": "a2a-openclaw-adapter", "expectedStatus": "connected" },
+        { "action": "receiveEvent", "event": "task.created", "taskId": "task-redacted-example-002" },
+        { "action": "claimTask", "taskId": "task-redacted-example-002", "expectedStatus": "claimed" },
+        { "action": "executeTask", "expectedEvidenceKind": "done" }
+      ]
+    }
+  },
+  "receiptLevelMappings": [
+    { "operation": "claimTask accepted by broker", "level": 0, "ackSafe": false },
+    { "operation": "submitEvidence accepted by broker", "level": 1, "ackSafe": false },
+    { "operation": "Broker confirms evidence in GitHub comment", "level": 2, "ackSafe": false },
+    { "operation": "Operator explicitly confirms receipt", "level": 3, "ackSafe": false },
+    { "operation": "Operator provides ACK-safe receipt proof", "level": 4, "ackSafe": true }
+  ],
+  "maxReceiptLevels": {
+    "openclaw": 3,
+    "hermes": 2,
+    "cli": 1
+  },
+  "conformanceGroups": [
+    {
+      "id": "PAI-01",
+      "name": "adapter-identity-schema",
+      "description": "All adapter identity schemas are valid and unique",
+      "expectedCount": 4
+    },
+    {
+      "id": "PAI-02",
+      "name": "adapter-capabilities-schema",
+      "description": "All capability declarations are valid (heartbeatSupported, transports, maxReceiptLevel)",
+      "expectedCount": 3
+    },
+    {
+      "id": "PAI-03",
+      "name": "task-request-envelope",
+      "description": "Task request envelopes parse correctly with required and optional fields",
+      "expectedCount": 2
+    },
+    {
+      "id": "PAI-04",
+      "name": "evidence-shape-and-redaction",
+      "description": "All evidence payloads are valid and have redacted=true",
+      "expectedCount": 4
+    },
+    {
+      "id": "PAI-05",
+      "name": "receipt-level-mapping",
+      "description": "Receipt level mapping matches the frozen four-level model; claimTask is level 0, submitEvidence is level 1",
+      "expectedCount": 5
+    },
+    {
+      "id": "PAI-06",
+      "name": "http-poll-transport-flow",
+      "description": "HTTP-poll transport flow: poll → claim → run → evidence",
+      "expectedCount": 5
+    },
+    {
+      "id": "PAI-07",
+      "name": "sse-push-transport-flow",
+      "description": "SSE push transport flow: connect → receive → claim → execute",
+      "expectedCount": 4
+    },
+    {
+      "id": "PAI-08",
+      "name": "heartbeat-payload-shape",
+      "description": "Heartbeat payloads have valid adapterId, activeTasks, and health fields",
+      "expectedCount": 2
+    },
+    {
+      "id": "PAI-09",
+      "name": "adapter-identifies-max-receipt-level",
+      "description": "Each adapter capability declares maxReceiptLevel consistent with receipt level mapping",
+      "expectedCount": 3
+    },
+    {
+      "id": "PAI-10",
+      "name": "safety-gate-flags",
+      "description": "All safety gate flags are set to safe values (no deploy, live send, DB mutation, etc.)",
+      "expectedCount": 11
+    }
+  ]
+}
