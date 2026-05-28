@@ -1,0 +1,201 @@
+{
+  "schema": "a2a.hermesNativeWorker.enrollmentEvidence.v1",
+  "mode": "enrollment-dry-run",
+  "fixtureId": "a2a-plane.fixture.hermes-native-worker-enrollment-evidence.v1",
+  "description": "Hermes/Android native A2A worker enrollment evidence fixture for Gongyung/Daegyo-style Termux nodes. Documents the pre-enrollment state snapshot, GO/NO-GO decision packet, post-enrollment evidence, and rollback evidence schemas. All values are redacted, loopback-only example fixtures — no production broker URL, secret, or device identifier is present.",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/504",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/503",
+  "priorArt": [
+    "https://github.com/jinwon-int/a2a-plane/issues/393",
+    "https://github.com/jinwon-int/a2a-plane/issues/464",
+    "https://github.com/jinwon-int/a2a-plane/issues/465",
+    "https://github.com/jinwon-int/a2a-plane/issues/504"
+  ],
+  "profiles": [
+    "docs/specs/gongyung-hermes-worker-profile/spec.md",
+    "docs/hermes-native-worker-conformance-checklist.md"
+  ],
+  "runbook": "docs/hermes-native-worker-enrollment-runbook.md",
+  "referenceWorker": "examples/workers/hermes-reference-worker/",
+  "priorFixture": "fixtures/native-worker/no-live-conformance.json",
+
+  "evidenceSchemas": {
+    "enrollmentPreSnapshot": {
+      "schemaId": "a2a.hermesWorker.enrollmentPreSnapshot.v1",
+      "description": "Pre-enrollment snapshot recorded before any broker URL change. Captures the worker state under loopback/no-live mode.",
+      "requiredFields": [
+        "workerId",
+        "targetBrokerUrl",
+        "enrollmentTimestamp",
+        "preEnrollmentState.loopbackRegistrationExists",
+        "preEnrollmentState.conformanceTestsPassed",
+        "preEnrollmentState.conformanceEvidencePath",
+        "preEnrollmentState.envFileSecure",
+        "preEnrollmentState.operatorApprovalCommentUrl",
+        "redactionStatement"
+      ],
+      "forbiddenFields": [
+        "providerToken",
+        "edgeSecret",
+        "deviceSerial",
+        "hardwareUuid",
+        "rawSessionDump"
+      ]
+    },
+    "enrollmentPostSnapshot": {
+      "schemaId": "a2a.hermesWorker.enrollmentEvidence.v1",
+      "description": "Post-enrollment snapshot recorded after E-step completion. Confirms registration, heartbeat, readiness check task result, and operator approval.",
+      "requiredFields": [
+        "workerId",
+        "brokerUrl",
+        "enrollmentTimestamp",
+        "preEnrollmentSnapshot",
+        "postEnrollmentEvidence.registrationSucceeded",
+        "postEnrollmentEvidence.heartbeatSucceeded",
+        "postEnrollmentEvidence.readinessCheckTaskId",
+        "postEnrollmentEvidence.readinessCheckStatus",
+        "operatorApprovalCommentUrl",
+        "redactionStatement"
+      ],
+      "forbiddenFields": [
+        "providerToken",
+        "edgeSecret",
+        "deviceSerial",
+        "hardwareUuid",
+        "rawSessionDump"
+      ]
+    },
+    "enrollmentGoNoGo": {
+      "schemaId": "a2a.hermesWorker.enrollmentGoNoGo.v1",
+      "description": "GO/NO-GO decision packet for enrollment. Records each gate result, decision, and operator approval reference.",
+      "requiredFields": [
+        "workerId",
+        "targetBrokerUrl",
+        "decisionTimestamp",
+        "decision",
+        "gateResults",
+        "operatorApprovalCommentUrl",
+        "redactionStatement",
+        "safetyConfirmation"
+      ],
+      "validDecisions": ["GO", "NO_GO", "BLOCKED"],
+      "requiredGates": [
+        "G1_noLiveConformance",
+        "G2_workerProfile",
+        "G3_registrationPayload",
+        "G4_evidenceRedaction",
+        "G5_preflightAllPass",
+        "G6_operatorApproval",
+        "G7_envBackup",
+        "G8_rollbackProcedure",
+        "G9_nonLoopbackAuthorized",
+        "G10_enrollmentEvidence"
+      ],
+      "requiredSafetyConfirmationFields": [
+        "noProductionDeploy",
+        "noGatewayRestart",
+        "noBrokerWorkerRestart",
+        "noLiveProviderSend",
+        "noDbMutation",
+        "noTerminalAck",
+        "noCredentialMovement",
+        "noSecretDisclosure"
+      ],
+      "forbiddenFields": [
+        "providerToken",
+        "edgeSecret",
+        "deviceSerial",
+        "hardwareUuid",
+        "rawSessionDump"
+      ]
+    },
+    "rollbackEvidence": {
+      "schemaId": "a2a.hermesWorker.rollbackEvidence.v1",
+      "description": "Rollback evidence recorded when enrollment is reversed. Captures reason, steps completed, and loopback recovery success.",
+      "requiredFields": [
+        "workerId",
+        "rolledBackFromBrokerUrl",
+        "rollbackTimestamp",
+        "rollbackReason",
+        "stepsCompleted",
+        "loopbackRecoverySuccess",
+        "redactionStatement",
+        "safetyConfirmation"
+      ],
+      "forbiddenFields": [
+        "providerToken",
+        "edgeSecret",
+        "deviceSerial",
+        "hardwareUuid",
+        "rawSessionDump"
+      ]
+    }
+  },
+
+  "samplePayloads": {
+    "valid": {
+      "workerId": "gongyung",
+      "targetBrokerUrl": "http://127.0.0.1:18787",
+      "enrollmentTimestamp": "2026-05-28T13:55:00Z",
+      "decision": "GO",
+      "gateResults": {
+        "G1_noLiveConformance": "PASS",
+        "G2_workerProfile": "PASS",
+        "G3_registrationPayload": "PASS",
+        "G4_evidenceRedaction": "PASS",
+        "G5_preflightAllPass": "PASS",
+        "G6_operatorApproval": "PASS",
+        "G7_envBackup": "PASS",
+        "G8_rollbackProcedure": "PASS",
+        "G9_nonLoopbackAuthorized": "PASS",
+        "G10_enrollmentEvidence": "PASS"
+      },
+      "operatorApprovalCommentUrl": "https://github.com/jinwon-int/a2a-plane/issues/504#issuecomment-0000000000",
+      "redactionStatement": "All device identifiers, provider tokens, and private paths redacted to <redacted>.",
+      "safetyConfirmation": {
+        "noProductionDeploy": true,
+        "noGatewayRestart": true,
+        "noBrokerWorkerRestart": true,
+        "noLiveProviderSend": true,
+        "noDbMutation": true,
+        "noTerminalAck": true,
+        "noCredentialMovement": true,
+        "noSecretDisclosure": true
+      }
+    },
+    "invalid": {
+      "workerId": null,
+      "targetBrokerUrl": "",
+      "enrollmentTimestamp": "not-a-timestamp",
+      "decision": "MAYBE",
+      "gateResults": {
+        "G1_noLiveConformance": "PASS"
+      },
+      "redactionStatement": "",
+      "safetyConfirmation": {}
+    }
+  },
+
+  "safety": {
+    "liveProviderSend": false,
+    "terminalAckReplay": false,
+    "gatewayRestart": false,
+    "brokerRestart": false,
+    "databaseMutation": false,
+    "releaseOrPublish": false,
+    "secretMovement": false,
+    "liveRegistration": false,
+    "nonLoopbackBrokerContact": false,
+    "forcePush": false,
+    "prMerge": false,
+    "issueClose": false
+  },
+
+  "androidTermuxCaveats": {
+    "enrollmentWakeLock": "Enrollment health checks should verify termux-wake-lock is active before production broker contact",
+    "enrollmentNetwork": "If using Tailscale/VPN for broker reachability, verify tunnel stability for at least 60 minutes",
+    "enrollmentBattery": "Production broker polling may increase battery drain vs loopback; verify acceptable drain",
+    "enrollmentStorage": "Enrollment evidence packets must use 0700 permissions; do not use shared storage",
+    "bootAfterEnrollment": "Verify Termux:Boot sources updated env file after reboot"
+  }
+}
