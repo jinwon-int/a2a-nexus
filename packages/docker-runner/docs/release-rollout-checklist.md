@@ -2,6 +2,17 @@
 
 Scope: operator checklist for proposing and rolling out an `a2a-docker-runner` release. This document is PR/release-prep only; do not tag, publish to npm, restart workers, or deploy live services from feature tasks.
 
+## Release gate approval
+
+Before any tag creation, run the release-gate workflow via GitHub Actions dispatch:
+
+- **Workflow**: `.github/workflows/release-gate.yml` (at `packages/docker-runner/.github/workflows/release-gate.yml` in the monorepo).
+- **Dry-run**: Set `dry_run=true` (default) to run all validation gates without creating a tag. Evidence is preserved as a job summary.
+- **Non-dry-run**: Set `dry_run=false` to proceed to the `tag` job, which requires manual approval through the **`release` GitHub Environment**. A repository maintainer must explicitly approve the tag job before the tag is created.
+- **Environment**: The `release` environment must be configured in the GitHub repository settings with the required reviewers (maintainers/operators).
+
+See [#485](https://github.com/jinwon-int/a2a-plane/issues/485) and the release provenance checklist at `docs/release/public-release-provenance-checklist.md` for the full approval gate definition.
+
 ## Pre-PR verification
 
 - Confirm the branch is based on current `main` and does not include secrets, raw session dumps, private host paths, or OpenClaw workspace bootstrap files (`.openclaw/`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `MEMORY.md`, `BOOTSTRAP.md`, or generated `memory/` notes). The first-class OpenClaw patch profile fails closed if these appear as untracked checkout artifacts.

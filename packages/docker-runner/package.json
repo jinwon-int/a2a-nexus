@@ -2,8 +2,16 @@
   "name": "@openclaw/a2a-docker-runner",
   "version": "0.1.0",
   "private": false,
+  "license": "MIT",
   "type": "module",
   "description": "Docker/Podman task runner for A2A Plane workers",
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "bin": {
     "a2a-docker-runner": "./dist/cli.js"
   },
