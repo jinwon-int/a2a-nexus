@@ -103,6 +103,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --include=dev
       - run: npm run check -w packages/broker
+      - run: npm run scan:public-readiness
 
   # ── Docker runner package (isolated execution, evidence) ────────────
   docker-runner:
@@ -121,6 +122,8 @@ jobs:
       - run: npm ci --ignore-scripts --include=dev
         working-directory: .
       - run: npm run check
+      - run: npm run scan:public-readiness
+        working-directory: .
 
   # ── OpenClaw plugin package (broker adapter, Gateway hooks) ────────
   plugin:
@@ -135,6 +138,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --include=dev
       - run: npm run check -w packages/openclaw-plugin-a2a
+      - run: npm run scan:public-readiness
 
   # ── Contract conformance and fixtures ────────────────────────────────
   contracts:
