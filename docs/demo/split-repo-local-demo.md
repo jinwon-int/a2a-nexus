@@ -128,7 +128,8 @@ The runner also exposes a `--dry-run` flag for the cleanup command:
 
 ```bash
 cd packages/docker-runner
-node bin/a2a-docker-runner.js cleanup --ttl 24h --dry-run 2>&1 || true
+npm run build
+node dist/cli.js cleanup --ttl 24h --dry-run 2>&1 || true
 ```
 
 In dry-run mode the runner reports candidate expired directories without deletion.

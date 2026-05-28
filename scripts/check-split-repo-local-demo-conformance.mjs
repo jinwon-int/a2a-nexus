@@ -94,6 +94,7 @@ if (doc) {
   // Docker-runner dry-run section
   expect(/dry-run evidence/i.test(doc), 'doc: must reference dry-run evidence');
   expect(/task\.canonical\.json/.test(doc), 'doc: must reference canonical task fixture');
+  expect(/node dist\/cli\.js cleanup --ttl 24h --dry-run/.test(doc), 'doc: must use the built docker-runner CLI dry-run command');
   expect(/--dry-run/.test(doc), 'doc: must reference dry-run flag');
 
   // Summary table

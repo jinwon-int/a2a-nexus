@@ -105,6 +105,7 @@ test('doc mentions docker-runner dry-run evidence and task fixtures', async () =
 
   assert.match(content, /dry-run evidence/i);
   assert.match(content, /task\.canonical\.json/);
+  assert.match(content, /node dist\/cli\.js cleanup --ttl 24h --dry-run/);
   assert.match(content, /--dry-run/);
 });
 
