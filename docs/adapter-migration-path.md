@@ -44,7 +44,7 @@ creating two parallel maintenance surfaces.
    - `fixtures/contract/platform-adapter-interface.json` provides machine-readable conformance.
    - Both are source-only; no runtime behavior changes.
 
-2. **Wrap existing adapters behind `A2AAdapter`.**  
+2. **Wrap existing adapters behind `A2AAdapter`.**
    Each existing OpenClaw adapter gets a thin wrapper that implements `A2AAdapter` while delegating
    to the existing OpenClaw-specific implementation. This proves the interface can represent the
    existing behavior without rewriting it.
@@ -58,10 +58,10 @@ creating two parallel maintenance surfaces.
 
    Each wrapper is verified against the conformance fixture.
 
-3. **Add conformance test.**  
+3. **Add conformance test.**
    `test/conformance/check-platform-adapter-interface.mjs` validates the fixture and the wrappers.
 
-4. **Document adapter registration.**  
+4. **Document adapter registration.**
    Update `docs/ecosystem-guide.md` with the new abstract interface and how non-OpenClaw platforms
    can implement it.
 
@@ -101,20 +101,20 @@ A native Hermes adapter would:
 
 ### Steps
 
-1. **Implement `HermesA2AAdapter`.**  
+1. **Implement `HermesA2AAdapter`.**
    A TypeScript (or Hermes-compatible) class that implements `A2AAdapter` and communicates with
    the broker via the standard worker API (`POST /workers/register`, `POST /workers/:id/heartbeat`,
    `GET /tasks?worker=...`, `POST /tasks/:id/claim`, `POST /tasks/:id/evidence`).
 
-2. **Add Hermes-specific transport.**  
+2. **Add Hermes-specific transport.**
    SSE push subscription for real-time task creation events, falling back to HTTP-poll when SSE
    is unavailable.
 
-3. **Pass conformance fixture.**  
+3. **Pass conformance fixture.**
    The Hermes adapter must pass the same `platform-adapter-interface.json` fixture as OpenClaw
    adapters.
 
-4. **Update Hermes documentation.**  
+4. **Update Hermes documentation.**
    Replace the poll-mode reference in `docs/specs/hermes-worker-integration/` with the native
    adapter path.
 
@@ -147,7 +147,7 @@ implemented with shell scripts and curl, any language can implement it.
 
 ### Steps
 
-1. **Implement CLI adapter.**  
+1. **Implement CLI adapter.**
    A shell script (`adapters/cli/minimal-adapter.sh`) that:
    - Polls the broker for pending tasks (`GET /tasks?worker=...&status=pending`)
    - Claims a task (`POST /tasks/:id/claim`)
@@ -155,10 +155,10 @@ implemented with shell scripts and curl, any language can implement it.
    - Submits evidence (`POST /tasks/:id/evidence`)
    - Sends heartbeats (`POST /workers/:id/heartbeat`)
 
-2. **Document the CLI adapter.**  
+2. **Document the CLI adapter.**
    `docs/external-harness-quickstart.md` is the natural home.
 
-3. **Reference implementation in Python.**  
+3. **Reference implementation in Python.**
    A minimal Python adapter (`adapters/cli/python-a2a-adapter.py`) that uses only stdlib
    (`urllib.request`) to demonstrate the interface without external dependencies.
 
@@ -185,21 +185,21 @@ OpenClaw-only adapter paths as legacy.
 
 ### Steps
 
-1. **Update ecosystem guide.**  
+1. **Update ecosystem guide.**
    Add a "Writing an A2A Adapter" section to `docs/ecosystem-guide.md` that walks through the
    interface contract, the conformance fixture, and the four transport modes.
 
-2. **Update OpenClaw plugin README.**  
+2. **Update OpenClaw plugin README.**
    `packages/openclaw-plugin-a2a/README.md` gets a "Migration Status" section showing which
    adapters have been wrapped behind the abstract interface.
 
-3. **Cross-platform conformance matrix.**  
+3. **Cross-platform conformance matrix.**
    Test the conformance fixture against:
    - OpenClaw adapters (via wrappers)
    - Hermes adapter (if Phase 2 is complete)
    - CLI adapter (if Phase 3 is complete)
 
-4. **Deprecate direct OpenClaw adapter exports.**  
+4. **Deprecate direct OpenClaw adapter exports.**
    Mark the old adapter types in `packages/openclaw-plugin-a2a/` as `@deprecated` with a note
    pointing to the abstract interface equivalents.
 
