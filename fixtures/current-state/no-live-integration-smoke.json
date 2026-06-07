@@ -1,0 +1,146 @@
+{
+  "schema": "a2a.current-state.no-live-integration-smoke.v1",
+  "mode": "no-live",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/506",
+  "trackingIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
+  "snapshotDate": "2026-06-07",
+  "description": "Umbrella fixture for the #506 current-state wave. It proves the intended broker, runner, plugin, Agent Olympics, and finalizer boundaries through injected source fixtures only.",
+  "sourceOnly": true,
+  "finalizerRequired": true,
+  "route": {
+    "defaultMode": "solo",
+    "escalationMode": "a2a-crosscheck",
+    "riskTrigger": "cross-repo no-live integration proof",
+    "finalizer": "seoseo",
+    "workerMutationAllowed": false
+  },
+  "phases": [
+    {
+      "id": "broker-work-mode-decision",
+      "ownerRepo": "jinwon-int/a2a-broker",
+      "childIssue": "https://github.com/jinwon-int/a2a-broker/issues/1318",
+      "inputKind": "injected-work-mode-decision",
+      "requiredAssertions": [
+        "sourceOnlyDecision=true",
+        "workerDispatchAllowedByThisPacket=false",
+        "finalizerRequired=true",
+        "team1-or-hybrid-execute-mode requires durable work-mode decision evidence",
+        "solo decision blocks Team1/hybrid helper execution"
+      ],
+      "liveCallsAllowed": false,
+      "expectedOutput": "dispatch-gating evidence only; no task write"
+    },
+    {
+      "id": "docker-runner-readonly-nochange",
+      "ownerRepo": "jinwon-int/a2a-docker-runner",
+      "childIssue": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+      "inputKind": "synthetic-broker-task-payload",
+      "requiredAssertions": [
+        "readOnlyValidation implies allowNoChanges",
+        "status=no_changes_allowed is classified as no-change evidence",
+        "openclaw_no_changes=allowed is classified as no-change evidence",
+        "read-only no-change lanes do not require PR creation",
+        "incidental PR URLs are ignored when no-change markers are present"
+      ],
+      "liveCallsAllowed": false,
+      "expectedOutput": "PR-less Done/Block evidence classification from clean main fixture"
+    },
+    {
+      "id": "plugin-requester-visible-status",
+      "ownerRepo": "jinwon-int/openclaw-plugin-a2a",
+      "childIssue": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457",
+      "inputKind": "injected-broker-health-status-outbox",
+      "requiredAssertions": [
+        "brokerProtocolProfile survives monitor status projection",
+        "brokerBuildInfo coexists with brokerProtocolProfile",
+        "Hermes runtimeFlavor and gatewayRequired are sanitized before display",
+        "provider accepted or message-id evidence is not terminal ACK evidence",
+        "evidence-only cross-broker projection rows do not notify or ACK",
+        "operator-facing rows notify once and advance the cursor"
+      ],
+      "liveCallsAllowed": false,
+      "expectedOutput": "requester-visible no-live status projection"
+    },
+    {
+      "id": "agent-olympics-live-runner-boundary",
+      "ownerRepo": "jinwon-int/agent-olympics",
+      "childIssue": "https://github.com/jinwon-int/agent-olympics/issues/205",
+      "inputKind": "source-fixture-boundary-validation",
+      "requiredAssertions": [
+        "blocked-missing-approval remains blocked",
+        "dry-run-ready is ready only with mode=dry_run and transport=stub",
+        "private benchmark evidence is not public A2A release readiness",
+        "no credential-bearing live A2A dispatch approval is implied"
+      ],
+      "liveCallsAllowed": false,
+      "expectedOutput": "boundary fixture verdict for benchmark-only evidence"
+    },
+    {
+      "id": "single-finalizer-packet",
+      "ownerRepo": "jinwon-int/a2a-plane",
+      "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
+      "inputKind": "aggregated-worker-evidence",
+      "requiredAssertions": [
+        "one finalizer owns the closeout decision",
+        "worker outputs are evidence packets, not merge or close authority",
+        "finalizer matrix lists repo, lane, evidence, risk, decision, and next action",
+        "Wiki or runbook follow-up is explicitly classified"
+      ],
+      "liveCallsAllowed": false,
+      "expectedOutput": "source-only finalizer matrix"
+    }
+  ],
+  "owningRepoGaps": [
+    {
+      "repo": "jinwon-int/a2a-broker",
+      "issue": "https://github.com/jinwon-int/a2a-broker/issues/1318",
+      "gap": "Work-mode decision evidence is not yet mandatory and durable across Team1/hybrid paths."
+    },
+    {
+      "repo": "jinwon-int/a2a-docker-runner",
+      "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+      "gap": "Read-only/no-change evidence classification needs a clean-main smoke fixture."
+    },
+    {
+      "repo": "jinwon-int/openclaw-plugin-a2a",
+      "issue": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457",
+      "gap": "Requester-visible status projection needs a no-live fixture tied to broker evidence hints."
+    },
+    {
+      "repo": "jinwon-int/agent-olympics",
+      "issue": "https://github.com/jinwon-int/agent-olympics/issues/205",
+      "gap": "Benchmark record format should score solo versus A2A effectiveness after the no-live proof path is stable."
+    }
+  ],
+  "boundary": {
+    "liveA2ADispatch": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "dbMutation": false,
+    "terminalAckReplay": false,
+    "deployRestart": false,
+    "gatewayRestart": false,
+    "credentialMovement": false,
+    "issueMutationByWorker": false,
+    "repoVisibilityChange": false,
+    "releaseTagNpmDockerPublish": false,
+    "forcePushOrHistoryRewrite": false,
+    "destructiveCheckoutCleanup": false
+  },
+  "requiredFinalizerPacketFields": [
+    "tracker",
+    "repoOwner",
+    "lane",
+    "workerOrSource",
+    "currentState",
+    "evidenceLink",
+    "localCheckoutReadiness",
+    "sourceOfTruthRef",
+    "noLiveBoundaryStatus",
+    "blockerOrRisk",
+    "finalizerDecision",
+    "nextAction",
+    "wikiOrRunbookFollowup"
+  ],
+  "replaySafe": true
+}

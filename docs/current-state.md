@@ -25,6 +25,14 @@ Child work from that wave:
 | [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Add requester-visible no-live status conformance fixture. |
 | [agent-olympics#205](https://github.com/jinwon-int/agent-olympics/issues/205) | `agent-olympics` | Add A2A effectiveness benchmark record format. |
 
+The `#508` no-live smoke is documented in
+[`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
+and validated by
+`scripts/check-current-state-no-live-integration-smoke.mjs`. It uses injected
+source fixtures only and must not perform live broker, provider, Gateway,
+Terminal ACK, deployment, credential, release, visibility, or destructive
+checkout actions.
+
 ## Completed Historical Gates
 
 These issues are completed and should not be treated as active blockers:
