@@ -26,8 +26,18 @@ Separate approval is required for:
 2. [`monorepo-reentry-decision.md`](monorepo-reentry-decision.md) for the staged umbrella decision.
 3. [`monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) for import policy.
 4. [`monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md) for package/CI gaps.
-5. [`migration.md`](migration.md), [`developers.md`](developers.md), and
+5. [`release/monorepo-branch-release-package-policy.md`](release/monorepo-branch-release-package-policy.md)
+   for the #517 branch protection and release/package policy.
+6. [`migration.md`](migration.md), [`developers.md`](developers.md), and
    [`issue-routing.md`](issue-routing.md) for phase 0 workflow.
+
+## Branch And Release Policy
+
+The #517 policy review is recorded in
+[`release/monorepo-branch-release-package-policy.md`](release/monorepo-branch-release-package-policy.md).
+It documents the required `a2a-plane/main` protection baseline and release/
+package namespace policy before any canonical flip. It does not approve the
+settings or publication actions themselves.
 
 ## Finalizer Boundary
 

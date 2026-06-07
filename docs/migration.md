@@ -27,6 +27,13 @@ This migration is staged:
 5. Review branch protection and release/package policy.
 6. Ask for explicit operator sign-off before any canonical flip.
 
+The branch protection and release/package policy review is recorded by
+[`release/monorepo-branch-release-package-policy.md`](release/monorepo-branch-release-package-policy.md)
+for [#517](https://github.com/jinwon-int/a2a-plane/issues/517). It keeps
+branch protection changes, GitHub Releases, npm/GitHub Packages, Docker/GHCR
+publication, and canonical flip actions blocked until separate explicit
+operator approval.
+
 ## What This Migration Is Not
 
 This guide does not approve:
