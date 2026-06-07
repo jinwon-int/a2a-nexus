@@ -157,7 +157,9 @@ if (currentStateDoc) {
   expect(/a2a-plane#514/.test(currentStateDoc), 'current-state doc: must reference completed #514');
   expect(/a2a-plane#515/.test(currentStateDoc), 'current-state doc: must reference completed #515');
   expect(/a2a-plane#517/.test(currentStateDoc), 'current-state doc: must keep #517 active');
-  expect(/a2a-plane#530/.test(currentStateDoc), 'current-state doc: must keep #530 active');
+  expect(/a2a-plane#528/.test(currentStateDoc), 'current-state doc: must reference completed #528');
+  expect(/a2a-plane#530/.test(currentStateDoc), 'current-state doc: must reference completed #530');
+  expect(/#531/.test(currentStateDoc), 'current-state doc: must reference the #531 merge closeout');
 }
 
 if (pkg) {

@@ -2,7 +2,7 @@
 
 > **Snapshot date:** 2026-06-07
 > **Active coordination:** [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
-> **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; `#506` source/no-live validation wave completed.
+> **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; phase-2 rehearsal evidence complete; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -15,7 +15,6 @@ The active A2A coordination work is:
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
 | [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
-| [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) | `a2a-plane` | Phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence. |
 | [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
 | [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
 
@@ -39,6 +38,8 @@ Completed current-state and monorepo groundwork:
 | [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
 | [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Closed: CI parity and package boundary matrix; split repo CI remains canonical. |
 | [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) | `a2a-plane` | Closed: monorepo docs, CODEOWNERS, and issue-routing policy. |
+| [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528) | `a2a-plane` | Closed: phase-1 import rehearsal gate refresh after the all-repo audit. |
+| [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) | `a2a-plane` | Closed: phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -61,6 +62,10 @@ The `#530` phase-2 rehearsal is documented in
 fresh split repo refs and throwaway prefix-import evidence, then keeps phase-3
 package mirror refresh blocked until package jobs are equal-or-stricter than
 split repo CI.
+
+The `#531` merge closed `#530` with source-only docs, fixtures, and checker
+evidence. It did not import packages into `main`, flip canonical ownership, or
+perform live operations.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),
