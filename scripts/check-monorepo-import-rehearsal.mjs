@@ -59,11 +59,21 @@ if (fixture) {
   expect(fixture.schema === 'a2a.monorepo-import-rehearsal.v1', 'fixture: unexpected schema');
   expect(fixture.parentIssue === 'https://github.com/jinwon-int/a2a-plane/issues/511', 'fixture: parentIssue must be #511');
   expect(fixture.childIssue === 'https://github.com/jinwon-int/a2a-plane/issues/513', 'fixture: childIssue must be #513');
+  expect(fixture.refreshIssue === 'https://github.com/jinwon-int/a2a-plane/issues/528', 'fixture: refreshIssue must be #528');
+  expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
   expect(fixture.decision === 'plan_import_rehearsal_before_canonical_flip', 'fixture: decision must require rehearsal before flip');
   expect(fixture.canonicalDuringRehearsal === 'split_repos', 'fixture: split repos must remain canonical');
   expect(fixture.rehearsalWorkspace?.additiveOnly === true, 'fixture: rehearsal workspace must be additive only');
   expect(fixture.rehearsalWorkspace?.reuseExistingA2aMonorepoCheckout === false, 'fixture: must not reuse existing a2a-monorepo checkout');
   expect(fixture.rehearsalWorkspace?.disposableUntilParityPasses === true, 'fixture: rehearsal workspace must stay disposable');
+  expect(fixture.phase2Rehearsal?.status === 'completed_source_only', 'fixture: phase2 rehearsal must be completed source-only');
+  expect(fixture.phase2Rehearsal?.method === 'disposable_detached_worktree_git_archive_prefix_copy', 'fixture: phase2 rehearsal method mismatch');
+  expect(fixture.phase2Rehearsal?.importToMain === false, 'fixture: phase2 must not import to main');
+  expect(fixture.phase2Rehearsal?.canonicalFlip === false, 'fixture: phase2 must not approve canonical flip');
+  expect(
+    /block_package_mirror_refresh/.test(fixture.phase2Rehearsal?.phase3Recommendation || ''),
+    'fixture: phase2 must block package mirror refresh until parity gaps close'
+  );
 
   const mirrors = new Map((fixture.mirrors || []).map((mirror) => [mirror.surface, mirror]));
   for (const [surface, sourceRepo, targetPath] of [
@@ -83,6 +93,27 @@ if (fixture) {
     expect(
       mirror.splitTrackedFiles > mirror.planeTrackedFiles,
       `fixture: ${surface} splitTrackedFiles should exceed planeTrackedFiles in this stale snapshot`
+    );
+    expect(mirror.phase2Rehearsal?.importMethod === 'git_archive_tracked_files_into_prefixed_package_path', `fixture: ${surface} phase2 import method mismatch`);
+    expect(mirror.phase2Rehearsal?.sourceRef === mirror.sourceMain, `fixture: ${surface} phase2 sourceRef must match sourceMain`);
+    expect(
+      Number.isInteger(mirror.phase2Rehearsal?.statusCounts?.changed) &&
+        Number.isInteger(mirror.phase2Rehearsal?.statusCounts?.addedOrUntracked) &&
+        mirror.phase2Rehearsal.statusCounts.changed + mirror.phase2Rehearsal.statusCounts.addedOrUntracked > 0,
+      `fixture: ${surface} phase2 rehearsal must record changed or added/untracked files`
+    );
+    expect(
+      Number.isInteger(mirror.phase2Rehearsal?.manifestScriptDifferences?.sourceOnlyScriptCount),
+      `fixture: ${surface} must record source-only script count`
+    );
+    expect(
+      Array.isArray(mirror.phase2Rehearsal?.manifestScriptDifferences?.changedScripts),
+      `fixture: ${surface} must record changed scripts`
+    );
+    expect(
+      mirror.phase2Rehearsal?.generatedBuildArtifactExclusions?.importedFromTrackedOnly === true &&
+        mirror.phase2Rehearsal?.generatedBuildArtifactExclusions?.nodeModulesImported === false,
+      `fixture: ${surface} must record generated/build artifact exclusions`
     );
   }
 
@@ -134,11 +165,15 @@ if (doc) {
     'Do not squash by default',
     'Rollback / Discard Points',
     'No-live Boundary',
+    'Phase-2 Fresh Prefix Rehearsal',
+    'blocker',
   ]) {
     expect(doc.toLowerCase().includes(phrase.toLowerCase()), `doc: missing phrase "${phrase}"`);
   }
   expect(/a2a-plane#511/.test(doc), 'doc: must reference #511');
   expect(/a2a-plane#513/.test(doc), 'doc: must reference #513');
+  expect(/a2a-plane#528/.test(doc), 'doc: must reference #528');
+  expect(/a2a-plane#530/.test(doc), 'doc: must reference #530');
 }
 
 if (reentryDoc) {

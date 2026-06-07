@@ -4,7 +4,8 @@
 > **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
 > **Child:** [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513)
 > **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
-> **Status:** phase 0 planning. Split repos remain canonical.
+> **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
+> **Status:** phase 2 source-only rehearsal complete. Split repos remain canonical.
 
 ## Summary
 
@@ -48,6 +49,30 @@ canonical flip or import-to-main decision. The result remains conservative:
 No package mirror is fresh enough to become canonical. The next source change
 must be a fresh prefix import rehearsal plus CI parity evidence, not a direct
 canonical flip.
+
+## Phase-2 Fresh Prefix Rehearsal (#530)
+
+The 2026-06-07 KST phase-2 rehearsal used fresh default-branch source heads and
+a disposable detached worktree based on the #529 merge commit
+`e2ed672ac7a082e39a20ffd43d64d516413c153d`. Each split repo was archived from
+Git and expanded into its prefixed `packages/*` path in the throwaway worktree
+only. The rehearsal imported tracked files only, did not import to `main`, and
+did not flip canonical ownership.
+
+| Surface | Fresh split repo head | Tracked split / plane files | Rehearsal package status | Manifest/script result | Phase-3 blocker |
+| --- | --- | ---: | --- | --- | --- |
+| Broker | `fae438a4fba301c2a9a02ca7cb11282867327920` | 857 / 236 | 633 added-or-untracked, 86 changed, 12 removed | 119 source-only scripts, 4 plane-only scripts, `build` and `test` differ | Too much package drift; preserve source script checks and build-info behavior before mirror refresh. |
+| Docker runner | `269a0ef90737158b41f8da26241b9f7f4b14af5e` | 138 / 59 | 79 added-or-untracked, 31 changed, 0 removed | 5 source-only scripts, `check` and `lint` differ, `files` and `license` differ | Split head moved after #529; plane package job is still narrower than source `check/build/lint/test/pre-pr` gates. |
+| OpenClaw plugin | `a2e521271483ef0b6a29907c8228f0a442dd2db9` | 179 / 116 | 67 added-or-untracked, 53 changed, 4 removed | 2 source-only scripts, 1 plane-only script, `build`, `prepack`, and `test:gateway` differ | Plugin-local scan, A2A conformance smoke, bin/files metadata, and manifest-copy behavior are not yet mirrored. |
+
+Generated/build artifact exclusion: the rehearsal used `git archive`, so
+`node_modules`, untracked build output, and local temporary files were not
+imported. None of the three split repos had tracked `dist`, `build`,
+`coverage`, or `node_modules` paths in this rehearsal snapshot.
+
+Phase-3 should **not** be a package mirror refresh PR yet. The next step is to
+close the package CI parity blockers in the matrix, then perform a mirror
+refresh only after the package jobs are equal-or-stricter than split repo CI.
 
 ## Rehearsal Strategy
 

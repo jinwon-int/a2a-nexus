@@ -15,6 +15,7 @@ The active A2A coordination work is:
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
 | [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
+| [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) | `a2a-plane` | Phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence. |
 | [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
 | [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
 
@@ -53,6 +54,13 @@ validated by `scripts/check-monorepo-ci-parity-matrix.mjs`. It records that the
 current `packages/*` mirrors are not green for canonical flip and that split
 repo CI remains canonical until a fresh import rehearsal proves
 equal-or-stricter package coverage.
+
+The `#530` phase-2 rehearsal is documented in
+[`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) and
+[`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md). It records
+fresh split repo refs and throwaway prefix-import evidence, then keeps phase-3
+package mirror refresh blocked until package jobs are equal-or-stricter than
+split repo CI.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),
