@@ -51,10 +51,13 @@ const docs = [
 const fixture = parseJson(fixturePath);
 const pkg = parseJson('package.json');
 const releaseGate = readRel('scripts/release-gate.mjs') || '';
+const workflow = readRel('.github/workflows/ci.yml') || '';
+const packageCiRunner = readRel('scripts/run-monorepo-package-ci-parity.mjs') || '';
 
 if (fixture) {
   expect(fixture.schema === 'a2a.monorepo-phase3-package-ci-gate.v1', 'fixture: unexpected schema');
   expect(fixture.issue === 'https://github.com/jinwon-int/a2a-plane/issues/534', 'fixture: issue must be #534');
+  expect(fixture.implementationIssue === 'https://github.com/jinwon-int/a2a-plane/issues/536', 'fixture: implementationIssue must be #536');
   expect(fixture.parentIssue === 'https://github.com/jinwon-int/a2a-plane/issues/511', 'fixture: parentIssue must be #511');
   expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
   expect(fixture.gateStatus === 'blocked', 'fixture: phase-3 gate must remain blocked');
@@ -62,6 +65,8 @@ if (fixture) {
   expect(fixture.mirrorRefreshAllowed === false, 'fixture: mirror refresh must not be allowed');
   expect(fixture.canonicalFlipApproved === false, 'fixture: canonical flip must not be approved');
   expect(fixture.packageJobsMustBeEqualOrStricter === true, 'fixture: must require equal-or-stricter package jobs');
+  expect(fixture.packageCiJobsWired === true, 'fixture: package CI jobs must be wired');
+  expect(fixture.packageCiParityJobScript === 'scripts/run-monorepo-package-ci-parity.mjs', 'fixture: package CI runner mismatch');
 
   for (const gate of [
     'record_actions_v4_v5_policy',
@@ -88,10 +93,12 @@ if (fixture) {
     if (!surface) continue;
     expect(surface.targetPath === targetPath, `fixture: ${surfaceName} targetPath mismatch`);
     expect(surface.gateStatus === 'blocked', `fixture: ${surfaceName} gate must be blocked`);
+    expect(surface.packageCiJobStatus === 'wired', `fixture: ${surfaceName} package CI job must be wired`);
     expect(surface.mirrorRefreshAllowed === false, `fixture: ${surfaceName} mirror refresh must be false`);
     expect((surface.sourceCiCommands || []).includes('npm ci'), `fixture: ${surfaceName} must record source npm ci`);
     expect((surface.requiredPackageJobBeforeMirrorRefresh || []).length >= 6, `fixture: ${surfaceName} must list required package job gates`);
-    expect((surface.blockingGaps || []).length >= 5, `fixture: ${surfaceName} must list blocking gaps`);
+    expect((surface.blockingGaps || []).length >= 1, `fixture: ${surfaceName} must list blocking gaps`);
+    expect((surface.packageCiEvidence || []).some((item) => item.includes('run-monorepo-package-ci-parity')), `fixture: ${surfaceName} must list package CI runner evidence`);
   }
 
   const broker = surfaces.get('broker');
@@ -124,8 +131,20 @@ if (pkg) {
     pkg.scripts?.['check:monorepo-phase3-package-ci-gate'] === 'node scripts/check-monorepo-phase3-package-ci-gate.mjs',
     'package.json: missing check:monorepo-phase3-package-ci-gate script'
   );
+  expect(
+    pkg.scripts?.['check:monorepo-package-ci-parity-jobs'] === 'node scripts/run-monorepo-package-ci-parity.mjs broker && node scripts/run-monorepo-package-ci-parity.mjs docker-runner && node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a',
+    'package.json: missing check:monorepo-package-ci-parity-jobs script'
+  );
 }
 expect(/monorepo-phase3-package-ci-gate/.test(releaseGate), 'release gate must include phase-3 package CI gate check');
+expect(/monorepo-package-ci-parity-jobs/.test(releaseGate), 'release gate must include package CI parity jobs check');
+expect(/actions\/checkout@v5/.test(workflow), 'workflow must use actions/checkout@v5');
+expect(/actions\/setup-node@v5/.test(workflow), 'workflow must use actions/setup-node@v5');
+expect(!/ignore-scripts/.test(workflow), 'workflow package installs must not suppress lifecycle scripts');
+for (const surfaceName of ['broker', 'docker-runner', 'openclaw-plugin-a2a']) {
+  expect(workflow.includes(`node scripts/run-monorepo-package-ci-parity.mjs ${surfaceName}`), `workflow missing package CI parity runner for ${surfaceName}`);
+  expect(packageCiRunner.includes(surfaceName), `package CI runner missing ${surfaceName}`);
+}
 
 if (failures.length) {
   console.error(`monorepo phase-3 package CI gate validation failed:\n- ${failures.join('\n- ')}`);

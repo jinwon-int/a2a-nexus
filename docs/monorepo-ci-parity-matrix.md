@@ -6,7 +6,8 @@
 > **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
-> **Status:** phase 3 package CI gate blocked. Split repo CI remains canonical.
+> **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
+> **Status:** phase 3 package CI jobs wired; package mirror refresh remains blocked until fresh mirrored content is proven. Split repo CI remains canonical.
 
 ## Summary
 
@@ -30,9 +31,9 @@ The result is intentionally conservative:
 
 | Surface | Split repo canonical CI | Plane workspace job today | Parity status | Required before authoritative |
 | --- | --- | --- | --- | --- |
-| Broker | `jinwon-int/a2a-broker` `ci`: `npm ci`, `npm test`; source `test` runs `build`, script syntax checks, and built JS tests. | `broker` job: `npm ci --ignore-scripts --include=dev`, `npm run check -w packages/broker`, root `scan:public-readiness`. | Not green for canonical flip. Plane mirror is stale and its broker build omits current split-repo build-info generation and script syntax checks. | Fresh prefix import from `fae438a4fba301c2a9a02ca7cb11282867327920`; preserve `scripts/generate-build-info.mjs`; compare `npm ci` lifecycle behavior; prove script syntax checks and test globs; decide actions v4/v5 policy. |
-| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: root install, package `npm run check`, root `scan:public-readiness`. | Not green for canonical flip. Plane job is narrower than split CI and does not cover release-gate dry-run behavior. | Fresh prefix import from `269a0ef90737158b41f8da26241b9f7f4b14af5e`; preserve CLI/package files; add build/lint/test/pre-pr-bootstrap parity; model release-gate dry-run evidence without tag/publish; decide artifact policy. |
-| OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` `ci`: `npm ci`, `scan:public-readiness`, `smoke:a2a-conformance`, `npm test`; package build copies `openclaw.plugin.json`; `prepack` scans then builds. | `plugin` job: `npm ci --ignore-scripts --include=dev`, `npm run check -w packages/openclaw-plugin-a2a`, root `scan:public-readiness`. | Not green for canonical flip. Plane mirror lacks current bin/docs/files shape and does not run plugin-local public scan or A2A conformance smoke. | Fresh prefix import from `a2e521271483ef0b6a29907c8228f0a442dd2db9`; preserve `openclaw` peer boundary; preserve manifest copy/prepack behavior; add plugin-local scan and conformance smoke; verify package files/bin exports. |
+| Broker | `jinwon-int/a2a-broker` `ci`: `npm ci`, `npm test`; source `test` runs `build`, script syntax checks, and built JS tests. | `broker` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs broker`; runner executes package `check`, build-info generation, syntax checks, built JS tests, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because mirrored content is still behind the split repo. | Fresh prefix import from `fae438a4fba301c2a9a02ca7cb11282867327920`; compare post-import scripts and generated build-info before authoritative use. |
+| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs docker-runner`; runner executes `check`, `build`, `lint`, `test`, pre-PR bootstrap guard, chaos E2E, no-publish release-candidate dry-run, package metadata checks, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because mirrored content is still behind the split repo. | Fresh prefix import from `269a0ef90737158b41f8da26241b9f7f4b14af5e`; compare package metadata and release-gate scripts before authoritative use. |
+| OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` `ci`: `npm ci`, `scan:public-readiness`, `smoke:a2a-conformance`, `npm test`; package build copies `openclaw.plugin.json`; `prepack` scans then builds. | `plugin` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a`; runner executes plugin-local public-readiness scan, A2A conformance smoke, tests, `prepack`, manifest copy check, OpenClaw peer-boundary check, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because current split plugin bin/files shape still needs a fresh prefix import comparison. | Fresh prefix import from `a2e521271483ef0b6a29907c8228f0a442dd2db9`; compare bin/files metadata and sidecar surfaces before authoritative use. |
 
 ## Shared Umbrella Gates
 
@@ -56,12 +57,12 @@ the split repos.
 
 | Difference | Current finding | Required decision |
 | --- | --- | --- |
-| GitHub Actions versions | Split repos use `actions/checkout@v5` and `actions/setup-node@v5`; `a2a-plane` uses v4 for both. | Align or explicitly accept the version drift before treating plane jobs as equivalent. |
-| Install lifecycle | Split repo CI uses `npm ci`; plane CI uses `npm ci --ignore-scripts --include=dev`. | Prove lifecycle-script suppression is safe for all imported packages, or split package jobs must run lifecycle-equivalent checks. |
-| Broker build side effects | Split broker build generates build-info; plane broker mirror only runs `tsc`. | Preserve and validate build-info generation after import. |
-| Runner release policy | Split runner has an approval-gated release workflow with dry-run evidence and isolated tag path. | Mirror release-gate evidence without creating tags, releases, npm packages, images, deploys, or live mutations. |
-| Plugin packaging | Split plugin build copies `openclaw.plugin.json`, exposes CLI bins, and `prepack` scans then builds. | Preserve manifest packaging, bin exports, OpenClaw peer dependency, and local fixture boundary. |
-| Scanner coverage | Split plugin runs plugin-local `scan:public-readiness`; plane runs root public readiness. | Keep root scanner and add/retain package-local scanners where split repos have them. |
+| GitHub Actions versions | Split repos use `actions/checkout@v5` and `actions/setup-node@v5`; `a2a-plane` package jobs now use v5 for both. | Keep v5 alignment in future package jobs. |
+| Install lifecycle | Split repo CI uses `npm ci`; plane package jobs now use `npm ci --include=dev` without `--ignore-scripts`. | Re-check lifecycle behavior after the next fresh prefix import. |
+| Broker build side effects | Split broker build generates build-info; plane broker package CI now validates build-info generation and syntax-check targets. | Compare generated content after import before treating the mirror as authoritative. |
+| Runner release policy | Split runner has an approval-gated release workflow with dry-run evidence and isolated tag path. | Plane package CI models release-candidate evidence only as no-publish dry-run; non-dry-run tag/release/publish remains blocked. |
+| Plugin packaging | Split plugin build copies `openclaw.plugin.json`, exposes CLI bins, and `prepack` scans then builds. | Plane package CI validates manifest copy, prepack, scanner, smoke, and peer boundary; split bin/files drift remains a fresh-import comparison item. |
+| Scanner coverage | Split plugin runs plugin-local `scan:public-readiness`; plane now runs the plugin-local scanner plus the root scanner. | Keep root and package-local scanners green. |
 
 ## Phase-1 Refresh (#528)
 
@@ -123,9 +124,14 @@ The gate requires every package mirror refresh candidate to prove:
 The validated fixture is
 [`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](../fixtures/current-state/monorepo-phase3-package-ci-gate.json)
 and the release-gate check is
-`check:monorepo-phase3-package-ci-gate`. Until this check is green with the
-package jobs in place, split repos remain canonical and `packages/*` must not be
-refreshed as implementation truth.
+`check:monorepo-phase3-package-ci-gate`. The package CI runner added for
+`a2a-plane#536` is `scripts/run-monorepo-package-ci-parity.mjs`, and the root
+release gate also runs `check:monorepo-package-ci-parity-jobs`.
+
+This wires concrete package jobs, but it still does not refresh `packages/*` as
+implementation truth. Split repos remain canonical until the next fresh prefix
+import proves the mirrored content and package metadata are current under these
+jobs.
 
 ## Canonical Flip Gate
 
