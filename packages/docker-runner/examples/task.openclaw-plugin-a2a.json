@@ -3,5 +3,5 @@
   "intent": "propose_patch",
   "preset": "openclaw-plugin-a2a-dev",
   "prompt": "Develop openclaw-plugin-a2a in an isolated runner checkout and include test evidence.",
-  "timeoutMs": 2700000
+  "timeoutMs": 3600000
 }

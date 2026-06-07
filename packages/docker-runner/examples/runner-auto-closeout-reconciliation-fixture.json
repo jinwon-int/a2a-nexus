@@ -1,0 +1,541 @@
+{
+  "$schema": "a2a-runner-auto-closeout-reconciliation-v1",
+  "description": "CI-safe approval-gated auto-closeout action reconciliation fixture. Validates comment_only, comment_and_close, duplicate idempotency, GitHub 403, stale evidence, rollback/no-op, and timeout/retry reconciliation without live GitHub mutation, broker round closeout, Gateway restart, provider send, terminal ACK, DB mutation, PR merge, or secret disclosure.",
+  "run": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+  "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+  "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+  "parent": "https://github.com/jinwon-int/a2a-broker/issues/844",
+  "parentRoundTotal": 4,
+  "parentRoundOrder": 1,
+  "parentRoundProgress": 0,
+  "originBrokerId": "bangtong",
+  "brokerOfRecordId": "bangtong",
+  "parentBrokerId": "bangtong",
+  "noLiveProof": {
+    "fixtureOnly": true,
+    "autoCloseoutEnabled": false,
+    "liveAutoCloseoutExecution": false,
+    "liveBrokerRoundCloseout": false,
+    "brokerRestart": false,
+    "gatewayRestart": false,
+    "workerRestart": false,
+    "liveProviderSend": false,
+    "terminalAck": "not_attempted",
+    "productionDbMutation": false,
+    "secretOrVisibilityChange": false,
+    "providerSendIsReceiptEvidence": false,
+    "prMergeAutomation": false,
+    "releasePublish": false,
+    "credentialMovement": false,
+    "allowedEvidence": [
+      "synthetic-fixture-json",
+      "node-test-output",
+      "git-diff"
+    ]
+  },
+  "canonicalCloseout": {
+    "allowedEvidenceKinds": ["PR", "Done", "Block"],
+    "terminalAckRequiresOperatorVisibleReceipt": true,
+    "providerSendSuccessIsReceiptEvidence": false,
+    "noLiveProviderSend": true,
+    "terminalOutboxAckPerformed": false,
+    "autoCloseoutMode": "source_only"
+  },
+  "activeNodes": ["bangtong", "dungae", "sogyo", "nosuk"],
+  "source": {
+    "schemaVersion": "a2a.runner.auto-closeout-reconciliation-fixture.v1",
+    "parentRoundTotal": 4,
+    "parentRoundOrder": 1,
+    "parentRoundProgress": 0,
+    "originBrokerId": "bangtong",
+    "brokerOfRecordId": "bangtong",
+    "parentBrokerId": "bangtong"
+  },
+  "reconciliationSemantics": {
+    "approvalGateRequired": true,
+    "autoCloseoutActionNeverTriggered": true,
+    "failClosedOnApprovalGateFailure": true,
+    "noLiveGithubMutation": true,
+    "reconciliationIsSourceOnly": true
+  },
+  "cases": [
+    {
+      "name": "comment_only: approval-gated comment-only reconciliation produces Done evidence without closing the issue",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-comment-only-r1",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "commentOnly": true,
+          "title": "Comment-only reconciliation: auto-closeout not triggered",
+          "focus": "Validate that approval-gated comment-only evidence does not trigger auto-closeout action.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 1,
+          "parentRoundProgress": 0,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "auto-closeout-reconcile-comment-only-r1",
+        "status": "completed",
+        "workDir": "${SYNTHETIC_DIR}/comment-only",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "comment-only reconciliation: Done evidence posted; no auto-closeout action was triggered",
+        "stderr": "",
+        "artifacts": [],
+        "resultSummary": {
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "reconciliation comment-only: Done evidence; auto-closeout not triggered",
+          "stderr": "",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 0,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-comment-only"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Done",
+        "handlerStatus": "done",
+        "status": "succeeded",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "comment_only",
+        "approvalGatePreserved": true
+      }
+    },
+    {
+      "name": "comment_and_close: approval-gated close via comment produces Done evidence; issue is closed but close is local-dry-only",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-comment-close-r2",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "commentOnly": true,
+          "title": "Comment-and-close reconciliation: dry-run issue close",
+          "focus": "Validate that approval-gated comment-and-close evidence only simulates issue close; real close is never triggered.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 2,
+          "parentRoundProgress": 1,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "auto-closeout-reconcile-comment-close-r2",
+        "status": "completed",
+        "workDir": "${SYNTHETIC_DIR}/comment-close",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "comment-and-close reconciliation: Done evidence posted; issue close is dry-run-simulated only; no live mutation",
+        "stderr": "",
+        "artifacts": [],
+        "resultSummary": {
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "comment-and-close: dry-run close simulated; no live close",
+          "stderr": "",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 0,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-comment-close",
+          "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-comment-close",
+          "outcome": "done",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Done",
+        "handlerStatus": "done",
+        "status": "succeeded",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "comment_and_close",
+        "approvalGatePreserved": true,
+        "closeDryRunOnly": true
+      }
+    },
+    {
+      "name": "duplicate_idempotency: duplicate evidence detected via idempotency key; reconciliation does not re-post",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-duplicate-r3",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "commentOnly": true,
+          "title": "Duplicate evidence reconciliation: replayed idempotent task",
+          "focus": "Validate that duplicate evidence tasks are detected by idempotency and do not re-post or trigger auto-closeout.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 3,
+          "parentRoundProgress": 2,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "auto-closeout-reconcile-duplicate-r3",
+        "status": "completed",
+        "workDir": "${SYNTHETIC_DIR}/duplicate",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "duplicate evidence detected via idempotency key; evidence already posted by prior task; no re-post or auto-closeout triggered",
+        "stderr": "",
+        "artifacts": [],
+        "resultSummary": {
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "duplicate idempotency: evidence already posted; no re-post",
+          "stderr": "",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 0,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-duplicate",
+          "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-duplicate",
+          "outcome": "done",
+          "commentLedger": {
+            "schemaVersion": "a2a.runner.github-comment-ledger.v1",
+            "entries": [
+              {
+                "dedupeKey": "reconcile-dup-r3-a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+                "url": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-original",
+                "kind": "done",
+                "postedAt": "2026-05-20T18:09:55.000Z"
+              }
+            ],
+            "disclaimer": "GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval."
+          }
+        }
+      },
+      "expected": {
+        "evidenceKind": "Done",
+        "handlerStatus": "done",
+        "status": "succeeded",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "duplicate_idempotency",
+        "approvalGatePreserved": true,
+        "duplicateDetected": true
+      }
+    },
+    {
+      "name": "github_403: GitHub API 403 permission-denied produces Block evidence; fail-closed",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-github-403-r4",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "title": "GitHub 403 reconciliation: permission denied",
+          "focus": "Validate that GitHub 403 produces Block evidence and auto-closeout fails closed without live mutation.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 4,
+          "parentRoundProgress": 2,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": false,
+        "taskId": "auto-closeout-reconcile-github-403-r4",
+        "status": "failed",
+        "workDir": "${SYNTHETIC_DIR}/github-403",
+        "exitCode": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "GitHub API 403: Resource not accessible by integration; token lacks write permission on jinwon-int/a2a-docker-runner",
+        "artifacts": [
+          "artifacts/block.txt"
+        ],
+        "resultSummary": {
+          "exitCode": 1,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "",
+          "stderr": "blocked: GitHub API 403 - resource not accessible by integration",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 1,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "blockCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-403",
+          "blockUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-403",
+          "outcome": "block"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Block",
+        "handlerStatus": "blocked",
+        "status": "blocked",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "github_403",
+        "approvalGatePreserved": true,
+        "failClosed": true
+      }
+    },
+    {
+      "name": "stale_evidence: timestamp-based staleness detection produces Block evidence; reconciliation does not apply stale closeout",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-stale-r5",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "commentOnly": true,
+          "title": "Stale evidence reconciliation: evidence timestamp exceeded staleness threshold",
+          "focus": "Validate that stale evidence is detected by timestamp threshold and reconciliation blocks instead of applying stale closeout action.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 5,
+          "parentRoundProgress": 3,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": false,
+        "taskId": "auto-closeout-reconcile-stale-r5",
+        "status": "failed",
+        "workDir": "${SYNTHETIC_DIR}/stale",
+        "exitCode": 1,
+        "signal": null,
+        "stdout": "",
+        "stderr": "stale evidence: evidence timestamp 2026-05-19T18:09:55.000Z exceeds staleness threshold of 3600000ms; reconciliation blocked; no auto-closeout triggered",
+        "artifacts": [
+          "artifacts/block.txt"
+        ],
+        "resultSummary": {
+          "exitCode": 1,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "",
+          "stderr": "blocked: stale evidence timestamp exceeds threshold",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 1,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "blockCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-stale",
+          "blockUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-stale",
+          "outcome": "block"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Block",
+        "handlerStatus": "blocked",
+        "status": "blocked",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "stale_evidence",
+        "approvalGatePreserved": true,
+        "failClosed": true
+      }
+    },
+    {
+      "name": "rollback_noop: no-op rollback reconciliation produces Done evidence without auto-closeout action",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-rollback-noop-r6",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "commentOnly": true,
+          "title": "No-op rollback reconciliation: no auto-closeout action",
+          "focus": "Validate that no-op/rollback reconciliation produces Done evidence and does not trigger auto-closeout action.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 6,
+          "parentRoundProgress": 3,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "auto-closeout-reconcile-rollback-noop-r6",
+        "status": "completed",
+        "workDir": "${SYNTHETIC_DIR}/rollback-noop",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "no-op/rollback reconciliation: no state changed; Done evidence posted; auto-closeout action not applicable",
+        "stderr": "",
+        "artifacts": [],
+        "resultSummary": {
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "stdout": "rollback/no-op: no state changed; Done evidence",
+          "stderr": "",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 0,
+          "manifestPath": "artifacts/manifest.json"
+        },
+        "github": {
+          "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-rollback-noop",
+          "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-rollback-noop",
+          "outcome": "done"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Done",
+        "handlerStatus": "done",
+        "status": "succeeded",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "rollback_noop",
+        "approvalGatePreserved": true
+      }
+    },
+    {
+      "name": "timeout_retry: container timeout with retry produces Block evidence; reconciliation does not auto-closeout",
+      "handlerTask": {
+        "id": "auto-closeout-reconcile-timeout-retry-r7",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "307",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307",
+          "title": "Timeout/retry reconciliation: container timed out with retries exhausted",
+          "focus": "Validate that timeout-with-retry exhaustion produces Block evidence with retry evidence and does not auto-closeout.",
+          "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
+          "parentRoundTotal": 4,
+          "parentRoundOrder": 7,
+          "parentRoundProgress": 3,
+          "originBrokerId": "bangtong",
+          "brokerOfRecordId": "bangtong",
+          "parentBrokerId": "bangtong"
+        }
+      },
+      "runnerOutput": {
+        "ok": false,
+        "taskId": "auto-closeout-reconcile-timeout-retry-r7",
+        "status": "failed",
+        "workDir": "${SYNTHETIC_DIR}/timeout-retry",
+        "exitCode": null,
+        "signal": "SIGTERM",
+        "stdout": "",
+        "stderr": "container execution timed out after 3 retries; all attempts exhausted; no auto-closeout triggered",
+        "artifacts": [
+          "artifacts/block.txt"
+        ],
+        "resultSummary": {
+          "exitCode": null,
+          "signal": "SIGTERM",
+          "timedOut": true,
+          "stdout": "",
+          "stderr": "blocked: container timeout after 3 retry attempts; no auto-closeout",
+          "stdoutTruncated": false,
+          "stderrTruncated": false,
+          "artifactCount": 1,
+          "manifestPath": "artifacts/manifest.json",
+          "containerRetryEvidence": {
+            "schemaVersion": "a2a.runner.container-retry-evidence.v1",
+            "config": {
+              "maxAttempts": 3,
+              "baseDelayMs": 1000,
+              "maxDelayMs": 8000,
+              "backoffFactor": 2,
+              "jitterFactor": 0.2
+            },
+            "attempts": [
+              {
+                "attempt": 1,
+                "startedAt": 1747764595000,
+                "elapsedMs": 300001,
+                "outcome": "timeout",
+                "exitCode": null,
+                "signal": "SIGTERM",
+                "errorMessage": "attempt 1 timed out after 300000ms"
+              },
+              {
+                "attempt": 2,
+                "startedAt": 1747764597000,
+                "elapsedMs": 300001,
+                "outcome": "timeout",
+                "exitCode": null,
+                "signal": "SIGTERM",
+                "errorMessage": "attempt 2 timed out after 300000ms"
+              },
+              {
+                "attempt": 3,
+                "startedAt": 1747764605000,
+                "elapsedMs": 300001,
+                "outcome": "timeout",
+                "exitCode": null,
+                "signal": "SIGTERM",
+                "errorMessage": "attempt 3 timed out after 300000ms"
+              }
+            ],
+            "totalAttempts": 3,
+            "succeededOnAttempt": 0
+          }
+        },
+        "github": {
+          "blockCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-timeout-retry",
+          "blockUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307#issuecomment-reconcile-timeout-retry",
+          "outcome": "block",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/307"
+        }
+      },
+      "expected": {
+        "evidenceKind": "Block",
+        "handlerStatus": "blocked",
+        "status": "blocked",
+        "noLiveAutoCloseout": true,
+        "autoCloseoutEnabled": false,
+        "reconciliationKind": "timeout_retry",
+        "approvalGatePreserved": true,
+        "failClosed": true,
+        "retryEvidencePresent": true,
+        "retryAttempts": 3,
+        "retrySucceededOn": 0
+      }
+    }
+  ]
+}

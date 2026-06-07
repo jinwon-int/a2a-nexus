@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { createA2AMonitoringHandlers } from "../dist/src/gateway-monitoring-handlers.js";
 import { createA2AOperatorEventBridge } from "../dist/src/operator-event-bridge.js";
 import { renderOperatorNotificationText } from "../dist/src/operator-notification-adapter.js";
+import { createA2ABrokerClient } from "../dist/standalone-broker-client.js";
+import { buildA2ACrossBrokerTerminalProjection } from "../dist/src/cross-broker-terminal-relay.js";
 
 function defer() {
   let resolve;
@@ -365,6 +370,86 @@ test("monitor status keeps operator event bridge default-off unless explicitly r
   assert.equal(responses[0].result.bridge.requestedCursor, "operator:9");
 });
 
+test("monitor preflight blocks on broker terminal-outbox history without active bridge", async () => {
+  const responses = [];
+  const listCalls = [];
+  const handlers = createA2AMonitoringHandlers({
+    plugins: {
+      entries: {
+        "a2a-broker-adapter": {
+          enabled: true,
+          config: {
+            baseUrl: "https://broker.example.test",
+            operatorEvents: { enabled: false },
+          },
+        },
+      },
+    },
+  }, {
+    runtime: {
+      channel: {
+        outbound: {
+          async loadAdapter(channel) {
+            assert.equal(channel, "telegram");
+            return {
+              capabilities: { currentSessionVisibleReceipt: true },
+              async sendText() {
+                throw new Error("preflight must not send live messages");
+              },
+            };
+          },
+        },
+      },
+    },
+    createClient: () => ({
+      async listTerminalOutbox(params = {}) {
+        listCalls.push(params);
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: "terminal:fresh:succeeded:2026-05-17T02%3A00%3A00.000Z",
+          events: [{
+            id: "terminal:fresh:succeeded:2026-05-17T02%3A00%3A00.000Z",
+            kind: "task.terminal",
+            taskEventId: 1,
+            payload: { taskId: "fresh", status: "succeeded" },
+            createdAt: "2026-05-17T02:00:00.000Z",
+            receipt: { status: "accepted" },
+            attempts: 0,
+          }],
+        };
+      },
+    }),
+  });
+
+  await handlers.handleA2AMonitorStatus({
+    params: {
+      sessionKey: "session-1",
+      operatorEvents: {
+        preflight: true,
+        enabled: true,
+        terminalOutboxCursor: "terminal:previous:succeeded:2026-05-17T01%3A00%3A00.000Z",
+        terminalOutboxLimit: 5,
+        notification: { enabled: true, channel: "telegram", to: "operator-chat" },
+      },
+    },
+    respond(ok, result, error) {
+      responses.push({ ok, result, error });
+    },
+  });
+
+  assert.equal(responses.length, 1);
+  assert.equal(responses[0].ok, true);
+  assert.equal(responses[0].result.decision, "BLOCK");
+  assert.equal(responses[0].result.safeToRestartGateway, false);
+  assert.match(responses[0].result.preflight.notificationTarget.reason, /broker terminal-outbox history has 1 unacknowledged/);
+  assert.deepEqual(listCalls, [{
+    afterId: "terminal:previous:succeeded:2026-05-17T01%3A00%3A00.000Z",
+    limit: 5,
+    reconcileUnacked: false,
+  }]);
+});
+
 test("monitor status projects compact broker audit bottleneck warnings from health metadata", async () => {
   const responses = [];
   const handlers = createA2AMonitoringHandlers({
@@ -528,11 +613,11 @@ test("monitor status projects terminal receipt gaps from broker diagnostics", as
   assert.equal(byTask.get("task-provider-only").receiptState, "sent");
   assert.equal(byTask.get("task-provider-only").receiptGapStatus, "missing");
   assert.equal(byTask.get("task-provider-only").operatorReceiptState, "pending_receipt");
-  assert.equal(byTask.get("task-provider-only").operatorReceiptLabel, "pending receipt");
+  assert.equal(byTask.get("task-provider-only").operatorReceiptLabel, "⋯ pending receipt");
   assert.equal(byTask.get("task-provider-only").providerDeliveryState, "sent");
   assert.equal(byTask.get("task-provider-only").receiptStatus, "pending");
   assert.equal(byTask.get("task-provider-only").terminalAckEligible, false);
-  assert.match(byTask.get("task-provider-only").reason, /terminal ack must remain blocked/);
+  assert.match(byTask.get("task-provider-only").reason, /no current-session\/manual receipt — ack blocked/);
   assert.equal(byTask.get("task-provider-delivered").receiptState, "provider-delivered-if-known");
   assert.equal(byTask.get("task-provider-delivered").providerDeliveryState, "provider-delivered-if-known");
   assert.equal(byTask.get("task-provider-delivered").receiptGapStatus, "missing");
@@ -648,7 +733,7 @@ test("monitor status redacts unsafe broker build info values from broker health"
             image: "ghcr.io/jinwon-int/a2a-broker:token=should-not-leak",
           },
           container: {
-            image: "ghcr.io/example/a2a-broker:token",
+            image: "/root/private/a2a-broker:latest",
           },
         };
       },
@@ -833,10 +918,147 @@ test("monitor status wires terminal notifications to the configured Telegram ada
   });
   assert.equal(sent[0].receiptRequired, "current_session_visible");
   assert.equal(sent[0].userVisibleReceiptRequired, true);
-  assert.match(sent[0].text, /A2A Terminal Brief 완료: A2A 작업/);
-  assert.match(sent[0].text, /업무: PR ready for review/);
+  assert.equal(sent[0].text, "A2A Terminal Brief 완료: A2A(1/1)");
+  assert.doesNotMatch(sent[0].text, /업무:/);
+  assert.doesNotMatch(sent[0].text, /PR ready for review/);
   assert.doesNotMatch(sent[0].text, /Dedupe:/);
   assert.doesNotMatch(sent[0].text, /Task: task-telegram/);
+});
+
+test("monitor status exposes no-live notification preflight for proposed Terminal Brief config", async () => {
+  const sends = [];
+  let clientCreated = false;
+  const handlers = createA2AMonitoringHandlers({
+    plugins: {
+      entries: {
+        "a2a-broker-adapter": {
+          enabled: true,
+          config: {
+            baseUrl: "https://broker.example.test",
+            operatorEvents: {
+              enabled: false,
+              notification: { enabled: false, channel: "telegram", to: "stale-chat" },
+            },
+          },
+        },
+      },
+    },
+  }, {
+    runtime: {
+      channel: {
+        outbound: {
+          async loadAdapter(channel) {
+            assert.equal(channel, "telegram");
+            return {
+              capabilities: { currentSessionVisibleReceipt: true },
+              async sendText(payload) {
+                sends.push(payload);
+              },
+            };
+          },
+        },
+      },
+    },
+    createClient: () => {
+      clientCreated = true;
+      throw new Error("preflight must not create a broker client");
+    },
+  });
+
+  const responses = [];
+  await handlers.handleA2AMonitorStatus({
+    params: {
+      sessionKey: "operator-session",
+      operatorEvents: {
+        preflight: true,
+        enabled: true,
+        notification: { enabled: true, channel: "telegram", to: "operator-chat", accountId: "default" },
+      },
+    },
+    respond(ok, result, error) {
+      responses.push({ ok, result, error });
+    },
+  });
+
+  assert.equal(responses.length, 1);
+  assert.equal(responses[0].ok, true);
+  assert.equal(responses[0].error, undefined);
+  assert.equal(responses[0].result.kind, "a2a.operator.notification.preflight");
+  assert.equal(responses[0].result.mode, "no-live");
+  assert.equal(responses[0].result.decision, "GO");
+  assert.equal(responses[0].result.safeToRestartGateway, true);
+  assert.equal(responses[0].result.liveSendPerformed, false);
+  assert.equal(responses[0].result.terminalOutboxAckPerformed, false);
+  assert.equal(responses[0].result.providerSendPerformed, false);
+  assert.equal(responses[0].result.preflight.providerSendMode, "receipt_confirmed_required");
+  assert.deepEqual(responses[0].result.preflight.target, {
+    channel: "telegram",
+    to: "operator-chat",
+    accountId: "default",
+  });
+  assert.equal(sends.length, 0, "no-live preflight must not send Telegram messages");
+  assert.equal(clientCreated, false, "no-live preflight must not touch the broker");
+});
+
+test("monitor status labels allowUnconfirmedProviderSend as transport-only and non-ACK", async () => {
+  const sends = [];
+  const handlers = createA2AMonitoringHandlers({
+    plugins: {
+      entries: {
+        "a2a-broker-adapter": {
+          enabled: true,
+          config: {
+            baseUrl: "https://broker.example.test",
+            operatorEvents: { enabled: false },
+          },
+        },
+      },
+    },
+  }, {
+    runtime: {
+      channel: {
+        outbound: {
+          async loadAdapter(channel) {
+            assert.equal(channel, "telegram");
+            return {
+              async sendText(payload) {
+                sends.push(payload);
+                return { accepted: true, status: "sent" };
+              },
+            };
+          },
+        },
+      },
+    },
+  });
+
+  const responses = [];
+  await handlers.handleA2AMonitorStatus({
+    params: {
+      sessionKey: "operator-session",
+      operatorEvents: {
+        preflight: true,
+        enabled: true,
+        notification: {
+          enabled: true,
+          channel: "telegram",
+          to: "operator-chat",
+          allowUnconfirmedProviderSend: true,
+        },
+      },
+    },
+    respond(ok, result, error) {
+      responses.push({ ok, result, error });
+    },
+  });
+
+  assert.equal(responses[0].ok, true);
+  assert.equal(responses[0].result.decision, "BLOCK");
+  assert.equal(responses[0].result.safeToRestartGateway, false);
+  assert.equal(responses[0].result.preflight.providerSendMode, "transport_only_unacknowledged");
+  assert.equal(responses[0].result.preflight.target.allowUnconfirmedProviderSend, true);
+  assert.match(responses[0].result.preflight.notificationTarget.reason, /current-session-visible receipt support/);
+  assert.equal(sends.length, 0, "preflight must not perform even transport-only sends");
 });
 
 test("operator notification adapter fails closed unless operator events and notifications are explicitly enabled", async () => {
@@ -870,7 +1092,7 @@ test("operator notification adapter fails closed unless operator events and noti
   }
 });
 
-test("operator notification adapter does not confirm receipt from provider/Gateway success alone", async () => {
+test("operator notification adapter supports nested Telegram outbound adapters without ACKing provider success", async () => {
   const { createA2AOperatorNotificationAdapter } = await import("../dist/src/operator-notification-adapter.js");
   const envelope = {
     kind: "a2a.operator.notification",
@@ -907,10 +1129,12 @@ test("operator notification adapter does not confirm receipt from provider/Gatew
       outbound: {
         async loadAdapter() {
           return {
-            capabilities: { currentSessionVisibleReceipt: true },
-            async sendText(payload) {
-              sent.push(payload);
-              return { ok: true, providerMessageId: "gateway-success-only" };
+            base: {
+              capabilities: { currentSessionVisibleReceipt: true },
+              async sendPayload(payload) {
+                sent.push(payload);
+                return { ok: true, providerMessageId: "gateway-success-only" };
+              },
             },
           };
         },
@@ -920,6 +1144,9 @@ test("operator notification adapter does not confirm receipt from provider/Gatew
 
   const receipt = await adapter.notify(envelope);
   assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "operator-chat");
+  assert.equal(sent[0].payload.text, "A2A Terminal Brief 완료: A2A(1/1)");
+  assert.doesNotMatch(sent[0].payload.text, /provider accepted but no user-visible receipt/);
   assert.equal(receipt, undefined);
   assert.deepEqual(adapter.listReceipts(), []);
 });
@@ -1214,7 +1441,7 @@ test("operator event bridge builds plugin-owned terminal notifications with dedu
           type: "failed",
           taskId: "task-137",
           createdAt: "2026-05-01T14:30:00.000Z",
-          summary: "runner failed with token=should-not-leak at <private-log-path>",
+          summary: "runner failed with token=should-not-leak at /root/private/log.txt",
         };
         yield {
           name: "operator-summary-update",
@@ -1348,6 +1575,8 @@ test("operator terminal notification renderer covers success block and PR events
   assert.equal(success.severity, "info");
   assert.equal(success.evidence.receiptProjection, "current_session_visible");
   assert.match(success.title, /Terminal Brief 완료/);
+  assert.match(success.text, /Required receipt proof: current_session_visible/);
+  assert.doesNotMatch(success.text, /Receipt: current_session_visible/);
   assert.equal(blocked.type, "block");
   assert.equal(blocked.severity, "warn");
   assert.equal(blocked.evidence.receiptProjection, "manual_operator_receipt");
@@ -1381,7 +1610,7 @@ test("operator terminal notification carries compact evidence and Telegram adapt
         repo: "jinwon-int/openclaw-plugin-a2a",
         issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/146",
         doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/147",
-        summary: "Done URL ready; secret=hide-me <private-raw-log-path>",
+        summary: "Done URL ready; secret=hide-me /root/private/raw.log",
         originalMessage: "Fix Terminal Brief notifications for worker completions",
         createdAt: "2026-05-02T00:00:00.000Z",
       },
@@ -1425,7 +1654,7 @@ test("telegram-safe dry-run harness projects bounded Telegram payloads without s
           type: "succeeded",
           taskId: "task-148",
           workerId: "dungae",
-          summary: "dry-run ready token=hide-me <private-telegram-log-path>",
+          summary: "dry-run ready token=hide-me /root/private/telegram.log",
           doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/148",
         },
       },
@@ -1504,7 +1733,7 @@ test("operator release drift renderer summarizes broker and worker current stale
           broker: { revision: "78b2b42fca6e", expectedRevision: "78b2b42fca6e" },
           workers: { dungae: { runnerRevision: "160bd95af6b4", expectedRevision: "ff4c244a38a7" } },
         },
-        summary: "Terminal Brief proof saved; token=do-not-leak <private-session-path>",
+        summary: "Terminal Brief proof saved; token=do-not-leak /home/example/private/session.log",
       },
     },
   });
@@ -1631,7 +1860,7 @@ test("operator event bridge exposes receipt-gated terminal ack projections", asy
     const byTask = new Map(state.operator.terminalReceipts.map((receipt) => [receipt.taskId, receipt]));
     assert.equal(byTask.get("task-provider-only").terminalAckEligible, false);
     assert.equal(byTask.get("task-provider-only").receiptStatus, "pending");
-    assert.match(byTask.get("task-provider-only").reason, /pending until current-session visibility or manual operator receipt/);
+    assert.match(byTask.get("task-provider-only").reason, /no current-session\/manual receipt — ack blocked/);
     assert.equal(byTask.get("task-current-session").terminalAckEligible, true);
     assert.equal(byTask.get("task-current-session").receiptMode, "current_session_visible");
     assert.equal(byTask.get("task-current-session").receiptStatus, "received");
@@ -1716,7 +1945,7 @@ test("operator event bridge consumes broker receipt gap vocabulary and dedupes b
     assert.equal(byTask.get("task-missing").receiptGapStatus, "missing");
     assert.equal(byTask.get("task-missing").receiptStatus, "pending");
     assert.equal(byTask.get("task-missing").terminalAckEligible, false);
-    assert.match(byTask.get("task-missing").reason, /operator-visible receipt is missing/);
+    assert.match(byTask.get("task-missing").reason, /no current-session\/manual receipt — ack blocked/);
 
     assert.equal(byTask.get("task-stale").receiptGapStatus, "stale");
     assert.equal(byTask.get("task-stale").terminalAckEligible, false);
@@ -1835,9 +2064,9 @@ test("operator notification renderer does not duplicate title or PR lines", () =
     evidence: { schema: "a2a.operator.notification.evidence", version: 1, taskId: "task-1" },
   });
 
-  assert.equal(text.match(/A2A Terminal Brief 완료: A2A 작업/g)?.length, 1);
-  assert.equal(text.match(/PR: https:\/\/github.com\/jinwon-int\/openclaw-plugin-a2a\/pull\/167/g)?.length, 1);
-  assert.match(text, /업무: tests passed/);
+  assert.equal(text, "A2A Terminal Brief 완료: A2A(1/1)");
+  assert.doesNotMatch(text, /PR: https:\/\/github.com\/jinwon-int\/openclaw-plugin-a2a\/pull\/167/);
+  assert.doesNotMatch(text, /업무:/);
   assert.doesNotMatch(text, /Task: task-1/);
   assert.doesNotMatch(text, /Dedupe: terminal:task-1:succeeded/);
 });
@@ -1856,6 +2085,7 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
       repo: "jinwon-int/openclaw-plugin-a2a",
       issue: 165,
       doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/165#issuecomment-done",
+      receiptProjection: "current_session_visible",
       testSummary: "provider send success is not enough",
       originalMessage: "Verify terminal outbox ACK safety gate",
       createdAt: "2026-05-02T04:59:00.000Z",
@@ -1972,6 +2202,108 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
   }
 });
 
+test("operator terminal outbox cursor stops at the first unacknowledged row", async () => {
+  let nowMs = Date.parse("2026-05-06T00:00:00.000Z");
+  const firstAcked = {
+    id: "terminal:first-acked:succeeded:2026-05-06T00%3A00%3A01.000Z",
+    createdAt: "2026-05-06T00:00:01.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "first-acked",
+      status: "succeeded",
+      worker: "yukson",
+      receiptProjection: "current_session_visible",
+      testSummary: "first row receives operator-visible receipt",
+      completedAt: "2026-05-06T00:00:01.000Z",
+    },
+  };
+  const middlePending = {
+    id: "terminal:middle-pending:failed:2026-05-06T00%3A00%3A02.000Z",
+    createdAt: "2026-05-06T00:00:02.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "middle-pending",
+      status: "failed",
+      worker: "sogyo",
+      receiptProjection: "current_session_visible",
+      testSummary: "middle row does not yet have a visible receipt",
+      completedAt: "2026-05-06T00:00:02.000Z",
+    },
+  };
+  const thirdFresh = {
+    id: "terminal:third-fresh:succeeded:2026-05-06T00%3A00%3A03.000Z",
+    createdAt: "2026-05-06T00:00:03.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "third-fresh",
+      status: "succeeded",
+      worker: "nosuk",
+      receiptProjection: "current_session_visible",
+      testSummary: "third row must not be processed while middle is pending",
+      completedAt: "2026-05-06T00:00:03.000Z",
+    },
+  };
+  const events = [firstAcked, middlePending, thirdFresh];
+  const sent = [];
+  const acks = [];
+  const listCalls = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => nowMs,
+    terminalOutboxPollMs: 5,
+    terminalOutboxHistoricalReplay: "notify",
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox(params = {}) {
+        listCalls.push(params);
+        const startIndex = params.afterId ? events.findIndex((event) => event.id === params.afterId) + 1 : 0;
+        return {
+          kind: "task.terminal.outbox",
+          count: events.length - startIndex,
+          cursor: thirdFresh.id,
+          reconciledUnacked: params.reconcileUnacked ? 1 : 0,
+          events: events.slice(startIndex),
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        const event = events.find((candidate) => candidate.id === params.id);
+        return { ...event, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      if (envelope.taskId === "middle-pending") {
+        return { ackTerminalEvent: false, reason: "receipt still pending for middle row" };
+      }
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState();
+    await eventually(() => sent.length, (value) => value >= 2, "expected first and middle terminal outbox notifications");
+    await eventually(() => listCalls.length, (value) => value >= 2, "expected repeated polling while middle row is pending");
+    assert.deepEqual(sent.map((item) => item.taskId), ["first-acked", "middle-pending"]);
+    assert.deepEqual(acks.map((item) => item.id), [firstAcked.id], "third row must not ACK before the middle row");
+
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, firstAcked.id);
+    assert.equal(state.operator.terminalOutbox.lastPoll.firstPendingId, middlePending.id);
+    assert.equal(state.operator.terminalOutbox.lastPoll.cursorBlockedByUnacked, true);
+    assert.equal(state.operator.terminalOutbox.pendingUnacknowledged[0].taskId, "middle-pending");
+    assert.equal(
+      state.operator.terminalOutbox.pendingUnacknowledged.some((event) => event.taskId === "third-fresh"),
+      true,
+      "monitor should still show later rows as pending while cursor is blocked",
+    );
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
 test("monitor status live wiring polls terminal outbox and ACKs OpenClaw receipt projection shape", async () => {
   const outboxEvent = {
     id: "terminal:live-wiring:succeeded:2026-05-02T06%3A30%3A00.000Z",
@@ -1987,6 +2319,7 @@ test("monitor status live wiring polls terminal outbox and ACKs OpenClaw receipt
       issue: 165,
       doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/165#issuecomment-done",
       testSummary: "live Gateway path must wait for user-visible receipt",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-02T06:30:00.000Z",
     },
   };
@@ -2138,9 +2471,10 @@ test("monitor status skips terminal outbox polling when notification is disabled
     await new Promise((resolve) => setTimeout(resolve, 25));
     assert.equal(listCalls.length, 0, "disabled notification target should not poll terminal outbox");
     assert.equal(acks.length, 0);
-    assert.equal(state.operator.terminalOutbox, undefined);
+    assert.equal(state.operator.terminalOutbox.poller.status, "skipped");
+    assert.match(state.operator.terminalOutbox.poller.reason, /notification target unavailable/);
     assert.equal(state.operator.safetyStatus.status, "unknown");
-    assert.match(state.operator.safetyStatus.blockers.join("\n"), /preflight evidence unavailable/);
+    assert.match(state.operator.safetyStatus.blockers.join("\n"), /not been polled yet/);
   } finally {
     handlers.shutdownOperatorEventBridge();
   }
@@ -2161,6 +2495,7 @@ test("operator terminal outbox duplicate replay is bounded until receipt confirm
       issue: 168,
       prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/167",
       testSummary: "provider send success alone must not flood Telegram",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-02T06:42:23.031Z",
     },
   };
@@ -2229,6 +2564,7 @@ test("operator terminal outbox suppresses stale post-cursor unacked rows by defa
       status: "succeeded",
       worker: "seoseo-terminal-proof",
       testSummary: "Terminal Brief Stage2 no-send proof completed",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-05T16:21:38.672Z",
     },
   };
@@ -2280,6 +2616,83 @@ test("operator terminal outbox suppresses stale post-cursor unacked rows by defa
   }
 });
 
+test("standalone client accepts broker-owned task metadata on task responses", async () => {
+  const client = createA2ABrokerClient({
+    baseUrl: "https://broker.example.test",
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/tasks");
+      assert.equal(init?.method, "POST");
+      return new Response(JSON.stringify({
+        id: "task-with-ownership-metadata",
+        intent: "chat",
+        requester: { id: "gwakga", kind: "node", role: "operator" },
+        target: { id: "soonwook", kind: "node", role: "operator" },
+        message: "schema drift canary",
+        payload: {},
+        status: "queued",
+        targetNodeId: "soonwook",
+        assignedWorkerId: "soonwook",
+        createdAt: "2026-05-12T22:50:01.000Z",
+        updatedAt: "2026-05-12T22:50:01.000Z",
+        taskOrigin: "unknown",
+        brokerOfRecord: "gwakga",
+        teamId: "team2",
+      }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const task = await client.createTask({
+    id: "task-with-ownership-metadata",
+    intent: "chat",
+    requester: { id: "gwakga", kind: "node", role: "operator" },
+    target: { id: "soonwook", kind: "node", role: "operator" },
+    message: "schema drift canary",
+  });
+  assert.equal(task.taskOrigin, "unknown");
+  assert.equal(task.brokerOfRecord, "gwakga");
+  assert.equal(task.teamId, "team2");
+});
+
+test("standalone client accepts terminal outbox payload with only completedAt timestamp", async () => {
+  const client = createA2ABrokerClient({
+    baseUrl: "https://broker.example.test",
+    fetchImpl: async (input) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/a2a/tasks/terminal-outbox");
+      return new Response(JSON.stringify({
+        kind: "task.terminal.outbox",
+        count: 1,
+        cursor: "terminal:minimal-payload:succeeded:2026-05-12T16%3A47%3A49.027Z",
+        reconciledUnacked: 1,
+        events: [{
+          id: "terminal:minimal-payload:succeeded:2026-05-12T16%3A47%3A49.027Z",
+          kind: "task.terminal",
+          taskEventId: 232,
+          createdAt: "2026-05-12T16:47:49.032Z",
+          attempts: 0,
+          payload: {
+            taskId: "minimal-payload",
+            status: "succeeded",
+            completedAt: "2026-05-12T16:47:49.027Z",
+          },
+        }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const response = await client.listTerminalOutbox({ reconcileUnacked: true });
+  assert.equal(response.count, 1);
+  assert.equal(response.events[0].payload.taskId, "minimal-payload");
+  assert.equal(response.events[0].payload.completedAt, "2026-05-12T16:47:49.027Z");
+});
+
 test("operator terminal outbox suppresses historical unacked backlog by default", async () => {
   const outboxEvent = {
     id: "terminal:stale-backlog:succeeded:2026-05-05T08%3A11%3A26.697Z",
@@ -2295,6 +2708,7 @@ test("operator terminal outbox suppresses historical unacked backlog by default"
       issue: 369,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/373",
       testSummary: "docker runner completed e058a492-ae5b-4f86-a6da-fd3a426fb9cc",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-05T08:11:26.697Z",
     },
   };
@@ -2335,7 +2749,9 @@ test("operator terminal outbox suppresses historical unacked backlog by default"
     assert.equal(sent.length, 0, "historical unacked backlog must not send Telegram by default");
     assert.equal(acks.length, 0, "suppressed historical backlog must not be auto-ACKed");
     const state = bridge.getState();
-    assert.equal(state.operator.terminalOutbox.lastPoll.backlogDrain, true);
+    assert.equal(listCalls[0].reconcileUnacked, true);
+    assert.equal(listCalls[1].reconcileUnacked, false);
+    assert.equal(state.operator.terminalOutbox.lastPoll.backlogDrain, false);
     assert.equal(state.operator.terminalOutbox.lastPoll.pendingUnacknowledged, 1);
     assert.equal(state.operator.terminalOutbox.lastNotificationAttempt.receiptStatus, "pending");
     assert.match(state.operator.terminalOutbox.lastNotificationAttempt.reason, /historical terminal-outbox replay suppressed/);
@@ -2362,6 +2778,7 @@ test("monitoring handlers can start terminal outbox draining without a monitor.s
       issue: 286,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/288",
       testSummary: "terminal outbox should drain on plugin activation",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-03T04:08:22.962Z",
     },
   };
@@ -2434,11 +2851,94 @@ test("monitoring handlers can start terminal outbox draining without a monitor.s
     assert.equal(state.kind, "a2a.operator.monitor");
     await eventually(() => acks, (value) => value.length === 1, "expected activation-started outbox drain to ACK");
     assert.equal(sent.length, 1);
-    assert.match(sent[0].text, /PR #288|PR:/);
+    assert.equal(sent[0].text, "A2A Terminal Brief 완료: nosuk(1/1)");
+    assert.doesNotMatch(sent[0].text, /PR #288|PR:/);
     assert.equal(acks[0].id, outboxEvent.id);
     assert.equal(acks[0].receipt.evidence, "operator_visible");
   } finally {
     handlers.shutdownOperatorEventBridge();
+  }
+});
+
+test("cross-broker watcher forwards per-broker terminal outbox bounds", () => {
+  const bridgeParams = [];
+  const clientOptions = [];
+  const secretDir = mkdtempSync(join(tmpdir(), "a2a-crossbroker-"));
+  const secretPath = join(secretDir, "edge-secret");
+  writeFileSync(secretPath, "test-edge-secret-from-file\n", { mode: 0o600 });
+  const handlers = createA2AMonitoringHandlers({
+    plugins: {
+      entries: {
+        "a2a-broker-adapter": {
+          enabled: true,
+          config: {
+            enabled: true,
+            operatorEvents: {
+              enabled: true,
+              notification: { enabled: false, channel: "telegram", to: "operator-chat" },
+              terminalOutboxAllowedIds: ["terminal:team1-only"],
+              crossBrokers: [
+                {
+                  baseUrl: "https://team2-broker.example.test",
+                  edgeSecretFile: secretPath,
+                  label: "team2",
+                  terminalOutboxAllowedIds: ["terminal:team2-round"],
+                  terminalOutboxCursor: "terminal:team2-cursor",
+                  terminalOutboxReconcileUnackedOnStart: false,
+                  handoffBrokerId: "gwakga",
+                  maxSummaryChars: 480,
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  }, {
+    createClient: () => ({
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+    }),
+    createStandaloneBrokerClient: (options) => {
+      clientOptions.push(options);
+      return {
+        async *streamOperatorEvents(innerOptions = {}) {
+          await waitForAbort(innerOptions.signal);
+        },
+      };
+    },
+    createOperatorEventBridge: (params) => {
+      bridgeParams.push(params);
+      return {
+        getState() {
+          return {
+            kind: "a2a.operator.monitor",
+            operator: { terminalOutbox: { poller: { status: "started" } } },
+          };
+        },
+        shutdown() {},
+        async waitForIdle() {},
+      };
+    },
+  });
+
+  try {
+    const state = handlers.startOperatorEventBridge();
+    assert.equal(bridgeParams.length, 2, "primary and Team2 cross-broker bridges should both start");
+    const team2 = bridgeParams[1];
+    assert.deepEqual(team2.readTerminalOutboxAllowedIds(), ["terminal:team2-round"]);
+    assert.equal(team2.terminalOutboxCursor, "terminal:team2-cursor");
+    assert.equal(team2.readTerminalOutboxCursor(), "terminal:team2-cursor");
+    assert.equal(team2.terminalOutboxReconcileUnackedOnStart, false);
+    assert.equal(team2.handoffBrokerId, "gwakga");
+    assert.equal(team2.terminalProjectionMaxSummaryChars, 480);
+    assert.equal(clientOptions.length, 1);
+    assert.equal(clientOptions[0].edgeSecret, "test-edge-secret-from-file");
+    assert.ok(state.crossBrokers.team2, "returned monitor state should include Team2 bridge state");
+  } finally {
+    handlers.shutdownOperatorEventBridge();
+    rmSync(secretDir, { recursive: true, force: true });
   }
 });
 
@@ -2458,6 +2958,7 @@ test("release dry-run no-live operator completion notification waits for visible
         title: "plugin operator notification no-live proof",
         summary: "릴리스 드라이런 완료 — operator receipt 확인 전 ACK 금지",
         runId: "a2a-release-dryrun-20260504022511",
+        receiptProjection: "current_session_visible",
         traceId: "trace-dryrun-201",
         completedAt: "2026-05-04T02:25:11.000Z",
       },
@@ -2477,6 +2978,7 @@ test("release dry-run no-live operator completion notification waits for visible
       issue: 201,
       doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/201#issuecomment-done",
       originalMessage: "plugin operator notification no-live proof",
+      receiptProjection: "current_session_visible",
       testSummary: "릴리스 드라이런 완료 — operator receipt 확인 전 ACK 금지",
       runId: "a2a-release-dryrun-20260504022511",
       traceId: "trace-dryrun-201",
@@ -2627,7 +3129,7 @@ test("monitor status projects broker no-live rehearsal manifest without unsafe e
                 taskId: "task-205",
                 state: "sent",
                 terminalAckEligible: false,
-                reason: "provider-send-only; rawPrompt=<private-prompt-path> token=sk-test",
+                reason: "provider-send-only; rawPrompt=/root/private/prompt.md token=sk-test",
               },
             ],
             gateFindings: [
@@ -2795,7 +3297,7 @@ test("monitor status blocks live-readiness for missing evidence and stale queue 
           liveReadiness: {
             mode: "live-readiness",
             evidenceAcceptance: [
-              { kind: "missing_evidence", status: "missing", taskId: "task-missing", message: "missing Done evidence rawPrompt=<private-path> token=sk-test" },
+              { kind: "missing_evidence", status: "missing", taskId: "task-missing", message: "missing Done evidence rawPrompt=/root/private token=sk-test" },
             ],
             queueSignals: { queued: 1, claimed: 0, running: 0, stale: 2, timedOut: 1 },
           },
@@ -2825,6 +3327,166 @@ test("monitor status blocks live-readiness for missing evidence and stale queue 
   assert.doesNotMatch(JSON.stringify(responses[0].result), /sk-test|\/root\/private|rawPrompt=\/root/);
 });
 
+test("operator terminal outbox cursor advances past suppressed historical allowed page", async () => {
+  const nowMs = Date.parse("2026-05-14T09:50:00.000Z");
+  const historicalAllowed = {
+    id: "terminal:allowed-history-page:succeeded:2026-05-14T09%3A40%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 631,
+    createdAt: "2026-05-14T09:40:00.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "allowed-history-page",
+      status: "succeeded",
+      worker: "dungae",
+      receiptProjection: "current_session_visible",
+      testSummary: "historical page must not pin terminal-outbox cursor",
+      completedAt: "2026-05-14T09:40:00.000Z",
+    },
+  };
+  const allowedFresh = {
+    id: "terminal:allowed-fresh-page:succeeded:2026-05-14T09%3A50%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 632,
+    createdAt: "2026-05-14T09:50:00.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "allowed-fresh-page",
+      status: "succeeded",
+      worker: "dungae",
+      receiptProjection: "current_session_visible",
+      testSummary: "fresh page should still attempt notification",
+      completedAt: "2026-05-14T09:50:00.000Z",
+    },
+  };
+  const sent = [];
+  const listCalls = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => nowMs,
+    terminalOutboxPollMs: 5,
+    terminalOutboxAllowedIds: [historicalAllowed.id, allowedFresh.id],
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox(params = {}) {
+        listCalls.push(params);
+        if (params.afterId === historicalAllowed.id) {
+          return {
+            kind: "task.terminal.outbox",
+            count: 1,
+            cursor: allowedFresh.id,
+            reconciledUnacked: 0,
+            events: [allowedFresh],
+          };
+        }
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: historicalAllowed.id,
+          reconciledUnacked: params.reconcileUnacked ? 1 : 0,
+          events: [historicalAllowed],
+        };
+      },
+      async ackTerminalOutbox() {
+        throw new Error("provider send success alone must not ACK terminal outbox");
+      },
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: false, reason: "provider send success is not an operator receipt" };
+    },
+  });
+
+  try {
+    bridge.getState();
+    await eventually(() => sent.length, (value) => value === 1, "expected fresh allowlisted terminal-outbox notification attempt");
+    assert.equal(sent[0].taskId, "allowed-fresh-page");
+    assert.deepEqual(
+      listCalls.slice(0, 2).map((call) => call.afterId),
+      [undefined, historicalAllowed.id],
+      "suppressed historical rows should advance after_id so fresh rows are reachable",
+    );
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.lastNotificationAttempt.taskId, "allowed-fresh-page");
+    assert.equal(state.operator.terminalOutbox.lastNotificationAttempt.receiptStatus, "pending");
+    assert.match(state.operator.terminalOutbox.lastNotificationAttempt.reason, /provider send success is not an operator receipt/);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator terminal outbox poller applies hot-reloaded cursor and allowlist readers", async () => {
+  const nowMs = Date.parse("2026-05-17T02:18:00.000Z");
+  let configuredCursor = "terminal:old-window";
+  let configuredAllowedIds = ["terminal:old-window"];
+  const freshEvent = {
+    id: "terminal:hot-reload-fresh:succeeded:2026-05-17T02%3A18%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 701,
+    createdAt: "2026-05-17T02:18:00.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "hot-reload-fresh",
+      status: "succeeded",
+      worker: "sogyo",
+      receiptProjection: "current_session_visible",
+      testSummary: "fresh event should send after hot-reloaded allowlist",
+      completedAt: "2026-05-17T02:18:00.000Z",
+    },
+  };
+  const sent = [];
+  const listCalls = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => nowMs,
+    terminalOutboxPollMs: 5,
+    readTerminalOutboxCursor: () => configuredCursor,
+    readTerminalOutboxAllowedIds: () => configuredAllowedIds,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox(params = {}) {
+        listCalls.push(params);
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox() {
+        throw new Error("provider send success alone must not ACK terminal outbox");
+      },
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: false, reason: "provider send success is not an operator receipt" };
+    },
+  });
+
+  try {
+    bridge.getState();
+    await eventually(() => listCalls.length, (value) => value >= 1, "expected initial outbox poll");
+    assert.equal(sent.length, 0, "fresh event must stay unsent before its id is allowlisted");
+
+    configuredCursor = "terminal:hot-reload-window";
+    configuredAllowedIds = [freshEvent.id];
+
+    await eventually(() => sent.length, (value) => value === 1, "expected hot-reloaded allowlist to send fresh event");
+    assert.equal(sent[0].taskId, "hot-reload-fresh");
+    assert.ok(
+      listCalls.some((call) => call.afterId === "terminal:hot-reload-window"),
+      "poller should use the hot-reloaded cursor on a later poll",
+    );
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
 test("operator terminal outbox allowlist sends only one fresh allowed event", async () => {
   const nowMs = Date.parse("2026-05-05T22:58:00.000Z");
   const historicalAllowed = {
@@ -2838,6 +3500,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
       status: "succeeded",
       worker: "sogyo",
       testSummary: "historical allowlisted event must still stay suppressed",
+      receiptProjection: "current_session_visible",
       completedAt: "2026-05-05T22:40:00.000Z",
     },
   };
@@ -2851,12 +3514,13 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
       taskId: "denied-fresh",
       status: "succeeded",
       worker: "sogyo",
+      receiptProjection: "current_session_visible",
       testSummary: "fresh event without explicit allowlist must not send",
       completedAt: "2026-05-05T22:58:00.000Z",
     },
   };
   const allowedFresh = {
-    id: "terminal:allowed-fresh:succeeded:2026-05-05T22%3A58%3A00.000Z",
+    id: "terminal:91a8574d-24b6-464b-9373-89175dc698a4:succeeded:2026-05-05T22%3A58%3A00.000Z",
     kind: "task.terminal",
     taskEventId: 503,
     createdAt: "2026-05-05T22:58:00.000Z",
@@ -2865,6 +3529,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
       taskId: "allowed-fresh",
       status: "succeeded",
       worker: "sogyo",
+      receiptProjection: "current_session_visible",
       testSummary: "fresh allowed proof event",
       completedAt: "2026-05-05T22:58:00.000Z",
     },
@@ -2876,7 +3541,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
   const bridge = createA2AOperatorEventBridge({
     now: () => nowMs,
     terminalOutboxPollMs: 5,
-    terminalOutboxAllowedIds: [historicalAllowed.id, allowedFresh.id],
+    terminalOutboxAllowedIds: [historicalAllowed.id, "allowed-fresh"],
     broker: {
       async *streamOperatorEvents(options = {}) {
         await waitForAbort(options.signal);
@@ -2919,98 +3584,1121 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
   }
 });
 
-test("operator terminal outbox cursor stops at the first unacknowledged row", async () => {
-  let nowMs = Date.parse("2026-05-06T00:00:00.000Z");
-  const firstAcked = {
-    id: "terminal:first-acked:succeeded:2026-05-06T00%3A00%3A01.000Z",
-    createdAt: "2026-05-06T00:00:01.000Z",
+test("cross-broker terminal projection is bounded, redacted, and fail-closed for ACK semantics", () => {
+  const terminalEvent = {
+    id: "terminal:child-1:succeeded:2026-05-13T01%3A30%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 528,
+    createdAt: "2026-05-13T01:30:00.000Z",
     attempts: 0,
+    ack: { status: "receipt_confirmed", evidence: "provider_delivery_receipt" },
     payload: {
-      taskId: "first-acked",
+      taskId: "child-1",
       status: "succeeded",
-      worker: "yukson",
-      testSummary: "first row receives operator-visible receipt",
-      completedAt: "2026-05-06T00:00:01.000Z",
+      worker: "jingun",
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      issue: 281,
+      prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/999?token=secret-value",
+      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/281#issuecomment-done",
+      testSummary: "done with token=super-secret and /home/operator/private/path plus ```raw log```",
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "cross-broker-terminal-brief-team2-20260513T011822Z",
+        originBrokerId: "gwakga-vps7",
+        handoffBrokerId: "seoseo",
+        originTaskId: "parent-task-528",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "gwakga-vps7",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-13T01:30:00.000Z",
     },
   };
-  const middlePending = {
-    id: "terminal:middle-pending:failed:2026-05-06T00%3A00%3A02.000Z",
-    createdAt: "2026-05-06T00:00:02.000Z",
+  const projection = buildA2ACrossBrokerTerminalProjection(terminalEvent, { maxSummaryChars: 120 });
+
+  assert.equal(projection.kind, "a2a.crossBroker.terminalProjection");
+  assert.equal(projection.parentRoundId, "cross-broker-terminal-brief-team2-20260513T011822Z");
+  assert.equal(projection.originBrokerId, "seoseo");
+  assert.equal(projection.brokerOfRecordId, "gwakga-vps7");
+  assert.equal(projection.handoffBrokerId, "seoseo");
+  assert.equal(projection.childTaskId, "child-1");
+  assert.equal(projection.receipt.providerGatewaySendSuccess, "not_ack_evidence");
+  assert.equal(projection.receipt.localReceiptState, "provider_only");
+  assert.equal(projection.receipt.originTerminalAckEligible, false);
+  assert.match(projection.evidence.prUrl, /token=\[redacted\]/);
+  assert.doesNotMatch(JSON.stringify(projection), /super-secret|private\/path|raw log/);
+
+  const currentSessionProjection = buildA2ACrossBrokerTerminalProjection({
+    ...terminalEvent,
+    ack: { status: "receipt_confirmed", evidence: "current_session_visible" },
+    payload: { ...terminalEvent.payload, taskId: "child-current-session" },
+  });
+  assert.equal(currentSessionProjection.receipt.localReceiptState, "receipt_confirmed");
+  assert.equal(currentSessionProjection.receipt.localReceiptEvidence, "current_session_visible");
+  assert.equal(currentSessionProjection.receipt.originTerminalAckEligible, false);
+});
+
+test("operator bridge relays only fresh post-cursor cross-broker terminal outbox projections", async () => {
+  const oldEvent = {
+    id: "terminal:old:succeeded:2026-05-13T01%3A00%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 527,
+    createdAt: "2026-05-13T01:00:00.000Z",
     attempts: 0,
     payload: {
-      taskId: "middle-pending",
-      status: "failed",
-      worker: "sogyo",
-      testSummary: "middle row does not yet have a visible receipt",
-      completedAt: "2026-05-06T00:00:02.000Z",
-    },
-  };
-  const thirdFresh = {
-    id: "terminal:third-fresh:succeeded:2026-05-06T00%3A00%3A03.000Z",
-    createdAt: "2026-05-06T00:00:03.000Z",
-    attempts: 0,
-    payload: {
-      taskId: "third-fresh",
+      taskId: "old-child",
       status: "succeeded",
-      worker: "nosuk",
-      testSummary: "third row must not be processed while middle is pending",
-      completedAt: "2026-05-06T00:00:03.000Z",
+      worker: "jingun",
+      testSummary: "old event must not replay",
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "gwakga-vps7" },
+      notificationOwnership: {
+        ownerBrokerId: "gwakga-vps7",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-13T01:00:00.000Z",
     },
   };
-  const events = [firstAcked, middlePending, thirdFresh];
-  const sent = [];
+  const freshEvent = {
+    id: "terminal:fresh:succeeded:2026-05-13T01%3A20%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 528,
+    createdAt: "2026-05-13T01:20:00.000Z",
+    attempts: 0,
+    payload: {
+      taskId: "fresh-child",
+      status: "succeeded",
+      worker: "jingun",
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      issue: 281,
+      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/281#issuecomment-done",
+      testSummary: "fresh terminal projection",
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "gwakga-vps7" },
+      notificationOwnership: {
+        ownerBrokerId: "gwakga-vps7",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-13T01:20:00.000Z",
+    },
+  };
+  const relayed = [];
   const acks = [];
-  const listCalls = [];
   const bridge = createA2AOperatorEventBridge({
-    now: () => nowMs,
+    now: () => Date.parse("2026-05-13T01:10:00.000Z"),
     terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
     broker: {
       async *streamOperatorEvents(options = {}) {
         await waitForAbort(options.signal);
       },
-      async listTerminalOutbox(params = {}) {
-        listCalls.push(params);
-        const startIndex = params.afterId ? events.findIndex((event) => event.id === params.afterId) + 1 : 0;
+      async listTerminalOutbox() {
         return {
           kind: "task.terminal.outbox",
-          count: events.length - startIndex,
-          cursor: thirdFresh.id,
-          reconciledUnacked: params.reconcileUnacked ? 1 : 0,
-          events: events.slice(startIndex),
+          count: 2,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [oldEvent, freshEvent],
         };
       },
       async ackTerminalOutbox(params) {
         acks.push(params);
-        const event = events.find((candidate) => candidate.id === params.id);
-        return { ...event, ack: { status: "receipt_confirmed", ...params.receipt } };
+        return freshEvent;
       },
+    },
+    handoffBrokerId: "seoseo",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "origin accepted" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:previous" });
+    await eventually(() => relayed.length, (value) => value === 1, "expected exactly one fresh relay");
+    assert.equal(relayed[0].childTaskId, "fresh-child");
+    assert.equal(relayed[0].originBrokerId, "seoseo");
+    assert.equal(relayed[0].brokerOfRecordId, "gwakga-vps7");
+    assert.equal(relayed[0].handoffBrokerId, "seoseo");
+    assert.equal(relayed[0].receipt.providerGatewaySendSuccess, "not_ack_evidence");
+    assert.equal(acks.length, 0, "relay must not ACK terminal outbox without operator-visible origin receipt");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.relayed, 1);
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.skipped, 1);
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.receiptGate.providerGatewaySendSuccess, "not_ack_evidence");
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.receiptGate.terminalAckEligible, false);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge relays cross-broker child Terminal Briefs without local operator notification", async () => {
+  const freshEvent = {
+    id: "terminal:handoff-child:succeeded:2026-05-13T05%3A00%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 539,
+    createdAt: "2026-05-13T05:00:00.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-13T05:00:00.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-13T05:00:00.000Z",
+    },
+    payload: {
+      taskId: "handoff-child",
+      status: "succeeded",
+      worker: "soonwook",
+      repo: "jinwon-int/a2a-plane",
+      issue: 276,
+      testSummary: "child handoff completed",
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo-round",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        originTaskId: "parent-seoseo-round",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-13T05:00:00.000Z",
+    },
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-13T04:59:55.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "parent accepted" };
     },
     notifyOperator(envelope) {
       sent.push(envelope);
-      if (envelope.taskId === "middle-pending") {
-        return { ackTerminalEvent: false, reason: "receipt still pending for middle row" };
-      }
       return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
     },
   });
 
   try {
-    bridge.getState();
-    await eventually(() => sent.length, (value) => value >= 2, "expected first and middle terminal outbox notifications");
-    await eventually(() => listCalls.length, (value) => value >= 2, "expected repeated polling while middle row is pending");
-    assert.deepEqual(sent.map((item) => item.taskId), ["first-acked", "middle-pending"]);
-    assert.deepEqual(acks.map((item) => item.id), [firstAcked.id], "third row must not ACK before the middle row");
-
+    bridge.getState({ cursor: "terminal:before-handoff" });
+    await eventually(() => relayed.length, (value) => value === 1, "expected child projection relay");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(relayed[0].brokerOfRecordId, "seoseo");
+    assert.equal(relayed[0].originBrokerId, "gwakga");
+    assert.equal(sent.length, 0, "handoff broker must not send operator-facing Terminal Brief locally");
+    assert.equal(acks.length, 0, "handoff broker must not ACK local terminal outbox for parent-owned Brief visibility");
     const state = bridge.getState();
-    assert.equal(state.operator.terminalOutbox.cursor, firstAcked.id);
-    assert.equal(state.operator.terminalOutbox.lastPoll.firstPendingId, middlePending.id);
-    assert.equal(state.operator.terminalOutbox.lastPoll.cursorBlockedByUnacked, true);
-    assert.equal(state.operator.terminalOutbox.pendingUnacknowledged[0].taskId, "middle-pending");
-    assert.equal(
-      state.operator.terminalOutbox.pendingUnacknowledged.some((event) => event.taskId === "third-fresh"),
-      true,
-      "monitor should still show later rows as pending while cursor is blocked",
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
+    assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge suppresses child Terminal Briefs when parentOwnerBrokerId is the only ownership field", async () => {
+  const freshEvent = {
+    id: "terminal:handoff-child-owner-only:succeeded:2026-05-13T05%3A05%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 541,
+    createdAt: "2026-05-13T05:05:00.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-13T05:05:00.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent-owned visibility evidence before ACK",
+      updatedAt: "2026-05-13T05:05:00.000Z",
+    },
+    payload: {
+      taskId: "handoff-child-owner-only",
+      status: "succeeded",
+      worker: "jingun",
+      repo: "jinwon-int/a2a-docker-runner",
+      issue: 311,
+      parentRoundId: "parent-seoseo-round",
+      parentOwnerBrokerId: "seoseo",
+      testSummary: "child handoff completed with parent owner metadata only",
+      completedAt: "2026-05-13T05:05:00.000Z",
+    },
+  };
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-13T05:04:55.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-owner-only" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(sent.length, 0, "handoff broker must suppress local Brief when parentOwnerBrokerId points elsewhere");
+    assert.equal(acks.length, 0, "handoff broker must not ACK parent-owned Brief visibility");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge suppresses parent-broker-only child Briefs with explicit notification ownership", async () => {
+  const freshEvent = {
+    id: "terminal:handoff-child-parent-broker-only:succeeded:2026-05-21T09%3A38%3A31.955Z",
+    kind: "task.terminal",
+    taskEventId: 873,
+    createdAt: "2026-05-21T09:38:31.955Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-21T09:38:31.955Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent-owned visibility evidence before ACK",
+      updatedAt: "2026-05-21T09:38:31.955Z",
+    },
+    payload: {
+      taskId: "terminal-brief-873-live-proof-20260521T1831KST-team2-jingun",
+      status: "failed",
+      worker: "jingun",
+      repo: "jinwon-int/a2a-broker",
+      issue: 871,
+      parentRoundId: "terminal-brief-873-live-proof-20260521T1831KST",
+      parentRoundOrder: 2,
+      parentRoundTotal: 2,
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "terminal-brief-873-live-proof-20260521T1831KST",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        childWorkerId: "jingun",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      terminalBriefTitle: "A2A Terminal Brief 실패: jingun(종료 2/2, 성공 0/2)",
+      completedAt: "2026-05-21T09:38:31.955Z",
+    },
+  };
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-21T09:38:30.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-parent-broker-only" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(sent.length, 0, "handoff broker must not send parent-broker-only Terminal Brief locally");
+    assert.equal(acks.length, 0, "handoff broker must not ACK parent-broker-only visibility");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge sends parent-broker-only Briefs when local broker owns notification", async () => {
+  const freshEvent = {
+    id: "terminal:parent-owned-by-local:succeeded:2026-05-21T10%3A42%3A56.903Z",
+    kind: "task.terminal",
+    taskEventId: 420,
+    createdAt: "2026-05-21T10:42:56.903Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-21T10:42:56.903Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent broker visibility evidence before ACK",
+      updatedAt: "2026-05-21T10:42:56.903Z",
+    },
+    payload: {
+      taskId: "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-jingun",
+      status: "succeeded",
+      worker: "jingun",
+      repo: "jinwon-int/a2a-docker-runner",
+      issue: 311,
+      doneUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-420",
+      parentRoundId: "terminal-brief-419-runner319-live-proof-20260521T193251KST",
+      parentRoundOrder: 2,
+      parentRoundProgress: 2,
+      parentRoundTotal: 2,
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "terminal-brief-419-runner319-live-proof-20260521T193251KST",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        childWorkerId: "jingun",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      terminalBriefTitle: "A2A Terminal Brief 완료: jingun(완료 2/2)",
+      completedAt: "2026-05-21T10:42:56.903Z",
+    },
+  };
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-21T10:42:50.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "seoseo",
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-parent-local-owner" });
+    await eventually(() => sent.length, (value) => value === 1, "expected parent owner broker to send Brief");
+    assert.equal(sent[0].taskId, "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-jingun");
+    assert.equal(sent[0].title, "A2A Terminal Brief 완료: jingun(완료 2/2)");
+    await eventually(() => acks.length, (value) => value === 1, "expected parent owner broker to ACK after visible receipt");
+    assert.equal(acks[0].receipt.evidence, "operator_visible");
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge notifies local broker-owned Terminal Briefs when no handoff broker is configured", async () => {
+  const event = {
+    id: "terminal:local-broker-owned:succeeded:2026-05-13T05%3A10%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 540,
+    createdAt: "2026-05-13T05:10:00.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-13T05:10:00.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-13T05:10:00.000Z",
+    },
+    payload: {
+      taskId: "local-broker-owned",
+      status: "succeeded",
+      worker: "nosuk",
+      doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/294",
+      parentRoundId: "local-broker-owned",
+      brokerOfRecordId: "seoseo",
+      originBrokerId: "seoseo",
+      testSummary: "local broker-owned canary completed",
+      completedAt: "2026-05-13T05:10:00.000Z",
+    },
+  };
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-13T05:09:55.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: event.id,
+          reconciledUnacked: 0,
+          events: [event],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return { ...event, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-local-owned" });
+    await eventually(() => sent.length, (value) => value === 1, "expected local broker-owned Brief notification");
+    assert.equal(sent[0].taskId, "local-broker-owned");
+    assert.equal(sent[0].doneUrl, "https://github.com/jinwon-int/a2a-broker/issues/294");
+    await eventually(() => acks.length, (value) => value === 1, "expected local broker-owned Brief ACK");
+    assert.equal(acks[0].receipt.evidence, "operator_visible");
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+
+test("operator bridge notifies parent-side synthetic cross-broker Terminal Briefs locally", async () => {
+  const parentEvent = {
+    id: "terminal:cross-broker%3Aparent-seoseo%3Agwakga%3Achild-1:succeeded:2026-05-13T05%3A30%3A00.000Z",
+    kind: "task.terminal",
+    taskEventId: 540,
+    createdAt: "2026-05-13T05:30:00.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-13T05:30:00.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "cross-broker terminal projection accepted; awaiting parent-broker current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-13T05:30:00.000Z",
+    },
+    payload: {
+      taskId: "child-1",
+      status: "succeeded",
+      run: "parent-seoseo",
+      worker: "gwakga",
+      testSummary: "parent synthetic projection completed",
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        originTaskId: "child-1",
+      },
+      completedAt: "2026-05-13T05:30:00.000Z",
+    },
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-13T05:29:55.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: parentEvent.id,
+          reconciledUnacked: 0,
+          events: [parentEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return { ...parentEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    handoffBrokerId: "seoseo",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "should not relay parent synthetic event" };
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-parent-synthetic" });
+    await eventually(() => sent.length, (value) => value === 1, "expected parent-side synthetic Brief notification");
+    assert.equal(relayed.length, 0, "parent synthetic cross-broker event must not be relayed back to child broker");
+    assert.equal(sent[0].taskId, "child-1");
+    assert.equal(sent[0].runId, "parent-seoseo");
+    await eventually(() => acks.length, (value) => value === 1, "expected parent-side synthetic Brief ACK");
+    assert.equal(acks[0].receipt.evidence, "operator_visible");
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("operator bridge skips evidence-only cross-broker projection and notifies paired operator row", async () => {
+  const projectionEvent = {
+    id: "terminal:cross-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+    kind: "task.terminal",
+    taskEventId: 541,
+    createdAt: "2026-05-13T05:35:00.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-13T05:35:00.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "cross-broker terminal projection accepted as evidence-only",
+      updatedAt: "2026-05-13T05:35:00.000Z",
+    },
+    payload: {
+      taskId: "child-1",
+      status: "succeeded",
+      run: "parent-seoseo",
+      worker: "dungae",
+      testSummary: "projection evidence only",
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        originTaskId: "child-1",
+        childWorkerId: "dungae",
+      },
+      completedAt: "2026-05-13T05:34:58.000Z",
+    },
+  };
+  const operatorEvent = {
+    ...projectionEvent,
+    id: "terminal:cross-broker-operator%3Across-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+    taskEventId: 542,
+    ackAudit: {
+      decision: "pending",
+      reason: "operator-facing parent broker row awaiting visible receipt",
+      updatedAt: "2026-05-13T05:35:00.000Z",
+    },
+    payload: {
+      ...projectionEvent.payload,
+      notificationOwnership: undefined,
+      testSummary: "operator-facing parent broker row",
+    },
+  };
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-13T05:34:55.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        if (acks.length) {
+          return {
+            kind: "task.terminal.outbox",
+            count: 0,
+            cursor: operatorEvent.id,
+            reconciledUnacked: 0,
+            events: [],
+          };
+        }
+        return {
+          kind: "task.terminal.outbox",
+          count: 2,
+          cursor: operatorEvent.id,
+          reconciledUnacked: 0,
+          events: [projectionEvent, operatorEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return { ...operatorEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    handoffBrokerId: "seoseo",
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-cross-broker-pair" });
+    await eventually(() => sent.length, (value) => value === 1, "expected only the operator-facing row to notify");
+    assert.equal(sent[0].taskId, "child-1");
+    assert.equal(sent[0].evidence.summary, "operator-facing parent broker row");
+    await eventually(() => acks.length, (value) => value === 1, "expected only the operator-facing row to ACK");
+    assert.equal(acks[0].id, operatorEvent.id);
+    assert.equal(acks[0].receipt.evidence, "operator_visible");
+    await eventually(
+      () => bridge.getState().operator.terminalOutbox.pendingUnacknowledged?.length ?? 0,
+      (value) => value === 0,
+      "expected broker poll to clear acknowledged cross-broker rows",
     );
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, operatorEvent.id);
+    assert.equal(state.operator.terminalOutbox.pendingUnacknowledged?.length ?? 0, 0);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent round at Gwakga", async () => {
+  const freshEvent = {
+    id: "terminal:child-1-of-1:succeeded:2026-05-22T22%3A58%3A13.000Z",
+    kind: "task.terminal",
+    taskEventId: 601,
+    createdAt: "2026-05-22T22:58:13.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-22T22:58:13.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent-broker current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-22T22:58:13.000Z",
+    },
+    payload: {
+      taskId: "child-1-of-1",
+      status: "succeeded",
+      worker: "dungae",
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      issue: 437,
+      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      testSummary: "lane 5/7 child 1/1 completion",
+      parentRoundId: "parent-seoseo-round-1-of-1",
+      parentRoundOrder: 1,
+      parentRoundTotal: 1,
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo-round-1-of-1",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        childWorkerId: "dungae",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-22T22:58:13.000Z",
+    },
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-22T22:58:10.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "parent accepted" };
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-child-1-1" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for child 1/1 owned by Seoseo");
+    assert.equal(relayed.length, 1, "Gwakga must relay cross-broker projection to Seoseo for child 1/1");
+    assert.equal(acks.length, 0, "Gwakga must not ACK terminal outbox for Seoseo-owned Brief visibility");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
+    assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent round at Gwakga", async () => {
+  const freshEvent = {
+    id: "terminal:child-1-of-2:succeeded:2026-05-22T22%3A58%3A14.000Z",
+    kind: "task.terminal",
+    taskEventId: 602,
+    createdAt: "2026-05-22T22:58:14.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-22T22:58:14.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent-broker current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-22T22:58:14.000Z",
+    },
+    payload: {
+      taskId: "child-1-of-2",
+      status: "succeeded",
+      worker: "dungae",
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      issue: 437,
+      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      testSummary: "lane 5/7 child 1/2 completion",
+      parentRoundId: "parent-seoseo-round-1-of-2",
+      parentRoundOrder: 1,
+      parentRoundTotal: 2,
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo-round-1-of-2",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        childWorkerId: "dungae",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-22T22:58:14.000Z",
+    },
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-22T22:58:10.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: freshEvent.id,
+          reconciledUnacked: 0,
+          events: [freshEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return freshEvent;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "parent accepted" };
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-child-1-2" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for child 1/2 owned by Seoseo");
+    assert.equal(relayed.length, 1, "Gwakga must relay cross-broker projection to Seoseo for child 1/2");
+    assert.equal(acks.length, 0, "Gwakga must not ACK terminal outbox for Seoseo-owned Brief visibility");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
+    assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sends for repeated projection", async () => {
+  const dedupeEvent = {
+    id: "terminal:dedupe-test:succeeded:2026-05-22T22%3A58%3A15.000Z",
+    kind: "task.terminal",
+    taskEventId: 603,
+    createdAt: "2026-05-22T22:58:15.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-22T22:58:15.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "terminal event accepted; awaiting parent-broker current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-22T22:58:15.000Z",
+    },
+    payload: {
+      taskId: "dedupe-child-task",
+      status: "succeeded",
+      worker: "dungae",
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      issue: 437,
+      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      testSummary: "lane 5/7 dedupe test",
+      parentRoundId: "parent-seoseo-round-dedupe",
+      parentRoundOrder: 1,
+      parentRoundTotal: 2,
+      parentOwnedTerminalBrief: true,
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo-round-dedupe",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        childWorkerId: "dungae",
+      },
+      notificationOwnership: {
+        ownerBrokerId: "seoseo",
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+      },
+      completedAt: "2026-05-22T22:58:15.000Z",
+    },
+  };
+  // Simulate a second event with the same taskId (different event id — outbox replay scenario)
+  const duplicateEvent = {
+    ...dedupeEvent,
+    id: "terminal:dedupe-test-duplicate:succeeded:2026-05-22T22%3A58%3A16.000Z",
+    taskEventId: 604,
+    createdAt: "2026-05-22T22:58:16.000Z",
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-22T22:58:10.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        // Return both events in the same batch to test cross-broker dedupe
+        return {
+          kind: "task.terminal.outbox",
+          count: 2,
+          cursor: duplicateEvent.id,
+          reconciledUnacked: 0,
+          events: [dedupeEvent, duplicateEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return params;
+      },
+    },
+    handoffBrokerId: "gwakga",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "parent accepted" };
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-dedupe" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for dedupe test (Seoseo-owned)");
+    assert.equal(relayed.length, 2, "both original and duplicate relay projections should be forwarded");
+    // Both relay projections should reference the same childTaskId from the same parent round
+    assert.equal(relayed[0].childTaskId, "dedupe-child-task");
+    assert.equal(relayed[1].childTaskId, "dedupe-child-task");
+    const state = bridge.getState();
+    assert.equal(state.operator.terminalOutbox.cursor, duplicateEvent.id);
+  } finally {
+    bridge.shutdown();
+    await bridge.waitForIdle();
+  }
+});
+
+test("cross-broker parent-side synthetic Seoseo operator Brief has correct title scoped to parent round", async () => {
+  const parentEvent = {
+    id: "terminal:cross-broker%3Aparent-seoseo%3Agwakga%3Achild-1-of-2:succeeded:2026-05-22T22%3A58%3A17.000Z",
+    kind: "task.terminal",
+    taskEventId: 605,
+    createdAt: "2026-05-22T22:58:17.000Z",
+    attempts: 0,
+    receipt: { status: "accepted", updatedAt: "2026-05-22T22:58:17.000Z" },
+    ackAudit: {
+      decision: "pending",
+      reason: "cross-broker terminal projection accepted; awaiting parent-broker current-session-visible/operator-visible evidence before ACK",
+      updatedAt: "2026-05-22T22:58:17.000Z",
+    },
+    payload: {
+      taskId: "child-1-of-2",
+      status: "succeeded",
+      run: "parent-seoseo-round-synthetic",
+      worker: "dungae",
+      testSummary: "parent synthetic projection for child 1/2 completed",
+      parentRoundId: "parent-seoseo-round-synthetic",
+      parentRoundOrder: 1,
+      parentRoundTotal: 2,
+      crossBrokerHandoff: {
+        parentRoundId: "parent-seoseo-round-synthetic",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+        originTaskId: "child-1-of-2",
+        childWorkerId: "dungae",
+      },
+      completedAt: "2026-05-22T22:58:17.000Z",
+    },
+  };
+  const relayed = [];
+  const sent = [];
+  const acks = [];
+  const bridge = createA2AOperatorEventBridge({
+    now: () => Date.parse("2026-05-22T22:58:15.000Z"),
+    terminalOutboxPollMs: 5,
+    terminalOutboxReconcileUnackedOnStart: false,
+    broker: {
+      async *streamOperatorEvents(options = {}) {
+        await waitForAbort(options.signal);
+      },
+      async listTerminalOutbox() {
+        return {
+          kind: "task.terminal.outbox",
+          count: 1,
+          cursor: parentEvent.id,
+          reconciledUnacked: 0,
+          events: [parentEvent],
+        };
+      },
+      async ackTerminalOutbox(params) {
+        acks.push(params);
+        return { ...parentEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
+      },
+    },
+    handoffBrokerId: "seoseo",
+    relayTerminalProjection(projection) {
+      relayed.push(projection);
+      return { accepted: true, reason: "should not relay parent synthetic event" };
+    },
+    notifyOperator(envelope) {
+      sent.push(envelope);
+      return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
+    },
+  });
+
+  try {
+    bridge.getState({ cursor: "terminal:before-synthetic-brief-title" });
+    await eventually(() => sent.length, (value) => value === 1, "expected Seoseo-side synthetic Brief notification");
+    assert.equal(relayed.length, 0, "Seoseo synthetic cross-broker event must not be relayed back to child broker");
+    assert.equal(sent[0].taskId, "child-1-of-2");
+    assert.equal(sent[0].runId, "parent-seoseo-round-synthetic");
+    assert.equal(sent[0].parentRoundId, "parent-seoseo-round-synthetic");
+    // Title should reflect parent round context with 1/2, not a misleading child-local "1/1"
+    assert.ok(
+      sent[0].title.includes("1/2") || sent[0].title.includes("완료"),
+      `synthetic brief title "${sent[0].title}" must contain parent round order context`,
+    );
+    await eventually(() => acks.length, (value) => value === 1, "expected Seoseo synthetic Brief ACK");
+    assert.equal(acks[0].receipt.evidence, "operator_visible");
   } finally {
     bridge.shutdown();
     await bridge.waitForIdle();

@@ -110,6 +110,6 @@ After S1–S4 pass:
 
 > ⚠️ Wake-on-Task remains **default-off / opt-in** until canary proof complete.
 > 
-> Only enable via explicit config: `plugins.entries.a2a-broker-adapter.config.wakeOnTask.enabled = true`
+> Only enable via explicit config: `plugins.entries.a2a-broker-adapter.config.wake.enabled = true`
 > 
 > No other code path should enable wake automatically.

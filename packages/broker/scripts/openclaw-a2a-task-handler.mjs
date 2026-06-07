@@ -6,9 +6,24 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const HANDLER_VERSION = "0.2.8";
+const HANDLER_VERSION = "0.2.11";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
+
+// ── Allowlisted worker model / thinking constants ───────────────────────
+
+const ALLOWED_WORKER_MODELS = new Set([
+  "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-pro",
+]);
+
+const VALID_WORKER_THINKING_LEVELS = new Set([
+  "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max",
+]);
+
+const DEFAULT_WORKER_THINKING = "low";
+const DEFAULT_RUNNER_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+const DEFAULT_OPENCLAW_TIMEOUT_SEC = 60 * 60;
 
 export const BUILD_INFO = Object.freeze({
   name: "openclaw-a2a-task-handler",
@@ -142,7 +157,7 @@ function buildRunnerTask(task, env = process.env) {
       "Leave a Start marker before work begins and a PR, Done, or Block marker when work ends; return startCommentUrl plus prUrl, doneCommentUrl, or blockCommentUrl when available.",
       "Before creating a PR, fail closed if OpenClaw runtime/bootstrap context files would enter the branch or artifact evidence. Report the exact repo-relative offending paths, including any of: AGENTS.md, SOUL.md, USER.md, TOOLS.md, HEARTBEAT.md, IDENTITY.md, .openclaw/**.",
     ].filter(Boolean).join("\n\n"),
-    timeoutMs: Number(env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS || payload.timeoutMs || 45 * 60 * 1000),
+    timeoutMs: Number(env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS || payload.timeoutMs || DEFAULT_RUNNER_TASK_TIMEOUT_MS),
   };
 
   const issueUrl = safeText(payload.issueUrl, "");
@@ -156,6 +171,25 @@ function buildRunnerTask(task, env = process.env) {
   if (issueNumber) runnerTask.issueNumber = issueNumber;
   if (reportLanguage) runnerTask.reportLanguage = reportLanguage;
   if (requestedBy) runnerTask.requestedBy = requestedBy;
+  if (isGithubReadOnlyEvidenceTask(task)) {
+    runnerTask.readOnlyValidation = true;
+  }
+  // Propagate no-change/read-only flags from payload for propose_patch + github-propose-patch
+  // The broker sets these flags explicitly when a task should validate without requiring a PR/diff.
+  // Without propagation the Docker runner receives no no-change env vars and correctly fail-closes.
+  if (isGithubPatchEvidenceTask(task)) {
+    if (
+      payload.allowNoChanges === true ||
+      payload.evidenceOnlyAllowed === true ||
+      payload.readOnlyValidation === true ||
+      payload.validationOnly === true
+    ) {
+      runnerTask.allowNoChanges = true;
+    }
+    if (payload.readOnlyValidation === true || payload.validationOnly === true) {
+      runnerTask.readOnlyValidation = true;
+    }
+  }
 
   if (usesPluginPreset) {
     runnerTask.preset = "openclaw-plugin-a2a-dev";
@@ -168,6 +202,12 @@ function buildRunnerTask(task, env = process.env) {
     if (safeText(payload.baseBranch, "")) runnerTask.baseBranch = safeText(payload.baseBranch);
   }
 
+  // Carry workerModel/workerThinking overrides from task payload to runner task
+  const { model: effectiveModel } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking } = resolveWorkerThinking(task);
+  runnerTask.workerModel = effectiveModel;
+  runnerTask.workerThinking = effectiveThinking;
+
   if (Array.isArray(payload.repos) && payload.repos.length > 0) {
     runnerTask.repos = payload.repos;
   }
@@ -178,12 +218,294 @@ function buildRunnerTask(task, env = process.env) {
   return runnerTask;
 }
 
-function isGithubEvidenceTask(task) {
+const GITHUB_PATCH_TASK_MODES = new Set(["github-propose-patch", "github-issue-instruction"]);
+const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
+  "github-verify",
+  "github-read-only-validation",
+  "read-only-validation",
+  "github-libero-validation",
+  "libero-validation",
+  "family-wiki-readonly-audit",
+]);
+
+// ── Worker model validation ─────────────────────────────────────────────
+
+/**
+ * Resolve the effective model from task payload or environment.
+ * If the payload specifies a model, it must be in ALLOWED_WORKER_MODELS.
+ * Returns { model, fromPayload } where fromPayload=true means the model
+ * came from the task payload override.
+ */
+function resolveWorkerModel(task, env = process.env) {
+  const payload = taskPayload(task);
+  const payloadModel = safeText(payload.workerModel, "");
+  const envModel = safeText(env.A2A_OPENCLAW_MODEL, "");
+
+  if (payloadModel && ALLOWED_WORKER_MODELS.has(payloadModel)) {
+    return { model: payloadModel, fromPayload: true };
+  }
+  if (payloadModel && !ALLOWED_WORKER_MODELS.has(payloadModel)) {
+    return { model: null, error: `workerModel "${payloadModel}" is not in the allowlist: [${[...ALLOWED_WORKER_MODELS].join(", ")}]` };
+  }
+  if (envModel && ALLOWED_WORKER_MODELS.has(envModel)) {
+    return { model: envModel, fromPayload: false };
+  }
+  return { model: "deepseek/deepseek-v4-flash", fromPayload: false };
+}
+
+/**
+ * Resolve the effective thinking level from task payload or default.
+ */
+function resolveWorkerThinking(task) {
+  const payload = taskPayload(task);
+  const payloadThinking = safeText(payload.workerThinking, "");
+  if (payloadThinking && VALID_WORKER_THINKING_LEVELS.has(payloadThinking)) {
+    return { thinking: payloadThinking, fromPayload: true };
+  }
+  return { thinking: DEFAULT_WORKER_THINKING, fromPayload: false };
+}
+
+/**
+ * Validate that if a workerModel override is present in the task payload,
+ * it is in the allowlist. Returns null on success, or an error object.
+ */
+function validateWorkerOverrides(task) {
+  const modelRes = resolveWorkerModel(task);
+  if (modelRes.error) {
+    return {
+      error: {
+        code: "worker_model_not_allowed",
+        message: modelRes.error,
+        details: {
+          allowedModels: [...ALLOWED_WORKER_MODELS],
+          validThinkingLevels: [...VALID_WORKER_THINKING_LEVELS],
+          taskId: safeText(task.id, undefined),
+          intent: safeText(task.intent, undefined),
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
+  }
+  return null;
+}
+
+function isGithubPatchEvidenceTask(task) {
   const mode = taskMode(task);
   const intent = safeText(task.intent, "");
-  if (intent === "propose_patch" && (mode === "github-propose-patch" || mode === "github-issue-instruction")) return true;
-  if (intent === "verify" && mode === "github-verify") return true;
+  return intent === "propose_patch" && GITHUB_PATCH_TASK_MODES.has(mode);
+}
+
+function isGithubReadOnlyEvidenceTask(task) {
+  const mode = taskMode(task);
+  const intent = safeText(task.intent, "");
+  return (
+    (intent === "analyze" || intent === "verify" || intent === "validate_change") &&
+    GITHUB_READ_ONLY_VALIDATION_MODES.has(mode)
+  );
+}
+
+function isGithubEvidenceTask(task) {
+  return isGithubPatchEvidenceTask(task) || isGithubReadOnlyEvidenceTask(task);
+}
+
+const READ_ONLY_ANALYSIS_MODES = new Set(["analysis-only", "read-only-analysis", "analyze-only"]);
+
+/**
+ * Detects analysis-only / read-only A2A task modes.
+ *
+ * These tasks produce Start+Done/Block evidence (findings, summary, risks)
+ * without requiring a patch/PR. They are strictly read-only: no code changes,
+ * no workspace modification, no file writes.
+ *
+ * GitHub propose_patch PR evidence requirements are preserved — analysis-only
+ * tasks do not bypass the propose_patch evidence gate.
+ */
+function isReadOnlyAnalysisTask(task) {
+  const intent = safeText(task.intent, "").toLowerCase();
+  const mode = taskMode(task).toLowerCase();
+  // Explicit mode match: payload.mode must name a recognized analysis-only mode.
+  if (intent === "analyze" && READ_ONLY_ANALYSIS_MODES.has(mode)) return true;
+  if (isSourceOnlyAnalysisTask(task)) return true;
   return false;
+}
+
+function isSourceOnlyAnalysisTask(task) {
+  const intent = safeText(task?.intent, "").toLowerCase();
+  if (intent !== "analyze") return false;
+  const payload = taskPayload(task);
+  const mode = taskMode(task).toLowerCase();
+  const sourceOnly = payload.sourceOnly === true || payload.source_only === true;
+  if (!sourceOnly) return false;
+  const phase = safeText(payload.phase, "").toLowerCase();
+  const role = safeText(payload.role, "").toLowerCase();
+  return mode.startsWith("a2a-") || mode.includes("analysis") || mode.includes("evidence") || Boolean(phase || role);
+}
+
+function shouldUseOpenClawAnalysisBridge(task, env = process.env) {
+  if (!isReadOnlyAnalysisTask(task)) return false;
+  if (isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_DISABLED)) return false;
+  if (!isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_ENABLED)) return false;
+  return isOpenClawBridgeConfigured(env);
+}
+
+function normalizedBridgeAnalysisStatus(value) {
+  const status = safeText(value, "done").toLowerCase();
+  return status === "blocked" || status === "block" ? "blocked" : "done";
+}
+
+function runOpenClawAnalysisBridge(task, env = process.env) {
+  const payload = taskPayload(task);
+  // Resolve effective worker model/thinking from task payload overrides
+  const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
+  const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
+  const sessionId = safeText(
+    env.A2A_OPENCLAW_ANALYSIS_SESSION_ID,
+    `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-analysis`,
+  );
+  const prompt = [
+    `You are A2A worker ${nodeId}. Complete this read-only A2A analysis task.`,
+    "Do not modify files, deploy, restart services, send providers, acknowledge terminal rows, mutate databases, or move credentials.",
+    "Use only the evidence provided in the task unless an approved read-only tool result is present in the payload.",
+    "If the task cannot be analyzed from the provided material, return status=blocked with the exact missing evidence.",
+    "Return JSON only, no markdown, with exactly this shape:",
+    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    "All human-readable text should be Korean unless quoting code/test output.",
+    `Task id: ${safeText(task.id, "unknown")}`,
+    `Intent: ${safeText(task.intent, "unknown")}`,
+    `Mode: ${taskMode(task)}`,
+    `Assigned worker: ${safeText(task.assignedWorkerId, "")}`,
+    `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
+    `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
+    `Task message:\n${safeText(task.message, "")}`,
+    `Payload JSON:\n${jsonForPrompt(payload, 16000)}`,
+  ].join("\n\n");
+
+  const command = safeText(env.OPENCLAW_BIN, "openclaw");
+  const args = [
+    "agent",
+    "--local",
+    "--agent", safeText(env.A2A_OPENCLAW_ANALYSIS_AGENT_ID || env.A2A_OPENCLAW_AGENT_ID, "main"),
+    "--session-id", sessionId,
+    "--message", prompt,
+    "--model", effectiveModel,
+    "--thinking", effectiveThinking,
+    "--timeout", timeoutSec,
+    "--json",
+  ];
+
+  const watchdogMs = env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS
+    ? Number(env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS)
+    : (Number(timeoutSec) + 30) * 1000;
+
+  const child = spawnSync(command, args, {
+    cwd: safeText(env.A2A_HANDLER_CWD, process.cwd()),
+    env,
+    encoding: "utf8",
+    maxBuffer: 50 * 1024 * 1024,
+    timeout: watchdogMs,
+    killSignal: "SIGKILL",
+  });
+
+  if (child.error) {
+    const isTimeout = child.error.code === "ETIMEDOUT";
+    return {
+      error: {
+        code: isTimeout ? "openclaw_analysis_timeout" : "openclaw_analysis_spawn_failed",
+        message: child.error.message,
+        details: { signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  if (child.status !== 0) {
+    return {
+      error: {
+        code: child.signal ? "openclaw_analysis_timeout" : "openclaw_analysis_failed",
+        message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
+        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  let envelope;
+  try {
+    envelope = parseOpenClawEnvelope(child.stdout, child.stderr);
+  } catch {
+    return {
+      error: {
+        code: "openclaw_analysis_no_final_json",
+        message: "OpenClaw analysis bridge produced no parseable output envelope",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  const text = extractOpenClawText(envelope);
+  if (!text) {
+    return {
+      error: {
+        code: "openclaw_analysis_no_final_json",
+        message: "OpenClaw analysis bridge returned no visible text output",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  let response;
+  try {
+    response = parseJsonFromLooseText(text);
+  } catch {
+    return {
+      error: {
+        code: "openclaw_analysis_no_final_json",
+        message: "OpenClaw analysis bridge response text contained no valid JSON",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  const status = normalizedBridgeAnalysisStatus(response.status);
+  const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
+  const output = {
+    analysisSummary,
+    analysisKind: "openclaw_bridge",
+    analysisStatus: status,
+    findings: normalizeStringArray(response.findings),
+    risks: normalizeStringArray(response.risks),
+    recommendations: normalizeStringArray(response.recommendations),
+    evidenceRefs: normalizeStringArray(response.evidenceRefs),
+    doneCommentUrl: safeText(response.doneCommentUrl, undefined),
+    blockCommentUrl: safeText(response.blockCommentUrl, undefined),
+    startCommentUrl: safeText(response.startCommentUrl, undefined),
+    nodeId,
+    taskId: safeText(task.id, undefined),
+    mode: taskMode(task),
+    role: safeText(payload.role, undefined),
+    phase: safeText(payload.phase, undefined),
+    noLive: payload.noLive === true || payload.no_live === true || undefined,
+    sourceOnly: payload.sourceOnly === true || payload.source_only === true || undefined,
+    payloadKeys: Object.keys(payload).sort(),
+    effectiveModel,
+    effectiveThinking,
+    modelFromPayload: modelFromPayload || undefined,
+  };
+
+  return {
+    result: {
+      summary: `analysis bridge ${status}: ${analysisSummary}`,
+      note: "read-only A2A analysis completed through OpenClaw bridge",
+      handler: BUILD_INFO,
+      lifecycle: {
+        intent: "analyze",
+        mode: taskMode(task),
+        taskId: safeText(task.id, "unknown"),
+        proposalId: safeText(task.proposalId, undefined),
+        exchangeId: safeText(task.exchangeId, undefined),
+      },
+      output,
+    },
+  };
 }
 
 
@@ -318,8 +640,12 @@ function runOpenClawBridge(task, env = process.env) {
     return { error: { code: "openclaw_bridge_invalid_task", message: "github-propose-patch requires payload.issue or payload.issueUrl", details: { buildInfo: BUILD_INFO } } };
   }
 
+  // Resolve effective worker model/thinking from task payload overrides
+  const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
-  const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_TIMEOUT_SEC || 900)));
+  const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
   const sessionId = safeText(env.A2A_OPENCLAW_SESSION_ID, `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-github`);
   const prompt = [
     `You are A2A worker ${nodeId}. Complete this GitHub development assignment end-to-end.`,
@@ -336,6 +662,8 @@ function runOpenClawBridge(task, env = process.env) {
     `Issue: ${issue ? `#${issue}` : issueUrl}`,
     `Issue URL: ${issueUrl}`,
     `Current workspace root: ${env.A2A_HANDLER_CWD || process.cwd()}`,
+    `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
+    `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
     `Task title: ${safeText(payload.title, "")}`,
     `Task focus: ${safeText(payload.focus, "")}`,
     `Acceptance: ${safeText(payload.acceptance, "")}`,
@@ -350,7 +678,8 @@ function runOpenClawBridge(task, env = process.env) {
     "--agent", safeText(env.A2A_OPENCLAW_AGENT_ID, "main"),
     "--session-id", sessionId,
     "--message", prompt,
-    "--thinking", safeText(env.A2A_OPENCLAW_THINKING, "low"),
+    "--model", effectiveModel,
+    "--thinking", effectiveThinking,
     "--timeout", timeoutSec,
     "--json",
   ];
@@ -449,6 +778,9 @@ function runOpenClawBridge(task, env = process.env) {
       risks: normalizeStringArray(response.risks),
       nodeId,
       taskId: safeText(task.id, undefined),
+      effectiveModel,
+      effectiveThinking,
+      modelFromPayload: modelFromPayload || undefined,
     };
     if (safeText(evidence.startCommentUrl, "")) output.startCommentUrl = safeText(evidence.startCommentUrl);
     if (safeText(evidence.prUrl, "")) output.prUrl = safeText(evidence.prUrl);
@@ -603,6 +935,14 @@ function runDockerRunner(task, env = process.env) {
     output.nodeId = nodeId;
     output.taskId = safeText(task.id, undefined);
 
+    // Record effective model/thinking for evidence
+    const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+    const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+    output.effectiveModel = effectiveModel;
+    output.effectiveThinking = effectiveThinking;
+    if (modelFromPayload) output.modelFromPayload = true;
+    if (thinkingFromPayload) output.thinkingFromPayload = true;
+
     const branch = safeText(parsed.branch, "");
     if (branch) output.branch = branch;
     const tests = normalizeStringArray(parsed.tests);
@@ -611,6 +951,68 @@ function runDockerRunner(task, env = process.env) {
     if (filesChanged.length) output.filesChanged = filesChanged;
     const risks = normalizeStringArray(parsed.risks);
     if (risks.length) output.risks = risks;
+
+    // --- fail-closed OpenClaw runtime/bootstrap leak guard (issue #522) ---
+    // Runner output is the handoff evidence the broker will surface. Refuse success if the
+    // changed-file list or artifact list contains OpenClaw workspace/bootstrap files.
+    const openclawBootstrapLeakPaths = extractOpenClawBootstrapLeakPaths(parsed.artifacts, parsed.filesChanged);
+    if (openclawBootstrapLeakPaths.length) {
+      return {
+        error: {
+          code: "docker_runner_openclaw_bootstrap_leak",
+          message:
+            "docker runner reported OpenClaw runtime/bootstrap files in branch or artifact evidence; " +
+            "refusing GitHub completion evidence until offending paths are removed",
+          details: {
+            runnerTask,
+            openclawBootstrapLeakPaths,
+            runnerResult: parsed,
+          },
+        },
+      };
+    }
+
+    // --- fail-closed branch/no-diff guard (issue #447) ---
+    // The docker runner owns branch creation and can report the runner branch it expected.
+    // Do not compare against baseBranch: baseBranch is normally `main`, while successful
+    // patch evidence branches are feature branches. Only fail when the runner explicitly
+    // reports an expected/runner branch and the completed branch differs.
+    const expectedRunnerBranch = safeText(parsed.expectedBranch ?? parsed.runnerBranch ?? parsed.prBranch, "");
+    if (expectedRunnerBranch && branch && branch !== expectedRunnerBranch) {
+      return {
+        error: {
+          code: "docker_runner_branch_mismatch",
+          message:
+            `docker runner completed on branch "${branch}" but expected runner branch "${expectedRunnerBranch}"; ` +
+            "refusing to merge evidence from an unexpected branch",
+          details: {
+            runnerTask,
+            expectedRunnerBranch,
+            actualBranch: branch,
+            runnerResult: parsed,
+          },
+        },
+      };
+    }
+
+    // Preserve the older missing-evidence contract for generic fake-runner outputs.
+    // Treat no-diff as a hard failure only when the runner explicitly detected it.
+    const runnerReportedNoDiff = parsed.noDiff === true || safeText(parsed.diffStatus, "") === "empty";
+    if (isGithubPatchEvidenceTask(task) && runnerReportedNoDiff) {
+      return {
+        error: {
+          code: "docker_runner_no_diff",
+          message:
+            "docker runner completed but reported no file changes; " +
+            "github-propose-patch tasks must produce a non-empty diff before PR creation",
+          details: {
+            runnerTask,
+            runnerResult: parsed,
+            branch,
+          },
+        },
+      };
+    }
 
     // map all evidence URLs from runner result through both github sub-object and top-level output
     const githubEvidence = buildOutputGithub(parsed);
@@ -676,6 +1078,8 @@ function handleBuiltinTask(task, env = process.env) {
 
   const mode = taskMode(task);
   const payload = taskPayload(task);
+  const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
 
   if (isDockerBrokerNoopSmokeTask(task)) {
     return {
@@ -699,6 +1103,97 @@ function handleBuiltinTask(task, env = process.env) {
             completedAt: new Date().toISOString(),
           },
           payloadKeys: Object.keys(payload).sort(),
+          effectiveModel,
+          effectiveThinking,
+          modelFromPayload: modelFromPayload || undefined,
+        },
+      },
+    };
+  }
+
+  if (isReadOnlyAnalysisTask(task)) {
+    // Read-only analysis task: produces Done/Block evidence without requiring a patch/PR.
+    // These tasks are strictly read-only — no code changes, no workspace modifications.
+    // GitHub propose_patch PR evidence requirements are preserved (see isGithubEvidenceTask above).
+    const analysisSummary = safeText(payload.summary, safeText(payload.analysisSummary, payload.finding))
+      || safeText(task.message, `analysis-only task completed`);
+    const doneCommentUrl = safeText(payload.doneCommentUrl, "");
+    const blockCommentUrl = safeText(payload.blockCommentUrl, "");
+    const startCommentUrl = safeText(payload.startCommentUrl, "");
+    const findings = Array.isArray(payload.findings) ? [...payload.findings] : [];
+    const risks = Array.isArray(payload.risks) ? [...payload.risks] : [];
+    const recommendations = Array.isArray(payload.recommendations) ? [...payload.recommendations] : [];
+    const evidenceRefs = Array.isArray(payload.evidenceRefs) ? [...payload.evidenceRefs] : [];
+    const artifacts = Array.isArray(payload.artifacts) ? [...payload.artifacts] : [];
+    const noLive = payload.noLive === true || payload.no_live === true || undefined;
+    const sourceOnly = payload.sourceOnly === true || payload.source_only === true || undefined;
+
+    if (blockCommentUrl) {
+      return {
+        result: {
+          summary: `analysis-only blocked: ${analysisSummary}`,
+          note: `analysis-only task blocked with Block evidence`,
+          handler: BUILD_INFO,
+          lifecycle: {
+            intent: "analyze",
+            mode,
+            taskId: safeText(task.id, "unknown"),
+            proposalId: safeText(task.proposalId, undefined),
+            exchangeId: safeText(task.exchangeId, undefined),
+          },
+          output: {
+            analysisSummary,
+            analysisKind: "builtin_structured",
+            blockCommentUrl,
+            startCommentUrl: startCommentUrl || undefined,
+            findings,
+            risks,
+            recommendations,
+            evidenceRefs,
+            artifacts,
+            role: safeText(payload.role, undefined),
+            phase: safeText(payload.phase, undefined),
+            noLive,
+            sourceOnly,
+            payloadKeys: Object.keys(payload).sort(),
+            effectiveModel,
+            effectiveThinking,
+            modelFromPayload: modelFromPayload || undefined,
+          },
+        },
+      };
+    }
+
+    return {
+      result: {
+        summary: `analysis-only completed: ${analysisSummary}`,
+        note: `analysis-only task completed with Done evidence (no PR required)`,
+        handler: BUILD_INFO,
+        lifecycle: {
+          intent: "analyze",
+          mode,
+          taskId: safeText(task.id, "unknown"),
+          proposalId: safeText(task.proposalId, undefined),
+          exchangeId: safeText(task.exchangeId, undefined),
+        },
+        output: {
+          analysisSummary,
+          analysisKind: "builtin_structured",
+          doneCommentUrl: doneCommentUrl || undefined,
+          startCommentUrl: startCommentUrl || undefined,
+          findings,
+          risks,
+          recommendations,
+          evidenceRefs,
+          artifacts,
+          role: safeText(payload.role, undefined),
+          phase: safeText(payload.phase, undefined),
+          noLive,
+          sourceOnly,
+          payloadKeys: Object.keys(payload).sort(),
+          effectiveModel,
+          effectiveThinking,
+          modelFromPayload: modelFromPayload || undefined,
         },
       },
     };
@@ -722,14 +1217,33 @@ function handleBuiltinTask(task, env = process.env) {
         payloadKeys: task.payload && typeof task.payload === "object" && !Array.isArray(task.payload)
           ? Object.keys(task.payload).sort()
           : [],
+        effectiveModel,
+        effectiveThinking,
+        modelFromPayload: modelFromPayload || undefined,
       },
     },
   };
 }
 
+export const __test = Object.freeze({
+  buildRunnerTask,
+  DEFAULT_OPENCLAW_TIMEOUT_SEC,
+  DEFAULT_RUNNER_TASK_TIMEOUT_MS,
+  resolveWorkerModel,
+  resolveWorkerThinking,
+  validateWorkerOverrides,
+});
+
 export function handleTask(task, env = process.env) {
   if (!task || typeof task !== "object" || Array.isArray(task)) {
     return { error: { code: "invalid_task", message: "handler input must be a task object", details: { buildInfo: BUILD_INFO } } };
+  }
+
+  // Fail closed if the task requests an unsupported model override.
+  // This check happens before any execution to prevent wasted patch attempts.
+  const overrideValidation = validateWorkerOverrides(task);
+  if (overrideValidation) {
+    return overrideValidation;
   }
 
   if (shouldUseDockerRunner(task, env)) {
@@ -738,6 +1252,10 @@ export function handleTask(task, env = process.env) {
 
   if (shouldUseOpenClawBridge(task, env)) {
     return runOpenClawBridge(task, env);
+  }
+
+  if (shouldUseOpenClawAnalysisBridge(task, env)) {
+    return runOpenClawAnalysisBridge(task, env);
   }
 
   return handleBuiltinTask(task, env);

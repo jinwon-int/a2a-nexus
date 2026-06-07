@@ -1,0 +1,35 @@
+{
+  "now": "2026-06-06T21:00:00.000Z",
+  "task": {
+    "taskId": "example-hybrid-supplemental-review",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1253,
+    "title": "Late supplemental PR hygiene after Team1 round",
+    "workProfile": "late_supplemental_review",
+    "ambiguity": "medium",
+    "urgency": "normal",
+    "desiredOptimization": "confidence",
+    "hasIndependentEvidenceLanes": true,
+    "seoseoOwnsImplementation": true,
+    "boundedHelperScope": [
+      "review stale close wording",
+      "confirm no duplicate parent closeout",
+      "check CI and merge risk"
+    ]
+  },
+  "workers": {
+    "capacityState": "healthy",
+    "staleTasks": 0,
+    "activeRounds": 0
+  },
+  "boundaries": {
+    "liveDeployOrRestart": false,
+    "dbMutation": false,
+    "terminalAckOrReplay": false,
+    "providerSend": false,
+    "releaseOrVisibilityChange": false,
+    "credentialOrSecretChange": false,
+    "approvalSensitiveCloseout": true
+  },
+  "finalizerOwner": "seoseo"
+}

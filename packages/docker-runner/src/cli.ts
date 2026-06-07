@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { loadConfig } from "./config.js";
+import { DEFAULT_SERVICE_ENV_FILE, loadConfig, mergeRunnerEnvFile } from "./config.js";
 import { runEngineSmokeFixture } from "./engine-smoke.js";
 import { cleanup, doctor, install } from "./ops.js";
 import { runTask } from "./runner.js";
@@ -28,19 +28,19 @@ async function main(): Promise<void> {
   }
 
   if (command === "doctor") {
-    const config = await loadConfig({ ...process.env, A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
+    const config = await loadConfig(loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" }));
     console.log(JSON.stringify(await doctor(config), null, 2));
     return;
   }
 
   if (command === "install" || command === "setup") {
-    const config = await loadConfig({ ...process.env, A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
+    const config = await loadConfig(loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" }));
     console.log(JSON.stringify(await install(config), null, 2));
     return;
   }
 
   if (command === "cleanup") {
-    const config = await loadConfig({ ...process.env, A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" });
+    const config = await loadConfig(loadCliEnv({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1" }));
     const ttlMs = parseTtlMs(processFlag("--ttl", arg) ?? "24h");
     const dryRun = process.argv.includes("--dry-run");
     console.log(JSON.stringify(await cleanup({ rootDir: config.rootDir, ttlMs, dryRun }), null, 2));
@@ -66,8 +66,16 @@ function parseTtlMs(value: string): number {
 
 function processFlag(name: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(name);
-  if (index >= 0) return process.argv[index + 1];
+  if (index >= 0) {
+    const value = process.argv[index + 1];
+    return value?.startsWith("--") ? undefined : value;
+  }
   return fallback?.startsWith("--") ? undefined : fallback;
+}
+
+function loadCliEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const envFile = processFlag("--env-file") ?? process.env.A2A_DOCKER_RUNNER_ENV_FILE ?? DEFAULT_SERVICE_ENV_FILE;
+  return mergeRunnerEnvFile({ ...process.env, ...extra }, envFile);
 }
 
 function readStdin(): Promise<string> {
@@ -83,10 +91,10 @@ function printHelp(): void {
   console.log(`a2a-docker-runner
 
 Usage:
-  a2a-docker-runner doctor
+  a2a-docker-runner doctor [--env-file /etc/default/openclaw-a2a-worker]
   a2a-docker-runner smoke
-  a2a-docker-runner install
-  a2a-docker-runner cleanup [--ttl 24h] [--dry-run]
+  a2a-docker-runner install [--env-file /etc/default/openclaw-a2a-worker]
+  a2a-docker-runner cleanup [--env-file /etc/default/openclaw-a2a-worker] [--ttl 24h] [--dry-run]
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);

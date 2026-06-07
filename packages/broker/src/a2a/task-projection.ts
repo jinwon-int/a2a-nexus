@@ -52,7 +52,9 @@ export function projectBrokerTask(task: TaskRecord): A2ATaskProjection {
       requester: task.requester,
       target: task.target,
       exchangeId: task.exchangeId,
+      contextId: task.exchangeId,
       parentTaskId: task.parentTaskId,
+      referenceTaskIds: task.referenceTaskIds,
       proposalId: task.proposalId,
       targetNodeId: task.targetNodeId,
       assignedWorkerId: task.assignedWorkerId,
@@ -81,7 +83,9 @@ export function projectBrokerTaskForList(task: TaskRecord): A2ATaskListProjectio
       requester: task.requester,
       target: task.target,
       exchangeId: task.exchangeId,
+      contextId: task.exchangeId,
       parentTaskId: task.parentTaskId,
+      referenceTaskIds: task.referenceTaskIds,
       proposalId: task.proposalId,
       targetNodeId: task.targetNodeId,
       assignedWorkerId: task.assignedWorkerId,
@@ -98,6 +102,26 @@ export function projectBrokerTaskForList(task: TaskRecord): A2ATaskListProjectio
   };
 }
 
+/**
+ * Map broker-internal {@link TaskStatus} to the public A2A 1.0 task state.
+ *
+ * Broker status → A2A 1.0 state:
+ *
+ * | Broker status | A2A 1.0 state | Terminal? |
+ * |--------------|--------------|----------|
+ * | `blocked`    | `submitted`  | no       |
+ * | `queued`     | `submitted`  | no       |
+ * | `claimed`    | `working`    | no       |
+ * | `running`    | `working`    | no       |
+ * | `succeeded`  | `completed`  | **yes**  |
+ * | `failed`     | `failed`     | **yes**  |
+ * | `canceled`   | `canceled`   | **yes**  |
+ *
+ * **Terminal immutability:** Once a task reaches a terminal broker status
+ * (`succeeded`, `failed`, or `canceled`), the broker rejects further
+ * lifecycle mutations (reassign, complete, fail, cancel). The projected
+ * A2A state (`completed`, `failed`, `canceled`) is likewise immutable.
+ */
 function mapTaskState(status: TaskStatus): A2ATaskState {
   switch (status) {
     case "blocked":

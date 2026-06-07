@@ -742,6 +742,208 @@ Response:
 }
 ```
 
+### `GET /cleanup/candidates`
+
+Read-only heuristic discovery of potential cleanup candidates in broker state.
+**No rows are mutated.** The response identifies records that *may* need
+operator attention, classified by actionability category.
+
+**Requester role:** `hub` or `operator` (when identity enforcement enabled).
+
+**Query parameters** (all optional):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `stale_worker_after_ms` | `300000` (5 min) | Worker idle threshold |
+| `stale_task_after_ms` | `120000` (2 min) | Queued task stale threshold |
+| `terminal_outbox_backlog_after_ms` | `900000` (15 min) | Unacknowledged outbox event age |
+| `historical_terminal_after_ms` | `86400000` (24 h) | Terminal task age for archival |
+
+**Response** (`200`):
+
+```json
+{
+  "generatedAt": "2026-05-20T12:00:00.000Z",
+  "summary": {
+    "stale_worker": 1,
+    "malformed_task": 0,
+    "queued_residue": 2,
+    "orphaned_claim": 0,
+    "terminal_outbox_backlog": 0,
+    "historical_terminal_task": 1
+  },
+  "totalCandidates": 4,
+  "candidates": [
+    {
+      "id": "cleanup:stale-worker:worker-a",
+      "class": "stale_worker",
+      "reason": "stale worker worker-a has active tasks assigned; do not prune without reassigning",
+      "risk": "high_risk",
+      "entityId": "worker-a",
+      "updatedAt": "2026-05-19T10:00:00.000Z",
+      "ageMs": 93600000,
+      "metadata": {
+        "nodeId": "worker-a",
+        "role": "operator",
+        "lastSeenAt": "2026-05-19T10:00:00.000Z",
+        "hasActiveTasks": true
+      }
+    },
+    {
+      "id": "cleanup:queued-residue:task-001",
+      "class": "queued_residue",
+      "reason": "queued task task-001 has been queued for 93600000 ms without being claimed",
+      "risk": "caution",
+      "entityId": "task-001",
+      "updatedAt": "2026-05-19T10:00:00.000Z",
+      "ageMs": 93600000,
+      "metadata": {
+        "taskId": "task-001",
+        "intent": "analyze",
+        "status": "queued"
+      }
+    },
+    {
+      "id": "cleanup:historical-task:task-002",
+      "class": "historical_terminal_task",
+      "reason": "terminal task task-002 (succeeded) is 93600000 ms old; safe to archive with tombstone",
+      "risk": "safe",
+      "entityId": "task-002",
+      "updatedAt": "2026-05-19T10:00:00.000Z",
+      "ageMs": 93600000,
+      "metadata": {
+        "taskId": "task-002",
+        "status": "succeeded",
+        "intent": "backfill",
+        "hasTombstone": true
+      }
+    }
+  ],
+  "riskNotes": [
+    "Stale workers detected (1): verify worker health and task reassignment before any pruning.",
+    "Queued residue detected (2): well-formed queued tasks that remain unclaimed. Verify worker capacity.",
+    "Historical terminal tasks detected (1): archive with tombstone backup before pruning."
+  ]
+}
+```
+
+**Actionability note:** Not all discovered candidates are safely prunable.
+`totalCandidates` counts all discovered records, but some classes
+(`stale_worker` with active tasks, `queued_residue`, `orphaned_claim`,
+`malformed_task`) are not eligible for automated retention pruning. These
+require manual operator intervention (task reassignment, cancellation, or
+capacity review).
+
+For precise prune counts based on SQLite retention policy, use
+`/operator/cleanup/plan` instead. See
+[cleanup-candidate-actionability.md](./cleanup-candidate-actionability.md) for
+complete actionability categories and the total-candidates-vs-prune-candidates
+distinction.
+
+### `GET /operator/cleanup/plan`
+
+Dry-run SQLite hot-table retention planning. **No rows are mutated.** Returns
+the set of rows that exceed configured retention policy and are eligible for
+pruning.
+
+**Requester role:** `hub` or `operator` (when identity enforcement enabled).
+
+**Query parameters** (all optional):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `now_ms` | current time | Reference timestamp for age computation |
+| `task_retention_ms` | 7 days | Terminal task retention window |
+| `max_terminal_tasks` | 2000 | Max terminal tasks to retain |
+| `audit_retention_ms` | 7 days | Audit event retention window |
+| `max_audit_events` | 5000 | Max audit events to retain |
+| `worker_retention_ms` | 14 days | Inactive worker retention window |
+| `max_inactive_workers` | 500 | Max inactive workers to retain |
+
+**Response** (`200`):
+
+```json
+{
+  "kind": "broker.cleanup.plan",
+  "mode": "dry-run",
+  "planId": "a1b2c3d4e5f6g7h8",
+  "summary": {
+    "candidateTables": 2,
+    "totalPruneCandidates": 5,
+    "highestRisk": "high",
+    "executionRequires": [
+      "matching approvalToken equal to planId",
+      "confirmation string APPLY_BROKER_CLEANUP_PLAN",
+      "non-empty backupProof/checkpoint evidence",
+      "separate allowWorkerPrune=true when worker rows are candidates"
+    ]
+  },
+  "tables": [
+    {
+      "table": "broker_tasks",
+      "pruneCount": 3,
+      "retainedCount": 200,
+      "reason": "terminal task rows older than retention/cap window",
+      "riskClass": "medium"
+    },
+    {
+      "table": "broker_workers",
+      "pruneCount": 2,
+      "retainedCount": 50,
+      "reason": "inactive worker rows outside retention/cap window",
+      "riskClass": "high",
+      "executionBlockedByDefault": true
+    }
+  ]
+}
+```
+
+### `POST /operator/cleanup/execute`
+
+Execute a previously generated retention plan. Requires matching `planId`,
+confirmation string, and backup evidence.
+
+**Requester role:** `hub` or `operator` (when identity enforcement enabled).
+
+**Request body:**
+
+```json
+{
+  "planId": "a1b2c3d4e5f6g7h8",
+  "approvalToken": "<approval-token-bound-to-planId>",
+  "confirmation": "APPLY_BROKER_CLEANUP_PLAN",
+  "backupProof": "s3://backups/broker-20260520T120000Z.sqlite sha256=abc123",
+  "allowWorkerPrune": false,
+  "actorId": "operator.cleanup"
+}
+```
+
+**Response** (`200`):
+
+```json
+{
+  "kind": "broker.cleanup.execution",
+  "planId": "a1b2c3d4e5f6g7h8",
+  "appliedAt": "2026-05-20T12:05:00.000Z",
+  "results": [
+    { "table": "broker_tasks", "prunedCount": 3, "remainingCount": 197 },
+    { "table": "broker_workers", "prunedCount": 2, "remainingCount": 48 }
+  ]
+}
+```
+
+**Error response** (`400`) when execution is blocked:
+
+```json
+{
+  "error": "cleanup_execution_blocked",
+  "blockers": [
+    "approvalToken does not match planId",
+    "worker prune candidates require allowWorkerPrune=true"
+  ]
+}
+```
+
 ## A2A surface
 
 The broker exposes an A2A-compatible surface alongside the legacy REST routes. See

@@ -1,3 +1,8 @@
+import {
+  extractWorkerCapacityHint,
+  formatWorkerCapacityHint,
+} from "./worker-capacity-hints.js";
+
 type UnknownRecord = Record<string, unknown>;
 
 export type A2AOperatorTerminalNotificationType = "success" | "failure" | "block" | "pr";
@@ -24,9 +29,29 @@ export type A2AOperatorTerminalNotificationEnvelope = {
   doneUrl?: string;
   blockUrl?: string;
   runId?: string;
+  /** Parent/all-hands round id when the notification belongs to a grouped worker round. */
+  parentRoundId?: string;
   traceId?: string;
   createdAt?: string;
   dryRun?: boolean;
+  /** Source carried parent-round grouping context even if numerator/denominator is incomplete. */
+  parentRoundContext?: boolean;
+  /** Parent-round completion sequence (1-based numerator). */
+  roundNum?: number;
+  /** Parent-round worker/task order from broker metadata (1-based numerator). */
+  parentRoundOrder?: number;
+  /** Parent-round total worker/task count (denominator). */
+  roundTotal?: number;
+  /** Broker-native parent-round completion sequence (1-based numerator). */
+  parentRoundProgress?: number;
+  /** Broker-native parent-round total worker/task count (denominator). */
+  parentRoundTotal?: number;
+  /** Broker-native progress object; completed is treated as roundNum compatibility. */
+  roundProgress?: { completed?: number };
+  /** Broker-provided override title; takes precedence over auto-built title. */
+  terminalBriefTitle?: string;
+  /** Broker-provided Terminal Brief template string with {variable} placeholders. */
+  terminalBriefTemplate?: string;
 };
 
 export type A2AOperatorNotificationEvidence = {
@@ -44,8 +69,19 @@ export type A2AOperatorNotificationEvidence = {
   traceId?: string;
   summary?: string;
   taskDescription?: string;
+  taskSummary?: string;
+  taskBrief?: string;
   createdAt?: string;
   receiptProjection?: A2AOperatorTerminalReceiptProjection;
+  /**
+   * Sanitized worker capacity hint — never raw host data.
+   * Helps closeout reports distinguish:
+   * - worker slow/capacity-limited
+   * - task failed
+   * - task stuck/no receipt
+   * - profile stale/unknown
+   */
+  capacityHint?: string;
 };
 
 export type A2AOpenClawTelegramOperatorNotification = {
@@ -104,6 +140,7 @@ export type A2ATelegramSafeDryRunNotificationHarnessOptions = {
 };
 
 const DEFAULT_MAX_TEXT_CHARS = 900;
+export const A2A_OPERATOR_TERMINAL_BRIEF_DEFAULT_TITLE_FORMAT = "A2A Terminal Brief 완료: worker(완료 1/3)";
 
 const URL_SECRET_RE = /([?&](?:token|secret|password|key|api_key)=)[^&\s]+/gi;
 const BEARER_RE = /\b(?:bearer|token)\s+[a-z0-9._~+/=-]{12,}/gi;
@@ -119,6 +156,11 @@ export function buildA2AOperatorTerminalOutboxNotificationEnvelope(
   const type = readNotificationType(payload);
   if (!type) return undefined;
 
+  const receiptProjection = readTerminalOutboxReceiptProjection(payload, outbox);
+  if (!receiptProjection) {
+    return undefined;
+  }
+
   const taskId = readString(payload.taskId);
   const worker = readWorker(payload);
   const status = readStatus(payload);
@@ -129,13 +171,23 @@ export function buildA2AOperatorTerminalOutboxNotificationEnvelope(
   const doneUrl = readDoneUrl(payload);
   const blockUrl = readBlockUrl(payload);
   const runId = readRunId(payload, outbox);
+  const parentRoundId = readParentRoundId(payload, outbox);
+  const parentRoundContext = hasParentRoundContext(payload, outbox);
   const traceId = readTraceId(payload, outbox);
   const createdAt = readString(payload.completedAt) ?? readString(payload.updatedAt) ?? readString(payload.createdAt) ?? readString(outbox.createdAt);
   const summary = readString(payload.testSummary) ?? readString(payload.summary) ?? readString(payload.message);
   const safeSummary = summary ? clampText(redactText(summary), 240) : undefined;
   const taskDescription = readTaskDescription(payload, asRecord(payload.task), asRecord(payload.metadata));
   const safeTaskDescription = taskDescription ? clampText(redactText(taskDescription), 180) : undefined;
-  const title = buildTitle(type, taskId, prUrl);
+  const taskSummary = readTaskSummary(payload, asRecord(payload.task), asRecord(payload.metadata));
+  const safeTaskSummary = taskSummary ? clampText(redactText(taskSummary), 180) : undefined;
+  const taskBrief = readTaskBrief(payload, asRecord(payload.task), asRecord(payload.metadata));
+  const safeTaskBrief = taskBrief ? clampText(redactText(taskBrief), 180) : undefined;
+  const terminalBriefTitle = readTerminalBriefTitle(payload, asRecord(payload.metadata), asRecord(payload.terminalBrief), outbox);
+  const terminalBriefTemplate = readString(payload.terminalBriefTemplate);
+  const roundNum = readRoundNum(payload, outbox);
+  const roundTotal = readRoundTotal(payload, outbox);
+  const title = buildTitle(type, taskId, prUrl, worker, roundNum, roundTotal, terminalBriefTitle, parentRoundContext);
   const evidence = compactEvidence({
     taskId,
     worker,
@@ -149,13 +201,17 @@ export function buildA2AOperatorTerminalOutboxNotificationEnvelope(
     traceId,
     summary: safeSummary,
     taskDescription: safeTaskDescription,
+    taskSummary: safeTaskSummary,
+    taskBrief: safeTaskBrief,
     createdAt,
+    receiptProjection,
   });
   const text = clampText(
     redactText(
       [
         title,
         safeSummary,
+        `Required receipt proof: ${receiptProjection}`,
         renderWorkerTaskCompletionLine({ type, worker, taskId, taskDescription: safeTaskDescription }),
         worker ? `Worker: ${worker}` : undefined,
         safeTaskDescription && !taskId ? `Task: ${safeTaskDescription}` : undefined,
@@ -195,8 +251,15 @@ export function buildA2AOperatorTerminalOutboxNotificationEnvelope(
     ...(doneUrl ? { doneUrl } : {}),
     ...(blockUrl ? { blockUrl } : {}),
     ...(runId ? { runId } : {}),
+    ...(parentRoundId ? { parentRoundId } : {}),
     ...(traceId ? { traceId } : {}),
     ...(createdAt ? { createdAt } : {}),
+    ...(roundNum !== undefined ? { roundNum } : {}),
+    ...(roundNum !== undefined ? { parentRoundOrder: roundNum } : {}),
+    ...(roundTotal !== undefined ? { roundTotal } : {}),
+    ...(parentRoundContext ? { parentRoundContext: true } : {}),
+    ...(terminalBriefTitle ? { terminalBriefTitle } : {}),
+    ...(terminalBriefTemplate ? { terminalBriefTemplate } : {}),
     ...(options.dryRun ? { dryRun: true } : {}),
   };
 }
@@ -232,8 +295,11 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
   const doneUrl = readDoneUrl(terminal) ?? readDoneUrl(metadata) ?? readDoneUrl(task ?? {});
   const blockUrl = readBlockUrl(terminal) ?? readBlockUrl(metadata) ?? readBlockUrl(task ?? {});
   const runId = readRunId(terminal, metadata, task, data);
+  const parentRoundId = readParentRoundId(terminal, metadata, task, asRecord(task?.payload), data);
+  const parentRoundContext = hasParentRoundContext(terminal, metadata, task, asRecord(task?.payload), data);
   const traceId = readTraceId(terminal, metadata, task, data);
   const releaseDrift = buildA2AOperatorReleaseDriftSummary([terminal, metadata, task, data]);
+  const capacityHint = buildNotificationCapacityHint(terminal, metadata, task, data);
   const receiptProjection = readOperatorReceiptProjection(terminal, metadata, task, data);
   if (!receiptProjection) {
     return undefined;
@@ -247,8 +313,24 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
   const safeSummary = summary ? clampText(redactText(summary), 240) : undefined;
   const taskDescription = readTaskDescription(terminal, metadata, task, asRecord(task?.payload), data);
   const safeTaskDescription = taskDescription ? clampText(redactText(taskDescription), 180) : undefined;
+  const taskSummary = readTaskSummary(terminal, metadata, task, asRecord(task?.payload), data);
+  const safeTaskSummary = taskSummary ? clampText(redactText(taskSummary), 180) : undefined;
+  const taskBrief = readTaskBrief(terminal, metadata, task, asRecord(task?.payload), data);
+  const safeTaskBrief = taskBrief ? clampText(redactText(taskBrief), 180) : undefined;
+  const terminalBriefTitle = readTerminalBriefTitle(
+    terminal,
+    metadata,
+    task,
+    asRecord(task?.payload),
+    asRecord(asRecord(task?.payload)?.terminalBrief),
+    asRecord(terminal.terminalBrief),
+    data,
+  );
+  const terminalBriefTemplate = readString(terminal.terminalBriefTemplate) ?? readString(data.terminalBriefTemplate);
 
-  const title = buildTitle(type, taskId, prUrl);
+  const roundNum = readRoundNum(terminal, metadata, task, data);
+  const roundTotal = readRoundTotal(terminal, metadata, task, data);
+  const title = buildTitle(type, taskId, prUrl, worker, roundNum, roundTotal, terminalBriefTitle, parentRoundContext);
   const releaseLine = releaseDrift ? `Release: ${releaseDrift.text}` : undefined;
   const evidence = compactEvidence({
     taskId,
@@ -263,8 +345,11 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
     traceId,
     summary: safeSummary,
     taskDescription: safeTaskDescription,
+    taskSummary: safeTaskSummary,
+    taskBrief: safeTaskBrief,
     createdAt,
     receiptProjection,
+    capacityHint,
   });
   const text = clampText(
     redactText(
@@ -272,9 +357,10 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
         title,
         releaseLine,
         summary,
-        `Receipt: ${receiptProjection}`,
+        `Required receipt proof: ${receiptProjection}`,
         renderWorkerTaskCompletionLine({ type, worker, taskId, taskDescription: safeTaskDescription }),
         worker ? `Worker: ${worker}` : undefined,
+        capacityHint ? `Capacity: ${capacityHint}` : undefined,
         safeTaskDescription && !taskId ? `Task: ${safeTaskDescription}` : undefined,
         repo ? `Repo: ${repo}` : undefined,
         issueUrl ? `Issue: ${issueUrl}` : undefined,
@@ -318,8 +404,15 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
     ...(doneUrl ? { doneUrl } : {}),
     ...(blockUrl ? { blockUrl } : {}),
     ...(runId ? { runId } : {}),
+    ...(parentRoundId ? { parentRoundId } : {}),
     ...(traceId ? { traceId } : {}),
     ...(createdAt ? { createdAt } : {}),
+    ...(roundNum !== undefined ? { roundNum } : {}),
+    ...(roundNum !== undefined ? { parentRoundOrder: roundNum } : {}),
+    ...(roundTotal !== undefined ? { roundTotal } : {}),
+    ...(parentRoundContext ? { parentRoundContext: true } : {}),
+    ...(terminalBriefTitle ? { terminalBriefTitle } : {}),
+    ...(terminalBriefTemplate ? { terminalBriefTemplate } : {}),
     ...(options.dryRun ? { dryRun: true } : {}),
   };
 }
@@ -327,6 +420,10 @@ export function buildA2AOperatorTerminalNotificationEnvelope(
 export function buildA2AOpenClawTelegramOperatorNotification(
   envelope: A2AOperatorTerminalNotificationEnvelope,
 ): A2AOpenClawTelegramOperatorNotification {
+  const text = envelope.terminalBriefTemplate
+    ? renderA2AOperatorTerminalBriefTemplate(envelope.terminalBriefTemplate, envelope)
+    : envelope.title;
+
   return {
     kind: "openclaw.operator.telegram_notification",
     version: 1,
@@ -337,7 +434,7 @@ export function buildA2AOpenClawTelegramOperatorNotification(
       channel: "telegram",
     },
     title: envelope.title,
-    text: envelope.text,
+    text,
     evidence: envelope.evidence,
   };
 }
@@ -464,6 +561,130 @@ export function getA2AOperatorTerminalReceiptGate(
     isTerminal: true,
     ...(receiptProjection ? { receiptProjection } : {}),
   };
+}
+
+/** Provider delivery state for terminal outbox records, kept separate from operator-visible receipt. */
+export type A2AOperatorTerminalOutboxProviderDeliveryState =
+  | "accepted"
+  | "sent"
+  | "provider_delivered"
+  | "unknown";
+
+/** Operator-visible terminal receipt state for outbox events. */
+export type A2AOperatorTerminalOutboxReceiptState =
+  | "pending_receipt"
+  | "operator_visible"
+  | "receipt_confirmed"
+  | "none";
+
+/**
+ * Receipt-gap projection for a terminal outbox event.
+ *
+ * This projection explicitly separates provider delivery/send state from
+ * operator-visible receipt state. Provider send success is never evidence
+ * of operator-visible ACK — those concepts live in different fields.
+ *
+ * Monitors use this projection to answer the question:
+ * "Has the provider acknowledged delivery but the operator hasn't seen it yet?"
+ */
+export type A2AOperatorTerminalOutboxReceiptGap = {
+  taskId?: string;
+  type?: string;
+  /** Provider/transport delivery state — never ACK evidence by itself. */
+  providerDelivery: A2AOperatorTerminalOutboxProviderDeliveryState;
+  /** Operator-visible receipt state — the only field gating ACK eligibility. */
+  operatorReceipt: A2AOperatorTerminalOutboxReceiptState;
+  operatorReceiptProjection?: A2AOperatorTerminalReceiptProjection;
+  /** Whether this terminal event is eligible for terminal ACK. */
+  terminalAckEligible: boolean;
+  /** Why the receipt gap is in its current state. */
+  reason: string;
+};
+
+/**
+ * Project the receipt gap for a terminal outbox record.
+ *
+ * Provider delivery state and operator-visible receipt are always kept in
+ * separate fields so that monitors, dashboards, and alerting can distinguish
+ * "provider sent successfully" from "operator saw it."
+ *
+ * No live send, no terminal ACK, no Gateway restart.
+ */
+export function getA2AOperatorTerminalOutboxReceiptGap(
+  outbox: UnknownRecord,
+): A2AOperatorTerminalOutboxReceiptGap {
+  const payload = asRecord(outbox.payload);
+  const taskId = payload ? readString(payload.taskId) : undefined;
+  const type = payload ? readString(payload.type) : undefined;
+
+  // Provider delivery state — derived from outbox receipt/ack metadata
+  const receipt = asRecord(outbox.receipt) ?? asRecord(payload?.receipt);
+  const ack = asRecord(outbox.ack) ?? asRecord(payload?.ack);
+  const ackAudit = asRecord(outbox.ackAudit) ?? asRecord(payload?.ackAudit);
+
+  const receiptStatus = readString(receipt?.status)?.toLowerCase();
+  const ackStatus = readString(ack?.status)?.toLowerCase();
+  const ackAuditDecision = readString(ackAudit?.decision)?.toLowerCase();
+
+  const providerDelivery: A2AOperatorTerminalOutboxProviderDeliveryState =
+    receiptStatus === "sent" || ackStatus === "sent"
+      ? "sent"
+      : receiptStatus === "delivered" || ackStatus === "delivered" || receiptStatus === "provider_delivered"
+        ? "provider_delivered"
+        : receiptStatus === "accepted" || ackStatus === "accepted" || ackAuditDecision === "accepted"
+          ? "accepted"
+          : "unknown";
+
+  // Operator receipt projection — only gated on operator-visible evidence
+  const receiptProjection = payload ? readTerminalOutboxReceiptProjection(payload, outbox) : undefined;
+
+  const operatorReceipt: A2AOperatorTerminalOutboxReceiptState =
+    receiptProjection === "current_session_visible" || receiptProjection === "manual_operator_receipt"
+      ? ackStatus === "receipt_confirmed"
+        ? "receipt_confirmed"
+        : "operator_visible"
+      : receiptProjection === undefined && providerDelivery !== "unknown"
+        ? "none"
+        : "pending_receipt";
+
+  const terminalAckEligible =
+    operatorReceipt === "receipt_confirmed" && receiptProjection !== undefined;
+
+  const reason = buildTerminalOutboxReceiptGapReason(
+    providerDelivery,
+    operatorReceipt,
+    receiptProjection,
+  );
+
+  return {
+    ...(taskId ? { taskId } : {}),
+    ...(type ? { type } : {}),
+    providerDelivery,
+    operatorReceipt,
+    ...(receiptProjection ? { operatorReceiptProjection: receiptProjection } : {}),
+    terminalAckEligible,
+    reason,
+  };
+}
+
+function buildTerminalOutboxReceiptGapReason(
+  providerDelivery: A2AOperatorTerminalOutboxProviderDeliveryState,
+  operatorReceipt: A2AOperatorTerminalOutboxReceiptState,
+  receiptProjection?: A2AOperatorTerminalReceiptProjection,
+): string {
+  if (operatorReceipt === "none" && providerDelivery !== "unknown") {
+    return `provider delivery is ${providerDelivery} but no operator-visible receipt evidence exists; provider evidence is not Terminal Brief visibility proof`;
+  }
+  if (operatorReceipt === "pending_receipt") {
+    return `provider delivery is ${providerDelivery} but operator-visible receipt is pending (projection: ${receiptProjection ?? "none"})`;
+  }
+  if (operatorReceipt === "operator_visible") {
+    return `operator-visible receipt projection ${receiptProjection} is set`;
+  }
+  if (operatorReceipt === "receipt_confirmed") {
+    return `operator-visible receipt is confirmed (projection: ${receiptProjection}) — terminal ACK eligible`;
+  }
+  return `provider delivery is ${providerDelivery}; operator receipt is ${operatorReceipt}`;
 }
 
 function buildReleaseDriftRoots(value: unknown): UnknownRecord[] {
@@ -601,12 +822,202 @@ function readNotificationType(record: UnknownRecord): A2AOperatorTerminalNotific
   return undefined;
 }
 
-function buildTitle(type: A2AOperatorTerminalNotificationType, taskId?: string, prUrl?: string): string {
-  const subject = taskId ? `task ${taskId}` : "terminal task";
+function buildTitle(
+  type: A2AOperatorTerminalNotificationType,
+  taskId?: string,
+  prUrl?: string,
+  worker?: string,
+  roundNum?: number,
+  roundTotal?: number,
+  terminalBriefTitle?: string,
+  parentRoundContext?: boolean,
+): string {
+  return renderA2AOperatorTerminalBriefDefaultTitle({
+    type,
+    taskId,
+    prUrl,
+    worker,
+    roundNum,
+    roundTotal,
+    terminalBriefTitle,
+    parentRoundContext,
+  });
+}
+
+export type A2AOperatorTerminalBriefDefaultTitleInput = {
+  type: A2AOperatorTerminalNotificationType;
+  taskId?: string;
+  prUrl?: string;
+  worker?: string;
+  roundNum?: number;
+  roundTotal?: number;
+  terminalBriefTitle?: string;
+  parentRoundContext?: boolean;
+};
+
+export function renderA2AOperatorTerminalBriefDefaultTitle(
+  input: A2AOperatorTerminalBriefDefaultTitleInput,
+): string {
+  const { type, taskId, prUrl, worker, roundNum, roundTotal, terminalBriefTitle, parentRoundContext } = input;
+  const label = worker ?? (taskId ? `task ${taskId}` : "terminal task");
+  const progress = formatRoundProgress(roundNum, roundTotal, {
+    parentRoundContext,
+    progressKind: roundNum !== undefined && roundTotal !== undefined
+      ? (type === "success" || type === "pr" ? "completed" : "order")
+      : undefined,
+  });
+  const missingProgress = parentRoundContext && progress === undefined ? formatMissingRoundProgress(type) : undefined;
+  if (terminalBriefTitle && !missingProgress) return normalizeSingleWorkerTerminalBriefTitle(terminalBriefTitle, label, progress);
+  const subject = progress ? `${label}${progress}` : missingProgress ? `${label}${missingProgress}` : label;
   if (type === "success") return `A2A Terminal Brief 완료: ${subject}`;
   if (type === "failure") return `A2A Terminal Brief 실패: ${subject}`;
   if (type === "block") return `A2A Terminal Brief 차단: ${subject}`;
   return `A2A Terminal Brief PR: ${prUrl ?? subject}`;
+}
+
+function formatMissingRoundProgress(type: A2AOperatorTerminalNotificationType): string {
+  return type === "success" || type === "pr" ? "(완료 ?/?)" : "(?/?)";
+}
+
+function formatRoundProgress(
+  roundNum?: number,
+  roundTotal?: number,
+  options: { parentRoundContext?: boolean; progressKind?: "completed" | "order" } = {},
+): string | undefined {
+  const allowImplicitSingleWorker = !options.parentRoundContext;
+  if (roundNum === undefined && roundTotal === undefined) {
+    return allowImplicitSingleWorker ? "(1/1)" : undefined;
+  }
+  if (roundNum === 1 && roundTotal === undefined) {
+    return allowImplicitSingleWorker ? "(1/1)" : undefined;
+  }
+  if (roundNum === undefined && roundTotal === 1) {
+    return allowImplicitSingleWorker ? "(1/1)" : undefined;
+  }
+  if (
+    typeof roundNum !== "number" ||
+    !Number.isFinite(roundNum) ||
+    roundNum < 1 ||
+    !Number.isInteger(roundNum) ||
+    typeof roundTotal !== "number" ||
+    !Number.isFinite(roundTotal) ||
+    roundTotal < 1 ||
+    !Number.isInteger(roundTotal) ||
+    roundNum > roundTotal
+  ) {
+    return undefined;
+  }
+  const label = options.progressKind === "completed" ? "완료 " : "";
+  return `(${label}${roundNum}/${roundTotal})`;
+}
+
+function normalizeSingleWorkerTerminalBriefTitle(title: string, label: string, progress?: string): string {
+  if (progress !== "(1/1)" || /\(\d+\/\d+\)/.test(title)) {
+    return title;
+  }
+  const match = title.match(/^(A2A Terminal Brief (?:완료|실패|차단|취소|PR(?: 알림)?): )(.+)$/);
+  if (!match) return title;
+  const [, prefix, subject] = match;
+  return subject.trim() === label ? `${prefix}${subject}${progress}` : title;
+}
+
+/**
+ * Terminal Brief template variable names and their value resolver.
+ */
+export type A2AOperatorTerminalBriefTemplateVariables = {
+  title: string;
+  type: string;
+  worker?: string;
+  taskId?: string;
+  roundNum?: string;
+  roundTotal?: string;
+  repo?: string;
+  issueUrl?: string;
+  prUrl?: string;
+  doneUrl?: string;
+  blockUrl?: string;
+  runId?: string;
+  traceId?: string;
+  summary?: string;
+  taskDescription?: string;
+  taskSummary?: string;
+  taskBrief?: string;
+  status?: string;
+  pr?: string;
+  issue?: string;
+};
+
+function buildTerminalBriefTemplateVariables(
+  envelope: A2AOperatorTerminalNotificationEnvelope,
+): A2AOperatorTerminalBriefTemplateVariables {
+  const roundNum = readEnvelopeRoundNum(envelope);
+  const roundTotal = readEnvelopeRoundTotal(envelope);
+  return {
+    title: envelope.title,
+    type: envelope.type,
+    ...(envelope.worker ? { worker: envelope.worker } : {}),
+    ...(envelope.taskId ? { taskId: envelope.taskId } : {}),
+    ...(roundNum !== undefined ? { roundNum: String(roundNum) } : {}),
+    ...(roundTotal !== undefined ? { roundTotal: String(roundTotal) } : {}),
+    ...(envelope.repo ? { repo: envelope.repo } : {}),
+    ...(envelope.issueUrl ? { issueUrl: envelope.issueUrl, issue: extractNumberFromUrl(envelope.issueUrl) } : {}),
+    ...(envelope.prUrl ? { prUrl: envelope.prUrl, pr: extractNumberFromUrl(envelope.prUrl) } : {}),
+    ...(envelope.doneUrl ? { doneUrl: envelope.doneUrl } : {}),
+    ...(envelope.blockUrl ? { blockUrl: envelope.blockUrl } : {}),
+    ...(envelope.runId ? { runId: envelope.runId } : {}),
+    ...(envelope.traceId ? { traceId: envelope.traceId } : {}),
+    ...(envelope.evidence.summary ? { summary: envelope.evidence.summary } : {}),
+    ...(envelope.evidence.taskDescription ? { taskDescription: envelope.evidence.taskDescription } : {}),
+    ...(envelope.evidence.taskSummary ? { taskSummary: envelope.evidence.taskSummary } : {}),
+    ...(envelope.evidence.taskBrief ? { taskBrief: envelope.evidence.taskBrief } : {}),
+    ...(envelope.status ? { status: envelope.status } : {}),
+  };
+}
+
+function readEnvelopeRoundNum(envelope: A2AOperatorTerminalNotificationEnvelope): number | undefined {
+  return readPositiveInteger(envelope.roundNum) ??
+    readPositiveInteger(envelope.parentRoundOrder) ??
+    readPositiveInteger(envelope.parentRoundProgress) ??
+    readPositiveInteger(envelope.roundProgress?.completed);
+}
+
+function readEnvelopeRoundTotal(envelope: A2AOperatorTerminalNotificationEnvelope): number | undefined {
+  return readPositiveInteger(envelope.roundTotal) ?? readPositiveInteger(envelope.parentRoundTotal);
+}
+
+function extractNumberFromUrl(url: string): string {
+  const match = url.match(/\/(\d+)$/);
+  return match ? match[1] : url;
+}
+
+/**
+ * Render a Terminal Brief template string with {variable} placeholders
+ * resolved from the envelope's field values.
+ *
+ * Supports the full set of template variables:
+ * {title}, {type}, {worker}, {taskId}, {roundNum}, {roundTotal},
+ * {repo}, {issueUrl}, {issue}, {prUrl}, {pr}, {doneUrl}, {blockUrl},
+ * {runId}, {traceId}, {summary}, {taskDescription}, {taskSummary},
+ * {taskBrief}, {status}
+ *
+ * Escaped braces (\{\{, \}\}) are preserved as literal braces.
+ * Missing variables are replaced with empty string.
+ */
+export function renderA2AOperatorTerminalBriefTemplate(
+  template: string,
+  envelope: A2AOperatorTerminalNotificationEnvelope,
+): string {
+  const vars = buildTerminalBriefTemplateVariables(envelope);
+  // Replace {variable} with the value, preserving escaped braces
+  return template.replace(
+    /\{(\w+)\}/g,
+    (match: string, name: string) => {
+      const value = (vars as Record<string, string | undefined>)[name];
+      if (value !== undefined) return value;
+      // Leave unknown variables in place
+      return match;
+    },
+  );
 }
 
 function renderWorkerTaskCompletionLine(params: {
@@ -652,6 +1063,78 @@ function readTaskDescription(...records: Array<UnknownRecord | undefined>): stri
   return undefined;
 }
 
+function readTaskSummary(...records: Array<UnknownRecord | undefined>): string | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const nestedTask = asRecord(record.task);
+    const result = asRecord(record.result);
+    const direct = firstString(
+      record.taskSummary,
+      record.summary,
+      result?.summary,
+      nestedTask?.taskSummary,
+      nestedTask?.summary,
+      nestedTask?.result,
+    );
+    if (direct) return direct;
+  }
+  return undefined;
+}
+
+function readTaskBrief(...records: Array<UnknownRecord | undefined>): string | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const nestedTask = asRecord(record.task);
+    const direct = firstString(
+      record.taskBrief,
+      record.brief,
+      nestedTask?.taskBrief,
+      nestedTask?.brief,
+    );
+    if (direct) return direct;
+  }
+  return undefined;
+}
+
+function readTerminalBriefTitle(...records: Array<UnknownRecord | undefined>): string | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const metadataTerminalBrief = asRecord(metadata?.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const crossBrokerTerminalBrief = asRecord(crossBroker?.terminalBrief);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const payloadCrossBrokerTerminalBrief = asRecord(payloadCrossBroker?.terminalBrief);
+    const direct = firstString(
+      record.terminalBriefTitle,
+      record.briefTitle,
+      terminalBrief?.terminalBriefTitle,
+      terminalBrief?.title,
+      metadata?.terminalBriefTitle,
+      metadata?.briefTitle,
+      metadataTerminalBrief?.terminalBriefTitle,
+      metadataTerminalBrief?.title,
+      payload?.terminalBriefTitle,
+      payload?.briefTitle,
+      payloadTerminalBrief?.terminalBriefTitle,
+      payloadTerminalBrief?.title,
+      crossBroker?.terminalBriefTitle,
+      crossBroker?.briefTitle,
+      crossBrokerTerminalBrief?.terminalBriefTitle,
+      crossBrokerTerminalBrief?.title,
+      payloadCrossBroker?.terminalBriefTitle,
+      payloadCrossBroker?.briefTitle,
+      payloadCrossBrokerTerminalBrief?.terminalBriefTitle,
+      payloadCrossBrokerTerminalBrief?.title,
+    );
+    if (direct) return direct;
+  }
+  return undefined;
+}
+
 function buildDedupeKey(parts: {
   eventId?: string;
   taskId?: string;
@@ -681,8 +1164,11 @@ function compactEvidence(values: Omit<A2AOperatorNotificationEvidence, "schema" 
     ...(values.traceId ? { traceId: values.traceId } : {}),
     ...(values.summary ? { summary: values.summary } : {}),
     ...(values.taskDescription ? { taskDescription: values.taskDescription } : {}),
+    ...(values.taskSummary ? { taskSummary: values.taskSummary } : {}),
+    ...(values.taskBrief ? { taskBrief: values.taskBrief } : {}),
     ...(values.createdAt ? { createdAt: values.createdAt } : {}),
     ...(values.receiptProjection ? { receiptProjection: values.receiptProjection } : {}),
+    ...(values.capacityHint ? { capacityHint: values.capacityHint } : {}),
   };
 }
 
@@ -714,6 +1200,64 @@ function readOperatorReceiptProjection(...records: Array<UnknownRecord | undefin
   return undefined;
 }
 
+function readTerminalOutboxReceiptProjection(
+  payload: UnknownRecord,
+  outbox: UnknownRecord,
+): A2AOperatorTerminalReceiptProjection | undefined {
+  const explicit = readOperatorReceiptProjection(payload, outbox);
+  if (explicit) return explicit;
+
+  // Broker terminal-outbox rows start life as `receipt.status=accepted` and can
+  // later move through pre-visibility states such as `produced` while
+  // ackAudit still says the notifier must obtain current-session/operator
+  // visible evidence before ACK. That is a receipt *requirement*, not provider
+  // send evidence. Older plugin builds required an explicit payload
+  // receiptProjection and therefore dropped these broker-native rows before any
+  // Telegram attempt, leaving attempts=0 forever. Infer the receipt gate only
+  // for this broker-owned pending shape; plain provider-accepted-only fixtures
+  // remain rejected below.
+  const receipt = asRecord(outbox.receipt) ?? asRecord(payload.receipt);
+  const ackAudit = asRecord(outbox.ackAudit) ?? asRecord(payload.ackAudit);
+  const receiptStatus = readString(receipt?.status)?.toLowerCase();
+  const ackDecision = readString(ackAudit?.decision)?.toLowerCase();
+  const ackReason = readString(ackAudit?.reason)?.toLowerCase() ?? "";
+  if (
+    isBrokerPendingReceiptStatus(receiptStatus) &&
+    ackDecision === "pending" &&
+    isBrokerPendingOperatorVisibilityReason(ackReason)
+  ) {
+    return "current_session_visible";
+  }
+  return undefined;
+}
+
+function isBrokerPendingOperatorVisibilityReason(reason: string): boolean {
+  if (reason.includes("provider accepted only")) return false;
+  if (reason.includes("not operator-visible receipt")) return false;
+  if (reason.includes("not operator visible receipt")) return false;
+  if (reason.includes("no operator-visible receipt")) return false;
+  if (reason.includes("no operator visible receipt")) return false;
+  if (reason.includes("current-session-visible")) return true;
+  if (reason.includes("current session visible")) return true;
+  if (reason.includes("operator-visible")) return true;
+  if (reason.includes("operator visible")) return true;
+  if (reason.includes("operator-facing") && reason.includes("visible receipt")) return true;
+  if (reason.includes("awaiting visible receipt")) return true;
+  if (reason.includes("parent-owned visibility")) return true;
+  if (reason.includes("parent broker visibility")) return true;
+  if (reason.includes("parent-broker visibility")) return true;
+  if (reason.includes("parent-broker current-session-visible")) return true;
+  return false;
+}
+
+function isBrokerPendingReceiptStatus(status: string | undefined): boolean {
+  return status === "accepted" ||
+    status === "started" ||
+    status === "produced" ||
+    status === "provider_sent" ||
+    status === "provider_accepted";
+}
+
 function normalizeReceiptProjection(value: string | undefined): A2AOperatorTerminalReceiptProjection | undefined {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "current_session_visible" || normalized === "manual_operator_receipt") {
@@ -725,7 +1269,31 @@ function normalizeReceiptProjection(value: string | undefined): A2AOperatorTermi
 function readWorker(...records: Array<UnknownRecord | undefined>): string | undefined {
   for (const record of records) {
     if (!record) continue;
-    const worker = sanitizeLabel(firstString(record.worker, record.workerId, record.nodeId, asRecord(record.workerRef)?.id));
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const worker = sanitizeLabel(firstString(
+      terminalBrief?.workerLabel,
+      terminalBrief?.worker,
+      record.childWorkerId,
+      crossBroker?.childWorkerId,
+      metadata?.childWorkerId,
+      payload?.childWorkerId,
+      payloadTerminalBrief?.workerLabel,
+      payloadTerminalBrief?.worker,
+      payloadCrossBroker?.childWorkerId,
+      record.worker,
+      record.workerId,
+      record.nodeId,
+      metadata?.worker,
+      metadata?.workerId,
+      payload?.worker,
+      payload?.workerId,
+      asRecord(record.workerRef)?.id,
+    ));
     if (worker) return worker;
   }
   return undefined;
@@ -748,7 +1316,18 @@ function readPrUrl(record: UnknownRecord): string | undefined {
 }
 
 function readIssueUrl(record: UnknownRecord): string | undefined {
-  return [record.issueUrl, record.githubIssueUrl, asRecord(record.github)?.issueUrl]
+  const payload = asRecord(record.payload);
+  return [
+    record.issueUrl,
+    record.githubIssueUrl,
+    record.parentIssueUrl,
+    record.parent_issue_url,
+    payload?.issueUrl,
+    payload?.githubIssueUrl,
+    payload?.parentIssueUrl,
+    payload?.parent_issue_url,
+    asRecord(record.github)?.issueUrl,
+  ]
     .map(readString)
     .find(isSafeHttpUrl);
 }
@@ -769,6 +1348,75 @@ function readRunId(...records: Array<UnknownRecord | undefined>): string | undef
     if (value) return value;
   }
   return undefined;
+}
+
+function readParentRoundId(...records: Array<UnknownRecord | undefined>): string | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const value = sanitizeLabel(firstString(
+      record.parentRoundId,
+      record.roundId,
+      record.round,
+      record.run,
+      terminalBrief?.parentRoundId,
+      terminalBrief?.roundId,
+      metadata?.parentRoundId,
+      metadata?.roundId,
+      metadata?.round,
+      metadata?.run,
+      payload?.parentRoundId,
+      payload?.roundId,
+      payload?.round,
+      payload?.run,
+      payloadTerminalBrief?.parentRoundId,
+      payloadTerminalBrief?.roundId,
+      crossBroker?.parentRoundId,
+      crossBroker?.roundId,
+      payloadCrossBroker?.parentRoundId,
+      payloadCrossBroker?.roundId,
+    ));
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function hasParentRoundContext(...records: Array<UnknownRecord | undefined>): boolean {
+  if (readParentRoundId(...records)) return true;
+  for (const record of records) {
+    if (!record) continue;
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const values = [
+      record.parentRoundTotal,
+      record.parentRoundOrder,
+      terminalBrief?.parentRoundTotal,
+      terminalBrief?.parentRoundOrder,
+      metadata?.parentRoundTotal,
+      metadata?.parentRoundOrder,
+      payload?.parentRoundTotal,
+      payload?.parentRoundOrder,
+      payloadTerminalBrief?.parentRoundTotal,
+      payloadTerminalBrief?.parentRoundOrder,
+      crossBroker,
+      crossBroker?.parentRoundTotal,
+      crossBroker?.parentRoundOrder,
+      payloadCrossBroker,
+      payloadCrossBroker?.parentRoundTotal,
+      payloadCrossBroker?.parentRoundOrder,
+    ];
+    if (values.some((value) => value !== undefined && value !== null)) return true;
+  }
+  return false;
 }
 
 function readTraceId(...records: Array<UnknownRecord | undefined>): string | undefined {
@@ -794,8 +1442,157 @@ function readBlockUrl(record: UnknownRecord): string | undefined {
     .find(isSafeHttpUrl);
 }
 
+/**
+ * Build a sanitized worker capacity hint line from notification event
+ * sources (terminal event, metadata, task payload).
+ *
+ * Checks the task payload for broker-reported worker capability data
+ * and produces a safe display string.  Never leaks raw host data.
+ */
+function buildNotificationCapacityHint(
+  terminal: UnknownRecord,
+  metadata: UnknownRecord,
+  task: UnknownRecord | undefined,
+  data: UnknownRecord,
+): string | undefined {
+  // Try task payload first
+  const taskPayload = asRecord(task?.payload);
+  if (taskPayload) {
+    const hint = extractWorkerCapacityHint(taskPayload);
+    if (hint) {
+      return formatWorkerCapacityHint(hint);
+    }
+  }
+
+  // Fallback: check metadata for worker capability
+  if (metadata) {
+    const hint = extractWorkerCapacityHint(metadata as Record<string, unknown>);
+    if (hint) {
+      return formatWorkerCapacityHint(hint);
+    }
+  }
+
+  // Check terminal event payload
+  const terminalPayload = asRecord(terminal.payload) ?? asRecord(terminal.data);
+  if (terminalPayload && terminalPayload !== taskPayload) {
+    const hint = extractWorkerCapacityHint(terminalPayload);
+    if (hint) {
+      return formatWorkerCapacityHint(hint);
+    }
+  }
+
+  return undefined;
+}
+
 function isSafeHttpUrl(value: string | undefined): value is string {
   return Boolean(value && /^https:\/\//.test(value));
+}
+
+function readRoundNum(...records: Array<UnknownRecord | undefined>): number | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const roundProgress = asRecord(record.roundProgress);
+    const parentRoundProgress = asRecord(record.parentRoundProgress);
+    const metadataRoundProgress = asRecord(metadata?.roundProgress);
+    const metadataParentRoundProgress = asRecord(metadata?.parentRoundProgress);
+    const crossBrokerRoundProgress = asRecord(crossBroker?.roundProgress);
+    const crossBrokerParentRoundProgress = asRecord(crossBroker?.parentRoundProgress);
+    const payloadRoundProgress = asRecord(payload?.roundProgress);
+    const payloadParentRoundProgress = asRecord(payload?.parentRoundProgress);
+    const payloadTerminalRoundProgress = asRecord(payloadTerminalBrief?.roundProgress);
+    const payloadTerminalParentRoundProgress = asRecord(payloadTerminalBrief?.parentRoundProgress);
+    const payloadCrossBrokerRoundProgress = asRecord(payloadCrossBroker?.roundProgress);
+    const payloadCrossBrokerParentRoundProgress = asRecord(payloadCrossBroker?.parentRoundProgress);
+    const candidates = [
+      record.roundNum,
+      record.parentRoundNum,
+      record.parentRoundProgress,
+      roundProgress?.completed,
+      parentRoundProgress?.completed,
+      metadata?.roundNum,
+      metadata?.parentRoundNum,
+      metadata?.parentRoundProgress,
+      metadataRoundProgress?.completed,
+      metadataParentRoundProgress?.completed,
+      payload?.roundNum,
+      payload?.parentRoundNum,
+      payload?.parentRoundProgress,
+      payloadRoundProgress?.completed,
+      payloadParentRoundProgress?.completed,
+      payloadTerminalRoundProgress?.completed,
+      payloadTerminalParentRoundProgress?.completed,
+      record.completionNum,
+      crossBroker?.roundNum,
+      crossBroker?.parentRoundNum,
+      crossBroker?.parentRoundProgress,
+      crossBrokerRoundProgress?.completed,
+      crossBrokerParentRoundProgress?.completed,
+      crossBroker?.completionNum,
+      payloadCrossBroker?.roundNum,
+      payloadCrossBroker?.parentRoundNum,
+      payloadCrossBroker?.parentRoundProgress,
+      payloadCrossBrokerRoundProgress?.completed,
+      payloadCrossBrokerParentRoundProgress?.completed,
+      payloadCrossBroker?.completionNum,
+    ];
+    for (const value of candidates) {
+      const parsed = readPositiveInteger(value);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function readRoundTotal(...records: Array<UnknownRecord | undefined>): number | undefined {
+  for (const record of records) {
+    if (!record) continue;
+    const metadata = asRecord(record.metadata);
+    const terminalBrief = asRecord(record.terminalBrief);
+    const payload = asRecord(record.payload);
+    const payloadTerminalBrief = asRecord(payload?.terminalBrief);
+    const crossBroker = asRecord(record.crossBrokerHandoff) ?? asRecord(record.crossBroker) ?? asRecord(record.handoff);
+    const payloadCrossBroker = asRecord(payload?.crossBrokerHandoff) ?? asRecord(payload?.crossBroker) ?? asRecord(payload?.handoff);
+    const candidates = [
+      record.roundTotal,
+      record.parentRoundTotal,
+      terminalBrief?.total,
+      terminalBrief?.parentRoundTotal,
+      metadata?.roundTotal,
+      metadata?.parentRoundTotal,
+      payload?.roundTotal,
+      payload?.parentRoundTotal,
+      payload?.terminalBriefTotal,
+      payloadTerminalBrief?.total,
+      payloadTerminalBrief?.parentRoundTotal,
+      record.totalTasks,
+      record.totalWorkers,
+      record.roundDenominator,
+      crossBroker?.roundTotal,
+      crossBroker?.parentRoundTotal,
+      crossBroker?.totalTasks,
+      crossBroker?.totalWorkers,
+      payloadCrossBroker?.roundTotal,
+      payloadCrossBroker?.parentRoundTotal,
+      payloadCrossBroker?.totalTasks,
+      payloadCrossBroker?.totalWorkers,
+    ];
+    for (const value of candidates) {
+      const parsed = readPositiveInteger(value);
+      if (parsed !== undefined) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
 }
 
 function readStatusMessage(task?: UnknownRecord): string | undefined {

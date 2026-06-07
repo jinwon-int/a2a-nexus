@@ -11,9 +11,11 @@
  */
 import type {
   TaskDiagnosticReport,
+  TaskError,
   TaskTombstone,
   WorkerRecord,
 } from "./types.js";
+import type { HotTableGrowthProjection } from "./hot-table-growth.js";
 
 // ---------------------------------------------------------------------------
 // Alert types
@@ -31,9 +33,10 @@ export type AlertKind =
   | "task_canceled"
   | "queue_pressure"
   | "worker.heartbeat_missed"
-  | "gateway.unhealthy";
+  | "gateway.unhealthy"
+  | "hot_table_growth";
 
-export type AlertSubjectKind = "task" | "worker" | "gateway";
+export type AlertSubjectKind = "task" | "worker" | "gateway" | "storage";
 
 export interface Alert {
   /** Unique alert id (deterministic: `${kind}:${subject.id}`). */
@@ -72,6 +75,9 @@ export interface AlertScanResult {
   countsByKind: Record<AlertKind, number>;
 }
 
+const ALERT_ERROR_MESSAGE_MAX_CHARS = 1_000;
+const ALERT_ERROR_SUMMARY_MAX_CHARS = 240;
+
 // ---------------------------------------------------------------------------
 // Alert projection — pure function
 // ---------------------------------------------------------------------------
@@ -89,6 +95,8 @@ export interface AlertProjectionOptions {
   queuePressureWarning?: number;
   /** Queue pressure: number of queued tasks for critical. */
   queuePressureCritical?: number;
+  /** Hot-table growth projection to scan for storage-growth alerts. */
+  hotTableGrowth?: HotTableGrowthProjection | null;
   /** Worker records to scan for missed heartbeats. */
   workers?: WorkerRecord[];
   /** Threshold after which a worker heartbeat is considered missed. */
@@ -156,6 +164,12 @@ export function projectAlerts(
         alerts.push(terminalAlert);
       }
     }
+  }
+
+  // Hot-table growth alerts from storage pressure
+  if (options?.hotTableGrowth) {
+    const growthAlerts = projectHotTableGrowthAlerts(options.hotTableGrowth, now);
+    alerts.push(...growthAlerts);
   }
 
   for (const worker of options?.workers ?? []) {
@@ -239,9 +253,9 @@ function projectTerminalAlert(
       });
     case "failed":
       return makeAlert("task_failed", "info", report, now, {
-        summary: `Task ${report.taskId} failed: ${tombstone.error?.message ?? "unknown error"}`,
+        summary: `Task ${report.taskId} failed: ${compactAlertErrorSummary(tombstone.error)}`,
         durationMs: tombstone.durationMs,
-        extra: { error: tombstone.error },
+        extra: { error: compactAlertError(tombstone.error) },
       });
     case "canceled":
       return makeAlert("task_canceled", "info", report, now, {
@@ -250,6 +264,96 @@ function projectTerminalAlert(
       });
     default:
       return null;
+  }
+}
+
+/**
+ * Max hot-table growth alerts emitted per projection to keep alert payloads compact.
+ */
+const MAX_HOT_TABLE_GROWTH_ALERTS = 5;
+
+/**
+ * Project hot-table growth warnings/criticals into structured alerts.
+ *
+ * Produces at most {@link MAX_HOT_TABLE_GROWTH_ALERTS} alerts to keep
+ * operator event payloads bounded. Each alert has a deterministic id based on
+ * the table name (e.g. `"hot_table_growth:broker_tasks"`) so the operator
+ * event stream can track open/resolve transitions.
+ *
+ * Design:
+ *   - Pure function: same inputs → same outputs.
+ *   - Each alert carries compact summary + severity + estimated memory bytes.
+ *   - Alerts are deduped by table so the alert-open/resolve loop works.
+ *   - Tables with severity "ok" produce no alert (existing alert resolves naturally).
+ */
+export function projectHotTableGrowthAlerts(
+  projection: HotTableGrowthProjection,
+  detectedAt: string,
+): Alert[] {
+  const alerts: Alert[] = [];
+
+  for (const table of projection.tables) {
+    if (table.severity === "ok") continue;
+    if (alerts.length >= MAX_HOT_TABLE_GROWTH_ALERTS) break;
+
+    const kind: AlertKind = "hot_table_growth";
+    alerts.push({
+      id: `hot_table_growth:${table.table}`,
+      kind,
+      severity: table.severity,
+      subject: { kind: "storage", id: table.table },
+      summary: table.severity === "critical"
+        ? `CRITICAL: ${table.summary}`
+        : `WARNING: ${table.summary}`,
+      detectedAt,
+      metadata: {
+        table: table.table,
+        currentCount: table.currentCount,
+        estimatedMemoryBytes: table.estimatedMemoryBytes,
+        growthDelta: table.growthDelta,
+        growthRate: table.growthRate,
+        runtimeSkipped: table.runtimeSkipped,
+        severity: table.severity,
+        runtimeLimit: table.runtimeLimit,
+        operatorAction: table.operatorAction ?? (table.severity === "critical" ? "approval_required" : "investigate"),
+        operatorActionReason: table.operatorActionReason ?? "legacy projection without operator action classification",
+      },
+    });
+  }
+
+  return alerts;
+}
+
+function compactAlertErrorSummary(error: TaskError | undefined): string {
+  return truncateForAlert(error?.message ?? "unknown error", ALERT_ERROR_SUMMARY_MAX_CHARS);
+}
+
+function compactAlertError(error: TaskError | undefined): Record<string, unknown> | undefined {
+  if (!error) {
+    return undefined;
+  }
+
+  const message = truncateForAlert(error.message, ALERT_ERROR_MESSAGE_MAX_CHARS);
+  return {
+    ...(error.code ? { code: error.code } : {}),
+    message,
+    ...(error.message.length > message.length ? { messageTruncated: true } : {}),
+    ...(error.details ? { detailsOmitted: true, detailsBytes: safeJsonByteLength(error.details) } : {}),
+  };
+}
+
+function truncateForAlert(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function safeJsonByteLength(value: unknown): number | undefined {
+  try {
+    return Buffer.byteLength(JSON.stringify(value));
+  } catch {
+    return undefined;
   }
 }
 

@@ -1,0 +1,246 @@
+{
+  "schemaVersion": "a2a.runner.readonly-nochange-clean-main-smoke.v1",
+  "parent": "https://github.com/jinwon-int/a2a-plane/issues/506",
+  "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+  "sourceBase": {
+    "repo": "jinwon-int/a2a-docker-runner",
+    "baseRef": "main",
+    "baseCommit": "e3d27ed8615a2d4193bf4e1bcc41e64e9f3f7584",
+    "cleanMainRequired": true,
+    "generatedTmpEvidenceExcluded": true
+  },
+  "safetyState": {
+    "noProductionDeployOrRestart": true,
+    "noLiveProviderSend": true,
+    "terminalAck": "requires_operator_receipt",
+    "providerSendIsReceiptEvidence": false
+  },
+  "cases": [
+    {
+      "name": "status marker alone is missing evidence, not Done",
+      "task": {
+        "id": "fixture-358-marker-only-status",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "readOnlyValidation": true,
+          "validationOnly": true,
+          "allowNoChanges": true,
+          "runId": "a2a-docker-runner-358-clean-main-smoke"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "fixture-358-marker-only-status",
+        "status": "completed",
+        "workDir": "/synthetic/a2a/runner-358/marker-only-status",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "read_only_validation=passed\nstatus=no_changes_allowed\nnotice=no_code_changes_produced_evidence_only_lane\n",
+        "stderr": "",
+        "artifacts": ["artifacts/summary.txt"],
+        "github": {
+          "schemaVersion": "a2a.runner.github-evidence.v1",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "jinwon-int/a2a-docker-runner#358",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "taskId": "fixture-358-marker-only-status",
+          "worker": "seoseo",
+          "outcome": "missing_evidence",
+          "validation": {
+            "status": "completed",
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "artifactCount": 1,
+            "stdoutTruncated": false,
+            "stderrTruncated": false
+          },
+          "safetyState": {
+            "noLiveProviderSend": true,
+            "terminalAck": "requires_operator_receipt",
+            "providerSendIsReceiptEvidence": false
+          }
+        }
+      },
+      "expected": {
+        "handlerStatus": "blocked",
+        "evidenceKind": "MissingEvidence",
+        "terminalStatus": "blocked"
+      }
+    },
+    {
+      "name": "openclaw marker alone is missing evidence, not Done",
+      "task": {
+        "id": "fixture-358-marker-only-openclaw",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "readOnlyValidation": true,
+          "validationOnly": true,
+          "allowNoChanges": true,
+          "runId": "a2a-docker-runner-358-clean-main-smoke"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "fixture-358-marker-only-openclaw",
+        "status": "completed",
+        "workDir": "/synthetic/a2a/runner-358/marker-only-openclaw",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "read_only_validation=passed\nopenclaw_no_changes=allowed\nnotice=no_code_changes_produced_evidence_only_lane\n",
+        "stderr": "",
+        "artifacts": ["artifacts/summary.txt"],
+        "github": {
+          "schemaVersion": "a2a.runner.github-evidence.v1",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "jinwon-int/a2a-docker-runner#358",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "taskId": "fixture-358-marker-only-openclaw",
+          "worker": "seoseo",
+          "outcome": "missing_evidence",
+          "validation": {
+            "status": "completed",
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "artifactCount": 1,
+            "stdoutTruncated": false,
+            "stderrTruncated": false
+          },
+          "safetyState": {
+            "noLiveProviderSend": true,
+            "terminalAck": "requires_operator_receipt",
+            "providerSendIsReceiptEvidence": false
+          }
+        }
+      },
+      "expected": {
+        "handlerStatus": "blocked",
+        "evidenceKind": "MissingEvidence",
+        "terminalStatus": "blocked"
+      }
+    },
+    {
+      "name": "status marker with Done URL is PR-less validation Done",
+      "task": {
+        "id": "fixture-358-done-status",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "readOnlyValidation": true,
+          "validationOnly": true,
+          "allowNoChanges": true,
+          "runId": "a2a-docker-runner-358-clean-main-smoke"
+        }
+      },
+      "runnerOutput": {
+        "ok": true,
+        "taskId": "fixture-358-done-status",
+        "status": "completed",
+        "workDir": "/synthetic/a2a/runner-358/done-status",
+        "exitCode": 0,
+        "signal": null,
+        "stdout": "https://github.com/jinwon-int/a2a-docker-runner/pull/999\nread_only_validation=passed\nstatus=no_changes_allowed\nnotice=no_code_changes_produced_evidence_only_lane\n",
+        "stderr": "",
+        "artifacts": ["artifacts/summary.txt"],
+        "github": {
+          "schemaVersion": "a2a.runner.github-evidence.v1",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "jinwon-int/a2a-docker-runner#358",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "taskId": "fixture-358-done-status",
+          "worker": "seoseo",
+          "outcome": "succeeded_no_changes_with_done_evidence",
+          "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-done",
+          "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-done",
+          "validation": {
+            "status": "completed",
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "artifactCount": 1,
+            "stdoutTruncated": false,
+            "stderrTruncated": false
+          },
+          "safetyState": {
+            "noLiveProviderSend": true,
+            "terminalAck": "requires_operator_receipt",
+            "providerSendIsReceiptEvidence": false
+          }
+        }
+      },
+      "expected": {
+        "handlerStatus": "done",
+        "evidenceKind": "Done",
+        "terminalStatus": "succeeded",
+        "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-done"
+      }
+    },
+    {
+      "name": "openclaw marker with Block URL is PR-less validation Block",
+      "task": {
+        "id": "fixture-358-block-openclaw",
+        "intent": "propose_patch",
+        "payload": {
+          "mode": "github-propose-patch",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "readOnlyValidation": true,
+          "validationOnly": true,
+          "allowNoChanges": true,
+          "runId": "a2a-docker-runner-358-clean-main-smoke"
+        }
+      },
+      "runnerOutput": {
+        "ok": false,
+        "taskId": "fixture-358-block-openclaw",
+        "status": "failed",
+        "workDir": "/synthetic/a2a/runner-358/block-openclaw",
+        "exitCode": 4,
+        "signal": null,
+        "stdout": "read_only_validation=blocked\nopenclaw_no_changes=allowed\n",
+        "stderr": "validation blocked",
+        "artifacts": ["artifacts/summary.txt"],
+        "github": {
+          "schemaVersion": "a2a.runner.github-evidence.v1",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": "jinwon-int/a2a-docker-runner#358",
+          "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
+          "taskId": "fixture-358-block-openclaw",
+          "worker": "seoseo",
+          "outcome": "blocked_no_changes_with_evidence",
+          "blockUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-block",
+          "blockCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-block",
+          "validation": {
+            "status": "failed",
+            "exitCode": 4,
+            "signal": null,
+            "timedOut": false,
+            "artifactCount": 1,
+            "stdoutTruncated": false,
+            "stderrTruncated": false
+          },
+          "safetyState": {
+            "noLiveProviderSend": true,
+            "terminalAck": "requires_operator_receipt",
+            "providerSendIsReceiptEvidence": false
+          }
+        }
+      },
+      "expected": {
+        "handlerStatus": "blocked",
+        "evidenceKind": "Block",
+        "terminalStatus": "blocked",
+        "blockCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358#issuecomment-fixture-block"
+      }
+    }
+  ]
+}

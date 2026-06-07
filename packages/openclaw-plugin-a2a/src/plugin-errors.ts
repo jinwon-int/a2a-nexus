@@ -17,3 +17,21 @@ export function a2aError(
 ): { code: A2AErrorCode; message: string } {
   return { code, message };
 }
+
+/**
+ * Presence-safe labels for sessionKey state — never returns the raw value.
+ *
+ * Use this whenever an error message, log, or diagnostic needs to reference
+ * a sessionKey's presence state without exposing the key itself.
+ *
+ * @returns "<missing>"  when value is undefined or null
+ * @returns "<empty>"    when value is an empty/whitespace-only string
+ * @returns "<present>"  when a non-empty string is provided
+ */
+export function safeSessionKeyLabel(
+  value: unknown,
+): "<missing>" | "<empty>" | "<present>" {
+  if (value === undefined || value === null) return "<missing>";
+  if (typeof value === "string" && value.trim() === "") return "<empty>";
+  return "<present>";
+}

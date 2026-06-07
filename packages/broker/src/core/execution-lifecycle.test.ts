@@ -8,6 +8,9 @@ import {
 } from "./execution-lifecycle.js";
 import {
   EXECUTION_TRANSITIONS,
+  EXECUTION_FAILURE_CODES,
+  FAILURE_RETRYABILITY,
+  classifyExecutionFailure,
 } from "./execution-lifecycle-types.js";
 
 // ---------------------------------------------------------------------------
@@ -420,10 +423,10 @@ describe("retry", () => {
     const mgr = createManager();
     const input = baseInput();
     const r1 = mgr.requestExecution(input);
-    mgr.failExecution(r1.runId, "error");
-    const r2 = mgr.retryExecution(r1.runId);
-    mgr.failExecution(r2.runId, "error");
-    const r3 = mgr.retryExecution(r2.runId);
+    mgr.failExecution(r1.runId, "runtime_error");
+    const r2 = mgr.retryExecution(r1.runId, { maxRetries: 2 });
+    mgr.failExecution(r2.runId, "runtime_error");
+    const r3 = mgr.retryExecution(r2.runId, { maxRetries: 2 });
     expect(r3.attempts).toBe(3);
   });
 
@@ -671,7 +674,7 @@ describe("closeout reconciliation", () => {
     const mgr = createManager();
     const input = baseInput({ sessionKey: "session-x" });
     const r1 = mgr.requestExecution(input);
-    mgr.failExecution(r1.runId, "error");
+    mgr.failExecution(r1.runId, "runtime_error");
     const r2 = mgr.retryExecution(r1.runId);
     mgr.sessionReady(r2.runId);
     mgr.deliverPayload({ runId: r2.runId });
@@ -770,9 +773,225 @@ describe("multi-run scenarios", () => {
     const mgr = createManager();
     const input = baseInput({ sessionKey: "s1" });
     const r1 = mgr.requestExecution(input);
-    mgr.failExecution(r1.runId, "error");
+    mgr.failExecution(r1.runId, "runtime_error");
     const r2 = mgr.retryExecution(r1.runId);
 
     expect(mgr.getRunsForSession("s1")).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retryability classification (issue #838)
+// ---------------------------------------------------------------------------
+
+describe("retryability classification", () => {
+  it("classifies retryable codes correctly", () => {
+    // Core retryable: transient infrastructure failures
+    expect(classifyExecutionFailure("peer_unreachable")).toBe(true);
+    expect(classifyExecutionFailure("session_expired")).toBe(true);
+    expect(classifyExecutionFailure("delivery_failed")).toBe(true);
+    expect(classifyExecutionFailure("runtime_error")).toBe(true);
+    expect(classifyExecutionFailure("rate_limited")).toBe(true);
+    expect(classifyExecutionFailure("lease_expired")).toBe(true);
+    expect(classifyExecutionFailure("execution_timeout")).toBe(true);
+  });
+
+  it("classifies non-retryable codes correctly", () => {
+    // Non-retryable: permanent or semantic failures
+    expect(classifyExecutionFailure("payload_too_large")).toBe(false);
+    expect(classifyExecutionFailure("result_parse_error")).toBe(false);
+    expect(classifyExecutionFailure("auth_failed")).toBe(false);
+    expect(classifyExecutionFailure("cancelled_by_operator")).toBe(false);
+    expect(classifyExecutionFailure("duplicate_payload_suppressed")).toBe(false);
+    expect(classifyExecutionFailure("other")).toBe(false);
+  });
+
+  it("resolves aliases through classifyExecutionFailure", () => {
+    expect(classifyExecutionFailure("timeout")).toBe(true);
+    expect(classifyExecutionFailure("auth")).toBe(false);
+    expect(classifyExecutionFailure("unreachable")).toBe(true);
+    expect(classifyExecutionFailure("lease")).toBe(true);
+    expect(classifyExecutionFailure("rate_limit")).toBe(true);
+  });
+
+  it("defaults unknown codes to non-retryable", () => {
+    expect(classifyExecutionFailure("unknown")).toBe(false);
+    expect(classifyExecutionFailure("weird_failure")).toBe(false);
+    expect(classifyExecutionFailure("")).toBe(false);
+  });
+
+  it("FAILURE_RETRYABILITY has entry for every EXECUTION_FAILURE_CODES member", () => {
+    for (const code of EXECUTION_FAILURE_CODES) {
+      expect(FAILURE_RETRYABILITY).toHaveProperty(code);
+      expect(typeof FAILURE_RETRYABILITY[code]).toBe("boolean");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRetryableFailure and remainingRetries (issue #838)
+// ---------------------------------------------------------------------------
+
+describe("isRetryableFailure", () => {
+  it("returns true for failed run with retryable code", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    expect(mgr.isRetryableFailure(req.runId)).toBe(true);
+  });
+
+  it("returns true for timed-out run", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.sessionReady(req.runId);
+    mgr.timeoutExecution(req.runId);
+    expect(mgr.isRetryableFailure(req.runId)).toBe(true);
+  });
+
+  it("returns false for failed run with non-retryable code", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "auth_failed");
+    expect(mgr.isRetryableFailure(req.runId)).toBe(false);
+  });
+
+  it("returns false for active run", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    expect(mgr.isRetryableFailure(req.runId)).toBe(false);
+  });
+
+  it("returns false for completed run", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.sessionReady(req.runId);
+    mgr.deliverPayload({ runId: req.runId });
+    mgr.startRunning(req.runId);
+    mgr.reportResult({ runId: req.runId, outcome: "success", summary: "Done" });
+    expect(mgr.isRetryableFailure(req.runId)).toBe(false);
+  });
+
+  it("returns false for unknown run id", () => {
+    const mgr = createManager();
+    expect(mgr.isRetryableFailure("nope")).toBe(false);
+  });
+
+  it("returns false for cancelled run", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.cancelExecution(req.runId);
+    expect(mgr.isRetryableFailure(req.runId)).toBe(false);
+  });
+});
+
+describe("remainingRetries", () => {
+  it("returns 1 for first failed run with maxRetries=1", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    expect(mgr.remainingRetries(req.runId)).toBe(1);
+  });
+
+  it("returns 0 for first failed run with maxRetries=0", () => {
+    const mgr = createManager({ defaultMaxRetries: 0 });
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    expect(mgr.remainingRetries(req.runId)).toBe(0);
+  });
+
+  it("returns 0 for non-retryable failure code", () => {
+    const mgr = createManager({ defaultMaxRetries: 5 });
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "auth_failed");
+    expect(mgr.remainingRetries(req.runId)).toBe(0);
+  });
+
+  it("returns 0 for active run", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    expect(mgr.remainingRetries(req.runId)).toBe(0);
+  });
+
+  it("returns 2 after one retry used with maxRetries=3", () => {
+    const mgr = createManager({ defaultMaxRetries: 3 });
+    const r1 = mgr.requestExecution(baseInput());
+    mgr.failExecution(r1.runId, "runtime_error");
+    const r2 = mgr.retryExecution(r1.runId);
+    mgr.failExecution(r2.runId, "runtime_error");
+    expect(mgr.remainingRetries(r2.runId)).toBe(2);
+  });
+
+  it("returns 0 after all retries exhausted", () => {
+    const mgr = createManager({ defaultMaxRetries: 1 });
+    const r1 = mgr.requestExecution(baseInput());
+    mgr.failExecution(r1.runId, "runtime_error");
+    const r2 = mgr.retryExecution(r1.runId);
+    expect(mgr.remainingRetries(r2.runId)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retry policy enforcement (issue #838)
+// ---------------------------------------------------------------------------
+
+describe("retry policy enforcement", () => {
+  it("blocks retry for non-retryable failure code", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "auth_failed");
+    expect(() => mgr.retryExecution(req.runId)).toThrow(/not classified as retryable/);
+  });
+
+  it("blocks retry when attempts exceed maxRetries", () => {
+    const mgr = createManager({ defaultMaxRetries: 1 });
+    const r1 = mgr.requestExecution(baseInput());
+    mgr.failExecution(r1.runId, "runtime_error");
+    const r2 = mgr.retryExecution(r1.runId);
+    // r2 is in wake_requested; fail it before retrying to trigger budget exhaust
+    mgr.failExecution(r2.runId, "runtime_error");
+    // attempts now 2, maxRetries=1 → budget exhausted
+    expect(() => mgr.retryExecution(r2.runId)).toThrow(/attempt budget exhausted/);
+  });
+
+  it("blocks retry when maxRetries=0", () => {
+    const mgr = createManager({ defaultMaxRetries: 0 });
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    expect(() => mgr.retryExecution(req.runId)).toThrow(/automatic retry is disabled/);
+  });
+
+  it("allows per-call maxRetries override", () => {
+    const mgr = createManager({ defaultMaxRetries: 0 });
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    const retry = mgr.retryExecution(req.runId, { maxRetries: 1 });
+    expect(retry.attempts).toBe(2);
+  });
+
+  it("allows retry once by default", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    const retry = mgr.retryExecution(req.runId);
+    expect(retry.attempts).toBe(2);
+    expect(retry.runId).not.toBe(req.runId);
+    expect(retry.payloadDelivered).toBe(false);
+  });
+
+  it("distinguishes infra failure from source failure", () => {
+    // runtime_error (infra) is retryable; other (unknown/source) is not
+    expect(classifyExecutionFailure("runtime_error")).toBe(true);
+    expect(classifyExecutionFailure("result_parse_error")).toBe(false);
+    expect(classifyExecutionFailure("other")).toBe(false);
+  });
+
+  it("fresh retry run has new session workspace (new runId)", () => {
+    const mgr = createManager();
+    const req = mgr.requestExecution(baseInput());
+    mgr.failExecution(req.runId, "runtime_error");
+    const retry = mgr.retryExecution(req.runId);
+    expect(retry.runId).not.toBe(req.runId);
+    expect(retry.attempts).toBe(2);
+    expect(retry.status).toBe("wake_requested");
   });
 });

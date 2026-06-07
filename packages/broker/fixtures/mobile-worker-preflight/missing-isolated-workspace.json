@@ -1,0 +1,20 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Daegyo-style Termux worker with healthy liveness signals but no isolated per-task workspace root configured. Active implementation lane use must be blocked until the workspace contract is satisfied.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "daegyo",
+    "workerMode": "termux-mobile",
+    "status": "online",
+    "lastSeenAgeSec": 12,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": true,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": false
+  }
+}

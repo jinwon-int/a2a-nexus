@@ -116,9 +116,11 @@ function deriveAuditEventId(wakeId: string, toState: DurableWakeState, timestamp
 }
 
 function redactTargetRef(sessionKey: string, nodeId?: string): string {
-  // Only expose truncated references, never full session keys
-  const skShort = sessionKey.length > 12 ? `${sessionKey.slice(0, 6)}…${sessionKey.slice(-4)}` : sessionKey;
-  return nodeId ? `${nodeId}/${skShort}` : skShort;
+  // Use non-secret hash digest — never expose raw or partial sessionKey values
+  // R29 fix: previously showed first 6 + last 4 chars; now uses a one-way digest
+  // See openclaw-plugin-a2a#337 (R28 HOLD: raw sessionKey in error messages)
+  const digest = createHash("sha256").update(sessionKey).digest("hex").slice(0, 16);
+  return nodeId ? `${nodeId}/${digest}` : digest;
 }
 
 // ── Durable Session Wake Adapter ───────────────────────────────

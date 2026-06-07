@@ -1,10 +1,67 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { loadConfig } from "./config.js";
+import { loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
+import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
   A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
 };
+
+test("loadEnvFile parses service-style runner env files without shell execution", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
+  try {
+    const file = join(dir, "worker.env");
+    writeFileSync(file, [
+      "# comment",
+      "export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw",
+      "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR='/srv/openclaw profile'",
+      'A2A_DOCKER_RUNNER_IMAGE="a2a-docker-runner-openclaw:latest"',
+      'A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON=\'[{"source":"/usr/lib/node_modules","target":"/usr/lib/node_modules","readOnly":true}]\'',
+      "A2A_DOCKER_RUNNER_CPUS=2 # inline comment",
+    ].join("\n"));
+
+    assert.deepEqual(loadEnvFile(file), {
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/srv/openclaw profile",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-openclaw:latest",
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: '[{"source":"/usr/lib/node_modules","target":"/usr/lib/node_modules","readOnly":true}]',
+      A2A_DOCKER_RUNNER_CPUS: "2",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("mergeRunnerEnvFile lets direct doctor inherit worker service GitHub patch profile", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
+  try {
+    const file = join(dir, "worker.env");
+    writeFileSync(file, [
+      "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw",
+      "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/srv/openclaw-profile",
+      "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-openclaw:latest",
+    ].join("\n"));
+
+    const env = mergeRunnerEnvFile({
+      ...baseEnv,
+      A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-pro",
+    }, file);
+    const config = await loadConfig(env);
+
+    assert.equal(config.commandProfile, "openclaw");
+    assert.equal(config.image, "a2a-docker-runner-openclaw:latest");
+    assert.equal(config.network, "host");
+    assert.match(config.commandScript ?? "", /deepseek\/deepseek-v4-pro/);
+    assert.deepEqual(config.extraMounts, [
+      { source: "/srv/openclaw-profile", target: "/run/secrets/openclaw-dir", readOnly: true },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("loadConfig reads bounded safe runner build metadata", async () => {
   const config = await loadConfig({
@@ -28,7 +85,7 @@ test("loadConfig reads bounded safe runner build metadata", async () => {
 test("loadConfig drops unsafe runner build metadata values", async () => {
   const config = await loadConfig({
     ...baseEnv,
-    A2A_DOCKER_RUNNER_BUILD_SOURCE: "<private-checkout>",
+    A2A_DOCKER_RUNNER_BUILD_SOURCE: "/root/private/checkout",
     A2A_DOCKER_RUNNER_BUILD_REVISION: "token=ghp_" + "x".repeat(36),
     A2A_DOCKER_RUNNER_BUILD_IMAGE: "safe-image:latest\nignored-line",
   });
@@ -45,18 +102,33 @@ test("loadConfig reads OpenClaw patch command script env var", async () => {
   assert.equal(config.commandScript, "#!/usr/bin/env bash\nopenclaw agent --help");
 });
 
+test("loadConfig defaults runner container timeout to 60 minutes", async () => {
+  const config = await loadConfig(baseEnv);
+
+  assert.equal(config.defaultTimeoutMs, 60 * 60 * 1000);
+});
+
 test("loadConfig builds first-class OpenClaw patch profile", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
     A2A_OPENCLAW_AGENT_ID: "main",
     A2A_OPENCLAW_THINKING: "medium",
-    A2A_OPENCLAW_TIMEOUT_SEC: "1800",
+    A2A_OPENCLAW_TIMEOUT_SEC: "3600",
   });
 
   assert.match(config.commandScript ?? "", /openclaw agent/);
-  assert.match(config.commandScript ?? "", /--model 'openai-codex\/gpt-5\.5'/);
-  assert.match(config.commandScript ?? "", /--thinking 'medium'/);
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='openai-codex\/gpt-5\.5'/);
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_THINKING='medium'/);
+  assert.match(config.commandScript ?? "", /--model "\$A2A_OPENCLAW_MODEL"/);
+  assert.match(config.commandScript ?? "", /--thinking "\$A2A_OPENCLAW_THINKING"/);
+  assert.match(config.commandScript ?? "", /A2A_RUNNER_ALLOW_NO_CHANGES/);
+  assert.match(config.commandScript ?? "", /openclaw_no_changes=allowed/);
+  assert.match(config.commandScript ?? "", /OPENCLAW_EXIT="\$\{PIPESTATUS\[0\]\}"/);
+  assert.match(config.commandScript ?? "", /openclaw_exit_code=/);
+  assert.match(config.commandScript ?? "", /openclaw_nonzero_allowed_for_evidence_only_lane/);
+  assert.match(config.commandScript ?? "", /error=openclaw_agent_failed/);
+  assert.match(config.commandScript ?? "", /Done evidence\|Done comment/);
   assert.match(config.commandScript ?? "", /OPENCLAW_DISABLE_BUNDLED_PLUGINS='0'/);
   assert.equal(config.network, "host");
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/openclaw-dir\/openclaw\.json/);
@@ -66,16 +138,29 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.match(config.commandScript ?? "", /A2A_SANITIZE_OPENCLAW_CONFIG/);
   assert.match(config.commandScript ?? "", /A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW/);
   assert.match(config.commandScript ?? "", /config\.skills\.entries\["gh-issues"\]\.apiKey = token/);
-  assert.match(config.commandScript ?? "", /export GITHUB_TOKEN/);
+  assert.match(config.commandScript ?? "", /env GITHUB_TOKEN/);
   assert.ok((config.commandScript ?? "").includes('JSON.stringify(config, null, 2) + "\\n");'));
   assert.equal((config.commandScript ?? "").includes('JSON.stringify(config, null, 2) + "\n");'), false);
   assert.match(config.commandScript ?? "", /delete config\.plugins/);
   assert.match(config.commandScript ?? "", /delete config\.channels/);
+  assert.match(config.commandScript ?? "", /delete config\.surfaces/);
+  assert.match(config.commandScript ?? "", /delete defaults\.silentReply/);
+  assert.match(config.commandScript ?? "", /delete defaults\.silentReplyRewrite/);
   assert.match(config.commandScript ?? "", /delete defaults\.models/);
   assert.match(config.commandScript ?? "", /delete entry\.models/);
+  assert.match(config.commandScript ?? "", /delete entry\.silentReply/);
+  assert.match(config.commandScript ?? "", /delete entry\.silentReplyRewrite/);
   assert.match(config.commandScript ?? "", /delete defaults\.agentRuntime\.fallback/);
   assert.match(config.commandScript ?? "", /delete entry\.agentRuntime\.fallback/);
   assert.match(config.commandScript ?? "", /openai-codex/);
+  assert.match(config.commandScript ?? "", /A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK='0'/);
+  assert.match(config.commandScript ?? "", /error=openclaw_cli_missing/);
+  assert.match(config.commandScript ?? "", /openclaw_install_fallback=disabled/);
+  assert.match(
+    config.commandScript ?? "",
+    /if \[ "\$\{A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK:-0\}" = "1" \]; then[\s\S]*notice=openclaw_cli_missing_install_attempted/,
+  );
+  assert.match(config.commandScript ?? "", /failure_category=openclaw_cli_unavailable/);
   assert.match(config.commandScript ?? "", /openclaw_config_bytes=/);
   assert.match(config.commandScript ?? "", /A2A_SET_OPENCLAW_WORKSPACE/);
   assert.match(config.commandScript ?? "", /config\.agents\.defaults\.workspace = workspace/);
@@ -84,7 +169,14 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.match(config.commandScript ?? "", /openclaw_session_store_guard/);
   assert.match(config.commandScript ?? "", /openclaw_workspace_bootstrap_leak/);
   assert.match(config.commandScript ?? "", /bootstrap_leak=/);
-  assert.match(config.commandScript ?? "", /git status --porcelain -- \.openclaw AGENTS\.md BOOTSTRAP\.md HEARTBEAT\.md IDENTITY\.md MEMORY\.md SOUL\.md TOOLS\.md USER\.md memory/);
+  assert.match(config.commandScript ?? "", /scrubbed_ignored_openclaw_bootstrap/);
+  assert.match(config.commandScript ?? "", /git check-ignore -q --/);
+  assert.match(config.commandScript ?? "", /git ls-files --/);
+  assert.match(config.commandScript ?? "", /find_bootstrap_leaks \./);
+  assert.match(config.commandScript ?? "", /BOOTSTRAP_BANNED="AGENTS\.md BOOTSTRAP\.md HEARTBEAT\.md IDENTITY\.md MEMORY\.md SOUL\.md TOOLS\.md USER\.md"/);
+  assert.match(config.commandScript ?? "", /BOOTSTRAP_BANNED_DIRS="\.openclaw memory"/);
+  assert.match(config.commandScript ?? "", /Files detected \(repo-relative\):/);
+  assert.doesNotMatch(config.commandScript ?? "", /git status --porcelain -- \.openclaw AGENTS\.md BOOTSTRAP\.md HEARTBEAT\.md IDENTITY\.md MEMORY\.md SOUL\.md TOOLS\.md USER\.md memory/);
   assert.match(config.commandScript ?? "", /activeAgentId = process\.env\.A2A_OPENCLAW_AGENT_ID \|\| "main"/);
   assert.ok((config.commandScript ?? "").includes('warning=openclaw_session_store_guard " + warning + "\\n"'));
   assert.ok((config.commandScript ?? "").includes('error=openclaw_session_store_guard " + errors.join("; ") + "\\n"'));
@@ -93,10 +185,35 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.match(config.commandScript ?? "", /empty non-active-agent sessions registry ignored/);
   assert.doesNotMatch(config.commandScript ?? "", /tar -C \/run\/secrets\/openclaw-dir/);
   assert.doesNotMatch(config.commandScript ?? "", /cp -a \/run\/secrets\/openclaw-dir \/root\/\.openclaw/);
+  assert.equal(config.commandProfile, "openclaw");
+  assert.deepEqual(config.openclawProfile, { allowNpmInstallFallback: false });
   assert.equal(config.commandJson, undefined);
   assert.deepEqual(config.extraMounts, [
     { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
   ]);
+});
+
+test("OpenClaw patch profile defaults command timeout to 60 minutes", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+  });
+
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_TIMEOUT_SEC='3600'/);
+});
+
+test("loadConfig OpenClaw patch profile requires explicit opt-in for npm CLI fallback", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK: "1",
+  });
+
+  assert.match(config.commandScript ?? "", /A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK='1'/);
+  assert.match(config.commandScript ?? "", /openclaw_cli_missing_install_attempted/);
+  assert.match(config.commandScript ?? "", /error=openclaw_install_failed/);
+  assert.match(config.commandScript ?? "", /failure_category=openclaw_cli_unavailable/);
+  assert.deepEqual(config.openclawProfile, { allowNpmInstallFallback: true });
 });
 
 test("loadConfig OpenClaw patch profile honors custom model", async () => {
@@ -106,7 +223,10 @@ test("loadConfig OpenClaw patch profile honors custom model", async () => {
     A2A_OPENCLAW_MODEL: "zai/glm-5.1",
   });
 
-  assert.match(config.commandScript ?? "", /--model 'zai\/glm-5\.1'/);
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='zai\/glm-5\.1'/);
+  assert.match(config.commandScript ?? "", /--model "\$A2A_OPENCLAW_MODEL"/);
+  assert.match(config.commandScript ?? "", /const selectedModel = process\.env\.A2A_OPENCLAW_MODEL/);
+  assert.match(config.commandScript ?? "", /selectedProvider/);
 });
 
 test("loadConfig honors explicit Docker network override", async () => {
@@ -197,6 +317,51 @@ test("loadConfig reads extra runner mounts", async () => {
   ]);
 });
 
+test("loadConfig rejects openclaw profile extra mounts without the profile mount", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
+      ]),
+    }),
+    /openclaw patch profile requires a \/run\/secrets\/openclaw-dir mount/,
+  );
+});
+
+test("loadConfig rejects conflicting openclaw profile mount source", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/root/.openclaw-a2a-deepseek-config",
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
+        { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
+      ]),
+    }),
+    /source conflicts with A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR/,
+  );
+});
+
+test("loadConfig accepts explicit openclaw profile mount source matching config dir", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/root/.openclaw-a2a-deepseek-config",
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
+      { source: "/root/.openclaw-a2a-deepseek-config", target: "/run/secrets/openclaw-dir", readOnly: true },
+    ]),
+  });
+
+  assert.deepEqual(config.extraMounts, [
+    { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
+    { source: "/root/.openclaw-a2a-deepseek-config", target: "/run/secrets/openclaw-dir", readOnly: true },
+  ]);
+});
+
 test("loadConfig rejects malformed extra runner mounts", async () => {
   await assert.rejects(
     () => loadConfig({
@@ -212,7 +377,7 @@ test("loadConfig rejects writable OpenClaw runtime/session mounts", async () => 
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
-        { source: "/root/.openclaw/agents/main/sessions", target: "/host-sessions", readOnly: false },
+        { source: "/root/.openclaw/workspace/sessions", target: "/host-sessions", readOnly: false },
       ]),
     }),
     /writable OpenClaw runtime\/session paths are forbidden/,
@@ -300,4 +465,140 @@ test("loadConfig allows OpenClaw and Codex Docker patch executors", async () => 
     A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["bash", "-lc", "npm install -g @openai/codex && codex exec --help"] }),
   });
   assert.match(codexConfig.commandJson ?? "", /@openai\/codex/);
+});
+
+// --- pre-deploy config validation (a2a-plane#249) ---
+
+function validConfig(overrides?: Partial<RunnerConfig>): RunnerConfig {
+  return {
+    rootDir: "/var/lib/openclaw-a2a/tasks",
+    image: "node:22-bookworm-slim",
+    engine: "docker",
+    defaultTimeoutMs: 900000,
+    ...overrides,
+  };
+}
+
+test("validateRunnerConfig accepts valid config", () => {
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig()));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "bridge" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "host" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "none" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ memory: "4g" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ memory: "512m" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ cpus: "4" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ cpus: "1.5" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ defaultTimeoutMs: 1 })));
+});
+
+test("validateRunnerConfig rejects empty image", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ image: "" })),
+    /runner pre-deploy config validation failed/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ image: "" })),
+    /image must be a non-empty string/,
+  );
+});
+
+test("validateRunnerConfig rejects non-absolute rootDir", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ rootDir: "relative/path" })),
+    /rootDir must be a non-empty absolute path/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ rootDir: "" })),
+    /rootDir must be a non-empty absolute path/,
+  );
+});
+
+test("validateRunnerConfig rejects unsupported network mode", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ network: "overlay" })),
+    /unsupported network mode/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ network: "container:foo" })),
+    /unsupported network mode/,
+  );
+});
+
+test("validateRunnerConfig rejects invalid memory format", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ memory: "two gigabytes" })),
+    /invalid memory limit/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ memory: "-2g" })),
+    /invalid memory limit/,
+  );
+});
+
+test("validateRunnerConfig rejects invalid cpus format", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ cpus: "two" })),
+    /invalid cpus/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ cpus: "1.2.3" })),
+    /invalid cpus/,
+  );
+});
+
+test("validateRunnerConfig rejects invalid defaultTimeoutMs", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ defaultTimeoutMs: 0 })),
+    /invalid defaultTimeoutMs/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ defaultTimeoutMs: -100 })),
+    /invalid defaultTimeoutMs/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ defaultTimeoutMs: NaN })),
+    /invalid defaultTimeoutMs/,
+  );
+});
+
+test("validateRunnerConfig reports all errors at once", () => {
+  try {
+    validateRunnerConfig(validConfig({
+      image: "",
+      rootDir: "bad",
+      network: "overlay",
+      memory: "bad",
+      cpus: "bad",
+      defaultTimeoutMs: 0,
+    }));
+    assert.fail("expected throw");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    assert.match(msg, /image must be a non-empty string/);
+    assert.match(msg, /rootDir must be a non-empty absolute path/);
+    assert.match(msg, /unsupported network mode/);
+    assert.match(msg, /invalid memory limit/);
+    assert.match(msg, /invalid cpus/);
+    assert.match(msg, /invalid defaultTimeoutMs/);
+  }
+});
+
+test("loadConfig runs pre-deploy validation on invalid network", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_NETWORK: "invalid-mode",
+    }),
+    /runner pre-deploy config validation failed/,
+  );
+});
+
+test("loadConfig runs pre-deploy validation on invalid memory", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_MEMORY: "not-a-number",
+    }),
+    /runner pre-deploy config validation failed/,
+  );
 });

@@ -1,0 +1,18 @@
+{
+  "kind": "a2a-broker.complexity-orchestration-recommendation.fixture",
+  "version": 1,
+  "description": "Complex source-only patch planning task with no live impact.",
+  "now": "2026-05-29T08:30:00.000Z",
+  "format": "markdown",
+  "input": {
+    "intent": "propose_patch",
+    "targetEnvironment": "research",
+    "policyContext": {
+      "requiresApproval": false,
+      "liveImpact": false
+    },
+    "referenceCount": 2,
+    "artifactCount": 2,
+    "turnCount": 3
+  }
+}

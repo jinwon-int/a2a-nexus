@@ -174,7 +174,7 @@ function extractProposalSummary(event: WorkerStatusEvent): string | undefined {
 
 function extractArtifactUrl(event: WorkerStatusEvent): string | undefined {
   const p = event.payload as Record<string, unknown>;
-  for (const c of [p.prUrl, p.issueUrl]) {
+  for (const c of [p.prUrl, p.issueUrl, p.doneUrl, p.blockUrl]) {
     if (typeof c === "string" && c.trim()) return c.trim();
   }
   return undefined;

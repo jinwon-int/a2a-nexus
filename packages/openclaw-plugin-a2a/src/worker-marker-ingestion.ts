@@ -91,6 +91,14 @@ export function deriveEventId(source: GitHubCommentSource): string {
   return `gh:${source.repository}:${source.issueNumber}#${source.commentId}`;
 }
 
+/**
+ * Build a GitHub issue comment URL from source identifiers.
+ * Format: https://github.com/{repo}/issues/{issue}#issuecomment-{commentId}
+ */
+export function buildGitHubCommentUrl(source: GitHubCommentSource): string {
+  return `https://github.com/${source.repository}/issues/${source.issueNumber}#issuecomment-${source.commentId}`;
+}
+
 // ── Ingestion result ───────────────────────────────────────────
 
 export interface IngestionSuccess {
@@ -269,13 +277,28 @@ export function ingestGitHubComment(
 
   const event = parsed as WorkerStatusEvent;
 
-  // 8. Convert to broker event
+  // 8. Enrich read-only/libero evidence events with comment URL
+  // For Done markers with evidence-only or no-change outcomes, populate
+  // doneUrl from the comment URL itself (PR-less evidence lane).
+  // For Block markers, populate blockUrl from the comment URL.
+  if (event.marker === 'Done' &&
+    'outcome' in event.payload) {
+    const outcome = event.payload.outcome;
+    if (outcome === 'done_evidence_only' || outcome === 'done_no_changes') {
+      event.payload.doneUrl = buildGitHubCommentUrl(source);
+    }
+  }
+  if (event.marker === 'Block') {
+    event.payload.blockUrl = buildGitHubCommentUrl(source);
+  }
+
+  // 9. Convert to broker event
   const brokerEvent = toBrokerEvent(event);
 
-  // 9. Record for deduplication
+  // 10. Record for deduplication
   dedupStore.add(eventId);
 
-  // 10. Return success
+  // 11. Return success
   return {
     ok: true,
     eventId,

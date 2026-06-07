@@ -38,9 +38,9 @@ test("broker rehearsal manifest composes no-live contracts for runner lanes", ()
   assert.equal(manifest.terminalOutboxReadinessGate.subscribeOnly, true);
   assert.equal(manifest.terminalOutboxReadinessGate.ackEndpointExercised, false);
   assert.deepEqual(manifest.terminalOutboxReadinessGate.requiredAckEvidence, [
+    "current_session_visible",
     "operator_visible",
     "operator_confirmed",
-    "provider_delivery_receipt",
   ]);
   assert.deepEqual(manifest.terminalOutboxReadinessGate.rejectedEvidence, ["provider_send_success"]);
 

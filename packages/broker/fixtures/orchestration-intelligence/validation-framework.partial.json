@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-05-30T00:05:00.000Z",
+  "runId": "oi-v2-validation-framework-1001",
+  "roadmapIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/968",
+  "parentIssueNumber": 968,
+  "scenarios": [
+    {
+      "id": "wiki-large-refactor",
+      "baselineEvidence": "collected",
+      "candidateEvidence": "planned",
+      "notes": ["Baseline evidence exists from prior manual Wiki refactor rounds."]
+    },
+    {
+      "id": "a2a-worker-deployment",
+      "baselineEvidence": "planned",
+      "candidateEvidence": "planned",
+      "notes": ["Deployment remains approval-gated; validation framework records evidence slots only."]
+    }
+  ]
+}

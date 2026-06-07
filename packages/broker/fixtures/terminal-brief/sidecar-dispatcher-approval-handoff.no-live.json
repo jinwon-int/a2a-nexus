@@ -1,0 +1,217 @@
+{
+  "dispatcherPreflightSealPacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-dispatcher-preflight-seal.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T03:45:00.000Z",
+    "mode": "read-only/no-live",
+    "parentRoundId": "round-739",
+    "state": "dispatcher_preflight_seal_ready",
+    "dryRunOnly": true,
+    "sourceOnlyNoLive": true,
+    "idempotencyKey": "tb-sidecar-dispatcher-preflight-seal:fixture755",
+    "source": {
+      "dispatchDraftState": "dispatch_request_draft_ready",
+      "dispatchDraftIdempotencyKey": "tb-sidecar-executor-dispatch-request-draft:fixture755",
+      "dispatchRequestReference": "dispatch-request-753",
+      "executorAdapterId": "terminal-brief-sidecar-supervised-dry-run-start",
+      "executionGateReference": "execution-gate-751",
+      "operatorTarget": "round-739"
+    },
+    "runtimeEvidence": {
+      "suppliedOnly": true,
+      "observedAt": "2026-05-19T03:44:00.000Z",
+      "maxAgeMs": 300000,
+      "fresh": true,
+      "rows": [
+        {
+          "id": "gateway_ready",
+          "label": "Gateway readiness",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "event_loop",
+          "label": "Event loop not degraded",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "queue_backlog",
+          "label": "Queue backlog within approved limit",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "dry_run_only",
+          "label": "Dry-run-only mode proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "cursor_persistence",
+          "label": "Cursor persistence proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "bounded_polling",
+          "label": "Bounded polling proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "secret_boundary",
+          "label": "Secret boundary proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "operator_events_scope",
+          "label": "operatorEvents scope proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "terminal_evidence_path",
+          "label": "Terminal evidence path proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        },
+        {
+          "id": "rollback_path",
+          "label": "Rollback path proven",
+          "status": "ready",
+          "evidence": [
+            "true"
+          ]
+        }
+      ]
+    },
+    "sealedEnvelope": {
+      "sealOnly": true,
+      "sealOwner": "broker-finalizer",
+      "sealReference": "dispatcher-preflight-seal-755",
+      "envelopeHash": "sha256:fixture-envelope-hash",
+      "expiresAt": "2026-05-19T03:55:00.000Z",
+      "integrityVerified": true,
+      "commandIntent": "supervised_terminal_brief_sidecar_dry_run_start",
+      "transport": "json-stdin-stdout",
+      "metadataOnly": true,
+      "secretValuesIncluded": false,
+      "writesRuntimeState": false
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "dispatcherPreflightSealReady": true,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "approvalGrantExecutionPermitted": false,
+      "startExecutorDispatchPermitted": false,
+      "executorInvocationPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "executionPermitted": false,
+      "dbMutationPermitted": false,
+      "missingEvidence": [],
+      "blockers": [
+        "dispatcher preflight seal is not executor dispatch",
+        "runtime execution requires later separate approved dispatcher path"
+      ],
+      "nextAction": "broker finalizer may review the sealed preflight before any later separately approved dispatcher path; this packet dispatches nothing"
+    },
+    "blockers": [],
+    "nextActions": [
+      "broker finalizer may review the sealed preflight before any later separately approved dispatcher path; this packet dispatches nothing",
+      "do not dispatch executor, invoke executor, spawn process, start sidecar, ACK terminal rows, or mutate state from this packet"
+    ],
+    "approvalSensitiveActionsExcluded": [
+      "sending the approval request",
+      "granting approval or executing an approval grant",
+      "dispatching or invoking a start executor",
+      "spawning a process or starting/stopping the sidecar",
+      "Terminal Brief default-on enablement",
+      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "terminal ACK/replay or terminal receipt DB mutation",
+      "GitHub PR merge, issue close, or comment post from the packet/route",
+      "TaskFlow record creation or broker DB mutation",
+      "production deploy/restart, historical replay, release, publish, or secret movement"
+    ],
+    "integrationContract": {
+      "transport": "json",
+      "dispatcherPreflightSealVersion": 1,
+      "harnessNeutral": true,
+      "openclawMessageSendRequired": false,
+      "hermesAdapterCompatible": true,
+      "gongyungAdapterCompatible": true,
+      "externalHarnessCompatible": true,
+      "consumesExecutorDispatchRequestDraftPacket": true,
+      "rendersDispatcherPreflightSeal": true,
+      "collectsLiveEvidence": false,
+      "sendsApprovalRequest": false,
+      "grantsApproval": false,
+      "executesApprovalGrant": false,
+      "dispatchesStartExecutor": false,
+      "invokesExecutor": false,
+      "spawnsProcess": false,
+      "startsSidecar": false,
+      "enablesDefaultOn": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "dispatcherPreflightSealOnly": true,
+      "sourceOnlyNoLive": true,
+      "suppliedEvidenceOnly": true,
+      "sealDoesNotDispatchExecutor": true,
+      "sealDoesNotAuthorizeRuntime": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "terminalAckEligibleDoesNotPermitAck": true,
+      "executionNotPermitted": true,
+      "processSpawnNotPermitted": true,
+      "sidecarStartNotPermitted": true,
+      "defaultOnNotEnabledByThisPacket": true,
+      "routeIsReadOnly": true,
+      "brokerFinalizerRequired": true,
+      "performsGitHubMutation": false,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "createsTaskFlowRecords": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "dispatcherApprovalHandoff": {
+    "now": "2026-05-19T03:46:00.000Z",
+    "requestedBy": "broker-finalizer",
+    "operatorTarget": "operator",
+    "operatorChannel": "telegram",
+    "approvalReference": "dispatcher-approval-757",
+    "handoffReference": "dispatcher-approval-handoff-757",
+    "approvalWindowMinutes": 10,
+    "requiredReply": "approve_terminal_brief_sidecar_dispatcher_path dispatcher-approval-757"
+  }
+}

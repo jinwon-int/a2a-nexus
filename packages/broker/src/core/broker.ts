@@ -17,8 +17,31 @@ import {
 } from "./store.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
 import { TaskEventStream } from "./task-event-stream.js";
-import { TerminalTaskEventOutbox } from "./terminal-event-outbox.js";
+import {
+  TerminalTaskEventOutbox,
+  type TerminalTaskOutboxAckInput,
+  type TerminalTaskOutboxEvent,
+  type TerminalTaskOutboxReceiptUpdateInput,
+} from "./terminal-event-outbox.js";
 import { ConferenceRoomManager } from "./conference-room.js";
+import {
+  CrossBrokerTerminalBriefProjectionStore,
+  type CrossBrokerTerminalBriefProjection,
+  type CrossBrokerTerminalBriefProjectionFilters,
+  type CrossBrokerTerminalBriefProjectionRequest,
+  type CrossBrokerTerminalBriefProjectionResult,
+} from "./cross-broker-terminal-brief.js";
+import {
+  extractDispatchMetadata,
+  hasTerminalBriefMetadata,
+  validateTerminalBriefMetadata,
+} from "./terminal-brief-metadata.js";
+import { validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
+import {
+  resolveTerminalBriefParentOriginRoute,
+  normalizeTerminalBriefTeamScope,
+  type TerminalBriefParentOriginRoute,
+} from "./terminal-brief-routing.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -28,12 +51,25 @@ import type { TombstoneRuntimeRepository } from "./tombstone-repository.js";
 import type { ValidationRuntimeRepository } from "./validation-repository.js";
 import type { WorkerRuntimeRepository } from "./worker-repository.js";
 import type {
+  WorkerAssignmentRole,
+  WorkerCapabilityCard,
+  WorkerCapabilityCardQuery,
+  WorkerCapabilityCardRepository,
+} from "./worker-capability-card.js";
+import {
+  InMemoryWorkerCapabilityCardRepository,
+  queryWorkerCapabilityCards,
+  createDefaultCapabilityCard,
+} from "./worker-capability-card.js";
+import type {
   ApplyProposalRequest,
   ArtifactRecord,
   AttachArtifactRequest,
   AuditAction,
   AuditEvent,
   AuditListFilters,
+  A2AExchangeIntent,
+  A2APartyRef,
   A2AWorkerEnvironment,
   A2AExchangeMessageRecord,
   A2AExchangeMessageRequest,
@@ -41,6 +77,9 @@ import type {
   A2AExchangeState,
   BrokerDashboard,
   ChangeProposal,
+  CleanupCandidate,
+  CleanupCandidateActionability,
+  CleanupDryRunPlan,
   CreateProposalRequest,
   CreateTaskRequest,
   ProposalActorRequest,
@@ -89,6 +128,11 @@ export type BrokerErrorCode =
   | "invalid_transition"
   | "github_completion_evidence_missing"
   | "github_completion_receipt_invalid"
+  | "queue_saturated"
+  | "queue_drain_timeout"
+  | "queue_closed"
+  | "worker_crashed"
+  | "worker_unavailable"
   | "unauthorized"
   | "rate_limited";
 
@@ -110,7 +154,16 @@ export interface BrokerRetentionPolicy {
   inactiveWorkerRetentionMs: number;
   maxInactiveWorkers: number;
   auditRetentionMs: number;
+  /**
+   * Maximum meaningful, non-heartbeat audit events retained after the age
+   * window. Heartbeat audit rows use maxHeartbeatAuditEvents instead so
+   * liveness chatter cannot evict terminal/proposal/approval evidence.
+   */
   maxAuditEvents: number;
+  /** Maximum heartbeat audit rows retained after the age window. */
+  maxHeartbeatAuditEvents: number;
+  /** Minimum interval for recording identical task heartbeat audit evidence. */
+  heartbeatAuditSampleIntervalMs: number;
 }
 
 export interface InMemoryA2ABrokerOptions {
@@ -132,6 +185,8 @@ export interface InMemoryA2ABrokerOptions {
   artifactRepository?: ArtifactRuntimeRepository;
   /** Optional table-native repository for proposal validation results. */
   validationRepository?: ValidationRuntimeRepository;
+  /** Optional repository for worker capability profile storage and retrieval. */
+  capabilityCardRepository?: WorkerCapabilityCardRepository;
   retention?: Partial<BrokerRetentionPolicy>;
   /**
    * Maximum number of times the stale-task reaper (or manual requeue) is allowed to recycle a
@@ -160,7 +215,7 @@ export interface InMemoryA2ABrokerOptions {
   maxTerminalTaskOutboxEvents?: number;
   /**
    * Minimum interval for persisting unchanged worker heartbeats. Set `0` to persist every heartbeat.
-   * In-memory worker liveness still updates on every heartbeat. Default: 60000ms.
+   * In-memory worker liveness still updates on every heartbeat. Default: disabled.
    */
   workerHeartbeatPersistIntervalMs?: number;
   /**
@@ -197,9 +252,37 @@ export const DEFAULT_MAX_REQUEUE_ATTEMPTS = 5;
 
 /**
  * Worker heartbeats are high-churn liveness hints. Persist unchanged heartbeats
- * at most once per minute; in-memory liveness remains updated on every request.
+ * only when explicitly configured; in-memory liveness remains updated on every
+ * request. Material heartbeat changes still persist immediately.
  */
-export const DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS = 60_000;
+export const DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS = Number.POSITIVE_INFINITY;
+const EPHEMERAL_WORKER_HEARTBEAT_METADATA_KEYS = new Set([
+  "heartbeatAt",
+  "heartbeatAtEpochMs",
+  "lastHeartbeatAt",
+]);
+const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
+export const DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS = 60_000;
+
+/**
+ * Default milliseconds after which a persistent worker is considered stale.
+ * @see WorkerMode
+ */
+export const DEFAULT_WORKER_OFFLINE_AFTER_MS = 90_000;
+
+/**
+ * Shorter stale window for mobile workers (Termux/Hermes, battery-powered).
+ * Mobile nodes may briefly sleep (Doze, lid close, network suspend), so this
+ * threshold reflects expected brief offline windows — 30 seconds.
+ */
+export const MOBILE_OFFLINE_AFTER_MS = 30_000;
+
+/**
+ * Extended gap after which a mobile worker is considered fully disconnected
+ * rather than merely stale. Workers exceeding this threshold without any
+ * heartbeat are classified as `"disconnected"`.
+ */
+export const MOBILE_DISCONNECTED_AFTER_MS = 90_000;
 
 export const REQUEUE_EXHAUSTED_ERROR_CODE = "exceeded_requeue_limit";
 
@@ -212,6 +295,8 @@ export const DEFAULT_BROKER_RETENTION_POLICY: BrokerRetentionPolicy = {
   maxInactiveWorkers: 500,
   auditRetentionMs: 7 * 24 * 60 * 60 * 1000,
   maxAuditEvents: 5_000,
+  maxHeartbeatAuditEvents: 500,
+  heartbeatAuditSampleIntervalMs: DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
 };
 
 export type TaskUpdateReason =
@@ -222,6 +307,7 @@ export type TaskUpdateReason =
   | "succeeded"
   | "failed"
   | "canceled"
+  | "updated"
   | "reassigned"
   | "requeued"
   | "dead_lettered"
@@ -255,6 +341,9 @@ export interface BrokerProfilingSample {
   operation: BrokerProfilingOperation;
   startedAt: string;
   durationMs: number;
+  persistenceMode?: "full" | "hot";
+  retentionApplied?: boolean;
+  snapshotExported?: boolean;
   saveHints?: {
     hotExchanges: number;
     hotExchangeMessages: number;
@@ -265,6 +354,7 @@ export interface BrokerProfilingSample {
     hotTombstones: number;
     hotAuditEvents: number;
     hotWorkers: number;
+    hotTerminalOutboxEvents: number;
   };
 }
 
@@ -319,17 +409,20 @@ export class InMemoryA2ABroker {
   private readonly pendingHotTombstones = new Map<string, TaskTombstone>();
   private readonly pendingHotAuditEvents = new Map<string, AuditEvent>();
   private readonly pendingHotWorkers = new Map<string, WorkerRecord>();
+  private readonly pendingHotTerminalOutboxEvents = new Map<string, TerminalTaskOutboxEvent>();
   private readonly pendingHotExchanges = new Map<string, A2AExchangeState>();
   private readonly pendingHotExchangeMessages = new Map<string, A2AExchangeMessageRecord>();
   private readonly pendingHotProposals = new Map<string, ChangeProposal>();
   private readonly pendingHotArtifacts = new Map<string, ArtifactRecord>();
   private readonly pendingHotValidations = new Map<string, ValidationResult>();
   private readonly lastPersistedWorkerHeartbeatAtMs = new Map<string, number>();
+  private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
   private readonly stateListeners = new Set<BrokerStateListener>();
   private readonly profilingListeners = new Set<BrokerProfilingListener>();
   private readonly maxBufferedEventsPerTask: number;
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
+  private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
   private readonly conferenceManager: ConferenceRoomManager;
   private readonly taskRepository?: TaskRuntimeRepository;
   private readonly auditRepository?: AuditRuntimeRepository;
@@ -340,10 +433,12 @@ export class InMemoryA2ABroker {
   private readonly proposalRepository?: ProposalRuntimeRepository;
   private readonly artifactRepository?: ArtifactRuntimeRepository;
   private readonly validationRepository?: ValidationRuntimeRepository;
+  private readonly capabilityCards: WorkerCapabilityCardRepository;
   private readonly optionProfilingListener?: BrokerProfilingListener;
   private readonly brokerId?: string;
   private readonly teamId?: string;
   private readonly workerHeartbeatPersistIntervalMs: number;
+  private lastFullRetentionPersistAtMs = Date.now();
 
   constructor(
     private readonly stateStore?: BrokerStateStore,
@@ -359,6 +454,7 @@ export class InMemoryA2ABroker {
     this.proposalRepository = options.proposalRepository;
     this.artifactRepository = options.artifactRepository;
     this.validationRepository = options.validationRepository;
+    this.capabilityCards = options.capabilityCardRepository ?? new InMemoryWorkerCapabilityCardRepository();
     this.optionProfilingListener = options.profilingListener;
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
@@ -368,6 +464,32 @@ export class InMemoryA2ABroker {
     this.maxBufferedEventsPerTask = options.maxBufferedEventsPerTask ?? 100;
     this.taskEventStream = new TaskEventStream({ maxEvents: options.maxTaskStatusEvents });
     this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({ maxEvents: options.maxTerminalTaskOutboxEvents });
+    this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
+      brokerId: this.brokerId,
+      hasParentRound: (parentRoundId) => this.tasks.has(parentRoundId),
+      parentBrokerOfRecord: (parentRoundId) => this.tasks.get(parentRoundId)?.brokerOfRecord,
+      getParentRoundRouting: (parentRoundId) => {
+        const task = this.tasks.get(parentRoundId);
+        if (!task) return undefined;
+        const payload = task.payload ?? {};
+        const teamScope = normalizeTerminalBriefTeamScope(
+          (payload["teamScope"] as string)
+          ?? (payload["requestedTeamScope"] as string)
+          ?? "",
+        );
+        const initiatingBrokerId = (payload["initiatingBrokerId"] as string)?.trim();
+        if (!teamScope || !initiatingBrokerId) return undefined;
+        const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId, requestedTeamScope: teamScope });
+        if (!result.ok) return undefined;
+        return {
+          initiatingBrokerId: result.route.initiatingBrokerId,
+          parentBrokerId: result.route.parentBrokerId,
+          operatorFacingTerminalBriefSender: result.route.operatorFacingTerminalBriefSender,
+          handoffBrokerId: result.route.handoff?.handoffBrokerId,
+          projectionDestinationBrokerId: result.route.handoff?.projectionDestinationBrokerId,
+        };
+      },
+    });
     this.conferenceManager = new ConferenceRoomManager();
     if (snapshot) {
       this.loadSnapshot(snapshot);
@@ -387,6 +509,39 @@ export class InMemoryA2ABroker {
   /** Compact terminal task event outbox for durable webhook/SSE delivery. */
   getTerminalTaskEventOutbox(): TerminalTaskEventOutbox {
     return this.terminalTaskEventOutbox;
+  }
+
+  acknowledgeTerminalTaskOutboxEvent(id: string, receipt: TerminalTaskOutboxAckInput): TerminalTaskOutboxEvent | null {
+    const event = this.terminalTaskEventOutbox.acknowledge(id, receipt);
+    if (!event) return null;
+    this.persistTerminalTaskOutboxEvent(event);
+    return event;
+  }
+
+  recordTerminalTaskOutboxReceiptStatus(id: string, receipt: TerminalTaskOutboxReceiptUpdateInput): TerminalTaskOutboxEvent | null {
+    const event = this.terminalTaskEventOutbox.recordReceiptStatus(id, receipt);
+    if (!event) return null;
+    this.persistTerminalTaskOutboxEvent(event);
+    return event;
+  }
+
+  ingestCrossBrokerTerminalBriefProjection(request: CrossBrokerTerminalBriefProjectionRequest): CrossBrokerTerminalBriefProjectionResult {
+    const result = this.crossBrokerTerminalBriefs.ingest(request);
+    if (result.accepted) {
+      if (!result.replayed) {
+        this.terminalTaskEventOutbox.enqueueCrossBrokerProjection(result.record);
+      }
+      this.persistState();
+    }
+    return result;
+  }
+
+  listCrossBrokerTerminalBriefProjections(filters?: CrossBrokerTerminalBriefProjectionFilters): CrossBrokerTerminalBriefProjection[] {
+    return this.crossBrokerTerminalBriefs.list(filters);
+  }
+
+  getCrossBrokerTerminalBriefProjection(parentRoundId: string, originBrokerId: string): CrossBrokerTerminalBriefProjection | undefined {
+    return this.crossBrokerTerminalBriefs.get(parentRoundId, originBrokerId);
   }
 
   /**
@@ -741,15 +896,37 @@ export class InMemoryA2ABroker {
     this.assertWorkerRegistrationPayload(request);
 
     const now = isoNow();
-    const existing = this.getWorker(request.nodeId);
+    const existing = this.getWorkerCachedFirst(request.nodeId);
+    const capabilities = normalizeCapabilities(request.capabilities);
+    const materialChange = !existing ||
+      existing.role !== request.role ||
+      existing.displayName !== request.displayName ||
+      existing.brokerUrl !== request.brokerUrl ||
+      existing.workerMode !== request.workerMode ||
+      existing.managementPlane !== request.managementPlane ||
+      JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities) ||
+      !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
+
+    if (existing && !materialChange) {
+      return this.heartbeatWorker(request.nodeId, {
+        displayName: request.displayName,
+        brokerUrl: request.brokerUrl,
+        capabilities,
+        workerMode: request.workerMode,
+        metadata: request.metadata,
+        managementPlane: request.managementPlane,
+      });
+    }
+
     const worker: WorkerRecord = {
       nodeId: request.nodeId,
       role: request.role,
       displayName: request.displayName,
       brokerUrl: request.brokerUrl,
-      capabilities: normalizeCapabilities(request.capabilities),
+      capabilities,
       workerMode: request.workerMode,
       metadata: request.metadata,
+      managementPlane: request.managementPlane,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       lastSeenAt: now,
@@ -768,7 +945,7 @@ export class InMemoryA2ABroker {
   }
 
   heartbeatWorker(nodeId: string, request?: WorkerHeartbeatRequest): WorkerRecord {
-    const worker = this.requireWorker(nodeId);
+    const worker = this.requireWorkerCachedFirst(nodeId);
     const nowMs = Date.now();
     const now = new Date(nowMs).toISOString();
 
@@ -779,22 +956,29 @@ export class InMemoryA2ABroker {
     const nextBrokerUrl = request?.brokerUrl ?? worker.brokerUrl;
     const nextWorkerMode = request?.workerMode ?? worker.workerMode;
     const nextMetadata = request?.metadata ?? worker.metadata;
+    const nextManagementPlane = request?.managementPlane ?? worker.managementPlane;
+    const capabilitiesChanged =
+      request?.capabilities !== undefined &&
+      JSON.stringify(nextCapabilities) !== JSON.stringify(worker.capabilities);
+    const metadataChanged =
+      request?.metadata !== undefined &&
+      !workerMetadataMateriallyEqual(worker.metadata, nextMetadata);
     const materialChange =
       nextDisplayName !== worker.displayName ||
       nextBrokerUrl !== worker.brokerUrl ||
       nextWorkerMode !== worker.workerMode ||
-      JSON.stringify(nextCapabilities) !== JSON.stringify(worker.capabilities) ||
-      JSON.stringify(nextMetadata ?? null) !== JSON.stringify(worker.metadata ?? null);
+      nextManagementPlane !== worker.managementPlane ||
+      capabilitiesChanged ||
+      metadataChanged;
 
     worker.displayName = nextDisplayName;
     worker.brokerUrl = nextBrokerUrl;
     worker.capabilities = nextCapabilities;
     worker.workerMode = nextWorkerMode;
     worker.metadata = nextMetadata;
+    worker.managementPlane = nextManagementPlane;
     worker.updatedAt = now;
     worker.lastSeenAt = now;
-
-    this.setWorkerRecord(worker);
 
     const lastPersistedAtMs = this.lastPersistedWorkerHeartbeatAtMs.get(worker.nodeId) ?? 0;
     const shouldPersistHeartbeat =
@@ -803,9 +987,11 @@ export class InMemoryA2ABroker {
       nowMs - lastPersistedAtMs >= this.workerHeartbeatPersistIntervalMs;
 
     if (!shouldPersistHeartbeat) {
+      this.setWorkerRecordInMemory(worker);
       return worker;
     }
 
+    this.setWorkerRecord(worker);
     this.appendAuditEvent({
       actorId: worker.nodeId,
       action: "worker.heartbeat",
@@ -819,18 +1005,32 @@ export class InMemoryA2ABroker {
   }
 
   getWorker(nodeId: string): WorkerRecord | null {
+    const cachedWorker = this.workers.get(nodeId) ?? null;
     const repositoryWorker = this.workerRepository?.getWorker(nodeId);
     if (repositoryWorker) {
-      const worker = normalizeWorkerRecord(repositoryWorker);
+      const worker = chooseFresherWorkerRecord(cachedWorker, normalizeWorkerRecord(repositoryWorker));
       this.workers.set(worker.nodeId, worker);
       return worker;
     }
-    return this.workers.get(nodeId) ?? null;
+    return cachedWorker;
+  }
+
+  getWorkerCachedFirst(nodeId: string): WorkerRecord | null {
+    return this.workers.get(nodeId) ?? this.getWorker(nodeId);
   }
 
   listWorkers(filters?: WorkerListFilters): WorkerRecord[] {
     if (this.workerRepository) {
-      const workers = this.workerRepository.listWorkers(filters).map(normalizeWorkerRecord);
+      const workersById = new Map<string, WorkerRecord>();
+      for (const worker of this.workerRepository.listWorkers(filters).map(normalizeWorkerRecord)) {
+        const cachedWorker = this.workers.get(worker.nodeId) ?? null;
+        workersById.set(worker.nodeId, chooseFresherWorkerRecord(cachedWorker, worker));
+      }
+      for (const worker of this.workers.values()) {
+        const existing = workersById.get(worker.nodeId) ?? null;
+        workersById.set(worker.nodeId, chooseFresherWorkerRecord(existing, worker));
+      }
+      const workers = [...workersById.values()];
       for (const worker of workers) {
         this.workers.set(worker.nodeId, worker);
       }
@@ -848,10 +1048,7 @@ export class InMemoryA2ABroker {
   }
 
   listWorkerViews(offlineAfterMs: number, filters?: WorkerListFilters): WorkerView[] {
-    return this.listWorkers(filters).map((worker) => ({
-      ...worker,
-      status: computeWorkerStatus(worker.lastSeenAt, offlineAfterMs),
-    }));
+    return this.listWorkers(filters).map((worker) => toWorkerViewRecord(worker, offlineAfterMs));
   }
 
   getWorkerView(nodeId: string, offlineAfterMs: number): WorkerView | null {
@@ -860,10 +1057,67 @@ export class InMemoryA2ABroker {
       return null;
     }
 
-    return {
-      ...worker,
-      status: computeWorkerStatus(worker.lastSeenAt, offlineAfterMs),
-    };
+    return toWorkerViewRecord(worker, offlineAfterMs);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Worker capability profile storage/listing and assignment consumption (R31)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Persist a capability profile for assignment planning.
+   * Overwrites any previous profile for the same worker.
+   */
+  storeCapabilityProfile(card: WorkerCapabilityCard): void {
+    this.capabilityCards.store(card);
+  }
+
+  /**
+   * Retrieve a stored capability profile by worker id, or null when no profile
+   * has been registered for that worker.
+   */
+  getCapabilityProfile(workerId: string): WorkerCapabilityCard | null {
+    return this.capabilityCards.get(workerId);
+  }
+
+  /**
+   * List all stored capability profiles. Filters by {@link WorkerCapabilityCardQuery}
+   * when provided. Only valid cards pass the filter.
+   */
+  listCapabilityProfiles(query?: WorkerCapabilityCardQuery): WorkerCapabilityCard[] {
+    const cards = this.capabilityCards.list();
+    if (!query || Object.keys(query).length === 0) {
+      return cards;
+    }
+    return queryWorkerCapabilityCards(cards, query);
+  }
+
+  /**
+   * Remove a stored capability profile. No-op when the worker has no profile.
+   */
+  deleteCapabilityProfile(workerId: string): void {
+    this.capabilityCards.delete(workerId);
+  }
+
+  /**
+   * Auto-register a default capability profile from a registered
+   * {@link WorkerView}. Useful when a worker registers and no explicit
+   * capability card has been provided, so assignment planning always has at
+   * least a baseline profile to work with.
+   */
+  registerDefaultCapabilityProfile(
+    worker: WorkerView,
+    defaults?: {
+      teamId?: "team1" | "team2";
+      brokerOfRecord?: string;
+      lane?: "team1" | "team2";
+      assignmentRoles?: WorkerAssignmentRole[];
+      supportedTaskTypes?: A2AExchangeIntent[];
+    },
+  ): WorkerCapabilityCard {
+    const card = createDefaultCapabilityCard(worker, defaults);
+    this.capabilityCards.store(card);
+    return card;
   }
 
   createProposal(request: CreateProposalRequest): ChangeProposal {
@@ -1111,7 +1365,15 @@ export class InMemoryA2ABroker {
   }
 
   createTask(request: CreateTaskRequest): TaskRecord {
-    const normalizedRequest = normalizeGitHubPatchTaskRequest(request);
+    const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request);
+    const brokerOfRecord = normalizeOwnershipString(normalizedGitHubRequest.brokerOfRecord) ?? this.brokerId;
+    const normalizedRequest = {
+      ...normalizedGitHubRequest,
+      payload: normalizeTaskPayload(normalizedGitHubRequest.payload, {
+        assignedWorkerId: normalizedGitHubRequest.assignedWorkerId ?? normalizedGitHubRequest.target.id,
+        localBrokerId: brokerOfRecord,
+      }),
+    };
     this.assertTaskPayload(normalizedRequest);
 
     // Idempotent create: if a task with the requested id already exists, return it as-is.
@@ -1134,12 +1396,15 @@ export class InMemoryA2ABroker {
     const now = isoNow();
     const policyContext = normalizeTaskPolicyContext(normalizedRequest);
     const initialStatus: TaskStatus = policyContext?.requiresApproval === true ? "blocked" : "queued";
-    const brokerOfRecord = normalizeOwnershipString(normalizedRequest.brokerOfRecord) ?? this.brokerId;
     const teamId = normalizeOwnershipString(normalizedRequest.teamId) ?? this.teamId;
+    this.assertTaskCreationOwnership(brokerOfRecord);
     const task: TaskRecord = {
       id: normalizedRequest.id ?? randomUUID(),
       exchangeId: normalizedRequest.exchangeId,
       parentTaskId: normalizedRequest.parentTaskId,
+      ...(normalizedRequest.referenceTaskIds?.length
+        ? { referenceTaskIds: uniqueIds(normalizedRequest.referenceTaskIds) }
+        : {}),
       intent: normalizedRequest.intent,
       requester: normalizedRequest.requester,
       target: normalizedRequest.target,
@@ -1151,7 +1416,7 @@ export class InMemoryA2ABroker {
       artifactIds: uniqueIds(normalizedRequest.artifactIds ?? []),
       via: normalizedRequest.via,
       policyContext,
-      payload: normalizeTaskPayload(normalizedRequest.payload),
+      payload: normalizedRequest.payload,
       status: initialStatus,
       createdAt: normalizedRequest.createdAt ?? now,
       updatedAt: now,
@@ -1299,10 +1564,37 @@ export class InMemoryA2ABroker {
         tasksById.set(repositoryTask.id, repositoryTask);
       }
     }
-    return sortedCopy(
+    const tasks = sortedCopy(
       [...tasksById.values()].filter((task) => taskMatchesFilters(task, filters)),
       sortNewestFirst,
     );
+    return applyTaskListLimit(tasks, filters?.limit);
+  }
+
+  updateTaskPayload(
+    taskId: string,
+    payload: Record<string, unknown>,
+    request: { actor: A2APartyRef; note?: string },
+  ): TaskRecord {
+    const task = this.requireTask(taskId);
+    if (!request.actor?.id) {
+      throw new BrokerError("bad_request", "actor.id is required");
+    }
+    const now = isoNow();
+    task.payload = normalizeTaskPayload(payload);
+    task.updatedAt = now;
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId: request.actor.id,
+      action: "task.updated",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: request.note ?? "task payload updated",
+    });
+    this.persistState();
+    this.emitTaskUpdate(task, "updated");
+    return task;
   }
 
   reassignTask(taskId: string, request: TaskReassignRequest): TaskRecord {
@@ -1313,7 +1605,7 @@ export class InMemoryA2ABroker {
     if (request.actor.role !== "hub" && request.actor.role !== "operator") {
       throw new BrokerError("policy_denied", "task reassignment requires a hub or operator actor");
     }
-    if (task.status === "succeeded" || task.status === "canceled") {
+    if (isTerminalTaskStatus(task.status)) {
       throw new BrokerError("invalid_transition", `cannot reassign task while status is ${task.status}`);
     }
 
@@ -1390,9 +1682,30 @@ export class InMemoryA2ABroker {
       return task;
     }
 
+    const supersededByTaskId = cleanOptionalTaskCancelField(request.supersededByTaskId);
+    const supersededByPrUrl = cleanOptionalTaskCancelField(request.supersededByPrUrl);
+    const roundId = cleanOptionalTaskCancelField(request.roundId);
+    if (supersededByTaskId === task.id) {
+      throw new BrokerError("bad_request", "supersededByTaskId must refer to a different task");
+    }
+    if (supersededByTaskId) {
+      const winner = this.requireTask(supersededByTaskId);
+      if (!isTerminalTaskStatus(winner.status)) {
+        throw new BrokerError("invalid_transition", `cannot supersede task by non-terminal task ${supersededByTaskId}`);
+      }
+    }
+    const superseded = Boolean(supersededByTaskId || supersededByPrUrl);
+    const reason = request.reason ?? (superseded
+      ? `superseded by ${supersededByPrUrl ?? supersededByTaskId}`
+      : undefined);
+
     return this.cancelTaskTree(task, {
       actorId,
-      reason: request.reason,
+      reason,
+      kind: superseded ? "superseded" : undefined,
+      supersededByTaskId,
+      supersededByPrUrl,
+      roundId,
     });
   }
 
@@ -1559,8 +1872,12 @@ export class InMemoryA2ABroker {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "complete");
 
-    // Idempotent: if already terminal, return as-is without mutation
-    if (isTerminalTaskStatus(task.status)) {
+    // If already canceled, record late completion evidence instead of silently dropping.
+    if (task.status === "canceled") {
+      return this.recordLateEvidenceAfterCancel(task, workerId, "complete", { result });
+    }
+    // Idempotent: if already succeeded/failed, return as-is without mutation
+    if (task.status === "succeeded" || task.status === "failed") {
       return task;
     }
     if (task.status !== "claimed" && task.status !== "running") {
@@ -1612,8 +1929,12 @@ export class InMemoryA2ABroker {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "fail");
 
-    // Idempotent: if already terminal, return as-is without mutation
-    if (isTerminalTaskStatus(task.status)) {
+    // If already canceled, record late failure evidence instead of silently dropping.
+    if (task.status === "canceled") {
+      return this.recordLateEvidenceAfterCancel(task, workerId, "fail", { error });
+    }
+    // Idempotent: if already succeeded/failed, return as-is without mutation
+    if (task.status === "succeeded" || task.status === "failed") {
       return task;
     }
     if (task.status !== "claimed" && task.status !== "running") {
@@ -1858,7 +2179,9 @@ export class InMemoryA2ABroker {
     let active = 0;
 
     const items: WorkerCapacitySummaryItem[] = workers.map((worker) => {
-      const workerIsStale = isWorkerStale(worker.lastSeenAt, workerOfflineAfterMs, nowMs);
+      // Use mobile-aware stale threshold when the worker declares mobile mode
+      const effectiveOffline = effectiveOfflineAfterMs(worker.workerMode, workerOfflineAfterMs);
+      const workerIsStale = isWorkerStale(worker.lastSeenAt, effectiveOffline, nowMs);
       if (workerIsStale) {
         staleWorkers += 1;
       } else {
@@ -1902,6 +2225,8 @@ export class InMemoryA2ABroker {
         lastSeenAgeSec: ageSecFromIso(worker.lastSeenAt, nowMs),
         counts,
         latestTaskUpdatedAt,
+        workerMode: worker.workerMode,
+        mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
       };
     });
 
@@ -2028,7 +2353,8 @@ export class InMemoryA2ABroker {
     let onlineCount = 0;
     let staleCount = 0;
     const byNode = allWorkers.map((w) => {
-      const isStale = isWorkerStale(w.lastSeenAt, offlineAfterMs, nowMs);
+      const effectiveOffline = effectiveOfflineAfterMs(w.workerMode, offlineAfterMs);
+      const isStale = isWorkerStale(w.lastSeenAt, effectiveOffline, nowMs);
       const status: WorkerFleetSummary["byNode"][number]["status"] = isStale ? "stale" : "online";
       if (isStale) {
         staleCount++;
@@ -2048,6 +2374,8 @@ export class InMemoryA2ABroker {
         ).length,
         lastSeenAt: w.lastSeenAt,
         lastSeenAgeSec: ageSecFromIso(w.lastSeenAt, nowMs),
+        workerMode: w.workerMode,
+        mobileHealth: computeWorkerMobileHealth(w.workerMode, w.lastSeenAt, nowMs),
       };
     });
     const workers: WorkerFleetSummary = {
@@ -2177,6 +2505,7 @@ export class InMemoryA2ABroker {
       tasks: [...this.tasks.values()],
       tombstones: [...this.tombstones.values()],
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
+      crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
     };
   }
 
@@ -2260,6 +2589,7 @@ export class InMemoryA2ABroker {
       nowMs,
       auditRetentionMs: this.retentionPolicy.auditRetentionMs,
       maxAuditEvents: this.retentionPolicy.maxAuditEvents,
+      maxHeartbeatAuditEvents: this.retentionPolicy.maxHeartbeatAuditEvents,
       retainedProposalIds,
       retainedTaskIds,
       retainedExchangeIds,
@@ -2277,6 +2607,8 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.validations, retainedValidationIds);
     pruneMapEntries(this.workers, retainedWorkerIds);
     pruneMapEntries(this.auditEvents, retainedAuditEventIds);
+    pruneMapEntries(this.lastPersistedWorkerHeartbeatAtMs, retainedWorkerIds);
+    pruneMapEntries(this.lastPersistedTaskHeartbeatAuditAtMs, retainedTaskIds);
   }
 
   private collectRetainedExchangeMessageIds(retainedExchangeIds: Set<string>): Set<string> {
@@ -2427,6 +2759,10 @@ export class InMemoryA2ABroker {
     for (const worker of snapshot.workers ?? []) {
       const normalizedWorker = normalizeWorkerRecord(worker);
       this.workers.set(normalizedWorker.nodeId, normalizedWorker);
+      const lastSeenAtMs = Date.parse(normalizedWorker.lastSeenAt);
+      if (Number.isFinite(lastSeenAtMs)) {
+        this.lastPersistedWorkerHeartbeatAtMs.set(normalizedWorker.nodeId, lastSeenAtMs);
+      }
     }
 
     for (const task of snapshot.tasks ?? []) {
@@ -2438,6 +2774,7 @@ export class InMemoryA2ABroker {
     }
 
     this.terminalTaskEventOutbox.restoreSnapshot(snapshot.terminalOutbox ?? []);
+    this.crossBrokerTerminalBriefs.restore(snapshot.crossBrokerTerminalBriefs ?? []);
 
     this.applyRetentionPolicy();
   }
@@ -2445,7 +2782,31 @@ export class InMemoryA2ABroker {
   private persistState(): void {
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
+    const hotSave = this.stateStore?.saveHotEntities;
+    if (
+      hotSave &&
+      this.hasPendingStateSaveHints() &&
+      startedAtMs - this.lastFullRetentionPersistAtMs < HOT_PERSIST_FULL_RETENTION_INTERVAL_MS
+    ) {
+      const hints = this.consumeStateSaveHintsWithoutSnapshot();
+      if (hints) {
+        hotSave.call(this.stateStore, hints);
+        this.emitStateChange();
+        this.emitProfilingSample({
+          operation: "persistState",
+          startedAt,
+          durationMs: Date.now() - startedAtMs,
+          persistenceMode: "hot",
+          retentionApplied: false,
+          snapshotExported: false,
+          saveHints: countStateSaveHints(hints),
+        });
+        return;
+      }
+    }
+
     this.applyRetentionPolicy();
+    this.lastFullRetentionPersistAtMs = startedAtMs;
     const snapshot = this.exportSnapshot();
     const hints = this.consumeStateSaveHints(snapshot);
     this.stateStore?.save(snapshot, hints);
@@ -2454,6 +2815,9 @@ export class InMemoryA2ABroker {
       operation: "persistState",
       startedAt,
       durationMs: Date.now() - startedAtMs,
+      persistenceMode: "full",
+      retentionApplied: true,
+      snapshotExported: true,
       saveHints: hints ? countStateSaveHints(hints) : undefined,
     });
   }
@@ -2503,6 +2867,73 @@ export class InMemoryA2ABroker {
     this.pendingHotWorkers.set(normalizedWorker.nodeId, structuredClone(normalizedWorker));
   }
 
+  private setWorkerRecordInMemory(worker: WorkerRecord): void {
+    const normalizedWorker = normalizeWorkerRecord(worker);
+    this.workers.set(normalizedWorker.nodeId, normalizedWorker);
+  }
+
+  private persistTerminalTaskOutboxEvent(event: TerminalTaskOutboxEvent): void {
+    this.pendingHotTerminalOutboxEvents.set(event.id, structuredClone(event));
+    this.persistState();
+  }
+
+  private hasPendingStateSaveHints(): boolean {
+    return (
+      this.pendingHotExchanges.size > 0 ||
+      this.pendingHotExchangeMessages.size > 0 ||
+      this.pendingHotProposals.size > 0 ||
+      this.pendingHotArtifacts.size > 0 ||
+      this.pendingHotValidations.size > 0 ||
+      this.pendingHotTasks.size > 0 ||
+      this.pendingHotTombstones.size > 0 ||
+      this.pendingHotAuditEvents.size > 0 ||
+      this.pendingHotWorkers.size > 0 ||
+      this.pendingHotTerminalOutboxEvents.size > 0
+    );
+  }
+
+  private consumeStateSaveHintsWithoutSnapshot(): BrokerStateSaveHints | undefined {
+    if (!this.hasPendingStateSaveHints()) {
+      return undefined;
+    }
+    const hotExchanges = [...this.pendingHotExchanges.values()];
+    const hotExchangeMessages = [...this.pendingHotExchangeMessages.values()];
+    const hotProposals = [...this.pendingHotProposals.values()];
+    const hotArtifacts = [...this.pendingHotArtifacts.values()];
+    const hotValidations = [...this.pendingHotValidations.values()];
+    const hotTasks = [...this.pendingHotTasks.values()];
+    const hotTombstones = [...this.pendingHotTombstones.values()];
+    const hotAuditEvents = [...this.pendingHotAuditEvents.values()];
+    const hotWorkers = [...this.pendingHotWorkers.values()];
+    const hotTerminalOutboxEvents = [...this.pendingHotTerminalOutboxEvents.values()];
+    this.clearPendingStateSaveHints();
+    return {
+      ...(hotExchanges.length ? { hotExchanges } : {}),
+      ...(hotExchangeMessages.length ? { hotExchangeMessages } : {}),
+      ...(hotProposals.length ? { hotProposals } : {}),
+      ...(hotArtifacts.length ? { hotArtifacts } : {}),
+      ...(hotValidations.length ? { hotValidations } : {}),
+      ...(hotTasks.length ? { hotTasks } : {}),
+      ...(hotTombstones.length ? { hotTombstones } : {}),
+      ...(hotAuditEvents.length ? { hotAuditEvents } : {}),
+      ...(hotWorkers.length ? { hotWorkers } : {}),
+      ...(hotTerminalOutboxEvents.length ? { hotTerminalOutboxEvents } : {}),
+    };
+  }
+
+  private clearPendingStateSaveHints(): void {
+    this.pendingHotExchanges.clear();
+    this.pendingHotExchangeMessages.clear();
+    this.pendingHotProposals.clear();
+    this.pendingHotArtifacts.clear();
+    this.pendingHotValidations.clear();
+    this.pendingHotTasks.clear();
+    this.pendingHotTombstones.clear();
+    this.pendingHotAuditEvents.clear();
+    this.pendingHotWorkers.clear();
+    this.pendingHotTerminalOutboxEvents.clear();
+  }
+
   private consumeStateSaveHints(snapshot: BrokerSnapshot): BrokerStateSaveHints | undefined {
     if (
       this.pendingHotExchanges.size === 0 &&
@@ -2513,7 +2944,8 @@ export class InMemoryA2ABroker {
       this.pendingHotTasks.size === 0 &&
       this.pendingHotTombstones.size === 0 &&
       this.pendingHotAuditEvents.size === 0 &&
-      this.pendingHotWorkers.size === 0
+      this.pendingHotWorkers.size === 0 &&
+      this.pendingHotTerminalOutboxEvents.size === 0
     ) {
       return undefined;
     }
@@ -2526,6 +2958,7 @@ export class InMemoryA2ABroker {
     const retainedTombstoneTaskIds = new Set((snapshot.tombstones ?? []).map((tombstone) => tombstone.taskId));
     const retainedAuditEventIds = new Set(snapshot.auditEvents.map((event) => event.id));
     const retainedWorkerIds = new Set(snapshot.workers.map((worker) => worker.nodeId));
+    const retainedTerminalOutboxIds = new Set((snapshot.terminalOutbox ?? []).map((event) => event.id));
     const hotExchanges = [...this.pendingHotExchanges.values()].filter((exchange) => retainedExchangeIds.has(exchange.id));
     const hotExchangeMessages = [...this.pendingHotExchangeMessages.values()].filter((message) => retainedExchangeMessageIds.has(message.id));
     const hotProposals = [...this.pendingHotProposals.values()].filter((proposal) => retainedProposalIds.has(proposal.id));
@@ -2535,15 +2968,8 @@ export class InMemoryA2ABroker {
     const hotTombstones = [...this.pendingHotTombstones.values()].filter((tombstone) => retainedTombstoneTaskIds.has(tombstone.taskId));
     const hotAuditEvents = [...this.pendingHotAuditEvents.values()].filter((event) => retainedAuditEventIds.has(event.id));
     const hotWorkers = [...this.pendingHotWorkers.values()].filter((worker) => retainedWorkerIds.has(worker.nodeId));
-    this.pendingHotExchanges.clear();
-    this.pendingHotExchangeMessages.clear();
-    this.pendingHotProposals.clear();
-    this.pendingHotArtifacts.clear();
-    this.pendingHotValidations.clear();
-    this.pendingHotTasks.clear();
-    this.pendingHotTombstones.clear();
-    this.pendingHotAuditEvents.clear();
-    this.pendingHotWorkers.clear();
+    const hotTerminalOutboxEvents = [...this.pendingHotTerminalOutboxEvents.values()].filter((event) => retainedTerminalOutboxIds.has(event.id));
+    this.clearPendingStateSaveHints();
     return {
       ...(hotExchanges.length ? { hotExchanges } : {}),
       ...(hotExchangeMessages.length ? { hotExchangeMessages } : {}),
@@ -2554,6 +2980,7 @@ export class InMemoryA2ABroker {
       ...(hotTombstones.length ? { hotTombstones } : {}),
       ...(hotAuditEvents.length ? { hotAuditEvents } : {}),
       ...(hotWorkers.length ? { hotWorkers } : {}),
+      ...(hotTerminalOutboxEvents.length ? { hotTerminalOutboxEvents } : {}),
     };
   }
 
@@ -2596,9 +3023,7 @@ export class InMemoryA2ABroker {
     proposalId?: string;
     note?: string;
   }): AuditEvent {
-    const eventId = input.action === "worker.heartbeat" && input.targetType === "worker"
-      ? `worker-heartbeat:${input.targetId}`
-      : randomUUID();
+    const eventId = getHeartbeatAuditEventId(input) ?? randomUUID();
     const event: AuditEvent = {
       id: eventId,
       actorId: input.actorId,
@@ -2618,7 +3043,10 @@ export class InMemoryA2ABroker {
       if (task) {
         const taskEvent = this.taskEventStream.push(event, task);
         if (taskEvent) {
-          this.terminalTaskEventOutbox.enqueue(taskEvent, task);
+          const terminalEvent = this.terminalTaskEventOutbox.enqueue(taskEvent, task);
+          if (terminalEvent) {
+            this.pendingHotTerminalOutboxEvents.set(terminalEvent.id, structuredClone(terminalEvent));
+          }
         }
       }
     }
@@ -2643,6 +3071,14 @@ export class InMemoryA2ABroker {
 
   private requireWorker(nodeId: string): WorkerRecord {
     const worker = this.getWorker(nodeId);
+    if (!worker) {
+      throw new BrokerError("not_found", "worker not found");
+    }
+    return worker;
+  }
+
+  private requireWorkerCachedFirst(nodeId: string): WorkerRecord {
+    const worker = this.getWorkerCachedFirst(nodeId);
     if (!worker) {
       throw new BrokerError("not_found", "worker not found");
     }
@@ -2822,6 +3258,10 @@ export class InMemoryA2ABroker {
       actorId: string;
       reason?: string;
       sourceTaskId?: string;
+      kind?: "superseded";
+      supersededByTaskId?: string;
+      supersededByPrUrl?: string;
+      roundId?: string;
     },
   ): TaskRecord {
     const canceledAt = isoNow();
@@ -2835,8 +3275,12 @@ export class InMemoryA2ABroker {
     task.cancellation = {
       requestedAt: canceledAt,
       requestedBy: params.actorId,
+      kind: params.kind ?? "operator_cancel",
       reason: params.reason,
       sourceTaskId: params.sourceTaskId,
+      supersededByTaskId: params.supersededByTaskId,
+      supersededByPrUrl: params.supersededByPrUrl,
+      roundId: params.roundId,
     };
     this.setTaskRecord(task);
     this.syncExchangeStateFromTask(task, "queued");
@@ -2860,6 +3304,10 @@ export class InMemoryA2ABroker {
       actorId: string;
       reason?: string;
       sourceTaskId?: string;
+      kind?: "superseded";
+      supersededByTaskId?: string;
+      supersededByPrUrl?: string;
+      roundId?: string;
     },
     visited = new Set<string>(),
   ): TaskRecord {
@@ -2879,6 +3327,10 @@ export class InMemoryA2ABroker {
           actorId: params.actorId,
           reason: params.reason,
           sourceTaskId: task.id,
+          kind: params.kind,
+          supersededByTaskId: params.supersededByTaskId,
+          supersededByPrUrl: params.supersededByPrUrl,
+          roundId: params.roundId,
         },
         visited,
       );
@@ -2903,17 +3355,25 @@ export class InMemoryA2ABroker {
     this.assertTaskStatus(task.status, ["claimed", "running"], "heartbeat");
 
     const now = isoNow();
+    const nowMs = Date.parse(now);
     task.lastHeartbeatAt = now;
     task.updatedAt = now;
     this.setTaskRecord(task);
-    this.appendAuditEvent({
-      actorId: workerId,
-      action: "task.heartbeat",
-      targetType: "task",
-      targetId: task.id,
-      proposalId: task.proposalId,
-      note: "task heartbeat",
-    });
+    const lastPersistedAtMs = this.lastPersistedTaskHeartbeatAuditAtMs.get(task.id) ?? 0;
+    const shouldPersistHeartbeatAudit =
+      this.retentionPolicy.heartbeatAuditSampleIntervalMs === 0 ||
+      nowMs - lastPersistedAtMs >= this.retentionPolicy.heartbeatAuditSampleIntervalMs;
+    if (shouldPersistHeartbeatAudit) {
+      this.appendAuditEvent({
+        actorId: workerId,
+        action: "task.heartbeat",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: "task heartbeat",
+      });
+      this.lastPersistedTaskHeartbeatAuditAtMs.set(task.id, nowMs);
+    }
     this.persistState();
     this.emitTaskUpdate(task, "started"); // re-emit so subscribers see the heartbeat
     return task;
@@ -3047,6 +3507,340 @@ export class InMemoryA2ABroker {
     });
   }
 
+  // --- Cleanup Candidate Discovery (issue #520) ---
+
+  /**
+   * Read-only discovery of cleanup candidates across worker, task, outbox,
+   * and tombstone categories. Never mutates broker state; execution of any
+   * cleanup action requires a separate operator approval gate.
+   *
+   * Candidate classes:
+   * - `stale_worker`: workers with no recent heartbeat (online but last seen
+   *   beyond the stale threshold).
+   * - `malformed_task`: queued tasks missing required target/requester fields.
+   * - `queued_residue`: well-formed queued tasks that have been stale without
+   *   being claimed — valid payloads that remain unclaimed and may indicate
+   *   capacity or routing issues.
+   * - `orphaned_claim`: claimed or running tasks whose claiming worker is
+   *   stale — common residue after a fleet update where old workers are
+   *   replaced and their in-flight tasks lose their executor.
+   * - `terminal_outbox_backlog`: unacknowledged terminal outbox events older
+   *   than the backlog threshold.
+   * - `historical_terminal_task`: terminal (succeeded/failed/canceled) tasks
+   *   with tombstones older than the historical threshold.
+   */
+  discoverCleanupCandidates(options?: {
+    staleWorkerAfterMs?: number;
+    staleTaskAfterMs?: number;
+    terminalOutboxBacklogAfterMs?: number;
+    historicalTerminalAfterMs?: number;
+    nowMs?: number;
+  }): CleanupDryRunPlan {
+    const nowMs = options?.nowMs ?? Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+
+    const staleWorkerAfterMs = options?.staleWorkerAfterMs ?? 300_000; // 5 min
+    const staleTaskAfterMs = options?.staleTaskAfterMs ?? 120_000; // 2 min
+    const terminalOutboxBacklogAfterMs = options?.terminalOutboxBacklogAfterMs ?? 900_000; // 15 min
+    const historicalTerminalAfterMs = options?.historicalTerminalAfterMs ?? 86_400_000; // 24 h
+
+    const candidates: CleanupCandidate[] = [];
+    const riskNotes: string[] = [];
+
+    // --- Stale workers ---
+    for (const [nodeId, worker] of this.workers) {
+      const lastSeenMs = worker.lastSeenAt ? Date.parse(worker.lastSeenAt) : 0;
+      const ageMs = nowMs - lastSeenMs;
+      if (ageMs > staleWorkerAfterMs) {
+        const hasActiveTasks = [...this.tasks.values()].some(
+          (task) =>
+            (task.assignedWorkerId === nodeId || task.claimedBy === nodeId) &&
+            task.status !== "succeeded" &&
+            task.status !== "failed" &&
+            task.status !== "canceled",
+        );
+        const risk: CleanupCandidate["risk"] = hasActiveTasks ? "high_risk" : "caution";
+        const actionability: CleanupCandidateActionability = hasActiveTasks ? "blocked" : "advisory";
+        candidates.push({
+          id: `cleanup:stale-worker:${encodeURIComponent(nodeId)}`,
+          class: "stale_worker",
+          reason: hasActiveTasks
+            ? `stale worker ${nodeId} has active tasks assigned; do not prune without reassigning`
+            : `stale worker ${nodeId} has not been seen for ${formatAgeMs(ageMs)}`,
+          risk,
+          actionability,
+          actionabilityReason: hasActiveTasks
+            ? "blocked: stale worker still owns active tasks; reassign or settle tasks before worker cleanup"
+            : "advisory: stale worker has no active tasks; prune only through an approved worker cleanup plan",
+          entityId: nodeId,
+          updatedAt: worker.lastSeenAt,
+          ageMs,
+          metadata: {
+            nodeId: worker.nodeId,
+            role: worker.role,
+            workerMode: worker.workerMode,
+            lastSeenAt: worker.lastSeenAt,
+            hasActiveTasks,
+          },
+        });
+      }
+    }
+
+    // --- Malformed queued tasks and queued residue ---
+    // Single pass: malformed tasks (missing fields) are caught first with a
+    // `continue` to skip queued-residue detection; well-formed stale queued
+    // tasks fall through as queued residue.
+    for (const task of this.tasks.values()) {
+      if (task.status !== "queued") continue;
+      const ageMs = nowMs - Date.parse(task.updatedAt);
+      if (ageMs < staleTaskAfterMs) continue;
+
+      const issues: string[] = [];
+      if (!task.targetNodeId) issues.push("missing targetNodeId");
+      if (!task.requester?.id) issues.push("missing requester.id");
+      if (!task.payload || Object.keys(task.payload).length === 0) issues.push("empty payload");
+
+      if (issues.length > 0) {
+        candidates.push({
+          id: `cleanup:malformed-task:${encodeURIComponent(task.id)}`,
+          class: "malformed_task",
+          reason: `queued task ${task.id} is malformed: ${issues.join("; ")}`,
+          risk: "caution",
+          actionability: "blocked",
+          actionabilityReason: "blocked: malformed queued task requires manual payload inspection before cancellation or repair",
+          entityId: task.id,
+          updatedAt: task.updatedAt,
+          ageMs,
+          metadata: {
+            taskId: task.id,
+            intent: task.intent,
+            issues,
+          },
+        });
+        continue; // malformed — not queued residue
+      }
+
+      // --- Queued residue: well-formed queued task sitting stale/unclaimed ---
+      candidates.push({
+        id: `cleanup:queued-residue:${encodeURIComponent(task.id)}`,
+        class: "queued_residue",
+        reason: `queued task ${task.id} has been ${task.status} for ${formatAgeMs(ageMs)} without being claimed`,
+        risk: "caution",
+        actionability: "advisory",
+        actionabilityReason: "advisory: queued residue is non-terminal and requires capacity/routing review before cancellation or reassignment",
+        entityId: task.id,
+        updatedAt: task.updatedAt,
+        ageMs,
+        metadata: {
+          taskId: task.id,
+          intent: task.intent,
+          status: task.status,
+          requeueCount: task.requeueCount,
+        },
+      });
+    }
+
+    // --- Orphaned claims: claimed/running tasks whose claiming worker is stale ---
+    const staleWorkerIds = new Set(
+      [...this.workers.entries()]
+        .filter(([, w]) => {
+          const lastSeenMs = w.lastSeenAt ? Date.parse(w.lastSeenAt) : 0;
+          return Number.isFinite(lastSeenMs) && nowMs - lastSeenMs > staleWorkerAfterMs;
+        })
+        .map(([id]) => id),
+    );
+    if (staleWorkerIds.size > 0) {
+      for (const task of this.tasks.values()) {
+        if (task.status !== "claimed" && task.status !== "running") continue;
+        const workerId = task.claimedBy ?? task.assignedWorkerId;
+        if (!workerId || !staleWorkerIds.has(workerId)) continue;
+
+        const lastActivityMs = task.lastHeartbeatAt
+          ? Date.parse(task.lastHeartbeatAt)
+          : task.claimedAt
+            ? Date.parse(task.claimedAt)
+            : Date.parse(task.createdAt);
+        const ageMs = nowMs - (Number.isFinite(lastActivityMs) ? lastActivityMs : nowMs);
+
+        const risk: CleanupCandidate["risk"] =
+          task.status === "running" ? "high_risk" : "caution";
+        const actionability: CleanupCandidateActionability = "blocked";
+
+        candidates.push({
+          id: `cleanup:orphaned-claim:${encodeURIComponent(task.id)}`,
+          class: "orphaned_claim",
+          reason: `task ${task.id} is ${task.status} but its claiming worker ${workerId} has been stale for ${formatAgeMs(nowMs - (this.workers.get(workerId)?.lastSeenAt ? Date.parse(this.workers.get(workerId)!.lastSeenAt) : nowMs))}`,
+          risk,
+          actionability,
+          actionabilityReason: "blocked: claimed/running task on a stale worker must be requeued or failed before cleanup",
+          entityId: task.id,
+          updatedAt: task.lastHeartbeatAt ?? task.claimedAt ?? task.updatedAt,
+          ageMs,
+          metadata: {
+            taskId: task.id,
+            status: task.status,
+            intent: task.intent,
+            staleWorkerId: workerId,
+            lastHeartbeatAt: task.lastHeartbeatAt,
+            claimedAt: task.claimedAt,
+            requeueCount: task.requeueCount,
+          },
+        });
+      }
+    }
+
+    // --- Terminal outbox backlog ---
+    const outboxEvents = this.terminalTaskEventOutbox.snapshot();
+    for (const event of outboxEvents) {
+      const createdAtMs = Date.parse(event.createdAt);
+      const ageMs = nowMs - createdAtMs;
+      if (ageMs < terminalOutboxBacklogAfterMs) continue;
+      const isAcked =
+        event.ack?.status === "receipt_confirmed" || Boolean(event.deliveredAt);
+      if (isAcked) continue;
+
+      const risk: CleanupCandidate["risk"] =
+        ageMs > 3_600_000 ? "high_risk" : "caution";
+      candidates.push({
+        id: `cleanup:outbox-backlog:${encodeURIComponent(event.id)}`,
+        class: "terminal_outbox_backlog",
+        reason: `unacknowledged terminal outbox event ${event.id} (${event.payload?.status ?? "unknown"}) is ${formatAgeMs(ageMs)} old`,
+        risk,
+        actionability: "blocked",
+        actionabilityReason: "blocked: terminal outbox rows require operator-visible receipt or a separate approved ACK/prune path; broker cursor state is unknown",
+        entityId: event.payload?.taskId ?? event.id,
+        updatedAt: event.createdAt,
+        ageMs,
+        metadata: {
+          outboxId: event.id,
+          taskId: event.payload?.taskId,
+          terminalStatus: event.payload?.status,
+          receiptStatus: event.receipt?.status,
+          ackDecision: event.ackAudit?.decision,
+          cursorState: "unknown",
+          worker: event.payload?.worker,
+        },
+      });
+    }
+
+    // --- Historical terminal tasks ---
+    for (const task of this.tasks.values()) {
+      if (
+        task.status !== "succeeded" &&
+        task.status !== "failed" &&
+        task.status !== "canceled"
+      )
+        continue;
+      const completedAtMs = task.completedAt
+        ? Date.parse(task.completedAt)
+        : Date.parse(task.updatedAt);
+      const ageMs = nowMs - completedAtMs;
+      if (ageMs < historicalTerminalAfterMs) continue;
+
+      const tombstone = this.tombstones.get(task.id);
+      const risk: CleanupCandidate["risk"] =
+        task.status === "failed" && !tombstone ? "high_risk" : "safe";
+      const actionability: CleanupCandidateActionability =
+        risk === "high_risk" ? "blocked" : "retention_not_due";
+      candidates.push({
+        id: `cleanup:historical-task:${encodeURIComponent(task.id)}`,
+        class: "historical_terminal_task",
+        reason: `terminal task ${task.id} (${task.status}) is ${formatAgeMs(ageMs)} old; safe to archive with tombstone${tombstone ? "" : " (missing tombstone — verify before pruning)"}`,
+        risk,
+        actionability,
+        actionabilityReason: risk === "high_risk"
+          ? "blocked: failed historical task has no tombstone; verify evidence before any pruning"
+          : "retention_not_due: historical task discovery is advisory unless operator cleanup plan marks it executable under retention/cap policy",
+        entityId: task.id,
+        updatedAt: task.completedAt ?? task.updatedAt,
+        ageMs,
+        metadata: {
+          taskId: task.id,
+          status: task.status,
+          intent: task.intent,
+          hasTombstone: Boolean(tombstone),
+          tombstoneReason: tombstone?.tombstoneReason,
+          completedAt: task.completedAt,
+        },
+      });
+    }
+
+    // --- Summary ---
+    const summary: CleanupDryRunPlan["summary"] = {
+      stale_worker: 0,
+      malformed_task: 0,
+      queued_residue: 0,
+      orphaned_claim: 0,
+      terminal_outbox_backlog: 0,
+      historical_terminal_task: 0,
+    };
+    const actionabilitySummary: CleanupDryRunPlan["actionabilitySummary"] = {
+      advisory: 0,
+      blocked: 0,
+      executable: 0,
+      cursor_skipped: 0,
+      retention_not_due: 0,
+    };
+    for (const candidate of candidates) {
+      summary[candidate.class] += 1;
+      actionabilitySummary[candidate.actionability] += 1;
+    }
+
+    if (summary.stale_worker > 0) {
+      riskNotes.push(
+        `Stale workers detected (${summary.stale_worker}): verify worker health and task reassignment before any pruning. Use workerOfflineAfterMs to tune detection window.`,
+      );
+    }
+    if (summary.malformed_task > 0) {
+      riskNotes.push(
+        `Malformed queued tasks detected (${summary.malformed_task}): inspect payload before cancellation; may indicate upstream ingestion issues.`,
+      );
+    }
+    if (summary.queued_residue > 0) {
+      riskNotes.push(
+        `Queued residue detected (${summary.queued_residue}): well-formed queued tasks that remain unclaimed. Verify worker capacity and routing before manual intervention.`,
+      );
+    }
+    if (summary.orphaned_claim > 0) {
+      riskNotes.push(
+        `Orphaned claims detected (${summary.orphaned_claim}): claimed/running tasks assigned to stale workers after fleet update. Requeue or fail these tasks to unblock the queue. Use --allow-worker-prune only after reassignment.`,
+      );
+    }
+    if (summary.terminal_outbox_backlog > 0) {
+      riskNotes.push(
+        `Terminal outbox backlog detected (${summary.terminal_outbox_backlog}): unacknowledged events may indicate notifier disconnect. Retry delivery or confirm operator visibility before pruning.`,
+      );
+    }
+    if (summary.historical_terminal_task > 0) {
+      riskNotes.push(
+        `Historical terminal tasks detected (${summary.historical_terminal_task}): archive with tombstone backup before pruning. High-risk items may need manual verification.`,
+      );
+    }
+
+    if (candidates.length === 0) {
+      riskNotes.push("No cleanup candidates found. Broker state is clean.");
+    }
+
+    // Sort by risk: high_risk first, then caution, then safe.
+    candidates.sort((a, b) => {
+      const riskOrder: Record<CleanupCandidate["risk"], number> = {
+        high_risk: 0,
+        caution: 1,
+        safe: 2,
+      };
+      return riskOrder[a.risk] - riskOrder[b.risk];
+    });
+
+    return {
+      generatedAt: nowIso,
+      summary,
+      actionabilitySummary,
+      totalCandidates: candidates.length,
+      candidates,
+      riskNotes,
+    };
+  }
+
   // --- Tombstones ---
 
   /** Get a tombstone by task ID. */
@@ -3101,6 +3895,15 @@ export class InMemoryA2ABroker {
       tombstonedAt: now,
       metadata: context ? { actorId: context.actorId, cancelReason: context.reason } : undefined,
     };
+    if (task.cancellation?.kind === "superseded") {
+      tombstone.metadata = {
+        ...(tombstone.metadata ?? {}),
+        cancellationKind: "superseded",
+        supersededByTaskId: task.cancellation.supersededByTaskId,
+        supersededByPrUrl: task.cancellation.supersededByPrUrl,
+        roundId: task.cancellation.roundId,
+      };
+    }
 
     this.tombstones.set(task.id, tombstone);
     this.tombstoneRepository?.upsertTombstone(structuredClone(tombstone));
@@ -3197,14 +4000,85 @@ export class InMemoryA2ABroker {
     if (!request.intent) {
       throw new BrokerError("bad_request", "intent is required");
     }
-    if (request.workspace && request.workspace.nodeId !== request.target.id) {
-      throw new BrokerError(
-        "policy_denied",
-        "task workspace.nodeId must match the target worker node",
-      );
+    if (request.workspace) {
+      const workspace = request.workspace as { nodeId?: unknown; workspaceId?: unknown };
+      if (
+        typeof workspace.nodeId !== "string" ||
+        !workspace.nodeId.trim() ||
+        typeof workspace.workspaceId !== "string" ||
+        !workspace.workspaceId.trim()
+      ) {
+        throw new BrokerError(
+          "bad_request",
+          "workspace.nodeId and workspace.workspaceId are required",
+        );
+      }
+      if (workspace.nodeId !== request.target.id) {
+        throw new BrokerError(
+          "policy_denied",
+          "task workspace.nodeId must match the target worker node",
+        );
+      }
     }
     if (request.assignedWorkerId && !request.assignedWorkerId.trim()) {
       throw new BrokerError("bad_request", "assignedWorkerId must not be empty");
+    }
+
+    // Fail-closed Terminal Brief metadata validation (R15).
+    // When the task payload carries parentRoundId (or a recognised alias), the
+    // canonical dispatch metadata must be present and internally consistent.
+    // This prevents silently creating tasks that would later fail at projection
+    // ingestion due to missing/inconsistent round metadata.
+    this.assertA2ARoundTaskPolicy(request);
+    this.assertWorkModeDecisionEvidence(request);
+    this.assertTerminalBriefMetadata(request.payload);
+  }
+
+  private assertWorkModeDecisionEvidence(request: CreateTaskRequest): void {
+    const result = validateWorkModeDecisionEvidenceForTask(request);
+    if (!result.applies || result.valid) {
+      return;
+    }
+    throw new BrokerError("bad_request", `work-mode decision evidence validation failed: ${result.issues.join("; ")}`);
+  }
+
+  private assertA2ARoundTaskPolicy(request: CreateTaskRequest): void {
+    const result = validateA2ARoundTaskPolicy(request, this.brokerId);
+    if (!result.applies || result.valid) {
+      return;
+    }
+
+    const errors = result.issues
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new BrokerError("bad_request", `A2A round task policy validation failed: ${errors}`);
+  }
+
+  /**
+   * Fail-closed guard: validate Terminal Brief metadata in the task payload
+   * at creation time. Rejects with BrokerError when parentRoundId is present
+   * but dispatch metadata fields (parentRoundTotal, parentRoundOrder, etc.)
+   * are missing or inconsistent.
+   *
+   * Tasks without Terminal Brief metadata pass through without validation.
+   */
+  private assertTerminalBriefMetadata(payload: Record<string, unknown> | undefined): void {
+    if (!payload || !hasTerminalBriefMetadata(payload)) {
+      return;
+    }
+
+    const dispatch = extractDispatchMetadata(payload);
+    // Creation-time validation allows local origin — this is the common case
+    // for Team2-local parent rounds where originBrokerId === this.brokerId.
+    // Cross-broker origin-receiver distinction is enforced at projection
+    // ingestion time in CrossBrokerTerminalBriefProjectionStore.ingest().
+    const result = validateTerminalBriefMetadata(dispatch, this.brokerId, { allowLocalOrigin: true });
+    if (!result.valid) {
+      const errors = result.issues
+        .filter((i) => i.severity === "error")
+        .map((i) => i.message)
+        .join("; ");
+      throw new BrokerError("bad_request", `Terminal Brief metadata validation failed: ${errors}`);
     }
   }
 
@@ -3300,6 +4174,55 @@ export class InMemoryA2ABroker {
     }
   }
 
+  private assertTaskCreationOwnership(brokerOfRecord: string | undefined): void {
+    if (brokerOfRecord && this.brokerId && this.brokerId !== brokerOfRecord) {
+      throw new BrokerError(
+        "policy_denied",
+        `create cannot set brokerOfRecord ${brokerOfRecord} on broker ${this.brokerId}`,
+      );
+    }
+  }
+
+  /**
+   * Record evidence that a worker posted after the task was already canceled.
+   * The task stays canceled; late evidence is preserved for diagnostics.
+   */
+  private recordLateEvidenceAfterCancel(
+    task: TaskRecord,
+    workerId: string,
+    kind: "complete" | "fail",
+    data: { result?: TaskResult; error?: TaskError },
+  ): TaskRecord {
+    // Idempotent: if late evidence already recorded, return without mutation
+    if (task.lateEvidenceAfterCancel) {
+      return task;
+    }
+    const now = isoNow();
+    task.lateEvidenceAfterCancel = {
+      kind,
+      result: data.result ? structuredClone(data.result) : undefined,
+      error: data.error ? structuredClone(data.error) : undefined,
+      submittedAt: now,
+      submittedBy: workerId,
+    };
+    task.updatedAt = now;
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId: workerId,
+      action: "task.updated",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `late ${kind} evidence after cancel (issue #954)`,
+    });
+    this.writeTombstone(task, "canceled_with_late_completion", {
+      actorId: workerId,
+      reason: `worker posted ${kind} evidence after cancel`,
+    });
+    this.persistState();
+    return task;
+  }
+
   private applyTaskCompletion(task: TaskRecord, workerId: string, result: TaskResult): void {
     if (!task.proposalId) {
       return;
@@ -3360,6 +4283,18 @@ function isoNow(): string {
   return new Date().toISOString();
 }
 
+function formatAgeMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours}h ${min % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
 function uniqueIds(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -3403,6 +4338,7 @@ function countStateSaveHints(hints: BrokerStateSaveHints): NonNullable<BrokerPro
     hotTombstones: hints.hotTombstones?.length ?? 0,
     hotAuditEvents: hints.hotAuditEvents?.length ?? 0,
     hotWorkers: hints.hotWorkers?.length ?? 0,
+    hotTerminalOutboxEvents: hints.hotTerminalOutboxEvents?.length ?? 0,
   };
 }
 
@@ -3442,6 +4378,21 @@ function computeWorkerStatus(
   return Date.now() - Date.parse(lastSeenAt) <= offlineAfterMs ? "online" : "stale";
 }
 
+function toWorkerViewRecord(worker: WorkerRecord, offlineAfterMs: number): WorkerView {
+  const status = computeWorkerStatus(worker.lastSeenAt, offlineAfterMs);
+  const workerPlane: import("./types.js").WorkerPlaneStatus = status === "online" ? "online" : "unknown";
+  const managementPlane: import("./types.js").ManagementPlaneStatus = worker.managementPlane ?? "unknown";
+  const updateEligible = workerPlane === "online" && managementPlane !== "disconnected";
+
+  return {
+    ...worker,
+    status,
+    workerPlane,
+    managementPlane,
+    updateEligible,
+  };
+}
+
 function taskMatchesFilters(task: TaskRecord, filters?: TaskListFilters): boolean {
   if (filters?.exchangeId && task.exchangeId !== filters.exchangeId) {
     return false;
@@ -3468,6 +4419,12 @@ function taskMatchesFilters(task: TaskRecord, filters?: TaskListFilters): boolea
     return false;
   }
   return true;
+}
+
+function applyTaskListLimit(tasks: TaskRecord[], limit: number | undefined): TaskRecord[] {
+  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0
+    ? tasks.slice(0, limit)
+    : tasks;
 }
 
 function proposalMatchesFilters(proposal: ChangeProposal, filters?: ProposalListFilters): boolean {
@@ -3538,6 +4495,43 @@ function isWorkerStale(lastSeenAt: string, offlineAfterMs: number, nowMs: number
   return nowMs - lastSeenMs > offlineAfterMs;
 }
 
+/**
+ * Compute the effective offline-after threshold for a worker based on its
+ * declared `workerMode`. Mobile workers get a shorter window (30s default)
+ * so the broker correctly classifies brief Doze/sleep gaps as "online" and
+ * longer absences as "stale" or "disconnected".
+ */
+function effectiveOfflineAfterMs(workerMode: string | undefined, defaultMs: number): number {
+  return workerMode === "mobile" ? MOBILE_OFFLINE_AFTER_MS : defaultMs;
+}
+
+/**
+ * Compute an enriched health status for a mobile worker.
+ *
+ * Returns `undefined` for persistent workers so callers that want compact
+ * output (dashboard consumers, operator event lanes) can omit the field.
+ *
+ * Classification:
+ * - `health_ok`:        heartbeat within mobile stale window (≤ 30s)
+ * - `stale`:            heartbeat within extended window (30s < age ≤ 90s)
+ * - `disconnected`:     heartbeat well beyond extended window (> 90s)
+ */
+function computeWorkerMobileHealth(
+  workerMode: string | undefined,
+  lastSeenAt: string | undefined,
+  nowMs: number,
+): import("./types.js").WorkerMobileHealth | undefined {
+  if (workerMode !== "mobile") return undefined;
+
+  const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+  if (!Number.isFinite(lastSeenMs)) return "disconnected";
+
+  const ageMs = nowMs - lastSeenMs;
+  if (ageMs <= MOBILE_OFFLINE_AFTER_MS) return "health_ok";
+  if (ageMs <= MOBILE_DISCONNECTED_AFTER_MS) return "stale";
+  return "disconnected";
+}
+
 function findLatestTaskAuditEvent(
   events: Iterable<AuditEvent>,
   taskId: string,
@@ -3567,6 +4561,10 @@ function projectTaskDurableSignals(params: {
   const staleLease = diagnosticStatus === "stale";
   const requeued = (task.requeueCount ?? 0) > 0;
 
+  const lateEvidence = task.lateEvidenceAfterCancel
+    ? { kind: task.lateEvidenceAfterCancel.kind as "complete" | "fail", submittedAt: task.lateEvidenceAfterCancel.submittedAt, submittedBy: task.lateEvidenceAfterCancel.submittedBy }
+    : undefined;
+
   const brokerHints: TaskDiagnosticReport["brokerHints"] = {
     staleLease,
     staleWorker,
@@ -3576,6 +4574,10 @@ function projectTaskDurableSignals(params: {
     lastRequeueReason: lastRequeueEvent?.note,
     workerLastSeenAt: assignedWorker?.lastSeenAt,
     tombstoneReason: tombstone?.tombstoneReason,
+    supersededByTaskId: task.cancellation?.supersededByTaskId,
+    supersededByPrUrl: task.cancellation?.supersededByPrUrl,
+    supersededRoundId: task.cancellation?.roundId,
+    lateEvidenceAfterCancel: lateEvidence,
   };
 
   if (tombstone) {
@@ -3619,6 +4621,21 @@ function projectTaskDurableSignals(params: {
           brokerHints,
         };
       case "canceled":
+        if (task.cancellation?.kind === "superseded") {
+          return {
+            brokerState: "terminal",
+            reconcileNeeded: false,
+            interruption: {
+              kind: "superseded",
+              source: "tombstone",
+              summary: "broker canceled the task as superseded by finalizer selection",
+              detectedAt: tombstone.tombstonedAt,
+              actorId: task.cancellation.requestedBy,
+              reason: task.cancellation.reason,
+            },
+            brokerHints,
+          };
+        }
         return {
           brokerState: "terminal",
           reconcileNeeded: false,
@@ -3629,6 +4646,20 @@ function projectTaskDurableSignals(params: {
             detectedAt: tombstone.tombstonedAt,
             actorId: task.cancellation?.requestedBy,
             reason: task.cancellation?.reason,
+          },
+          brokerHints,
+        };
+      case "canceled_with_late_completion":
+        return {
+          brokerState: "terminal",
+          reconcileNeeded: false,
+          interruption: {
+            kind: "late_completion_after_cancel",
+            source: "tombstone",
+            summary: "worker posted completion/fail evidence after cancel",
+            detectedAt: task.lateEvidenceAfterCancel?.submittedAt ?? tombstone.tombstonedAt,
+            actorId: task.lateEvidenceAfterCancel?.submittedBy ?? task.cancellation?.requestedBy,
+            reason: `${task.lateEvidenceAfterCancel?.kind ?? "unknown"} evidence after cancel`,
           },
           brokerHints,
         };
@@ -3729,6 +4760,8 @@ function normalizeCapabilities(capabilities: unknown): WorkerCapabilities {
   const capabilityRecord = capabilities && typeof capabilities === "object"
     ? capabilities as Partial<WorkerCapabilities>
     : {};
+  const runtimeFlavor = normalizeWorkerRuntimeFlavor(capabilityRecord.runtimeFlavor);
+  const gatewayRequired = normalizeOptionalBoolean(capabilityRecord.gatewayRequired);
 
   return {
     canAnalyze: capabilityRecord.canAnalyze === true,
@@ -3737,7 +4770,43 @@ function normalizeCapabilities(capabilities: unknown): WorkerCapabilities {
     canPromoteLive: capabilityRecord.canPromoteLive === true,
     workspaceIds: uniqueStringList(capabilityRecord.workspaceIds),
     environments: uniqueEnvironmentList(capabilityRecord.environments),
+    ...(runtimeFlavor ? { runtimeFlavor } : {}),
+    ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
   };
+}
+
+function workerMetadataMateriallyEqual(
+  a?: Record<string, string>,
+  b?: Record<string, string>,
+): boolean {
+  return JSON.stringify(materialWorkerMetadata(a)) === JSON.stringify(materialWorkerMetadata(b));
+}
+
+function materialWorkerMetadata(metadata?: Record<string, string>): Record<string, string> | null {
+  if (!metadata) return null;
+  const entries = Object.entries(metadata)
+    .filter(([key]) => !EPHEMERAL_WORKER_HEARTBEAT_METADATA_KEYS.has(key))
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return null;
+  return Object.fromEntries(entries);
+}
+
+function normalizeWorkerRuntimeFlavor(value: unknown): WorkerCapabilities["runtimeFlavor"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "gateway" || normalized === "termux-hermes") return normalized;
+  if (normalized.length > 0) return "unknown";
+  return undefined;
+}
+
+function normalizeOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
 }
 
 function uniqueStringList(values: unknown): string[] {
@@ -3761,6 +4830,41 @@ function normalizeWorkerRecord(worker: WorkerRecord): WorkerRecord {
   };
 }
 
+function chooseFresherWorkerRecord(cachedWorker: WorkerRecord | null, persistedWorker: WorkerRecord): WorkerRecord {
+  if (!cachedWorker) {
+    return persistedWorker;
+  }
+  const cachedFreshnessMs = workerFreshnessMs(cachedWorker);
+  const persistedFreshnessMs = workerFreshnessMs(persistedWorker);
+  if (cachedFreshnessMs > persistedFreshnessMs) {
+    return cachedWorker;
+  }
+  if (
+    cachedFreshnessMs === persistedFreshnessMs &&
+    JSON.stringify(cachedWorker.metadata ?? null) !== JSON.stringify(persistedWorker.metadata ?? null) &&
+    workerMetadataMateriallyEqual(cachedWorker.metadata, persistedWorker.metadata)
+  ) {
+    return cachedWorker;
+  }
+  return persistedWorker;
+}
+
+function workerFreshnessMs(worker: WorkerRecord): number {
+  return Math.max(
+    safeTimestampMs(worker.updatedAt),
+    safeTimestampMs(worker.lastSeenAt),
+    safeTimestampMs(worker.createdAt),
+  );
+}
+
+function safeTimestampMs(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function normalizePolicyError(error: unknown): BrokerError {
   if (error instanceof BrokerError) {
     return error;
@@ -3771,6 +4875,103 @@ function normalizePolicyError(error: unknown): BrokerError {
   }
 
   return new BrokerError("policy_denied", "policy denied");
+}
+
+const GITHUB_READ_ONLY_TASK_MODES = new Set([
+  "analysis-only",
+  "read-only-analysis",
+  "analyze-only",
+  "github-verify",
+  "github-read-only-validation",
+  "read-only-validation",
+  "github-libero-validation",
+  "libero-validation",
+  "family-wiki-readonly-audit",
+]);
+
+const GITHUB_DISPATCH_TEAM_TOTALS: Record<string, number> = {
+  team1: 4,
+  team2: 4,
+};
+
+function isGithubReadOnlyTaskRequest(request: CreateTaskRequest, mode: string | undefined): boolean {
+  if (!mode || !GITHUB_READ_ONLY_TASK_MODES.has(mode)) {
+    return false;
+  }
+  return request.intent === "analyze" || request.intent === "verify" || request.intent === "validate_change";
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function normalizeGithubPatchParentRoundPayload(
+  payload: Record<string, unknown>,
+  context: { requesterId?: string },
+): { fields: Record<string, unknown>; issues: string[] } {
+  const runId = readString(payload["runId"] ?? payload["run"] ?? payload["roundId"] ?? payload["round"]);
+  const parentRoundId = readString(payload["parentRoundId"]) ?? runId;
+  const originBrokerId = readString(payload["originBrokerId"]) ?? context.requesterId;
+  const teamId = readString(payload["teamId"] ?? payload["teamScope"]);
+  const teamDefaultTotal = teamId ? GITHUB_DISPATCH_TEAM_TOTALS[teamId] : undefined;
+  const parentRoundTotal = readPositiveInteger(
+    payload["parentRoundTotal"] ??
+    payload["roundTotal"] ??
+    payload["assignmentCount"] ??
+    payload["expectedWorkers"] ??
+    payload["taskCount"],
+  ) ?? teamDefaultTotal;
+  const parentRoundOrder = readPositiveInteger(
+    payload["parentRoundOrder"] ??
+    payload["parentRoundNum"] ??
+    payload["parentRoundIndex"] ??
+    payload["roundOrder"] ??
+    payload["roundNum"] ??
+    payload["roundIndex"] ??
+    payload["lane"],
+  );
+  const issues: string[] = [];
+
+  if (!parentRoundId) {
+    issues.push("parentRoundId is required when GitHub patch dispatch includes parent-round routing; provide parentRoundId or runId");
+  }
+  if (!originBrokerId) {
+    issues.push("originBrokerId is required when GitHub patch dispatch includes parent-round routing; provide originBrokerId or requester.id");
+  }
+  if (parentRoundTotal === undefined) {
+    issues.push("parentRoundTotal is required when GitHub patch dispatch includes parent-round routing; provide parentRoundTotal, assignmentCount, expectedWorkers, taskCount, or teamId=team1/team2");
+  }
+  if (parentRoundOrder === undefined) {
+    issues.push("parentRoundOrder is required when GitHub patch dispatch includes parent-round routing; provide parentRoundOrder or lane");
+  }
+  if (parentRoundTotal !== undefined && parentRoundOrder !== undefined && parentRoundOrder > parentRoundTotal) {
+    issues.push(`parentRoundOrder must be <= parentRoundTotal, got ${parentRoundOrder}/${parentRoundTotal}`);
+  }
+
+  if (issues.length > 0) {
+    return { fields: {}, issues };
+  }
+
+  return {
+    fields: {
+      parentRoundId,
+      parentRoundTotal,
+      parentRoundOrder,
+      originBrokerId,
+      ...(teamId ? { teamId } : {}),
+      ...(runId ? { runId } : {}),
+    },
+    issues,
+  };
 }
 
 function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTaskRequest {
@@ -3798,6 +4999,8 @@ function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTask
   const legacyCompatibilityAllowed = hasLegacyGitHubMetadata && (workMode === "github" || githubWorkMode === "github");
   const hasExplicitGithubDispatchSignal =
     mode === "github-propose-patch" ||
+    (isGithubReadOnlyTaskRequest(request, mode) &&
+      (payloadHasRepoIssuePair || messageIssue !== undefined || payloadIssue !== undefined || hasLegacyGitHubMetadata)) ||
     (mode !== undefined && hasLegacyGitHubMetadata) ||
     messageIssue !== undefined ||
     payloadIssue !== undefined ||
@@ -3809,6 +5012,37 @@ function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTask
 
   if (!looksLikeGithubTask) {
     return request;
+  }
+
+  if (isGithubReadOnlyTaskRequest(request, mode)) {
+    if (request.taskOrigin !== undefined && request.taskOrigin !== "github") {
+      throw new BrokerError("bad_request", "GitHub read-only validation tasks require taskOrigin=github");
+    }
+
+    const normalizedRepo = repo ?? legacyRepo ?? payloadIssue?.repo ?? messageIssue?.repo;
+    if (!normalizedRepo || !/^[^/\s]+\/[^/\s]+$/.test(normalizedRepo)) {
+      throw new BrokerError("bad_request", "GitHub read-only validation payload requires repo in owner/name form");
+    }
+
+    const normalizedIssueNumber = issueNumber ?? legacyIssueNumber ?? payloadIssue?.issueNumber ?? messageIssue?.issueNumber;
+    if (normalizedIssueNumber === undefined) {
+      throw new BrokerError("bad_request", "GitHub read-only validation payload requires issueNumber, issue, or issueUrl");
+    }
+
+    const normalizedIssueUrl = issueUrl ?? legacyIssueUrl ??
+      `https://github.com/${normalizedRepo}/issues/${normalizedIssueNumber}`;
+    return {
+      ...request,
+      taskOrigin: "github",
+      payload: {
+        ...payload,
+        mode,
+        repo: normalizedRepo,
+        issue: `#${normalizedIssueNumber}`,
+        issueNumber: normalizedIssueNumber,
+        issueUrl: normalizedIssueUrl,
+      },
+    };
   }
 
   if (request.intent !== "propose_patch") {
@@ -3849,6 +5083,29 @@ function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTask
 
   const normalizedIssueUrl = issueUrl ?? legacyIssueUrl ??
     `https://github.com/${normalizedRepo}/issues/${normalizedIssueNumber}`;
+  const hasParentRoundRoutingSignal = Boolean(
+    readString(payload["parentIssueUrl"]) ||
+    readString(payload["parentRoundId"]) ||
+    readString(payload["parentRound"]) ||
+    readString(payload["operatorFacingOwner"]) ||
+    payload["parentRoundTotal"] !== undefined ||
+    payload["parentRoundOrder"] !== undefined ||
+    payload["parentRoundNum"] !== undefined ||
+    payload["parentRoundIndex"] !== undefined ||
+    payload["assignmentCount"] !== undefined ||
+    payload["expectedWorkers"] !== undefined ||
+    payload["taskCount"] !== undefined ||
+    payload["lane"] !== undefined ||
+    payload["teamId"] !== undefined ||
+    payload["teamScope"] !== undefined ||
+    payload["crossBrokerHandoff"] !== undefined,
+  );
+  const parentRoundPayload = hasParentRoundRoutingSignal
+    ? normalizeGithubPatchParentRoundPayload(payload, { requesterId: request.requester?.id })
+    : { fields: {}, issues: [] };
+  if (parentRoundPayload.issues.length > 0) {
+    throw new BrokerError("bad_request", `GitHub patch dispatch parent-round metadata invalid: ${parentRoundPayload.issues.join("; ")}`);
+  }
   const normalizedPayload: Record<string, unknown> = {
     ...payload,
     mode: normalizedMode,
@@ -3856,6 +5113,7 @@ function normalizeGitHubPatchTaskRequest(request: CreateTaskRequest): CreateTask
     issue: `#${normalizedIssueNumber}`,
     issueNumber: normalizedIssueNumber,
     issueUrl: normalizedIssueUrl,
+    ...parentRoundPayload.fields,
   };
 
   if (mode === undefined || repo === undefined || issueNumber === undefined || issueUrl === undefined) {
@@ -3887,6 +5145,10 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function cleanOptionalTaskCancelField(value: unknown): string | undefined {
+  return readString(value);
+}
+
 function normalizeOwnershipString(value: unknown): string | undefined {
   return readString(value);
 }
@@ -3904,14 +5166,185 @@ function readIssueNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function validateWorkModeDecisionEvidenceForTask(request: CreateTaskRequest): {
+  applies: boolean;
+  valid: boolean;
+  issues: string[];
+} {
+  const payload = request.payload ?? {};
+  const explicitWorkMode = readString(payload["workMode"]) ?? readString(payload["a2aWorkMode"]);
+  const payloadTeamId = readString(payload["teamId"]) ?? normalizeOwnershipString(request.teamId);
+  const hasParentRoundSignal = Boolean(
+    readString(payload["parentRoundId"]) ||
+    payload["parentRoundTotal"] !== undefined ||
+    payload["parentRoundOrder"] !== undefined ||
+    payload["lane"] !== undefined ||
+    isPlainRecord(payload["crossBrokerHandoff"]),
+  );
+  const requiresEvidence =
+    explicitWorkMode === "team1" ||
+    explicitWorkMode === "hybrid" ||
+    payload["workModeDecisionRequired"] === true ||
+    (payloadTeamId === "team1" && hasParentRoundSignal);
+
+  if (!requiresEvidence) {
+    return { applies: false, valid: true, issues: [] };
+  }
+
+  const evidence = isPlainRecord(payload["workModeDecision"]) ?? isPlainRecord(payload["workModeDecisionEvidence"]);
+  const issues: string[] = [];
+  if (!evidence) {
+    return {
+      applies: true,
+      valid: false,
+      issues: ["payload.workModeDecision is required for Team1/hybrid task creation"],
+    };
+  }
+
+  const mode = readString(evidence["mode"]);
+  if (mode !== "team1" && mode !== "hybrid") {
+    issues.push("workModeDecision.mode must be team1 or hybrid");
+  }
+  if (explicitWorkMode === "team1" || explicitWorkMode === "hybrid") {
+    if (mode !== explicitWorkMode) {
+      issues.push(`workModeDecision.mode must match payload.workMode=${explicitWorkMode}`);
+    }
+  }
+  if (evidence["sourceOnlyDecision"] !== true) {
+    issues.push("workModeDecision.sourceOnlyDecision must be true");
+  }
+  if (evidence["workerDispatchAllowedByThisPacket"] !== false) {
+    issues.push("workModeDecision.workerDispatchAllowedByThisPacket must be false");
+  }
+  if (!readString(evidence["idempotencyKey"])) {
+    issues.push("workModeDecision.idempotencyKey is required");
+  }
+  if (!readString(evidence["finalizerOwner"])) {
+    issues.push("workModeDecision.finalizerOwner is required");
+  }
+  if (!readString(evidence["generatedAt"])) {
+    issues.push("workModeDecision.generatedAt is required");
+  }
+  if (!readString(evidence["capacitySnapshotSource"])) {
+    issues.push("workModeDecision.capacitySnapshotSource is required");
+  }
+  if (!readString(evidence["capacitySnapshotAt"])) {
+    issues.push("workModeDecision.capacitySnapshotAt is required");
+  }
+
+  return { applies: true, valid: issues.length === 0, issues };
+}
+
 function normalizeTaskPayload(
   payload: Record<string, unknown> | undefined,
+  context?: { assignedWorkerId?: string; localBrokerId?: string },
 ): Record<string, unknown> {
   if (!payload) {
     return {};
   }
 
-  return { ...payload };
+  const normalized = { ...payload };
+  const terminalBrief = isPlainRecord(normalized["terminalBrief"]) ?? {};
+  const localBrokerId = normalizeOwnershipString(context?.localBrokerId);
+  const parentRoundId = firstOwnershipString(
+    normalized["parentRoundId"],
+    normalized["run"],
+    terminalBrief["parentRoundId"],
+  );
+  const originBrokerId = firstOwnershipString(
+    normalized["originBrokerId"],
+    normalized["parentBrokerId"],
+    normalized["requestedByBroker"],
+    terminalBrief["originBrokerId"],
+  );
+  const hasParentRoundPosition =
+    normalized["parentRoundOrder"] !== undefined ||
+    normalized["parentRoundNum"] !== undefined ||
+    normalized["roundOrder"] !== undefined ||
+    normalized["roundNum"] !== undefined ||
+    terminalBrief["parentRoundOrder"] !== undefined ||
+    terminalBrief["parentRoundNum"] !== undefined;
+  const hasParentOwnedTerminalBrief =
+    normalized["parentOwnedTerminalBrief"] === true ||
+    terminalBrief["parentOwnedTerminalBrief"] === true;
+  const hasExplicitCrossBrokerHandoff = Boolean(isPlainRecord(normalized["crossBrokerHandoff"]));
+
+  if (
+    !parentRoundId ||
+    !originBrokerId ||
+    !localBrokerId ||
+    sameOwnershipToken(originBrokerId, localBrokerId) ||
+    (!hasExplicitCrossBrokerHandoff && !hasParentRoundPosition && !hasParentOwnedTerminalBrief)
+  ) {
+    return normalized;
+  }
+
+  const existingHandoff = isPlainRecord(normalized["crossBrokerHandoff"]) ?? {};
+  const existingOwnership = isPlainRecord(normalized["notificationOwnership"]) ?? {};
+  const terminalBriefOwnership = isPlainRecord(terminalBrief["notificationOwnership"]) ?? {};
+  const handoffBrokerId = firstOwnershipString(
+    existingHandoff["handoffBrokerId"],
+    normalized["handoffBrokerId"],
+    terminalBrief["handoffBrokerId"],
+    localBrokerId,
+  );
+  const childWorkerId = firstOwnershipString(
+    existingHandoff["childWorkerId"],
+    normalized["childWorkerId"],
+    context?.assignedWorkerId,
+  );
+  const notificationOwnership = {
+    ...existingOwnership,
+    owner: existingOwnership["owner"] ?? "parent",
+    ownerBrokerId: existingOwnership["ownerBrokerId"] ?? originBrokerId,
+    scope: existingOwnership["scope"] ?? "parent-broker-only",
+    providerSendPermittedByProjection: existingOwnership["providerSendPermittedByProjection"] ?? false,
+    terminalAckPermittedByProjection: existingOwnership["terminalAckPermittedByProjection"] ?? false,
+    reason: existingOwnership["reason"] ??
+      "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
+  };
+
+  return {
+    ...normalized,
+    originBrokerId,
+    operatorFacingOwner: normalized["operatorFacingOwner"] ?? "parent",
+    crossBrokerHandoff: {
+      ...existingHandoff,
+      parentRoundId: existingHandoff["parentRoundId"] ?? parentRoundId,
+      originBrokerId: existingHandoff["originBrokerId"] ?? originBrokerId,
+      handoffBrokerId,
+      ...(childWorkerId ? { childWorkerId } : {}),
+    },
+    terminalBrief: {
+      ...terminalBrief,
+      parentOwnedTerminalBrief: terminalBrief["parentOwnedTerminalBrief"] ?? true,
+      notificationOwnership: {
+        ...terminalBriefOwnership,
+        owner: terminalBriefOwnership["owner"] ?? "parent",
+        ownerBrokerId: terminalBriefOwnership["ownerBrokerId"] ?? originBrokerId,
+        scope: terminalBriefOwnership["scope"] ?? "parent-broker-only",
+      },
+    },
+    notificationOwnership,
+  };
+}
+
+function isPlainRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function firstOwnershipString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const normalized = normalizeOwnershipString(value);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
+function sameOwnershipToken(left: string | undefined, right: string | undefined): boolean {
+  return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
 }
 
 function normalizeTaskResult(result: TaskResult | undefined): TaskResult {
@@ -3947,6 +5380,10 @@ function normalizeTaskResult(result: TaskResult | undefined): TaskResult {
 function normalizeBrokerRetentionPolicy(
   overrides?: Partial<BrokerRetentionPolicy>,
 ): BrokerRetentionPolicy {
+  const maxAuditEvents = normalizeNonNegativeInteger(
+    overrides?.maxAuditEvents,
+    DEFAULT_BROKER_RETENTION_POLICY.maxAuditEvents,
+  );
   return {
     terminalRetentionMs: normalizeNonNegativeInteger(
       overrides?.terminalRetentionMs,
@@ -3976,9 +5413,14 @@ function normalizeBrokerRetentionPolicy(
       overrides?.auditRetentionMs,
       DEFAULT_BROKER_RETENTION_POLICY.auditRetentionMs,
     ),
-    maxAuditEvents: normalizeNonNegativeInteger(
-      overrides?.maxAuditEvents,
-      DEFAULT_BROKER_RETENTION_POLICY.maxAuditEvents,
+    maxAuditEvents,
+    maxHeartbeatAuditEvents: normalizeNonNegativeInteger(
+      overrides?.maxHeartbeatAuditEvents,
+      Math.min(maxAuditEvents, DEFAULT_BROKER_RETENTION_POLICY.maxHeartbeatAuditEvents),
+    ),
+    heartbeatAuditSampleIntervalMs: normalizeNonNegativeInteger(
+      overrides?.heartbeatAuditSampleIntervalMs,
+      DEFAULT_BROKER_RETENTION_POLICY.heartbeatAuditSampleIntervalMs,
     ),
   };
 }
@@ -4129,6 +5571,7 @@ function selectRetainedAuditEventIds(params: {
   nowMs: number;
   auditRetentionMs: number;
   maxAuditEvents: number;
+  maxHeartbeatAuditEvents: number;
   retainedProposalIds: Set<string>;
   retainedTaskIds: Set<string>;
   retainedExchangeIds: Set<string>;
@@ -4139,6 +5582,7 @@ function selectRetainedAuditEventIds(params: {
 }): Set<string> {
   const retainedIds = new Set<string>();
   const retentionCandidates: Array<{ id: string; timestampMs: number }> = [];
+  const heartbeatCandidates: Array<{ id: string; timestampMs: number }> = [];
   const cutoffMs = params.nowMs - params.auditRetentionMs;
 
   for (const event of params.auditEvents) {
@@ -4147,16 +5591,29 @@ function selectRetainedAuditEventIds(params: {
       retainedIds.add(event.id);
       continue;
     }
-    retentionCandidates.push({ id: event.id, timestampMs });
+    const entry = { id: event.id, timestampMs };
+    if (isHeartbeatAuditEvent(event)) {
+      heartbeatCandidates.push(entry);
+    } else {
+      retentionCandidates.push(entry);
+    }
   }
 
-  sortedCopy(
-    retentionCandidates,
-    (a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id),
-  )
-    .filter((entry) => entry.timestampMs >= cutoffMs)
-    .slice(0, params.maxAuditEvents)
-    .forEach((entry) => retainedIds.add(entry.id));
+  const retainRecentCandidates = (
+    candidates: Array<{ id: string; timestampMs: number }>,
+    maxEvents: number,
+  ) => {
+    sortedCopy(
+      candidates,
+      (a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id),
+    )
+      .filter((entry) => entry.timestampMs >= cutoffMs)
+      .slice(0, maxEvents)
+      .forEach((entry) => retainedIds.add(entry.id));
+  };
+
+  retainRecentCandidates(retentionCandidates, params.maxAuditEvents);
+  retainRecentCandidates(heartbeatCandidates, params.maxHeartbeatAuditEvents);
 
   return retainedIds;
 }
@@ -4173,6 +5630,9 @@ function isAuditEventRetained(
     retainedWorkerIds: Set<string>;
   },
 ): boolean {
+  if (isHeartbeatAuditEvent(event)) {
+    return false;
+  }
   if (event.proposalId && params.retainedProposalIds.has(event.proposalId)) {
     return true;
   }
@@ -4185,9 +5645,6 @@ function isAuditEventRetained(
     case "validation":
       return params.retainedValidationIds.has(event.targetId);
     case "worker":
-      if (event.action === "worker.heartbeat") {
-        return false;
-      }
       return params.retainedWorkerIds.has(event.targetId);
     case "task":
       return params.retainedTaskIds.has(event.targetId);
@@ -4198,6 +5655,25 @@ function isAuditEventRetained(
     default:
       return false;
   }
+}
+
+function isHeartbeatAuditEvent(event: Pick<AuditEvent, "action" | "targetType">): boolean {
+  return (
+    (event.action === "worker.heartbeat" && event.targetType === "worker") ||
+    (event.action === "task.heartbeat" && event.targetType === "task")
+  );
+}
+
+function getHeartbeatAuditEventId(
+  event: Pick<AuditEvent, "action" | "targetType" | "targetId">,
+): string | null {
+  if (event.action === "worker.heartbeat" && event.targetType === "worker") {
+    return `worker-heartbeat:${event.targetId}`;
+  }
+  if (event.action === "task.heartbeat" && event.targetType === "task") {
+    return `task-heartbeat:${event.targetId}`;
+  }
+  return null;
 }
 
 function pruneMapEntries<T>(items: Map<string, T>, retainedIds: Set<string>): void {

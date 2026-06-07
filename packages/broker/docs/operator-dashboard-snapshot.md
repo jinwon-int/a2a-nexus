@@ -54,3 +54,34 @@ Items also include `taskId`, `status`, `intent`, `targetNodeId`, `assignedWorker
 - **Dead-letter**: `recoverySummary.deadLetter` and `dead_lettered` attention items identify tasks that exhausted retries and require human review before recreating/reassigning work.
 
 The projection intentionally excludes secrets, private filesystem paths, and raw session dumps.
+
+## Control Tower Slice
+
+`GET /control-tower` is a read-only aggregate for A2A control tower clients. It combines:
+
+- queue status and recovery/attention summaries from `GET /dashboard`;
+- worker dispatch capacity from `GET /workers/capacity`;
+- Terminal Brief inbox health from `GET /terminal-brief/inbox`.
+
+The endpoint is explicitly non-mutating. It does not dispatch work, ACK Terminal Brief rows, replay providers, prune state, restart services, deploy broker code, or mutate the database.
+
+### Scheduler Control Tower Summary v2 (`scheduler-control-tower.ts`)
+
+`buildSchedulerControlTowerSummaryV2()` and the convenience `buildQueueGroupSummary()` output a structured, deterministic read-only summary that extends the basic capacity view with:
+
+**Worker-level capacity signals** (`WorkerCapacitySlot`) — per-worker breakdown of active, queued, claimed, and running tasks, plus optional max-concurrent-task limits and utilization percentages when capability-card data is available.
+
+**Queue grouping** across five dimensions:
+- **worker** — by assigned worker / target node
+- **role** — by worker role (analyst, researcher, operator, …)
+- **repo** — by GitHub repository or workspace id (extracted from payload or workspace ref)
+- **task type** — by task intent (`propose_patch`, `analyze`, …)
+- **priority** — by priority level (defaults to `default`; future-ready for native priority fields)
+
+Each group entry includes a count, status breakdown, and the age of the oldest task in the group. Groups are sorted by descending count.
+
+The summary also includes a Markdown renderer (`renderSchedulerControlTowerSummary()`) for CLI consumption.
+
+See `src/core/scheduler-control-tower.ts` for types and functions. The module is pure — no mutation, dispatch, ACK/replay, or DB writes.
+
+`GET /terminal-brief/inbox` is the bounded Terminal Brief inbox view. It defaults to unacked rows and reports `rawUnacked`, `actionableUnacked`, `ackEligibleUnacked`, `providerSendOnlyUnacked`, and `ackIneligibleProjectionRows` so parent-broker-only projection rows do not appear as false operator blockers.

@@ -67,6 +67,42 @@ export const validateA2APeerStatusParams = ajv.compile<A2APeerStatusParams>(
  * Minimal validation helper — replaces core assertValidParams.
  * Returns true if valid; returns an error object if not.
  */
+/**
+ * Redact sessionKey values from an AJV error message.
+ * Returns the safe label (<missing>, <empty>, <present>); the original
+ * error for any other path is passed through as-is.
+ */
+function redactSessionKeyError(e: ErrorObject): string {
+  const path = e.instancePath || "/";
+
+  // Missing required property
+  if (
+    (e.params as Record<string, unknown>)?.missingProperty === "sessionKey"
+  ) {
+    return `/${(e.params as Record<string, unknown>).missingProperty}: <missing>`;
+  }
+
+  // Any path ending in "/sessionKey" (top-level or nested)
+  if (path.endsWith("/sessionKey")) {
+    // minLength violation => empty string
+    if (e.keyword === "minLength") {
+      return `${path}: <empty>`;
+    }
+    // Any other violation (type mismatch, etc.) — value is present but invalid
+    return `${path}: <present>`;
+  }
+
+  return `${path}: ${e.message}`;
+}
+
+/**
+ * Minimal validation helper — replaces core assertValidParams.
+ * Returns true if valid; returns an error object if not.
+ *
+ * SessionKey values are never included in error messages.  Missing/empty
+ * sessionKey shows "<missing>" / "<empty>"; any present (but possibly
+ * invalid) sessionKey shows "<present>".
+ */
 export function validateParams<T>(
   params: unknown,
   validate: Validator<T>,
@@ -76,7 +112,7 @@ export function validateParams<T>(
     return { valid: true, data: params };
   }
   const errors = validate.errors
-    ?.map((e: ErrorObject) => `${e.instancePath || "/"}: ${e.message}`)
+    ?.map(redactSessionKeyError)
     .join("; ");
   return {
     valid: false,

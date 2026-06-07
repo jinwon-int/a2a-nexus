@@ -1,0 +1,47 @@
+{
+  "description": "Lane with a non-terminal task past the timeoutAt deadline. Should classify as 'timeout'.",
+  "manifest": {
+    "roundLabel": "a2a-team1-round-coordinator-20260526T201140KST",
+    "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/934",
+    "lanes": [
+      { "workerId": "sogyo", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
+      { "workerId": "nosuk", "description": "A2A definitions" }
+    ],
+    "staleAfterMs": 1800000,
+    "timeoutAt": "2026-05-26T20:00:00.000Z"
+  },
+  "tasks": [
+    {
+      "id": "task-sogyo-936",
+      "intent": "propose_patch",
+      "status": "succeeded",
+      "targetNodeId": "default",
+      "assignedWorkerId": "sogyo",
+      "requester": { "id": "broker", "kind": "service" },
+      "target": { "id": "default", "kind": "node" },
+      "payload": {},
+      "createdAt": "2026-05-26T10:00:00.000Z",
+      "updatedAt": "2026-05-26T14:30:00.000Z",
+      "completedAt": "2026-05-26T14:30:00.000Z",
+      "result": {
+        "summary": "Completed successfully",
+        "output": {
+          "prUrl": "https://github.com/jinwon-int/a2a-broker/pull/937",
+          "summary": "PR #937 created"
+        }
+      }
+    },
+    {
+      "id": "task-nosuk-timeout",
+      "intent": "propose_patch",
+      "status": "running",
+      "targetNodeId": "default",
+      "assignedWorkerId": "nosuk",
+      "requester": { "id": "broker", "kind": "service" },
+      "target": { "id": "default", "kind": "node" },
+      "payload": {},
+      "createdAt": "2026-05-26T09:30:00.000Z",
+      "updatedAt": "2026-05-26T18:00:00.000Z"
+    }
+  ]
+}

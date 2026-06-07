@@ -20,7 +20,8 @@ A2A Broker → Host A2A Worker (systemd) → Handler MJS → a2a-docker-runner C
 ```
 
 각 A2A task 는 호스트 워커가 broker 로부터 claim 한 후 handler MJS
-(`scripts/openclaw-a2a-task-handler.mjs`) 를 거친다. handler 는
+(`scripts/openclaw-a2a-task-handler.mjs`, legacy runtime 에서는
+`handlers/openclaw-a2a-task-handler.mjs`) 를 거친다. handler 는
 `shouldUseDockerRunner()` 로 docker-runner 라우팅 여부를 결정한 뒤,
 runner 가 Docker container 를 띄워 격리된 `/work` 아래서 repo clone →
 `npm ci` → `npm test` → command 실행을 수행하고 결과를 반환한다.
@@ -170,7 +171,7 @@ A2A_DOCKER_RUNNER_ARGS_JSON='["/opt/a2a-docker-runner/dist/cli.js"]'
 OPENCLAW_BIN=/usr/bin/openclaw
 A2A_OPENCLAW_AGENT_ID=main
 A2A_OPENCLAW_THINKING=low
-A2A_OPENCLAW_TIMEOUT_SEC=900
+A2A_OPENCLAW_TIMEOUT_SEC=3600
 # A2A_OPENCLAW_BRIDGE_DISABLED=1  # emergency disable
 
 # task root — host 쪽 작업 디렉토리 root
@@ -180,10 +181,10 @@ A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks
 A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE=/path/to/github-token-file
 
 # task-level timeout (handler → runner)
-A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=2700000   # 45분
+A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000   # 60분
 
 # container-level timeout (runner → docker run)
-A2A_DOCKER_RUNNER_TIMEOUT_MS=2700000        # 45분
+A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000        # 60분
 
 # resource cap
 A2A_DOCKER_RUNNER_MEMORY=2g
@@ -233,8 +234,8 @@ host 쪽 work directory 에 남고, 다음 task 실행 시 runner 가
 
 | Setting | Default | Env | 적용 위치 |
 |---|---|---|---|
-| Task timeout | 15 min | `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | handler → runner spawn |
-| Container timeout | 15 min | `A2A_DOCKER_RUNNER_TIMEOUT_MS` | runner → `docker run` |
+| Task timeout | 60 min | `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | handler → runner spawn |
+| Container timeout | 60 min | `A2A_DOCKER_RUNNER_TIMEOUT_MS` | runner → `docker run` |
 | Memory limit | 2 GB | `A2A_DOCKER_RUNNER_MEMORY` | `docker run --memory` |
 | CPU limit | 2 cores | `A2A_DOCKER_RUNNER_CPUS` | `docker run --cpus` |
 
@@ -373,6 +374,42 @@ curl -sf https://broker.example.com/tasks/$TASK_ID \
 4. **GitHub token** (`gh auth login` → `~/.config/gh/hosts.yml` 존재)
 5. **OpenClaw A2A worker** (`openclaw-a2a-worker.service`) 가 설치되어
    있고 `scripts/openclaw-a2a-task-handler.mjs` (version >= 0.2.0) 배포 완료
+6. **Runtime handler compat path** 가 동기화되어 있음:
+   `/opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs` 와
+   `/opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs` 의 SHA-256 이 일치
+
+### 5.1.1 Runtime Handler Copy Gate
+
+repo checkout 이 최신이어도 worker 가 실제 실행하는 legacy compat path 가
+stale 일 수 있다. rollout/restart 전에는 각 노드에서 **실제 runtime root** 기준으로
+`scripts/` 와 `handlers/` 사본을 비교한다.
+
+권장 guard:
+
+```bash
+A2A_WORKER_ROOT=/opt/openclaw-a2a-worker \
+  node /path/to/a2a-broker/scripts/worker-artifact-rollout-guard.mjs --deployed
+```
+
+guard script 를 worker 에서 바로 사용할 수 없을 때는 아래 최소 gate 를 사용한다:
+
+```bash
+src=/opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs
+dst=/opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs
+
+test -s "$src"
+test -s "$dst"
+test "$(sha256sum "$src" | awk '{print $1}')" = "$(sha256sum "$dst" | awk '{print $1}')"
+grep -q 'runnerTask.readOnlyValidation = true' "$dst"
+```
+
+불일치하면 restart 전에 source handler 를 compat path 로 복사하고 gate 를 다시 실행한다:
+
+```bash
+install -D -m 0644 \
+  /opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs \
+  /opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs
+```
 
 ### 5.2 Enable Docker Runner (plugin-only scope)
 
@@ -385,8 +422,8 @@ A2A_DOCKER_RUNNER_BIN=/usr/bin/node
 A2A_DOCKER_RUNNER_ARGS_JSON='["/opt/a2a-docker-runner/dist/cli.js"]'
 A2A_DOCKER_RUNNER_ROOT=/var/lib/openclaw-a2a/tasks
 A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE=/path/to/github-token-file
-A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=2700000
-A2A_DOCKER_RUNNER_TIMEOUT_MS=2700000
+A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000
+A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000
 A2A_DOCKER_RUNNER_MEMORY=2g
 A2A_DOCKER_RUNNER_CPUS=2
 ```
@@ -395,6 +432,8 @@ A2A_DOCKER_RUNNER_CPUS=2
 
 ```bash
 systemctl daemon-reload
+A2A_WORKER_ROOT=/opt/openclaw-a2a-worker \
+  node /path/to/a2a-broker/scripts/worker-artifact-rollout-guard.mjs --deployed
 systemctl restart openclaw-a2a-worker
 systemctl status openclaw-a2a-worker --no-pager
 ```

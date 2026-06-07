@@ -199,6 +199,124 @@ describe("Done marker", () => {
     const result = parseWorkerStatusMarker("**Done**", "worker-alpha", "51") as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
     expect(result.payload.success).toBe(true);
+    expect(result.payload.outcome).toBeUndefined();
+  });
+
+  it("classifies done_with_changes when PR URL is present", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — https://github.com/jinwon-int/openclaw/pull/52 merged",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.success).toBe(true);
+    expect(result.payload.outcome).toBe("done_with_changes");
+  });
+
+  it("classifies done_evidence_only from explicit signal", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — evidence-only, no code changes. Start comment posted.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.success).toBe(true);
+    expect(result.payload.outcome).toBe("done_evidence_only");
+  });
+
+  it("classifies done_evidence_only from block evidence signal", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — block evidence surfaced, no PR needed.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBe("done_evidence_only");
+  });
+
+  it("classifies done_no_changes from explicit signal", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — assessment complete, no changes needed.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.success).toBe(true);
+    expect(result.payload.outcome).toBe("done_no_changes");
+  });
+
+  it("classifies done_no_changes from nothing to change signal", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — nothing to change, code is already compliant.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBe("done_no_changes");
+  });
+
+  it("does not set outcome when no signals are present and no PR URL", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — task completed successfully.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBeUndefined();
+  });
+
+  it("evidence-only overrides PR URL presence", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — evidence-only, no code changes. PR: https://github.com/jinwon-int/openclaw/pull/52",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBe("done_evidence_only");
+    expect(result.payload.prUrl).toBe("https://github.com/jinwon-int/openclaw/pull/52");
+  });
+  it("sets readOnly=true for done_evidence_only outcome", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — evidence-only, no code changes. Assessment complete.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.readOnly).toBe(true);
+    expect(result.payload.outcome).toBe("done_evidence_only");
+  });
+
+  it("sets readOnly=true for done_no_changes outcome", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — assessment complete, no changes needed.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.readOnly).toBe(true);
+    expect(result.payload.outcome).toBe("done_no_changes");
+  });
+
+  it("readOnly is undefined for done_with_changes outcome", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — https://github.com/jinwon-int/openclaw/pull/52 merged",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBe("done_with_changes");
+    expect(result.payload.readOnly).toBeUndefined();
+  });
+
+  it("readOnly is undefined when no outcome is classified", () => {
+    const result = parseWorkerStatusMarker(
+      "**Done** — task completed.",
+      "worker-alpha",
+      "51",
+    ) as WorkerStatusEvent;
+    if (result.marker !== "Done") throw new Error("wrong marker");
+    expect(result.payload.outcome).toBeUndefined();
+    expect(result.payload.readOnly).toBeUndefined();
   });
 });
 

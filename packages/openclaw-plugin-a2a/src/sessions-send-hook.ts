@@ -1,6 +1,8 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+import { createHash } from "node:crypto";
 import {
   createConfiguredA2ABrokerClient,
+  shouldEnableNoDuplicateSend,
   shouldEnableWakeOnTask,
   shouldUseStandaloneBrokerSessionsSendAdapter,
   type A2ABrokerAdapterPluginRuntimeConfig,
@@ -155,6 +157,42 @@ export function createA2ASessionsSendHook(
   } = {},
 ) {
   const recentWakeKeys = new Set<string>();
+  const recentSendFingerprints = new Set<string>();
+  const MAX_RECENT_SENDS = 256;
+
+  /**
+   * Duplicate-send gate: derive a stable fingerprint from the send event
+   * and reject if the same send was recently dispatched.
+   */
+  function buildSendFingerprint(event: SessionsSendHookEvent): string {
+    const raw = [
+      normalizeOptionalString(event.task?.correlationId) ?? "",
+      normalizeOptionalString(event.target?.sessionKey) ?? normalizeOptionalString(event.sessionKey),
+      normalizeOptionalString(event.task?.intent) ?? "",
+      normalizeOptionalString(event.message),
+    ]
+      .filter(Boolean)
+      .join("|");
+    return createHash("sha256").update(raw).digest("hex").slice(0, 24);
+  }
+
+  function isRecentSendDuplicate(fingerprint: string): boolean {
+    return recentSendFingerprints.has(fingerprint);
+  }
+
+  function recordRecentSend(fingerprint: string): void {
+    recentSendFingerprints.add(fingerprint);
+    if (recentSendFingerprints.size > MAX_RECENT_SENDS) {
+      // Evict oldest entries to bound memory
+      const toEvict = recentSendFingerprints.size - MAX_RECENT_SENDS;
+      let evicted = 0;
+      for (const key of recentSendFingerprints) {
+        if (evicted >= toEvict) break;
+        recentSendFingerprints.delete(key);
+        evicted++;
+      }
+    }
+  }
 
   function buildWakeOptions(base?: A2AWakeAfterAcceptanceOptions): A2AWakeAfterAcceptanceOptions {
     const runtimePort = deps.wakeRuntime ?? base?.runtime ?? createA2AWakeRuntimePort(deps.wakeAdapter);
@@ -214,6 +252,35 @@ export function createA2ASessionsSendHook(
           ? Math.max(0, event.task.constraints.maxPingPongTurns)
           : 0;
 
+    // No-duplicate-send dry-run gate (#294): fingerprint the send event
+    // before any broker I/O and block replayed sends entirely when the
+    // hardened gate is active. Provider message id (if any) is accepted-
+    // send only and must not be used as read, visibility, or terminal
+    // ACK evidence.
+    const sendFingerprint = buildSendFingerprint(event);
+    const isDuplicateSend = isRecentSendDuplicate(sendFingerprint);
+    if (isDuplicateSend && shouldEnableNoDuplicateSend(config)) {
+      // Hardened gate: block the send entirely — no broker task creation,
+      // no wake scheduling. This prevents duplicate broker tasks from
+      // polluting the queue and keeps the wake audit trail clean.
+      return {
+        handled: false,
+        reason: "duplicate send suppressed by no-duplicate-send gate",
+      };
+    }
+
+    if (isDuplicateSend) {
+      // Gate disabled (legacy path): still pre-populate the wake key so
+      // the wake layer skips with duplicate_wake, but allow the broker
+      // task to be created idempotently.
+      const wakeKey = `${normalizeOptionalString(event.task.correlationId) ?? ""}:${normalizeOptionalString(event.task.runtime?.waitRunId) ?? targetSessionKey}`;
+      recentWakeKeys.add(wakeKey);
+    }
+
+    // Record fingerprint before broker task creation to prevent
+    // concurrent-replay races from creating duplicate tasks.
+    recordRecentSend(sendFingerprint);
+
     const createBrokerClient = deps.createBrokerClient ?? createConfiguredA2ABrokerClient;
     const brokerTask = await createBrokerClient(config).createTask(
       buildBrokerCreateTaskRequestFromOpenClaw({
@@ -249,6 +316,7 @@ export function createA2ASessionsSendHook(
     });
 
     const dispatch = readDispatchFromBrokerTask(brokerTask);
+
     return {
       handled: true,
       mode: "delegated",

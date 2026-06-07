@@ -34,6 +34,7 @@ const A2ABrokerTaskStatusSchema = z.enum([
   "failed",
   "canceled",
 ]);
+const A2ABrokerTaskOriginSchema = z.enum(["github", "api", "sessions_send", "operator", "unknown"]);
 
 const A2ABrokerPartyRefSchema = z
   .object({
@@ -190,6 +191,9 @@ const A2ABrokerTaskCreateRequestSchema = z
     via: A2ABrokerViaSchema.optional(),
     policyContext: A2ABrokerTaskPolicyContextSchema.optional(),
     payload: UnknownRecordSchema.optional(),
+    taskOrigin: A2ABrokerTaskOriginSchema.optional(),
+    brokerOfRecord: z.string().min(1).optional(),
+    teamId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -218,6 +222,42 @@ const A2ABrokerHealthSchema = z
     publicBaseUrl: z.string().min(1),
   })
   .passthrough();
+
+/**
+ * Broker-advertised A2A protocol profile extracted from the health endpoint.
+ *
+ * This models the protocol-level capabilities the broker advertises:
+ * protocolVersion, streaming/push support, input/output modes, and
+ * unsupported REST/gRPC/push transport hints.
+ *
+ * Terminal Brief / outbox ACK boundaries are separate from A2A push
+ * notification conformance. Provider accepted/message-id evidence is
+ * send-acceptance telemetry only and not operator-visible ACK.
+ */
+export const A2ABrokerProtocolProfileSchema = z
+  .object({
+    protocolVersion: z.string().min(1).optional(),
+    capabilities: z
+      .object({
+        streaming: z.boolean().optional(),
+        pushNotifications: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
+    inputModes: z.array(z.string().min(1)).optional(),
+    outputModes: z.array(z.string().min(1)).optional(),
+    transportHints: z
+      .object({
+        rest: z.union([z.literal("supported"), z.literal("unsupported"), z.literal("deferred")]).optional(),
+        grpc: z.union([z.literal("supported"), z.literal("unsupported"), z.literal("deferred")]).optional(),
+        push: z.union([z.literal("supported"), z.literal("unsupported"), z.literal("deferred")]).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+export type A2ABrokerProtocolProfile = z.infer<typeof A2ABrokerProtocolProfileSchema>;
 
 const A2ABrokerTaskSseEventNameSchema = z.enum(["task-snapshot", "task-status-update"]);
 const A2ABrokerOperatorSseEventNameSchema = z.enum([
@@ -365,8 +405,8 @@ const A2ATerminalOutboxPayloadSchema = z.object({
   doneUrl: z.string().min(1).optional(),
   blockUrl: z.string().min(1).optional(),
   testSummary: z.string().min(1).optional(),
-  createdAt: z.string().min(1),
-  updatedAt: z.string().min(1),
+  createdAt: z.string().min(1).optional(),
+  updatedAt: z.string().min(1).optional(),
   completedAt: z.string().min(1).optional(),
 }).passthrough();
 
@@ -396,6 +436,15 @@ const A2ATerminalOutboxAckResponseSchema = z.object({
 export type A2ATerminalOutboxEvent = z.infer<typeof A2ATerminalOutboxEventSchema>;
 export type A2ATerminalOutboxListResponse = z.infer<typeof A2ATerminalOutboxListResponseSchema>;
 export type A2ATerminalOutboxAckEvidence = "operator_visible" | "operator_confirmed" | "provider_delivery_receipt";
+export type A2ATerminalOutboxReceiptStatus =
+  | "accepted"
+  | "started"
+  | "produced"
+  | "provider_sent"
+  | "provider_accepted"
+  | "timed_out"
+  | "stale"
+  | "failed";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -1376,6 +1425,47 @@ export function createA2ABrokerClient(options: A2ABrokerClientOptions) {
       });
       const body = await parseBrokerJson(response, A2ATerminalOutboxAckResponseSchema);
       return body.event;
+    },
+
+    async recordTerminalOutboxReceipt(params: {
+      id: string;
+      receipt: {
+        status: A2ATerminalOutboxReceiptStatus;
+        updatedAt?: string;
+        note?: string;
+      };
+    }): Promise<A2ATerminalOutboxEvent> {
+      const id = normalizeRequiredTaskId(params.id);
+      const response = await fetchImpl(buildEndpointUrl(baseUrl, "a2a/tasks/terminal-outbox/receipt"), {
+        method: "POST",
+        headers: buildRequestHeaders({
+          requester: options.requester,
+          edgeSecret,
+          userAgent,
+          contentType: "application/json",
+        }),
+        body: JSON.stringify({ id, receipt: params.receipt }),
+      });
+      const body = await parseBrokerJson(response, A2ATerminalOutboxAckResponseSchema);
+      return body.event;
+    },
+
+    async relayTerminalProjection(projection: Record<string, unknown>): Promise<unknown> {
+      const response = await fetchImpl(buildEndpointUrl(baseUrl, "a2a/cross-broker/terminal-briefs"), {
+        method: "POST",
+        headers: buildRequestHeaders({
+          requester: options.requester,
+          edgeSecret,
+          userAgent,
+          contentType: "application/json",
+        }),
+        body: JSON.stringify(projection),
+      });
+      const body = await readBrokerJson(response).catch(() => undefined);
+      if (!response.ok) {
+        throw buildClientError(response, body);
+      }
+      return body;
     },
 
     /**

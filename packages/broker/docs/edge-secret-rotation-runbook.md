@@ -16,6 +16,16 @@ scope, for example:
 > once, then restart workers one at a time, and record only rotation time,
 > affected nodes, and redacted validation results.
 
+## Pre-rotation Caddy hardening
+
+Before rotating secrets, verify that Caddy log redaction is active on the
+proxy host. Without `log_redact`, the old edge secret may already be
+present in Caddy access logs from prior 502 windows (broker downtime).
+
+Reference: `docs/caddy-502-log-redaction.md`, `config/caddy-broker-log-redaction.caddy`.
+
+Preflight check (CI-safe): `node scripts/caddy-log-redaction-preflight.mjs --json`
+
 ## Scope to update
 
 Update every place that supplies the broker edge secret. Known config names are:
@@ -32,6 +42,37 @@ Active workers from the current README production baseline are `bangtong`,
 and `sogyo`; include `nosuk` unless the operator confirms it is out of service.
 `yukson` is explicitly excluded unless the operator makes a new decision to
 bring it back into the active worker fleet.
+
+## Planning diagnostics, secret-safe only
+
+Use the planning diagnostic before any approved rotation window to enumerate
+where broker/worker edge-secret handling is configured. The diagnostic is
+plan-only: it does not call the broker, rotate secrets, edit config, restart
+services, send provider messages, mutate DB state, ACK terminal records, replay
+outbox records, or perform a release.
+
+It records only variable names, env/drop-in/file locations, and handling rules.
+It must not record secret values, hashes of secret values, raw env output, raw
+file contents, or screenshots containing secret material.
+
+```bash
+# Safe sample / shape check; does not read production files.
+npm run edge_secret_rotation_diagnostics -- --sample --markdown
+
+# If an operator has already captured local redacted snapshots, inspect those
+# files by path. Values are still not emitted by the diagnostic.
+npm run edge_secret_rotation_diagnostics -- \
+  --broker-systemd-cat /tmp/redacted-a2a-broker-systemctl-cat.txt \
+  --worker-systemd-cat /tmp/redacted-openclaw-a2a-worker-systemctl-cat.txt \
+  --broker-env-file /tmp/redacted-broker.env \
+  --worker-env-file /tmp/redacted-worker.env \
+  --markdown
+```
+
+The output should be kept with rotation-planning evidence only when it contains
+`values=<not recorded>` / `values-redacted-and-not-recorded` and the safety gate
+states that no mutation, restart, provider send, DB mutation, terminal ACK,
+replay, release, or secret change was attempted.
 
 ## Preflight evidence, redacted only
 
@@ -56,6 +97,20 @@ systemctl cat a2a-broker 2>/dev/null \
 systemctl cat openclaw-a2a-worker 2>/dev/null \
   | sed -E 's/(EDGE_SECRET|A2A_EDGE_SECRET|BROKER_EDGE_SECRET|A2A_BROKER_EDGE_SECRET)=.*/\1=<redacted>/g'
 ```
+
+A reusable CI-safe preflight diagnostic is also available at
+`scripts/edge-secret-preflight.mjs`. It scans `.env.example` and optional env
+files (via `--check-env`) for edge-secret variable coverage, validates that
+values are not concrete secrets, and exits with zero/non-zero status.
+
+```bash
+node scripts/edge-secret-preflight.mjs
+node scripts/edge-secret-preflight.mjs --json
+node scripts/edge-secret-preflight.mjs --check-env path/to/env/file
+```
+
+The script never prints, resolves, or transmits secret values. Run it before
+rotation to confirm the config shape is ready.
 
 Do not run broad `env`, `printenv`, `systemctl show -p Environment`, or raw file
 `cat` commands against production env files because they can reveal values.

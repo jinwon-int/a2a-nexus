@@ -1,13 +1,47 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
+import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
 import { spawn } from "node:child_process";
 import { normalizeTask } from "./task-normalizer.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
-import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContinuationEvidence, RunnerEvidenceHints, RunnerReceiptTrace, RunnerResult, RunnerTask } from "./types.js";
+import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
+import { expandTask, resolveTemplate, buildTemplateExpansionEvidence } from "./task-templates.js";
+import { buildExecutionProof } from "./execution-proof.js";
+import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
+import { redactAndBound, redactSecrets } from "./redaction.js";
+export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
+import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContinuationEvidence, RunnerEvidenceHints, RunnerReceiptTrace, RunnerResult, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
 export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<RunnerResult> {
   validateTask(task);
-  const normalizedTask = normalizeTask(task);
+
+  // ── Non-Docker worker profile guard ───────────────────────────────
+  // Reject Hermes/native A2A worker tasks early with a proper Block
+  // outcome before any container is started.
+  // Parent: a2a-docker-runner#340
+  // Parent: a2a-plane#464
+  if (task.workerProfile !== undefined && task.workerProfile !== "docker") {
+    const blockError = `Docker runner cannot execute tasks with workerProfile "${task.workerProfile}". ` +
+      `This task requires a Hermes/native A2A worker runtime. ` +
+      `Supported runner profile: docker.`;
+    return buildWorkerProfileBlockResult(task, task.workerProfile, blockError);
+  }
+
+  // ── Template Expansion (Team1 nosuk lane, A2A R23) ────────────────
+  // Parent: a2a-docker-runner#261
+  // Parent: a2a-plane#335
+  let expandedTask: RunnerTask | undefined;
+  let templateExpansionEv: ReturnType<typeof buildTemplateExpansionEvidence> | undefined;
+  if (task.template || task.inlineTemplate) {
+    expandedTask = expandTask(task);
+    const template = resolveTemplate(task);
+    if (template) {
+      templateExpansionEv = buildTemplateExpansionEvidence(task, expandedTask, template);
+    }
+  }
+
+  const normalizedTask = normalizeTask(expandedTask ?? task);
   const root = resolve(config.rootDir);
   const runToken = createRunToken();
   const safeTaskId = safeId(task.id);
@@ -39,11 +73,22 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const args = buildRunArgs(config, normalizedTask, workDir, runToken);
   const timeoutMs = normalizedTask.timeoutMs ?? config.defaultTimeoutMs;
   const engine = config.engine ?? "docker";
-  const completed = await spawnWithTimeout(engine, args, timeoutMs);
+  // Use retry harness for transient container failures.
+  // runContainerWithRetry handles backoff, jitter, and retry evidence tracking.
+  const { result: completed, retryEvidence } = await runContainerWithRetry(engine, args, timeoutMs);
+  await writeSanitizedTaskArtifact(workDir, normalizedTask);
   const artifacts = await listArtifacts(workDir);
   const stdout = redactAndBound(completed.stdout);
   const stderr = redactAndBound(completed.stderr);
-  const prUrl = extractPrUrl(completed.stdout);
+  const detectedPrUrl = extractPrUrl(completed.stdout);
+  const prUrl = shouldTreatDetectedPrUrlAsCanonical(
+    normalizedTask,
+    completed.stdout,
+    completed.stderr,
+    detectedPrUrl,
+  )
+    ? detectedPrUrl
+    : undefined;
   const budgetStop = inferBudgetStopEvidence(stdout, stderr);
   const receiptTrace = sanitizeReceiptTrace(normalizedTask.receiptTrace ?? parseReceiptTraceEnv(normalizedTask.env));
   const manifest = await buildArtifactManifest(workDir, artifacts, {
@@ -56,12 +101,21 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     ...(budgetStop ? budgetStop : {}),
   });
   await writeArtifactManifest(workDir, manifest);
+  const retryAttempted = retryEvidence.totalAttempts > 1;
   const resultSummary = buildResultSummary(completed, stdout, stderr, artifacts, manifest, config.buildMetadata);
+  if (retryAttempted) {
+    resultSummary.containerRetryEvidence = retryEvidence;
+  }
 
+  // When a PR URL is detected in stdout but the container exited non-zero,
+  // treat it as success — the PR was created.  Post-PR cleanup / no-change
+  // checks that fail non-zero after PR creation are not patch failures.
+  // Parent: a2a-docker-runner#199
+  const prUrlRecoveredAfterNonzero = Boolean(prUrl && !completed.timedOut && completed.code !== 0);
   const result: RunnerResult = {
-    ok: completed.code === 0 && !completed.timedOut,
+    ok: (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero,
     taskId: task.id,
-    status: completed.timedOut ? "timeout" : completed.code === 0 ? "completed" : "failed",
+    status: completed.timedOut ? "timeout" : (completed.code === 0 || prUrlRecoveredAfterNonzero) ? "completed" : "failed",
     workDir,
     exitCode: completed.code,
     signal: completed.signal,
@@ -72,8 +126,21 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     resultSummary,
     runnerBuild: config.buildMetadata,
     prUrl,
-    error: completed.code === 0 && !completed.timedOut ? undefined : buildActionableError(engine, config.image, completed),
+    error: (completed.code === 0 && !completed.timedOut) || prUrlRecoveredAfterNonzero ? undefined : buildActionableError(engine, config.image, completed),
   };
+
+  if (prUrlRecoveredAfterNonzero) {
+    result.resultSummary = {
+      ...result.resultSummary!,
+      status: "done",
+    };
+    result.artifactManifest = {
+      ...result.artifactManifest!,
+      status: "done",
+      summary: `Runner recovered PR evidence after post-PR no-change failure: ${prUrl}`,
+    };
+    await writeArtifactManifest(workDir, result.artifactManifest);
+  }
 
   if (isMissingPatchCommand(stdout, stderr)) {
     result.ok = false;
@@ -97,11 +164,31 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
       }
     }
     const evidenceHints = buildRunnerEvidenceHints(normalizedTask, result);
-    if (evidenceHints) {
-      result.artifactManifest = { ...result.artifactManifest!, evidenceHints };
-      result.resultSummary = { ...result.resultSummary!, evidenceHints };
+    const githubCommentProjection = buildGitHubCommentProjection(normalizedTask, result);
+    if (evidenceHints || githubCommentProjection) {
+      result.artifactManifest = { ...result.artifactManifest!, ...(evidenceHints ? { evidenceHints } : {}), ...(githubCommentProjection ? { githubCommentProjection } : {}) };
+      result.resultSummary = { ...result.resultSummary!, ...(evidenceHints ? { evidenceHints } : {}), ...(githubCommentProjection ? { githubCommentProjection } : {}) };
       await writeArtifactManifest(workDir, result.artifactManifest);
     }
+  }
+
+  // ── Execution Proof (Team1 nosuk lane, A2A R23) ──────────────────
+  // Parent: a2a-docker-runner#261
+  // Parent: a2a-plane#335
+  const executionProof = buildExecutionProof({
+    task: normalizedTask,
+    result,
+    expanded: expandedTask,
+    runToken,
+  });
+  result.executionProof = executionProof;
+  result.templateExpansion = templateExpansionEv;
+  if (result.artifactManifest) {
+    result.artifactManifest = {
+      ...result.artifactManifest,
+      executionProof,
+    };
+    await writeArtifactManifest(workDir, result.artifactManifest);
   }
 
   return result;
@@ -118,12 +205,16 @@ export function buildRunnerEvidenceHints(task: NormalizedRunnerTask, result: Run
   const branch = safeHintText(github?.branch ?? result.artifactManifest?.branch);
   const repo = safeGitHubRepoSlug(github?.repo ?? result.artifactManifest?.repo ?? task.repo);
   const failureCategory = inferEvidenceFailureCategory(result);
+  const prUrl = canonicalHintPrUrl(result);
+  const doneUrl = canonicalHintDoneUrl(result);
+  const blockUrl = canonicalHintBlockUrl(result);
   const hint: RunnerEvidenceHints = {
     schemaVersion: "a2a.runner.evidence-hints.v1",
     ...(safeGitHubUrl(task.issueUrl ?? result.artifactManifest?.issueUrl, "issues") ? { issueUrl: task.issueUrl ?? result.artifactManifest?.issueUrl } : {}),
-    ...(safeGitHubUrl(github?.prUrl ?? result.prUrl ?? result.artifactManifest?.prUrl, "pull") ? { prUrl: github?.prUrl ?? result.prUrl ?? result.artifactManifest?.prUrl } : {}),
-    ...(safeGitHubUrl(github?.doneUrl ?? github?.doneCommentUrl, "issues") ? { doneUrl: github?.doneUrl ?? github?.doneCommentUrl } : {}),
-    ...(safeGitHubUrl(github?.blockUrl ?? github?.blockCommentUrl, "issues") ? { blockUrl: github?.blockUrl ?? github?.blockCommentUrl } : {}),
+    ...(safeGitHubUrl(github?.startCommentUrl, "issues") ? { startCommentUrl: github?.startCommentUrl } : {}),
+    ...(safeGitHubUrl(prUrl, "pull") ? { prUrl } : {}),
+    ...(safeGitHubUrl(doneUrl, "issues") ? { doneUrl } : {}),
+    ...(safeGitHubUrl(blockUrl, "issues") ? { blockUrl } : {}),
     ...(branch ? { branch } : {}),
     ...(repo && branch ? { branchUrl: buildBranchUrl(repo, branch) } : {}),
     ...(failureCategory ? { failureCategory } : {}),
@@ -131,14 +222,131 @@ export function buildRunnerEvidenceHints(task: NormalizedRunnerTask, result: Run
   return Object.keys(hint).length > 1 ? hint : undefined;
 }
 
+function canonicalHintPrUrl(result: RunnerResult): string | undefined {
+  const github = result.github;
+  if (!github) return result.prUrl ?? result.artifactManifest?.prUrl;
+  if (github.outcome === "pr") return github.prUrl ?? result.prUrl ?? result.artifactManifest?.prUrl;
+  if (github.outcome) return undefined;
+  return github.prUrl ?? result.prUrl ?? result.artifactManifest?.prUrl;
+}
+
+function canonicalHintDoneUrl(result: RunnerResult): string | undefined {
+  const github = result.github;
+  if (!github) return undefined;
+  if (github.outcome === "done" || github.outcome === "succeeded_no_changes_with_done_evidence") return github.doneUrl ?? github.doneCommentUrl;
+  if (github.outcome) return undefined;
+  if (github.prUrl || result.prUrl || result.artifactManifest?.prUrl) return undefined;
+  if (github.blockUrl || github.blockCommentUrl) return undefined;
+  return github.doneUrl ?? github.doneCommentUrl;
+}
+
+function canonicalHintBlockUrl(result: RunnerResult): string | undefined {
+  const github = result.github;
+  if (!github) return undefined;
+  if (github.outcome === "block" || github.outcome === "blocked_no_changes_with_evidence") return github.blockUrl ?? github.blockCommentUrl;
+  if (github.outcome) return undefined;
+  if (github.prUrl || result.prUrl || result.artifactManifest?.prUrl) return undefined;
+  return github.blockUrl ?? github.blockCommentUrl;
+}
+
+export function buildGitHubCommentProjection(task: NormalizedRunnerTask, result: RunnerResult): GitHubCommentProjection | undefined {
+  const github = result.github;
+  const projectionSource = canonicalGitHubCommentProjectionSource(result);
+  const kind = projectionSource?.kind;
+  const url = projectionSource?.url;
+  if (!kind || !url || !safeGitHubUrl(url, kind === "pr" ? "pull" : "issues")) return undefined;
+  const projectedUrl = url;
+
+  const issueUrl = safeGitHubUrl(task.issueUrl ?? github?.issueUrl ?? result.artifactManifest?.issueUrl, "issues")
+    ? task.issueUrl ?? github?.issueUrl ?? result.artifactManifest?.issueUrl
+    : undefined;
+  const manifestPath = result.artifactManifest?.manifestPath ?? result.resultSummary?.manifestPath ?? "artifacts/manifest.json";
+  const taskId = safeHintText(task.id) ?? "task";
+  const dedupeKey = ["a2a-github-comment", taskId, kind, projectedUrl]
+    .join(":")
+    .replace(/[^A-Za-z0-9_.:/#-]+/g, "_")
+    .slice(0, 300);
+
+  return {
+    schemaVersion: "a2a.runner.github-comment-projection.v1",
+    kind,
+    url: projectedUrl,
+    ...(issueUrl ? { issueUrl } : {}),
+    manifestPath: sanitizeManifestPath(manifestPath),
+    dedupeKey,
+    commentIsTerminalAck: false,
+    commentIsVisibilityReceipt: false,
+    commentIsOperatorApproval: false,
+  };
+}
+
+function canonicalGitHubCommentProjectionSource(result: RunnerResult): { kind: GitHubCommentProjectionKind; url: string } | undefined {
+  const blockUrl = canonicalHintBlockUrl(result);
+  const doneUrl = canonicalHintDoneUrl(result);
+  const prUrl = canonicalHintPrUrl(result);
+  if (blockUrl) return { kind: "block", url: blockUrl };
+  if (doneUrl) return { kind: "done", url: doneUrl };
+  if (prUrl) return { kind: "pr", url: prUrl };
+  return undefined;
+}
+
+function sanitizeManifestPath(_value: string): string {
+  return "artifacts/manifest.json";
+}
+
 function inferEvidenceFailureCategory(result: RunnerResult): RunnerEvidenceHints["failureCategory"] | undefined {
   const outcome = result.github?.outcome;
-  if (outcome === "block" || outcome === "budget_limited" || outcome === "timed_out" || outcome === "missing_evidence") return outcome;
+  if (outcome === "succeeded_no_changes_with_done_evidence") return "no_changes_allowed";
+  if (outcome === "blocked_no_changes_with_evidence") return outcome;
+  if (outcome === "failed_infrastructure") return outcome;
+  if (outcome === "block" || outcome === "budget_limited" || outcome === "timed_out" || outcome === "missing_evidence" || outcome === "worker_profile_blocked") return outcome;
   if (result.status === "timeout") return "timed_out";
   if (result.resultSummary?.status === "budget_limited" || result.artifactManifest?.status === "budget_limited") return "budget_limited";
+  if (isResourceLimitedFailure(result)) return "resource_limited";
+  if (isOpenClawCliUnavailableFailure(result)) return "openclaw_cli_unavailable";
+  if (isOpenClawProfileUnavailableFailure(result)) return "openclaw_profile_unavailable";
+  if (isOpenClawVersionFailedFailure(result)) return "openclaw_version_failed";
+  if (detectEmbeddedModelTimeoutNoFallback(result)) return "embedded_model_timeout_no_fallback";
   if (!result.ok && typeof result.exitCode === "number" && result.exitCode !== 0) return "exit_nonzero";
   if (!result.ok) return "failed";
   return undefined;
+}
+
+function isOpenClawCliUnavailableFailure(result: RunnerResult): boolean {
+  const text = [
+    result.stdout,
+    result.stderr,
+    result.error,
+    result.artifactManifest?.summary,
+  ].filter(Boolean).join("\n");
+  return /(^|\n)(error=openclaw_install_failed|failure_category=openclaw_cli_unavailable)\b/.test(text);
+}
+
+function isOpenClawProfileUnavailableFailure(result: RunnerResult): boolean {
+  const text = [
+    result.stdout,
+    result.stderr,
+    result.error,
+    result.artifactManifest?.summary,
+  ].filter(Boolean).join("\n");
+  return /(^|\n)(error=openclaw_config_mount_missing|failure_category=openclaw_profile_unavailable)\b/.test(text);
+}
+
+function isOpenClawVersionFailedFailure(result: RunnerResult): boolean {
+  const text = [
+    result.stdout,
+    result.stderr,
+    result.error,
+    result.artifactManifest?.summary,
+  ].filter(Boolean).join("\n");
+  return /(^|\n)failure_category=openclaw_version_failed\b/.test(text);
+}
+
+function isResourceLimitedFailure(result: RunnerResult): boolean {
+  if (result.ok) return false;
+  if (result.exitCode === 137 || result.signal === "SIGKILL") return true;
+  const text = `${result.resultSummary?.stderr ?? result.stderr ?? ""}\n${result.resultSummary?.stdout ?? result.stdout ?? ""}`;
+  return /(?:oomkilled|out of memory|cannot allocate memory|allocation failed|heap limit allocation failed|javaScript heap out of memory|no space left on device|\bENOSPC\b|resource temporarily unavailable|Killed)$/im.test(text);
 }
 
 function buildBranchUrl(repo: string, branch: string): string {
@@ -178,6 +386,59 @@ function hasUnsafeHintContent(value: string): boolean {
 function validateTask(task: RunnerTask): void {
   if (!task.id) throw new Error("task.id is required");
   if (!task.intent) throw new Error("task.intent is required");
+}
+
+/**
+ * Build a deterministic block RunnerResult for non-Docker workerProfile tasks.
+ *
+ * Called from runTask when the task carries a Hermes/native A2A worker profile
+ * such as "termux-hermes", "external-harness", or "hermes".  Returns a result
+ * with github.outcome = "worker_profile_blocked" so the broker sees a clean
+ * Block outcome and can re-route the task.
+ *
+ * Parent: a2a-docker-runner#340
+ * Parent: a2a-plane#464
+ */
+function buildWorkerProfileBlockResult(
+  task: RunnerTask,
+  workerProfile: string,
+  blockError: string,
+): RunnerResult {
+  const normalizedTask = normalizeTask(task);
+  const repo = normalizedTask.repos[0]?.url ?? task.repo ?? "";
+  const blockMessage = `blocked: ${blockError}`;
+  return {
+    ok: false,
+    taskId: task.id,
+    status: "failed",
+    workDir: "",
+    exitCode: 4,
+    signal: null,
+    stdout: blockMessage,
+    stderr: `worker_profile=${workerProfile}\n`,
+    artifacts: [],
+    error: blockError,
+    github: {
+      schemaVersion: "a2a.runner.github-evidence.v1",
+      repo,
+      issue: task.issue ? (typeof task.issue === "number" ? `#${task.issue}` : String(task.issue)) : undefined,
+      issueUrl: task.issueUrl,
+      taskId: task.id,
+      outcome: "worker_profile_blocked",
+      validation: {
+        status: "failed",
+        exitCode: 4,
+        signal: null,
+        timedOut: false,
+        artifactCount: 0,
+      },
+      safetyState: {
+        noLiveProviderSend: true,
+        terminalAck: "not_attempted",
+        providerSendIsReceiptEvidence: false,
+      },
+    },
+  };
 }
 
 function safeId(id: string): string {
@@ -266,11 +527,15 @@ function buildMetadataEnv(config: RunnerConfig): Record<string, string> {
 export function buildContainerScript(task: NormalizedRunnerTask): string {
   return `#!/usr/bin/env bash
 set -euo pipefail
-cleanup_permissions() {
-  chmod a+rwx /work 2>/dev/null || true
-  chmod -R a+rwX /work/artifacts 2>/dev/null || true
+restore_work_ownership() {
+  local owner group
+  owner="$(stat -c '%u' /work 2>/dev/null || true)"
+  group="$(stat -c '%g' /work 2>/dev/null || true)"
+  if [ -n "$owner" ] && [ -n "$group" ]; then
+    chown -R "$owner:$group" /work 2>/dev/null || true
+  fi
 }
-trap cleanup_permissions EXIT
+trap restore_work_ownership EXIT
 mkdir -p /work/artifacts
 printf 'A2A Docker Runner task %s\n' ${shellQuote(task.id)} | tee /work/artifacts/summary.txt
 printf 'intent=%s\n' ${shellQuote(task.intent)} | tee -a /work/artifacts/summary.txt
@@ -284,11 +549,53 @@ ${installBaseToolsScript()}
 ${installGhUpdateBranchFallbackScript()}
 ${githubAuthScript()}
 ${checkoutReposScript(task)}
-cat /work/task.json > /work/artifacts/task.json
+${bootstrapGuardScript(task)}
+redact_task_artifact() {
+  sed -E \
+    -e 's#gh[pousr]_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
+    -e 's#github_pat_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
+    -e 's#/root/\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/tmp/openclaw-agent-workspace(/[^[:space:]",}]+)?#<openclaw-workspace>#g' \
+    -e 's#xai-[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
+    -e 's#sm_[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
+    -e 's#sk-[A-Za-z0-9_-]{32,}#<redacted-api-key>#g' \
+    -e 's#x-access-token:[^@[:space:]]+@github\.com#x-access-token:<redacted>@github.com#g' \
+    -e 's#(oauth_token:[[:space:]]*)[^[:space:]]+#\\1<redacted>#Ig' \
+    -e 's#(Authorization:[[:space:]]*(Bearer|token)[[:space:]]+)[^[:space:]]+#\\1<redacted>#Ig' \
+    -e 's#(gh auth login --with-token[[:space:]]+)[^[:space:]]+#\\1<redacted>#g' \
+    -e 's#((token|password|secret|api[_-]?key)=)[^[:space:]",}]+#\\1<redacted>#Ig' \
+    -e 's#("[^"]*(GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy])[^"]*"[[:space:]]*:[[:space:]]*")[^"]*"#\\1<redacted>"#g' \
+    /work/task.json > /work/artifacts/task.json
+}
+# In-place redaction for command output log files.
+# Reuses the same sed patterns to prevent secret leakage in artifacts.
+redact_artifact_file() {
+  local _a2a_f="$1"
+  [ -f "$_a2a_f" ] || return 0
+  sed -E \
+    -e 's#gh[pousr]_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
+    -e 's#github_pat_[A-Za-z0-9_]{20,}#<redacted-github-token>#g' \
+    -e 's#/root/\.openclaw(/[^[:space:]",}]+)?#<openclaw-dir>#g' \
+    -e 's#/tmp/openclaw-agent-workspace(/[^[:space:]",}]+)?#<openclaw-workspace>#g' \
+    -e 's#xai-[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
+    -e 's#sm_[A-Za-z0-9_-]{40,}#<redacted-api-key>#g' \
+    -e 's#sk-[A-Za-z0-9_-]{32,}#<redacted-api-key>#g' \
+    -e 's#x-access-token:[^@[:space:]]+@github\.com#x-access-token:<redacted>@github.com#g' \
+    -e 's#(oauth_token:[[:space:]]*)[^[:space:]]+#\\1<redacted>#Ig' \
+    -e 's#(Authorization:[[:space:]]*(Bearer|token)[[:space:]]+)[^[:space:]]+#\\1<redacted>#Ig' \
+    -e 's#(gh auth login --with-token[[:space:]]+)[^[:space:]]+#\\1<redacted>#g' \
+    -e 's#((token|password|secret|api[_-]?key)=)[^[:space:]",}]+#\\1<redacted>#Ig' \
+    -e 's#("[^"]*(GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy])[^"]*"[[:space:]]*:[[:space:]]*")[^"]*"#\\1<redacted>"#g' \
+    "$_a2a_f" > "\${_a2a_f}.a2a-redacted" && mv "\${_a2a_f}.a2a-redacted" "$_a2a_f"
+}
+redact_task_artifact
 ${runCommandsScript(task)}
+# Post-command: redact command output logs to prevent secret leakage in artifacts.
+for _a2a_log in /work/artifacts/command-*.log; do
+  [ -f "$_a2a_log" ] && redact_artifact_file "$_a2a_log"
+done
+${bootstrapPostGuardScript(task)}
 printf 'status=completed\n' | tee -a /work/artifacts/summary.txt
-# Keep host-side cleanup and artifact indexing reliable when the container runs as root.
-cleanup_permissions
 `;
 }
 
@@ -405,13 +712,220 @@ git clone --depth=1 --branch ${shellQuote(repo.branch ?? "main")} ${shellQuote(r
   }).join("\n");
 }
 
+const FAMILY_WIKI_READONLY_AUDIT_MODE = "family-wiki-readonly-audit";
+const FAMILY_WIKI_REPO_SLUG = "jinwon-int/seoyoon-family-wiki";
+
+function parseGitHubRepoSlug(repoUrl: string): string | undefined {
+  const match = repoUrl.match(/^(?:https?:\/\/github\.com\/)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[/?#].*)?$/);
+  return match?.[1];
+}
+
+function buildBootstrapAllowedTrackedRepoEntries(task: NormalizedRunnerTask): string[] {
+  if (task.mode !== FAMILY_WIKI_READONLY_AUDIT_MODE) return [];
+  return task.repos
+    .filter((repo) => parseGitHubRepoSlug(repo.url) === FAMILY_WIKI_REPO_SLUG)
+    .map((repo) => `/work/${repo.path ?? "repo"}:AGENTS.md`);
+}
+
+/**
+ * Pre-command bootstrap guard that fails closed if OpenClaw runtime/bootstrap
+ * context files would be included in any checked-out repository branch.
+ *
+ * Parent: a2a-broker#446
+ */
+function bootstrapGuardScript(task: NormalizedRunnerTask): string {
+  if (!task.repos.length) return "";
+
+  const repoPaths = task.repos.map((repo) => shellQuote(`/work/${repo.path ?? "repo"}`));
+  const repoList = repoPaths.join(" ");
+  const allowedTrackedRepoEntries = buildBootstrapAllowedTrackedRepoEntries(task);
+
+  return `# Pre-PR bootstrap guard: fail closed if OpenClaw bootstrap files would
+# enter the checked-out repository branch.  These files are runtime/persona
+# context, not repository artifacts.
+# Parent: a2a-broker#446
+BOOTSTRAP_BANNED="AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md"
+BOOTSTRAP_BANNED_DIRS=".openclaw memory"
+BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES=${shellQuote(allowedTrackedRepoEntries.join(" "))}
+is_allowed_tracked_bootstrap_path() {
+  repo_dir="$1"
+  path="$2"
+  for allowed in $BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES; do
+    allowed_repo="\${allowed%%:*}"
+    allowed_path="\${allowed#*:}"
+    [ "$repo_dir" = "$allowed_repo" ] || continue
+    [ "$path" = "$allowed_path" ] || continue
+    if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] && [ -z "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+find_bootstrap_leaks() {
+  repo_dir="$1"
+  (
+    cd "$repo_dir"
+    for name in $BOOTSTRAP_BANNED; do
+      if [ -e "$name" ]; then
+        printf '%s\\n' "$name"
+      fi
+    done
+    for name in $BOOTSTRAP_BANNED_DIRS; do
+      if [ -d "$name" ]; then
+        found=0
+        while IFS= read -r path; do
+          found=1
+          printf '%s\\n' "\${path#./}"
+        done < <(find "$name" -mindepth 1 -print | sort)
+        if [ "$found" -eq 0 ]; then
+          printf '%s\\n' "$name"
+        fi
+      fi
+    done
+  )
+}
+filter_branch_bootstrap_leaks() {
+  repo_dir="$1"
+  if ! git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    cat
+    return
+  fi
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if is_allowed_tracked_bootstrap_path "$repo_dir" "$path"; then
+      continue
+    fi
+    if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] || [ -n "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+      printf '%s\\n' "$path"
+    fi
+  done
+}
+for repo_dir in ${repoList}; do
+  bootstrap_leaks_pre="$(find_bootstrap_leaks "$repo_dir" | filter_branch_bootstrap_leaks "$repo_dir")"
+  if [ -n "$bootstrap_leaks_pre" ]; then
+    printf 'error=pre_pr_bootstrap_guard_blocked\\n' | tee -a /work/artifacts/summary.txt
+    printf 'PR blocked: OpenClaw bootstrap context files found in repository checkout.\\n' | tee /work/artifacts/patch-command.log
+    printf 'Parent: a2a-broker#446\\n' | tee -a /work/artifacts/patch-command.log
+    repo_label="\${repo_dir#/work/}"
+    printf 'Repository checkout: %s\\n' "$repo_label" | tee -a /work/artifacts/patch-command.log
+    printf 'Files detected (repo-relative):\\n' | tee -a /work/artifacts/patch-command.log
+    printf '%s\\n' "$bootstrap_leaks_pre" | tee -a /work/artifacts/patch-command.log
+    printf 'bootstrap_guard=blocked\\n' >> /work/artifacts/summary.txt
+    printf 'guard_schema=a2a.runner.pre-pr-bootstrap-guard.v1\\n' >> /work/artifacts/summary.txt
+    exit 4
+  fi
+done
+printf 'bootstrap_guard=ok\\n' | tee -a /work/artifacts/summary.txt
+`;
+}
+
+/**
+ * Post-command bootstrap guard: verify no bootstrap files leaked into the
+ * repository checkout during patch execution.
+ *
+ * Like the pre-check this runs after the patch command and checks every
+ * configured checkout path for tracked, staged, or unignored bootstrap paths.
+ */
+function bootstrapPostGuardScript(task: NormalizedRunnerTask): string {
+  const repoPaths = task.repos.length
+    ? task.repos.map((repo) => shellQuote(`/work/${repo.path ?? "repo"}`))
+    : ["/work/repo", "/work/*/repo"];
+  const repoList = repoPaths.join(" ");
+  const allowedTrackedRepoEntries = buildBootstrapAllowedTrackedRepoEntries(task);
+
+  return `# Post-PR bootstrap guard: check for leaked workspace files after patch commands.
+# These are prompt/runtime context files, never repository artifacts.
+# Parent: a2a-broker#446
+BOOTSTRAP_BANNED="AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md"
+BOOTSTRAP_BANNED_DIRS=".openclaw memory"
+BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES=${shellQuote(allowedTrackedRepoEntries.join(" "))}
+if ! command -v is_allowed_tracked_bootstrap_path >/dev/null 2>&1; then
+  is_allowed_tracked_bootstrap_path() {
+    repo_dir="$1"
+    path="$2"
+    for allowed in $BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES; do
+      allowed_repo="\${allowed%%:*}"
+      allowed_path="\${allowed#*:}"
+      [ "$repo_dir" = "$allowed_repo" ] || continue
+      [ "$path" = "$allowed_path" ] || continue
+      if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] && [ -z "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+        return 0
+      fi
+    done
+    return 1
+  }
+fi
+if ! command -v find_bootstrap_leaks >/dev/null 2>&1; then
+  find_bootstrap_leaks() {
+    repo_dir="$1"
+    (
+      cd "$repo_dir"
+      for name in $BOOTSTRAP_BANNED; do
+        if [ -e "$name" ]; then
+          printf '%s\\n' "$name"
+        fi
+      done
+      for name in $BOOTSTRAP_BANNED_DIRS; do
+        if [ -d "$name" ]; then
+          found=0
+          while IFS= read -r path; do
+            found=1
+            printf '%s\\n' "\${path#./}"
+          done < <(find "$name" -mindepth 1 -print | sort)
+          if [ "$found" -eq 0 ]; then
+            printf '%s\\n' "$name"
+          fi
+        fi
+      done
+    )
+  }
+fi
+if ! command -v filter_branch_bootstrap_leaks >/dev/null 2>&1; then
+  filter_branch_bootstrap_leaks() {
+    repo_dir="$1"
+    if ! git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      cat
+      return
+    fi
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      if is_allowed_tracked_bootstrap_path "$repo_dir" "$path"; then
+        continue
+      fi
+      if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] || [ -n "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then
+        printf '%s\\n' "$path"
+      fi
+    done
+  }
+fi
+for repo_dir in ${repoList}; do
+  if [ -d "$repo_dir/.git" ]; then
+    bootstrap_leaks_post="$(find_bootstrap_leaks "$repo_dir" | filter_branch_bootstrap_leaks "$repo_dir")"
+    if [ -n "$bootstrap_leaks_post" ]; then
+      printf 'error=post_pr_bootstrap_guard_leak\\n' | tee -a /work/artifacts/summary.txt
+      printf 'PR blocked: OpenClaw bootstrap context files leaked into repository during patch execution.\\n' | tee -a /work/artifacts/patch-command.log
+      printf 'Parent: a2a-broker#446\\n' | tee -a /work/artifacts/patch-command.log
+      repo_label="\${repo_dir#/work/}"
+      printf 'Repository checkout: %s\\n' "$repo_label" | tee -a /work/artifacts/patch-command.log
+      printf 'Files detected (repo-relative):\\n' | tee -a /work/artifacts/patch-command.log
+      printf '%s\\n' "$bootstrap_leaks_post" | tee -a /work/artifacts/patch-command.log
+      exit 4
+    fi
+  fi
+done
+`;
+}
+
 function runCommandsScript(task: NormalizedRunnerTask): string {
   if (!task.commands.length) {
     return "printf 'commands=none\\n' | tee -a /work/artifacts/summary.txt\n";
   }
 
   const commands = task.commands.map((command, index) => {
-    return `printf 'command[%s]=%s\n' ${shellQuote(String(index))} ${shellQuote(command)} | tee -a /work/artifacts/summary.txt
+    const digest = createHash("sha256").update(command, "utf8").digest("hex");
+    const bytes = Buffer.byteLength(command, "utf8");
+    return `printf 'command[%s].sha256=%s\n' ${shellQuote(String(index))} ${shellQuote(digest)} | tee -a /work/artifacts/summary.txt
+printf 'command[%s].bytes=%s\n' ${shellQuote(String(index))} ${shellQuote(String(bytes))} | tee -a /work/artifacts/summary.txt
 (${command}) 2>&1 | tee /work/artifacts/command-${index}.log
 `;
   }).join("\n");
@@ -469,38 +983,32 @@ ${envLines.join("\n")}
 ${envLines.length ? "\n" : ""}exec ${argvQuoted}
 `;
 }
-export const RESULT_STREAM_LIMIT = 8_000;
+export function sanitizeTaskArtifactPayload(value: unknown, fieldName?: string): unknown {
+  if (isSensitiveFieldName(fieldName)) return "<redacted>";
+  if (typeof value === "string") {
+    return redactSecrets(value);
+  }
+  if (Array.isArray(value)) return value.map((entry) => sanitizeTaskArtifactPayload(entry, fieldName));
+  if (!value || typeof value !== "object") return value;
 
-
-export function redactSecrets(value: string): string {
-  return value
-    // GitHub tokens (classic + fine-grained + PAT v2)
-    .replace(new RegExp("gh[pousr]" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
-    .replace(new RegExp("github" + "_pat" + "_" + "[A-Za-z0-9_]{20,}", "g"), "<redacted-github-token>")
-    // xai / supermemory / openai API key patterns (synthetic format)
-    // Must fire BEFORE generic key=value redaction to catch the full key.
-    .replace(/xai-[A-Za-z0-9_-]{40,}/g, "<redacted-api-key>")
-    .replace(/sm_[A-Za-z0-9_-]{40,}/g, "<redacted-api-key>")
-    .replace(/sk-[A-Za-z0-9_-]{32,}/g, "<redacted-api-key>")
-    // x-access-token in URLs
-    .replace(/x-access-token:[^@\s]+@github\.com/g, "x-access-token:<redacted>@github.com")
-    // oauth_token in YAML/JSON
-    .replace(/(oauth_token:\s*)\S+/gi, "$1<redacted>")
-    // Authorization / Bearer headers
-    .replace(/(Authorization:\s*Bearer\s+)\S+/gi, "$1<redacted>")
-    .replace(/(gh auth login --with-token\s+)\S+/gi, "$1<redacted>")
-    // Generic key=value and JSON/YAML-style secrets (after API key patterns)
-    .replace(/((?:token|password|secret|api[_-]?key)=)(?!<redacted)[^\s]+/gi, "$1<redacted>")
-    .replace(/((?:token|password|secret|api[_-]?key)["']?\s*[:=]\s*["']?)(?!<redacted)[^"'\s,}]+/gi, "$1<redacted>")
-    // Shell variable assignments with secrets
-    .replace(/((?:GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|A2A_TOKEN)=)['"]?[^'"\s]+['"]?/gi, "$1<redacted>");
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      sanitizeTaskArtifactPayload(entry, key),
+    ]),
+  );
 }
 
-export function redactAndBound(value: string, limit = RESULT_STREAM_LIMIT): string {
-  const redacted = redactSecrets(value);
-  if (redacted.length <= limit) return redacted;
-  const omitted = redacted.length - limit;
-  return `${redacted.slice(0, limit)}\n<truncated ${omitted} chars>`;
+function isSensitiveFieldName(fieldName: string | undefined): boolean {
+  return Boolean(fieldName && /(?:token|password|secret|api[_-]?key|authorization|credential|oauth)/i.test(fieldName));
+}
+
+async function writeSanitizedTaskArtifact(workDir: string, task: NormalizedRunnerTask): Promise<void> {
+  await mkdir(join(workDir, "artifacts"), { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(workDir, "artifacts", "task.json"),
+    `${JSON.stringify(sanitizeTaskArtifactPayload(task), null, 2)}\n`,
+  );
 }
 
 export function buildResultSummary(
@@ -525,7 +1033,11 @@ export function buildResultSummary(
     ...(manifest.budget ? { budget: manifest.budget } : {}),
     ...(manifest.receiptTrace ? { receiptTrace: manifest.receiptTrace } : {}),
     ...(manifest.continuation ? { continuation: manifest.continuation } : {}),
+    ...(manifest.cleanupRehearsal ? { cleanupRehearsal: manifest.cleanupRehearsal } : {}),
     ...(manifest.evidenceHints ? { evidenceHints: manifest.evidenceHints } : {}),
+    ...(manifest.githubCommentProjection ? { githubCommentProjection: manifest.githubCommentProjection } : {}),
+    ...(manifest.sourcePublicApprovalRehearsal ? { sourcePublicApprovalRehearsal: manifest.sourcePublicApprovalRehearsal } : {}),
+    ...(manifest.sourcePublicExecutionPreflight ? { sourcePublicExecutionPreflight: manifest.sourcePublicExecutionPreflight } : {}),
     ...(runnerBuild ? { runnerBuild } : {}),
   };
 }
@@ -539,7 +1051,11 @@ export interface ArtifactManifestContext {
   budget?: RunnerBudgetEvidence;
   receiptTrace?: RunnerReceiptTrace;
   continuation?: RunnerContinuationEvidence;
+  cleanupRehearsal?: CleanupRehearsalEvidence;
   evidenceHints?: RunnerEvidenceHints;
+  githubCommentProjection?: GitHubCommentProjection;
+  sourcePublicApprovalRehearsal?: SourcePublicApprovalRehearsal;
+  sourcePublicExecutionPreflight?: SourcePublicExecutionPreflight;
 }
 
 export async function buildArtifactManifest(workDir: string, artifacts: string[], context: ArtifactManifestContext = {}): Promise<ArtifactManifest> {
@@ -557,6 +1073,9 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
   const task = context.task;
   const primaryRepo = task?.repos.find((repo) => repo.primary) ?? task?.repos[0];
   const summary = buildArtifactManifestSummary(context, evidence.length);
+  const sourcePublicApprovalRehearsal = sanitizeSourcePublicApprovalRehearsal(context.sourcePublicApprovalRehearsal);
+  const sourcePublicExecutionPreflight = sanitizeSourcePublicExecutionPreflight(context.sourcePublicExecutionPreflight);
+  const cleanupRehearsal = sanitizeCleanupRehearsal(context.cleanupRehearsal);
   return {
     artifactVersion: 1,
     schemaVersion: 1,
@@ -565,7 +1084,7 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
     ...(task?.id ? { taskId: task.id } : {}),
     ...(primaryRepo?.url ? { repo: primaryRepo.url } : task?.repo ? { repo: task.repo } : {}),
     ...(primaryRepo?.branch ?? task?.baseBranch ? { branch: primaryRepo?.branch ?? task?.baseBranch } : {}),
-    ...(context.prUrl ? { prUrl: context.prUrl } : task?.existingPrUrl ? { prUrl: task.existingPrUrl } : {}),
+    ...(context.prUrl ? { prUrl: context.prUrl } : {}),
     ...(task?.issueUrl ? { issueUrl: task.issueUrl } : {}),
     status: context.status ?? "done",
     summary,
@@ -574,7 +1093,11 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
     ...(context.budget ? { budget: context.budget } : {}),
     ...(context.receiptTrace ? { receiptTrace: context.receiptTrace } : {}),
     ...(context.continuation ? { continuation: context.continuation } : {}),
+    ...(cleanupRehearsal ? { cleanupRehearsal } : {}),
     ...(context.evidenceHints ? { evidenceHints: context.evidenceHints } : {}),
+    ...(context.githubCommentProjection ? { githubCommentProjection: context.githubCommentProjection } : {}),
+    ...(sourcePublicApprovalRehearsal ? { sourcePublicApprovalRehearsal } : {}),
+    ...(sourcePublicExecutionPreflight ? { sourcePublicExecutionPreflight } : {}),
   };
 }
 
@@ -611,6 +1134,289 @@ function parseReceiptTraceEnv(env: Record<string, string> | undefined): unknown 
   } catch {
     return { status: "failed", reason: "invalid receipt trace metadata" };
   }
+}
+
+export function sanitizeCleanupRehearsal(input: unknown): CleanupRehearsalEvidence | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (value.schemaVersion !== "a2a.runner.cleanup-rehearsal.v1") return undefined;
+  if (value.generatedAt !== "1970-01-01T00:00:00.000Z") return undefined;
+  if (!isCleanupRehearsalTarget(value.target) || !isCleanupRehearsalMode(value.mode) || !isCleanupRehearsalStatus(value.status)) return undefined;
+
+  const planId = safeBudgetText(typeof value.planId === "string" ? value.planId : undefined, 120);
+  const runId = safeBudgetText(typeof value.runId === "string" ? value.runId : undefined, 160);
+  const candidateCounts = sanitizeCleanupCandidateCounts(value.candidateCounts);
+  const checkpoint = sanitizeCleanupCheckpoint(value.checkpoint);
+  const rollback = sanitizeCleanupRollback(value.rollback);
+  const safetyGates = value.safetyGates as Record<string, unknown> | undefined;
+  if (!planId || !candidateCounts || !checkpoint || !rollback || !hasSafeCleanupRehearsalGates(safetyGates)) return undefined;
+
+  const failClosedReasons = Array.isArray(value.failClosedReasons)
+    ? value.failClosedReasons
+      .filter((reason): reason is string => typeof reason === "string")
+      .map((reason) => safeBudgetText(reason, 220))
+      .filter((reason): reason is string => Boolean(reason))
+      .slice(0, 10)
+    : [];
+
+  return {
+    schemaVersion: "a2a.runner.cleanup-rehearsal.v1",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    ...(runId ? { runId } : {}),
+    target: value.target,
+    mode: value.mode,
+    status: value.status,
+    planId,
+    candidateCounts,
+    checkpoint,
+    rollback,
+    failClosedReasons,
+    safetyGates: {
+      explicitOperatorApprovalRequired: true,
+      backupCheckpointRequired: true,
+      dryRunOnly: true,
+      liveExecutionBlocked: true,
+      dbMutationPerformed: false,
+      prunePerformed: false,
+      migrationPerformed: false,
+      deployOrRestartPerformed: false,
+      liveProviderSendPerformed: false,
+      terminalAckSent: false,
+    },
+  };
+}
+
+function isCleanupRehearsalTarget(value: unknown): value is CleanupRehearsalEvidence["target"] {
+  return value === "broker_db" || value === "runner_artifacts";
+}
+
+function isCleanupRehearsalMode(value: unknown): value is CleanupRehearsalEvidence["mode"] {
+  return value === "dry_run" || value === "simulate";
+}
+
+function isCleanupRehearsalStatus(value: unknown): value is CleanupRehearsalEvidence["status"] {
+  return value === "ready_for_operator_approval" || value === "blocked";
+}
+
+function sanitizeCleanupCandidateCounts(input: unknown): CleanupRehearsalEvidence["candidateCounts"] | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  const total = safeNonNegativeInt(value.total);
+  const highRisk = safeNonNegativeInt(value.highRisk);
+  if (total === undefined || highRisk === undefined) return undefined;
+  const counts: CleanupRehearsalEvidence["candidateCounts"] = { total, highRisk };
+  for (const key of ["staleWorkerRows", "terminalOutboxRows", "artifactDirs"] as const) {
+    const count = safeNonNegativeInt(value[key]);
+    if (count !== undefined) counts[key] = count;
+  }
+  return counts;
+}
+
+function sanitizeCleanupCheckpoint(input: unknown): CleanupRehearsalEvidence["checkpoint"] | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (value.requiredBeforeExecution !== true || value.rehearsalOnly !== true || value.evidenceBundlePath !== "artifacts/manifest.json" || value.backupVerified !== false) return undefined;
+  const checkpointId = safeBudgetText(typeof value.checkpointId === "string" ? value.checkpointId : undefined, 120);
+  if (!checkpointId) return undefined;
+  return {
+    requiredBeforeExecution: true,
+    rehearsalOnly: true,
+    evidenceBundlePath: "artifacts/manifest.json",
+    checkpointId,
+    backupVerified: false,
+  };
+}
+
+function sanitizeCleanupRollback(input: unknown): CleanupRehearsalEvidence["rollback"] | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (value.rehearsed !== true || value.restoreVerificationRequired !== true) return undefined;
+  const rollbackPlanPath = safeRehearsalPath(typeof value.rollbackPlanPath === "string" ? value.rollbackPlanPath : undefined);
+  const abortPlanPath = safeRehearsalPath(typeof value.abortPlanPath === "string" ? value.abortPlanPath : undefined);
+  if (!rollbackPlanPath || !abortPlanPath) return undefined;
+  return { rehearsed: true, rollbackPlanPath, abortPlanPath, restoreVerificationRequired: true };
+}
+
+function hasSafeCleanupRehearsalGates(value: Record<string, unknown> | undefined): boolean {
+  return value?.explicitOperatorApprovalRequired === true
+    && value.backupCheckpointRequired === true
+    && value.dryRunOnly === true
+    && value.liveExecutionBlocked === true
+    && value.dbMutationPerformed === false
+    && value.prunePerformed === false
+    && value.migrationPerformed === false
+    && value.deployOrRestartPerformed === false
+    && value.liveProviderSendPerformed === false
+    && value.terminalAckSent === false;
+}
+
+function safeNonNegativeInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+export interface SourcePublicApprovalRehearsalInput {
+  targetRepo: string;
+  decision?: SourcePublicApprovalDecision;
+  runId?: string;
+  packetId?: string;
+  dedupeKey?: string;
+  rollbackPath?: string;
+  abortPath?: string;
+}
+
+export function buildSourcePublicApprovalRehearsal(input: SourcePublicApprovalRehearsalInput): SourcePublicApprovalRehearsal {
+  const targetRepo = safeSourcePublicRepo(input.targetRepo);
+  if (!targetRepo) throw new Error("source-public rehearsal targetRepo must be owner/repo");
+  const decision = input.decision ?? "NEEDS_OPERATOR_APPROVAL";
+  const packetId = safeBudgetText(input.packetId ?? `source-public-${targetRepo.replace("/", "-")}`, 120);
+  const dedupeKey = safeBudgetText(input.dedupeKey ?? `source-public:${targetRepo}:${packetId}:${decision}`, 240);
+  const rollbackPath = safeRehearsalPath(input.rollbackPath ?? "rollback/source-public-approval-rehearsal.md");
+  const abortPath = safeRehearsalPath(input.abortPath ?? "abort/source-public-approval-rehearsal.md");
+  if (!isSourcePublicDecision(decision) || !packetId || !dedupeKey || !rollbackPath || !abortPath) {
+    throw new Error("invalid source-public approval rehearsal input");
+  }
+  const rehearsal = sanitizeSourcePublicApprovalRehearsal({
+    schemaVersion: "a2a.runner.source-public-approval-rehearsal.v1",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    ...(input.runId ? { runId: input.runId } : {}),
+    decision,
+    terminalBriefRehearsalOnly: true,
+    approvalPackets: [{
+      schemaVersion: "a2a.runner.source-public-approval-packet.v1",
+      packetId,
+      targetRepo,
+      decision,
+      dedupeKey,
+      evidenceBundlePath: "artifacts/manifest.json",
+      operatorApprovalRequired: true,
+      approvalExecuted: false,
+      releaseExecuted: false,
+      visibilityChanged: false,
+      terminalAckSent: false,
+      providerSendPerformed: false,
+      dbMutationPerformed: false,
+      rollbackPath,
+      abortPath,
+    }],
+    replayNoDuplicateProof: { dedupeKey, noDuplicatePacketIds: true },
+    rollbackAbort: { rollbackPath, abortPath },
+    safetyGates: {
+      operatorApprovalRequired: true,
+      sourcePublicExecutionBlocked: true,
+      approvalExecuted: false,
+      releaseExecuted: false,
+      visibilityChanged: false,
+      liveProviderSendPerformed: false,
+      terminalAckSent: false,
+      dbMutationPerformed: false,
+    },
+  });
+  if (!rehearsal) throw new Error("failed to build source-public approval rehearsal");
+  return rehearsal;
+}
+
+export function sanitizeSourcePublicApprovalRehearsal(input: unknown): SourcePublicApprovalRehearsal | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (value.schemaVersion !== "a2a.runner.source-public-approval-rehearsal.v1") return undefined;
+  if (value.generatedAt !== "1970-01-01T00:00:00.000Z") return undefined;
+  if (!isSourcePublicDecision(value.decision)) return undefined;
+  if (value.terminalBriefRehearsalOnly !== true) return undefined;
+  const packets = Array.isArray(value.approvalPackets)
+    ? value.approvalPackets.map(sanitizeSourcePublicApprovalPacket).filter((packet): packet is SourcePublicApprovalPacket => Boolean(packet))
+    : [];
+  if (packets.length === 0 || packets.length > 10) return undefined;
+  const packetIds = new Set(packets.map((packet) => packet.packetId));
+  if (packetIds.size !== packets.length) return undefined;
+  const replay = value.replayNoDuplicateProof as Record<string, unknown> | undefined;
+  const rollbackAbort = value.rollbackAbort as Record<string, unknown> | undefined;
+  const safetyGates = value.safetyGates as Record<string, unknown> | undefined;
+  if (replay?.noDuplicatePacketIds !== true) return undefined;
+  if (!hasSafeSourcePublicGates(safetyGates)) return undefined;
+  const dedupeKey = safeBudgetText(typeof replay?.dedupeKey === "string" ? replay.dedupeKey : undefined, 240);
+  const rollbackPath = safeRehearsalPath(typeof rollbackAbort?.rollbackPath === "string" ? rollbackAbort.rollbackPath : undefined);
+  const abortPath = safeRehearsalPath(typeof rollbackAbort?.abortPath === "string" ? rollbackAbort.abortPath : undefined);
+  if (!dedupeKey || !rollbackPath || !abortPath) return undefined;
+  return {
+    schemaVersion: "a2a.runner.source-public-approval-rehearsal.v1",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    ...(typeof value.runId === "string" && safeBudgetText(value.runId, 160) ? { runId: safeBudgetText(value.runId, 160) } : {}),
+    decision: value.decision,
+    approvalPackets: packets.sort((a, b) => a.packetId.localeCompare(b.packetId)),
+    terminalBriefRehearsalOnly: true,
+    replayNoDuplicateProof: { dedupeKey, noDuplicatePacketIds: true },
+    rollbackAbort: { rollbackPath, abortPath },
+    safetyGates: {
+      operatorApprovalRequired: true,
+      sourcePublicExecutionBlocked: true,
+      approvalExecuted: false,
+      releaseExecuted: false,
+      visibilityChanged: false,
+      liveProviderSendPerformed: false,
+      terminalAckSent: false,
+      dbMutationPerformed: false,
+    },
+  };
+}
+
+function sanitizeSourcePublicApprovalPacket(input: unknown): SourcePublicApprovalPacket | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (value.schemaVersion !== "a2a.runner.source-public-approval-packet.v1") return undefined;
+  if (!isSourcePublicDecision(value.decision)) return undefined;
+  if (value.evidenceBundlePath !== "artifacts/manifest.json") return undefined;
+  if (value.operatorApprovalRequired !== true || value.approvalExecuted !== false || value.releaseExecuted !== false || value.visibilityChanged !== false || value.terminalAckSent !== false || value.providerSendPerformed !== false || value.dbMutationPerformed !== false) return undefined;
+  const packetId = safeBudgetText(typeof value.packetId === "string" ? value.packetId : undefined, 120);
+  const targetRepo = safeSourcePublicRepo(typeof value.targetRepo === "string" ? value.targetRepo : undefined);
+  const dedupeKey = safeBudgetText(typeof value.dedupeKey === "string" ? value.dedupeKey : undefined, 240);
+  const rollbackPath = safeRehearsalPath(typeof value.rollbackPath === "string" ? value.rollbackPath : undefined);
+  const abortPath = safeRehearsalPath(typeof value.abortPath === "string" ? value.abortPath : undefined);
+  if (!packetId || !targetRepo || !dedupeKey || !rollbackPath || !abortPath) return undefined;
+  return {
+    schemaVersion: "a2a.runner.source-public-approval-packet.v1",
+    packetId,
+    targetRepo,
+    decision: value.decision,
+    dedupeKey,
+    evidenceBundlePath: "artifacts/manifest.json",
+    operatorApprovalRequired: true,
+    approvalExecuted: false,
+    releaseExecuted: false,
+    visibilityChanged: false,
+    terminalAckSent: false,
+    providerSendPerformed: false,
+    dbMutationPerformed: false,
+    rollbackPath,
+    abortPath,
+  };
+}
+
+function isSourcePublicDecision(value: unknown): value is SourcePublicApprovalDecision {
+  return value === "GO_CANDIDATE" || value === "NO_GO" || value === "NEEDS_OPERATOR_APPROVAL";
+}
+
+function hasSafeSourcePublicGates(value: Record<string, unknown> | undefined): boolean {
+  return value?.operatorApprovalRequired === true
+    && value.sourcePublicExecutionBlocked === true
+    && value.approvalExecuted === false
+    && value.releaseExecuted === false
+    && value.visibilityChanged === false
+    && value.liveProviderSendPerformed === false
+    && value.terminalAckSent === false
+    && value.dbMutationPerformed === false;
+}
+
+function safeSourcePublicRepo(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const safe = safeBudgetText(value, 160);
+  return safe && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(safe) ? safe : undefined;
+}
+
+function safeRehearsalPath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const safe = safeBudgetText(value, 160);
+  if (!safe || safe.includes("..") || safe.startsWith("/") || /^~(?:\/|$)/.test(safe)) return undefined;
+  return safe;
 }
 
 export function sanitizeReceiptTrace(input: unknown): RunnerReceiptTrace | undefined {
@@ -744,19 +1550,35 @@ async function writeArtifactManifest(workDir: string, manifest: ArtifactManifest
 }
 
 
-function buildActionableError(engine: string, image: string, completed: SpawnResult): string {
+export function buildActionableError(engine: string, image: string, completed: SpawnResult): string {
   const combined = redactSecrets([completed.stderr, completed.stdout].filter(Boolean).join("\n")).trim();
   if (completed.errorCode === "ENOENT") {
     return `${engine} 실행 파일을 찾을 수 없습니다. Docker 또는 Podman을 설치하거나 A2A_DOCKER_RUNNER_ENGINE을 사용 가능한 엔진으로 설정하세요.`;
   }
   if (completed.timedOut) {
-    return `컨테이너 실행이 제한 시간 안에 끝나지 않았습니다. timeoutMs를 늘리거나 작업 명령을 줄이고, 남은 컨테이너가 있으면 '${engine} ps -a --filter label=a2a.task.id=<safeTaskId>'로 확인한 뒤 run별 container name을 지정해 정리하세요.\n${combined}`.trim();
+    const elapsedSec = ((completed.elapsedMs ?? 0) / 1000).toFixed(1);
+    return `컨테이너 실행이 제한 시간 안에 끝나지 않았습니다 (elapsed=${elapsedSec}s). timeoutMs를 늘리거나 작업 명령을 줄이고, 남은 컨테이너가 있으면 '${engine} ps -a --filter label=a2a.task.id=<safeTaskId>'로 확인한 뒤 run별 container name을 지정해 정리하세요.\n${combined}`.trim();
   }
-  if (/Conflict\.? The container name|container name .* is already in use|name is already in use|already exists/i.test(combined)) {
+  const engineStderr = redactSecrets(completed.stderr).trim();
+  // OOM detection: Docker/Podman kills with SIGKILL (exit 137 = 128+9) when
+  // the container exceeds its memory limit.  The daemon may also emit "Out of
+  // memory" to stderr.  Report resource evidence for stability gates.
+  // Parent: a2a-docker-runner#227
+  if (completed.code === 137 || /out of memory|OOMKill|oom-kill/i.test(engineStderr)) {
+    const elapsedSec = ((completed.elapsedMs ?? 0) / 1000).toFixed(1);
+    return `컨테이너가 메모리 부족(OOM)으로 종료되었습니다 (exit=137, elapsed=${elapsedSec}s). --memory 값을 늘리거나 작업 명령을 줄이세요. '${engine} inspect <container>'의 OOMKilled 필드로 확인할 수 있습니다.\n${combined}`.trim();
+  }
+  if (/Conflict\.? The container name|container name .* is already in use|name is already in use/i.test(engineStderr)) {
     return `컨테이너 이름 충돌이 발생했습니다. runner는 task id와 run token을 포함한 고유 이름을 사용하므로, 같은 safeTaskId를 가진 오래된 컨테이너가 남았는지 '${engine} ps -a --filter label=a2a.task.id=<safeTaskId>'로 확인하고 해당 run만 정리하세요.\n${combined}`.trim();
   }
-  if (/pull access denied|manifest unknown|not found|no such image|repository does not exist/i.test(combined)) {
-    return `이미지 '${image}'를 가져오거나 찾을 수 없습니다. 이미지 이름/태그와 registry 인증을 확인하세요.\n${combined}`.trim();
+  // Image-pull error detection: only inspect stderr for Docker/Podman engine
+  // errors.  Container-side command output (stdout) must not trigger a
+  // misleading image-pull summary when the container actually started.
+  // Parent: a2a-docker-runner#169
+  {
+    if (/Error response from daemon:.*pull access denied|manifest for.*not found|no such image: |repository does not exist|unauthorized:/i.test(engineStderr)) {
+      return `이미지 '${image}'를 가져오거나 찾을 수 없습니다. 이미지 이름/태그와 registry 인증을 확인하세요.\n${combined}`.trim();
+    }
   }
   if (/mkdir .*permission denied|EACCES|EROFS|read-only file system|permission denied.*work/i.test(combined)) {
     return `작업 디렉터리 생성 또는 마운트 권한 문제가 감지되었습니다. rootDir 소유권/권한과 컨테이너 볼륨 마운트 정책을 확인하고, 같은 task id의 run 디렉터리가 동시에 사용 중인지 확인하세요.\n${combined}`.trim();
@@ -774,9 +1596,12 @@ interface SpawnResult {
   stderr: string;
   timedOut: boolean;
   errorCode?: string;
+  /** Wall-clock elapsed milliseconds from spawn to close/error. */
+  elapsedMs?: number;
 }
 
 function spawnWithTimeout(command: string, args: string[], timeoutMs: number): Promise<SpawnResult> {
+  const startMs = Date.now();
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -801,11 +1626,12 @@ function spawnWithTimeout(command: string, args: string[], timeoutMs: number): P
         stderr: redactSecrets(error.message),
         timedOut,
         errorCode: error.code,
+        elapsedMs: Date.now() - startMs,
       });
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      resolvePromise({ code, signal, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr), timedOut });
+      resolvePromise({ code, signal, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr), timedOut, elapsedMs: Date.now() - startMs });
     });
   });
 }
@@ -823,6 +1649,19 @@ async function listArtifacts(workDir: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export function shouldTreatDetectedPrUrlAsCanonical(
+  task: Pick<NormalizedRunnerTask, "allowNoChanges" | "readOnlyValidation">,
+  stdout: string,
+  stderr: string,
+  detectedPrUrl: string | undefined,
+): boolean {
+  if (!detectedPrUrl) return false;
+  const text = `${stdout}\n${stderr}`;
+  if (!/(?:^|\n)(?:status=no_changes_allowed|openclaw_no_changes=allowed)\b/.test(text)) return true;
+  if (/(?:^|\n)pr_created=1\b/.test(text)) return true;
+  return !(task.allowNoChanges || task.readOnlyValidation);
 }
 
 function extractPrUrl(stdout: string): string | undefined {

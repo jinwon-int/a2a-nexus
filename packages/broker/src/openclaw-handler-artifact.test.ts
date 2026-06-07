@@ -59,7 +59,7 @@ test("versioned OpenClaw handler exposes credential-free build metadata", () => 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.result.handler.name, "openclaw-a2a-task-handler");
-  assert.equal(payload.result.handler.version, "0.2.8");
+  assert.equal(payload.result.handler.version, "0.2.11");
   assert.match(payload.result.handler.sourceSha256, /^[a-f0-9]{64}$/);
   assert.equal(payload.result.handler.credentialFree, true);
   assert.equal(payload.result.handler.hostNeutral, true);
@@ -265,7 +265,7 @@ console.log(JSON.stringify({
         A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
         A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["claude", "--print", "hello"] }),
         A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
-          { source: "/tmp/.claude", target: "/run/secrets/claude-dir", readOnly: true },
+          { source: "/tmp/.claude", target: "/opt/claude-dir", readOnly: true },
         ]),
         OPENCLAW_BIN: fakeOpenClawPath,
         A2A_NODE_ID: "worker-bridge-fallback",
@@ -699,6 +699,50 @@ console.log(JSON.stringify({
   }
 });
 
+test("docker runner success fails closed when evidence includes OpenClaw bootstrap paths (#522)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-bootstrap-success-leak-522-"));
+  const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
+  try {
+    writeFileSync(fakeRunnerPath, `
+console.log(JSON.stringify({
+  ok: true,
+  taskId: "task-fixture-1",
+  status: "completed",
+  workDir: "/tmp/work-fixture",
+  artifacts: ["evidence/summary.md", "AGENTS.md", ".openclaw/session.json"],
+  filesChanged: ["src/server.ts", "TOOLS.md"],
+  prUrl: "https://github.com/owner/repo/pull/522"
+}));
+`);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(githubTask()),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_DOCKER_RUNNER_ENABLED: "1",
+        A2A_DOCKER_RUNNER_ALL_GITHUB: "1",
+        A2A_DOCKER_RUNNER_SCOPE: "all-github",
+        A2A_DOCKER_RUNNER_BIN: process.execPath,
+        A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
+      },
+    });
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.error.code, "docker_runner_openclaw_bootstrap_leak");
+    assert.deepEqual(payload.error.details.openclawBootstrapLeakPaths, [
+      ".openclaw/session.json",
+      "AGENTS.md",
+      "TOOLS.md",
+    ]);
+    assert.match(payload.error.message, /refusing GitHub completion evidence/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+
 test("docker runner success without evidence surfaces as docker_runner_evidence_missing (contract #169)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "handler-no-evidence-test-"));
   const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
@@ -812,6 +856,7 @@ console.log(JSON.stringify({
   status: "completed",
   workDir: "/tmp/work-fixture",
   artifacts: [],
+  noDiff: true,
   doneCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-789"
 }));
 `);
@@ -836,6 +881,104 @@ console.log(JSON.stringify({
     assert.equal(payload.result.lifecycle.mode, "github-verify");
     assert.equal(payload.result.output.doneCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-789");
     assert.doesNotMatch(payload.result.summary, /generic github-verify/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("family-wiki-readonly-audit tasks route through docker runner instead of built-in generic success", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-family-wiki-audit-test-"));
+  const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
+  try {
+    writeFileSync(fakeRunnerPath, `
+import { readFileSync } from "node:fs";
+const taskPath = process.argv.at(-1);
+const task = JSON.parse(readFileSync(taskPath, "utf8"));
+if (process.argv[2] !== "run") throw new Error("expected run subcommand");
+if (task.intent !== "verify") throw new Error("expected verify intent propagation");
+if (task.mode !== "family-wiki-readonly-audit") throw new Error("expected family wiki mode propagation");
+if (task.repo !== "jinwon-int/seoyoon-family-wiki") throw new Error("expected family wiki repo mapping");
+console.log(JSON.stringify({
+  ok: true,
+  taskId: task.id,
+  status: "completed",
+  workDir: "/tmp/work-fixture",
+  artifacts: [],
+  noDiff: true,
+  doneCommentUrl: "https://github.com/jinwon-int/seoyoon-family-wiki/issues/894#issuecomment-family-wiki-audit"
+}));
+`);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(githubTask({
+        intent: "verify",
+        payload: { mode: "family-wiki-readonly-audit", repo: "jinwon-int/seoyoon-family-wiki", issue: "#894" },
+      })),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_DOCKER_RUNNER_ENABLED: "1",
+        A2A_DOCKER_RUNNER_ALL_GITHUB: "1",
+        A2A_DOCKER_RUNNER_SCOPE: "all-github",
+        A2A_DOCKER_RUNNER_BIN: process.execPath,
+        A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.result.summary, "docker runner completed task-fixture-1");
+    assert.equal(payload.result.lifecycle.intent, "verify");
+    assert.equal(payload.result.lifecycle.mode, "family-wiki-readonly-audit");
+    assert.equal(payload.result.output.doneCommentUrl, "https://github.com/jinwon-int/seoyoon-family-wiki/issues/894#issuecomment-family-wiki-audit");
+    assert.doesNotMatch(payload.result.summary, /generic family-wiki-readonly-audit/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("github-libero-validation verify tasks route through docker runner with Done evidence", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-github-libero-test-"));
+  const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
+  try {
+    writeFileSync(fakeRunnerPath, `
+import { readFileSync } from "node:fs";
+const taskPath = process.argv.at(-1);
+const task = JSON.parse(readFileSync(taskPath, "utf8"));
+if (process.argv[2] !== "run") throw new Error("expected run subcommand");
+if (task.intent !== "verify") throw new Error("expected verify intent propagation");
+if (task.mode !== "github-libero-validation") throw new Error("expected github-libero-validation mode propagation");
+if (task.readOnlyValidation !== true) throw new Error("expected readOnlyValidation propagation");
+if (task.repo !== "owner/repo") throw new Error("expected repo mapping");
+console.log(JSON.stringify({
+  ok: true,
+  taskId: task.id,
+  status: "completed",
+  workDir: "/tmp/work-fixture",
+  artifacts: [],
+  doneCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-libero-done"
+}));
+`);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(githubTask({ intent: "verify", payload: { mode: "github-libero-validation", repo: "owner/repo", issue: "#1" } })),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_DOCKER_RUNNER_ENABLED: "1",
+        A2A_DOCKER_RUNNER_ALL_GITHUB: "1",
+        A2A_DOCKER_RUNNER_SCOPE: "all-github",
+        A2A_DOCKER_RUNNER_BIN: process.execPath,
+        A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.result.lifecycle.intent, "verify");
+    assert.equal(payload.result.lifecycle.mode, "github-libero-validation");
+    assert.equal(payload.result.output.doneCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-libero-done");
+    assert.doesNotMatch(payload.result.summary, /generic github-libero-validation/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1062,6 +1205,33 @@ test("docker runner evidence-missing fails validateTaskCompletionEvidence (contr
   const evidenceError = validateTaskCompletionEvidence(makeTaskRecord(task), emptyResult);
   assert.ok(evidenceError, "should reject empty result from github-propose-patch task");
   assert.equal(evidenceError!.code, "github_completion_evidence_missing");
+});
+
+test("GitHub read-only validation requires Done or Block evidence but not a PR", () => {
+  const task = githubTask({
+    intent: "verify",
+    payload: { mode: "github-verify", repo: "owner/repo", issue: "#527" },
+  });
+  const taskRecord = { ...makeTaskRecord(task), taskOrigin: "github" as const };
+
+  const missingEvidenceError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "read-only validation completed", output: { runner: { status: "completed", artifacts: [] } } } as any,
+  );
+  assert.equal(missingEvidenceError?.code, "github_completion_evidence_missing");
+
+  const prOnlyEvidenceError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "read-only validation completed", output: { prUrl: "https://github.com/owner/repo/pull/527" } } as any,
+  );
+  assert.equal(prOnlyEvidenceError?.code, "github_completion_evidence_missing");
+  assert.match(prOnlyEvidenceError?.message ?? "", /Done-comment or Block-comment/);
+
+  const doneEvidenceError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "read-only validation completed", output: { doneCommentUrl: "https://github.com/owner/repo/issues/527#issuecomment-done" } } as any,
+  );
+  assert.equal(doneEvidenceError, null);
 });
 
 test("docker runner with multi-evidence output maps all URLs correctly (contract #169)", () => {
@@ -1367,6 +1537,83 @@ console.log(JSON.stringify({
   }
 });
 
+
+
+test("docker runner explicit no-diff evidence fails closed before success (#447)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-runner-nodiff-447-"));
+  const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
+  try {
+    writeFileSync(fakeRunnerPath, `
+console.log(JSON.stringify({
+  ok: true,
+  taskId: "task-fixture-1",
+  status: "completed",
+  workDir: "/tmp/work",
+  artifacts: [],
+  noDiff: true,
+  branch: "a2a-patch-empty",
+  prUrl: "https://github.com/owner/repo/pull/447"
+}));
+`);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(githubTask()),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_EXECUTOR_MODE: "docker",
+        A2A_DOCKER_RUNNER_BIN: process.execPath,
+        A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
+      },
+    });
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.error.code, "docker_runner_no_diff");
+    assert.equal(payload.error.details.branch, "a2a-patch-empty");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("docker runner explicit branch mismatch fails closed (#447)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-runner-branch-mismatch-447-"));
+  const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
+  try {
+    writeFileSync(fakeRunnerPath, `
+console.log(JSON.stringify({
+  ok: true,
+  taskId: "task-fixture-1",
+  status: "completed",
+  workDir: "/tmp/work",
+  artifacts: [],
+  expectedBranch: "a2a-patch-runner-owned",
+  branch: "a2a-patch-agent-owned",
+  prUrl: "https://github.com/owner/repo/pull/447"
+}));
+`);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(githubTask()),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_EXECUTOR_MODE: "docker",
+        A2A_DOCKER_RUNNER_BIN: process.execPath,
+        A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
+      },
+    });
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.error.code, "docker_runner_branch_mismatch");
+    assert.equal(payload.error.details.expectedRunnerBranch, "a2a-patch-runner-owned");
+    assert.equal(payload.error.details.actualBranch, "a2a-patch-agent-owned");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("docker runner output nodeId falls back to unknown-node when no node env is set (issue #196)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "handler-nodeid-fallback-196-"));
   const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
@@ -1410,11 +1657,11 @@ import { readFileSync } from "node:fs";
 const taskPath = process.argv.at(-1);
 const task = JSON.parse(readFileSync(taskPath, "utf8"));
 if (task.preset !== "openclaw-plugin-a2a-dev") throw new Error("expected plugin preset");
-console.log(JSON.stringify({ ok: true, taskId: task.id, status: "completed", workDir: "/tmp/work-fixture", artifacts: [], prUrl: "https://github.com/example-org/openclaw-plugin-a2a/pull/2" }));
+console.log(JSON.stringify({ ok: true, taskId: task.id, status: "completed", workDir: "/tmp/work-fixture", artifacts: [], prUrl: "https://github.com/jinon86/openclaw-plugin-a2a/pull/2" }));
 `);
 
     const task = githubTask();
-    task.payload.repo = "example-org/openclaw-plugin-a2a";
+    task.payload.repo = "jinon86/openclaw-plugin-a2a";
     const result = spawnSync(process.execPath, [handlerPath], {
       input: JSON.stringify(task),
       encoding: "utf8",
@@ -1429,8 +1676,381 @@ console.log(JSON.stringify({ ok: true, taskId: task.id, status: "completed", wor
 
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.result.output.github.prUrl, "https://github.com/example-org/openclaw-plugin-a2a/pull/2");
+    assert.equal(payload.result.output.github.prUrl, "https://github.com/jinon86/openclaw-plugin-a2a/pull/2");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+// ─── analysis-only / read-only task mode regression tests ───
+
+test("analysis-only mode produces Done evidence without requiring PR/patch", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = {
+    mode: "analysis-only",
+    summary: "market regime analysis complete",
+    findings: ["BTC dominance rising", "ETH/BTC ratio declining"],
+    risks: ["low liquidity in alt pairs"],
+    artifacts: ["analysis-20260509.json"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.result, "analysis-only task should succeed");
+  assert.match(payload.result.summary, /analysis-only completed/);
+  assert.equal(payload.result.lifecycle.intent, "analyze");
+  assert.equal(payload.result.lifecycle.mode, "analysis-only");
+  assert.equal(payload.result.output.analysisSummary, "market regime analysis complete");
+  assert.deepEqual(payload.result.output.findings, ["BTC dominance rising", "ETH/BTC ratio declining"]);
+  assert.deepEqual(payload.result.output.risks, ["low liquidity in alt pairs"]);
+  assert.deepEqual(payload.result.output.artifacts, ["analysis-20260509.json"]);
+  // No PR evidence required — output must not carry prUrl or github.prUrl
+  assert.equal(payload.result.output.prUrl, undefined);
+  assert.equal(payload.result.output.github, undefined);
+});
+
+test("analysis-only mode with doneCommentUrl carries URL evidence", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = {
+    mode: "analysis-only",
+    summary: "research findings",
+    doneCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-done",
+    findings: ["signal: bullish divergence"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.match(payload.result.summary, /analysis-only completed/);
+  assert.equal(payload.result.output.doneCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-done");
+  assert.equal(payload.result.output.analysisSummary, "research findings");
+  assert.equal(payload.result.output.prUrl, undefined, "no PR URL for analysis-only");
+});
+
+test("analysis-only mode with blockCommentUrl produces Block evidence", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = {
+    mode: "analysis-only",
+    summary: "cannot complete analysis",
+    blockCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-block",
+    risks: ["data feed unavailable"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.match(payload.result.summary, /analysis-only blocked/);
+  assert.equal(payload.result.output.blockCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-block");
+  assert.deepEqual(payload.result.output.risks, ["data feed unavailable"]);
+  assert.equal(payload.result.output.prUrl, undefined, "no PR URL for blocked analysis");
+  assert.equal(payload.result.output.doneCommentUrl, undefined, "no done URL for blocked analysis");
+});
+
+test("analysis-only mode with startCommentUrl preserves Start marker", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = {
+    mode: "analysis-only",
+    summary: "thesis analysis",
+    startCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-start",
+    doneCommentUrl: "https://github.com/owner/repo/issues/1#issuecomment-done",
+    findings: ["regime: trending"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.result.output.startCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-start");
+  assert.equal(payload.result.output.doneCommentUrl, "https://github.com/owner/repo/issues/1#issuecomment-done");
+  assert.match(payload.result.summary, /analysis-only completed/);
+});
+
+test("analysis-only mode with read-only-analysis alias works identically", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = {
+    mode: "read-only-analysis",
+    summary: "read-only market scan",
+    findings: ["no anomalies"],
+    risks: [],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.match(payload.result.summary, /analysis-only completed/);
+  assert.equal(payload.result.lifecycle.mode, "read-only-analysis");
+  assert.equal(payload.result.output.analysisSummary, "read-only market scan");
+});
+
+test("no-live source-only A2A evidence task produces structured analysis output", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.message = "Assess #687 worker analysis evidence quality";
+  task.payload = {
+    mode: "a2a-489-phase2-evidence",
+    noLive: true,
+    sourceOnly: true,
+    role: "thesis",
+    phase: "phase2",
+    summary: "worker should return useful evidence",
+    findings: ["generic acceptance is insufficient"],
+    risks: ["false green closeout"],
+    recommendations: ["emit structured analysis fields"],
+    evidenceRefs: ["gh:jinwon-int/a2a-broker#687"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.match(payload.result.summary, /analysis-only completed/);
+  assert.equal(payload.result.output.analysisKind, "builtin_structured");
+  assert.equal(payload.result.output.analysisSummary, "worker should return useful evidence");
+  assert.equal(payload.result.output.role, "thesis");
+  assert.equal(payload.result.output.phase, "phase2");
+  assert.equal(payload.result.output.noLive, true);
+  assert.equal(payload.result.output.sourceOnly, true);
+  assert.deepEqual(payload.result.output.recommendations, ["emit structured analysis fields"]);
+  assert.deepEqual(payload.result.output.evidenceRefs, ["gh:jinwon-int/a2a-broker#687"]);
+});
+
+test("source-only A2A evidence task without noLive still produces structured analysis output", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.message = "Assess #810 source-only evidence quality";
+  task.payload = {
+    mode: "a2a-810-source-gap-evidence",
+    sourceOnly: true,
+    role: "evidence-review",
+    summary: "worker should return useful source-only evidence",
+    findings: ["generic success is insufficient"],
+    risks: ["source-only work can be falsely marked done"],
+    recommendations: ["route source-only analysis through structured output"],
+    evidenceRefs: ["gh:jinwon-int/a2a-broker#810"],
+  };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.match(payload.result.summary, /analysis-only completed/);
+  assert.equal(payload.result.output.analysisKind, "builtin_structured");
+  assert.equal(payload.result.output.analysisSummary, "worker should return useful source-only evidence");
+  assert.equal(payload.result.output.sourceOnly, true);
+  assert.equal(payload.result.output.noLive, undefined);
+  assert.deepEqual(payload.result.output.findings, ["generic success is insufficient"]);
+  assert.deepEqual(payload.result.output.recommendations, ["route source-only analysis through structured output"]);
+  assert.deepEqual(payload.result.output.evidenceRefs, ["gh:jinwon-int/a2a-broker#810"]);
+});
+
+test("analysis-only task can use OpenClaw analysis bridge when explicitly enabled", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-analysis-bridge-test-"));
+  const fakeOpenClawPath = join(tempDir, "fake-openclaw-analysis.mjs");
+  const argsPath = join(tempDir, "args.json");
+  try {
+    writeFileSync(fakeOpenClawPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from \"node:fs\";",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv));",
+      "if (!process.argv.includes(\"agent\")) throw new Error(\"expected agent subcommand\");",
+      "if (!process.argv.includes(\"--json\")) throw new Error(\"expected json output flag\");",
+      "const sessionIndex = process.argv.indexOf(\"--session-id\");",
+      "if (sessionIndex < 0 || process.argv[sessionIndex + 1] === \"main\") throw new Error(\"expected task-scoped session\");",
+      "console.log(JSON.stringify({",
+      "  payloads: [{",
+      "    text: JSON.stringify({",
+      "      status: \"done\",",
+      "      summary: \"bridge analysis complete\",",
+      "      findings: [\"worker produced substantive analysis\"],",
+      "      risks: [\"requires bridge enablement\"],",
+      "      recommendations: [\"keep generic fallback explicit\"],",
+      "      evidenceRefs: [\"gh:jinwon-int/a2a-broker#687\"]",
+      "    })",
+      "  }]",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeOpenClawPath, 0o755);
+
+    const task = githubTask();
+    task.intent = "analyze";
+    task.payload = {
+      mode: "analysis-only",
+      summary: "fallback summary should be replaced",
+      noLive: true,
+      sourceOnly: true,
+    };
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(task),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_EXECUTOR_MODE: "builtin",
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        OPENCLAW_BIN: fakeOpenClawPath,
+        A2A_NODE_ID: "worker-a",
+        CAPTURE_ARGS_PATH: argsPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.match(payload.result.summary, /analysis bridge done/);
+    assert.equal(payload.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(payload.result.output.analysisSummary, "bridge analysis complete");
+    assert.deepEqual(payload.result.output.findings, ["worker produced substantive analysis"]);
+    assert.deepEqual(payload.result.output.recommendations, ["keep generic fallback explicit"]);
+    assert.equal(payload.result.output.nodeId, "worker-a");
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    const sessionId = args[args.indexOf("--session-id") + 1];
+    assert.match(sessionId, /^a2a-worker-a-task-fixture-1-analysis$/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("GitHub propose_patch evidence requirements are preserved when intent is not analyze", () => {
+  // propose_patch with github taskOrigin still fails without executor config
+  const task = githubTask();
+  task.intent = "propose_patch";
+  task.payload = { mode: "github-propose-patch", repo: "owner/repo", issue: "#1" };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, "github_executor_not_configured");
+});
+
+test("analyze intent with unknown mode falls through to generic handler, not analysis-only", () => {
+  // intent=analyze but mode is not a recognized analysis-only mode → generic handler
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = { mode: "unknown-mode", detail: "something" };
+
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(task),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  // Falls through to generic handler — not analysis-only
+  assert.match(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.doesNotMatch(payload.result.summary, /analysis-only/);
+});
+
+test("analysis-only mode passes validateTaskCompletionEvidence without PR evidence", () => {
+  const task = githubTask();
+  task.intent = "analyze";
+  task.payload = { mode: "analysis-only", summary: "safe analysis" };
+
+  const evidenceError = validateTaskCompletionEvidence(
+    makeTaskRecord(task),
+    {
+      summary: "analysis-only completed: safe analysis",
+      output: {
+        analysisSummary: "safe analysis",
+        findings: [],
+        risks: [],
+      },
+    } as any,
+  );
+  // Analysis-only tasks must NOT require PR evidence
+  assert.equal(evidenceError, null, `analysis-only should not require PR evidence: ${JSON.stringify(evidenceError)}`);
+});
+
+test("analysis-only mode with Done evidence passes validateTaskCompletionEvidence", () => {
+  const taskFixture = githubTask();
+  taskFixture.intent = "analyze";
+  taskFixture.payload = { mode: "analysis-only", summary: "regime analysis", doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1" };
+  const task = makeTaskRecord(taskFixture);
+  // Override taskOrigin to github to verify github-origin analysis-only tasks pass
+  (task as any).taskOrigin = "github";
+
+  const evidenceError = validateTaskCompletionEvidence(
+    task,
+    {
+      summary: "analysis-only completed: regime analysis",
+      output: {
+        analysisSummary: "regime analysis",
+        doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1",
+        findings: ["bullish"],
+      },
+    } as any,
+  );
+  assert.equal(evidenceError, null, `analysis-only done should pass: ${JSON.stringify(evidenceError)}`);
 });

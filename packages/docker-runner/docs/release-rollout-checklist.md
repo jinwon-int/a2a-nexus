@@ -2,14 +2,40 @@
 
 Scope: operator checklist for proposing and rolling out an `a2a-docker-runner` release. This document is PR/release-prep only; do not tag, publish to npm, restart workers, or deploy live services from feature tasks.
 
+## Release gate approval
+
+The `release-gate` workflow keeps validation and tag creation in separate jobs:
+
+- `gate` always runs first and only produces CI-safe dry-run evidence.
+- `tag` runs only when `dry_run=false`, only after `gate` succeeds, and is attached to the GitHub `release` environment.
+- The `release` environment must be configured in repository settings with required reviewers before a non-dry-run tag path is considered approved.
+- The tag step creates an annotated release-candidate tag in the Actions checkout only. Pushing a tag, drafting or publishing a GitHub Release, publishing npm or images, deployment, provider send, terminal ACK, credential change, DB mutation, or history rewrite remains a separate explicit operator-approved action.
+
+Use this approval gate as the implementation reference for `a2a-plane#485` and the release provenance checklist in `a2a-plane#479`.
+
 ## Pre-PR verification
 
-- Confirm the branch is based on current `main` and does not include secrets, raw session dumps, private host paths, or OpenClaw workspace bootstrap files (`.openclaw/`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `MEMORY.md`, `BOOTSTRAP.md`, or generated `memory/` notes). The first-class OpenClaw patch profile fails closed if these appear as untracked checkout artifacts.
-- Run the local gates:
-  - `npm run check`
-  - `npm run build`
-  - `npm run lint`
-  - `npm test` (includes CI-safe canary fixture — no Docker needed)
+- Confirm the branch is based on current `main` and does not include secrets, raw session dumps, private host paths, or OpenClaw workspace bootstrap files (`.openclaw/`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `MEMORY.md`, `BOOTSTRAP.md`, or generated `memory/` notes). The first-class OpenClaw patch profile fails closed if these appear in the checkout, including ignored files that `git status` would hide.
+- For a quick repeatable package-build-test verification, run the deterministic
+  `verify:package` script as a gate before the full conformance smoke:
+  - `npm run verify:package`
+  - Equivalent to: `npm run check && npm run build && npm run lint && npm test`
+  - This is faster than the full conformance smoke and suitable for iterative
+    development loops. Exits on first failure.
+- Run the unified conformance smoke — a single deterministic command that runs all pre-release gates in order and exits on first failure:
+  - `npm run smoke:conformance`
+  - Equivalent to: `npm run check && npm run build && npm run lint && npm test && node scripts/pre-pr-bootstrap-guard.mjs --repo-dir . && npm run audit:release-candidate && npm run chaos:e2e && node --test dist/canary.test.js && node dist/cli.js --help`
+  - Passing this gate means all of the following individual steps passed:
+    - `npm run check` (TypeScript type-check without emit)
+    - `npm run build` (TypeScript compilation)
+    - `npm run lint` (syntax/`node --check` pass on all scripts)
+    - `npm test` (unit tests including CI-safe canary fixture — no Docker needed)
+    - `node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .` (bootstrap file leak guard)
+    - `npm run audit:release-candidate` (parity audit: CI gate parity, bootstrap guard coverage, chaos/receipt rollout gates, active worker targets, legacy `yukson` exclusion)
+    - `npm run chaos:e2e` (CI-safe/mock chaos E2E gate with broker_restart, worker_kill, stale_requeue, duplicate_delivery_tolerance, network_interrupt_reconnect scenarios)
+    - `node --test dist/canary.test.js` (CI-safe canary covering PR/Done/Block/malformed/failure/crash paths with fake runner binary)
+    - `node dist/cli.js --help` (package bin entry point smoke)
+  - To run individual gates separately (e.g. for debugging a failure): see the equivalent commands listed above.
 - Run the CI-safe canary explicitly when changing handler integration code:
   - `node --test dist/canary.test.js`
   - Covers PR/Done/Block/malformed/failure/crash paths end-to-end with fake runner binary.
@@ -21,8 +47,62 @@ Scope: operator checklist for proposing and rolling out an `a2a-docker-runner` r
 - Verify package entry points before publishing or packaging:
   - `package.json` `bin.a2a-docker-runner` points to `./dist/cli.js`.
   - `npm test` includes the package bin contract test.
-  - Optional smoke after build: `node dist/cli.js --help`.
+  - The `npm run smoke:conformance` script includes a package bin smoke: `node dist/cli.js --help`.
 - Keep GitHub Actions on non-deprecated action runtimes. Current CI uses `actions/checkout@v5` and `actions/setup-node@v5` with Node 22 so Node 20 runtime deprecation warnings do not become release noise.
+
+## Terminal Brief ops-readiness templates (Team1/seoseo lane)
+
+The built-in template registry in `src/task-templates.ts` includes four no-live
+reusable diagnostic/check templates for production operations readiness before
+and after Terminal Brief activation.
+
+Built-in template ids:
+
+- **`terminal-brief-node-health`** — Validates runner node health: engine
+  (docker/podman), task root, secret mount, base image, GitHub patch readiness,
+  and deploy-marker revision match.
+- **`terminal-brief-latency-diagnostics`** — Validates latency thresholds
+  (p95/p99), repeated-latency diagnostic stages, diagnostics split candidates,
+  and expensive-diagnostics caching guarantees.
+- **`terminal-brief-session-store-residue`** — Validates OpenClaw session-store
+  guard: empty active-agent registries, backup count/bytes within limits,
+  cleanup rehearsal dry-run.
+- **`terminal-brief-worker-readiness`** — Composite readiness gate that chains
+  all three templates above plus doctor, deploy-marker, evidence contract, and
+  stale-backlog checks.
+
+All four templates ship with `A2A_DOCKER_RUNNER_NO_LIVE=1` enforced in env and
+require explicit safety gates: no provider sends, Gateway/broker/worker restart,
+DB mutation, terminal ACK, deployment, release, or repo visibility change.
+
+Each template has a corresponding example fixture in `examples/`:
+
+```
+examples/terminal-brief-node-health-fixture.json
+examples/terminal-brief-latency-diagnostics-fixture.json
+examples/terminal-brief-session-store-residue-fixture.json
+examples/terminal-brief-worker-readiness-fixture.json
+```
+
+Use within a `RunnerTask` by setting `template` to the id and providing the
+required `templateVars`. Example task referencing the node-health template:
+
+```json
+{
+  "id": "tb-node-health-pre-activation",
+  "intent": "propose_patch",
+  "template": "terminal-brief-node-health",
+  "templateVars": {
+    "DOCTOR_ARGS": "a2a-docker-runner doctor",
+    "EXPECTED_REVISION": "f17072e",
+    "TARGET_NODE": "nosuk"
+  },
+  "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/270"
+}
+```
+
+These templates do **not** implement Terminal Brief core feature logic (Team2/Gwakga
+scope). They are production operations and runbook tools for Team1/Seoseo.
 
 ## Active rollout targets
 
@@ -42,7 +122,16 @@ Excluded legacy target:
 1. Seoseo/operator reviews the merged PR and CI result.
 2. Build/package from the merge commit only; do not publish from an issue branch.
 3. **Pre-deploy canary**: Run CI-safe canary fixture on the merge commit: `node --test dist/canary.test.js`.
-4. Collect no-live receipt-smoke evidence for all active workers (`bangtong`, `dungae`, `sogyo`, `nosuk`) into one sanitized JSON file, then run the merged-evidence guard from the merge commit:
+4. **Deploy-marker doctor**: Before rollout, run the deploy-marker doctor to confirm the deployed runner revision matches the expected merge commit:
+
+   ```bash
+   node scripts/deploy-marker-doctor.mjs \
+     --expected-revision <merge-commit-sha> \
+     --repo-dir .
+   ```
+
+   The doctor fails closed when the deployed revision does not match the expected marker, when the checkout is not a git worktree, or when the local SHA cannot be resolved. It produces no-live refresh safety evidence: no provider sends, terminal ACKs, deployments, restarts, or DB mutations are performed. This check is deterministic, CI-safe, and requires no external services.
+5. Collect no-live receipt-smoke evidence for all active workers (`bangtong`, `dungae`, `sogyo`, `nosuk`) into one sanitized JSON file, then run the merged-evidence guard from the merge commit:
 
    ```bash
    npm run rollout:receipt-evidence -- \
@@ -51,10 +140,17 @@ Excluded legacy target:
    ```
 
    The guard fails closed if any active worker is missing, reports a different runner artifact commit, lacks an artifact version or passing focused test result, lacks operator-visible terminal receipt evidence, allows provider-send-only ACK, or has stale-backlog terminal receipt evidence. Do not include tokens, private host paths, raw session dumps, live Telegram sends, or real terminal-outbox ACKs in the merged input.
-5. Roll out one active target at a time, starting with a non-critical worker when possible.
-6. On each target, run `a2a-docker-runner doctor` and a small non-secret smoke task before sending real GitHub jobs.
-7. Confirm the worker completion payload preserves runner evidence fields when present: `github.prUrl`, `github.doneCommentUrl`, and `github.blockCommentUrl`.
-8. Continue to the next active target only after the previous target reports healthy status and expected evidence output.
+6. Roll out one active target at a time, starting with a non-critical worker when possible.
+7. On each target, run `a2a-docker-runner doctor` and the deploy-marker doctor before sending real GitHub jobs:
+
+   ```bash
+   a2a-docker-runner doctor
+   node scripts/deploy-marker-doctor.mjs --expected-revision <merge-commit-sha>
+   ```
+
+   Both checks must pass before sending real jobs to the target.
+8. Confirm the worker completion payload preserves runner evidence fields when present: `github.prUrl`, `github.doneCommentUrl`, and `github.blockCommentUrl`.
+9. Continue to the next active target only after the previous target reports healthy status and expected evidence output.
 
 ## Chaos E2E release gate
 

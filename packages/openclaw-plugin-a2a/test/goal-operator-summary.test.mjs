@@ -81,3 +81,53 @@ test('goal summary fails loud when visible summary is missing', () => {
     /missing goal summary/,
   );
 });
+
+test('cross-broker projection-aware summary notes child tasks as evidence, not achievement', () => {
+  // Cross-broker projections are bounded terminal evidence; operator-facing
+  // wording must not conflate child task success with goal achievement.
+  const summary = build('active', {
+    title: 'Cross-broker projection-only handling',
+    summary: 'Lane 2: cross-broker projection-only verified — parent-owned remote rows, no direct ACK, localBrokerId safety.',
+    taskSuccessCount: 2,
+    taskTotalCount: 7,
+  });
+
+  assert.equal(summary.headline, 'Active goal: Cross-broker projection-only handling');
+  assert.equal(summary.taskProgress.succeeded, 2);
+  assert.equal(summary.taskProgress.total, 7);
+  // Operator must see that child success is not final achievement
+  assert.match(
+    summary.taskProgress.note,
+    /child tasks are evidence, not final achievement/,
+    'operator-facing note must separate child success from goal achievement for cross-broker projection rounds',
+  );
+});
+
+test('cross-broker projection with partial task success shows correct ratio', () => {
+  // After a cross-broker round with some lanes done, some pending:
+  const summary = build('active', {
+    title: 'Cross-broker projection-only round',
+    summary: '2/7 lanes terminal, 5 pending projection relay.',
+    taskSuccessCount: 2,
+    taskTotalCount: 7,
+    childTasks: [
+      {
+        brokerTaskId: 'lane-1',
+        status: 'succeeded',
+        summary: 'Lane 1: projection-only handler',
+      },
+      {
+        brokerTaskId: 'lane-3',
+        status: 'running',
+        summary: 'Lane 3: in progress',
+      },
+    ],
+  });
+
+  assert.equal(summary.taskProgress.succeeded, 2);
+  assert.equal(summary.taskProgress.total, 7);
+  assert.ok(
+    summary.taskProgress.note.startsWith('2/7'),
+    'partial task ratio must be visible in operator summary',
+  );
+});

@@ -2,6 +2,20 @@
 
 `openclaw-a2a-worker` handler (`openclaw-a2a-task-handler.mjs`) calls `a2a-docker-runner` for `github-propose-patch` / `propose_patch` tasks instead of mutating the host workspace directly.
 
+## Hermes/Android native worker boundary
+
+When the Docker runner receives a task with a non-Docker `workerProfile`
+(e.g. `"termux-hermes"`, `"external-harness"`, or `"hermes"`), it rejects the
+task early during validation with a Block outcome.  This ensures that
+Hermes/Android native A2A worker tasks are never accidentally executed
+inside the Docker runner.
+
+The handler should check `workerProfile` before routing to the Docker runner
+so that native Hermes tasks are dispatched to the correct runtime.
+
+Parent: a2a-docker-runner#340
+Parent: a2a-plane#464
+
 ## Architecture
 
 ```text
@@ -127,7 +141,8 @@ const handlerResult = buildHandlerResult(parsed, task, nodeId);
 | `A2A_DOCKER_RUNNER_PRESET` | — | Default preset (e.g. `openclaw-plugin-a2a-dev`) |
 | `A2A_DOCKER_RUNNER_BIN` | `a2a-docker-runner` | Runner binary path |
 | `A2A_DOCKER_RUNNER_ARGS_JSON` | `[]` | Extra CLI args before `run` |
-| `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | `2700000` (45m) | Task timeout override |
+| `A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS` | `3600000` (60m) | Task timeout override |
+| `A2A_DOCKER_RUNNER_TIMEOUT_MS` | `3600000` (60m) | Container execution timeout fallback |
 | `A2A_DOCKER_RUNNER_ROOT` | `/var/lib/openclaw-a2a/tasks` | Runtime root dir |
 | `A2A_DOCKER_RUNNER_IMAGE` | `node:22-bookworm-slim` | Container image |
 | `A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE` | — | gh hosts.yml for container auth |
@@ -283,6 +298,76 @@ FAKE_RUNNER_MODE=pr bash scripts/fake-runner.sh run examples/task.canary.json
 3. `bash scripts/fake-runner.sh pr` — fake runner 단독 실행 확인
 4. 위 3단계가 모두 통과해야 라이브 롤아웃 진행
 
+## Local Development & Teardown
+
+로컬 개발/테스트 후 남은 아티팩트를 정리하는 절차이다. `A2A_DOCKER_RUNNER_ROOT` 기본 경로는 `/var/lib/openclaw-a2a/tasks`이며, 각 태스크 실행은 `rootDir/<safeTaskId>/<runToken>/` 구조로 아티팩트를 생성한다.
+
+### Container Cleanup
+
+기본적으로 runner는 태스크 완료 후 컨테이너를 **삭제한다** (`--rm`). 하지만 일부 중단(crash, SIGKILL, 데몬 재시작) 시 컨테이너가 남을 수 있다. 아래 명령어로 확인/정리한다:
+
+```bash
+# 남은 a2a-runner 컨테이너 확인
+docker ps -a --filter name=a2a-
+
+# 모두 삭제
+docker ps -a --filter name=a2a- -q | xargs -r docker rm -f
+
+# Podman 사용 시
+declare engine="${A2A_DOCKER_RUNNER_ENGINE:-docker}"
+"$engine" ps -a --filter name=a2a-
+```
+
+### Artifact Cleanup
+
+태스크 실행 후 생성된 아티팩트 디렉토리를 정리한다:
+
+```bash
+# rootDir 기본값 사용 시
+export A2A_DOCKER_RUNNER_ROOT=${A2A_DOCKER_RUNNER_ROOT:-/var/lib/openclaw-a2a/tasks}
+
+# 최근 7일 초과 디렉토리만 정리 (안전하게 유지할 기간 보존)
+find "$A2A_DOCKER_RUNNER_ROOT" -maxdepth 1 -mindepth 1 -type d -mtime +7 -exec rm -rf {} +
+
+# 특정 태스크 ID 정리
+rm -rf "$A2A_DOCKER_RUNNER_ROOT/<safeTaskId>"
+```
+
+### Image Cleanup
+
+로컬 테스트로 인해 pull된 베이스 이미지 (`node:22-bookworm-slim` 및 변형)가 오래되면 디스크를 차지할 수 있다:
+
+```bash
+# 사용된 a2a-runner 이미지 확인
+docker images --filter reference='node:22-bookworm-slim' --filter reference='node:22-*'
+
+# 오래된 dangling 이미지 정리
+docker image prune -f
+```
+
+### Full Local Reset
+
+개발/테스트 세션 후 완전히 초기화하려면:
+
+```bash
+# 모든 관련 컨테이너 정리
+docker ps -a --filter name=a2a- -q | xargs -r docker rm -f
+
+# 아티팩트 정리 (rootDir 확인 필요)
+export A2A_DOCKER_RUNNER_ROOT=${A2A_DOCKER_RUNNER_ROOT:-/var/lib/openclaw-a2a/tasks}
+rm -rf "$A2A_DOCKER_RUNNER_ROOT"/*
+
+# dangling 이미지 정리 (선택사항)
+docker image prune -f
+```
+
+### Safety Notes
+
+- 다른 활성 작업자가 동일한 `rootDir`을 공유하지 않는지 확인한 후 정리한다.
+- `find -mtime` 필터를 사용하면 최근 실행 기록을 유지할 수 있다.
+- 스캐너 모듈(`scanHistory`)을 사용하면 정리 전 아카이브 번들을 먼저 생성할 수 있다 (아티팩트 매니페스트의 "Artifact retention & boundaries" 참고).
+- 컨테이너 정리 시 이미 실행 중인 task가 있으면 중단될 수 있으므로, 활동 중인 worker 프로세스가 없을 때 수행한다.
+
 ## Rollback
 
 handler integration 문제가 발생하거나 host-workspace direct execution으로 복귀해야 할 때 아래 절차를 따른다.
@@ -364,6 +449,7 @@ export A2A_DOCKER_RUNNER_ALL_GITHUB=1  # 모든 github 태스크
 ```bash
 export A2A_DOCKER_RUNNER_ENABLED=1
 export A2A_DOCKER_RUNNER_ALL_GITHUB=1
-export A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=2700000  # 45분
+export A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS=3600000  # 60분
+export A2A_DOCKER_RUNNER_TIMEOUT_MS=3600000       # 60분
 # 전체 활성화 + 표준 타임아웃
 ```

@@ -222,7 +222,7 @@ From `jinwon-int/a2a-broker#42`:
 - [x] Summary response avoids sensitive task/session text → §7
 - [x] Cache age returned to callers → §2.2 (`cacheAgeMs` always present)
 
-From `OWNER/a2a-broker#180`:
+From `jinon86/a2a-broker#180`:
 
 - [x] `busy` health state when all capacity slots occupied → §2.2, §2.4
 - [x] `workerMode` field (`persistent` | `mobile`) in registration/heartbeat/response → §2.2, §2.5

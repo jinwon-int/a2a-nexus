@@ -13,6 +13,10 @@ import {
   buildA2AOperatorTerminalOutboxNotificationEnvelope,
   getA2AOperatorTerminalReceiptGate,
 } from "./operator-terminal-notifier.js";
+import {
+  buildA2ACrossBrokerTerminalProjection,
+  type A2ACrossBrokerTerminalProjection,
+} from "./cross-broker-terminal-relay.js";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -193,6 +197,21 @@ export type A2AOperatorMonitorSafetyStatus = {
 
 export type A2AOperatorTerminalOutboxProjection = {
   cursor?: string;
+  poller?: {
+    status: "started" | "skipped" | "stopped" | "failed";
+    reason: string;
+    timestamp: number;
+    lastTick?: {
+      timestamp: number;
+      afterId?: string;
+      limit: number;
+      reconcileUnacked: boolean;
+    };
+    lastError?: {
+      timestamp: number;
+      message: string;
+    };
+  };
   lastPoll?: {
     timestamp: number;
     afterId?: string;
@@ -223,7 +242,61 @@ export type A2AOperatorTerminalOutboxProjection = {
     acknowledgedAt: string;
     timestamp: number;
   };
+  crossBrokerRelay?: A2AOperatorTerminalOutboxRelayProjection;
   deployPreflight?: A2AOperatorTerminalOutboxDeployPreflightProjection;
+  /** Internal diagnostic counters for duplicate suppression, fuse, and relay state. */
+  doctorDiagnostics?: A2AOperatorTerminalOutboxDoctorDiagnostics;
+};
+
+export type A2AOperatorTerminalOutboxDoctorDiagnostics = {
+  /** How many unique dedupe keys have been notified so far. */
+  notifiedDedupeKeyCount: number;
+  /** How many unique dedupe keys are currently pending notification. */
+  pendingNotificationDedupeKeyCount: number;
+  /** How many unique task notification keys have been notified. */
+  notifiedTaskKeyCount: number;
+  /** How many unique task notification keys are pending. */
+  pendingNotificationTaskKeyCount: number;
+  /** Whether the one-shot notification fuse has tripped (blocked further sends pending manual review). */
+  notificationFuseTripped: boolean;
+  /** How many dedupe keys currently have active retry-after timers. */
+  retryAfterCount: number;
+  /** How many terminal outbox IDs have been relayed cross-broker. */
+  relayedTerminalOutboxIdCount: number;
+};
+
+export type A2AOperatorTerminalOutboxRelayProjection = {
+  status: "idle" | "started" | "succeeded" | "failed" | "skipped";
+  cursor?: string;
+  relayed: number;
+  skipped: number;
+  failed: number;
+  lastAttempt?: {
+    timestamp: number;
+    terminalOutboxId: string;
+    childTaskId?: string;
+    parentRoundId?: string;
+    originBrokerId?: string;
+    status: "succeeded" | "failed" | "skipped";
+    reason: string;
+  };
+  lastSuccess?: {
+    timestamp: number;
+    terminalOutboxId: string;
+    relayId: string;
+    childTaskId: string;
+    parentRoundId: string;
+    originBrokerId: string;
+  };
+  lastError?: {
+    timestamp: number;
+    terminalOutboxId?: string;
+    message: string;
+  };
+  receiptGate: {
+    providerGatewaySendSuccess: "not_ack_evidence";
+    terminalAckEligible: false;
+  };
 };
 
 export type A2AOperatorEventBridgeState = {
@@ -276,6 +349,14 @@ export type A2AOperatorEventBridgeBrokerClient = {
       note?: string;
     };
   }): Promise<A2ATerminalOutboxEvent>;
+  recordTerminalOutboxReceipt?(params: {
+    id: string;
+    receipt: {
+      status: A2AOperatorTerminalOutboxReceiptStatus;
+      updatedAt?: string;
+      note?: string;
+    };
+  }): Promise<A2ATerminalOutboxEvent>;
 };
 
 export type A2AOperatorEventBridge = {
@@ -287,8 +368,24 @@ export type A2AOperatorEventBridge = {
 export type A2AOperatorNotificationAckDecision = {
   ackTerminalEvent: boolean;
   reason?: string;
+  terminalReceiptStatus?: A2AOperatorTerminalOutboxReceiptStatus;
   confirmationSource?: "current_session_visible" | "manual_operator_receipt";
   receiptId?: string;
+};
+
+export type A2AOperatorTerminalOutboxReceiptStatus =
+  | "accepted"
+  | "started"
+  | "produced"
+  | "provider_sent"
+  | "provider_accepted"
+  | "timed_out"
+  | "stale"
+  | "failed";
+
+export type A2AOperatorTerminalRelayDecision = {
+  accepted?: boolean;
+  reason?: string;
 };
 
 export type A2AOperatorEventBridgeOptions = {
@@ -301,6 +398,11 @@ export type A2AOperatorEventBridgeOptions = {
   notifyOperator?: (
     envelope: A2AOperatorTerminalNotificationEnvelope,
   ) => void | A2AOperatorNotificationAckDecision | Promise<void | A2AOperatorNotificationAckDecision>;
+  relayTerminalProjection?: (
+    projection: A2ACrossBrokerTerminalProjection,
+  ) => void | A2AOperatorTerminalRelayDecision | Promise<void | A2AOperatorTerminalRelayDecision>;
+  terminalProjectionMaxSummaryChars?: number;
+  handoffBrokerId?: string;
   dryRunNotifications?: boolean;
   notificationMaxTextChars?: number;
   terminalOutboxPollMs?: number;
@@ -310,6 +412,16 @@ export type A2AOperatorEventBridgeOptions = {
    * proofs. Historical rows outside this set stay suppressed by default.
    */
   terminalOutboxAllowedIds?: readonly string[];
+  /** Optional dynamic terminal-outbox allowlist reader for Gateway hot reload. */
+  readTerminalOutboxAllowedIds?: () => readonly string[] | undefined;
+  /** Optional initial terminal-outbox cursor for controlled one-shot canaries. */
+  terminalOutboxCursor?: string;
+  /** Optional dynamic terminal-outbox cursor reader for Gateway hot reload. */
+  readTerminalOutboxCursor?: () => string | undefined;
+  /** Optional terminal-outbox cursor persistence hook for sidecar/runtime state. */
+  writeTerminalOutboxCursor?: (cursor: string) => void;
+  /** Skip the startup unacked backlog reconciliation for controlled one-shot canaries. */
+  terminalOutboxReconcileUnackedOnStart?: boolean;
   /**
    * Historical unacknowledged terminal-outbox rows are replayable by design, but
    * they must not be live-sent after a Gateway/plugin restart unless an operator
@@ -346,23 +458,21 @@ type InternalState = {
   terminalReceipts: Map<string, A2AOperatorTerminalReceiptProjection>;
   openAlerts: Map<string, A2AOperatorEventBridgeAlert>;
   resolvedAlerts: Map<string, A2AOperatorEventBridgeAlert>;
-  /** Merged Set: raw dedupeKey values and task:-prefixed keys. Replaces former notifiedDedupeKeys + notifiedTaskKeys pair — see docs/operator-event-bridge-safety-layers.md */
-  notifiedKeys: Set<string>;
-  /** Merged Set: in-flight deduplication. Replaces former pendingNotificationDedupeKeys + pendingNotificationTaskKeys pair. */
-  pendingNotificationKeys: Set<string>;
+  notifiedDedupeKeys: Set<string>;
+  pendingNotificationDedupeKeys: Set<string>;
+  notifiedTaskKeys: Set<string>;
+  pendingNotificationTaskKeys: Set<string>;
   terminalOutboxRetryAfterByDedupeKey: Map<string, number>;
-  /**
-   * Production-essential one-shot notification fuse (safety layer #3).
-   * Once tripped by a non-acked terminal outbox notification, all subsequent
-   * outbox notifications are blocked until the operator provides a manual
-   * receipt. Prevents runaway notification storms. See
-   * docs/operator-event-bridge-safety-layers.md.
-   */
   terminalOutboxNotificationFuseTripped: boolean;
   terminalOutboxStartedAt: number;
+  relayedTerminalOutboxIds: Set<string>;
 };
 
 const DEFAULT_RETRY_DELAY_MS = 1_000;
+// Broker general rate limit is intentionally low on operator requesters. Keep
+// the default terminal-outbox poll cadence below 10/min so the poller does not
+// starve itself or operator status checks before it can send/ACK a fresh row.
+const DEFAULT_TERMINAL_OUTBOX_POLL_MS = 15_000;
 const DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS = 60_000;
 
 export function createA2AOperatorEventBridge(
@@ -375,17 +485,44 @@ export function createA2AOperatorEventBridge(
   let stopped = false;
   let loopPromise: Promise<void> | undefined;
   let outboxLoopPromise: Promise<void> | undefined;
+  let appliedTerminalOutboxCursor = normalizeOptionalString(options.terminalOutboxCursor);
   const state: InternalState = {
     connection: "idle",
     terminalReceipts: new Map(),
     openAlerts: new Map(),
     resolvedAlerts: new Map(),
-    notifiedKeys: new Set(),
-    pendingNotificationKeys: new Set(),
+    notifiedDedupeKeys: new Set(),
+    pendingNotificationDedupeKeys: new Set(),
+    notifiedTaskKeys: new Set(),
+    pendingNotificationTaskKeys: new Set(),
     terminalOutboxRetryAfterByDedupeKey: new Map(),
     terminalOutboxNotificationFuseTripped: false,
     terminalOutboxStartedAt: now(),
+    relayedTerminalOutboxIds: new Set(),
+    ...(normalizeOptionalString(options.terminalOutboxCursor) ? { terminalOutboxCursor: normalizeOptionalString(options.terminalOutboxCursor) } : {}),
   };
+
+  function readCurrentTerminalOutboxAllowedIds(): readonly string[] {
+    const dynamic = options.readTerminalOutboxAllowedIds?.();
+    return Array.isArray(dynamic)
+      ? dynamic.map(normalizeOptionalString).filter((value): value is string => Boolean(value))
+      : options.terminalOutboxAllowedIds ?? [];
+  }
+
+  function syncTerminalOutboxCursorFromOptions(): void {
+    const configuredCursor = normalizeOptionalString(options.readTerminalOutboxCursor?.())
+      ?? normalizeOptionalString(options.terminalOutboxCursor);
+    if (!configuredCursor || configuredCursor === appliedTerminalOutboxCursor) {
+      return;
+    }
+    state.terminalOutboxCursor = configuredCursor;
+    appliedTerminalOutboxCursor = configuredCursor;
+    // A bounded canary can move the live cursor/allowlist by config hot reload.
+    // Reset per-event retry/fuse state so the next poll can evaluate the new
+    // operator-approved window instead of inheriting an older blocked row.
+    state.terminalOutboxNotificationFuseTripped = false;
+    state.terminalOutboxRetryAfterByDedupeKey.clear();
+  }
 
   function ensureRequestedCursor(explicitCursor?: string): void {
     if (state.cursor || state.requestedCursor) {
@@ -407,11 +544,33 @@ export function createA2AOperatorEventBridge(
         loopPromise = undefined;
       });
     }
-    if (!outboxLoopPromise && !stopped && options.notifyOperator && options.broker.listTerminalOutbox && options.broker.ackTerminalOutbox) {
+    const outboxSkipReason = getTerminalOutboxPollerSkipReason();
+    if (outboxSkipReason) {
+      recordTerminalOutboxPollerState(state, {
+        status: "skipped",
+        reason: outboxSkipReason,
+        now,
+      });
+      return;
+    }
+    if (!outboxLoopPromise && !stopped) {
+      recordTerminalOutboxPollerState(state, {
+        status: "started",
+        reason: "terminal outbox poller started",
+        now,
+      });
       outboxLoopPromise = runTerminalOutboxLoop().finally(() => {
         outboxLoopPromise = undefined;
       });
     }
+  }
+
+  function getTerminalOutboxPollerSkipReason(): string | undefined {
+    if (stopped) return "operator event bridge is stopped";
+    if (!options.broker.listTerminalOutbox) return "broker client does not expose listTerminalOutbox; terminal outbox poller not started";
+    if (options.notifyOperator && !options.broker.ackTerminalOutbox) return "broker client does not expose ackTerminalOutbox; terminal outbox poller not started";
+    if (!options.notifyOperator && !options.relayTerminalProjection) return "operator notification target unavailable and cross-broker relay target unavailable; terminal outbox poller not started";
+    return undefined;
   }
 
   function recordFailure(code: A2AOperatorEventBridgeFailureCode, message: string): void {
@@ -469,15 +628,6 @@ export function createA2AOperatorEventBridge(
   }
 
 
-  /**
-   * Safety layer activation for live-stream terminal events:
-   *   - Receipt gate (layer #4): operator-terminal-notifier enforces
-   *     receipt-projection presence before building an envelope.
-   *   - Historical replay suppression (layer #6): suppresses events
-   *     created before bridge start.
-   *   - Dedupe (layer #5): single notifiedKeys Set prevents duplicate
-   *     notifications for the same task or dedupe key.
-   */
   async function maybeNotifyOperator(event: A2ABrokerOperatorSseEvent): Promise<A2AOperatorNotificationAckDecision> {
     if (!options.notifyOperator) {
       return { ackTerminalEvent: true, reason: "no operator notification configured" };
@@ -489,6 +639,12 @@ export function createA2AOperatorEventBridge(
     });
     if (!envelope) {
       return { ackTerminalEvent: true, reason: "not a terminal operator notification" };
+    }
+    if (shouldSuppressLocalCrossBrokerTerminalNotification(event.id, readOperatorEventTerminalPayload(event), options.handoffBrokerId)) {
+      return {
+        ackTerminalEvent: true,
+        reason: "child/handoff Terminal Brief suppressed locally; parent/origin broker owns operator-facing notification",
+      };
     }
     if (shouldSuppressHistoricalTerminalEventReplay(envelope, {
       startedAt: state.terminalOutboxStartedAt,
@@ -509,21 +665,21 @@ export function createA2AOperatorEventBridge(
       };
     }
     const taskNotificationKey = buildTaskNotificationKey(envelope);
-    if (state.notifiedKeys.has(envelope.dedupeKey) || state.notifiedKeys.has(taskNotificationKey)) {
-      state.notifiedKeys.add(envelope.dedupeKey);
-      state.notifiedKeys.add(taskNotificationKey);
+    if (state.notifiedDedupeKeys.has(envelope.dedupeKey) || state.notifiedTaskKeys.has(taskNotificationKey)) {
+      state.notifiedDedupeKeys.add(envelope.dedupeKey);
+      state.notifiedTaskKeys.add(taskNotificationKey);
       return {
         ackTerminalEvent: true,
         confirmationSource: "current_session_visible",
         reason: "duplicate terminal notification suppressed for already-notified task",
       };
     }
-    if (state.pendingNotificationKeys.has(envelope.dedupeKey) || state.pendingNotificationKeys.has(taskNotificationKey)) {
+    if (state.pendingNotificationDedupeKeys.has(envelope.dedupeKey) || state.pendingNotificationTaskKeys.has(taskNotificationKey)) {
       return { ackTerminalEvent: false, reason: "terminal notification already pending or confirmed" };
     }
 
-    state.pendingNotificationKeys.add(envelope.dedupeKey);
-    state.pendingNotificationKeys.add(taskNotificationKey);
+    state.pendingNotificationDedupeKeys.add(envelope.dedupeKey);
+    state.pendingNotificationTaskKeys.add(taskNotificationKey);
     try {
       const decision = await Promise.resolve(options.notifyOperator(envelope));
       const ackDecision = normalizeNotificationAckDecision(decision, options.dryRunNotifications === true);
@@ -534,35 +690,29 @@ export function createA2AOperatorEventBridge(
         now,
       });
       if (ackDecision.ackTerminalEvent) {
-        state.notifiedKeys.add(envelope.dedupeKey);
-        state.notifiedKeys.add(taskNotificationKey);
+        state.notifiedDedupeKeys.add(envelope.dedupeKey);
+        state.notifiedTaskKeys.add(taskNotificationKey);
       }
-      state.pendingNotificationKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationKeys.delete(taskNotificationKey);
+      state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
+      state.pendingNotificationTaskKeys.delete(taskNotificationKey);
       return ackDecision;
     } catch {
       // Operator delivery is owned by the OpenClaw plugin notifier.
       // A delivery failure must not break broker processing, but it also must
       // not acknowledge terminal outbox/cursor state without a visible receipt.
-      state.pendingNotificationKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationKeys.delete(taskNotificationKey);
+      state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
+      state.pendingNotificationTaskKeys.delete(taskNotificationKey);
       return { ackTerminalEvent: false, reason: "operator notification failed before receipt confirmation" };
     }
   }
 
-  /**
-   * Safety layer activation for terminal-outbox backlog processing:
-   *   - One-shot fuse (layer #3): terminalOutboxNotificationFuseTripped
-   *     blocks all downstream sends after a single non-acked notification.
-   *   - Dedupe (layer #5): merged notifiedKeys Set (raw dedupeKey + task:-prefixed).
-   *   - Historical replay suppression (layer #6): outbox events created before
-   *     bridge start are skipped unless explicitly allowed.
-   *   - Cursor gating (layer #7): afterId/cursor advances only on acked events.
-   */
   async function processTerminalOutboxOnce(reconcileUnacked: boolean): Promise<void> {
-    if (!options.notifyOperator || !options.broker.listTerminalOutbox || !options.broker.ackTerminalOutbox) return;
+    if (!options.broker.listTerminalOutbox) return;
+    syncTerminalOutboxCursorFromOptions();
     const afterId = state.terminalOutboxCursor;
     const limit = options.terminalOutboxLimit ?? 25;
+    const terminalOutboxAllowedIds = readCurrentTerminalOutboxAllowedIds();
+    recordTerminalOutboxPollerTick(state, { afterId, limit, reconcileUnacked, now });
     const response = await options.broker.listTerminalOutbox({
       afterId,
       reconcileUnacked,
@@ -570,10 +720,29 @@ export function createA2AOperatorEventBridge(
     });
     let nextContiguousCursor = afterId;
     let firstPendingId: string | undefined;
-    let sawUnconfirmedReplayableEvent = false;
+    let shouldHoldTerminalOutboxCursor = false;
     for (const event of response.events) {
-      if (event.ack?.status === "receipt_confirmed" || event.deliveredAt) {
+      const relayStatus = await maybeRelayTerminalOutboxEvent(event, { reconcileUnacked, reconciledUnacked: response.reconciledUnacked ?? 0 });
+      const relayFailed = relayStatus === "failed";
+      const completeCurrentEvent = (): boolean => {
+        if (relayFailed) {
+          firstPendingId = event.id;
+          shouldHoldTerminalOutboxCursor = true;
+          return false;
+        }
         nextContiguousCursor = event.id;
+        return true;
+      };
+      if (shouldSuppressLocalNotificationForCrossBrokerHandoff(event, relayStatus)) {
+        if (!completeCurrentEvent()) break;
+        continue;
+      }
+      if (!options.notifyOperator || !options.broker.ackTerminalOutbox) {
+        if (!completeCurrentEvent()) break;
+        continue;
+      }
+      if (event.ack?.status === "receipt_confirmed" || event.deliveredAt) {
+        if (!completeCurrentEvent()) break;
         continue;
       }
       const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(event, {
@@ -582,16 +751,19 @@ export function createA2AOperatorEventBridge(
       });
       if (!envelope) {
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
       const taskNotificationKey = buildTaskNotificationKey(envelope);
+      if (terminalOutboxAllowedIds.length && !isAllowedTerminalOutboxEvent(event, terminalOutboxAllowedIds)) {
+        if (!completeCurrentEvent()) break;
+        continue;
+      }
       if (shouldSuppressHistoricalTerminalOutboxReplay(event, {
         reconcileUnacked,
         reconciledUnacked: response.reconciledUnacked ?? 0,
         startedAt: state.terminalOutboxStartedAt,
         mode: options.terminalOutboxHistoricalReplay ?? "suppress",
-        allowedIds: options.terminalOutboxAllowedIds,
       })) {
         recordTerminalOutboxNotificationAttempt(state, {
           source: "outbox-backlog",
@@ -602,7 +774,11 @@ export function createA2AOperatorEventBridge(
           },
           now,
         });
-        sawUnconfirmedReplayableEvent = true;
+        // Suppressed historical rows are intentionally not live-sent or ACKed,
+        // but they must not pin after_id forever. Advancing the read cursor lets
+        // a controlled fresh allowlisted canary behind old unacked rows become
+        // observable without enabling historical replay.
+        if (!completeCurrentEvent()) break;
         continue;
       }
       if (state.terminalOutboxNotificationFuseTripped) {
@@ -617,10 +793,10 @@ export function createA2AOperatorEventBridge(
           now,
         });
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
-      if (state.notifiedKeys.has(envelope.dedupeKey) || state.notifiedKeys.has(taskNotificationKey)) {
+      if (state.notifiedDedupeKeys.has(envelope.dedupeKey) || state.notifiedTaskKeys.has(taskNotificationKey)) {
         const acknowledgedAt = new Date(now()).toISOString();
         await options.broker.ackTerminalOutbox({
           id: event.id,
@@ -635,44 +811,92 @@ export function createA2AOperatorEventBridge(
           acknowledgedAt,
           now,
         });
-        state.notifiedKeys.add(envelope.dedupeKey);
-        state.notifiedKeys.add(taskNotificationKey);
-        nextContiguousCursor = event.id;
+        state.notifiedDedupeKeys.add(envelope.dedupeKey);
+        state.notifiedTaskKeys.add(taskNotificationKey);
+        if (!completeCurrentEvent()) break;
         continue;
       }
-      if (state.pendingNotificationKeys.has(envelope.dedupeKey) || state.pendingNotificationKeys.has(taskNotificationKey)) {
+      if (state.pendingNotificationDedupeKeys.has(envelope.dedupeKey) || state.pendingNotificationTaskKeys.has(taskNotificationKey)) {
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
       const retryAfter = state.terminalOutboxRetryAfterByDedupeKey.get(envelope.dedupeKey) ?? 0;
       if (retryAfter > now()) {
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
-      state.pendingNotificationKeys.add(envelope.dedupeKey);
-      state.pendingNotificationKeys.add(taskNotificationKey);
-      const decision = normalizeNotificationAckDecision(await Promise.resolve(options.notifyOperator(envelope)), options.dryRunNotifications === true);
+      state.pendingNotificationDedupeKeys.add(envelope.dedupeKey);
+      state.pendingNotificationTaskKeys.add(taskNotificationKey);
+      let decision: A2AOperatorNotificationAckDecision;
+      try {
+        decision = normalizeNotificationAckDecision(await Promise.resolve(options.notifyOperator(envelope)), options.dryRunNotifications === true);
+      } catch (error) {
+        decision = {
+          ackTerminalEvent: false,
+          reason: `operator notification failed before receipt confirmation: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      } finally {
+        state.pendingNotificationDedupeKeys.delete(envelope.dedupeKey);
+        state.pendingNotificationTaskKeys.delete(taskNotificationKey);
+      }
       recordTerminalOutboxNotificationAttempt(state, {
         source: "outbox-backlog",
         envelope,
         decision,
         now,
       });
-      state.pendingNotificationKeys.delete(envelope.dedupeKey);
-      state.pendingNotificationKeys.delete(taskNotificationKey);
+      const receiptStatus = terminalOutboxReceiptStatusFromDecision(decision);
+      if (!decision.ackTerminalEvent && receiptStatus && shouldAdvanceTerminalOutboxCursorAfterReceiptStatus(receiptStatus)) {
+        if (!options.broker.recordTerminalOutboxReceipt) {
+          state.terminalOutboxNotificationFuseTripped = true;
+          state.terminalOutboxRetryAfterByDedupeKey.set(envelope.dedupeKey, now() + DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS);
+          firstPendingId = event.id;
+          shouldHoldTerminalOutboxCursor = true;
+          break;
+        }
+        const updatedAt = new Date(now()).toISOString();
+        try {
+          await options.broker.recordTerminalOutboxReceipt({
+            id: event.id,
+            receipt: {
+              status: receiptStatus,
+              updatedAt,
+              note: decision.reason ?? `terminal notification receipt recorded as ${receiptStatus}; terminal ACK remains pending`,
+            },
+          });
+        } catch (error) {
+          recordTerminalOutboxNotificationAttempt(state, {
+            source: "outbox-backlog",
+            envelope,
+            decision: {
+              ackTerminalEvent: false,
+              reason: `terminal receipt update failed before cursor advance: ${error instanceof Error ? error.message : String(error)}`,
+            },
+            now,
+          });
+          state.terminalOutboxNotificationFuseTripped = true;
+          state.terminalOutboxRetryAfterByDedupeKey.set(envelope.dedupeKey, now() + DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS);
+          firstPendingId = event.id;
+          shouldHoldTerminalOutboxCursor = true;
+          break;
+        }
+        state.terminalOutboxRetryAfterByDedupeKey.delete(envelope.dedupeKey);
+        if (!completeCurrentEvent()) break;
+        continue;
+      }
       if (!decision.ackTerminalEvent) {
         state.terminalOutboxNotificationFuseTripped = true;
         state.terminalOutboxRetryAfterByDedupeKey.set(envelope.dedupeKey, now() + DEFAULT_TERMINAL_OUTBOX_RETRY_DELAY_MS);
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
       const evidence = terminalOutboxAckEvidenceFromDecision(decision);
       if (!evidence) {
         firstPendingId = event.id;
-        sawUnconfirmedReplayableEvent = true;
+        shouldHoldTerminalOutboxCursor = true;
         break;
       }
       const acknowledgedAt = new Date(now()).toISOString();
@@ -691,15 +915,25 @@ export function createA2AOperatorEventBridge(
         receiptId: decision.receiptId,
         now,
       });
-      state.notifiedKeys.add(envelope.dedupeKey);
-      state.notifiedKeys.add(taskNotificationKey);
+      state.notifiedDedupeKeys.add(envelope.dedupeKey);
+      state.notifiedTaskKeys.add(taskNotificationKey);
       state.terminalOutboxRetryAfterByDedupeKey.delete(envelope.dedupeKey);
-      nextContiguousCursor = event.id;
+      if (!completeCurrentEvent()) break;
     }
     if (nextContiguousCursor && nextContiguousCursor !== afterId) {
       state.terminalOutboxCursor = nextContiguousCursor;
-    } else if (response.cursor && !sawUnconfirmedReplayableEvent) {
+      try {
+        options.writeTerminalOutboxCursor?.(nextContiguousCursor);
+      } catch {
+        // Cursor persistence is a host concern; notification processing must keep flowing.
+      }
+    } else if (response.cursor && !shouldHoldTerminalOutboxCursor) {
       state.terminalOutboxCursor = response.cursor;
+      try {
+        options.writeTerminalOutboxCursor?.(response.cursor);
+      } catch {
+        // Cursor persistence is a host concern; notification processing must keep flowing.
+      }
     }
     recordTerminalOutboxPoll(state, response, {
       afterId,
@@ -707,19 +941,118 @@ export function createA2AOperatorEventBridge(
       now,
       cursor: state.terminalOutboxCursor,
       firstPendingId,
-      cursorBlockedByUnacked: sawUnconfirmedReplayableEvent,
+      cursorBlockedByUnacked: shouldHoldTerminalOutboxCursor,
     });
   }
 
+  async function maybeRelayTerminalOutboxEvent(
+    event: A2ATerminalOutboxEvent,
+    params: { reconcileUnacked: boolean; reconciledUnacked: number },
+  ): Promise<"not_applicable" | "succeeded" | "failed" | "skipped"> {
+    if (!options.relayTerminalProjection) return "not_applicable";
+    if (isParentSyntheticCrossBrokerTerminalEvent(event)) return "skipped";
+    if (state.relayedTerminalOutboxIds.has(event.id)) return "succeeded";
+    if (shouldSuppressHistoricalTerminalOutboxReplay(event, {
+      reconcileUnacked: params.reconcileUnacked,
+      reconciledUnacked: params.reconciledUnacked,
+      startedAt: state.terminalOutboxStartedAt,
+      mode: options.terminalOutboxHistoricalReplay ?? "suppress",
+    })) {
+      recordTerminalOutboxRelayAttempt(state, {
+        status: "skipped",
+        event,
+        reason: "historical terminal-outbox replay suppressed; cross-broker relay only sends post-start/post-cursor terminal events",
+        now,
+      });
+      return "skipped";
+    }
+    const projection = buildA2ACrossBrokerTerminalProjection(event, {
+      ...(options.handoffBrokerId ? { handoffBrokerId: options.handoffBrokerId } : {}),
+      ...(options.terminalProjectionMaxSummaryChars ? { maxSummaryChars: options.terminalProjectionMaxSummaryChars } : {}),
+    });
+    if (!projection) {
+      recordTerminalOutboxRelayAttempt(state, {
+        status: "skipped",
+        event,
+        reason: "terminal outbox entry has no cross-broker handoff metadata",
+        now,
+      });
+      return "skipped";
+    }
+    try {
+      const decision = await Promise.resolve(options.relayTerminalProjection(projection));
+      state.relayedTerminalOutboxIds.add(event.id);
+      recordTerminalOutboxRelayAttempt(state, {
+        status: "succeeded",
+        event,
+        projection,
+        reason: decision?.reason ?? "cross-broker terminal projection relayed to origin broker",
+        now,
+      });
+      return "succeeded";
+    } catch (error) {
+      recordTerminalOutboxRelayAttempt(state, {
+        status: "failed",
+        event,
+        projection,
+        reason: error instanceof Error ? error.message : String(error),
+        now,
+      });
+      return "failed";
+    }
+  }
+
+  function isParentSyntheticCrossBrokerTerminalEvent(event: A2ATerminalOutboxEvent): boolean {
+    return typeof event.id === "string" && event.id.startsWith("terminal:cross-broker");
+  }
+
+  function isParentSyntheticCrossBrokerOperatorTerminalEvent(event: A2ATerminalOutboxEvent): boolean {
+    return typeof event.id === "string" && event.id.startsWith("terminal:cross-broker-operator");
+  }
+
+  function isParentSyntheticCrossBrokerProjectionEvidenceOnly(event: A2ATerminalOutboxEvent): boolean {
+    if (!isParentSyntheticCrossBrokerTerminalEvent(event) || isParentSyntheticCrossBrokerOperatorTerminalEvent(event)) {
+      return false;
+    }
+    const payload = isRecord(event.payload) ? event.payload : undefined;
+    const ownership = payload && isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+    return ownership?.providerSendPermittedByProjection === false ||
+      ownership?.terminalAckPermittedByProjection === false;
+  }
+
+  function shouldSuppressLocalNotificationForCrossBrokerHandoff(
+    event: A2ATerminalOutboxEvent,
+    relayStatus: "not_applicable" | "succeeded" | "failed" | "skipped",
+  ): boolean {
+    if (isParentSyntheticCrossBrokerOperatorTerminalEvent(event)) return false;
+    if (isParentSyntheticCrossBrokerProjectionEvidenceOnly(event)) return true;
+    if (isParentSyntheticCrossBrokerTerminalEvent(event)) return false;
+    const payload = isRecord(event.payload) ? event.payload : undefined;
+    if (!shouldSuppressLocalCrossBrokerTerminalNotification(event.id, payload, options.handoffBrokerId)) {
+      return false;
+    }
+    // Relay success, relay failure, and relay-unavailable all stay parent-owned
+    // for operator-facing rendering. The child/handoff broker must not create a
+    // second local Terminal Brief unless the payload explicitly marks this
+    // broker as the parent/broker-of-record.
+    return relayStatus === "succeeded" || relayStatus === "failed" || relayStatus === "not_applicable" || relayStatus === "skipped";
+  }
+
   async function runTerminalOutboxLoop(): Promise<void> {
-    const pollMs = Math.max(0, options.terminalOutboxPollMs ?? 5_000);
-    let reconcileUnacked = true;
+    const pollMs = Math.max(0, options.terminalOutboxPollMs ?? DEFAULT_TERMINAL_OUTBOX_POLL_MS);
+    let reconcileUnacked = options.terminalOutboxReconcileUnackedOnStart !== false;
     while (!stopped && !loopAbort.signal.aborted) {
       try {
         await processTerminalOutboxOnce(reconcileUnacked);
-        reconcileUnacked = true;
+        reconcileUnacked = false;
       } catch (error) {
-        recordFailure("stream_runtime_failed", error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        recordFailure("stream_runtime_failed", message);
+        recordTerminalOutboxPollerState(state, {
+          status: "failed",
+          reason: `terminal outbox poll failed: ${message}`,
+          now,
+        });
       }
       try {
         await waitForRetry(pollMs, loopAbort.signal);
@@ -732,7 +1065,7 @@ export function createA2AOperatorEventBridge(
   async function runLoop(): Promise<void> {
     while (!stopped && !loopAbort.signal.aborted) {
       const resumeCursor = state.cursor ?? state.requestedCursor;
-      state.pendingNotificationKeys.clear();
+      state.pendingNotificationDedupeKeys.clear();
       state.connection = "connecting";
       state.connectedAt = undefined;
 
@@ -781,6 +1114,11 @@ export function createA2AOperatorEventBridge(
 
     shutdown() {
       stopped = true;
+      recordTerminalOutboxPollerState(state, {
+        status: "stopped",
+        reason: "operator event bridge shutdown requested",
+        now,
+      });
       loopAbort.abort();
     },
 
@@ -805,6 +1143,20 @@ function shouldSuppressHistoricalTerminalEventReplay(
   return eventCreatedAt < params.startedAt;
 }
 
+
+function isAllowedTerminalOutboxEvent(event: A2ATerminalOutboxEvent, allowedIds: readonly string[]): boolean {
+  const payload: UnknownRecord = isRecord(event.payload) ? event.payload : {};
+  const taskId = typeof payload.taskId === "string" && payload.taskId.trim().length > 0
+    ? payload.taskId.trim()
+    : undefined;
+  return allowedIds.some((allowed) =>
+    event.id === allowed ||
+    event.id.startsWith(allowed) ||
+    taskId === allowed ||
+    (taskId ? taskId.startsWith(allowed) : false)
+  );
+}
+
 function shouldSuppressHistoricalTerminalOutboxReplay(
   event: A2ATerminalOutboxEvent,
   params: {
@@ -812,11 +1164,9 @@ function shouldSuppressHistoricalTerminalOutboxReplay(
     reconciledUnacked: number;
     startedAt: number;
     mode: "suppress" | "notify";
-    allowedIds?: readonly string[];
   },
 ): boolean {
   if (params.mode === "notify") return false;
-  if (params.allowedIds && !params.allowedIds.includes(event.id)) return true;
   const eventCreatedAt = readTerminalOutboxEventTimestamp(event);
   if (eventCreatedAt === undefined) return true;
   return eventCreatedAt < params.startedAt;
@@ -830,8 +1180,148 @@ function readTerminalOutboxEventTimestamp(event: A2ATerminalOutboxEvent): number
     ?? readOptionalTimestamp(payload.createdAt);
 }
 
+function readOperatorEventTerminalPayload(event: A2ABrokerOperatorSseEvent): UnknownRecord | undefined {
+  const data = isRecord(event.data) ? event.data : undefined;
+  if (!data) return undefined;
+  return readRecordCandidate(data, ["terminalEvent", "event"]) ?? data;
+}
+
+function shouldSuppressLocalCrossBrokerTerminalNotification(
+  eventId: string | undefined,
+  payload: UnknownRecord | undefined,
+  localBrokerId: string | undefined,
+): boolean {
+  if (!payload) return false;
+  if (typeof eventId === "string" && eventId.startsWith("terminal:cross-broker")) return false;
+  if (!readCrossBrokerHandoffRecord(payload)) return false;
+  const local = normalizeOptionalString(localBrokerId);
+  if (local && isTerminalPayloadOwnedByLocalBroker(payload, local)) return false;
+  if (isParentBrokerOnlyTerminalPayload(payload)) return true;
+  if (!local) return false;
+  return true;
+}
+
+function readCrossBrokerHandoffRecord(payload: UnknownRecord): UnknownRecord | undefined {
+  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
+  const candidates = [
+    payload.crossBrokerHandoff,
+    payload.crossBroker,
+    payload.handoff,
+    metadata?.crossBrokerHandoff,
+    metadata?.crossBroker,
+    metadata?.handoff,
+    hasDirectCrossBrokerOwnershipFields(payload) ? payload : undefined,
+    metadata && hasDirectCrossBrokerOwnershipFields(metadata) ? metadata : undefined,
+  ];
+  for (const candidate of candidates) {
+    const record = isRecord(candidate) ? candidate : undefined;
+    if (!record) continue;
+    const parentRoundId = normalizeOptionalString(record.parentRoundId) ?? normalizeOptionalString(record.roundId);
+    const originBrokerId = normalizeOptionalString(record.originBrokerId) ?? normalizeOptionalString(record.parentBrokerId);
+    const handoffBrokerId = normalizeOptionalString(record.handoffBrokerId) ?? normalizeOptionalString(record.localBrokerId);
+    const brokerOfRecordId = normalizeOptionalString(record.brokerOfRecordId) ?? normalizeOptionalString(record.parentOriginBrokerId) ?? normalizeOptionalString(record.parentOwnerBrokerId);
+    if (parentRoundId && (originBrokerId || handoffBrokerId || brokerOfRecordId)) return record;
+  }
+  return undefined;
+}
+
+function hasDirectCrossBrokerOwnershipFields(record: UnknownRecord): boolean {
+  return Boolean(
+    normalizeOptionalString(record.parentRoundId) &&
+    (
+      normalizeOptionalString(record.handoffBrokerId) ||
+      normalizeOptionalString(record.localBrokerId) ||
+      normalizeOptionalString(record.brokerOfRecordId) ||
+      normalizeOptionalString(record.parentBrokerId) ||
+      normalizeOptionalString(record.parentOriginBrokerId) ||
+      normalizeOptionalString(record.parentOwnerBrokerId)
+    ),
+  );
+}
+
+function isParentBrokerOnlyTerminalPayload(payload: UnknownRecord): boolean {
+  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
+  const notificationOwnership = isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+  const metadataNotificationOwnership = metadata && isRecord(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
+  const terminalBrief = isRecord(payload.terminalBrief) ? payload.terminalBrief : undefined;
+  const metadataTerminalBrief = metadata && isRecord(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
+  const handoff = readCrossBrokerHandoffRecord(payload);
+  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isRecord);
+
+  return roots.some((record) => {
+    const scope = normalizeOptionalString(record.scope) ?? normalizeOptionalString(record.notificationScope);
+    if (scope === "parent-broker-only" || scope === "parent_broker_only") return true;
+    const owner = normalizeOptionalString(record.operatorFacingOwner) ??
+      normalizeOptionalString(record.terminalBriefOwner) ??
+      normalizeOptionalString(record.notificationOwner);
+    return record.parentOwned === true ||
+      record.parentOwnedTerminalBrief === true ||
+      record.parentOwnedNotification === true ||
+      record.operatorFacingParentOwned === true ||
+      owner === "parent" ||
+      owner === "origin" ||
+      owner === "parent-owned" ||
+      owner === "parent_owned" ||
+      owner === "broker-of-record" ||
+      owner === "broker_of_record";
+  });
+}
+
+function isTerminalPayloadOwnedByLocalBroker(payload: UnknownRecord, localBrokerId: string | undefined): boolean {
+  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
+  const notificationOwnership = isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+  const metadataNotificationOwnership = metadata && isRecord(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
+  const terminalBrief = isRecord(payload.terminalBrief) ? payload.terminalBrief : undefined;
+  const metadataTerminalBrief = metadata && isRecord(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
+  const handoff = readCrossBrokerHandoffRecord(payload);
+  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isRecord);
+
+  const local = normalizeOptionalString(localBrokerId);
+  if (!local) return false;
+
+  const parentBrokerIds = roots.flatMap((record) => [
+    normalizeOptionalString(record.ownerBrokerId),
+    normalizeOptionalString(record.brokerOfRecordId),
+    normalizeOptionalString(record.parentBrokerId),
+    normalizeOptionalString(record.parentOriginBrokerId),
+    normalizeOptionalString(record.parentOwnerBrokerId),
+  ]);
+  if (parentBrokerIds.includes(local)) return true;
+
+  const handoffOriginBrokerId = handoff
+    ? normalizeOptionalString(handoff.originBrokerId) ?? normalizeOptionalString(handoff.origin) ?? normalizeOptionalString(handoff.parentBrokerId)
+    : undefined;
+  return handoffOriginBrokerId === local;
+}
+
 function buildTaskNotificationKey(envelope: A2AOperatorTerminalNotificationEnvelope): string {
-  return envelope.taskId ? `task:${envelope.taskId}` : `dedupe:${envelope.dedupeKey}`;
+  const taskId = normalizeOptionalString(envelope.taskId) ?? normalizeOptionalString(envelope.evidence.taskId);
+  const parentRoundId = normalizeOptionalString(envelope.parentRoundId);
+  const roundScope = parentRoundId ? `round:${parentRoundId}:` : "";
+  if (taskId) return `${roundScope}task:${taskId}`;
+  const runId = normalizeOptionalString(envelope.runId) ?? normalizeOptionalString(envelope.evidence.runId);
+  if (runId) return `${roundScope}run:${runId}:${envelope.type}`;
+  const url = normalizeOptionalString(envelope.doneUrl) ??
+    normalizeOptionalString(envelope.prUrl) ??
+    normalizeOptionalString(envelope.blockUrl) ??
+    normalizeOptionalString(envelope.issueUrl) ??
+    normalizeOptionalString(envelope.evidence.doneUrl) ??
+    normalizeOptionalString(envelope.evidence.prUrl) ??
+    normalizeOptionalString(envelope.evidence.blockUrl) ??
+    normalizeOptionalString(envelope.evidence.issueUrl);
+  if (url) return `${roundScope}url:${url}:${envelope.type}`;
+  const worker = normalizeOptionalString(envelope.worker) ?? normalizeOptionalString(envelope.evidence.worker);
+  const status = normalizeOptionalString(envelope.status) ?? normalizeOptionalString(envelope.evidence.status);
+  const createdAt = normalizeOptionalString(envelope.createdAt) ?? normalizeOptionalString(envelope.evidence.createdAt);
+  const summary = normalizeOptionalString(envelope.evidence.summary) ??
+    normalizeOptionalString(envelope.evidence.taskSummary) ??
+    normalizeOptionalString(envelope.evidence.taskBrief) ??
+    normalizeOptionalString(envelope.evidence.taskDescription) ??
+    normalizeOptionalString(envelope.title);
+  if (worker && createdAt && summary) {
+    return `${roundScope}semantic:${envelope.type}:${worker}:${status ?? "unknown"}:${createdAt}:${summary}`;
+  }
+  return `${roundScope}dedupe:${envelope.dedupeKey}`;
 }
 
 function terminalOutboxAckEvidenceFromDecision(
@@ -843,6 +1333,22 @@ function terminalOutboxAckEvidenceFromDecision(
   // adapter only returns true after a current-session/manual receipt, never on
   // provider send success alone.
   return decision.ackTerminalEvent ? "operator_visible" : undefined;
+}
+
+function terminalOutboxReceiptStatusFromDecision(
+  decision: A2AOperatorNotificationAckDecision,
+): A2AOperatorTerminalOutboxReceiptStatus | undefined {
+  return decision.terminalReceiptStatus;
+}
+
+function shouldAdvanceTerminalOutboxCursorAfterReceiptStatus(
+  status: A2AOperatorTerminalOutboxReceiptStatus,
+): boolean {
+  return status === "accepted" ||
+    status === "started" ||
+    status === "produced" ||
+    status === "provider_sent" ||
+    status === "provider_accepted";
 }
 
 export function normalizeNotificationAckDecision(
@@ -863,6 +1369,8 @@ export function normalizeNotificationAckDecision(
   return {
     ackTerminalEvent: false,
     reason: decision?.reason ?? "waiting for current-session or manual receipt confirmation",
+    ...(decision?.terminalReceiptStatus ? { terminalReceiptStatus: decision.terminalReceiptStatus } : {}),
+    ...(decision?.receiptId ? { receiptId: decision.receiptId } : {}),
   };
 }
 
@@ -918,6 +1426,52 @@ export function buildUnavailableA2AOperatorEventBridgeState(params: {
         open: [],
         resolved: [],
       },
+    },
+  };
+}
+
+function recordTerminalOutboxPollerState(
+  state: InternalState,
+  params: { status: "started" | "skipped" | "stopped" | "failed"; reason: string; now: () => number },
+): void {
+  const timestamp = params.now();
+  const previousPoller = state.terminalOutbox?.poller;
+  state.terminalOutbox = {
+    ...state.terminalOutbox,
+    poller: {
+      status: params.status,
+      reason: params.reason,
+      timestamp,
+      ...(previousPoller?.lastTick ? { lastTick: previousPoller.lastTick } : {}),
+      ...(params.status === "failed"
+        ? { lastError: { timestamp, message: params.reason } }
+        : previousPoller?.lastError
+          ? { lastError: previousPoller.lastError }
+          : {}),
+    },
+  };
+}
+
+function recordTerminalOutboxPollerTick(
+  state: InternalState,
+  params: { afterId?: string; limit: number; reconcileUnacked: boolean; now: () => number },
+): void {
+  const previousPoller = state.terminalOutbox?.poller;
+  state.terminalOutbox = {
+    ...state.terminalOutbox,
+    poller: {
+      status: previousPoller?.status === "failed" ? "started" : previousPoller?.status ?? "started",
+      reason: previousPoller?.status === "failed"
+        ? "terminal outbox poller recovered; polling resumed"
+        : previousPoller?.reason ?? "terminal outbox poller started",
+      timestamp: previousPoller?.timestamp ?? params.now(),
+      lastTick: {
+        timestamp: params.now(),
+        ...(params.afterId ? { afterId: params.afterId } : {}),
+        limit: params.limit,
+        reconcileUnacked: params.reconcileUnacked,
+      },
+      ...(previousPoller?.lastError ? { lastError: previousPoller.lastError } : {}),
     },
   };
 }
@@ -1006,6 +1560,65 @@ function recordTerminalOutboxAck(
   };
 }
 
+function recordTerminalOutboxRelayAttempt(
+  state: InternalState,
+  params: {
+    status: "succeeded" | "failed" | "skipped";
+    event: A2ATerminalOutboxEvent;
+    projection?: A2ACrossBrokerTerminalProjection;
+    reason: string;
+    now: () => number;
+  },
+): void {
+  const previous = state.terminalOutbox?.crossBrokerRelay;
+  const timestamp = params.now();
+  const relayed = (previous?.relayed ?? 0) + (params.status === "succeeded" ? 1 : 0);
+  const skipped = (previous?.skipped ?? 0) + (params.status === "skipped" ? 1 : 0);
+  const failed = (previous?.failed ?? 0) + (params.status === "failed" ? 1 : 0);
+  state.terminalOutbox = {
+    ...state.terminalOutbox,
+    crossBrokerRelay: {
+      status: params.status,
+      ...(state.terminalOutboxCursor ? { cursor: state.terminalOutboxCursor } : {}),
+      relayed,
+      skipped,
+      failed,
+      lastAttempt: {
+        timestamp,
+        terminalOutboxId: params.event.id,
+        ...(params.projection?.childTaskId ? { childTaskId: params.projection.childTaskId } : {}),
+        ...(params.projection?.parentRoundId ? { parentRoundId: params.projection.parentRoundId } : {}),
+        ...(params.projection?.originBrokerId ? { originBrokerId: params.projection.originBrokerId } : {}),
+        status: params.status,
+        reason: params.reason,
+      },
+      ...(params.projection && params.status === "succeeded"
+        ? {
+            lastSuccess: {
+              timestamp,
+              terminalOutboxId: params.event.id,
+              relayId: params.projection.relayId,
+              childTaskId: params.projection.childTaskId,
+              parentRoundId: params.projection.parentRoundId,
+              originBrokerId: params.projection.originBrokerId,
+            },
+          }
+        : previous?.lastSuccess
+          ? { lastSuccess: { ...previous.lastSuccess } }
+          : {}),
+      ...(params.status === "failed"
+        ? { lastError: { timestamp, terminalOutboxId: params.event.id, message: params.reason } }
+        : previous?.lastError
+          ? { lastError: { ...previous.lastError } }
+          : {}),
+      receiptGate: {
+        providerGatewaySendSuccess: "not_ack_evidence",
+        terminalAckEligible: false,
+      },
+    },
+  };
+}
+
 function projectTerminalOutboxEvent(event: A2ATerminalOutboxEvent): A2AOperatorTerminalOutboxEventProjection {
   const payload: UnknownRecord = isRecord(event.payload) ? event.payload : {};
   const taskId = safeOperatorString(payload.taskId);
@@ -1033,6 +1646,24 @@ function projectTerminalOutboxEvent(event: A2ATerminalOutboxEvent): A2AOperatorT
   };
 }
 
+function addDoctorDiagnostics(
+  projection: A2AOperatorTerminalOutboxProjection,
+  state: InternalState,
+): A2AOperatorTerminalOutboxProjection {
+  return {
+    ...projection,
+    doctorDiagnostics: {
+      notifiedDedupeKeyCount: state.notifiedDedupeKeys.size,
+      pendingNotificationDedupeKeyCount: state.pendingNotificationDedupeKeys.size,
+      notifiedTaskKeyCount: state.notifiedTaskKeys.size,
+      pendingNotificationTaskKeyCount: state.pendingNotificationTaskKeys.size,
+      notificationFuseTripped: state.terminalOutboxNotificationFuseTripped,
+      retryAfterCount: state.terminalOutboxRetryAfterByDedupeKey.size,
+      relayedTerminalOutboxIdCount: state.relayedTerminalOutboxIds.size,
+    },
+  };
+}
+
 function cloneTerminalOutboxProjection(
   projection: A2AOperatorTerminalOutboxProjection,
 ): A2AOperatorTerminalOutboxProjection {
@@ -1043,10 +1674,23 @@ function cloneTerminalOutboxProjection(
     ...(projection.lastEvent ? { lastEvent: { ...projection.lastEvent } } : {}),
     ...(projection.lastNotificationAttempt ? { lastNotificationAttempt: { ...projection.lastNotificationAttempt } } : {}),
     ...(projection.lastAck ? { lastAck: { ...projection.lastAck } } : {}),
+    ...(projection.crossBrokerRelay ? { crossBrokerRelay: cloneTerminalOutboxRelayProjection(projection.crossBrokerRelay) } : {}),
   };
   return {
     ...cloned,
     deployPreflight: buildTerminalOutboxDeployPreflightProjection(cloned),
+  };
+}
+
+function cloneTerminalOutboxRelayProjection(
+  projection: A2AOperatorTerminalOutboxRelayProjection,
+): A2AOperatorTerminalOutboxRelayProjection {
+  return {
+    ...projection,
+    ...(projection.lastAttempt ? { lastAttempt: { ...projection.lastAttempt } } : {}),
+    ...(projection.lastSuccess ? { lastSuccess: { ...projection.lastSuccess } } : {}),
+    ...(projection.lastError ? { lastError: { ...projection.lastError } } : {}),
+    receiptGate: { ...projection.receiptGate },
   };
 }
 
@@ -1136,7 +1780,7 @@ function buildTerminalOutboxDeployPreflightProjection(
 
 function buildPublicState(state: InternalState): A2AOperatorEventBridgeState {
   const terminalOutbox = state.terminalOutbox
-    ? cloneTerminalOutboxProjection(state.terminalOutbox)
+    ? addDoctorDiagnostics(cloneTerminalOutboxProjection(state.terminalOutbox), state)
     : undefined;
   return {
     kind: "a2a.operator.monitor",
@@ -1691,11 +2335,11 @@ function buildTerminalReceiptProjectionReason(
   mode?: A2AOperatorTerminalReceiptProjection["receiptMode"],
 ): string {
   if (status === "confirmed" && mode) return `terminal ack allowed by ${mode}`;
-  if (status === "failed") return "operator-visible receipt failed; terminal ack must remain blocked";
-  if (status === "timed_out") return "operator-visible receipt timed out; terminal ack must remain blocked until refreshed";
-  if (status === "stale") return "operator-visible receipt is stale; terminal ack must remain blocked until refreshed";
-  if (status === "duplicate_suppressed") return "duplicate terminal notification was suppressed; terminal ack must remain blocked without receipt confirmation";
-  return "terminal ack pending until current-session visibility or manual operator receipt is observed; terminal succeeded but operator-visible receipt is missing";
+  if (status === "failed") return "receipt failed — terminal ack blocked";
+  if (status === "timed_out") return "receipt timed out — must refresh before ack";
+  if (status === "stale") return "receipt stale — must refresh before ack";
+  if (status === "duplicate_suppressed") return "duplicate suppressed — no receipt confirmation, ack blocked";
+  return "no current-session/manual receipt — ack blocked";
 }
 
 function normalizeOperatorVisibleReceiptState(status: A2AOperatorReceiptGapStatus): A2AOperatorVisibleTerminalReceiptState {
@@ -1710,17 +2354,17 @@ function normalizeOperatorVisibleReceiptState(status: A2AOperatorReceiptGapStatu
 function buildOperatorReceiptLabel(state: A2AOperatorVisibleTerminalReceiptState): string {
   switch (state) {
     case "receipt_confirmed":
-      return "receipt confirmed";
+      return "✓ receipt confirmed";
     case "timed_out":
-      return "timed out receipt";
+      return "⏱ timed out";
     case "stale":
-      return "stale receipt";
+      return "⚠ stale receipt";
     case "failed":
-      return "failed receipt";
+      return "✗ receipt failed";
     case "duplicate_suppressed":
       return "duplicate suppressed";
     case "pending_receipt":
-      return "pending receipt";
+      return "⋯ pending receipt";
   }
 }
 

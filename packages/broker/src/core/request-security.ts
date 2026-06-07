@@ -1,3 +1,43 @@
+/**
+ * request-security.ts — Requester identity extraction, permission assertions,
+ * rate limiting, and secret gating.
+ *
+ * ## Requester-visible status contract (issue #921)
+ *
+ * Every HTTP request carries an optional x-a2a-requester-id header that
+ * identifies the calling party. The broker uses this to:
+ *
+ * 1. **Authorize reads** — `assertRequesterCanSubscribeToTask()` enforces
+ *    that only the task requester, target node, assigned worker, or a
+ *    hub/operator role may subscribe to task events.
+ * 2. **Authorize writes** — `assertRequesterMatchesParty()` ensures the
+ *    requester id matches the expected party for the operation.
+ * 3. **Authorize privileged actions** — `assertRequesterHasRole()` gates
+ *    operations to specific roles (e.g. hub for SSE broadcast).
+ * 4. **Rate-limit** — `classifyRateLimitBucket()` assigns requests to
+ *    "worker" or "general" buckets based on path and identity.
+ *
+ * ### Error contract
+ *
+ * All permission failures throw `BrokerError(code="unauthorized")` with a
+ * human-readable `message`. Callers must propagate these to the HTTP
+ * response; they must NOT silently degrade security.
+ *
+ * ### Visibility matrix
+ *
+ * | Requester matches | Can subscribe? | Can see results/errors? |
+ * |---|---:|---:|
+ * | task.requester.id | ✅ | ✅ |
+ * | task.targetNodeId | ✅ | ✅ |
+ * | task.assignedWorkerId | ✅ | ✅ |
+ * | role=hub/operator | ✅ | ✅ |
+ * | none of the above | ❌ (BrokerError) | ❌ |
+ *
+ * Rate limit responses carry x-ratelimit-* headers so requesters can
+ * self-throttle: x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset,
+ * and x-a2a-ratelimit-bucket.
+ */
+
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
@@ -206,7 +246,7 @@ export function classifyRateLimitBucket(req: IncomingMessage, url: URL): RateLim
     req.method === "POST" &&
     segments[0] === "tasks" &&
     segments[1] &&
-    ["claim", "start", "complete", "fail"].includes(segments[2] ?? "")
+    ["claim", "start", "complete", "evidence", "fail"].includes(segments[2] ?? "")
   ) {
     return "worker";
   }
@@ -222,7 +262,8 @@ export function classifyRateLimitBucket(req: IncomingMessage, url: URL): RateLim
     return "worker";
   }
 
-  const assignedWorkerId = url.searchParams.get("assignedWorkerId")?.trim();
+  const assignedWorkerId =
+    url.searchParams.get("assignedWorkerId")?.trim() || url.searchParams.get("worker")?.trim();
   const requesterId = headerValue(req, "x-a2a-requester-id");
   if (
     req.method === "GET" &&

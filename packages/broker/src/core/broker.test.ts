@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { InMemoryA2ABroker, type BrokerProfilingSample, type TaskUpdate, type BufferedTaskEvent } from "./broker.js";
+import type { WorkerRuntimeRepository } from "./worker-repository.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   SqliteArtifactRuntimeRepository,
@@ -23,7 +24,7 @@ import {
   type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store.js";
-import type { ArtifactRecord, AuditEvent, ChangeProposal, CreateTaskRequest, TaskTombstone, ValidationResult, WorkerRecord } from "./types.js";
+import type { ArtifactRecord, AuditEvent, ChangeProposal, CreateTaskRequest, TaskTombstone, ValidationResult, WorkerMobileHealth, WorkerMode, WorkerRecord } from "./types.js";
 
 function registerWorker(broker: InMemoryA2ABroker, nodeId: string): void {
   broker.registerWorker({
@@ -92,10 +93,17 @@ test("broker annotates tasks with owner metadata and rejects mismatched lifecycl
   assert.equal(owned.brokerOfRecord, "broker-a");
   assert.equal(owned.teamId, "team-a");
 
-  const wrongBroker = createOwnedTask(broker, "task-wrong-broker", "worker-owned", {
+  assert.throws(() => createOwnedTask(broker, "task-wrong-broker-create", "worker-owned", {
     brokerOfRecord: "broker-b",
     teamId: "team-a",
+  }), {
+    name: "BrokerError",
+    code: "policy_denied",
+    message: "create cannot set brokerOfRecord broker-b on broker broker-a",
   });
+
+  const wrongBroker = createOwnedTask(broker, "task-wrong-broker", "worker-owned");
+  wrongBroker.brokerOfRecord = "broker-b";
   assert.throws(() => broker.claimTask(wrongBroker.id, "worker-owned"), {
     name: "BrokerError",
     code: "policy_denied",
@@ -140,6 +148,487 @@ test("broker annotates tasks with owner metadata and rejects mismatched lifecycl
     code: "policy_denied",
     message: "fail requires broker-of-record broker-b",
   });
+});
+
+test("broker normalizes cross-broker child tasks into parent-owned Terminal Brief payloads", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  const task = broker.createTask({
+    id: "seoseo-led-team2-jingun",
+    intent: "verify",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "jingun", kind: "node", role: "analyst" },
+    assignedWorkerId: "jingun",
+    message: "audit Family Wiki A2A page",
+    payload: {
+      parentRoundId: "family-wiki-cleanup-20260522T031233Z",
+      parentRoundTotal: 7,
+      parentRoundOrder: 2,
+      requestedByBroker: "seoseo",
+    },
+  });
+
+  assert.equal(task.payload["originBrokerId"], "seoseo");
+  assert.equal(task.payload["operatorFacingOwner"], "parent");
+  assert.deepEqual(task.payload["crossBrokerHandoff"], {
+    parentRoundId: "family-wiki-cleanup-20260522T031233Z",
+    originBrokerId: "seoseo",
+    handoffBrokerId: "gwakga",
+    childWorkerId: "jingun",
+  });
+  assert.deepEqual(task.payload["notificationOwnership"], {
+    owner: "parent",
+    ownerBrokerId: "seoseo",
+    scope: "parent-broker-only",
+    providerSendPermittedByProjection: false,
+    terminalAckPermittedByProjection: false,
+    reason: "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
+  });
+  assert.deepEqual(task.payload["terminalBrief"], {
+    parentOwnedTerminalBrief: true,
+    notificationOwnership: {
+      owner: "parent",
+      ownerBrokerId: "seoseo",
+      scope: "parent-broker-only",
+    },
+  });
+});
+
+test("broker preserves raw dispatch metadata when brokerId is not configured (no enrichment, no regression)", () => {
+  // When the broker has no brokerId configured, normalizeTaskPayload returns
+  // early because !localBrokerId. The raw payload fields (parentRoundId,
+  // parentRoundTotal, parentRoundOrder, requestedByBroker) are preserved
+  // as-is. Cross-broker enrichment (crossBrokerHandoff, notificationOwnership,
+  // terminalBrief) is absent — projection-time ingestion in
+  // CrossBrokerTerminalBriefProjectionStore handles metadata assembly.
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  // Use parentRoundId with an explicit run alias so hasTerminalBriefMetadata
+  // returns false (parentRoundId alone is not a trigger) — this test only
+  // validates that raw payload fields survive without cross-broker enrichment
+  // when localBrokerId is absent.
+  const task = broker.createTask({
+    id: "seoseo-led-unconfigured-broker-jingun",
+    intent: "verify",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "jingun", kind: "node", role: "analyst" },
+    assignedWorkerId: "jingun",
+    message: "audit page with missing broker ID",
+    payload: {
+      parentRoundId: "unconfigured-round-20260522",
+      requestedByBroker: "seoseo",
+    },
+  });
+
+  // Raw dispatch fields are preserved
+  assert.equal(task.payload["parentRoundId"], "unconfigured-round-20260522");
+  assert.equal(task.payload["requestedByBroker"], "seoseo");
+  // No enrichment because localBrokerId is absent
+  assert.equal(task.payload["crossBrokerHandoff"], undefined,
+    "crossBrokerHandoff enrichment requires a configured brokerId");
+  assert.equal(task.payload["notificationOwnership"], undefined,
+    "notificationOwnership enrichment requires a configured brokerId");
+  assert.equal(task.payload["terminalBrief"], undefined,
+    "terminalBrief enrichment requires a configured brokerId");
+});
+
+test("broker idempotent createTask returns existing task with same id (duplicate handling)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  const request = {
+    id: "duplicate-team2-child-task",
+    intent: "verify" as const,
+    requester: { id: "seoseo", kind: "node" as const, role: "operator" as const },
+    target: { id: "jingun", kind: "node" as const, role: "analyst" as const },
+    assignedWorkerId: "jingun",
+    message: "duplicate task for idempotency test",
+    payload: {
+      parentRoundId: "idempotent-round",
+      parentRoundTotal: 3,
+      parentRoundOrder: 1,
+      requestedByBroker: "seoseo",
+    },
+  };
+
+  const first = broker.createTask(request);
+  const second = broker.createTask(request);
+
+  // Second call returns the same task without mutation
+  assert.equal(first.id, request.id);
+  assert.equal(second.id, first.id);
+  assert.deepEqual(second.payload["crossBrokerHandoff"], first.payload["crossBrokerHandoff"]);
+  assert.deepEqual(second.payload["notificationOwnership"], first.payload["notificationOwnership"]);
+  assert.deepEqual(second.payload["terminalBrief"], first.payload["terminalBrief"]);
+  // Only one task in the broker
+  assert.equal(
+    broker.listTasks().filter((t) => t.id === request.id).length,
+    1,
+    "duplicate createTask must not produce a second task record",
+  );
+});
+
+test("broker createTask rejects Team1 parent-round task without work-mode decision evidence", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "yukson");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "team1-without-work-mode-evidence",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "yukson", kind: "node", role: "analyst" },
+        assignedWorkerId: "yukson",
+        message: "Team1 parent-round task without pre-dispatch evidence",
+        payload: {
+          teamId: "team1",
+          parentRoundId: "a2a-work-mode-round",
+          parentRoundTotal: 4,
+          parentRoundOrder: 1,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /work-mode decision evidence validation failed/,
+    },
+  );
+});
+
+test("broker createTask accepts Team1 parent-round task with valid work-mode decision evidence", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "yukson");
+
+  const task = broker.createTask({
+    id: "team1-with-work-mode-evidence",
+    intent: "verify",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "yukson", kind: "node", role: "analyst" },
+    assignedWorkerId: "yukson",
+    message: "Team1 parent-round task with pre-dispatch evidence",
+    payload: {
+      teamId: "team1",
+      parentRoundId: "a2a-work-mode-round",
+      parentRoundTotal: 4,
+      parentRoundOrder: 1,
+      originBrokerId: "seoseo",
+      workModeDecision: {
+        mode: "team1",
+        idempotencyKey: "a2a-work-mode:team1:test",
+        finalizerOwner: "seoseo",
+        generatedAt: "2026-06-07T06:00:00.000Z",
+        capacityState: "healthy",
+        capacitySnapshotSource: "/workers/capacity",
+        capacitySnapshotAt: "2026-06-07T05:59:00.000Z",
+        sourceOnlyDecision: true,
+        workerDispatchAllowedByThisPacket: false,
+      },
+    },
+  });
+
+  assert.equal(task.id, "team1-with-work-mode-evidence");
+  assert.equal((task.payload["workModeDecision"] as Record<string, unknown>)?.["finalizerOwner"], "seoseo");
+});
+
+test("broker rejects task workspace metadata missing workspaceId before persistence", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "dungae");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "malformed-workspace-task",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "dungae", kind: "node", role: "analyst" },
+        assignedWorkerId: "dungae",
+        workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "dungae" } as any,
+        message: "malformed workspace metadata should not enter broker_tasks",
+        payload: {
+          parentRoundId: "cross-team-canary",
+          originBrokerId: "seoseo",
+          parentRoundOrder: 1,
+          parentRoundTotal: 1,
+        },
+        taskOrigin: "operator",
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /workspace\.nodeId and workspace\.workspaceId are required/,
+    },
+  );
+  assert.equal(broker.listTasks().some((task) => task.id === "malformed-workspace-task"), false);
+});
+
+test("broker fail-closed at createTask when Terminal Brief metadata has missing parentRoundTotal", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  // parentRoundOrder present but parentRoundTotal absent.
+  // originBrokerId triggers hasTerminalBriefMetadata.
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "fail-closed-missing-total",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        message: "missing parentRoundTotal",
+        payload: {
+          parentRoundId: "fail-closed-round",
+          originBrokerId: "seoseo",
+          parentRoundOrder: 2,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /parentRoundTotal/,
+    },
+  );
+});
+
+test("broker fail-closed at createTask when Terminal Brief metadata has missing parentRoundOrder", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  // parentRoundTotal present but parentRoundOrder absent.
+  // originBrokerId triggers hasTerminalBriefMetadata.
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "fail-closed-missing-order",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        message: "missing parentRoundOrder",
+        payload: {
+          parentRoundId: "fail-closed-round",
+          originBrokerId: "seoseo",
+          parentRoundTotal: 5,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /parentRoundOrder/,
+    },
+  );
+});
+
+test("broker fail-closed at createTask when parentRoundOrder exceeds parentRoundTotal", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "fail-closed-order-exceeds-total",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        message: "order exceeds total",
+        payload: {
+          parentRoundId: "fail-closed-round",
+          parentRoundTotal: 3,
+          parentRoundOrder: 5,
+          requestedByBroker: "seoseo",
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /must not exceed/,
+    },
+  );
+});
+
+test("broker rejects A2A round task without parent round total and order", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "sogyo");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "a2a-round-missing-terminal-brief-order",
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        message: "A2A task missing parentRoundTotal and parentRoundOrder",
+        payload: {
+          mode: "ordinary_a2a_lite",
+          teamScope: "team1",
+          parentRoundId: "a2a-1032-round",
+          originBrokerId: "seoseo",
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /A2A round task policy validation failed: .*parentRoundTotal.*parentRoundOrder/,
+    },
+  );
+});
+
+test("broker rejects A2A round task assigned outside the declared team", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "dungae");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "a2a-round-wrong-team-worker",
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "dungae", kind: "node", role: "analyst" },
+        assignedWorkerId: "dungae",
+        message: "A2A task assigned to the wrong team worker",
+        payload: {
+          mode: "ordinary_a2a_lite",
+          teamScope: "team1",
+          parentRoundId: "a2a-1032-round",
+          originBrokerId: "seoseo",
+          parentRoundTotal: 3,
+          parentRoundOrder: 1,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /worker dungae is not in the team1 worker set/,
+    },
+  );
+});
+
+test("broker accepts A2A round task with team worker and complete Terminal Brief metadata", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "sogyo");
+
+  const task = broker.createTask({
+    id: "a2a-round-valid-team-worker",
+    intent: "analyze",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "sogyo", kind: "node", role: "analyst" },
+    assignedWorkerId: "sogyo",
+    message: "A2A task with complete round metadata",
+    payload: {
+      mode: "ordinary_a2a_lite",
+      teamScope: "team1",
+      parentRoundId: "a2a-1032-round",
+      originBrokerId: "seoseo",
+      parentRoundTotal: 3,
+      parentRoundOrder: 1,
+    },
+  });
+
+  assert.equal(task.assignedWorkerId, "sogyo");
+  assert.equal(task.payload.parentRoundTotal, 3);
+  assert.equal(task.payload.parentRoundOrder, 1);
+});
+
+test("broker fail-closed at createTask when crossBrokerHandoff has empty parentRoundId", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "fail-closed-missing-parent-round-id",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        message: "missing parentRoundId",
+        payload: {
+          // parentRoundId deliberately absent
+          originBrokerId: "seoseo",
+          parentRoundTotal: 5,
+          parentRoundOrder: 2,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /parentRoundId/,
+    },
+  );
+});
+
+test("broker fail-closed at createTask when crossBrokerHandoff has empty originBrokerId", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "fail-closed-missing-origin-broker",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "operator" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        message: "missing originBrokerId",
+        payload: {
+          parentRoundId: "fail-closed-round",
+          // originBrokerId deliberately absent
+          parentRoundTotal: 5,
+          parentRoundOrder: 2,
+        },
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /originBrokerId/,
+    },
+  );
 });
 
 test("broker fail-closes GitHub patch completion when evidence is missing", () => {
@@ -301,6 +790,151 @@ test("broker exposes compact diagnostics without task payload expansion", () => 
   assert.equal(Object.hasOwn(diagnostics, "tasksById"), false);
 });
 
+test("WorkerView includes workerPlane, managementPlane, updateEligible fields", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "worker-wp-test",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+
+  // Default (no managementPlane reported) → unknown
+  const view = broker.getWorkerView("worker-wp-test", 120_000);
+  assert.ok(view);
+  assert.equal(view.status, "online");
+  assert.equal(view.workerPlane, "online");
+  assert.equal(view.managementPlane, "unknown");
+  assert.equal(view.updateEligible, true);
+});
+
+test("WorkerView workerPlane goes to unknown when worker goes stale", async () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "worker-stale-plane",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+
+  // Small delay to nudge timestamp past 1ms stale threshold
+  await new Promise((r) => setTimeout(r, 10));
+
+  const view = broker.getWorkerView("worker-stale-plane", 1);
+  assert.ok(view);
+  assert.equal(view.status, "stale");
+  assert.equal(view.workerPlane, "unknown");
+  assert.equal(view.managementPlane, "unknown");
+  assert.equal(view.updateEligible, false);
+});
+
+test("heartbeat-online with management-disconnected sets updateEligible false", () => {
+  const broker = new InMemoryA2ABroker();
+  const nodeId = "worker-mgmt-disc";
+  broker.registerWorker({
+    nodeId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+
+  // Heartbeat with managementPlane="disconnected"
+  broker.heartbeatWorker(nodeId, { managementPlane: "disconnected" });
+
+  const view = broker.getWorkerView(nodeId, 120_000);
+  assert.ok(view);
+  assert.equal(view.status, "online");
+  assert.equal(view.workerPlane, "online");
+  assert.equal(view.managementPlane, "disconnected");
+  assert.equal(view.updateEligible, false);
+});
+
+test("heartbeat-online with management-online sets updateEligible true", () => {
+  const broker = new InMemoryA2ABroker();
+  const nodeId = "worker-mgmt-online";
+  broker.registerWorker({
+    nodeId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+
+  // Heartbeat with managementPlane="online"
+  broker.heartbeatWorker(nodeId, { managementPlane: "online" });
+
+  const view = broker.getWorkerView(nodeId, 120_000);
+  assert.ok(view);
+  assert.equal(view.status, "online");
+  assert.equal(view.workerPlane, "online");
+  assert.equal(view.managementPlane, "online");
+  assert.equal(view.updateEligible, true);
+});
+
+test("listWorkerViews includes plane fields for all workers", async () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "plane-worker-a",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+  broker.registerWorker({
+    nodeId: "plane-worker-b",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+
+  // Small delay so workers become stale with 1ms threshold
+  await new Promise((r) => setTimeout(r, 10));
+
+  const views = broker.listWorkerViews(1);
+  assert.equal(views.length, 2);
+  for (const view of views) {
+    assert.ok("workerPlane" in view);
+    assert.ok("managementPlane" in view);
+    assert.ok("updateEligible" in view);
+    // Offline-after-1ms → stale, so workerPlane should be "unknown"
+    assert.equal(view.workerPlane, "unknown");
+  }
+});
+
 test("broker profiling hooks receive compact persistence samples", () => {
   const samples: BrokerProfilingSample[] = [];
   const broker = new InMemoryA2ABroker(undefined, undefined, {
@@ -335,6 +969,7 @@ test("broker profiling hooks receive compact persistence samples", () => {
       hotTombstones: 0,
       hotAuditEvents: 1,
       hotWorkers: 0,
+      hotTerminalOutboxEvents: 0,
     });
   }
 });
@@ -407,6 +1042,393 @@ test("broker throttles unchanged worker heartbeat persistence while keeping in-m
 
   assert.equal(saveHints.length, savesAfterFirstHeartbeat, "unchanged immediate heartbeat should not rewrite broker state");
   assert.equal(broker.getWorker("worker-heartbeat-throttle")?.lastSeenAt, secondHeartbeat.lastSeenAt);
+});
+
+test("broker seeds worker heartbeat persistence throttle from loaded worker lastSeenAt", () => {
+  const now = new Date().toISOString();
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const snapshot: BrokerSnapshot = {
+    ...emptySnapshot(),
+    workers: [
+      {
+        nodeId: "worker-heartbeat-restart",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: false,
+          canPromoteLive: false,
+          workspaceIds: ["test"],
+          environments: ["research"],
+        },
+        createdAt: now,
+        updatedAt: now,
+        lastSeenAt: now,
+      },
+    ],
+  };
+  const store: BrokerStateStore = {
+    load: () => snapshot,
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+
+  const heartbeat = broker.heartbeatWorker("worker-heartbeat-restart");
+
+  assert.equal(saveHints.length, 0, "recent loaded workers should not rewrite state on first unchanged heartbeat after restart");
+  assert.equal(broker.getWorker("worker-heartbeat-restart")?.lastSeenAt, heartbeat.lastSeenAt);
+});
+
+test("broker keeps unchanged worker heartbeat hot writes off the request path", async () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  let workerReads = 0;
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => {
+      workerReads += 1;
+      return persistedWorkers.get(nodeId) ?? null;
+    },
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+  registerWorker(broker, "worker-heartbeat-hot-path");
+
+  workerReads = 0;
+  const heartbeat = broker.heartbeatWorker("worker-heartbeat-hot-path");
+  assert.equal(workerReads, 0, "cached heartbeat should not synchronously read worker hot table");
+  const writesAfterFirstHeartbeat = workerWrites.length;
+  const savesAfterFirstHeartbeat = saveHints.length;
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  workerReads = 0;
+  const unchangedHeartbeat = broker.heartbeatWorker("worker-heartbeat-hot-path");
+
+  assert.equal(workerReads, 0, "unchanged cached heartbeat should not synchronously read worker hot table");
+  assert.equal(workerWrites.length, writesAfterFirstHeartbeat, "unchanged heartbeat should not synchronously upsert worker hot table");
+  assert.equal(saveHints.length, savesAfterFirstHeartbeat, "unchanged heartbeat should not persist state");
+  assert.notEqual(unchangedHeartbeat.lastSeenAt, heartbeat.lastSeenAt);
+  assert.equal(broker.getWorker("worker-heartbeat-hot-path")?.lastSeenAt, unchangedHeartbeat.lastSeenAt);
+  assert.equal(broker.listWorkers()[0]?.lastSeenAt, unchangedHeartbeat.lastSeenAt);
+});
+
+test("broker keeps repeated unchanged worker registration off cached hot-table reads", () => {
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => {},
+  };
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  let workerReads = 0;
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => {
+      workerReads += 1;
+      return persistedWorkers.get(nodeId) ?? null;
+    },
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+  registerWorker(broker, "worker-register-hot-path");
+  const writesAfterRegister = workerWrites.length;
+
+  workerReads = 0;
+  registerWorker(broker, "worker-register-hot-path");
+
+  assert.equal(workerReads, 0, "unchanged cached registration should not synchronously read worker hot table");
+  assert.equal(workerWrites.length, writesAfterRegister, "unchanged registration should remain heartbeat-like without hot writes");
+});
+
+test("broker heartbeat still hydrates workers from hot table when cache is cold", () => {
+  const now = new Date().toISOString();
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => {},
+  };
+  const persistedWorkers = new Map<string, WorkerRecord>([
+    ["worker-cold-cache", {
+      nodeId: "worker-cold-cache",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+      createdAt: now,
+      updatedAt: now,
+      lastSeenAt: now,
+    }],
+  ]);
+  let workerReads = 0;
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => {
+      workerReads += 1;
+      return persistedWorkers.get(nodeId) ?? null;
+    },
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+
+  const heartbeat = broker.heartbeatWorker("worker-cold-cache");
+
+  assert.equal(workerReads, 1);
+  assert.equal(heartbeat.nodeId, "worker-cold-cache");
+  assert.equal(broker.getWorkerCachedFirst("worker-cold-cache")?.lastSeenAt, heartbeat.lastSeenAt);
+});
+
+test("broker default keeps unchanged worker heartbeat persistence disabled after the legacy interval", () => {
+  const oldTimestamp = new Date(Date.now() - 10 * 60_000).toISOString();
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  const snapshot: BrokerSnapshot = {
+    ...emptySnapshot(),
+    workers: [
+      {
+        nodeId: "worker-heartbeat-default-disabled",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: false,
+          canPromoteLive: false,
+          workspaceIds: ["test"],
+          environments: ["research"],
+        },
+        createdAt: oldTimestamp,
+        updatedAt: oldTimestamp,
+        lastSeenAt: oldTimestamp,
+      },
+    ],
+  };
+  const store: BrokerStateStore = {
+    load: () => snapshot,
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => persistedWorkers.get(nodeId) ?? null,
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+
+  const heartbeat = broker.heartbeatWorker("worker-heartbeat-default-disabled");
+
+  assert.equal(saveHints.length, 0, "default unchanged heartbeat should not persist even after old timestamps");
+  assert.equal(workerWrites.length, 0, "default unchanged heartbeat should not upsert the worker hot table");
+  assert.equal(broker.getWorker("worker-heartbeat-default-disabled")?.lastSeenAt, heartbeat.lastSeenAt);
+});
+
+test("broker heartbeatWorker with empty request body updates liveness without material-change persistence", async () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+  registerWorker(broker, "worker-empty-heartbeat");
+  const savesAfterRegister = saveHints.length;
+
+  broker.heartbeatWorker("worker-empty-heartbeat", {});
+  assert.equal(saveHints.length, savesAfterRegister);
+  await new Promise((resolve) => setTimeout(resolve, 2));
+
+  const heartbeat = broker.heartbeatWorker("worker-empty-heartbeat", {});
+  assert.equal(saveHints.length, savesAfterRegister);
+
+  const worker = broker.getWorker("worker-empty-heartbeat");
+  assert.ok(worker);
+  assert.equal(worker.capabilities.canAnalyze, true);
+  assert.equal(worker.lastSeenAt, heartbeat.lastSeenAt);
+});
+
+test("broker can explicitly keep periodic unchanged worker heartbeat persistence", () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => persistedWorkers.get(nodeId) ?? null,
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), {
+    workerHeartbeatPersistIntervalMs: 0,
+    workerRepository,
+  });
+  registerWorker(broker, "worker-heartbeat-explicit-persist");
+  const writesAfterRegister = workerWrites.length;
+  const savesAfterRegister = saveHints.length;
+
+  broker.heartbeatWorker("worker-heartbeat-explicit-persist");
+
+  assert.equal(workerWrites.length, writesAfterRegister + 1);
+  assert.equal(saveHints.length, savesAfterRegister + 1);
+});
+
+test("broker still persists material worker heartbeat changes by default", () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => persistedWorkers.get(nodeId) ?? null,
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+  registerWorker(broker, "worker-heartbeat-material");
+  const writesAfterRegister = workerWrites.length;
+  const savesAfterRegister = saveHints.length;
+
+  broker.heartbeatWorker("worker-heartbeat-material", { metadata: { phase: "changed" } });
+
+  assert.equal(workerWrites.length, writesAfterRegister + 1);
+  assert.equal(saveHints.length, savesAfterRegister + 1);
+  assert.deepEqual(broker.getWorker("worker-heartbeat-material")?.metadata, { phase: "changed" });
+});
+
+test("broker treats heartbeat timestamp metadata as non-material liveness churn", () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const persistedWorkers = new Map<string, WorkerRecord>();
+  const workerWrites: WorkerRecord[] = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const workerRepository: WorkerRuntimeRepository = {
+    getWorker: (nodeId) => persistedWorkers.get(nodeId) ?? null,
+    listWorkers: () => [...persistedWorkers.values()],
+    upsertWorker: (worker) => {
+      workerWrites.push(worker);
+      persistedWorkers.set(worker.nodeId, worker);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load(), { workerRepository });
+
+  broker.registerWorker({
+    nodeId: "worker-hermes-heartbeat",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["mobile"],
+      environments: ["research"],
+    },
+    workerMode: "mobile",
+    metadata: {
+      runtime: "hermes-agent",
+      transport: "http-poll",
+      heartbeat: "ok",
+      heartbeatAtEpochMs: "1000",
+    },
+  });
+  const writesAfterRegister = workerWrites.length;
+  const savesAfterRegister = saveHints.length;
+
+  broker.heartbeatWorker("worker-hermes-heartbeat", {
+    metadata: {
+      runtime: "hermes-agent",
+      transport: "http-poll",
+      heartbeat: "ok",
+      heartbeatAtEpochMs: "2000",
+    },
+  });
+
+  assert.equal(workerWrites.length, writesAfterRegister, "ephemeral heartbeat timestamp should not upsert worker hot table");
+  assert.equal(saveHints.length, savesAfterRegister, "ephemeral heartbeat timestamp should not persist state");
+  assert.equal(broker.getWorker("worker-hermes-heartbeat")?.metadata?.heartbeatAtEpochMs, "2000");
+});
+
+test("broker treats repeated registration heartbeat timestamp metadata as non-material", () => {
+  const saveHints: Array<BrokerStateSaveHints | undefined> = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (_snapshot, hints) => {
+      saveHints.push(hints);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+  const request = {
+    nodeId: "worker-hermes-register",
+    role: "analyst" as const,
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["mobile"],
+      environments: ["research" as const],
+    },
+    workerMode: "mobile" as const,
+    metadata: {
+      runtime: "hermes-agent",
+      transport: "http-poll",
+      heartbeat: "ok",
+      heartbeatAtEpochMs: "1000",
+    },
+  };
+
+  broker.registerWorker(request);
+  const savesAfterRegister = saveHints.length;
+
+  broker.registerWorker({
+    ...request,
+    metadata: {
+      ...request.metadata,
+      heartbeatAtEpochMs: "2000",
+    },
+  });
+
+  assert.equal(saveHints.length, savesAfterRegister, "repeated registration timestamp churn should behave like heartbeat");
+  assert.equal(broker.getWorker("worker-hermes-register")?.metadata?.heartbeatAtEpochMs, "2000");
 });
 
 test("broker passes dirty task, audit, and worker hints to state store saves", () => {
@@ -500,6 +1522,52 @@ test("broker passes dirty task, audit, and worker hints to state store saves", (
   assert.deepEqual(claimHints?.hotAuditEvents?.map((item) => item.action), ["task.claimed"]);
 });
 
+test("broker hot persistence path avoids full snapshot export for task lifecycle and terminal ACK writes", () => {
+  const hotSaves: BrokerStateSaveHints[] = [];
+  const store: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => {
+      throw new Error("full snapshot save should not run for hot persistence");
+    },
+    saveHotEntities: (hints) => {
+      hotSaves.push(hints);
+    },
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+  registerWorker(broker, "worker-hot-fast");
+
+  const task = createWorkerTask(broker, "task-hot-fast", "worker-hot-fast");
+  broker.claimTask(task.id, "worker-hot-fast");
+  broker.startTask(task.id, "worker-hot-fast");
+  hotSaves.length = 0;
+  (broker as { exportSnapshot: () => BrokerSnapshot }).exportSnapshot = () => {
+    throw new Error("exportSnapshot should not run for hot persistence");
+  };
+
+  broker.completeTask(task.id, "worker-hot-fast", { summary: "done" });
+  const completeHints = hotSaves.at(-1);
+  assert.deepEqual(completeHints?.hotTasks?.map((item) => [item.id, item.status]), [[task.id, "succeeded"]]);
+  assert.deepEqual(completeHints?.hotAuditEvents?.map((item) => item.action), ["task.succeeded"]);
+  assert.equal(completeHints?.hotTerminalOutboxEvents?.[0]?.payload.taskId, task.id);
+
+  const event = broker.getTerminalTaskEventOutbox().subscribe()[0]!;
+  broker.recordTerminalTaskOutboxReceiptStatus(event.id, {
+    status: "operator_visible",
+    updatedAt: "2026-05-17T12:00:00.000Z",
+  });
+  const receiptHints = hotSaves.at(-1);
+  assert.equal(receiptHints?.hotTerminalOutboxEvents?.[0]?.receipt.status, "operator_visible");
+
+  broker.acknowledgeTerminalTaskOutboxEvent(event.id, {
+    evidence: "operator_visible",
+    acknowledgedAt: "2026-05-17T12:00:01.000Z",
+    receiptId: "telegram:message-1",
+  });
+  const ackHints = hotSaves.at(-1);
+  assert.equal(ackHints?.hotTerminalOutboxEvents?.[0]?.ack?.status, "receipt_confirmed");
+  assert.equal(ackHints?.hotTerminalOutboxEvents?.[0]?.ack?.evidence, "operator_visible");
+});
+
 test("broker task lifecycle mutations can use the SQLite runtime repository without JSON hot hints", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-task-repo-"));
   const sqliteStore = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
@@ -572,6 +1640,8 @@ test("broker task lifecycle mutations can use the SQLite runtime repository with
       broker.listTasks({ assignedWorkerId: "worker-sqlite" }).map((task) => task.id).sort(),
       [completed.id, failed.id, requeued.id].sort(),
     );
+    assert.equal(broker.listTasks({ assignedWorkerId: "worker-sqlite", limit: 2 }).length, 2);
+    assert.equal(sqliteStore.readHotTasks({ assignedWorkerId: "worker-sqlite", limit: 1 }).length, 1);
     assert.equal(snapshots.at(-1)?.tasks.find((task) => task.id === requeued.id)?.status, "queued");
   } finally {
     sqliteStore.close();
@@ -910,6 +1980,80 @@ test("broker normalizes minimal legacy and full worker capabilities before SQLit
       canPromoteLive: true,
       workspaceIds: ["repo-seam"],
       environments: ["research", "staging"],
+    });
+  } finally {
+    sqliteStore.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("broker preserves Hermes native worker capability metadata in hot read model", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-hermes-worker-capabilities-"));
+  const sqliteStore = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const noopStore: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => undefined,
+  };
+
+  try {
+    const broker = new InMemoryA2ABroker(noopStore, noopStore.load(), {
+      workerRepository: new SqliteWorkerRuntimeRepository(sqliteStore),
+    });
+
+    broker.registerWorker({
+      nodeId: "gongyung",
+      role: "analyst",
+      displayName: "Gongyung Hermes Worker",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["hermes-no-live"],
+        environments: ["research"],
+        runtimeFlavor: "termux-hermes",
+        gatewayRequired: false,
+      },
+      workerMode: "mobile",
+      metadata: {
+        runtime: "hermes-agent",
+        transport: "http-poll",
+      },
+    });
+
+    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "gongyung" })[0]?.capabilities, {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["hermes-no-live"],
+      environments: ["research"],
+      runtimeFlavor: "termux-hermes",
+      gatewayRequired: false,
+    });
+
+    broker.heartbeatWorker("gongyung", {
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["hermes-no-live", "hermes-no-live"],
+        environments: ["research"],
+        runtimeFlavor: "custom-hermes-flavor" as any,
+        gatewayRequired: "false" as any,
+      },
+    });
+
+    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "gongyung" })[0]?.capabilities, {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["hermes-no-live"],
+      environments: ["research"],
+      runtimeFlavor: "unknown",
+      gatewayRequired: false,
     });
   } finally {
     sqliteStore.close();
@@ -1455,6 +2599,78 @@ test("repeat cancel is idempotent and preserves the first cancellation record", 
   assert.equal(broker.listAuditEvents({ targetId: task.id, action: "task.canceled" }).length, auditCount);
 });
 
+test("finalizer can durably mark a running sibling task as superseded", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "nosuk");
+  registerWorker(broker, "sogyo");
+
+  const selected = createWorkerTask(broker, "round-selected-pr", "nosuk");
+  broker.claimTask(selected.id, "nosuk");
+  broker.startTask(selected.id, "nosuk");
+  broker.completeTask(selected.id, "nosuk", {
+    summary: "selected PR merged",
+    output: { prUrl: "https://github.com/jinwon-int/a2a-docker-runner/pull/356" },
+  });
+
+  const sibling = createWorkerTask(broker, "round-sibling-running", "sogyo");
+  broker.claimTask(sibling.id, "sogyo");
+  broker.startTask(sibling.id, "sogyo");
+  const nextRound = createWorkerTask(broker, "next-round-sogyo-queued", "sogyo");
+
+  const canceled = broker.cancelTask(sibling.id, {
+    actor: { id: "seoseo", kind: "node", role: "hub" },
+    reason: "finalizer selected and merged PR #356",
+    supersededByTaskId: selected.id,
+    supersededByPrUrl: "https://github.com/jinwon-int/a2a-docker-runner/pull/356",
+    roundId: "a2a-team1-354-runner-nochange-contract-20260606T145219KST",
+  });
+
+  assert.equal(canceled.status, "canceled");
+  assert.equal(canceled.cancellation?.kind, "superseded");
+  assert.equal(canceled.cancellation?.supersededByTaskId, selected.id);
+  assert.equal(canceled.cancellation?.supersededByPrUrl, "https://github.com/jinwon-int/a2a-docker-runner/pull/356");
+  assert.equal(canceled.cancellation?.roundId, "a2a-team1-354-runner-nochange-contract-20260606T145219KST");
+  assert.equal(broker.getTask(nextRound.id)?.status, "queued");
+
+  const tombstone = broker.getTombstone(sibling.id);
+  assert.equal(tombstone?.tombstoneReason, "canceled");
+  assert.equal(tombstone?.metadata?.cancellationKind, "superseded");
+  assert.equal(tombstone?.metadata?.supersededByTaskId, selected.id);
+
+  const diagnostics = broker.getTaskDiagnostics(sibling.id);
+  assert.equal(diagnostics.interruption?.kind, "superseded");
+  assert.equal(diagnostics.interruption?.actorId, "seoseo");
+  assert.equal(diagnostics.brokerHints.supersededByTaskId, selected.id);
+  assert.equal(diagnostics.brokerHints.supersededByPrUrl, "https://github.com/jinwon-int/a2a-docker-runner/pull/356");
+  assert.equal(diagnostics.brokerHints.supersededRoundId, "a2a-team1-354-runner-nochange-contract-20260606T145219KST");
+});
+
+test("superseded cancellation requires a different terminal winner task when supersededByTaskId is supplied", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+  registerWorker(broker, "worker-b");
+
+  const running = createWorkerTask(broker, "superseded-running", "worker-a");
+  broker.claimTask(running.id, "worker-a");
+  const nonTerminalWinner = createWorkerTask(broker, "superseded-winner-not-terminal", "worker-b");
+
+  assert.throws(() => broker.cancelTask(running.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    supersededByTaskId: running.id,
+  }), {
+    name: "BrokerError",
+    message: /supersededByTaskId must refer to a different task/,
+  });
+
+  assert.throws(() => broker.cancelTask(running.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    supersededByTaskId: nonTerminalWinner.id,
+  }), {
+    name: "BrokerError",
+    message: /cannot supersede task by non-terminal task/,
+  });
+});
+
 test("stale requeue keeps assignedWorkerId unchanged", () => {
   const broker = new InMemoryA2ABroker();
   registerWorker(broker, "worker-a");
@@ -1615,6 +2831,110 @@ test("reassignTask resets requeueCount so the new target gets a fresh attempt bu
   assert.equal(result.requeued.length, 1, "reassigned task should be requeuable again");
   assert.equal(result.deadLettered.length, 0);
   assert.equal(result.requeued[0].requeueCount, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Terminal immutability: failed/succeeded/canceled tasks reject further mutations
+// ---------------------------------------------------------------------------
+
+test("cannot reassign a failed task", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+  registerWorker(broker, "worker-b");
+
+  const task = createWorkerTask(broker, "task-reassign-failed", "worker-a");
+  broker.claimTask(task.id, "worker-a");
+  broker.startTask(task.id, "worker-a");
+  broker.failTask(task.id, "worker-a", { code: "error", message: "boom" });
+
+  assert.throws(
+    () => broker.reassignTask(task.id, {
+      actor: { id: "ops", kind: "node", role: "operator" },
+      targetNodeId: "worker-b",
+      assignedWorkerId: "worker-b",
+    }),
+    { name: "BrokerError", message: /cannot reassign task while status is failed/ },
+  );
+});
+
+test("cannot reassign a succeeded task", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = createWorkerTask(broker, "task-reassign-succeeded", "worker-a");
+  broker.claimTask(task.id, "worker-a");
+  broker.startTask(task.id, "worker-a");
+  broker.completeTask(task.id, "worker-a", { summary: "done" });
+
+  assert.throws(
+    () => broker.reassignTask(task.id, {
+      actor: { id: "ops", kind: "node", role: "operator" },
+      targetNodeId: "worker-a",
+    }),
+    { name: "BrokerError", message: /cannot reassign task while status is succeeded/ },
+  );
+});
+
+test("cannot reassign a canceled task", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = createWorkerTask(broker, "task-reassign-canceled", "worker-a");
+  broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" } });
+
+  assert.throws(
+    () => broker.reassignTask(task.id, {
+      actor: { id: "ops", kind: "node", role: "operator" },
+      targetNodeId: "worker-a",
+    }),
+    { name: "BrokerError", message: /cannot reassign task while status is canceled/ },
+  );
+});
+
+test("terminal task idempotency: completeTask returns existing terminal task without mutation", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = createWorkerTask(broker, "task-idempotent-complete", "worker-a");
+  broker.claimTask(task.id, "worker-a");
+  broker.startTask(task.id, "worker-a");
+  const completed = broker.completeTask(task.id, "worker-a", { summary: "first" });
+  assert.equal(completed.result?.summary, "first");
+
+  // Second completion attempt: returns existing task with original result
+  const second = broker.completeTask(task.id, "worker-a", { summary: "second" });
+  assert.equal(second.result?.summary, "first");
+  assert.equal(second.status, "succeeded");
+});
+
+test("terminal task idempotency: failTask returns existing terminal task without mutation", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = createWorkerTask(broker, "task-idempotent-fail", "worker-a");
+  broker.claimTask(task.id, "worker-a");
+  broker.startTask(task.id, "worker-a");
+  const failed = broker.failTask(task.id, "worker-a", { code: "ERR", message: "first fail" });
+  assert.equal(failed.error?.message, "first fail");
+
+  // Second fail attempt: returns existing task with original error
+  const second = broker.failTask(task.id, "worker-a", { code: "ERR2", message: "second fail" });
+  assert.equal(second.error?.message, "first fail");
+  assert.equal(second.status, "failed");
+});
+
+test("terminal task idempotency: cancelTask returns existing canceled task without mutation", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = createWorkerTask(broker, "task-idempotent-cancel", "worker-a");
+  const canceled = broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" }, reason: "first cancel" });
+  assert.equal(canceled.cancellation?.reason, "first cancel");
+
+  // Second cancel: returns existing task with original cancellation
+  const second = broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" }, reason: "second cancel" });
+  assert.equal(second.cancellation?.reason, "first cancel");
+  assert.equal(second.status, "canceled");
 });
 
 test("completing an accepted exchange task marks the exchange completed", () => {
@@ -2202,6 +3522,7 @@ test("broker retention coalesces worker heartbeat audit rows without pruning wor
       auditRetentionMs: 60 * 60 * 1000,
       maxAuditEvents: 2,
     },
+    workerHeartbeatPersistIntervalMs: 0,
   });
 
   registerWorker(broker, "worker-heartbeat-cap");
@@ -2213,6 +3534,38 @@ test("broker retention coalesces worker heartbeat audit rows without pruning wor
 
   assert.equal(auditActions.filter((action) => action === "worker.registered").length, 1);
   assert.equal(auditActions.filter((action) => action === "worker.heartbeat").length, 1);
+});
+
+test("broker retention coalesces task heartbeat audit rows without pruning task lifecycle proof", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    retention: {
+      auditRetentionMs: 60 * 60 * 1000,
+      maxAuditEvents: 4,
+      maxHeartbeatAuditEvents: 1,
+      heartbeatAuditSampleIntervalMs: 0,
+    },
+  });
+  registerWorker(broker, "worker-task-heartbeat-cap");
+  const task = createWorkerTask(broker, "task-heartbeat-cap", "worker-task-heartbeat-cap");
+  broker.claimTask(task.id, "worker-task-heartbeat-cap");
+  broker.startTask(task.id, "worker-task-heartbeat-cap");
+
+  broker.heartbeatTask(task.id, "worker-task-heartbeat-cap");
+  broker.heartbeatTask(task.id, "worker-task-heartbeat-cap");
+  broker.heartbeatTask(task.id, "worker-task-heartbeat-cap");
+
+  const auditEvents = broker.exportSnapshot().auditEvents;
+  const auditActions = auditEvents.map((event) => event.action);
+
+  assert.equal(auditActions.filter((action) => action === "task.created").length, 1);
+  assert.equal(auditActions.filter((action) => action === "task.claimed").length, 1);
+  assert.equal(auditActions.filter((action) => action === "task.started").length, 1);
+  assert.deepEqual(
+    auditEvents
+      .filter((event) => event.action === "task.heartbeat")
+      .map((event) => event.id),
+    [`task-heartbeat:${task.id}`],
+  );
 });
 
 test("subscribeToTask streams lifecycle updates and marks terminal events final", () => {
@@ -2652,6 +4005,205 @@ test("failTask on already-succeeded returns task without mutation", () => {
   assert.equal(result.status, "succeeded");
 });
 
+// ── Late evidence after cancel (issue #954) ──────────────────────────────
+
+test("completeTask on already-canceled records lateEvidenceAfterCancel", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+
+  const result = broker.completeTask(task.id, "worker-a", { summary: "done late" });
+  assert.equal(result.status, "canceled");
+  assert.ok(result.lateEvidenceAfterCancel, "should record late evidence");
+  assert.equal(result.lateEvidenceAfterCancel!.kind, "complete");
+  assert.equal(result.lateEvidenceAfterCancel!.submittedBy, "worker-a");
+  assert.equal(result.lateEvidenceAfterCancel!.result?.summary, "done late");
+  assert.ok(result.lateEvidenceAfterCancel!.submittedAt);
+});
+
+test("failTask on already-canceled records lateEvidenceAfterCancel", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+
+  const result = broker.failTask(task.id, "worker-a", { message: "late fail" });
+  assert.equal(result.status, "canceled");
+  assert.ok(result.lateEvidenceAfterCancel, "should record late evidence");
+  assert.equal(result.lateEvidenceAfterCancel!.kind, "fail");
+  assert.equal(result.lateEvidenceAfterCancel!.submittedBy, "worker-a");
+  assert.equal(result.lateEvidenceAfterCancel!.error?.message, "late fail");
+  assert.ok(result.lateEvidenceAfterCancel!.submittedAt);
+});
+
+test("late completion after cancel produces canceled_with_late_completion tombstone", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+  broker.completeTask(task.id, "worker-a", { summary: "done late" });
+
+  const diag = broker.getTaskDiagnostics(task.id);
+  assert.equal(diag.interruption?.kind, "late_completion_after_cancel");
+  assert.equal(diag.interruption?.source, "tombstone");
+  assert.ok(diag.interruption?.summary.includes("after cancel"));
+
+  const ts = broker.getTombstone(task.id);
+  assert.ok(ts);
+  assert.equal(ts!.tombstoneReason, "canceled_with_late_completion");
+  assert.ok(ts!.metadata);
+  assert.equal(ts!.metadata!.cancelReason, "worker posted complete evidence after cancel");
+});
+
+test("late evidence after cancel surfaces in diagnostic brokerHints", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+  broker.completeTask(task.id, "worker-a", { summary: "done late" });
+
+  const diag = broker.getTaskDiagnostics(task.id);
+  assert.ok(diag.brokerHints.lateEvidenceAfterCancel);
+  assert.equal(diag.brokerHints.lateEvidenceAfterCancel!.kind, "complete");
+  assert.equal(diag.brokerHints.lateEvidenceAfterCancel!.submittedBy, "worker-a");
+  assert.ok(diag.brokerHints.lateEvidenceAfterCancel!.submittedAt);
+});
+
+test("second complete after cancel does not overwrite lateEvidenceAfterCancel", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+
+  const first = broker.completeTask(task.id, "worker-a", { summary: "first late" });
+  assert.equal(first.lateEvidenceAfterCancel?.result?.summary, "first late");
+
+  const second = broker.completeTask(task.id, "worker-a", { summary: "second late" });
+  assert.equal(second.lateEvidenceAfterCancel?.result?.summary, "first late");
+});
+
+test("snapshot roundtrip preserves lateEvidenceAfterCancel", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+  broker.completeTask(task.id, "worker-a", { summary: "done late" });
+
+  const snapshot = broker.exportSnapshot();
+  const broker2 = new InMemoryA2ABroker(undefined, snapshot);
+
+  const loaded = broker2.getTask(task.id);
+  assert.ok(loaded);
+  assert.equal(loaded!.status, "canceled");
+  assert.ok(loaded!.lateEvidenceAfterCancel);
+  assert.equal(loaded!.lateEvidenceAfterCancel!.kind, "complete");
+  assert.equal(loaded!.lateEvidenceAfterCancel!.result?.summary, "done late");
+});
+
+test("late fail after cancel produces late_completion_after_cancel interruption", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "run analysis",
+  });
+
+  broker.claimTask(task.id, "worker-a");
+  broker.cancelTask(task.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    reason: "no longer needed",
+  });
+  broker.failTask(task.id, "worker-a", { message: "late fail" });
+
+  const diag = broker.getTaskDiagnostics(task.id);
+  assert.equal(diag.interruption?.kind, "late_completion_after_cancel");
+  assert.equal(diag.interruption?.source, "tombstone");
+  assert.ok(diag.brokerHints.lateEvidenceAfterCancel);
+  assert.equal(diag.brokerHints.lateEvidenceAfterCancel!.kind, "fail");
+  assert.equal(diag.brokerHints.lateEvidenceAfterCancel!.submittedBy, "worker-a");
+
+  const ts = broker.getTombstone(task.id);
+  assert.ok(ts);
+  assert.equal(ts!.tombstoneReason, "canceled_with_late_completion");
+});
+
 test("accepted-task wake planning is durable and duplicate-safe", () => {
   const broker = new InMemoryA2ABroker();
   registerWorker(broker, "worker-a");
@@ -2831,6 +4383,72 @@ test("broker accepts canonical GitHub patch dispatch and stamps taskOrigin", () 
   assert.equal(task.payload.githubDispatchCompatibility, undefined);
 });
 
+test("broker derives parent-round metadata for Team GitHub patch dispatches", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-github-team-round");
+
+  const task = broker.createTask({
+    intent: "propose_patch",
+    taskOrigin: "github",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-github-team-round", kind: "node", role: "analyst" },
+    message: "fix issue",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "acme/platform",
+      issueNumber: 291,
+      issueUrl: "https://github.com/acme/platform/issues/291",
+      parentIssueUrl: "https://github.com/acme/platform/issues/290",
+      teamId: "team1",
+      lane: 3,
+      runId: "a2a-team1-round-20260606T073100Z",
+      workModeDecision: {
+        mode: "team1",
+        idempotencyKey: "a2a-work-mode:team1:github-round",
+        finalizerOwner: "seoseo",
+        generatedAt: "2026-06-07T06:00:00.000Z",
+        capacityState: "healthy",
+        capacitySnapshotSource: "/workers/capacity",
+        capacitySnapshotAt: "2026-06-07T05:59:00.000Z",
+        sourceOnlyDecision: true,
+        workerDispatchAllowedByThisPacket: false,
+      },
+    },
+  });
+
+  assert.equal(task.taskOrigin, "github");
+  assert.equal(task.payload.parentRoundId, "a2a-team1-round-20260606T073100Z");
+  assert.equal(task.payload.parentRoundTotal, 4);
+  assert.equal(task.payload.parentRoundOrder, 3);
+  assert.equal(task.payload.originBrokerId, "hub-a");
+  assert.equal(task.payload.runId, "a2a-team1-round-20260606T073100Z");
+  assert.equal((task.payload.workModeDecision as Record<string, unknown>)?.finalizerOwner, "seoseo");
+});
+
+test("broker rejects parent-routed GitHub patch dispatches with incomplete parent-round metadata", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-github-parent-round-reject");
+
+  assert.throws(
+    () => broker.createTask({
+      intent: "propose_patch",
+      taskOrigin: "github",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-github-parent-round-reject", kind: "node", role: "analyst" },
+      message: "fix issue",
+      payload: {
+        mode: "github-propose-patch",
+        repo: "acme/platform",
+        issueNumber: 291,
+        issueUrl: "https://github.com/acme/platform/issues/291",
+        parentIssueUrl: "https://github.com/acme/platform/issues/290",
+        runId: "a2a-parent-round-without-lane",
+      },
+    }),
+    /parent-round metadata invalid: parentRoundTotal is required.*parentRoundOrder is required/,
+  );
+});
+
 test("broker normalizes legacy GitHub dispatch fields with compatibility marker", () => {
   const broker = new InMemoryA2ABroker();
   registerWorker(broker, "worker-github-legacy");
@@ -2857,6 +4475,81 @@ test("broker normalizes legacy GitHub dispatch fields with compatibility marker"
     normalizedFromLegacyPayload: true,
     legacyFields: ["githubRepo", "githubIssueNumber", "workMode"],
   });
+});
+
+test("broker accepts GitHub read-only validation lanes with issue metadata", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-github-readonly");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-github-readonly", kind: "node", role: "analyst" },
+    message: "libero validation for https://github.com/acme/platform/issues/527",
+    payload: {
+      mode: "read-only-analysis",
+      repo: "acme/platform",
+      issueUrl: "https://github.com/acme/platform/issues/527",
+      assignmentRole: "libero",
+    },
+  });
+
+  assert.equal(task.intent, "analyze");
+  assert.equal(task.taskOrigin, "github");
+  assert.equal(task.payload.mode, "read-only-analysis");
+  assert.equal(task.payload.repo, "acme/platform");
+  assert.equal(task.payload.issue, "#527");
+  assert.equal(task.payload.issueNumber, 527);
+  assert.equal(task.payload.issueUrl, "https://github.com/acme/platform/issues/527");
+  assert.equal(task.payload.assignmentRole, "libero");
+});
+
+test("broker accepts github-verify as a read-only evidence lane", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-github-verify");
+
+  const task = broker.createTask({
+    intent: "verify",
+    taskOrigin: "github",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-github-verify", kind: "node", role: "analyst" },
+    message: "run no-live validation",
+    payload: {
+      mode: "github-verify",
+      repo: "acme/platform",
+      issueNumber: 528,
+    },
+  });
+
+  assert.equal(task.intent, "verify");
+  assert.equal(task.taskOrigin, "github");
+  assert.equal(task.payload.mode, "github-verify");
+  assert.equal(task.payload.issue, "#528");
+  assert.equal(task.payload.issueUrl, "https://github.com/acme/platform/issues/528");
+});
+
+test("broker accepts family-wiki-readonly-audit as a read-only evidence lane", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-family-wiki-audit");
+
+  const task = broker.createTask({
+    intent: "verify",
+    taskOrigin: "github",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-family-wiki-audit", kind: "node", role: "analyst" },
+    message: "audit Family Wiki structure without patch evidence",
+    payload: {
+      mode: "family-wiki-readonly-audit",
+      repo: "jinwon-int/seoyoon-family-wiki",
+      issueNumber: 894,
+    },
+  });
+
+  assert.equal(task.intent, "verify");
+  assert.equal(task.taskOrigin, "github");
+  assert.equal(task.payload.mode, "family-wiki-readonly-audit");
+  assert.equal(task.payload.issue, "#894");
+  assert.equal(task.payload.issueUrl, "https://github.com/jinwon-int/seoyoon-family-wiki/issues/894");
 });
 
 test("broker rejects non-canonical GitHub dispatch with wrong taskOrigin", () => {
@@ -2969,4 +4662,1200 @@ test("broker rejects repo plus issueUrl dispatch that is missing canonical GitHu
     }),
     /mode=github-propose-patch/,
   );
+});
+
+// --- Cleanup candidate discovery (issue #520) ---
+
+test("discoverCleanupCandidates returns empty plan for clean broker", () => {
+  const broker = new InMemoryA2ABroker();
+  const plan = broker.discoverCleanupCandidates();
+  assert.equal(plan.totalCandidates, 0);
+  assert.equal(plan.summary.stale_worker, 0);
+  assert.equal(plan.summary.malformed_task, 0);
+  assert.equal(plan.summary.terminal_outbox_backlog, 0);
+  assert.equal(plan.summary.historical_terminal_task, 0);
+  assert.deepEqual(plan.actionabilitySummary, {
+    advisory: 0,
+    blocked: 0,
+    executable: 0,
+    cursor_skipped: 0,
+    retention_not_due: 0,
+  });
+  assert.ok(plan.generatedAt);
+  assert.ok(plan.riskNotes.length > 0);
+  assert.ok(plan.riskNotes.some((n) => n.includes("No cleanup candidates")));
+});
+
+test("discoverCleanupCandidates detects stale workers via nowMs aging", () => {
+  const broker = new InMemoryA2ABroker();
+  // Register worker — lastSeenAt is set to now
+  broker.registerWorker({
+    nodeId: "stale-w1",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  // Use nowMs far in the future to make the worker appear stale
+  const farFutureMs = Date.now() + 600_000; // 10 min later
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000, // 5 min
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.stale_worker, 1);
+  assert.equal(plan.totalCandidates, 1);
+  assert.equal(plan.candidates[0].class, "stale_worker");
+  assert.equal(plan.candidates[0].entityId, "stale-w1");
+  assert.equal(plan.candidates[0].risk, "caution");
+  assert.equal(plan.candidates[0].actionability, "advisory");
+  assert.equal(plan.actionabilitySummary.advisory, 1);
+});
+
+test("discoverCleanupCandidates marks stale worker with active tasks as high_risk", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "stale-w2",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  // Create an active task assigned to the stale worker
+  broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "stale-w2", kind: "node", role: "operator" },
+    payload: { work: "active-task" },
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.stale_worker, 1);
+  assert.equal(plan.candidates[0].risk, "high_risk");
+  assert.equal(plan.candidates[0].actionability, "blocked");
+  assert.equal(plan.actionabilitySummary.blocked, 1);
+  assert.equal(plan.candidates[0].metadata?.hasActiveTasks, true);
+});
+
+test("discoverCleanupCandidates detects malformed queued tasks with missing target", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  // Create a task that will be queued
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "valid" },
+  });
+  assert.equal(task.status, "queued");
+
+  // With proper fields, should not be flagged as malformed
+  const nowMs = Date.now() + 300_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleTaskAfterMs: 120_000,
+    nowMs,
+  });
+
+  assert.equal(plan.summary.malformed_task, 0);
+  // Well-formed stale queued tasks are detected as queued_residue (see
+  // dedicated queued-residue tests below for comprehensive coverage).
+  assert.equal(plan.summary.queued_residue, 1);
+});
+
+test("discoverCleanupCandidates detects queued residue for old unclaimed queued tasks", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  // Create a well-formed queued task that remains unclaimed
+  const task = broker.createTask({
+    intent: "backfill",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { branch: "feature/cleanup" },
+  });
+  assert.equal(task.status, "queued");
+
+  // Fast-forward past the stale threshold; set staleWorkerAfterMs high to
+  // avoid interference from stale worker detection
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 86_400_000, // 24h — well beyond the window
+    staleTaskAfterMs: 120_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.queued_residue, 1);
+  assert.equal(plan.summary.malformed_task, 0);
+  assert.equal(plan.totalCandidates, 1);
+
+  const residue = plan.candidates[0];
+  assert.equal(residue.class, "queued_residue");
+  assert.equal(residue.entityId, task.id);
+  assert.equal(residue.risk, "caution");
+  assert.equal(residue.actionability, "advisory");
+  assert.equal(plan.actionabilitySummary.advisory, 1);
+  assert.equal(residue.metadata?.intent, "backfill");
+  assert.equal(residue.metadata?.status, "queued");
+  assert.ok(residue.reason.includes("queued"));
+  assert.ok(residue.id.includes("cleanup:queued-residue:"));
+  assert.ok(plan.riskNotes.some((note) => note.includes("Queued residue")));
+});
+
+test("discoverCleanupCandidates queued residue is distinct from malformed_task", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  // Well-formed queued task — should be queued residue
+  const valid = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "important" },
+  });
+
+  // Malformed queued task: clear targetNodeId and payload to make it malformed
+  broker.createTask({
+    id: "malformed-distinct",
+    intent: "backfill",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { temp: "placeholder" },
+  });
+  const malformedTaskRaw = broker.getTask("malformed-distinct")!;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (malformedTaskRaw as any).targetNodeId = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (malformedTaskRaw as any).payload = {};
+  malformedTaskRaw.updatedAt = new Date(Date.now() - 600_000).toISOString();
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 86_400_000, // 24h — avoid stale-worker interference
+    staleTaskAfterMs: 120_000,
+    nowMs: farFutureMs,
+  });
+
+  // Both classes should be present and distinct
+  assert.equal(plan.summary.malformed_task, 1);
+  assert.equal(plan.summary.queued_residue, 1);
+  assert.equal(plan.totalCandidates, 2);
+
+  const malformedItem = plan.candidates.find((c) => c.class === "malformed_task");
+  assert.ok(malformedItem);
+  assert.equal(malformedItem.metadata?.taskId, "malformed-distinct");
+  assert.ok(malformedItem.reason.includes("malformed"));
+  assert.ok(malformedItem.reason.includes("missing targetNodeId"));
+
+  const residueItem = plan.candidates.find((c) => c.class === "queued_residue");
+  assert.ok(residueItem);
+  assert.equal(residueItem.entityId, valid.id);
+  assert.ok(residueItem.reason.includes("without being claimed"));
+  assert.ok(!residueItem.reason.includes("malformed"));
+
+  // Risk notes for both classes present
+  assert.ok(plan.riskNotes.some((note) => note.includes("Malformed queued tasks")));
+  assert.ok(plan.riskNotes.some((note) => note.includes("Queued residue")));
+});
+
+test("discoverCleanupCandidates no queued residue for recent queued tasks", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "fresh" },
+  });
+
+  // No time travel — task is still recent
+  const plan = broker.discoverCleanupCandidates();
+  assert.equal(plan.summary.queued_residue, 0);
+});
+
+test("discoverCleanupCandidates queued residue risk note includes count", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "a" },
+  });
+  broker.createTask({
+    intent: "backfill",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "b" },
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 86_400_000, // 24h — avoid stale-worker interference
+    staleTaskAfterMs: 120_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.queued_residue, 2);
+  assert.ok(plan.riskNotes.some((note) => note === "Queued residue detected (2): well-formed queued tasks that remain unclaimed. Verify worker capacity and routing before manual intervention."));
+});
+
+test("discoverCleanupCandidates detects terminal outbox backlog", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "w1");
+  broker.completeTask(task.id, "w1", { summary: "done" });
+
+  const plan = broker.discoverCleanupCandidates({
+    terminalOutboxBacklogAfterMs: 0, // immediate
+  });
+
+  // The outbox should have an unacknowledged event for the terminal task
+  assert.ok(plan.summary.terminal_outbox_backlog >= 1);
+  const backlogItem = plan.candidates.find(
+    (c) => c.class === "terminal_outbox_backlog",
+  );
+  assert.ok(backlogItem);
+  assert.equal(backlogItem.metadata?.taskId, task.id);
+  assert.equal(backlogItem.actionability, "blocked");
+  assert.equal(backlogItem.metadata?.cursorState, "unknown");
+});
+
+test("discoverCleanupCandidates excludes acknowledged outbox events", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "w1");
+  broker.completeTask(task.id, "w1", { summary: "done" });
+
+  // Mark all outbox events as acknowledged
+  const outbox = broker.getTerminalTaskEventOutbox();
+  const events = outbox.snapshot();
+  for (const event of events) {
+    outbox.acknowledge(event.id, {
+      evidence: "operator_visible",
+      acknowledgedAt: new Date().toISOString(),
+    });
+  }
+
+  const plan = broker.discoverCleanupCandidates({
+    terminalOutboxBacklogAfterMs: 0,
+  });
+
+  assert.equal(plan.summary.terminal_outbox_backlog, 0);
+});
+
+test("discoverCleanupCandidates detects historical terminal tasks", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "w1");
+  broker.completeTask(task.id, "w1", { summary: "done" });
+
+  const farFutureMs = Date.now() + 86_400_000 + 1000; // ~24h + 1s later
+  const plan = broker.discoverCleanupCandidates({
+    historicalTerminalAfterMs: 86_400_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.ok(plan.summary.historical_terminal_task >= 1);
+  const histItem = plan.candidates.find(
+    (c) => c.class === "historical_terminal_task",
+  );
+  assert.ok(histItem);
+  assert.equal(histItem.entityId, task.id);
+  assert.equal(histItem.metadata?.status, "succeeded");
+  assert.equal(histItem.actionability, "retention_not_due");
+  assert.equal(plan.actionabilitySummary.retention_not_due, 1);
+});
+
+test("discoverCleanupCandidates sorts by risk (high_risk first)", () => {
+  const broker = new InMemoryA2ABroker();
+
+  // Create a stale worker with active tasks (high_risk)
+  broker.registerWorker({
+    nodeId: "stale-hi",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+  broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "stale-hi", kind: "node", role: "operator" },
+    payload: {},
+  });
+
+  // Create another stale worker without tasks (caution)
+  broker.registerWorker({
+    nodeId: "stale-lo",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.ok(plan.candidates.length >= 2);
+  // high_risk should be first
+  assert.equal(plan.candidates[0].risk, "high_risk");
+  assert.equal(plan.candidates[0].entityId, "stale-hi");
+});
+
+test("discoverCleanupCandidates returns riskNotes matching summary", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "stale-notes",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.ok(plan.riskNotes.some((note) => note.includes("Stale workers")));
+});
+
+test("discoverCleanupCandidates is read-only (no state mutation)", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: {},
+  });
+
+  const beforeSnapshot = broker.exportSnapshot();
+
+  broker.discoverCleanupCandidates();
+  broker.discoverCleanupCandidates({ staleWorkerAfterMs: 1000, nowMs: Date.now() + 99_999 });
+
+  const afterSnapshot = broker.exportSnapshot();
+  assert.equal(afterSnapshot.tasks.length, beforeSnapshot.tasks.length);
+  assert.equal(afterSnapshot.workers.length, beforeSnapshot.workers.length);
+  assert.equal(broker.getTask(task.id)!.status, task.status);
+});
+
+test("discoverCleanupCandidates respects custom thresholds", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "custom-w",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const farFutureMs = Date.now() + 120_000; // 2 min later
+
+  // Default threshold (5 min) should NOT find it stale
+  const planDefault = broker.discoverCleanupCandidates({ nowMs: farFutureMs });
+  assert.equal(planDefault.summary.stale_worker, 0);
+
+  // Custom threshold (1 min) should find it stale
+  const planCustom = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 60_000,
+    nowMs: farFutureMs,
+  });
+  assert.equal(planCustom.summary.stale_worker, 1);
+});
+
+test("discoverCleanupCandidates detects orphaned_claim for claimed task on stale worker", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "orphan-worker",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "orphan-worker", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "orphan-worker");
+  assert.equal(broker.getTask(task.id)!.status, "claimed");
+
+  // Fast-forward time to make the worker stale
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.orphaned_claim, 1);
+  const orphanItem = plan.candidates.find((c) => c.class === "orphaned_claim");
+  assert.ok(orphanItem);
+  assert.equal(orphanItem.entityId, task.id);
+  assert.equal(orphanItem.metadata?.status, "claimed");
+  assert.equal(orphanItem.metadata?.staleWorkerId, "orphan-worker");
+  assert.equal(orphanItem.risk, "caution");
+  assert.ok(orphanItem.reason.includes("orphan-worker"));
+});
+
+test("discoverCleanupCandidates detects orphaned_claim for running task on stale worker (high_risk)", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "orphan-runner",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "orphan-runner", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "orphan-runner");
+  // The broker goes claimed->running on start with a heartbeat
+  broker.startTask(task.id, "orphan-runner");
+  assert.equal(broker.getTask(task.id)!.status, "running");
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.orphaned_claim, 1);
+  const orphanItem = plan.candidates.find((c) => c.class === "orphaned_claim");
+  assert.ok(orphanItem);
+  assert.equal(orphanItem.entityId, task.id);
+  assert.equal(orphanItem.metadata?.status, "running");
+  assert.equal(orphanItem.metadata?.staleWorkerId, "orphan-runner");
+  // Running task on stale worker is high risk (potential data loss)
+  assert.equal(orphanItem.risk, "high_risk");
+});
+
+test("discoverCleanupCandidates does not flag orphaned_claim when worker is healthy", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "healthy-w",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "healthy-w", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "healthy-w");
+
+  // No time travel — worker is still fresh
+  const plan = broker.discoverCleanupCandidates();
+  assert.equal(plan.summary.orphaned_claim, 0);
+});
+
+test("discoverCleanupCandidates does not flag orphaned_claim for queued tasks", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "queued-worker",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "queued-worker", kind: "node", role: "operator" },
+    payload: {},
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  // Worker is stale, but queued tasks are not orphaned claims
+  assert.equal(plan.summary.stale_worker, 1);
+  assert.equal(plan.summary.orphaned_claim, 0);
+});
+
+test("discoverCleanupCandidates orphaned_claim risk notes are present when detected", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "risk-worker",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const task = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "risk-worker", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(task.id, "risk-worker");
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    nowMs: farFutureMs,
+  });
+
+  assert.equal(plan.summary.orphaned_claim, 1);
+  assert.ok(plan.riskNotes.some((note) => note.includes("Orphaned claims")));
+});
+
+test("discoverCleanupCandidates stable ids are deterministic", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "stable-w",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan1 = broker.discoverCleanupCandidates({ staleWorkerAfterMs: 300_000, nowMs: farFutureMs });
+  const plan2 = broker.discoverCleanupCandidates({ staleWorkerAfterMs: 300_000, nowMs: farFutureMs });
+
+  assert.equal(plan1.candidates.length, plan2.candidates.length);
+  assert.equal(plan1.candidates[0].id, plan2.candidates[0].id);
+  assert.equal(plan1.candidates[0].id, "cleanup:stale-worker:stable-w");
+});
+
+test("discoverCleanupCandidates finds candidates not eligible for retention pruning (actionability gap)", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  // Stale worker with active tasks — discovered as candidate but blocks pruning
+  broker.registerWorker({
+    nodeId: "stale-active",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+  const activeTask = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "stale-active", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(activeTask.id, "stale-active");
+
+  // Queued residue — non-terminal, not retention-prunable
+  broker.createTask({
+    intent: "backfill",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "residue" },
+  });
+
+  // Terminal task — completed but not past historical threshold (within 24h)
+  const recentTerminal = broker.createTask({
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: {},
+  });
+  broker.claimTask(recentTerminal.id, "w1");
+  broker.completeTask(recentTerminal.id, "w1", { summary: "done" });
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    staleTaskAfterMs: 120_000,
+    nowMs: farFutureMs,
+  });
+
+  // Discovery finds multiple candidate classes
+  assert.ok(plan.totalCandidates > 0, "should discover candidates");
+
+  // stale_worker with active tasks — NOT prunable via retention
+  const staleActive = plan.candidates.find((c) => c.class === "stale_worker" && c.metadata?.hasActiveTasks === true);
+  assert.ok(staleActive, "should find stale worker with active tasks");
+  assert.equal(staleActive!.risk, "high_risk");
+
+  // queued_residue — NOT prunable via retention (non-terminal)
+  const residue = plan.candidates.find((c) => c.class === "queued_residue");
+  assert.ok(residue, "should find queued residue");
+
+  // Recent terminal task should NOT show as historical_terminal_task (within threshold)
+  const hist = plan.candidates.find((c) => c.class === "historical_terminal_task");
+  assert.equal(hist, undefined, "recent terminal task should not be historical yet");
+
+  // stale_worker (idle, no tasks) — NOT present because no idle stale worker exists
+  const staleIdle = plan.candidates.filter(
+    (c) => c.class === "stale_worker" && c.metadata?.hasActiveTasks !== true,
+  );
+  // Both workers have active claims; no idle stale workers
+  assert.equal(staleIdle.length, 0, "all stale workers have active tasks");
+
+  // Risk notes reflect non-prunable categories
+  assert.ok(plan.riskNotes.some((n) => n.includes("Stale workers")));
+  assert.ok(plan.riskNotes.some((n) => n.includes("Queued residue")));
+
+  // Verify the actionability gap: discovered candidates > 0 but none are
+  // eligible for automated retention pruning (queued_residue and stale_worker
+  // with active tasks are discovery-only categories)
+  const prunableClasses = new Set(["historical_terminal_task"]);
+  const prunableCandidates = plan.candidates.filter((c) => prunableClasses.has(c.class));
+  assert.equal(
+    prunableCandidates.length,
+    0,
+    "no candidates prunable via retention alone — all require manual operator intervention",
+  );
+});
+
+test("discoverCleanupCandidates risk notes correctly categorize actionable and non-actionable classes", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "w1");
+
+  // Register a worker that will be stale but has NO active tasks — actionable (safe to prune with opt-in)
+  broker.registerWorker({
+    nodeId: "idle-worker",
+    role: "operator",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["default"], environments: ["research"] },
+  });
+
+  // Create queued residue that ages past threshold
+  broker.createTask({
+    id: "old-residue",
+    intent: "backfill",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { data: "stale" },
+  });
+
+  // Create a malformed task (missing targetNodeId) that ages past threshold
+  broker.createTask({
+    id: "old-malformed",
+    intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" },
+    target: { id: "w1", kind: "node", role: "operator" },
+    payload: { temp: "x" },
+  });
+  const malformedRaw = broker.getTask("old-malformed")!;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (malformedRaw as any).targetNodeId = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (malformedRaw as any).payload = {};
+  malformedRaw.updatedAt = new Date(Date.now() - 600_000).toISOString();
+
+  const farFutureMs = Date.now() + 600_000;
+  const plan = broker.discoverCleanupCandidates({
+    staleWorkerAfterMs: 300_000,
+    staleTaskAfterMs: 120_000,
+    nowMs: farFutureMs,
+  });
+
+  // Should find at least some candidates
+  assert.ok(plan.riskNotes.length > 0, "should have risk notes");
+
+  // Verify each candidate has a valid risk classification matching the actionability doc
+  assert.ok(plan.candidates.length > 0, "should find candidates");
+  assert.ok(
+    plan.candidates.every((c) => ["high_risk", "caution", "safe"].includes(c.risk)),
+    "all candidates should have valid risk classification",
+  );
+
+  // Risk notes should exist for discovered classes
+  if (plan.summary.stale_worker > 0) {
+    assert.ok(
+      plan.riskNotes.some((n) => n.includes("Stale workers")),
+      "stale worker risk note present",
+    );
+  }
+  if (plan.summary.queued_residue > 0) {
+    assert.ok(
+      plan.riskNotes.some((n) => n.includes("Queued residue")),
+      "queued residue risk note present",
+    );
+  }
+  if (plan.summary.malformed_task > 0) {
+    assert.ok(
+      plan.riskNotes.some((n) => n.includes("Malformed queued tasks")),
+      "malformed task risk note present",
+    );
+  }
+
+  // Verify that stale_worker (no tasks) is "caution" — actionable with opt-in
+  const idleStale = plan.candidates.find(
+    (c) => c.class === "stale_worker" && c.metadata?.hasActiveTasks === false,
+  );
+  if (idleStale) {
+    assert.equal(idleStale.risk, "caution", "idle stale worker should be caution risk");
+  }
+
+  // queued_residue is "caution" — requires manual intervention, not automated pruning
+  const residue = plan.candidates.find((c) => c.class === "queued_residue");
+  if (residue) {
+    assert.equal(residue.risk, "caution", "queued residue should be caution risk");
+  }
+
+  // malformed_task is "caution" — requires manual inspection
+  const malformed = plan.candidates.find((c) => c.class === "malformed_task");
+  if (malformed) {
+    assert.equal(malformed.risk, "caution", "malformed task should be caution risk");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mobile worker health in broker-facing status
+// ---------------------------------------------------------------------------
+
+test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile workers", () => {
+  const broker = new InMemoryA2ABroker();
+  const nowMs = Date.now();
+
+  // Register a persistent worker (control)
+  broker.registerWorker({
+    nodeId: "persistent-w1",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+
+  // Register a mobile worker with recent heartbeat
+  broker.registerWorker({
+    nodeId: "gongyung",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+
+  // Recent heartbeat (within mobile 30s window)
+  broker.heartbeatWorker("gongyung", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+
+  const summary = broker.getWorkerCapacitySummary({ nowMs });
+
+  // Persistent worker: no mobileHealth, no workerMode
+  const persistentItem = summary.items.find((i) => i.nodeId === "persistent-w1");
+  assert.ok(persistentItem);
+  assert.equal(persistentItem.workerMode, undefined);
+  assert.equal(persistentItem.mobileHealth, undefined);
+
+  // Mobile worker (online): has workerMode and mobileHealth
+  const mobileItem = summary.items.find((i) => i.nodeId === "gongyung");
+  assert.ok(mobileItem);
+  assert.equal(mobileItem.workerMode, "mobile");
+  assert.equal(mobileItem.mobileHealth, "health_ok");
+});
+
+test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile threshold", () => {
+  const broker = new InMemoryA2ABroker();
+
+  // Register a mobile worker at time zero
+  broker.registerWorker({
+    nodeId: "daegyo",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+
+  // Advance time to 35s after registration — past mobile 30s window, within 90s extended window
+  // The broker "now" is set to lastSeenAt + 35_000 ms
+  const worker = broker.getWorker("daegyo");
+  assert.ok(worker);
+  const workerSeenMs = Date.parse(worker.lastSeenAt);
+  const nowMs = workerSeenMs + 35_000;
+
+  const summary = broker.getWorkerCapacitySummary({ nowMs });
+
+  const daegyo = summary.items.find((i) => i.nodeId === "daegyo");
+  assert.ok(daegyo);
+  assert.equal(daegyo.workerMode, "mobile");
+  // Mobile past 30s => stale, but not yet disconnected (within 90s)
+  assert.equal(daegyo.mobileHealth, "stale");
+  // Brokers' generic status reflects mobile-aware threshold
+  assert.equal(daegyo.status, "stale");
+});
+
+test("getWorkerCapacitySummary classifies mobile worker as disconnected past extended threshold", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "daegyo-disconnected",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+
+  const worker = broker.getWorker("daegyo-disconnected");
+  assert.ok(worker);
+  const workerSeenMs = Date.parse(worker.lastSeenAt);
+  // 100s — well beyond both 30s mobile and 90s extended threshold
+  const nowMs = workerSeenMs + 100_000;
+
+  const summary = broker.getWorkerCapacitySummary({ nowMs });
+
+  const daegyo = summary.items.find((i) => i.nodeId === "daegyo-disconnected");
+  assert.ok(daegyo);
+  assert.equal(daegyo.workerMode, "mobile");
+  assert.equal(daegyo.mobileHealth, "disconnected");
+  assert.equal(daegyo.status, "stale");
+});
+
+test("getDashboard includes workerMode and mobileHealth for mobile workers", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "persistent-w2",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+
+  broker.registerWorker({
+    nodeId: "gongyung-dash",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+  broker.heartbeatWorker("gongyung-dash", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+
+  const dashboard = broker.getDashboard({ nowMs: Date.now(), offlineAfterMs: 90_000 });
+
+  // Persistent worker: no mobile fields
+  const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-w2");
+  assert.ok(persistentNode);
+  assert.equal(persistentNode.workerMode, undefined);
+  assert.equal(persistentNode.mobileHealth, undefined);
+
+  // Mobile worker (online)
+  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "gongyung-dash");
+  assert.ok(mobileNode);
+  assert.equal(mobileNode.workerMode, "mobile");
+  assert.equal(mobileNode.mobileHealth, "health_ok");
+  assert.equal(mobileNode.status, "online");
+});
+
+test("getDashboard fleet worker counts use mobile-aware stale thresholds", () => {
+  const broker = new InMemoryA2ABroker();
+
+  // Register one persistent and one mobile worker
+  broker.registerWorker({
+    nodeId: "persistent-a",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+  broker.registerWorker({
+    nodeId: "gongyung-fleet",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+
+  const persistentWorker = broker.getWorker("persistent-a");
+  const mobileWorker = broker.getWorker("gongyung-fleet");
+  assert.ok(persistentWorker);
+  assert.ok(mobileWorker);
+
+  const persistentSeenMs = Date.parse(persistentWorker.lastSeenAt);
+  const mobileSeenMs = Date.parse(mobileWorker.lastSeenAt);
+
+  // Advance time to 45s after registration:
+  //   - persistent worker still within 90s window => online
+  //   - mobile worker past its 30s window but within 90s extended => stale
+  const nowMs = Math.max(persistentSeenMs, mobileSeenMs) + 45_000;
+
+  const dashboard = broker.getDashboard({ nowMs, offlineAfterMs: 90_000 });
+
+  // Fleet totals reflect mode-aware staleness
+  assert.equal(dashboard.workers.total, 2);
+  assert.equal(dashboard.workers.online, 1, "persistent still online at 45s");
+  assert.equal(dashboard.workers.stale, 1, "mobile stale at 45s");
+
+  const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-a");
+  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "gongyung-fleet");
+  assert.ok(persistentNode);
+  assert.ok(mobileNode);
+
+  assert.equal(persistentNode.status, "online");
+  assert.equal(persistentNode.workerMode, undefined);
+  assert.equal(persistentNode.mobileHealth, undefined);
+
+  assert.equal(mobileNode.status, "stale");
+  assert.equal(mobileNode.workerMode, "mobile");
+  assert.equal(mobileNode.mobileHealth, "stale");
+});
+
+test("computeWorkerMobileHealth returns undefined for persistent workers", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "persistent-b",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+
+  const summary = broker.getWorkerCapacitySummary();
+  const item = summary.items.find((i) => i.nodeId === "persistent-b");
+  assert.ok(item);
+  assert.equal(item.workerMode, undefined);
+  assert.equal(item.mobileHealth, undefined);
+});
+
+test("getWorkerCapacitySummary mobile fields present for mobile workers, absent for persistent", () => {
+  const broker = new InMemoryA2ABroker();
+
+  // Register a mix of mobile and persistent workers
+  broker.registerWorker({
+    nodeId: "gongyung-mix",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+  broker.registerWorker({
+    nodeId: "daegyo-mix",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+  broker.registerWorker({
+    nodeId: "persistent-c",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+  broker.registerWorker({
+    nodeId: "persistent-d",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
+  });
+
+  // Heartbeat gongyung so it's fresh; daegyo stays at registration time
+  broker.heartbeatWorker("gongyung-mix", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+
+  // Query at the current time — all workers should be online since
+  // registration and heartbeat are all within the 90s persistent window
+  const summary = broker.getWorkerCapacitySummary();
+  assert.equal(summary.totals.workers, 4);
+
+  // Mobile items carry workerMode and mobileHealth
+  const gongyung = summary.items.find((i) => i.nodeId === "gongyung-mix");
+  const daegyo = summary.items.find((i) => i.nodeId === "daegyo-mix");
+  assert.ok(gongyung);
+  assert.ok(daegyo);
+  assert.equal(gongyung.workerMode, "mobile");
+  assert.ok(gongyung.mobileHealth); // could be "health_ok" or "stale" depending on timing
+  assert.equal(daegyo.workerMode, "mobile");
+  assert.ok(daegyo.mobileHealth);
+
+  // Persistent items have neither field
+  assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.workerMode, undefined);
+  assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.mobileHealth, undefined);
+  assert.equal(summary.items.find((i) => i.nodeId === "persistent-d")?.workerMode, undefined);
+  assert.equal(summary.items.find((i) => i.nodeId === "persistent-d")?.mobileHealth, undefined);
+});
+
+test("Hermes native worker submits redacted done evidence via completeTask", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "hermes-evidence-tester",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["hermes-no-live"],
+      environments: ["research"],
+      runtimeFlavor: "termux-hermes",
+      gatewayRequired: false,
+    },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  });
+
+  const task = broker.createTask({
+    id: "hermes-evidence-task",
+    requester: { id: "hub-requester", kind: "service", role: "hub" },
+    target: { id: "hermes-evidence-tester", kind: "node", role: "analyst" },
+    assignedWorkerId: "hermes-evidence-tester",
+    intent: "analyze",
+    message: "Hermes worker evidence contract test",
+    payload: { source: "hermes-evidence-contract-test" },
+    taskOrigin: "api",
+  });
+  assert.equal(task.status, "queued");
+
+  broker.claimTask(task.id, "hermes-evidence-tester");
+  broker.startTask(task.id, "hermes-evidence-tester");
+
+  const result = broker.completeTask(task.id, "hermes-evidence-tester", {
+    summary: "Hermes worker produced redacted terminal evidence",
+    output: { referenceWorker: "hermes-agent", openClawRequired: false, operatorNote: "source-only; no provider ids" },
+  });
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.result?.summary, "Hermes worker produced redacted terminal evidence");
+  assert.deepEqual(result.result?.output, { referenceWorker: "hermes-agent", openClawRequired: false, operatorNote: "source-only; no provider ids" });
+  assert.equal(result.assignedWorkerId, "hermes-evidence-tester");
+});
+
+test("Hermes native worker submits redacted blocked evidence via failTask", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "hermes-blocked-tester",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["hermes-no-live"],
+      environments: ["research"],
+      runtimeFlavor: "termux-hermes",
+      gatewayRequired: false,
+    },
+  });
+
+  const task = broker.createTask({
+    id: "hermes-blocked-evidence-task",
+    requester: { id: "hub-requester", kind: "service", role: "hub" },
+    target: { id: "hermes-blocked-tester", kind: "node", role: "analyst" },
+    assignedWorkerId: "hermes-blocked-tester",
+    intent: "analyze",
+    message: "Hermes worker blocked evidence test",
+    payload: { source: "hermes-blocked-evidence-test" },
+    taskOrigin: "api",
+  });
+  assert.equal(task.status, "queued");
+
+  broker.claimTask(task.id, "hermes-blocked-tester");
+  broker.startTask(task.id, "hermes-blocked-tester");
+
+  const result = broker.failTask(task.id, "hermes-blocked-tester", {
+    code: "blocked",
+    message: "Preflight no-live gate rejected live promotion attempt",
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.error?.code, "blocked");
+  assert.equal(result.error?.message, "Preflight no-live gate rejected live promotion attempt");
+});
+
+test("Hermes mobile worker transitions through health_ok, stale, disconnected", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "hermes-health-tester",
+    role: "analyst",
+    workerMode: "mobile",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["hermes-no-live"],
+      environments: ["research"],
+      runtimeFlavor: "termux-hermes",
+      gatewayRequired: false,
+    },
+  });
+
+  const nowMs = Date.now();
+  let summary = broker.getWorkerCapacitySummary({ nowMs });
+  const worker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
+  assert.ok(worker);
+  assert.equal(worker.status, "online");
+  assert.equal(worker.workerMode, "mobile");
+  assert.equal(worker.mobileHealth, "health_ok");
+
+  const staleNowMs = nowMs + 45_000;
+  summary = broker.getWorkerCapacitySummary({ nowMs: staleNowMs });
+  const staleWorker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
+  assert.ok(staleWorker);
+  assert.equal(staleWorker.status, "stale");
+  assert.equal(staleWorker.mobileHealth, "stale");
+
+  const disconnectedNowMs = nowMs + 100_000;
+  summary = broker.getWorkerCapacitySummary({ nowMs: disconnectedNowMs });
+  const disconnectedWorker = summary.items.find((i) => i.nodeId === "hermes-health-tester");
+  assert.ok(disconnectedWorker);
+  assert.equal(disconnectedWorker.status, "stale");
+  assert.equal(disconnectedWorker.mobileHealth, "disconnected");
+});
+
+test("Hermes worker registration preserves runtimeFlavor and gatewayRequired in read model", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-hermes-read-model-"));
+  const sqliteStore = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const noopStore: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => undefined,
+  };
+
+  try {
+    const broker = new InMemoryA2ABroker(noopStore, noopStore.load(), {
+      workerRepository: new SqliteWorkerRuntimeRepository(sqliteStore),
+    });
+
+    broker.registerWorker({
+      nodeId: "hermes-read-model",
+      role: "analyst",
+      displayName: "Hermes Read Model Tester",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: true,
+        canPromoteLive: false,
+        workspaceIds: ["hermes-no-live"],
+        environments: ["research"],
+        runtimeFlavor: "termux-hermes",
+        gatewayRequired: false,
+      },
+      workerMode: "mobile",
+      metadata: { runtime: "hermes-agent", transport: "http-poll" },
+    });
+
+    const hot = sqliteStore.readHotWorkers({ nodeId: "hermes-read-model" });
+    assert.equal(hot.length, 1);
+    assert.equal(hot[0]?.capabilities.runtimeFlavor, "termux-hermes");
+    assert.equal(hot[0]?.capabilities.gatewayRequired, false);
+    assert.equal(hot[0]?.workerMode, "mobile");
+
+    const worker = broker.getWorker("hermes-read-model");
+    assert.ok(worker);
+    assert.equal(worker.capabilities.runtimeFlavor, "termux-hermes");
+    assert.equal(worker.capabilities.gatewayRequired, false);
+    assert.equal(worker.workerMode, "mobile");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -12,6 +12,15 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "SubscribeToTask",
     "GetExtendedAgentCard",
   ],
+  brokerExtensionMethods: [
+    "a2a.peer.status",
+  ],
+  unsupportedTransports: [
+    "REST",
+    "gRPC",
+  ],
+  unsupportedPushNotifications: true,
+  unsupportedA2A03Compat: true,
   taskStates: ["submitted", "working", "completed", "failed", "canceled"],
   internalStatusToA2AState: {
     blocked: "submitted",
@@ -28,6 +37,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "assignedWorkerId",
     "cancellation",
     "claimedBy",
+    "contextId",
     "createdAt",
     "error",
     "exchangeId",
@@ -36,6 +46,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "parentTaskId",
     "policyContext",
     "proposalId",
+    "referenceTaskIds",
     "requester",
     "result",
     "target",
@@ -48,6 +59,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "assignedWorkerId",
     "cancellation",
     "claimedBy",
+    "contextId",
     "createdAt",
     "error",
     "exchangeId",
@@ -56,6 +68,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "parentTaskId",
     "policyContext",
     "proposalId",
+    "referenceTaskIds",
     "requester",
     "resultSummary",
     "target",
@@ -75,6 +88,31 @@ export const A2A_AGENT_CARD_GOLDEN: Pick<AgentCard, "protocolVersion" | "capabil
   defaultOutputModes: ["text"],
 };
 
+/**
+ * Trust-model golden: the current broker AgentCard is intentionally unsigned.
+ *
+ * When card signing is implemented, this constant will be updated to include
+ * a valid signature envelope. Until then, the absence of `signature` and
+ * `signedExtensions` is the expected and tested behavior.
+ */
+export const A2A_AGENT_CARD_TRUST_GOLDEN = {
+  /** Card signing is deferred. AgentCard.signature must remain undefined. */
+  signatureRequired: false,
+  /** Signed extensions are deferred. AgentCard.signedExtensions must remain undefined. */
+  signedExtensionsRequired: false,
+  /**
+   * The broker trusts cards through transport auth (edge-secret +
+   * requester-id), not through portable signed metadata.
+   */
+  trustModel: "transport-auth-only",
+  /**
+   * Secure-passport CallerContext operates at message metadata level, not
+   * card level. The broker neither attaches nor validates CallerContext
+   * signatures on SendMessage metadata.
+   */
+  securePassportMode: "passthrough",
+} as const;
+
 export const A2A_TASK_PROJECTION_GOLDEN: A2ATaskProjection = {
   id: "task-compat-golden",
   kind: "task",
@@ -92,7 +130,9 @@ export const A2A_TASK_PROJECTION_GOLDEN: A2ATaskProjection = {
     requester: { id: "hub-a", kind: "node", role: "hub" },
     target: { id: "worker-a", kind: "node", role: "analyst" },
     exchangeId: "exchange-compat-golden",
+    contextId: "exchange-compat-golden",
     parentTaskId: undefined,
+    referenceTaskIds: undefined,
     proposalId: undefined,
     targetNodeId: "worker-a",
     assignedWorkerId: "worker-a",
@@ -111,3 +151,46 @@ export const A2A_TASK_PROJECTION_GOLDEN: A2ATaskProjection = {
   },
   artifacts: [{ id: "artifact-1" }],
 };
+
+/**
+ * Pinned external A2A SDK/TCK references for drift-watch.
+ *
+ * These represent the official A2A project surfaces this broker tracks
+ * compatibility against. The `pinned` fields should be updated when a
+ * maintainer runs `npm run refresh:drift-refs` and verifies the broker
+ * profile against the refreshed references.
+ */
+export const A2A_DRIFT_EXTERNAL_REFS = [
+  {
+    repo: "a2aproject/a2a-js",
+    keyModules: [
+      "tck/agent/index.ts",
+      "src/types.ts",
+      "card resolver",
+      "JSON-RPC transport",
+      "REST transport",
+      "gRPC transport",
+      "server handlers",
+    ],
+    checkedSurfaces: ["AgentCard", "Task", "Message", "Artifact", "JSON-RPC envelope", "transport abstractions"],
+    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+  },
+  {
+    repo: "a2aproject/a2a-python",
+    keyModules: [
+      "canonical type/proto compatibility modules",
+      "client/server route helpers",
+    ],
+    checkedSurfaces: ["protocol buffer types", "JSON-RPC routes", "REST routes"],
+    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+  },
+  {
+    repo: "a2aproject/a2a-samples",
+    keyModules: [
+      "ITK (Interop Test Kit) / testlib",
+      "multi-language samples",
+    ],
+    checkedSurfaces: ["interop test harness", "multi-language agent/server patterns"],
+    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+  },
+];

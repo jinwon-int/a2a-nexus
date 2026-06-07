@@ -306,9 +306,9 @@ describe("Full S1–S5 proof matrix", () => {
   it("failure cells produce structured codes not free-form text", async () => {
     const badFixture: WakeScenarioFixture = {
       scenarioId: "S1_cold_wake",
-      sessionKey: "fixture-session-bad",
-      idempotencyKey: "fixture-idem-bad",
-      priorWakes: [{ id: "x", scenarioId: "S1_cold_wake", sessionKey: "fixture-session-bad", wakeKey: "w", idempotencyKey: "fixture-idem-bad", plannedAt: new Date().toISOString(), status: "completed", summary: "", replayCount: 0, coalesced: false }],
+      sessionKey: "session:bad",
+      idempotencyKey: "idem:bad",
+      priorWakes: [{ id: "x", scenarioId: "S1_cold_wake", sessionKey: "session:bad", wakeKey: "w", idempotencyKey: "idem:bad", plannedAt: new Date().toISOString(), status: "completed", summary: "", replayCount: 0, coalesced: false }],
     };
     const result = await runWakeProofMatrix([badFixture], createMockDispatcher());
     const cell = result.cells["S1_cold_wake"];

@@ -1,0 +1,23 @@
+{
+  "task": {
+    "taskId": "single-repo-code-patch",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1321,
+    "title": "Single repo code patch",
+    "taskClass": "single_repo_patch"
+  },
+  "signals": {
+    "expectedOutputSize": "medium",
+    "estimatedDuration": "moderate",
+    "riskLevel": "medium",
+    "fileCount": 3,
+    "repoCount": 1,
+    "nodeCount": 1,
+    "needsEvidence": true,
+    "needsValidation": false,
+    "needsDurableState": true,
+    "needsPrOrArtifact": true,
+    "roleSeparable": false
+  },
+  "finalizerOwner": "seoseo"
+}

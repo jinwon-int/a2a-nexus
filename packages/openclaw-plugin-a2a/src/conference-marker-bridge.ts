@@ -194,11 +194,11 @@ function extractSafeSummary(event: WorkerStatusEvent): string | undefined {
 }
 
 /**
- * Extract artifact URL from event (PR URL, issue URL, etc.).
+ * Extract artifact URL from event (PR URL, issue URL, evidence URL, etc.).
  */
 function extractArtifactUrl(event: WorkerStatusEvent): string | undefined {
   const payload = event.payload as Record<string, unknown>;
-  for (const candidate of [payload.prUrl, payload.issueUrl]) {
+  for (const candidate of [payload.prUrl, payload.issueUrl, payload.doneUrl, payload.blockUrl]) {
     if (typeof candidate === "string" && candidate.trim()) {
       return candidate.trim();
     }

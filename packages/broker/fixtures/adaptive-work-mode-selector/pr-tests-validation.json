@@ -1,0 +1,24 @@
+{
+  "task": {
+    "taskId": "pr-tests-validation",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1321,
+    "title": "PR plus tests and validation",
+    "taskClass": "pr_tests_validation"
+  },
+  "signals": {
+    "expectedOutputSize": "medium",
+    "estimatedDuration": "moderate",
+    "riskLevel": "medium",
+    "fileCount": 6,
+    "repoCount": 1,
+    "nodeCount": 1,
+    "needsEvidence": true,
+    "needsValidation": true,
+    "needsDurableState": true,
+    "needsPrOrArtifact": true,
+    "needsOpposition": true,
+    "roleSeparable": true
+  },
+  "finalizerOwner": "seoseo"
+}

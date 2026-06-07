@@ -1,11 +1,8 @@
 # A2A Docker Runner
 
-> Monorepo import provenance: sanitized/squash copy from `jinwon-int/a2a-docker-runner` commit `d223612cb027bf493b6b74e60a7bc04db1b9b6ae` for R3 issue #15. Private git history is not preserved. Runtime/bootstrap/cache artifacts, local OpenClaw context files, `node_modules`, and build outputs are excluded.
-
-# A2A Docker Runner
+[![CI](https://github.com/jinwon-int/a2a-docker-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-docker-runner/actions/workflows/ci.yml)
 
 Docker/Podman task runner for OpenClaw A2A workers.
-
 
 ## Repository role in the A2A layout
 
@@ -43,6 +40,7 @@ When `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` is used, the runner moun
 - `sessions.json` parsed as `{}` is treated as damaged host continuity and blocks the run.
 - `*.jsonl.bak-*` buildup is reported as `warning=openclaw_session_store_guard` when count/bytes exceed thresholds.
 - Writable extra mounts that target or source host OpenClaw runtime paths are rejected; only scratch paths may be mounted read-write.
+- The generated GitHub patch pipeline re-runs the ignored-file-aware bootstrap guard immediately before `git add`/push/PR creation and artifact evidence capture, so agent-created `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**` files fail closed before they can enter a branch or evidence bundle.
 
 Tunables:
 
@@ -138,6 +136,109 @@ commit changes, push, and open a PR. Result evidence includes
 `github.prUrl`, `github.blockCommentUrl`, or `github.doneCommentUrl`
 depending on the outcome.
 
+## PR-less validation lanes (allowNoChanges / readOnlyValidation)
+
+Some A2A tasks produce zero code changes and must still output clean
+Done or Block evidence.  The runner supports two task-level flags for
+this pattern, collectively referred to as **PR-less validation lanes**.
+
+### allowNoChanges
+
+When `allowNoChanges: true` is set, the default pipeline allows the
+no-code-change outcome instead of failing closed.  The pipeline emits
+`status=no_changes_allowed`, the runner sets `result.ok=true`, and
+`collectGitHubEvidence` posts a Done comment on the issue — without
+creating a PR.
+
+Use this for:
+
+- **Evidence-only readiness checks** that inspect a repository and
+  confirm no patch is warranted.
+- **Preflight validation** that must succeed (exit 0) regardless of
+  whether code was changed.
+- **Liveness / health lanes** that verify the runner and agent
+  integration are reachable.
+
+Example task:
+
+```json
+{
+  "id": "readiness-validation",
+  "intent": "propose_patch",
+  "mode": "github-propose-patch",
+  "repo": "jinwon-int/a2a-docker-runner",
+  "allowNoChanges": true,
+  "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/237",
+  "requestedBy": "nosuk",
+  "timeoutMs": 600000
+}
+```
+
+### readOnlyValidation
+
+`readOnlyValidation` extends `allowNoChanges` with a hard guard: if the
+coding agent produces any repository changes (staged or unstaged,
+tracked or untracked), the pipeline exits 4 **before** commit, push,
+or PR creation.  The runner posts a Block comment listing the offending
+files.
+
+Use this for:
+
+- **Validation lanes** that must never create patches, only inspect and
+  report.
+- **Operator-protected stability rounds** where worker-initiated
+  changes are not allowed.
+- **Libero / read-only roles** that produce evidence without mutation.
+
+When `readOnlyValidation` is set:
+
+- `allowNoChanges` is implied and auto-set.
+- The no-change path (no changes produced) emits
+  `status=no_changes_allowed` and posts Done evidence — same as
+  `allowNoChanges` alone.
+- The change path (any file difference on the branch) exits 4 and
+  posts Block evidence.
+- No PR is ever created.
+
+Example task:
+
+```json
+{
+  "id": "read-only-stability-round",
+  "intent": "propose_patch",
+  "mode": "github-propose-patch",
+  "repo": "jinwon-int/a2a-docker-runner",
+  "readOnlyValidation": true,
+  "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/237",
+  "requestedBy": "nosuk",
+  "timeoutMs": 600000
+}
+```
+
+### Evidence outcomes
+
+The `github.outcome` in the runner result distinguishes no-change
+outcomes from standard PR/Done/Block:
+
+| Outcome | Condition |
+|---|---|
+| `succeeded_no_changes_with_done_evidence` | `allowNoChanges` + no changes + Done comment posted |
+| `blocked_no_changes_with_evidence` | `allowNoChanges` + blocked + Block comment posted |
+| `block` | `readOnlyValidation` + changes detected (exit 4) + Block comment posted |
+
+Release-gate validation is skipped for
+`succeeded_no_changes_with_done_evidence` and
+`blocked_no_changes_with_evidence` outcomes — PR-level fields are not
+required when the evidence lane terminated without producing a pull
+request.
+
+Dashboard/read-model consumers should preserve these PR-less outcomes
+instead of flattening them into generic `done` / `block` states.  A
+valid no-diff validation Done result is not a runner failure and should
+carry an empty risk list, while a PR-less Block result should say that
+validation was blocked and point operators at the Block evidence.  Missing
+PR/Done/Block evidence remains a separate fail-closed condition.
+
 ## OpenClaw plugin A2A development preset
 
 The first-class A2A development path is to keep the runner stateless and clone `openclaw-plugin-a2a` for each job:
@@ -147,7 +248,7 @@ The first-class A2A development path is to keep the runner stateless and clone `
   "id": "issue-76-plugin-run",
   "intent": "propose_patch",
   "preset": "openclaw-plugin-a2a-dev",
-  "timeoutMs": 2700000
+  "timeoutMs": 3600000
 }
 ```
 
@@ -192,6 +293,7 @@ The event is intentionally small and secret-free:
 - `repo` and `issue`: repository plus canonical issue URL/reference
 - `prUrl`, `doneUrl`, or `blockUrl`: the chosen completion evidence URL
 - `alert.title`, `alert.body`, `alert.url`: compact preformatted notification text for adapters such as OpenClaw plugin-notifier
+- `terminalBrief`: optional parent-round aggregation context for concise titles, including `parentRoundId`, `parentBroker`, `originBroker`, `brokerOfRecord`, `ownership: "parent-broker-only"`, and known `progress.sequence/total`; these fields preserve routing metadata without being appended to the operator title
 - `testSummary.label`: one-line runner outcome with exit, timeout, artifact count
 - `runnerBuild`: optional bounded build metadata (`version`, `source`, `revision`, `builtAt`, `image`)
 - `reason`: short human-facing Done/Block/failure reason
@@ -224,8 +326,8 @@ Modern artifacts may include sanitized budget, receipt trace, and continuation e
   "status": "done|blocked|failed|budget_limited",
   "budget": {
     "limitKind": "time|token|attempt|command|safety",
-    "limit": "45m task timeout budget",
-    "used": "45m",
+    "limit": "60m task timeout budget",
+    "used": "60m",
     "reason": "Stopped before completing validation within the bounded task budget."
   },
   "receiptTrace": {
@@ -323,7 +425,10 @@ broker, GitHub, Telegram, OpenClaw Gateway, or Docker.
 - configured task-root access and permissions
 - optional GitHub hosts secret readability and intended `:ro` container mount
 - configured base-image presence or pull readiness
-- `githubPatch` readiness for generic `github-propose-patch` execution
+- `githubPatch` readiness for generic `github-propose-patch` execution; the
+  OpenClaw profile path includes a no-secret container probe for the `openclaw`
+  CLI, `/run/secrets/openclaw-dir` profile mount, and explicit compaction model
+  provider readiness
 - `runnerRevision` deployed-revision drift status for the runner checkout/package
 
 `runnerRevision.detail.summary` is a compact operator line suitable for broker/plugin surfaces. It reports the deployed package version, local runner SHA, upstream GitHub `main` SHA when available, branch, and dirty-worktree state without echoing remotes, tokens, secret files, or host-specific paths. For exact revision proof, the JSON detail also includes full 40-character `localFullSha` and `upstreamMainFullSha` fields when they are inspectable. A clean current checkout returns `status: "ok"`; stale, dirty, non-main, or upstream-unavailable source checkouts return `status: "warn"` so rollout operators can review drift without blocking unrelated readiness checks.
@@ -345,7 +450,7 @@ for host in bangtong dungae sogyo nosuk; do
 done
 ```
 
-`githubPatch.status` is `ok` when `commandScript` or valid `commandJson` is configured and `fail` when no patch command is configured or a legacy `commandTemplate` eval path is present. A failed `githubPatch` check means Docker-first generic GitHub patch tasks are not ready and should produce Block evidence instead of Done/no-op success.
+`githubPatch.status` is `ok` when `commandScript` or valid `commandJson` is configured and `fail` when no patch command is configured or a legacy `commandTemplate` eval path is present. When `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` generates the command script, `doctor` first runs a bounded container probe against the configured image and read-only profile mount; the status is `ok` only when the container can resolve `openclaw`, print a version, see `/run/secrets/openclaw-dir`, and confirm that any explicit `agents.defaults.compaction.model` provider exists in the mounted `models.providers` map. A failed `githubPatch` check means Docker-first generic GitHub patch tasks are not ready and should produce Block evidence instead of Done/no-op success.
 
 `install` (alias: `setup`) is safe to rerun. It creates the task root with private permissions when missing and validates the optional secret file without touching live services.
 
@@ -374,6 +479,19 @@ npm run chaos:e2e
 ```
 
 It prints and writes machine-readable JSON evidence for broker restart, worker kill, stale requeue, duplicate-delivery tolerance, and network interruption/reconnect scenarios. For staging/live-like validation, run `scripts/chaos-e2e-gate.mjs --real` with the command hooks documented in `docs/release-rollout-checklist.md`.
+
+## Release candidate approval gate
+
+The `.github/workflows/release-gate.yml` workflow defaults to `dry_run=true`.
+Dry-run mode runs validation and records release-candidate evidence without
+creating a tag. Setting `dry_run=false` moves tag creation into a separate
+`tag` job attached to the GitHub `release` environment, which must be configured
+with required reviewers before the path is considered approved.
+
+This workflow does not push tags, create GitHub Releases, publish npm packages
+or images, deploy services, send provider messages, ACK terminal records, mutate
+databases, change credentials, or rewrite history. Each of those actions remains
+a separate explicit operator-approved operation.
 
 ## Environment
 
@@ -430,6 +548,19 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Defaults to `A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | blocked | Legacy eval path; rejected for GitHub patch execution. |
 
+For the OpenClaw profile, prefer a runner image that already contains the
+`openclaw` CLI, or an explicitly approved trusted read-only CLI/package mount.
+The generated profile fails fast when the CLI is missing instead of relying on
+per-task package-manager mutation. Missing CLI evidence records
+`error=openclaw_cli_missing`, `openclaw_install_fallback=disabled`, and
+`failure_category=openclaw_cli_unavailable`; operators should fix the runner
+image or mount. `doctor.githubPatch` now reports this before task fan-out by
+probing the configured container image/mount. A temporary compatibility escape hatch exists via
+`A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK=1`, which restores the old
+`npm install -g openclaw` attempt and records `error=openclaw_install_failed`
+if that explicit fallback fails; this escape hatch reports `githubPatch.status: "warn"`
+until the CLI is provisioned in the image or mount.
+
 Examples:
 
 ```bash
@@ -444,7 +575,7 @@ export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw
 export A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/secure/operator/openclaw-config
 export A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5
 export A2A_OPENCLAW_THINKING=medium
-export A2A_OPENCLAW_TIMEOUT_SEC=1800
+export A2A_OPENCLAW_TIMEOUT_SEC=3600
 
 # Legacy Claude-in-Docker commands are intentionally rejected for GitHub patch tasks.
 # Use host-side OpenClaw/Codex commandScript or commandJson instead.
@@ -473,7 +604,7 @@ export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw
 export A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/secure/operator/openclaw-config
 export A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5
 export A2A_OPENCLAW_THINKING=medium
-export A2A_OPENCLAW_TIMEOUT_SEC=1800
+export A2A_OPENCLAW_TIMEOUT_SEC=3600
 
 # 2. Verify readiness before enabling all GitHub tasks.
 node dist/cli.js doctor | jq .githubPatch
@@ -491,7 +622,7 @@ export A2A_DOCKER_RUNNER_ALL_GITHUB=1
 | `A2A_PATCH_COMMAND` | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` host env |
 | `/usr/local/bin/a2a-gh-pr-update-branch` | Helper that wraps `gh pr update-branch` with a git merge/push fallback |
 | `/work/artifacts/prompt.md` | Task `prompt` field |
-| `/work/artifacts/task.json` | Full normalised task payload |
+| `/work/artifacts/task.json` | Public-safe normalised task payload with secret-like fields and token patterns redacted |
 | `/work/artifacts/manifest.json` | Versioned A2A Artifact/Part manifest; see [`docs/artifact-manifest.md`](docs/artifact-manifest.md) |
 
 **Explicit commands override**: when `commands` are provided in the task
@@ -528,3 +659,49 @@ a2a-docker-runner run /path/to/task.json
 ```
 
 and convert the runner result into the normal A2A worker completion payload.
+
+## Related docs
+
+- [LICENSE](LICENSE) — MIT
+- [SECURITY.md](SECURITY.md) — vulnerability reporting and security model
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development, gates, branching, PR process
+- [docs/design.md](docs/design.md) — component architecture and task lifecycle
+- [docs/integration.md](docs/integration.md) — handler integration and rollout
+- [docs/release-rollout-checklist.md](docs/release-rollout-checklist.md) — operator release and worker rollout
+- [docs/artifact-manifest.md](docs/artifact-manifest.md) — artifact manifest contract and evidence parts
+
+## Compatibility matrix
+
+| Component | Min version / expected | Notes |
+|---|---|---|
+| Node.js | >= 22 | Required runtime; CI uses Node 22 |
+| Docker Engine | 20.10+ | Primary container runtime (`--rm`, `--memory`, `--cpus`) |
+| Podman | 4.0+ | Alternative container runtime; `--replace` for cleanup |
+| GitHub CLI (`gh`) | 2.40+ | Required for `gh pr update-branch`; auto-installed from cli.github.com |
+| TypeScript | 5.8+ | Build toolchain (dev dependency) |
+| Ubuntu / Debian | 22.04+ (bookworm) | Base container image (`node:22-bookworm-slim`) |
+| GitHub Actions | `ubuntu-latest` | CI runner |
+
+## Known limitations
+
+- **Single-repo PRIMARY PATCH**: The `github-propose-patch` mode operates on one
+  primary repository per task. Multi-repo PR orchestration must be split into
+  separate tasks or implemented explicitly via `repos` and `commands`.
+- **No built-in coding agent**: The runner does not embed a coding agent. Patch
+  command configuration (`commandScript`, `commandJson`, or `commandProfile`)
+  must be provided by the operator.
+- **Operator-only trusted-worker features**: The `openclaw` command profile,
+  host-network Docker/Podman mode, and host OpenClaw config mounts are
+  operator-only features and should not be presented as public/sandbox defaults.
+- **Cleanup is TTL-based**: Container and work-directory cleanup is driven by a
+  configurable TTL via `a2a-docker-runner cleanup`. There is no automatic per-task
+  cleanup at task completion time; the operator should schedule cleanup or run it
+  after task bursts.
+- **No persistent worker state**: The runner is stateless between tasks. Task
+  history and retry state live in the broker, not in the runner.
+- **Budget-limited is not Done**: Tasks that hit CPU/RAM/time budgets are reported
+  as `budget_limited` or `failed`, not `done`. Continuation requires explicit
+  operator approval.
+- **No live Telegram/notifier send**: The runner produces compact terminal evidence
+  for the broker; actual notification delivery is owned by the broker/plugin-notifier,
+  not by this runner.

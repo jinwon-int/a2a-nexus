@@ -333,7 +333,7 @@ test("E2E: terminal notification outbox enforces auth and replays compact ack-sa
           githubRepo: "jinwon-int/a2a-broker",
           githubIssueNumber: 250,
           rawPrompt: "do-not-leak",
-          token: "ghp_do_not_leak",
+          token: "fake-token-placeholder",
         },
         message: "private prompt that must not enter operator notification payloads",
       }),
@@ -354,7 +354,7 @@ test("E2E: terminal notification outbox enforces auth and replays compact ack-sa
       body: JSON.stringify({
         workerId: "worker-a",
         result: {
-          summary: "Done: terminal outbox regression passed from /work/private token=ghp_do_not_leak",
+          summary: "Done: terminal outbox regression passed from /work/private token=fake-token-placeholder",
           output: {
             prUrl: "https://github.com/jinwon-int/a2a-broker/pull/251",
             doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/250#issuecomment-done",
@@ -406,28 +406,39 @@ test("E2E: terminal notification outbox enforces auth and replays compact ack-sa
     assert.equal(providerSendOnlyAckRes.status, 400);
     assert.equal(server.runtime.broker.getTerminalTaskEventOutbox().subscribe()[0]!.attempts, 0);
 
+    const providerDeliveryAckRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-outbox/ack`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        id: outboxEvent.id,
+        receipt: { evidence: "provider_delivery_receipt", acknowledgedAt: "2026-05-02T01:22:00.000Z" },
+      }),
+    });
+    assert.equal(providerDeliveryAckRes.status, 400);
+    assert.equal(server.runtime.broker.getTerminalTaskEventOutbox().subscribe()[0]!.attempts, 0);
+
     const acknowledgedAt = "2026-05-02T01:23:45.000Z";
     const ackRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-outbox/ack`, {
       method: "POST",
       headers: hubHeaders,
       body: JSON.stringify({
         id: outboxEvent.id,
-        receipt: { evidence: "provider_delivery_receipt", acknowledgedAt, receiptId: "delivery-receipt-250" },
+        receipt: { evidence: "operator_visible", acknowledgedAt, receiptId: "operator-visible-250" },
       }),
     });
     assert.equal(ackRes.status, 200);
     const ack = await ackRes.json();
     assert.deepEqual(ack.event.ack, {
       status: "receipt_confirmed",
-      evidence: "provider_delivery_receipt",
+      evidence: "operator_visible",
       acknowledgedAt,
-      receiptId: "delivery-receipt-250",
+      receiptId: "operator-visible-250",
     });
     assert.deepEqual(ack.event.receipt, {
-      status: "provider_sent",
+      status: "operator_visible",
       updatedAt: acknowledgedAt,
-      evidence: "provider_delivery_receipt",
-      receiptId: "delivery-receipt-250",
+      evidence: "operator_visible",
+      receiptId: "operator-visible-250",
     });
     assert.equal(ack.event.deliveredAt, undefined);
     assert.equal(ack.event.attempts, 1);
@@ -447,7 +458,7 @@ test("E2E: terminal notification outbox enforces auth and replays compact ack-sa
       "rawPrompt",
       "rawLog",
       "do-not-leak",
-      "ghp_do_not_leak",
+      "fake-token-placeholder",
       "/work/private",
     ]) {
       assert.ok(!serialized.includes(forbidden), forbidden);

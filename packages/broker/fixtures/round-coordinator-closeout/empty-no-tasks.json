@@ -1,0 +1,17 @@
+{
+  "description": "Round manifest with workers but zero task records. All lanes should classify as 'pending' with no evidence.",
+  "manifest": {
+    "roundLabel": "a2a-team1-round-coordinator-20260526T201140KST",
+    "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/934",
+    "lanes": [
+      { "workerId": "sogyo", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
+      { "workerId": "bangtong", "description": "Round manifest foundation" },
+      { "workerId": "nosuk", "description": "A2A definitions and types" },
+      { "workerId": "yukson", "description": "Validation and tests" },
+      { "workerId": "dungae", "description": "Result collector projection" }
+    ],
+    "staleAfterMs": 1800000,
+    "timeoutAt": "2026-05-27T06:00:00.000Z"
+  },
+  "tasks": []
+}

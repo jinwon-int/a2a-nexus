@@ -24,6 +24,26 @@ export const WorkerStatusMarker = {
 export type WorkerStatusMarkerType =
   (typeof WorkerStatusMarker)[keyof typeof WorkerStatusMarker];
 
+/**
+ * Outcome classification for Done events.
+ *
+ * - `done_with_changes`: code/doc changes were produced (default).
+ * - `done_evidence_only`: task completed but only evidence comments
+ *   (Start/Block markers, comment URLs) were produced; no code changes.
+ * - `done_no_changes`: assessment found nothing to change; the task
+ *   is Done without code/doc diffs.
+ * - `blocked`: the task is blocked; this outcome appears on Done
+ *   markers that carry a block reason rather than completion evidence.
+ *
+ * These outcomes NEVER imply terminal ACK, live send, read receipt,
+ * or visibility confirmation.  They classify what the worker
+ * produced, not whether the operator consumed it.
+ */
+export type WorkerDoneOutcome =
+  | "done_with_changes"
+  | "done_evidence_only"
+  | "done_no_changes";
+
 export interface WorkerStatusEventBase {
   /** Which marker was detected. */
   marker: WorkerStatusMarkerType;
@@ -56,6 +76,12 @@ export interface WorkerStatusBlockEvent extends WorkerStatusEventBase {
     blockedOn?: string;
     /** ISO-8601 when the blocker was reported, if different from observedAt. */
     reportedAt?: string;
+    /**
+     * Evidence URL for read-only Block markers (e.g. GitHub comment URL).
+     * Set by the ingestion pipeline when the block evidence is the comment
+     * itself rather than a separate artifact.
+     */
+    blockUrl?: string;
   };
 }
 
@@ -78,6 +104,40 @@ export interface WorkerStatusDoneEvent extends WorkerStatusEventBase {
     prUrl?: string;
     /** Whether the task completed successfully. */
     success: boolean;
+    /**
+     * Outcome classification for Done evidence.
+     *
+     * `done_with_changes` is the default when the text contains a PR URL
+     * or no explicit evidence-only/no-change signal.
+     * `done_evidence_only` is set when the text signals evidence-only
+     * (e.g., "evidence-only", "block evidence", "no code changes").
+     * `done_no_changes` is set when the text signals no changes were
+     * needed (e.g., "no changes needed", "nothing to change").
+     *
+     * This field classifies what the worker produced, not whether the
+     * operator consumed it.  It MUST NOT be interpreted as terminal
+     * ACK, read receipt, live-send success, or visibility confirmation.
+     */
+    outcome?: WorkerDoneOutcome;
+    /**
+     * True when the outcome is done_evidence_only or done_no_changes,
+     * meaning the task produced read-only evidence without code changes or
+     * a PR. This field distinguishes libero/read-only evidence outcomes
+     * from done_with_changes at the type level without requiring callers to
+     * inspect the outcome string. When readOnly is true, no PR was created
+     * and no full lifecycle (ACK/receipt) tracking applies.
+     *
+     * readOnly is undefined (not false) when the outcome is done_with_changes
+     * or unclassified, so callers can distinguish 'not set' from 'explicitly
+     * not read-only'.
+     */
+    readOnly?: boolean;
+    /**
+     * Evidence URL for read-only Done markers (e.g. GitHub comment URL).
+     * Set for done_evidence_only / done_no_changes outcomes when the
+     * evidence is the comment itself rather than a PR or external artifact.
+     */
+    doneUrl?: string;
   };
 }
 
@@ -287,9 +347,16 @@ function parseDoneMarker(
   const completionSummary = body || undefined;
   const prUrl = extractPRUrl(body);
 
-  // Check for failure indicators
-  const failureIndicators = /\b(failed|error|unsuccessful|aborted|rejected)\b/i;
+  // Check for failure indicators, including branch mismatch / no-diff evidence
+  const failureIndicators = /\b(failed|error|unsuccessful|aborted|rejected|no\s+commits\s+between)\b/i;
   const success = !failureIndicators.test(body ?? "");
+
+  // ── Outcome classification ───────────────────────────────────
+  // Detect evidence-only and no-change signals in the Done body.
+  // These classify what the worker produced, never read/visibility.
+  const outcome = classifyDoneOutcome(body ?? "", prUrl);
+  const readOnly =
+    outcome === "done_evidence_only" || outcome === "done_no_changes";
 
   return {
     marker: "Done",
@@ -303,8 +370,40 @@ function parseDoneMarker(
       ...(completionSummary ? { completionSummary } : {}),
       ...(prUrl ? { prUrl } : {}),
       success,
+      ...(outcome ? { outcome } : {}),
+      ...(readOnly ? { readOnly } : {}),
     },
   };
+}
+
+/**
+ * Classify a Done body as done_with_changes, done_evidence_only,
+ * or done_no_changes based on keyword signals.
+ *
+ * Returns undefined when no explicit signal is present (backward
+ * compatible: callers treat undefined as done_with_changes).
+ */
+function classifyDoneOutcome(body: string, prUrl: string | undefined): WorkerDoneOutcome | undefined {
+  const lower = body.toLowerCase();
+
+  // Explicit evidence-only signals
+  if (/evidence.?only|block.?evidence|comment.?only|no.?code.?change/i.test(lower)) {
+    return "done_evidence_only";
+  }
+
+  // Explicit no-change signals
+  if (/no.?changes?.?(needed|required|necessary)|nothing.?to.?change/i.test(lower)) {
+    return "done_no_changes";
+  }
+
+  // If there's a PR URL, it's done_with_changes by default
+  if (prUrl) {
+    return "done_with_changes";
+  }
+
+  // Without a PR URL and without explicit evidence-only/no-change
+  // signals, don't set outcome — backward compatible undefined.
+  return undefined;
 }
 
 // ── Public API ─────────────────────────────────────────────────

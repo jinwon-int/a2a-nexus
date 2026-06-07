@@ -372,6 +372,147 @@ describe("ingestGitHubComment", () => {
     expect(result.ok).toBe(true);
   });
 });
+// ── buildGitHubCommentUrl ────────────────────────────────────
+
+describe("buildGitHubCommentUrl", () => {
+  it("builds correct GitHub comment URL", () => {
+    const url = buildGitHubCommentUrl({
+      repository: "jinwon-int/openclaw-plugin-a2a",
+      issueNumber: 88,
+      commentId: 12345,
+      authorLogin: "worker-bot",
+    });
+    expect(url).toBe("https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-12345");
+  });
+
+  it("includes deliveryId when present", () => {
+    const url = buildGitHubCommentUrl({
+      repository: "org/repo",
+      issueNumber: 1,
+      commentId: 999,
+      authorLogin: "bot",
+      deliveryId: "abc-123",
+    });
+    expect(url).toContain("org/repo");
+    expect(url).toContain("issuecomment-999");
+  });
+});
+
+// evidence URL enrichment
+
+describe("evidence URL enrichment", () => {
+  it("enriches done_evidence_only marker with doneUrl", () => {
+    const store = new InMemoryDeduplicationStore();
+    const result = ingestGitHubComment(
+      makeIssueCommentPayload({
+        comment: {
+          id: 100001,
+          body: "**Done** \u2014 evidence-only, no code changes. Assessment complete.",
+          user: { login: "worker-bot" },
+        },
+      }),
+      store,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || ("skipped" in result && result.skipped)) {
+      throw new Error("expected success");
+    }
+    expect(result.workerEvent.marker).toBe("Done");
+    expect(result.workerEvent.payload.outcome).toBe("done_evidence_only");
+    expect(result.workerEvent.payload.doneUrl).toBe(
+      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100001",
+    );
+  });
+
+  it("enriches done_no_changes marker with doneUrl", () => {
+    const store = new InMemoryDeduplicationStore();
+    const result = ingestGitHubComment(
+      makeIssueCommentPayload({
+        comment: {
+          id: 100002,
+          body: "**Done** \u2014 assessment complete, no changes needed.",
+          user: { login: "worker-bot" },
+        },
+      }),
+      store,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || ("skipped" in result && result.skipped)) {
+      throw new Error("expected success");
+    }
+    expect(result.workerEvent.marker).toBe("Done");
+    expect(result.workerEvent.payload.doneUrl).toBe(
+      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100002",
+    );
+  });
+
+  it("enriches Block marker with blockUrl", () => {
+    const store = new InMemoryDeduplicationStore();
+    const result = ingestGitHubComment(
+      makeIssueCommentPayload({
+        comment: {
+          id: 100003,
+          body: "**Block** \u2014 waiting on upstream review",
+          user: { login: "worker-bot" },
+        },
+      }),
+      store,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || ("skipped" in result && result.skipped)) {
+      throw new Error("expected success");
+    }
+    expect(result.workerEvent.marker).toBe("Block");
+    expect(result.workerEvent.payload.blockUrl).toBe(
+      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100003",
+    );
+  });
+
+  it("does not enrich Done marker with PR URL and done_with_changes outcome", () => {
+    const store = new InMemoryDeduplicationStore();
+    const result = ingestGitHubComment(
+      makeIssueCommentPayload({
+        comment: {
+          id: 100004,
+          body: "**Done** \u2014 https://github.com/jinwon-int/openclaw/pull/52 merged",
+          user: { login: "worker-bot" },
+        },
+      }),
+      store,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || ("skipped" in result && result.skipped)) {
+      throw new Error("expected success");
+    }
+    expect(result.workerEvent.marker).toBe("Done");
+    expect(result.workerEvent.payload.outcome).toBe("done_with_changes");
+    expect(result.workerEvent.payload.doneUrl).toBeUndefined();
+  });
+
+  it("does not enrich Start marker with evidence URL", () => {
+    const store = new InMemoryDeduplicationStore();
+    const result = ingestGitHubComment(
+      makeIssueCommentPayload({
+        comment: {
+          id: 100005,
+          body: "**Start** \u2014 beginning work",
+          user: { login: "worker-bot" },
+        },
+      }),
+      store,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || ("skipped" in result && result.skipped)) {
+      throw new Error("expected success");
+    }
+    expect(result.workerEvent.marker).toBe("Start");
+  });
+});
 
 // ── batchIngestGitHubComments ──────────────────────────────────
 

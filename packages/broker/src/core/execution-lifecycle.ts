@@ -29,6 +29,8 @@ import {
   type ResultOutcome,
   EXECUTION_FAILURE_CODES,
   EXECUTION_TRANSITIONS,
+  classifyExecutionFailure,
+  resolveExecutionFailureCode,
 } from "./execution-lifecycle-types.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +41,13 @@ export interface ExecutionManagerOptions {
   maxEvents?: number;
   now?: () => Date;
   idFactory?: () => string;
+  /**
+   * Default maximum automatic retry attempts per execution run.
+   * A failed or timed-out run with a retryable failure code is eligible for
+   * up to this many automatic retries. Default: 1 (at most one auto-retry).
+   * Set to 0 to disable automatic retry. Set to a higher value for more retries.
+   */
+  defaultMaxRetries?: number;
 }
 
 export interface ExecutionRequestInput {
@@ -85,47 +94,6 @@ export class ExecutionError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Failure code resolution
-// ---------------------------------------------------------------------------
-
-const FAILURE_ALIASES: Record<string, ExecutionFailureCode> = {
-  unreachable: "peer_unreachable",
-  peer_unreachable: "peer_unreachable",
-  expired: "session_expired",
-  session_expired: "session_expired",
-  payload_large: "payload_too_large",
-  payload_too_large: "payload_too_large",
-  delivery: "delivery_failed",
-  delivery_failed: "delivery_failed",
-  runtime: "runtime_error",
-  runtime_error: "runtime_error",
-  parse: "result_parse_error",
-  result_parse_error: "result_parse_error",
-  auth: "auth_failed",
-  auth_failed: "auth_failed",
-  rate_limit: "rate_limited",
-  rate_limited: "rate_limited",
-  lease: "lease_expired",
-  lease_expired: "lease_expired",
-  timeout: "execution_timeout",
-  execution_timeout: "execution_timeout",
-  cancelled: "cancelled_by_operator",
-  cancelled_by_operator: "cancelled_by_operator",
-  duplicate: "duplicate_payload_suppressed",
-  duplicate_payload_suppressed: "duplicate_payload_suppressed",
-  other: "other",
-};
-
-const FAILURE_CODE_SET = new Set<string>(EXECUTION_FAILURE_CODES);
-
-function resolveFailureCode(raw: string): ExecutionFailureCode {
-  const resolved = FAILURE_ALIASES[raw];
-  if (resolved && FAILURE_CODE_SET.has(resolved)) return resolved;
-  if (FAILURE_CODE_SET.has(raw)) return raw as ExecutionFailureCode;
-  return "other";
-}
-
-// ---------------------------------------------------------------------------
 // Manager
 // ---------------------------------------------------------------------------
 
@@ -134,6 +102,7 @@ export class ExecutionManager {
   private readonly buffer: CursorEventBuffer<ExecutionEvent>;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
+  private readonly defaultMaxRetries: number;
 
   constructor(options: ExecutionManagerOptions = {}) {
     this.buffer = new CursorEventBuffer<ExecutionEvent>(
@@ -141,6 +110,7 @@ export class ExecutionManager {
     );
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => randomUUID());
+    this.defaultMaxRetries = options.defaultMaxRetries ?? 1;
   }
 
   // -------------------------------------------------------------------------
@@ -236,9 +206,9 @@ export class ExecutionManager {
   /** Mark execution as failed with structured code. */
   failExecution(runId: string, reason: string): ExecutionRunState {
     return this.transition(runId, "failed", (s) => {
-      s.failureCode = resolveFailureCode(reason);
+      s.failureCode = resolveExecutionFailureCode(reason);
       s.completedAt = s.updatedAt;
-    }, undefined, resolveFailureCode(reason));
+    }, undefined, resolveExecutionFailureCode(reason));
   }
 
   /** Mark execution as timed out. */
@@ -260,8 +230,16 @@ export class ExecutionManager {
   /**
    * Retry a failed or timed-out execution. Creates a new run for the same
    * session, incrementing the attempt counter.
+   *
+   * Fails closed if:
+   * - The existing run is not in a retryable terminal state.
+   * - The failure code is not classified as retryable (permanent/semantic failure).
+   * - The attempt budget would be exceeded (default: at most 1 automatic retry).
    */
-  retryExecution(runId: string): ExecutionRunState {
+  retryExecution(
+    runId: string,
+    options?: { maxRetries?: number },
+  ): ExecutionRunState {
     const existing = this.requireRun(runId);
     if (existing.status !== "failed" && existing.status !== "timeout") {
       throw new ExecutionError(
@@ -269,6 +247,38 @@ export class ExecutionManager {
         "INVALID_RETRY",
       );
     }
+
+    // Check retryability of the failure code
+    const code = existing.failureCode ?? "other";
+    if (!classifyExecutionFailure(code)) {
+      throw new ExecutionError(
+        `Cannot retry run ${runId}: failure code "${code}" is not classified as retryable`,
+        "NON_RETRYABLE_FAILURE",
+      );
+    }
+
+    // Enforce attempt budget
+    const maxRetries = options?.maxRetries ?? this.defaultMaxRetries;
+    if (maxRetries <= 0) {
+      throw new ExecutionError(
+        `Cannot retry run ${runId}: automatic retry is disabled (maxRetries=${maxRetries})`,
+        "RETRY_DISABLED",
+      );
+    }
+
+    // existing.attempts counts total historical attempts including the current run.
+    // We allow retry if the existing run's attempt number <= maxRetries.
+    // For a first run with attempts=1 and maxRetries=1, existing.attempts (1) <= 1
+    // means we allow one retry producing attempt 2.
+    // After that retry, if it fails, existing.attempts would be 2 > maxRetries (1)
+    // and no further retries are allowed.
+    if (existing.attempts > maxRetries) {
+      throw new ExecutionError(
+        `Cannot retry run ${runId}: attempt budget exhausted (attempts=${existing.attempts}, maxRetries=${maxRetries})`,
+        "RETRY_BUDGET_EXHAUSTED",
+      );
+    }
+
     const ts = this.now().toISOString();
     const newRunId = this.idFactory();
     const state: ExecutionRunState = {
@@ -288,6 +298,42 @@ export class ExecutionManager {
       wakeEventId: state.wakeEventId,
     });
     return state;
+  }
+
+  /**
+   * Check whether a run's failure code is classified as retryable.
+   * Returns false for non-terminal, unknown, or non-retryable failures.
+   */
+  isRetryableFailure(runId: string): boolean {
+    const run = this.runs.get(runId);
+    if (!run) return false;
+    if (run.status !== "failed" && run.status !== "timeout") return false;
+    const code = run.failureCode ?? "other";
+    return classifyExecutionFailure(code);
+  }
+
+  /**
+   * Get the number of remaining automatic retry attempts for a run.
+   * Returns 0 if the run cannot be retried (non-terminal, non-retryable, or budget exhausted).
+   */
+  remainingRetries(
+    runId: string,
+    options?: { maxRetries?: number },
+  ): number {
+    const run = this.runs.get(runId);
+    if (!run) return 0;
+    if (run.status !== "failed" && run.status !== "timeout") return 0;
+
+    const code = run.failureCode ?? "other";
+    if (!classifyExecutionFailure(code)) return 0;
+
+    const maxRetries = options?.maxRetries ?? this.defaultMaxRetries;
+    if (maxRetries <= 0) return 0;
+
+    // attempts counts total historical attempts (original run = 1, first retry = 2, etc.).
+    // remaining = maxRetries - (attempts - 1), i.e. how many more retries from this point.
+    const remaining = maxRetries - (run.attempts - 1);
+    return Math.max(0, remaining);
   }
 
   // -------------------------------------------------------------------------

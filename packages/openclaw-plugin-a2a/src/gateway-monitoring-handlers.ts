@@ -4,21 +4,27 @@
  * These handlers own the gateway RPC surface for a2a.alerts.list and a2a.monitor.status.
  * They delegate to the standalone a2a-broker HTTP endpoint's diagnostics and alerts APIs.
  */
+import { readFileSync } from "node:fs";
 import type { GatewayRequestHandlerOptions } from "openclaw/plugin-sdk/gateway-runtime";
 import {
   createConfiguredA2ABrokerClient,
   resolveA2ABrokerAdapterPluginConfig,
   type A2ABrokerAdapterPluginRuntimeConfig,
 } from "../config.js";
-import { A2ABrokerClientError } from "../standalone-broker-client.js";
+import { A2ABrokerClientError, createA2ABrokerClient } from "../standalone-broker-client.js";
 import {
   buildDisabledA2AOperatorEventBridgeState,
   buildUnavailableA2AOperatorEventBridgeState,
   createA2AOperatorEventBridge,
   type A2AOperatorEventBridge,
   type A2AOperatorEventBridgeBrokerClient,
+  type A2AOperatorEventBridgeState,
 } from "./operator-event-bridge.js";
-import { createA2AOperatorNotificationAdapter } from "./operator-notification-adapter.js";
+import type { A2ACrossBrokerTerminalProjection } from "./cross-broker-terminal-relay.js";
+import {
+  createA2AOperatorNotificationAdapter,
+  preflightA2AOperatorNotificationRuntime,
+} from "./operator-notification-adapter.js";
 import type {
   A2AAlertsListParams,
   A2AMonitorStatusParams,
@@ -29,6 +35,156 @@ import {
   validateParams,
 } from "./gateway-validators.js";
 import { a2aError, A2AErrorCodes } from "./plugin-errors.js";
+
+function readOperatorEventsConfig(config: A2ABrokerAdapterPluginRuntimeConfig): Record<string, unknown> | undefined {
+  const entry = config.plugins?.entries?.["a2a-broker-adapter"];
+  const value = entry?.config?.operatorEvents;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+interface CrossBrokerConfig {
+  baseUrl: string;
+  edgeSecret?: string;
+  label?: string;
+  requesterId?: string;
+  terminalOutboxAllowedIds?: string[];
+  terminalOutboxCursor?: string;
+  terminalOutboxReconcileUnackedOnStart?: boolean;
+  handoffBrokerId?: string;
+  maxSummaryChars?: number;
+}
+
+interface CrossBrokerTerminalRelayConfig {
+  enabled: boolean;
+  baseUrl: string;
+  edgeSecret?: string;
+  label?: string;
+  handoffBrokerId?: string;
+  maxSummaryChars?: number;
+}
+
+type OperatorEventBridgeFactoryParams = {
+  broker: A2AOperatorEventBridgeBrokerClient;
+  readTerminalOutboxAllowedIds?: () => readonly string[];
+  readTerminalOutboxCursor?: () => string | undefined;
+  terminalOutboxCursor?: string;
+  terminalOutboxReconcileUnackedOnStart?: boolean;
+  handoffBrokerId?: string;
+  terminalProjectionMaxSummaryChars?: number;
+  notifyOperator?: boolean;
+  relayTerminalProjection?: (
+    projection: A2ACrossBrokerTerminalProjection,
+  ) => void | { accepted?: boolean; reason?: string } | Promise<void | { accepted?: boolean; reason?: string }>;
+};
+
+function readSecretFile(value: unknown): string | undefined {
+  const filePath = readString(value);
+  if (!filePath || !filePath.startsWith("/")) return undefined;
+  try {
+    return readFileSync(filePath, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readBrokerIdLikeLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return /^[a-z][a-z0-9_-]{1,63}$/i.test(value) ? value : undefined;
+}
+
+function readCrossBrokerHandoffBrokerId(rec: Record<string, unknown>, ownerLocalBrokerId: string | undefined): string | undefined {
+  const explicit =
+    readString(rec.handoffBrokerId) ??
+    readString(rec.remoteBrokerId) ??
+    readString(rec.brokerId);
+  if (explicit) return explicit;
+
+  const localBrokerId = readString(rec.localBrokerId);
+  if (localBrokerId && localBrokerId !== ownerLocalBrokerId) return localBrokerId;
+
+  return readBrokerIdLikeLabel(readString(rec.label));
+}
+
+function readCrossBrokersConfig(raw: Record<string, unknown> | undefined, ownerLocalBrokerId?: string): CrossBrokerConfig[] {
+  if (!raw) return [];
+  const arr = raw.crossBrokers;
+  if (!Array.isArray(arr)) return [];
+  const results: CrossBrokerConfig[] = [];
+  for (const item of arr) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const baseUrl = typeof rec.baseUrl === "string" && rec.baseUrl.trim() ? rec.baseUrl.trim() : undefined;
+    if (!baseUrl) continue;
+    const edgeSecret = readString(rec.edgeSecret) ?? readSecretFile(rec.edgeSecretFile);
+    const label = typeof rec.label === "string" && rec.label.trim() ? rec.label.trim() : undefined;
+    const requesterId = typeof rec.requesterId === "string" && rec.requesterId.trim() ? rec.requesterId.trim() : undefined;
+    const terminalOutboxAllowedIds = readStringArray(rec.terminalOutboxAllowedIds);
+    const terminalOutboxCursor = readString(rec.terminalOutboxCursor);
+    const terminalOutboxReconcileUnackedOnStart = readBoolean(rec.terminalOutboxReconcileUnackedOnStart);
+    const handoffBrokerId = readCrossBrokerHandoffBrokerId(rec, ownerLocalBrokerId);
+    const maxSummaryChars = typeof rec.maxSummaryChars === "number" && Number.isFinite(rec.maxSummaryChars)
+      ? Math.max(80, Math.min(2_000, Math.trunc(rec.maxSummaryChars)))
+      : undefined;
+    results.push({
+      baseUrl,
+      ...(edgeSecret ? { edgeSecret } : {}),
+      ...(label ? { label } : {}),
+      ...(requesterId ? { requesterId } : {}),
+      ...(terminalOutboxAllowedIds.length ? { terminalOutboxAllowedIds } : {}),
+      ...(terminalOutboxCursor ? { terminalOutboxCursor } : {}),
+      ...(terminalOutboxReconcileUnackedOnStart !== undefined ? { terminalOutboxReconcileUnackedOnStart } : {}),
+      ...(handoffBrokerId ? { handoffBrokerId } : {}),
+      ...(maxSummaryChars ? { maxSummaryChars } : {}),
+    });
+  }
+  return results;
+}
+
+function readCrossBrokerTerminalRelayConfig(raw: Record<string, unknown> | undefined): CrossBrokerTerminalRelayConfig | undefined {
+  if (!raw) return undefined;
+  const rec = readRecord(raw.crossBrokerTerminalRelay) ?? readRecord(raw.terminalProjectionRelay);
+  if (!rec || rec.enabled !== true) return undefined;
+  const origin = readRecord(rec.originBroker) ?? rec;
+  const baseUrl = readString(origin.baseUrl);
+  if (!baseUrl) return undefined;
+  const edgeSecret = readString(origin.edgeSecret) ?? readSecretFile(origin.edgeSecretFile);
+  const label = readString(origin.label) ?? readString(rec.label);
+  const handoffBrokerId = readString(rec.handoffBrokerId) ?? readString(rec.localBrokerId);
+  const maxSummaryChars = typeof rec.maxSummaryChars === "number" && Number.isFinite(rec.maxSummaryChars)
+    ? Math.max(80, Math.min(2_000, Math.trunc(rec.maxSummaryChars)))
+    : undefined;
+  return {
+    enabled: true,
+    baseUrl,
+    ...(edgeSecret ? { edgeSecret } : {}),
+    ...(label ? { label } : {}),
+    ...(handoffBrokerId ? { handoffBrokerId } : {}),
+    ...(maxSummaryChars ? { maxSummaryChars } : {}),
+  };
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
 
 export type A2ABrokerAuditBottleneckWarning = {
   code: "broker_audit_bottleneck";
@@ -176,13 +332,81 @@ export type A2ABrokerLiveReadinessWarning = {
   message: string;
 };
 
+// ── Broker pressure projection ───────────────────────────────────────
+
+/**
+ * Synthesized broker pressure signal for operator gate decisions.
+ * Provider send/message-id remains non-ACK evidence.
+ */
+export type A2ABrokerPressureProjection = {
+  status: "elevated" | "normal" | "unknown";
+  pressure: {
+    /** Queue depth from operator-snapshot or live-summary. */
+    queueDepth: number;
+    /** Tasks queued vs total active: 0..1 pressure ratio. */
+    queuePressureRatio: number;
+    /** Audit table bottleneck ratio (rows/max), 0..1 when available. */
+    auditPressureRatio?: number;
+    /** Health check latency in ms. */
+    healthLatencyMs?: number;
+    /** Number of stale/unknown workers. */
+    staleWorkerCount: number;
+    /** Total tracked workers. */
+    totalWorkerCount: number;
+  };
+  messages: string[];
+};
+
+// ── Queue hygiene projection ─────────────────────────────────────────
+
+/**
+ * Synthesized queue hygiene signal for operator gate decisions.
+ * Provider send/message-id remains non-ACK evidence; terminal ACK
+ * requires operator-visible/manual-receipt confirmation.
+ */
+export type A2AQueueHygieneProjection = {
+  status: "clean" | "stale" | "timed_out" | "blocked" | "unknown";
+  hygiene: {
+    staleTaskCount: number;
+    timedOutTaskCount: number;
+    unacknowledgedOutboxCount: number;
+    receiptGapCount: number;
+    pendingLocalQueueCount: number;
+    claimedRunningCount: number;
+  };
+  messages: string[];
+};
+
+// ── Combined operator status projection ──────────────────────────────
+
+/**
+ * Top-level operator-facing status projection that coalesces broker
+ * pressure and queue hygiene signals for gate decisions.
+ *
+ * Provider send success remains non-ACK evidence; terminal ACK requires
+ * operator-visible current-session or manual-receipt confirmation.
+ */
+export type A2AOperatorStatusProjection = {
+  mode: "operator-status-dryrun/no-live";
+  brokerPressure: A2ABrokerPressureProjection;
+  queueHygiene: A2AQueueHygieneProjection;
+  /** Provider send/message-id is explicitly non-ACK evidence. */
+  providerSendNotAckEvidence: true;
+  safeOperations: {
+    liveSend: false;
+    terminalOutboxAck: false;
+    gatewayRestart: false;
+    productionDeploy: false;
+    providerSend: false;
+  };
+};
+
 export function createA2AMonitoringHandlers(
   config: A2ABrokerAdapterPluginRuntimeConfig,
   deps: {
     createClient?: typeof createConfiguredA2ABrokerClient;
-    createOperatorEventBridge?: (params: {
-      broker: A2AOperatorEventBridgeBrokerClient;
-    }) => A2AOperatorEventBridge;
+    createStandaloneBrokerClient?: typeof createA2ABrokerClient;
+    createOperatorEventBridge?: (params: OperatorEventBridgeFactoryParams) => A2AOperatorEventBridge;
     runtime?: unknown;
     now?: () => number;
   } = {},
@@ -191,19 +415,118 @@ export function createA2AMonitoringHandlers(
 
   const resolvedConfig = resolveA2ABrokerAdapterPluginConfig(config);
   const createClient = deps.createClient ?? createConfiguredA2ABrokerClient;
+  const createStandaloneBrokerClient = deps.createStandaloneBrokerClient ?? createA2ABrokerClient;
   const notificationAdapter = createA2AOperatorNotificationAdapter(config, deps.runtime, {
     ...(deps.now ? { now: deps.now } : {}),
   });
+  const operatorEventsConfig = readOperatorEventsConfig(config);
+  const terminalOutboxReconcileUnackedOnStart = readBoolean(operatorEventsConfig?.terminalOutboxReconcileUnackedOnStart);
+  const localBrokerId =
+    readString(operatorEventsConfig?.localBrokerId) ??
+    readString(operatorEventsConfig?.brokerId) ??
+    readString(operatorEventsConfig?.handoffBrokerId);
+  const crossBrokerTerminalRelayConfig = readCrossBrokerTerminalRelayConfig(operatorEventsConfig);
+  const readCurrentTerminalOutboxAllowedIds = () =>
+    readStringArray(readOperatorEventsConfig(config)?.terminalOutboxAllowedIds);
+  const readCurrentTerminalOutboxCursor = () =>
+    readString(readOperatorEventsConfig(config)?.terminalOutboxCursor);
+  const readCurrentOperatorEventCursor = () =>
+    readString(readOperatorEventsConfig(config)?.cursor);
+  type CrossBrokerTerminalRelayClient = ReturnType<typeof createA2ABrokerClient> & { relayTerminalProjection?: (projection: Record<string, unknown>) => Promise<unknown> };
+  let crossBrokerTerminalRelayClient: CrossBrokerTerminalRelayClient | undefined;
+
+  function getCrossBrokerTerminalRelayClient(): CrossBrokerTerminalRelayClient | undefined {
+    if (!crossBrokerTerminalRelayConfig) return undefined;
+    if (!crossBrokerTerminalRelayClient) {
+      crossBrokerTerminalRelayClient = createStandaloneBrokerClient({
+        baseUrl: crossBrokerTerminalRelayConfig.baseUrl,
+        ...(crossBrokerTerminalRelayConfig.edgeSecret ? { edgeSecret: crossBrokerTerminalRelayConfig.edgeSecret } : {}),
+        requester: { id: "openclaw-plugin-a2a", kind: "service", role: "hub" },
+      }) as unknown as CrossBrokerTerminalRelayClient;
+    }
+    return crossBrokerTerminalRelayClient;
+  }
+
+  // Cross-broker support: poll additional brokers' terminal outboxes
+  const crossBrokerConfigs = readCrossBrokersConfig(operatorEventsConfig, localBrokerId);
+  const crossBrokerClients = new Map<string, A2AOperatorEventBridgeBrokerClient>();
+  const crossBridges = new Map<string, A2AOperatorEventBridge>();
+
+  function initCrossBrokers(): void {
+    for (const cfg of crossBrokerConfigs) {
+      const key = cfg.label ?? new URL(cfg.baseUrl).hostname;
+      if (crossBrokerClients.has(key)) continue;
+      try {
+        // Cross-broker client: no write/create methods needed, only terminal-outbox read/ack
+        const client = createStandaloneBrokerClient({
+          baseUrl: cfg.baseUrl,
+          ...(cfg.edgeSecret ? { edgeSecret: cfg.edgeSecret } : {}),
+          requester: { id: cfg.requesterId ?? cfg.label ?? "cross-broker-client", kind: "node", role: "hub" },
+        }) as unknown as A2AOperatorEventBridgeBrokerClient;
+        crossBrokerClients.set(key, client);
+      } catch {
+        // Cross broker unreachable at init time; skip, will retry on next start
+      }
+    }
+  }
+
+  function startCrossBridges(): void {
+    for (const [key, client] of crossBrokerClients) {
+      if (crossBridges.has(key)) continue;
+      const cfg = crossBrokerConfigs.find((item) => (item.label ?? new URL(item.baseUrl).hostname) === key);
+      try {
+        const bridge = createOperatorEventBridgeFactory({
+          broker: client,
+          ...(cfg?.terminalOutboxAllowedIds ? { readTerminalOutboxAllowedIds: () => cfg.terminalOutboxAllowedIds ?? [] } : {}),
+          ...(cfg?.terminalOutboxCursor ? {
+            readTerminalOutboxCursor: () => cfg.terminalOutboxCursor,
+            terminalOutboxCursor: cfg.terminalOutboxCursor,
+          } : {}),
+          ...(cfg?.terminalOutboxReconcileUnackedOnStart !== undefined
+            ? { terminalOutboxReconcileUnackedOnStart: cfg.terminalOutboxReconcileUnackedOnStart }
+            : {}),
+          ...(cfg?.handoffBrokerId ? { handoffBrokerId: cfg.handoffBrokerId } : {}),
+          ...(cfg?.maxSummaryChars ? { terminalProjectionMaxSummaryChars: cfg.maxSummaryChars } : {}),
+          notifyOperator: false,
+          relayTerminalProjection: async (projection) => {
+            const originClient = getRawClient() as (RawBrokerClient & { relayTerminalProjection?: (projection: Record<string, unknown>) => Promise<unknown> }) | null;
+            if (!originClient?.relayTerminalProjection) {
+              throw new Error("local broker client does not expose relayTerminalProjection");
+            }
+            await originClient.relayTerminalProjection(projection as unknown as Record<string, unknown>);
+            return {
+              accepted: true,
+              reason: `local broker accepted cross-broker Terminal Brief projection from ${cfg?.label ?? key}`,
+            };
+          },
+        });
+        bridge.getState(); // triggers ensureStarted() internally
+        crossBridges.set(key, bridge);
+      } catch {
+        // Cross broker bridge start failed; skip, will retry on next start
+      }
+    }
+  }
+
+  function shutdownCrossBridges(): void {
+    for (const [key, bridge] of crossBridges) {
+      try { bridge.shutdown(); } catch { /* best-effort */ }
+    }
+    crossBridges.clear();
+    crossBrokerClients.clear();
+  }
+
   const createOperatorEventBridgeFactory =
     deps.createOperatorEventBridge ??
-    ((params: { broker: A2AOperatorEventBridgeBrokerClient }) =>
-      createA2AOperatorEventBridge({
+    ((params: OperatorEventBridgeFactoryParams) => {
+      const bridgeLocalBrokerId = params.handoffBrokerId ?? localBrokerId ?? crossBrokerTerminalRelayConfig?.handoffBrokerId;
+      const operatorNotificationEnabled = params.notifyOperator !== false;
+      return createA2AOperatorEventBridge({
         broker: params.broker,
-        ...(notificationAdapter
+        ...(operatorNotificationEnabled && notificationAdapter
           ? {
               notifyOperator: async (envelope) => {
                 const receipt = await notificationAdapter.notify(envelope);
-                const failure = receipt ? undefined : notificationAdapter.getLastFailure(envelope.dedupeKey);
                 return {
                   ackTerminalEvent: Boolean(receipt && !receipt.dryRun),
                   ...(receipt?.confirmationSource === "current_session_visible" || receipt?.confirmationSource === "manual_operator_receipt"
@@ -211,13 +534,53 @@ export function createA2AMonitoringHandlers(
                     : {}),
                   reason: receipt
                     ? `operator notification receipt confirmed via ${receipt.confirmationSource}`
-                    : failure?.reason ?? "operator notification sent without current-session/manual receipt confirmation",
+                    : "operator notification sent without current-session/manual receipt confirmation",
                 };
               },
             }
           : {}),
+        readTerminalOutboxAllowedIds: params.readTerminalOutboxAllowedIds ?? readCurrentTerminalOutboxAllowedIds,
+        readTerminalOutboxCursor: params.readTerminalOutboxCursor ?? readCurrentTerminalOutboxCursor,
+        readCursor: readCurrentOperatorEventCursor,
+        ...((params.terminalOutboxCursor ?? readCurrentTerminalOutboxCursor())
+          ? { terminalOutboxCursor: params.terminalOutboxCursor ?? readCurrentTerminalOutboxCursor() }
+          : {}),
+        ...((params.terminalOutboxReconcileUnackedOnStart ?? terminalOutboxReconcileUnackedOnStart) !== undefined
+          ? { terminalOutboxReconcileUnackedOnStart: params.terminalOutboxReconcileUnackedOnStart ?? terminalOutboxReconcileUnackedOnStart }
+          : {}),
+        ...(bridgeLocalBrokerId ? { handoffBrokerId: bridgeLocalBrokerId } : {}),
+        ...(params.relayTerminalProjection
+          ? {
+              relayTerminalProjection: params.relayTerminalProjection,
+              ...(params.terminalProjectionMaxSummaryChars
+                ? { terminalProjectionMaxSummaryChars: params.terminalProjectionMaxSummaryChars }
+                : {}),
+            }
+          : {}),
+        ...(!params.relayTerminalProjection && crossBrokerTerminalRelayConfig
+          ? {
+              relayTerminalProjection: async (projection) => {
+                const client = getCrossBrokerTerminalRelayClient();
+                if (!client?.relayTerminalProjection) {
+                  throw new Error("origin broker client does not expose relayTerminalProjection");
+                }
+                await client.relayTerminalProjection(projection as unknown as Record<string, unknown>);
+                return {
+                  accepted: true,
+                  reason: `origin broker ${crossBrokerTerminalRelayConfig.label ?? crossBrokerTerminalRelayConfig.baseUrl} accepted bounded terminal projection`,
+                };
+              },
+              ...(params.handoffBrokerId ?? crossBrokerTerminalRelayConfig.handoffBrokerId
+                ? { handoffBrokerId: params.handoffBrokerId ?? crossBrokerTerminalRelayConfig.handoffBrokerId }
+                : {}),
+              ...(params.terminalProjectionMaxSummaryChars ?? crossBrokerTerminalRelayConfig.maxSummaryChars
+                ? { terminalProjectionMaxSummaryChars: params.terminalProjectionMaxSummaryChars ?? crossBrokerTerminalRelayConfig.maxSummaryChars }
+                : {}),
+            }
+          : {}),
         ...(deps.now ? { now: deps.now } : {}),
-      }));
+      });
+    });
   let rawClient: RawBrokerClient | undefined;
   let clientError: Error | undefined;
   let operatorBridge: A2AOperatorEventBridge | undefined;
@@ -269,26 +632,117 @@ export function createA2AMonitoringHandlers(
       };
     }
 
-    operatorBridge ??= createOperatorEventBridgeFactory({ broker: client });
+    operatorBridge ??= createOperatorEventBridgeFactory({
+      broker: client,
+      ...(localBrokerId ? { handoffBrokerId: localBrokerId } : {}),
+    });
+    ensureCrossBridgesStarted();
     return { bridge: operatorBridge };
+  }
+
+  function ensureCrossBridgesStarted(): void {
+    initCrossBrokers();
+    startCrossBridges();
+  }
+
+  function getCrossBridgeStates(): Record<string, unknown> {
+    const crossStates: Record<string, unknown> = {};
+    for (const [key, bridge] of crossBridges) {
+      try { crossStates[key] = bridge.getState(); } catch { /* best-effort */ }
+    }
+    return crossStates;
   }
 
   function getOperatorBridgeState(params: { cursor?: string }): unknown {
     const ensured = ensureOperatorEventBridge(params);
     if (ensured.disabled) return ensured.disabled;
-    return ensured.bridge!.getState({ cursor: params.cursor });
+    const primaryState = ensured.bridge!.getState({ cursor: params.cursor });
+    const crossStates = getCrossBridgeStates();
+    return {
+      ...(primaryState as Record<string, unknown>),
+      ...(Object.keys(crossStates).length ? { crossBrokers: crossStates } : {}),
+    };
+  }
+
+  function buildNotificationPreflightConfig(params: A2AMonitorStatusParams["operatorEvents"]): A2ABrokerAdapterPluginRuntimeConfig {
+    const entry = config.plugins?.entries?.["a2a-broker-adapter"];
+    const entryConfig = entry?.config ?? {};
+    const currentOperatorEvents = asPlainRecord(entryConfig.operatorEvents) ?? {};
+    const requestedNotification = asPlainRecord(params?.notification);
+    const currentNotification = asPlainRecord(currentOperatorEvents.notification);
+    const operatorEvents = {
+      ...currentOperatorEvents,
+      ...(params?.enabled !== undefined ? { enabled: params.enabled } : {}),
+      ...(requestedNotification
+        ? { notification: { ...(currentNotification ?? {}), ...requestedNotification } }
+        : {}),
+    };
+
+    return {
+      ...config,
+      plugins: {
+        ...(config.plugins ?? {}),
+        entries: {
+          ...(config.plugins?.entries ?? {}),
+          "a2a-broker-adapter": {
+            ...(entry ?? {}),
+            enabled: entry?.enabled ?? true,
+            config: {
+              ...entryConfig,
+              operatorEvents,
+            },
+          },
+        },
+      },
+    };
+  }
+
+  async function readTerminalOutboxHistoryForPreflight(
+    params: A2AMonitorStatusParams["operatorEvents"],
+  ): Promise<Record<string, unknown> | undefined> {
+    const currentOperatorEvents = readOperatorEventsConfig(config);
+    const afterId = readString(params?.terminalOutboxCursor)
+      ?? readString(params?.cursor)
+      ?? readString(currentOperatorEvents?.terminalOutboxCursor);
+    if (!afterId) return undefined;
+
+    const client = getRawClient() as A2AOperatorEventBridgeBrokerClient | undefined;
+    if (!client?.listTerminalOutbox) {
+      return { error: "broker client does not expose listTerminalOutbox for no-live terminal-outbox history preflight" };
+    }
+
+    const requestedLimit = typeof params?.terminalOutboxLimit === "number" && Number.isFinite(params.terminalOutboxLimit)
+      ? Math.floor(params.terminalOutboxLimit)
+      : 25;
+    const limit = Math.min(100, Math.max(1, requestedLimit));
+    try {
+      const response = await client.listTerminalOutbox({
+        afterId,
+        limit,
+        reconcileUnacked: false,
+      });
+      return response as unknown as Record<string, unknown>;
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   return {
     startOperatorEventBridge(): unknown {
       const ensured = ensureOperatorEventBridge();
       if (ensured.disabled) return ensured.disabled;
-      return ensured.bridge!.getState();
+      const primaryState = ensured.bridge!.getState();
+      const crossStates = getCrossBridgeStates();
+      return {
+        ...(primaryState as Record<string, unknown>),
+        ...(Object.keys(crossStates).length ? { crossBrokers: crossStates } : {}),
+      };
     },
 
     shutdownOperatorEventBridge(): void {
       operatorBridge?.shutdown();
       operatorBridge = undefined;
+      shutdownCrossBridges();
     },
 
     handleA2AAlertsList: async (opts: GatewayRequestHandlerOptions): Promise<void> => {
@@ -321,10 +775,51 @@ export function createA2AMonitoringHandlers(
         opts.respond(false, undefined, check.error);
         return;
       }
-      if (!check.data.taskId && check.data.operatorEvents?.enabled === true) {
+      if (!check.data.taskId && check.data.operatorEvents?.preflight === true) {
+        const existingTerminalOutbox = operatorBridge
+          ? (operatorBridge.getState().operator.terminalOutbox as Record<string, unknown> | undefined)
+          : undefined;
+        const terminalOutboxHistory = await readTerminalOutboxHistoryForPreflight(check.data.operatorEvents);
+        const preflight = await preflightA2AOperatorNotificationRuntime(
+          buildNotificationPreflightConfig(check.data.operatorEvents),
+          deps.runtime,
+          {
+            ...(existingTerminalOutbox ? { terminalOutbox: existingTerminalOutbox } : {}),
+            ...(terminalOutboxHistory ? { terminalOutboxHistory } : {}),
+          },
+        );
         opts.respond(
           true,
-          getOperatorBridgeState({ cursor: check.data.operatorEvents.cursor }),
+          {
+            kind: "a2a.operator.notification.preflight",
+            mode: "no-live",
+            liveSendPerformed: false,
+            terminalOutboxAckPerformed: false,
+            providerSendPerformed: false,
+            safeToRestartGateway: preflight.safeToRestartGateway,
+            decision: preflight.safeToRestartGateway ? "GO" : "BLOCK",
+            preflight,
+            recommendedNextAction: preflight.safeToRestartGateway
+              ? "Operator may approve the bounded Gateway restart/live canary separately; this preflight did not send or ACK."
+              : "Fix the reported config/runtime receipt blockers before Gateway restart or live Terminal Brief canary.",
+          },
+        );
+        return;
+      }
+      if (!check.data.taskId && check.data.operatorEvents?.enabled === true) {
+        const bridgeState = getOperatorBridgeState({ cursor: check.data.operatorEvents.cursor }) as A2AOperatorEventBridgeState;
+        // Build pressure + hygiene for gate-readiness when bridge state is available
+        const rawClient = getRawClient();
+        const health = rawClient
+          ? await getBrokerHealthForWarningProjection(rawClient)
+          : undefined;
+        const operatorStatus = projectA2AOperatorStatus(bridgeState, health);
+        opts.respond(
+          true,
+          {
+            ...(bridgeState as Record<string, unknown>),
+            operatorStatus,
+          },
         );
         return;
       }
@@ -392,6 +887,7 @@ export function projectBrokerAuditWarnings(diagnostics: unknown, health: unknown
   const liveReadinessWarning = buildBrokerLiveReadinessWarning(liveReadiness);
   const runtimeOwner = buildBrokerRuntimeOwnerMetadata(health);
   const buildInfo = buildBrokerBuildInfoMetadata(health);
+  const protocolProfile = buildBrokerProtocolProfile(health);
   if (!isPlainRecord(diagnostics)) return diagnostics;
 
   const existingWarnings = Array.isArray(diagnostics.pluginWarnings)
@@ -415,6 +911,7 @@ export function projectBrokerAuditWarnings(diagnostics: unknown, health: unknown
     ...(liveReadiness ? { liveReadiness } : {}),
     ...(runtimeOwner ? { brokerRuntimeOwner: runtimeOwner } : {}),
     brokerBuildInfo: buildInfo,
+    ...(protocolProfile ? { brokerProtocolProfile: protocolProfile } : {}),
   };
 }
 
@@ -536,9 +1033,9 @@ function readLiveReadinessQueueSignals(
   const timedOut = firstNonNegativeInteger(queue.timedOut, queue.timed_out, queue.timeout, queue.timedOutCount) ?? 0;
   const active = queued + claimed + running;
   const messages = [
-    active ? `active queue signals: queued=${queued}, claimed=${claimed}, running=${running}` : undefined,
-    stale ? `stale queue signals: ${stale}` : undefined,
-    timedOut ? `timed_out queue signals: ${timedOut}` : undefined,
+    active ? `active tasks: queued=${queued}, claimed=${claimed}, running=${running}` : undefined,
+    stale ? `stale workers/tasks (no recent heartbeat): ${stale} — operator review recommended` : undefined,
+    timedOut ? `timed-out tasks (exceeded deadline): ${timedOut} — may need cancellation` : undefined,
   ].filter((message): message is string => Boolean(message)).slice(0, 10);
   return {
     status: active || stale || timedOut ? "blocked" : "ready",
@@ -887,12 +1384,12 @@ function normalizeOperatorReceiptStateString(value: string | undefined): A2AOper
 function buildTerminalReceiptGapReason(
   status: A2ABrokerTerminalReceiptGapProjection["receiptGapStatus"],
 ): string {
-  if (status === "confirmed") return "operator-visible receipt confirmed; terminal ack may be eligible";
-  if (status === "failed") return "operator-visible receipt failed; terminal ack must remain blocked";
-  if (status === "timed_out") return "operator-visible receipt timed out; terminal ack must remain blocked until refreshed";
-  if (status === "stale") return "operator-visible receipt is stale; terminal ack must remain blocked until refreshed";
-  if (status === "duplicate_suppressed") return "duplicate terminal notification was suppressed; terminal ack must remain blocked without receipt confirmation";
-  return "terminal task/provider send lacks current-session visibility or manual operator receipt; terminal ack must remain blocked";
+  if (status === "confirmed") return "receipt confirmed — terminal ack eligible";
+  if (status === "failed") return "receipt failed — terminal ack blocked";
+  if (status === "timed_out") return "receipt timed out — must refresh before ack";
+  if (status === "stale") return "receipt stale — must refresh before ack";
+  if (status === "duplicate_suppressed") return "duplicate suppressed — no receipt confirmation, ack blocked";
+  return "no current-session/manual receipt — ack blocked";
 }
 
 function normalizeOperatorVisibleReceiptState(
@@ -909,17 +1406,17 @@ function normalizeOperatorVisibleReceiptState(
 function buildOperatorReceiptLabel(state: A2AOperatorVisibleTerminalReceiptState): string {
   switch (state) {
     case "receipt_confirmed":
-      return "receipt confirmed";
+      return "✓ receipt confirmed";
     case "timed_out":
-      return "timed out receipt";
+      return "⏱ timed out";
     case "stale":
-      return "stale receipt";
+      return "⚠ stale receipt";
     case "failed":
-      return "failed receipt";
+      return "✗ receipt failed";
     case "duplicate_suppressed":
-      return "duplicate suppressed";
+      return "⚠ duplicate suppressed";
     case "pending_receipt":
-      return "pending receipt";
+      return "⋯ pending receipt";
   }
 }
 
@@ -1113,6 +1610,89 @@ export function buildBrokerAuditBottleneckWarning(
   };
 }
 
+// ── Broker protocol profile builder ──────────────────────────────────
+
+/**
+ * A2A broker protocol profile fields from the health endpoint.
+ *
+ * Extracts broker-advertised protocol information: protocolVersion,
+ * capabilities (streaming, pushNotifications), input/output modes,
+ * and transport hints (REST/gRPC/push). Returns undefined when the
+ * health response contains no protocol profile fields.
+ *
+ * Terminal Brief / outbox ACK boundaries are separate from A2A push
+ * notification conformance. Provider accepted/message-id evidence is
+ * send-acceptance telemetry only and not operator-visible ACK.
+ */
+export function buildBrokerProtocolProfile(
+  health: unknown,
+): Record<string, unknown> | undefined {
+  if (!isPlainRecord(health)) return undefined;
+
+  const protocol = isPlainRecord(health.protocol) ? health.protocol : undefined;
+  if (!protocol) return undefined;
+
+  const protocolVersion = firstSafeString(
+    protocol.protocolVersion,
+    protocol.version,
+    protocol.target,
+  );
+  const capabilities = protocol.capabilities;
+  const capabilitiesRecord = isPlainRecord(capabilities)
+    ? {
+        streaming:
+          typeof capabilities.streaming === "boolean"
+            ? capabilities.streaming
+            : undefined,
+        pushNotifications:
+          typeof capabilities.pushNotifications === "boolean"
+            ? capabilities.pushNotifications
+            : undefined,
+      }
+    : undefined;
+  const inputModes = Array.isArray(protocol.inputModes)
+    ? protocol.inputModes.filter(
+        (mode): mode is string => typeof mode === "string" && mode.trim().length > 0,
+      )
+    : undefined;
+  const outputModes = Array.isArray(protocol.outputModes)
+    ? protocol.outputModes.filter(
+        (mode): mode is string => typeof mode === "string" && mode.trim().length > 0,
+      )
+    : undefined;
+  const transportHints = isPlainRecord(protocol.transportHints)
+    ? {
+        rest: sanitizeTransportHint(protocol.transportHints.rest),
+        grpc: sanitizeTransportHint(protocol.transportHints.grpc),
+        push: sanitizeTransportHint(protocol.transportHints.push),
+      }
+    : undefined;
+
+  const result: Record<string, unknown> = {};
+
+  if (protocolVersion) result.protocolVersion = protocolVersion;
+  if (capabilitiesRecord) result.capabilities = capabilitiesRecord;
+  if (inputModes && inputModes.length > 0) result.inputModes = inputModes;
+  if (outputModes && outputModes.length > 0) result.outputModes = outputModes;
+  if (transportHints) result.transportHints = transportHints;
+
+  // When only empty arrays are returned, treat as no-profile.
+  if (Object.keys(result).length === 0) return undefined;
+
+  return result;
+}
+
+function sanitizeTransportHint(
+  value: unknown,
+): "supported" | "unsupported" | "deferred" | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.toLowerCase().trim();
+  if (normalized === "supported") return "supported";
+  if (normalized === "unsupported") return "unsupported";
+  if (normalized === "deferred") return "deferred";
+  return undefined;
+}
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string") {
@@ -1170,8 +1750,21 @@ function buildEvidenceAcceptanceMessage(
   kind: A2ABrokerLiveReadinessProjection["evidenceAcceptance"][number]["kind"],
   status: A2ABrokerLiveReadinessProjection["evidenceAcceptance"][number]["status"],
 ): string {
-  if (status === "accepted") return `${kind} evidence accepted by broker verifier`;
-  if (status === "missing") return "required PR/Done/Block evidence is missing";
+  if (status === "accepted") {
+    if (kind === "PR") return "PR proof-of-change accepted by broker verifier";
+    if (kind === "Done") return "Done evidence accepted (PR-less or read-only)";
+    if (kind === "Block") return "Block evidence accepted (PR-less blocker)";
+    return `${kind} evidence accepted by broker verifier`;
+  }
+  if (status === "missing") {
+    if (kind === "PR") return "required PR evidence is missing — no proof-of-change";
+    if (kind === "Done") return "required Done evidence is missing — no completion marker";
+    if (kind === "Block") return "required Block evidence is missing — no blocker marker";
+    return "required PR/Done/Block evidence is missing";
+  }
+  if (kind === "PR") return `PR evidence (${kind}) was rejected by broker verifier`;
+  if (kind === "Done") return `Done evidence (${kind}) was rejected by broker verifier`;
+  if (kind === "Block") return `Block evidence (${kind}) was rejected by broker verifier`;
   return `${kind} evidence was not accepted by broker verifier`;
 }
 
@@ -1266,4 +1859,302 @@ function firstSafeString(...values: unknown[]): string | undefined {
     if (/^[a-zA-Z0-9_.:-]{1,80}$/.test(trimmed)) return trimmed;
   }
   return undefined;
+}
+
+// ── Broker pressure & queue hygiene builders ─────────────────────────
+
+function readQueueDepthFromSnapshot(snapshot: unknown): number | undefined {
+  if (!isPlainRecord(snapshot)) return undefined;
+  const summary = isPlainRecord(snapshot.summary) ? snapshot.summary : snapshot;
+  return firstNonNegativeInteger(summary.queueDepth, summary.queue, summary.pendingTasks, summary.pendingCount);
+}
+
+function readWorkerProgressCounts(bridgeState: A2AOperatorEventBridgeState): {
+  total: number;
+  stale: number;
+  activeTasks: number;
+} {
+  const workers = bridgeState.operator.workerProgress;
+  if (!workers || typeof workers.counts !== "object") {
+    return { total: 0, stale: 0, activeTasks: 0 };
+  }
+  const counts = workers.counts as Record<string, unknown>;
+  return {
+    total: firstNonNegativeInteger(counts.total) ?? 0,
+    stale: (firstNonNegativeInteger(counts.stale) ?? 0) + (firstNonNegativeInteger(counts.unknown) ?? 0),
+    activeTasks: firstNonNegativeInteger(counts.activeTasks) ?? 0,
+  };
+}
+
+function readGitHubEvidenceHygiene(bridgeState: A2AOperatorEventBridgeState): {
+  evidenceMissing: number;
+  warnings: number;
+} {
+  const evidence = bridgeState.operator.githubEvidence;
+  if (!evidence || typeof evidence.counts !== "object") {
+    return { evidenceMissing: 0, warnings: 0 };
+  }
+  const counts = evidence.counts as Record<string, unknown>;
+  return {
+    evidenceMissing: firstNonNegativeInteger(counts.evidenceMissing) ?? 0,
+    warnings: firstNonNegativeInteger(counts.warnings) ?? 0,
+  };
+}
+
+function readTerminalReceiptGapCount(bridgeState: A2AOperatorEventBridgeState): number {
+  const receipts = bridgeState.operator.terminalReceipts;
+  if (!Array.isArray(receipts)) return 0;
+  return receipts.filter((r) => r.receiptGapStatus !== "confirmed").length;
+}
+
+function readUnacknowledgedOutboxCount(bridgeState: A2AOperatorEventBridgeState): number {
+  const outbox = bridgeState.operator.terminalOutbox;
+  if (!outbox) return 0;
+  const pending = (outbox as Record<string, unknown>).pendingUnacknowledged;
+  if (Array.isArray(pending)) return pending.length;
+  const lastPoll = isPlainRecord((outbox as Record<string, unknown>).lastPoll)
+    ? (outbox as Record<string, unknown>).lastPoll as Record<string, unknown>
+    : undefined;
+  if (lastPoll) {
+    return firstNonNegativeInteger(lastPoll.pendingUnacknowledged) ?? 0;
+  }
+  return 0;
+}
+
+function readQueueHygieneFromLiveSummary(liveSummary: unknown): {
+  stale: number;
+  timedOut: number;
+  pending: number;
+  claimedRunning: number;
+} {
+  if (!isPlainRecord(liveSummary)) {
+    return { stale: 0, timedOut: 0, pending: 0, claimedRunning: 0 };
+  }
+  const s = liveSummary as Record<string, unknown>;
+  return {
+    stale: firstNonNegativeInteger(s.staleTasks, s.stale, s.staleCount) ?? 0,
+    timedOut: firstNonNegativeInteger(s.timedOutTasks, s.timedOut, s.timed_out, s.timeoutCount) ?? 0,
+    pending: firstNonNegativeInteger(s.pendingTasks, s.pending, s.queued, s.queuedCount) ?? 0,
+    claimedRunning: firstNonNegativeInteger(s.claimedTasks, s.claimed, s.running, s.runningCount, s.inProgress) ?? 0,
+  };
+}
+
+function readAuditPressureRatio(health: unknown): number | undefined {
+  if (!isPlainRecord(health)) return undefined;
+  const auditRows = firstFiniteNumber(
+    health.auditRows,
+    getNested(health, ["audit", "auditRows"]),
+    getNested(health, ["audit", "rows"]),
+  );
+  const maxAuditEvents = firstFiniteNumber(
+    health.maxAuditEvents,
+    getNested(health, ["audit", "maxAuditEvents"]),
+    getNested(health, ["config", "maxAuditEvents"]),
+  );
+  if (auditRows !== undefined && maxAuditEvents !== undefined && maxAuditEvents > 0) {
+    return Math.min(1, auditRows / maxAuditEvents);
+  }
+  return undefined;
+}
+
+function readHealthLatencyMs(health: unknown): number | undefined {
+  if (!isPlainRecord(health)) return undefined;
+  return firstFiniteNumber(
+    health.healthLatencyMs,
+    health.latencyMs,
+    getNested(health, ["diagnostics", "healthLatencyMs"]),
+  );
+}
+
+/**
+ * Project broker pressure from operator bridge state + health metadata.
+ *
+ * Extracts queue depth, audit pressure, worker health, and latency into
+ * a single operator-readable pressure signal. Provider send/message-id
+ * remains non-ACK evidence throughout.
+ */
+export function projectBrokerPressureOperatorStatus(
+  bridgeState: A2AOperatorEventBridgeState,
+  health?: unknown,
+): A2ABrokerPressureProjection {
+  const queueDepth = readQueueDepthFromSnapshot(bridgeState.operator.snapshot)
+    ?? readQueueDepthFromSnapshot(bridgeState.operator.liveSummary)
+    ?? 0;
+  const workerCounts = readWorkerProgressCounts(bridgeState);
+  const auditPressureRatio = readAuditPressureRatio(health);
+  const healthLatencyMs = readHealthLatencyMs(health);
+
+  // queuePressureRatio: estimate from snapshot summary if available
+  const snapshot = isPlainRecord(bridgeState.operator.snapshot)
+    ? bridgeState.operator.snapshot as Record<string, unknown>
+    : undefined;
+  const liveSummary = isPlainRecord(bridgeState.operator.liveSummary)
+    ? bridgeState.operator.liveSummary as Record<string, unknown>
+    : undefined;
+  const taskCount = firstNonNegativeInteger(
+    getNested(snapshot, ["summary", "taskCount"]),
+    getNested(snapshot, ["taskCount"]),
+    getNested(liveSummary, ["summary", "taskCount"]),
+    getNested(liveSummary, ["taskCount"]),
+  );
+  const queuePressureRatio = taskCount && taskCount > 0
+    ? Math.min(1, queueDepth / taskCount)
+    : queueDepth > 0 ? 0.5 : 0;
+
+  const messages: string[] = [];
+  if (queueDepth > 0) {
+    messages.push(`queue depth: ${queueDepth} pending tasks`);
+  }
+  if (auditPressureRatio !== undefined && auditPressureRatio >= 0.8) {
+    messages.push(`audit table at ${Math.round(auditPressureRatio * 100)}% capacity — review retention/pruning`);
+  }
+  if (workerCounts.stale > 0) {
+    messages.push(`${workerCounts.stale} stale/unknown worker(s) — operator review recommended`);
+  }
+  if (healthLatencyMs !== undefined && healthLatencyMs >= 1_000) {
+    messages.push(`health check latency ${Math.round(healthLatencyMs)}ms — broker may be under pressure`);
+  }
+
+  const isHighPressure =
+    queueDepth > 10 ||
+    (auditPressureRatio !== undefined && auditPressureRatio >= 0.9) ||
+    (workerCounts.total > 0 && workerCounts.stale >= workerCounts.total);
+  const isElevated =
+    queueDepth > 0 ||
+    (auditPressureRatio !== undefined && auditPressureRatio >= 0.8) ||
+    workerCounts.stale > 0 ||
+    (healthLatencyMs !== undefined && healthLatencyMs >= 500);
+  const status: "elevated" | "normal" = isHighPressure || isElevated ? "elevated" : "normal";
+
+  return {
+    status,
+    pressure: {
+      queueDepth,
+      queuePressureRatio,
+      ...(auditPressureRatio !== undefined ? { auditPressureRatio } : {}),
+      ...(healthLatencyMs !== undefined ? { healthLatencyMs } : {}),
+      staleWorkerCount: workerCounts.stale,
+      totalWorkerCount: workerCounts.total,
+    },
+    messages: messages.slice(0, 10),
+  };
+}
+
+/**
+ * Project queue hygiene from operator bridge state + optional diagnostics.
+ *
+ * Synthesizes stale tasks, timed-out tasks, unacknowledged outbox events,
+ * receipt gaps, and pending local queue depth. Provider send/message-id
+ * remains non-ACK evidence; terminal ACK requires operator-visible or
+ * manual-receipt confirmation.
+ */
+export function projectQueueHygieneOperatorStatus(
+  bridgeState: A2AOperatorEventBridgeState,
+  terminalReceiptGaps?: A2ABrokerTerminalReceiptGapProjection[],
+): A2AQueueHygieneProjection {
+  const hygieneFromSummary = readQueueHygieneFromLiveSummary(bridgeState.operator.liveSummary);
+  const receiptGapCount = terminalReceiptGaps?.length
+    ?? readTerminalReceiptGapCount(bridgeState);
+  const unacknowledgedOutboxCount = readUnacknowledgedOutboxCount(bridgeState);
+  const evidenceMissing = readGitHubEvidenceHygiene(bridgeState).evidenceMissing;
+
+  // Combine stale signals from live summary + github evidence
+  const staleTaskCount = hygieneFromSummary.stale + evidenceMissing;
+  const timedOutTaskCount = hygieneFromSummary.timedOut;
+  const pendingLocalQueueCount = hygieneFromSummary.pending;
+  const claimedRunningCount = hygieneFromSummary.claimedRunning;
+
+  const messages: string[] = [];
+  if (staleTaskCount > 0) {
+    messages.push(`${staleTaskCount} stale entries (${hygieneFromSummary.stale} tasks, ${evidenceMissing} missing GitHub evidence)`);
+  }
+  if (timedOutTaskCount > 0) {
+    messages.push(`${timedOutTaskCount} timed-out tasks — may need cancellation or refresh`);
+  }
+  if (unacknowledgedOutboxCount > 0) {
+    messages.push(`unacknowledged outbox: ${unacknowledgedOutboxCount} pending ACK(s)`);
+  }
+  if (receiptGapCount > 0) {
+    messages.push(`${receiptGapCount} receipt gap(s) — terminal ACK blocked until operator-visible`);
+  }
+  if (pendingLocalQueueCount > 0) {
+    messages.push(`${pendingLocalQueueCount} pending local queue entries`);
+  }
+  if (messages.length === 0) {
+    messages.push("queue hygiene is clean — no stale, timed-out, unacknowledged, or gap signal");
+  }
+
+  const status =
+    staleTaskCount > 5 || timedOutTaskCount > 5
+      ? "blocked"
+      : staleTaskCount > 0 || timedOutTaskCount > 0 || unacknowledgedOutboxCount > 0
+        ? "stale"
+        : "clean";
+
+  return {
+    status,
+    hygiene: {
+      staleTaskCount,
+      timedOutTaskCount,
+      unacknowledgedOutboxCount,
+      receiptGapCount,
+      pendingLocalQueueCount,
+      claimedRunningCount,
+    },
+    messages: messages.slice(0, 10),
+  };
+}
+
+/**
+ * Build a combined operator status projection from operator bridge state,
+ * health, and optional terminal receipt gaps.
+ *
+ * Provider send success is explicitly non-ACK evidence; terminal ACK requires
+ * operator-visible current-session or manual-receipt confirmation.
+ */
+export function projectA2AOperatorStatus(
+  bridgeState: A2AOperatorEventBridgeState,
+  health?: unknown,
+  terminalReceiptGaps?: A2ABrokerTerminalReceiptGapProjection[],
+): A2AOperatorStatusProjection {
+  return {
+    mode: "operator-status-dryrun/no-live",
+    brokerPressure: projectBrokerPressureOperatorStatus(bridgeState, health),
+    queueHygiene: projectQueueHygieneOperatorStatus(bridgeState, terminalReceiptGaps),
+    providerSendNotAckEvidence: true,
+    safeOperations: {
+      liveSend: false,
+      terminalOutboxAck: false,
+      gatewayRestart: false,
+      productionDeploy: false,
+      providerSend: false,
+    },
+  };
+}
+
+/**
+ * Derive a terminal-receipt-gap projection array from operator bridge state
+ * when the raw diagnostics record does not carry explicit gap data.
+ */
+export function projectTerminalReceiptGapsFromBridge(
+  bridgeState: A2AOperatorEventBridgeState,
+): A2ABrokerTerminalReceiptGapProjection[] {
+  const receipts = bridgeState.operator.terminalReceipts;
+  if (!Array.isArray(receipts) || receipts.length === 0) return [];
+  return receipts
+    .filter((r: Record<string, unknown>) =>
+      r.receiptGapStatus !== "confirmed" && r.receiptGapStatus !== undefined
+    )
+    .map((r: Record<string, unknown>) => ({
+      taskId: String(r.taskId ?? ""),
+      ...(typeof r.status === "string" && r.status ? { status: r.status } : {}),
+      receiptState: r.receiptStatus === "received" ? "operator-visible" as const : "pending" as const,
+      receiptStatus: (r.receiptStatus === "received" ? "received" : "pending") as "received" | "pending",
+      receiptGapStatus: r.receiptGapStatus as A2ABrokerTerminalReceiptGapProjection["receiptGapStatus"],
+      operatorReceiptState: (r.operatorReceiptState ?? "pending_receipt") as A2AOperatorVisibleTerminalReceiptState,
+      operatorReceiptLabel: typeof r.operatorReceiptLabel === "string" ? r.operatorReceiptLabel : "⋯ pending receipt",
+      terminalAckEligible: false,
+      reason: typeof r.reason === "string" ? r.reason : "no receipt confirmation",
+    }))
+    .slice(0, 25);
 }

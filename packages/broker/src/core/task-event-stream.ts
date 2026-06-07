@@ -1,5 +1,7 @@
 import { CursorEventBuffer } from "./event-buffer.js";
 import type { AuditAction, AuditEvent, TaskRecord } from "./types.js";
+import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./terminal-event-outbox.js";
+import type { TerminalTaskEventPayload } from "./terminal-event-outbox.js";
 import type {
   TaskStatusEvent,
   TaskStatusEventKind,
@@ -76,6 +78,7 @@ export class TaskEventStream {
   private readonly terminalBuffer: CursorEventBuffer<TerminalTaskEvent>;
   private readonly listeners = new Set<TaskStatusEventListener>();
   private readonly terminalListeners = new Set<TerminalTaskEventListener>();
+  private readonly terminalChildIds = new Map<string, Set<string>>();
 
   constructor(options: TaskEventStreamOptions = {}) {
     const requested = options.maxEvents;
@@ -246,16 +249,114 @@ export class TaskEventStream {
     const taskBrief = buildTaskBrief(task, output);
     if (taskBrief) event.taskBrief = taskBrief;
 
-    const prUrl = firstHttpUrl(output["prUrl"], output["pullRequestUrl"], task.payload?.["prUrl"]);
+    const githubOutput = isRecord(output["github"]) ? output["github"] : {};
+    const prUrl = firstHttpUrl(
+      output["prUrl"],
+      output["pullRequestUrl"],
+      githubOutput["prUrl"],
+      githubOutput["pullRequestUrl"],
+      task.payload?.["prUrl"],
+      task.payload?.["pullRequestUrl"],
+    );
     if (prUrl) event.prUrl = prUrl;
-    const doneUrl = firstHttpUrl(output["doneUrl"], task.payload?.["doneUrl"]);
+    const doneUrl = firstHttpUrl(
+      output["doneUrl"],
+      output["doneCommentUrl"],
+      githubOutput["doneUrl"],
+      githubOutput["doneCommentUrl"],
+      task.payload?.["doneUrl"],
+      task.payload?.["doneCommentUrl"],
+    );
     if (doneUrl) event.doneUrl = doneUrl;
-    const blockUrl = firstHttpUrl(output["blockUrl"], task.payload?.["blockUrl"]);
+    const blockUrl = firstHttpUrl(
+      output["blockUrl"],
+      output["blockCommentUrl"],
+      githubOutput["blockUrl"],
+      githubOutput["blockCommentUrl"],
+      task.payload?.["blockUrl"],
+      task.payload?.["blockCommentUrl"],
+    );
     if (blockUrl) event.blockUrl = blockUrl;
 
     const testSummary = normalizeTestSummary(output["testSummary"]);
     if (testSummary) event.testSummary = testSummary;
+    const terminalPayload = buildTerminalTaskPayload(task);
+    applyRoundProgressMetadata(terminalPayload, this.terminalChildIds);
+    copyTerminalBriefRoutingFields(event, terminalPayload);
     return event;
+  }
+}
+
+function applyRoundProgressMetadata(
+  payload: TerminalTaskEventPayload,
+  terminalChildIds: Map<string, Set<string>>,
+): void {
+  if (!payload.run) return;
+  const terminalCounted = terminalChildIds.get(payload.run) ?? new Set<string>();
+  terminalCounted.add(payload.taskId);
+  terminalChildIds.set(payload.run, terminalCounted);
+  if (payload.parentRoundTotal === undefined) return;
+  const useParentRoundOrder = payload.parentRoundProgressSource === "parent_round_order"
+    && payload.parentRoundOrder !== undefined;
+  const terminalCount = terminalCounted.size;
+  payload.parentRoundProgress = useParentRoundOrder ? payload.parentRoundOrder : terminalCount;
+  payload.parentRoundTerminalProgress = useParentRoundOrder ? payload.parentRoundOrder : terminalCount;
+  if (!payload.parentRoundProgressSource) {
+    payload.parentRoundProgressSource = "broker_local_count";
+  }
+}
+
+function copyTerminalBriefRoutingFields(
+  event: TerminalTaskEvent,
+  payload: TerminalTaskEventPayload,
+): void {
+  if (payload.run && !event.run) event.run = payload.run;
+  if (payload.originBrokerId) event.originBrokerId = payload.originBrokerId;
+  if (payload.brokerOfRecordId) event.brokerOfRecordId = payload.brokerOfRecordId;
+  if (payload.crossBrokerHandoff) event.crossBrokerHandoff = payload.crossBrokerHandoff;
+  if (payload.notificationOwnership) event.notificationOwnership = payload.notificationOwnership;
+  const parentOrderProgress = payload.parentRoundProgressSource === "parent_round_order"
+    && payload.parentRoundOrder !== undefined
+    ? payload.parentRoundOrder
+    : undefined;
+  const parentRoundProgress = payload.parentRoundProgress
+    ?? (payload.status === "succeeded" ? parentOrderProgress : undefined);
+  const parentRoundTerminalProgress = payload.parentRoundTerminalProgress ?? parentOrderProgress;
+  const hasCompleteParentRoundProgress = payload.parentRoundTotal !== undefined
+    && (
+      payload.parentRoundOrder !== undefined ||
+      parentRoundProgress !== undefined ||
+      parentRoundTerminalProgress !== undefined
+    );
+  if (payload.parentRoundId && hasCompleteParentRoundProgress) {
+    event.parentRoundId = payload.parentRoundId;
+  }
+  if (parentRoundProgress !== undefined) event.parentRoundProgress = parentRoundProgress;
+  if (parentRoundTerminalProgress !== undefined) {
+    event.parentRoundTerminalProgress = parentRoundTerminalProgress;
+  }
+  if (payload.parentRoundProgressSource) event.parentRoundProgressSource = payload.parentRoundProgressSource;
+  if (payload.parentRoundTotal !== undefined) event.parentRoundTotal = payload.parentRoundTotal;
+  if (payload.parentRoundOrder !== undefined) event.parentRoundOrder = payload.parentRoundOrder;
+  const hasTerminalBriefRoundContext = Boolean(
+    payload.terminalBriefTitle ||
+    payload.parentRoundId ||
+    payload.parentRoundTotal !== undefined ||
+    payload.crossBrokerHandoff ||
+    payload.notificationOwnership,
+  );
+  const terminalBriefTitle = payload.terminalBriefTitle ?? (hasTerminalBriefRoundContext
+    ? buildTerminalBriefTitle({
+      ...payload,
+      ...(parentRoundProgress !== undefined ? { parentRoundProgress } : {}),
+      ...(parentRoundTerminalProgress !== undefined ? { parentRoundTerminalProgress } : {}),
+    })
+    : undefined);
+  if (terminalBriefTitle) {
+    event.terminalBriefTitle = terminalBriefTitle;
+    event.title = payload.title ?? terminalBriefTitle;
+  } else if (payload.title) {
+    event.title = payload.title;
   }
 }
 
@@ -349,7 +450,6 @@ function sanitizeOperatorText(value: string): string {
   return value
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat|sk|xox[abp])-[-_A-Za-z0-9]+\b/g, "[redacted]")
     .replace(/\b(token|secret|password|api[_-]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]")
-    .replace(/<private-[^>]+>/g, "[path]")
     .replace(/(^|\s)(?:[A-Za-z]:)?\/[\w./-]+/g, "$1[path]")
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
