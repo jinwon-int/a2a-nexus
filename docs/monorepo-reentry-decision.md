@@ -1,7 +1,7 @@
 # A2A Monorepo Re-entry Decision
 
 > **Decision date:** 2026-06-07
-> **Status:** Active re-entry decision for [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
+> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#516](https://github.com/jinwon-int/a2a-plane/issues/516), and [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
 > **Decision:** proceed with a staged umbrella workspace rehearsal, not an immediate canonical monorepo flip.
 
 ## Summary
@@ -36,9 +36,13 @@ split, CI parity, and explicit sign-off.
 gates. That means planning and rehearsal may proceed, but canonical migration
 may not.
 
-## Team1 Evidence
+## Codex Read-Only Cross-Check Evidence
 
-Read-only Team1 lanes agreed on the same shape:
+The first monorepo re-entry review used temporary Codex native read-only
+cross-check lanes, not routed Team1 or Team2 A2A workers. Their evidence should
+not be counted as Team1/Team2 benchmark evidence.
+
+Those read-only lanes agreed on the same shape:
 
 | Lane | Finding |
 | --- | --- |

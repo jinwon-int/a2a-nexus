@@ -140,6 +140,8 @@ if (doc) {
     'not an immediate canonical monorepo flip',
     'split implementation repos remain canonical',
     'agent-olympics stays private',
+    'Codex Read-Only Cross-Check Evidence',
+    'not be counted as Team1/Team2 benchmark evidence',
     'history-preserving',
     'CODEOWNERS',
     'operator sign-off',
@@ -153,8 +155,15 @@ if (doc) {
 }
 
 if (currentState) {
-  expect(/#511/.test(currentState), 'current-state doc: must reference #511');
+  expect(/#514/.test(currentState), 'current-state doc: must reference #514');
+  expect(/#515/.test(currentState), 'current-state doc: must reference #515');
+  expect(/#516/.test(currentState), 'current-state doc: must reference #516');
+  expect(/#517/.test(currentState), 'current-state doc: must reference #517');
+  expect(/a2a-broker#1320/.test(currentState), 'current-state doc: must reference a2a-broker#1320');
+  expect(/a2a-broker#1321/.test(currentState), 'current-state doc: must reference a2a-broker#1321');
   expect(/#506.*closed|closed.*#506/i.test(currentState), 'current-state doc: must mark #506 closed/completed');
+  expect(/#511.*Closed|Closed.*#511/i.test(currentState), 'current-state doc: must mark #511 closed/completed');
+  expect(/#513.*Closed|Closed.*#513/i.test(currentState), 'current-state doc: must mark #513 closed/completed');
 }
 
 if (topology) {
@@ -182,4 +191,3 @@ if (failures.length) {
 }
 
 console.log('monorepo re-entry decision ok');
-
