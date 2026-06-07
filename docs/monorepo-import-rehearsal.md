@@ -9,7 +9,8 @@
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
-> **Status:** phase-4 fresh prefix import candidate merged through #540; split repos remain canonical until phase-5 readiness evidence and separate canonical-flip approval.
+> **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repos remain canonical until branch protection/ruleset approval and separate canonical-flip approval.
 
 ## Summary
 
@@ -166,6 +167,15 @@ green package parity CI run, split-repo provenance policy, rollback path, and
 GO/NO-GO fields. The decision remains `NO_GO / Waiting` because #540 was not
 history-preserving, branch protection/release/package policy execution has not
 been approved, and no operator canonical-flip approval exists.
+
+## Phase-6 Branch Protection Approval Packet (#543)
+
+The phase-6 packet records the settings gate that must be decided before any
+canonical flip: `a2a-plane/main` is still not protected and has no repository
+rulesets, while `#542` proved the latest monorepo readiness packet under green
+CI. The packet proposes required-check and review fields but does not apply
+settings. Split repos remain canonical until settings and canonical-flip
+approvals are both explicit and separate.
 
 ## Rehearsal Strategy
 

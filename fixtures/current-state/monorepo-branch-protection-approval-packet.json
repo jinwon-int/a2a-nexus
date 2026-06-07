@@ -1,0 +1,140 @@
+{
+  "schema": "a2a.monorepo-branch-protection-approval-packet.v1",
+  "snapshotDate": "2026-06-08",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "phase5ReadinessIssue": "https://github.com/jinwon-int/a2a-plane/issues/541",
+  "phase5ReadinessPr": "https://github.com/jinwon-int/a2a-plane/pull/542",
+  "phase6ApprovalPacketIssue": "https://github.com/jinwon-int/a2a-plane/issues/543",
+  "phase5MergeCommit": "3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d",
+  "phase5HeadCommit": "71fb92a4bede59f76c4599867f19843ced162b6e",
+  "branchProtectionDecision": "NO_GO_WAITING",
+  "canonicalFlipDecision": "NO_GO_WAITING",
+  "settingsChanged": false,
+  "canonicalFlipApproved": false,
+  "packageOwnershipTransferred": false,
+  "liveReadOnlyPosture": {
+    "repository": "jinwon-int/a2a-plane",
+    "branch": "main",
+    "branchProtectionApi": "404_branch_not_protected",
+    "rulesetsApi": "empty_array",
+    "branchProtectionCurrentlyAbsent": true,
+    "rulesetsCurrentlyAbsent": true
+  },
+  "latestMonorepoCiEvidence": {
+    "pr": "https://github.com/jinwon-int/a2a-plane/pull/542",
+    "runId": "27099569029",
+    "runUrl": "https://github.com/jinwon-int/a2a-plane/actions/runs/27099569029",
+    "headCommit": "71fb92a4bede59f76c4599867f19843ced162b6e",
+    "mergeCommit": "3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d",
+    "passedJobs": [
+      "paths-filter",
+      "setup",
+      "contracts",
+      "layout",
+      "broker",
+      "plugin",
+      "docker-runner",
+      "check"
+    ],
+    "skippedJobs": [
+      "docs"
+    ]
+  },
+  "requiredCheckCandidate": {
+    "alwaysRequired": [
+      "paths-filter",
+      "setup",
+      "layout",
+      "contracts",
+      "check"
+    ],
+    "pathAwarePackageChecks": {
+      "broker": [
+        "packages/broker/**",
+        "scripts/run-monorepo-package-ci-parity.mjs",
+        "package metadata owned by broker parity"
+      ],
+      "docker-runner": [
+        "packages/docker-runner/**",
+        "scripts/run-monorepo-package-ci-parity.mjs",
+        "package metadata owned by docker-runner parity"
+      ],
+      "plugin": [
+        "packages/openclaw-plugin-a2a/**",
+        "scripts/run-monorepo-package-ci-parity.mjs",
+        "plugin manifest and package metadata"
+      ]
+    },
+    "docsJobPathFiltered": true,
+    "skippedPackageJobsAreNotFreshnessProof": true
+  },
+  "reviewAndRulesetDecisions": {
+    "protectedMain": "not_applied",
+    "requiredPrReview": "not_applied",
+    "codeownersReview": "not_applied_until_package_ownership_accepted",
+    "upToDateBranchOrMergeQueue": "not_applied",
+    "staleReviewDismissal": "not_applied",
+    "adminCoverage": "operator_must_decide_explicitly",
+    "criticalPathRulesets": [
+      ".github/workflows/**",
+      "scripts/**",
+      "packages/**",
+      "contracts/**",
+      "fixtures/**",
+      "scanner/**"
+    ]
+  },
+  "approvalRequirements": [
+    "repository_and_branch_or_ruleset_target",
+    "required_checks_and_path_aware_package_behavior",
+    "pr_review_count_and_codeowners_choice",
+    "stale_review_up_to_date_merge_queue_admin_coverage_choices",
+    "settings_only_rollback_or_noop_path",
+    "separate_from_canonical_flip_release_deploy_send_or_credentials"
+  ],
+  "rollbackPolicy": {
+    "declinedApproval": "no_source_rollback_required_keep_split_repos_canonical",
+    "misappliedSettings": "settings_only_revert_scoped_to_approved_repository_and_branch_or_ruleset",
+    "sourceHistoryRewriteAllowed": false,
+    "forcePushAllowed": false,
+    "packagePublishAllowed": false,
+    "splitRepoArchiveAllowed": false,
+    "canonicalOwnershipTransferAllowed": false
+  },
+  "goNoGoFields": {
+    "latestMonorepoCiGreen": true,
+    "branchProtectionCurrentlyAbsent": true,
+    "rulesetsCurrentlyAbsent": true,
+    "requiredCheckCandidateRecorded": true,
+    "operatorBranchProtectionApproval": false,
+    "settingsChanged": false,
+    "canonicalFlipApproved": false,
+    "decision": "NO_GO_WAITING"
+  },
+  "boundaries": {
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "permissionChange": false,
+    "codeownersEnforcementChange": false,
+    "canonicalFlip": false,
+    "packageOwnershipTransfer": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "repoVisibilityChange": false,
+    "splitRepoArchive": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "historicalReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "forcePush": false,
+    "historyRewrite": false,
+    "workerOwnedGithubMutation": false
+  }
+}

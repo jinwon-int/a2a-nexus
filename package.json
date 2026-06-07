@@ -32,6 +32,7 @@
     "check:monorepo-phase3-package-ci-gate": "node scripts/check-monorepo-phase3-package-ci-gate.mjs",
     "check:monorepo-package-ci-parity-jobs": "node scripts/run-monorepo-package-ci-parity.mjs broker && node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a && node scripts/run-monorepo-package-ci-parity.mjs docker-runner",
     "check:monorepo-canonical-flip-readiness": "node scripts/check-monorepo-canonical-flip-readiness.mjs",
+    "check:monorepo-branch-protection-approval-packet": "node scripts/check-monorepo-branch-protection-approval-packet.mjs",
     "check:monorepo-docs-routing": "node scripts/check-monorepo-docs-routing.mjs",
     "check:monorepo-branch-release-policy": "node scripts/check-monorepo-branch-release-package-policy.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
