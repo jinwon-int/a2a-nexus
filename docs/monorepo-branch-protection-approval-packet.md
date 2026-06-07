@@ -6,6 +6,7 @@
 > **Phase-5 PR:** [a2a-plane#542](https://github.com/jinwon-int/a2a-plane/pull/542)
 > **Phase-6 approval packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
 > **Status:** approval packet only; GitHub settings changes are still `NO_GO / Waiting`.
 
 ## Summary
@@ -90,6 +91,10 @@ protection approval.
 Follow-up `a2a-plane#545` records the split-repo disposition and rollback owner
 packet required before a canonical flip. This branch protection packet does not
 settle split-repo disposition.
+
+Follow-up `a2a-plane#549` records the final operator sign-off matrix. It
+includes branch protection or ruleset fields as one row in the final GO/NO-GO
+matrix without applying GitHub settings or approving canonical flip.
 
 ## Rollback / No-op Path
 

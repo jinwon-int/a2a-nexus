@@ -79,6 +79,14 @@ It records the package metadata and approval fields only; it does not create
 tags, GitHub Releases, npm packages, Docker images, or package ownership
 changes.
 
+The phase-9 final operator sign-off matrix is tracked in
+[`a2a-plane#549`](https://github.com/jinwon-int/a2a-plane/issues/549) and
+documented in
+[`docs/monorepo-final-operator-signoff-matrix.md`](../monorepo-final-operator-signoff-matrix.md).
+It consolidates branch protection, split repo disposition, release/package/tag,
+package ownership transfer, rollback owner, and canonical flip GO/NO-GO fields
+without approving any execution action.
+
 ## Canonical Flip Gate
 
 The canonical flip gate remains closed.

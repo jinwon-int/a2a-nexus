@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-08
-> **Active coordination:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
-> **Status:** public alpha, monorepo phase-8 release/package/tag approval packet active after #546 merged the split-repo disposition and rollback owner packet; `#506` source/no-live validation wave completed.
+> **Active coordination:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
+> **Status:** public alpha, monorepo phase-9 final operator sign-off matrix active after #548 merged the release/package/tag approval packet; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,12 +10,12 @@ topology gates.
 
 ## Current Active Work
 
-The active A2A coordination work is the monorepo phase-8 release/package/tag
-approval packet and dry-run inventory:
+The active A2A coordination work is the monorepo phase-9 final operator
+sign-off matrix:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547) | `a2a-plane` | Record release/package/tag approval fields and dry-run inventory before any tag, GitHub Release, npm/Docker publish, package ownership transfer, or canonical flip. |
+| [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549) | `a2a-plane` | Consolidate branch protection, split repo disposition, release/package/tag, package ownership, rollback owner, and canonical flip GO/NO-GO fields before any execution approval. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -50,6 +50,7 @@ Completed current-state and monorepo groundwork:
 | [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541) | `a2a-plane` | Closed: phase-5 canonical-flip readiness packet and provenance gate. |
 | [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543) | `a2a-plane` | Closed: phase-6 branch protection approval packet and required-checks dry-run. |
 | [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545) | `a2a-plane` | Closed: phase-7 split-repo disposition and rollback owner packet before canonical flip. |
+| [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547) | `a2a-plane` | Closed: phase-8 release/package/tag approval packet and dry-run inventory before release, publish, ownership transfer, or canonical flip. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -115,6 +116,14 @@ and validated by
 `scripts/check-monorepo-release-package-tag-approval-packet.mjs`. It records
 candidate package metadata, release/tag/npm/Docker approval fields, and dry-run
 commands while keeping every execution field at `NO_GO / Waiting`.
+
+The `#549` phase-9 final operator sign-off matrix is documented in
+[`docs/monorepo-final-operator-signoff-matrix.md`](monorepo-final-operator-signoff-matrix.md)
+and validated by
+`scripts/check-monorepo-final-operator-signoff-matrix.mjs`. It consolidates
+branch protection, split repo disposition, release/package/tag, package
+ownership transfer, rollback owner, and canonical flip GO/NO-GO fields while
+keeping every execution field at `NO_GO / Waiting`.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),

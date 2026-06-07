@@ -8,6 +8,7 @@
 > **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
 > **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
+> **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
 > **Status:** readiness packet only; canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -119,6 +120,11 @@ Follow-up `a2a-plane#547` records the release/package/tag approval packet and
 dry-run inventory. It does not create release tags, GitHub Releases, npm
 packages, Docker/GHCR images, or package ownership changes; release/package/tag
 execution remains `NO_GO / Waiting`.
+
+Follow-up `a2a-plane#549` records the final operator sign-off matrix. It
+consolidates branch protection, split repo disposition, release/package/tag,
+package ownership transfer, rollback owner, and canonical flip GO/NO-GO fields
+without approving any execution-sensitive action.
 
 ## GO / NO-GO Fields
 
