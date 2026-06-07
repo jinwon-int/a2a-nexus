@@ -47,7 +47,7 @@ No row is approved by this matrix.
 | Branch protection or ruleset | Operator owner, exact repository/branch/ruleset target, required checks, review count, CODEOWNERS choice, admin coverage, settings rollback owner. | `NO_GO / Waiting` |
 | Split repo disposition | Operator owner, repo-by-repo option, communication plan, undo owner for read-only/archive/redirect settings. | `NO_GO / Waiting` |
 | Release tag and GitHub Release | Operator owner, tag name, target commit, signing policy, release repository, release mode, artifact list, rollback/yank policy. | `NO_GO / Waiting` |
-| npm publish | Operator owner, package names, versions, registry, access, dist-tag, provenance flag, token owner, deprecate/unpublish policy. | `NO_GO / Waiting` |
+| npm publish | Operator owner, package names, versions, registry, access, dist-tag, provenance flag, registry account custodian, and package withdrawal or deprecation rollback plan. | `NO_GO / Waiting` |
 | Docker/GHCR publish | Operator owner, image names, registries, tags, build contexts, provenance/SBOM policy, rollback tag policy. | `NO_GO / Waiting` |
 | Package ownership transfer | Operator owner, canonical implementation source, package owner, split repo conflict policy, issue/PR provenance policy. | `NO_GO / Waiting` |
 | Canonical flip | Operator owner, accepted-risk register, final green CI evidence, branch protection posture, rollback owner, abort conditions. | `NO_GO / Waiting` |
