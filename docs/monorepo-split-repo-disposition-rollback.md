@@ -6,6 +6,7 @@
 > **Phase-5 readiness gate:** [a2a-plane#542](https://github.com/jinwon-int/a2a-plane/pull/542)
 > **Phase-6 branch protection packet:** [a2a-plane#544](https://github.com/jinwon-int/a2a-plane/pull/544)
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
 > **Status:** disposition packet only; split repos stay canonical and canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -74,7 +75,14 @@ These risks must be explicitly accepted or resolved before canonical flip:
 | `a2a-plane/main` branch protection/ruleset settings are not applied. | Approval packet exists; execution not approved. |
 | Split repo disposition is undecided. | This packet records options only. |
 | Post-flip rollback owner is unassigned. | Canonical flip remains blocked. |
-| Release/package/tag policy execution is unapproved. | Publication remains blocked. |
+| Release/package/tag policy execution is unapproved. | Publication remains blocked and is carried forward into `a2a-plane#547`. |
+
+## Release/package/tag Follow-up
+
+`a2a-plane#547` records the phase-8 release/package/tag approval packet. It is
+the next source-only gate after this disposition packet and does not approve
+release tags, GitHub Releases, npm publication, Docker/GHCR publication,
+package ownership transfer, or canonical flip.
 
 ## GO / NO-GO Fields
 
