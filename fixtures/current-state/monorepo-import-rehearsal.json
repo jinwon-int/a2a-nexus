@@ -1,0 +1,98 @@
+{
+  "schema": "a2a.monorepo-import-rehearsal.v1",
+  "snapshotDate": "2026-06-07",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/513",
+  "decision": "plan_import_rehearsal_before_canonical_flip",
+  "canonicalDuringRehearsal": "split_repos",
+  "rehearsalWorkspace": {
+    "recommendedName": "a2a-monorepo-next",
+    "additiveOnly": true,
+    "reuseExistingA2aMonorepoCheckout": false,
+    "disposableUntilParityPasses": true
+  },
+  "mirrors": [
+    {
+      "surface": "broker",
+      "sourceRepo": "jinwon-int/a2a-broker",
+      "sourceMain": "fae438a4fba301c2a9a02ca7cb11282867327920",
+      "targetPath": "packages/broker",
+      "splitTrackedFiles": 857,
+      "planeTrackedFiles": 236,
+      "freshness": "stale",
+      "canonicalNow": "split_repo"
+    },
+    {
+      "surface": "docker-runner",
+      "sourceRepo": "jinwon-int/a2a-docker-runner",
+      "sourceMain": "dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe",
+      "targetPath": "packages/docker-runner",
+      "splitTrackedFiles": 97,
+      "planeTrackedFiles": 59,
+      "freshness": "stale",
+      "canonicalNow": "split_repo"
+    },
+    {
+      "surface": "openclaw-plugin-a2a",
+      "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+      "sourceMain": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+      "targetPath": "packages/openclaw-plugin-a2a",
+      "splitTrackedFiles": 177,
+      "planeTrackedFiles": 116,
+      "freshness": "stale",
+      "canonicalNow": "split_repo"
+    }
+  ],
+  "importStrategy": {
+    "mode": "history_preserving_prefix_rehearsal",
+    "squashImportDefault": false,
+    "targetPaths": [
+      "packages/broker",
+      "packages/docker-runner",
+      "packages/openclaw-plugin-a2a"
+    ],
+    "tagPolicy": "document_before_import; prefix_rename_or_drop_collisions_only_after_review",
+    "closedIssuePrPolicy": "keep_closed_history_in_original_repos; use backlinks_and_source_labels_for_future_work"
+  },
+  "requiredReportFields": [
+    "sourceRepo",
+    "sourceRef",
+    "targetPath",
+    "importMethod",
+    "tagCollisionPolicy",
+    "issuePrProvenancePolicy",
+    "manifestScriptDifferences",
+    "ciParityStatus",
+    "scannerGateStatus",
+    "rollbackPoint",
+    "finalizerDecision"
+  ],
+  "rollbackPoints": [
+    "source_ref_collection",
+    "prefix_import_rehearsal",
+    "manifest_script_comparison",
+    "ci_parity_rehearsal",
+    "workspace_pr_without_canonical_flip"
+  ],
+  "boundaries": {
+    "repositoryImportToMain": false,
+    "historyRewrite": false,
+    "canonicalFlip": false,
+    "branchProtectionChange": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "visibilityChange": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}

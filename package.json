@@ -27,6 +27,7 @@
     "check:no-diff-closeout-guidance": "node --test scripts/check-no-diff-closeout-guidance.test.mjs",
     "check:current-state-no-live-smoke": "node scripts/check-current-state-no-live-integration-smoke.mjs",
     "check:monorepo-reentry": "node scripts/check-monorepo-reentry-decision.mjs",
+    "check:monorepo-import-rehearsal": "node scripts/check-monorepo-import-rehearsal.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
     "scan:readiness-gates": "node scanner/readiness/fail-closed-gates.mjs --spec docs/readiness/fail-closed-gates.json",
     "a2a:source-dryrun": "node scripts/a2a-source-dryrun-aggregator.mjs --spec docs/dry-run/source-public-dryrun-schema.json",

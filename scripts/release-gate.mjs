@@ -16,6 +16,7 @@ const steps = [
   ['split-repo-local-demo', 'npm', ['run', 'check:split-repo-local-demo']],
   ['current-state-no-live-smoke', 'npm', ['run', 'check:current-state-no-live-smoke']],
   ['monorepo-reentry', 'npm', ['run', 'check:monorepo-reentry']],
+  ['monorepo-import-rehearsal', 'npm', ['run', 'check:monorepo-import-rehearsal']],
 ];
 
 for (const [name, command, args] of steps) {
