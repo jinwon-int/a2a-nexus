@@ -8,13 +8,14 @@
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
-> **Status:** phase-4 fresh prefix import candidate is under parity validation; split repos remain canonical until PR/CI and separate canonical-flip approval.
+> **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repos remain canonical until phase-5 readiness evidence and separate canonical-flip approval.
 
 ## Summary
 
 This document turns the monorepo re-entry decision into a concrete import
-rehearsal and mirror freshness plan. The `#538` candidate imports fresh tracked
-trees into `packages/*` through a PR branch, but it still does not flip
+rehearsal and mirror freshness plan. The `#538` candidate imported fresh
+tracked trees into `packages/*` through PR `#540`, but it still does not flip
 canonical ownership.
 
 The immediate finding is that `a2a-plane/packages/*` is useful as an umbrella
@@ -156,6 +157,15 @@ This import mode is not history-preserving. Closed issue/PR provenance remains
 in the split implementation repos, while the candidate PR records exact source
 refs and package parity evidence. If the candidate regresses, rollback is a
 normal PR revert; split repos remain canonical.
+
+## Phase-5 Canonical Flip Readiness (#541)
+
+The phase-5 gate records readiness evidence before any ownership transfer. It
+uses the #540 merge commit `31273ce05b7e53655e3d8847a8d77ff1cd2f6d05`, the
+green package parity CI run, split-repo provenance policy, rollback path, and
+GO/NO-GO fields. The decision remains `NO_GO / Waiting` because #540 was not
+history-preserving, branch protection/release/package policy execution has not
+been approved, and no operator canonical-flip approval exists.
 
 ## Rehearsal Strategy
 

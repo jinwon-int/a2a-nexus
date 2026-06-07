@@ -8,7 +8,8 @@
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
-> **Status:** phase-4 fresh prefix import candidate is under package CI parity validation; split repo CI remains canonical until the candidate is merged and a separate canonical-flip approval exists.
+> **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repo CI remains canonical until phase-5 readiness evidence and a separate canonical-flip approval exist.
 
 ## Summary
 
@@ -22,8 +23,10 @@ The result is intentionally conservative:
   plugin implementation truth.
 - `a2a-plane` keeps first-class contract, conformance, scanner, and release
   gate checks for the umbrella workspace.
-- The `#538` candidate replaces `packages/*` with fresh tracked split-repo
-  trees and then proves them under package-local parity jobs.
+- The `#538` candidate replaced `packages/*` with fresh tracked split-repo
+  trees through `#540` and proved them under package-local parity jobs.
+- The `#541` readiness packet records provenance, rollback, and remaining
+  GO/NO-GO gates before any ownership transfer.
 - Even when package parity is green, canonical flip remains blocked until a
   separate operator decision records that split-repo implementation truth can
   move.
@@ -152,14 +155,27 @@ source provenance must cite the split repo and source ref. This is acceptable
 for the candidate PR because it is not a canonical flip and it keeps rollback
 as a normal PR revert.
 
+## Phase-5 Canonical Flip Readiness (#541)
+
+The phase-5 readiness packet is documented in
+[`docs/monorepo-canonical-flip-readiness.md`](monorepo-canonical-flip-readiness.md)
+and validated by `scripts/check-monorepo-canonical-flip-readiness.mjs`. It
+records #540 merge evidence, CI run `27099159202`, split-repo provenance
+policy, rollback path, remaining gates, and explicit GO/NO-GO fields.
+
+The current decision is still `NO_GO / Waiting`: package parity is green, but
+operator canonical-flip approval, branch protection/ruleset execution,
+release/package/tag execution, split-repo disposition, and post-flip rollback
+ownership remain unapproved.
+
 ## Canonical Flip Gate
 
 The canonical flip gate remains closed.
 
-The next monorepo action must be a fresh import rehearsal into a disposable or
-staged workspace, followed by a CI parity PR that proves every package job is
-equal-or-stricter than the split repo gate. Until then, package implementation
-changes belong in the split repos.
+The next monorepo action is a separate operator decision over the phase-5
+readiness packet. Until that approval exists, package implementation changes
+belong in the split repos even though the imported `packages/*` candidate is CI
+green.
 
 ## No-live Boundary
 
