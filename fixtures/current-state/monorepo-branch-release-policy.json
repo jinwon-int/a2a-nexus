@@ -1,0 +1,74 @@
+{
+  "schema": "a2a.monorepo-branch-release-policy.v1",
+  "snapshotDate": "2026-06-07",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/517",
+  "decision": "record_branch_release_policy_without_settings_or_publish_mutation",
+  "canonicalFlipApproved": false,
+  "liveProtectionSnapshot": {
+    "repo": "jinwon-int/a2a-plane",
+    "branch": "main",
+    "branchProtectionApi": "404_branch_not_protected",
+    "settingsChanged": false
+  },
+  "requiredBeforeCanonicalFlip": [
+    "import_rehearsal_green",
+    "ci_parity_green",
+    "docs_codeowners_routing_green",
+    "branch_protection_or_ruleset_approved_and_applied",
+    "release_package_policy_approved",
+    "explicit_operator_signoff"
+  ],
+  "branchProtectionRequirements": [
+    "required_status_checks_for_paths_filter_setup_layout_contracts_broker_docker_runner_plugin_check_or_approved_equivalent",
+    "require_up_to_date_branch_or_approved_merge_queue_alternative",
+    "require_pull_request_review",
+    "decide_codeowners_review_requirement",
+    "block_force_pushes_and_deletions",
+    "decide_admin_enforcement",
+    "decide_linear_history"
+  ],
+  "historicalTags": [
+    {
+      "tag": "source-public-20260511",
+      "sha": "83bc1519ebc4b45d9c1ddc4be2a9011fb4b210b4",
+      "meaning": "historical_source_public_snapshot_not_semantic_release",
+      "moveOrDeleteApproved": false
+    }
+  ],
+  "packageNamespacePolicy": {
+    "rootWorkspace": "private_non_published_coordination_workspace",
+    "broker": "no_npm_publish_until_release_approval",
+    "dockerRunner": "split_repo_retains_public_cli_package_trust_boundary",
+    "openclawPlugin": "no_npm_publish_until_manifest_prepack_peer_boundary_is_preserved_and_approved",
+    "dockerGhcr": "no_image_publish_without_separate_image_approval"
+  },
+  "splitReposRemainProvenanceArchives": true,
+  "closedIssuePrTransfer": false,
+  "agentOlympicsBoundary": "independent_repository_not_a2a_package_release_branch_protection_or_import_scope",
+  "boundaries": {
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "repositoryArchive": false,
+    "visibilityChange": false,
+    "tagCreateMoveDelete": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "githubPackagesPublish": false,
+    "ghcrPublish": false,
+    "dockerPublish": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "historyRewrite": false,
+    "forcePush": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false,
+    "canonicalFlip": false
+  }
+}

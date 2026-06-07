@@ -1,7 +1,7 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active coordination:** [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
+> **Active coordination:** [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
 > **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
@@ -14,7 +14,6 @@ The active A2A coordination work is:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
 | [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
 | [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
 
@@ -38,6 +37,7 @@ Completed current-state and monorepo groundwork:
 | [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
 | [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Closed: CI parity and package boundary matrix; split repo CI remains canonical. |
 | [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) | `a2a-plane` | Closed: monorepo docs, CODEOWNERS, and issue-routing policy. |
+| [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Closed: branch protection and release/package policy; settings and publishing remain approval-gated. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -60,6 +60,13 @@ The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 and [`.github/CODEOWNERS`](../.github/CODEOWNERS). It is validated by
 `scripts/check-monorepo-docs-routing.mjs` and keeps `agent-olympics` outside A2A
 source labels and package routing.
+
+The `#517` branch protection and release/package policy is documented in
+[`docs/monorepo-branch-release-policy.md`](monorepo-branch-release-policy.md) and
+validated by `scripts/check-monorepo-branch-release-policy.mjs`. It records that
+`a2a-plane/main` branch protection was absent at the 2026-06-07 live check and
+that branch settings, tags, releases, npm/GHCR/Docker publication, and canonical
+flip all remain approval-gated.
 
 ## Completed Historical Gates
 

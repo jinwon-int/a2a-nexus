@@ -1,7 +1,7 @@
 # A2A Monorepo Re-entry Decision
 
 > **Decision date:** 2026-06-07
-> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
+> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); phase 0 policy children [#513](https://github.com/jinwon-int/a2a-plane/issues/513), [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), and [#517](https://github.com/jinwon-int/a2a-plane/issues/517) are recorded as completed groundwork.
 > **Decision:** proceed with a staged umbrella workspace rehearsal, not an immediate canonical monorepo flip.
 
 ## Summary
@@ -89,8 +89,8 @@ a2a-plane/
 | CI parity | Monorepo package jobs match or exceed split repo build/test/scanner coverage. | Matrix recorded by `#514`; Not green |
 | Docs migration | README, current-state, developer, operator, migration, and backlink docs explain canonical state. | Draft recorded by `#515`; Not final cutover |
 | CODEOWNERS | Package-level ownership and review routes are defined. | Draft recorded by `#515`; Not final cutover |
-| Branch protection | `a2a-plane/main` protection is reviewed before any canonical flip. | Not started |
-| Release/package policy | npm/GitHub Packages, tags, images, and CLI canonical names are decided. | Not started |
+| Branch protection | `a2a-plane/main` protection is reviewed before any canonical flip. | Policy recorded by `#517`; settings not changed |
+| Release/package policy | npm/GitHub Packages, tags, images, and CLI canonical names are decided. | Policy recorded by `#517`; publish not approved |
 | Final sign-off | Operator approves canonical source flip after all evidence is green. | Not granted |
 
 ## Implementation Phases
@@ -112,6 +112,9 @@ a2a-plane/
   [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),
   [`docs/developers.md`](developers.md), and [`docs/issue-routing.md`](issue-routing.md),
   and keep it validated by `npm run check:monorepo-docs-routing`.
+- Record the branch protection and release/package policy in
+  [`docs/monorepo-branch-release-policy.md`](monorepo-branch-release-policy.md)
+  and keep it validated by `npm run check:monorepo-branch-release-policy`.
 - Keep all implementation repos canonical.
 
 ### Phase 1: Disposable Rehearsal
