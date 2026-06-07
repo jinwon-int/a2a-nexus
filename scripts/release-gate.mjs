@@ -19,6 +19,7 @@ const steps = [
   ['monorepo-import-rehearsal', 'npm', ['run', 'check:monorepo-import-rehearsal']],
   ['monorepo-ci-parity', 'npm', ['run', 'check:monorepo-ci-parity']],
   ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
+  ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
 ];
 
 for (const [name, command, args] of steps) {

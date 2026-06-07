@@ -1,0 +1,99 @@
+{
+  "schema": "a2a.monorepo-branch-release-package-policy.v1",
+  "snapshotDate": "2026-06-07",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/517",
+  "decision": "policy_documented_without_settings_or_release_changes",
+  "canonicalFlipApproved": false,
+  "branchProtectionChanged": false,
+  "releaseOrPackagePublished": false,
+  "packageInventoryVerified": false,
+  "packageInventoryBlocker": "GitHub Packages API returned 403 without read:packages scope",
+  "repos": [
+    {
+      "repo": "jinwon-int/a2a-plane",
+      "visibility": "PUBLIC",
+      "defaultBranch": "main",
+      "branchProtection": "none",
+      "rulesets": "none",
+      "requiredReviews": false,
+      "releasesReturned": 0,
+      "historicalTag": "source-public-20260511"
+    },
+    {
+      "repo": "jinwon-int/a2a-broker",
+      "visibility": "PUBLIC",
+      "defaultBranch": "main",
+      "branchProtection": "required_build_strict",
+      "rulesets": "none",
+      "requiredReviews": false,
+      "releasesReturned": 0,
+      "historicalTag": "source-public-20260511"
+    },
+    {
+      "repo": "jinwon-int/a2a-docker-runner",
+      "visibility": "PUBLIC",
+      "defaultBranch": "main",
+      "branchProtection": "required_build_strict",
+      "rulesets": "none",
+      "requiredReviews": false,
+      "releasesReturned": 0,
+      "historicalTag": "source-public-20260511"
+    },
+    {
+      "repo": "jinwon-int/openclaw-plugin-a2a",
+      "visibility": "PUBLIC",
+      "defaultBranch": "main",
+      "branchProtection": "required_build_strict_linear_history_conversation_resolution",
+      "rulesets": "none",
+      "requiredReviews": false,
+      "releasesReturned": 0,
+      "historicalTag": "source-public-20260511"
+    }
+  ],
+  "requiredBeforeCanonicalFlip": [
+    "protected_a2a_plane_main",
+    "required_root_checks",
+    "path_aware_package_checks_or_rulesets",
+    "required_pr_review",
+    "codeowners_review_enforcement",
+    "up_to_date_branch_or_merge_queue",
+    "stale_review_dismissal",
+    "critical_path_rulesets",
+    "package_inventory_verification",
+    "dry_run_release_evidence",
+    "operator_final_signoff"
+  ],
+  "releasePolicy": {
+    "historicalTagPreserved": "source-public-20260511",
+    "githubReleases": "no_go_without_separate_approval",
+    "npmPublish": "no_go_without_separate_approval",
+    "githubPackages": "no_go_until_inventory_verified_and_approved",
+    "dockerGhcrPublish": "no_go_without_separate_approval",
+    "splitReposRemainCanonical": true
+  },
+  "boundaries": {
+    "repositoryImport": false,
+    "historyRewrite": false,
+    "canonicalFlip": false,
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "permissionChange": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "ghcrPublish": false,
+    "visibilityChange": false,
+    "repositoryArchive": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}

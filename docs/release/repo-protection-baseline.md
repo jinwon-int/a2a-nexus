@@ -1,10 +1,10 @@
 # Public A2A Repository Protection Baseline
 
-Issues: [a2a-plane#488](https://github.com/jinwon-int/a2a-plane/issues/488)
+Issues: [a2a-plane#488](https://github.com/jinwon-int/a2a-plane/issues/488), [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517)
 Parent: [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473)
 Related: [a2a-plane#486](https://github.com/jinwon-int/a2a-plane/issues/486) (contribution surface and CI hardening)
 
-This document records the current repository protection state across the four public A2A repositories and proposes a minimal baseline for public repository protection. It is a read-only evidence document and does not authorize GitHub settings changes, branch protection changes, ruleset creation, permission changes, or any other GitHub repository administration action.
+This document records the current repository protection state across the four public A2A repositories and proposes a minimal baseline for public repository protection. The monorepo-specific branch protection and release/package policy for #517 is recorded in [monorepo-branch-release-package-policy](monorepo-branch-release-package-policy.md). This is a read-only evidence document and does not authorize GitHub settings changes, branch protection changes, ruleset creation, permission changes, or any other GitHub repository administration action.
 
 ## Safety boundary
 
@@ -208,9 +208,9 @@ If the operator has granted approval in a linked comment, the executing person o
 | Missing issue/PR templates | broker, runner, plugin | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
 | Missing broker public-readiness CI check | broker | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
 | Missing license metadata (package/license fields) | broker, plugin | [#478](https://github.com/jinwon-int/a2a-plane/issues/478), [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | Open |
-| No branch protection on main | a2a-plane | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
-| No required PR review | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
-| No rulesets | all | This issue (#488) — awaiting operator approval | Open / Waiting for approval |
+| No branch protection on main | a2a-plane | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
+| No required PR review | all | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
+| No rulesets | all | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
 
 ---
 
