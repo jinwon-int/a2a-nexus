@@ -5,6 +5,7 @@
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-4 PR:** [a2a-plane#540](https://github.com/jinwon-int/a2a-plane/pull/540)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
+> **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
 > **Status:** readiness packet only; canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -102,6 +103,10 @@ accepted as risk in a separate operator approval:
 | Release/package/tag policy execution | Not approved, not performed |
 | Split repo archival or read-only disposition | Not approved, not performed |
 | Operator canonical-flip approval | Missing |
+
+Follow-up `a2a-plane#543` records the branch protection approval packet and
+required-checks dry-run. It does not apply branch protection or rulesets; it
+keeps the canonical flip at `NO_GO / Waiting`.
 
 ## GO / NO-GO Fields
 

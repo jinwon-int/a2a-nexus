@@ -9,7 +9,8 @@
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
-> **Status:** phase-4 fresh prefix import candidate merged through #540; split repo CI remains canonical until phase-5 readiness evidence and a separate canonical-flip approval exist.
+> **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repo CI remains canonical until phase-6 branch protection approval evidence and a separate canonical-flip approval exist.
 
 ## Summary
 
@@ -27,6 +28,8 @@ The result is intentionally conservative:
   trees through `#540` and proved them under package-local parity jobs.
 - The `#541` readiness packet records provenance, rollback, and remaining
   GO/NO-GO gates before any ownership transfer.
+- The `#543` branch protection approval packet records the required-check
+  proposal and read-only GitHub settings posture before any settings change.
 - Even when package parity is green, canonical flip remains blocked until a
   separate operator decision records that split-repo implementation truth can
   move.
@@ -168,14 +171,30 @@ operator canonical-flip approval, branch protection/ruleset execution,
 release/package/tag execution, split-repo disposition, and post-flip rollback
 ownership remain unapproved.
 
+## Phase-6 Branch Protection Approval Packet (#543)
+
+The phase-6 branch protection approval packet is documented in
+[`docs/monorepo-branch-protection-approval-packet.md`](monorepo-branch-protection-approval-packet.md)
+and validated by `scripts/check-monorepo-branch-protection-approval-packet.mjs`.
+It records that live read-only checks still show `a2a-plane/main` as
+unprotected (`404 Branch not protected`) with no repository rulesets, while the
+latest monorepo CI run for `#542` (`27099569029`) is green.
+
+The packet proposes required root checks (`paths-filter`, `setup`, `layout`,
+`contracts`, and `check`) plus path-aware package checks (`broker`,
+`docker-runner`, and `plugin`). It does not apply the protection. The decision
+remains `NO_GO / Waiting` until a separate explicit operator approval names the
+settings action and scope.
+
 ## Canonical Flip Gate
 
 The canonical flip gate remains closed.
 
-The next monorepo action is a separate operator decision over the phase-5
-readiness packet. Until that approval exists, package implementation changes
-belong in the split repos even though the imported `packages/*` candidate is CI
-green.
+The next monorepo action is a separate operator decision over branch protection
+or ruleset settings, followed by a separate canonical-flip decision only if the
+settings gate is explicitly approved and executed. Until those approvals exist,
+package implementation changes belong in the split repos even though the
+imported `packages/*` candidate is CI green.
 
 ## No-live Boundary
 
