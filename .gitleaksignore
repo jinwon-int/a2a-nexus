@@ -1,0 +1,7 @@
+# Historical redaction-test fixtures. These fingerprints are synthetic
+# pseudo-secret test strings only; keep this list narrow and auditable.
+150ed4797850bce0de4e07a5627740aab2e835ec:packages/docker-runner/src/engine-contract.test.ts:generic-api-key:273
+150ed4797850bce0de4e07a5627740aab2e835ec:packages/docker-runner/src/engine-contract.test.ts:generic-api-key:280
+389a6e5f7d8ece32e7b0649f20f1b2246b1d3493:packages/openclaw-plugin-a2a/tests/proposal-marker-bridge.test.ts:generic-api-key:231
+bb10d2befe40c89301ba9dde46e5aee7a57d2ae1:packages/broker/scripts/terminal-receipt-closeout-report.test.mjs:generic-api-key:115
+4c16d5c994fc9e0824206e6b256ed1c841841225:packages/broker/scripts/terminal-receipt-closeout-report.test.mjs:generic-api-key:115

@@ -5,7 +5,8 @@
 > **Child:** [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513)
 > **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
-> **Status:** phase 2 source-only rehearsal complete. Split repos remain canonical.
+> **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
+> **Status:** phase 3 package CI gate blocked. Split repos remain canonical.
 
 ## Summary
 
@@ -73,6 +74,31 @@ imported. None of the three split repos had tracked `dist`, `build`,
 Phase-3 should **not** be a package mirror refresh PR yet. The next step is to
 close the package CI parity blockers in the matrix, then perform a mirror
 refresh only after the package jobs are equal-or-stricter than split repo CI.
+
+## Phase-3 Package CI Gate (#534)
+
+The next monorepo action is the phase-3 package CI gate, not a package mirror
+refresh. The gate records package-local CI requirements before any refreshed
+prefix import can be proposed for `packages/broker`, `packages/docker-runner`,
+or `packages/openclaw-plugin-a2a`.
+
+The gate keeps these conditions blocked until proven:
+
+- broker package jobs preserve source `npm ci` behavior, build-info generation,
+  script syntax checks, and the broader split-repo test glob;
+- Docker runner package jobs include `check`, `build`, `lint`, `test`,
+  `pre-pr-bootstrap-guard`, chaos/no-live evidence, release-candidate dry-run,
+  and package metadata checks;
+- OpenClaw plugin package jobs keep plugin-local public-readiness scanning,
+  A2A conformance smoke, manifest copy/prepack behavior, bin/files metadata,
+  and the OpenClaw peer boundary.
+
+The fixture
+[`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](../fixtures/current-state/monorepo-phase3-package-ci-gate.json)
+and `check:monorepo-phase3-package-ci-gate` make the blocker release-gate
+visible. A future mirror refresh PR must either satisfy the recorded package
+jobs or cite a separate operator decision that accepts the remaining parity
+risk.
 
 ## Rehearsal Strategy
 

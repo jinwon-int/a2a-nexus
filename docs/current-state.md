@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active coordination:** [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
-> **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; phase-2 rehearsal evidence complete; `#506` source/no-live validation wave completed.
+> **Active coordination:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
+> **Status:** public alpha, monorepo phase-3 package CI gate active; phase-2 rehearsal evidence complete; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,12 +10,15 @@ topology gates.
 
 ## Current Active Work
 
-The active A2A coordination work is:
+The active A2A coordination work is the monorepo phase-3 package CI gate:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
-| [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
+| [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534) | `a2a-plane` | Block package mirror refresh until broker, Docker runner, and OpenClaw plugin package CI is equal-or-stricter than split repo CI. |
+
+Recently completed broker-mode work is recorded for continuity only:
+`a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
+monorepo coordination lane.
 
 The completed monorepo re-entry decision is recorded in
 [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md) and
@@ -66,6 +69,13 @@ split repo CI.
 The `#531` merge closed `#530` with source-only docs, fixtures, and checker
 evidence. It did not import packages into `main`, flip canonical ownership, or
 perform live operations.
+
+The `a2a-plane#534` phase-3 package CI gate is documented in
+[`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md),
+[`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md), and
+[`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](../fixtures/current-state/monorepo-phase3-package-ci-gate.json).
+It keeps package mirror refresh blocked until broker, Docker runner, and
+OpenClaw plugin package jobs are equal-or-stricter than split repo CI.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),
