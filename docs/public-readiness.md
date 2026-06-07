@@ -6,6 +6,8 @@
 >
 > Remaining **NO-GO** items below are reclassified as **promotion/stable-release blockers** (stable release, announcements, public docs site, npm/Docker publication) — not as visibility blockers. Public visibility has been granted.
 >
+> Current active A2A coordination has moved to [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md). Historical issues such as `#75` and `a2a-broker#294` are closed and should not be cited as active blockers.
+>
 > This page records redacted review evidence only; it does not authorize deploys, service restarts, production database mutations, live provider or Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
 
 ## Team1 P0 public preflight decision table
@@ -16,7 +18,7 @@ Updated for run `team1-a2a-public-p0-20260507T221151Z` at `2026-05-07T22:16:10Z`
 |---|---|---|---|
 | Repository visibility | **Public** (since 2026-05-27) | **Promotion NO-GO** until remaining promotion blockers close | GitHub metadata is public; historical private-readiness docs are archived as gate records |
 | R4 closeout lanes | Closed and merged | Candidate evidence is available for operator review, but does not override the external scanner blocker | R4 lane table below |
-| External secret/history scanner | **Blocked/Waiting**: `npm run scan:external-secrets` failed closed because no supported external scanner was installed in this runner | **NO-GO/Waiting**; install `gitleaks` or `trufflehog` in the operator environment and rerun before public visibility approval | `docs/security/r4-external-scan-and-freeze.md`; local command output is redacted and contains no findings payload |
+| External secret/history scanner | **Blocked/Waiting**: `npm run scan:external-secrets` failed closed because no supported external scanner was installed in this runner | **NO-GO/Waiting** for promotion/stable-release; install `gitleaks` or `trufflehog` in the operator environment and rerun before promotion approval | `docs/security/r4-external-scan-and-freeze.md`; local command output is redacted and contains no findings payload |
 | Local public-readiness/release gate | Passed in this run | Supports operator review, but is not a substitute for the external scanner lane | `npm ci --ignore-scripts --include=dev`, `npm run check`, `npm run scan:public-readiness`, `node scripts/redacted-readiness-inventory.mjs`, and `npm run test:release-gate` |
 | Runtime/bootstrap hygiene | Clear for this branch/evidence when only tracked diff files are included | Fail closed if any runtime/bootstrap path enters the branch or evidence | Guard paths: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**` |
 | Public docs/SECURITY/templates/CODEOWNERS/README decision surface | Updated to reflect public state; historical private-candidate boundaries are archived | Ready for operator review; remaining blockers are promotion/stable-release, not visibility | `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/*`, `.github/pull_request_template.md`, `CODEOWNERS`, this page |
@@ -100,7 +102,7 @@ A follow-on A2A dispatch round cross-repo synthesis (post-merge state after `ope
 - External secret scanner unavailable (fail-closed) — remains a promotion blocker.
 - Explicit operator approval for public repository visibility: **granted** (2026-05-27).
 - Repository visibility is **public** as of 2026-05-27. A2A terminal evidence/replay-safety proof and clean scanner evidence remain promotion blockers.
-- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) remains open: all promotion-readiness gates are not yet met.
+- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) is now closed. The remaining promotion/stable-release evidence path is tracked by the current-state wave, starting at [#506](https://github.com/jinwon-int/a2a-plane/issues/506).
 
 Relevant cross-repo guardrail docs:
 - `contracts/a2a/task-lifecycle.md` — A2A task-state mapping reference.
@@ -152,7 +154,7 @@ Decision: **NO-GO / Waiting.**
 - `openclaw/openclaw#78261` is closed/superseded; do not claim that this closure itself unblocks Terminal Brief or public-readiness.
 - External secret scanner evidence remains unavailable (fail-closed).
 - Explicit operator approval for repository visibility is still required.
-- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) remains open.
+- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) is now closed; this historical section should not be used as the active blocker list.
 
 This closeout refresh performed redacted documentation evidence updates and local validation only. It did **not** perform any repository visibility change, release, deploy, Gateway/broker/worker restart, production database mutation, live provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, or force-push.
 
@@ -207,7 +209,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] `npm run test:release-gate` passes `3/3`.
    - [ ] `npm run scan:public-readiness` reports no new findings.
    - [ ] Runtime/bootstrap hygiene confirmed: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, and `.openclaw/**` are not entering the branch or evidence.
-   - [ ] Repository visibility remains private up to the decision point.
+   - [x] Repository visibility is public as of 2026-05-27. This item is historical and no longer an active visibility blocker.
 
 Seoseo must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
 
@@ -228,7 +230,7 @@ This packet is the Team1 next-round operator decision surface for `bangtong`. It
 |---|---|---|---|
 | **G1: Terminal evidence / replay-safe canary proof** | **NO-GO / Waiting.** PR [#78261](https://github.com/openclaw/openclaw/pull/78261) is closed/superseded; `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` remain non-ACK evidence. | A2A Plane contract/tests show provider message id/send success is accepted-send evidence only, and a replay-safe proof shows manual/proven ACK-safe receipt before terminal ACK. | Claiming GO because #78261 closed. Treating `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` as terminal ACK evidence. |
 | **G2: Final external scanner evidence** | **NO-GO / Blocked.** `npm run scan:external-secrets` exits non-zero because neither `gitleaks` nor `trufflehog` is installed in the runner environment. See `docs/security/r4-external-scan-and-freeze.md`. | `npm run scan:external-secrets` exits zero with clean findings (or findings dispositioned by operator with redacted evidence). At least one supported scanner (`gitleaks` or `trufflehog`) produces a clean report. | Claiming GO without scanner output. Running a local-only substitute (`npm run scan:public-readiness`, `node scripts/redacted-readiness-inventory.mjs`) and treating it as external scanner evidence. |
-| **G3: Explicit operator approval for repository visibility/publication** | **NO-GO / Waiting.** Repository remains private. No operator has issued an explicit visibility-change approval. `docs/public-transition-smoke-plan.md` defines the post-approval checklist but does not authorize the transition itself. | 진원님 explicitly approves a repository visibility change in a linked issue/PR comment. Approval is separate from any execution step. | Claiming GO because "docs are ready" or "all checks passed." Executing a visibility change without explicit operator approval. |
+| **G3: Explicit operator approval for repository visibility/publication** | **Historical state.** At the time of this R8 packet, repository visibility was still private and no operator approval had been issued. The repository is now public as of 2026-05-27. | Future visibility transfers, publication, or promotion still require explicit operator approval in a linked issue/PR comment. Approval is separate from any execution step. | Claiming GO because "docs are ready" or "all checks passed." Executing a new visibility, publication, or promotion action without explicit operator approval. |
 
 ### Aggregate Decision
 
@@ -260,13 +262,15 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] `npm run test:release-gate` passes `3/3`.
    - [ ] `npm run scan:public-readiness` reports no new findings.
    - [ ] Runtime/bootstrap hygiene confirmed: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, and `.openclaw/**` are not entering the branch or evidence.
-   - [ ] Repository visibility remains private up to the decision point.
+   - [x] Repository visibility is public as of 2026-05-27. Future visibility transfers or publication actions remain approval-gated.
 
 Seoseo must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
 
 > **Note:** These gates were defined when the repository was private. Items marked ✅ are cleared. Remaining ❌ items are now **promotion/stable-release blockers**, not visibility blockers. Public visibility was granted 2026-05-27.
 
 ## Promotion-readiness gates (was NO-GO gates)
+
+The parent visibility tracker [#75](https://github.com/jinwon-int/a2a-plane/issues/75) and roadmap [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) are closed historical records. Use [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md) for current A2A coordination.
 
 - [x] License decision approved and committed: MIT. NOTICE is not required for MIT unless future third-party notices require it.
 - [x] Secret and history scan clean or explicitly dispositioned with redacted evidence for operator review: root scanner passed with no findings; redacted inventory reports metadata only and keeps matched values out of evidence.

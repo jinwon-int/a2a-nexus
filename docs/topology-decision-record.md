@@ -3,6 +3,7 @@
 > **Decision date:** 2026-05-27
 > **Status:** 🟢 Adopted — hold full monorepo consolidation; keep split implementation repos with `a2a-plane` as the stronger public umbrella/start-here entrypoint.
 > **Tracking issue:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
+> **Current coordination:** [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md)
 > **Revisit trigger:** See [re-entry criteria](#future-monorepo-re-entry-criteria) below.
 
 ---
@@ -83,7 +84,7 @@ The historical monorepo work built the *migration path* and *cutover gates* but 
 
 ### Current docs/gate tension
 
-Several docs still describe private/NO-GO/public-readiness-candidate status even though all repos are already PUBLIC. This is tracked as [P0 blocker #476](https://github.com/jinwon-int/a2a-plane/issues/476). The topology decision should not be confused with the stale-private-docs reconciliation — they are related but independent work streams.
+Several docs historically described private/NO-GO/public-readiness-candidate status even though all repos are already PUBLIC. That stale-private-docs reconciliation was completed after the topology decision; use [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md) for current active A2A coordination.
 
 ---
 
@@ -151,15 +152,18 @@ If a re-entry criterion is triggered and an operator initiates the monorepo disc
 
 ## 6. Follow-up Issue Map
 
-The topology decision feeds into the following active lanes:
+The topology decision fed into the following lanes. These are historical groundwork unless the state says active:
 
 | Issue | Repo | Description | Dependency |
 | --- | --- | --- | --- |
-| [#476](https://github.com/jinwon-int/a2a-plane/issues/476) | `a2a-plane` | P0: reconcile stale private/NO-GO readiness docs with actual public visibility | Independent |
-| [#477](https://github.com/jinwon-int/a2a-plane/issues/477) | `a2a-plane` | Public repo map and quickstart umbrella docs | 🟢 Merged via #484 |
-| [#478](https://github.com/jinwon-int/a2a-plane/issues/478) | `a2a-plane` | Public-source security, secret-history, license, and provenance scan | Independent |
-| [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | `a2a-plane` | Public release, version, and provenance checklist | Independent |
-| [#480](https://github.com/jinwon-int/a2a-plane/issues/480) | `a2a-plane` | Local public demo and quickstart across repos | Independent |
+| [#506](https://github.com/jinwon-int/a2a-plane/issues/506) | `a2a-plane` | Current-state integration and A2A effectiveness wave | Active |
+| [#507](https://github.com/jinwon-int/a2a-plane/issues/507) | `a2a-plane` | Refresh current-state docs and checkout hygiene | Active |
+| [#508](https://github.com/jinwon-int/a2a-plane/issues/508) | `a2a-plane` | No-live cross-repo integration smoke spec | Active |
+| [#476](https://github.com/jinwon-int/a2a-plane/issues/476) | `a2a-plane` | P0: reconcile stale private/NO-GO readiness docs with actual public visibility | Closed |
+| [#477](https://github.com/jinwon-int/a2a-plane/issues/477) | `a2a-plane` | Public repo map and quickstart umbrella docs | Closed; merged via #484 |
+| [#478](https://github.com/jinwon-int/a2a-plane/issues/478) | `a2a-plane` | Public-source security, secret-history, license, and provenance scan | Closed |
+| [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | `a2a-plane` | Public release, version, and provenance checklist | Closed |
+| [#480](https://github.com/jinwon-int/a2a-plane/issues/480) | `a2a-plane` | Local public demo and quickstart across repos | Closed |
 | [#482](https://github.com/jinwon-int/a2a-plane/issues/482) | `a2a-plane` | Refresh public compatibility matrix baselines | Independent |
 | [#485](https://github.com/jinwon-int/a2a-plane/issues/485) | `a2a-docker-runner` | Lock release/tag workflow behind approval gates | Independent |
 | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | `a2a-broker`/`openclaw-plugin-a2a` | Harden public contribution surface and CI gates | Independent |
@@ -198,8 +202,8 @@ No approval-gated action was performed in producing this document.
 - [#240](https://github.com/jinwon-int/a2a-plane/issues/240) — initial monorepo consolidation review (closed)
 - [#335](https://github.com/jinwon-int/a2a-plane/issues/335) — R23 monorepo architecture plan (closed)
 - [#337](https://github.com/jinwon-int/a2a-plane/issues/337) — R23 Team1 monorepo cutover proof (closed)
-- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — current topology decision tracker (open)
-- [#489](https://github.com/jinwon-int/a2a-plane/issues/489) — Team1 roadmap implementation parent (open)
+- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted topology decision tracker (closed)
+- [#489](https://github.com/jinwon-int/a2a-plane/issues/489) — Team1 roadmap implementation parent (closed)
 - [`docs/monorepo-migration-checklist.md`](monorepo-migration-checklist.md) — historical migration checklist and cutover proof (preserved)
 - [`docs/ecosystem-guide.md`](ecosystem-guide.md) — bilingual component guide with repo role mapping
 - [`docs/quickstart/public-umbrella.md`](quickstart/public-umbrella.md) — public umbrella and repo map
