@@ -7,6 +7,7 @@ FROM deps AS build
 WORKDIR /app
 COPY tsconfig.json ./
 COPY src ./src
+COPY scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
 RUN npm run build
 
 FROM node:22-alpine AS runtime
@@ -28,7 +29,11 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 COPY --from=build /app/dist ./dist
+COPY scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
 COPY scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
+# Generate dist/build-info.json from Docker build ARGs so /health.build.revision
+# and org.opencontainers.image.revision use the actual build-time values.
+RUN node scripts/generate-build-info.mjs --runtime docker
 COPY scripts/openclaw-a2a-task-handler.mjs ./scripts/openclaw-a2a-task-handler.mjs
 RUN mkdir -p ./handlers && cp scripts/openclaw-a2a-task-handler.mjs ./handlers/openclaw-a2a-task-handler.mjs
 EXPOSE 8787

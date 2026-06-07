@@ -1,0 +1,641 @@
+{
+  "schemaVersion": "a2a.runner.residue-cleanup-dry-run-fixtures.v1",
+  "run": "a2a-team1-bangtong-residue-cleanup-dry-run-20260520T125200Z",
+  "issueUrl": "https://github.com/jinwon-int/a2a-broker/issues/835",
+  "parentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/300",
+  "targetWorker": "bangtong",
+  "safetyState": {
+    "noLiveProviderSend": true,
+    "noDbMutationOrPrune": true,
+    "noDeployOrRestart": true,
+    "noTerminalAck": true,
+    "dryRunOnly": true,
+    "operatorApprovalRequired": true,
+    "backupRequired": true
+  },
+  "cases": [
+    {
+      "name": "empty readiness report produces zero-candidate plan",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-test",
+        "totalTaskRoots": 0,
+        "totalRunDirs": 0,
+        "staleRuns": 0,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": []
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 0,
+        "entriesLen": 0,
+        "byRiskClass": { "low": 0, "medium": 0, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 0, "malformed": 0, "orphan": 0 },
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "stale runs older than 7 days are high risk",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-stale-old",
+        "totalTaskRoots": 2,
+        "totalRunDirs": 2,
+        "staleRuns": 1,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "github-propose-patch",
+            "runToken": "run-A1B2C3",
+            "ageMs": 604800001,
+            "status": "stale",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "run exceeds stale threshold (7d+1ms)"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 0, "medium": 0, "high": 1, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 1, "malformed": 0, "orphan": 0 },
+        "entries": [
+          {
+            "riskClass": "high",
+            "trigger": "stale",
+            "terminal": false
+          }
+        ],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "stale runs younger than 7 days are medium risk",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-stale-fresh",
+        "totalTaskRoots": 2,
+        "totalRunDirs": 2,
+        "staleRuns": 1,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "github-verify",
+            "runToken": "run-D4E5F6",
+            "ageMs": 3600000,
+            "status": "stale",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "run exceeds stale threshold (1h)"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 0, "medium": 1, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 1, "malformed": 0, "orphan": 0 },
+        "entries": [
+          {
+            "riskClass": "medium",
+            "trigger": "stale",
+            "terminal": false
+          }
+        ],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "orphan task roots classified as low risk",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-orphan",
+        "totalTaskRoots": 1,
+        "totalRunDirs": 0,
+        "staleRuns": 0,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 1,
+        "runs": [
+          {
+            "safeTaskId": "orphan-task",
+            "runToken": "<no-runs>",
+            "ageMs": 0,
+            "status": "orphan",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": true,
+            "reason": "task root has no valid run directories"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 1, "medium": 0, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 0, "malformed": 0, "orphan": 1 },
+        "entries": [
+          {
+            "riskClass": "low",
+            "trigger": "orphan",
+            "terminal": false
+          }
+        ],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "terminal malformed runs are low risk",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-term-malformed",
+        "totalTaskRoots": 1,
+        "totalRunDirs": 1,
+        "staleRuns": 0,
+        "malformedRuns": 1,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "evidence-task",
+            "runToken": "run-G7H8I9",
+            "ageMs": 7200000,
+            "status": "malformed",
+            "terminal": true,
+            "runJsonMalformed": true,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "corrupt run.json"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 1, "medium": 0, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 0, "malformed": 1, "orphan": 0 },
+        "entries": [
+          {
+            "riskClass": "low",
+            "trigger": "malformed",
+            "terminal": true
+          }
+        ],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "non-terminal malformed runs are medium risk",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-nt-malformed",
+        "totalTaskRoots": 1,
+        "totalRunDirs": 1,
+        "staleRuns": 0,
+        "malformedRuns": 1,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "readonly-validation",
+            "runToken": "run-J0K1L2",
+            "ageMs": 1800000,
+            "status": "malformed",
+            "terminal": false,
+            "runJsonMalformed": true,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "unparseable run.json content"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 0, "medium": 1, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 0, "malformed": 1, "orphan": 0 },
+        "entries": [
+          {
+            "riskClass": "medium",
+            "trigger": "malformed",
+            "terminal": false
+          }
+        ],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "ok runs are excluded from cleanup candidates",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-ok-excluded",
+        "totalTaskRoots": 2,
+        "totalRunDirs": 2,
+        "staleRuns": 0,
+        "malformedRuns": 1,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "completed-task",
+            "runToken": "run-OK1",
+            "ageMs": 5000,
+            "status": "ok",
+            "terminal": true,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "malformed-task",
+            "runToken": "run-BAD1",
+            "ageMs": 5000000,
+            "status": "malformed",
+            "terminal": true,
+            "runJsonMalformed": true,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "malformed manifest"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 1, "medium": 0, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 0, "malformed": 1, "orphan": 0 },
+        "entries": [
+          {
+            "riskClass": "low",
+            "trigger": "malformed",
+            "terminal": true
+          }
+        ],
+        "safeTaskIds": ["malformed-task"],
+        "excludedSafeTaskIds": ["completed-task"],
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "limit option caps total entries",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-limit",
+        "totalTaskRoots": 5,
+        "totalRunDirs": 5,
+        "staleRuns": 5,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "task-00", "runToken": "run-00", "ageMs": 10000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "task-01", "runToken": "run-01", "ageMs": 10000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "task-02", "runToken": "run-02", "ageMs": 10000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "task-03", "runToken": "run-03", "ageMs": 10000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "task-04", "runToken": "run-04", "ageMs": 10000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          }
+        ]
+      },
+      "options": {
+        "limit": 2
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 2,
+        "entriesLen": 2,
+        "byRiskClass": { "low": 0, "medium": 2, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 2, "malformed": 0, "orphan": 0 },
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "candidateIdPrefix overrides default prefix",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-prefix",
+        "totalTaskRoots": 1,
+        "totalRunDirs": 1,
+        "staleRuns": 1,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "test-task",
+            "runToken": "test-run",
+            "ageMs": 5000000,
+            "status": "stale",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false
+          }
+        ]
+      },
+      "options": {
+        "candidateIdPrefix": "bangtong-safe-prune"
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "candidateIdStartsWith": "bangtong-safe-prune:",
+        "planIdStartsWith": "bangtong-safe-prune-",
+        "byRiskClass": { "low": 0, "medium": 1, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 1, "malformed": 0, "orphan": 0 },
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "mixed residue with all risk classes present",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-mixed",
+        "totalTaskRoots": 4,
+        "totalRunDirs": 4,
+        "staleRuns": 2,
+        "malformedRuns": 1,
+        "orphanTaskRoots": 1,
+        "runs": [
+          {
+            "safeTaskId": "stale-old-run",
+            "runToken": "run-old",
+            "ageMs": 700000000,
+            "status": "stale",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "run exceeded stale threshold by ~8 days"
+          },
+          {
+            "safeTaskId": "stale-fresh-run",
+            "runToken": "run-fresh",
+            "ageMs": 1800000,
+            "status": "stale",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "run exceeded stale threshold by ~30m"
+          },
+          {
+            "safeTaskId": "broken-run",
+            "runToken": "run-broken",
+            "ageMs": 3600000,
+            "status": "malformed",
+            "terminal": true,
+            "runJsonMalformed": true,
+            "manifestMalformed": false,
+            "orphanTaskRoot": false,
+            "reason": "corrupt run.json"
+          },
+          {
+            "safeTaskId": "empty-task-root",
+            "runToken": "<no-runs>",
+            "ageMs": 0,
+            "status": "orphan",
+            "terminal": false,
+            "runJsonMalformed": false,
+            "manifestMalformed": false,
+            "orphanTaskRoot": true,
+            "reason": "task root has no valid run directories"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 4,
+        "entriesLen": 4,
+        "byRiskClass": { "low": 2, "medium": 1, "high": 1, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 2, "malformed": 1, "orphan": 1 },
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "entries sorted deterministically by candidateId",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-sort",
+        "totalTaskRoots": 3,
+        "totalRunDirs": 3,
+        "staleRuns": 3,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "zzz-task", "runToken": "run-zzz", "ageMs": 5000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "aaa-task", "runToken": "run-aaa", "ageMs": 5000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "mmm-task", "runToken": "run-mmm", "ageMs": 5000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 3,
+        "entriesLen": 3,
+        "sortedByCandidateId": true,
+        "firstCandidateSafeTaskId": "aaa-task",
+        "lastCandidateSafeTaskId": "zzz-task",
+        "byRiskClass": { "low": 0, "medium": 3, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 3, "malformed": 0, "orphan": 0 },
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "deterministic output for identical input across two invocations",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-det",
+        "totalTaskRoots": 2,
+        "totalRunDirs": 2,
+        "staleRuns": 1,
+        "malformedRuns": 1,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "det-task-a", "runToken": "run-det-1", "ageMs": 5000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          },
+          {
+            "safeTaskId": "det-task-b", "runToken": "run-det-2", "ageMs": 100000, "status": "malformed", "terminal": false, "runJsonMalformed": true, "manifestMalformed": false, "orphanTaskRoot": false
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 2,
+        "entriesLen": 2,
+        "byRiskClass": { "low": 0, "medium": 2, "high": 0, "blocked": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 1, "malformed": 1, "orphan": 0 },
+        "deterministic": true,
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    },
+    {
+      "name": "pre-execution checklist and rollback notes are present",
+      "readinessReport": {
+        "schemaVersion": "a2a.runner.readiness-report.v1",
+        "generatedAt": "1970-01-01T00:00:00.000Z",
+        "rootLabel": "runner-root:bangtong-checklist",
+        "totalTaskRoots": 1,
+        "totalRunDirs": 1,
+        "staleRuns": 1,
+        "malformedRuns": 0,
+        "orphanTaskRoots": 0,
+        "runs": [
+          {
+            "safeTaskId": "checklist-task", "runToken": "run-checklist", "ageMs": 5000000, "status": "stale", "terminal": false, "runJsonMalformed": false, "manifestMalformed": false, "orphanTaskRoot": false
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
+        "totalCandidates": 1,
+        "entriesLen": 1,
+        "byRiskClass": { "low": 0, "medium": 1, "high": 0, "blocked": 0 },
+        "byTrigger": { "ok": 0, "stale": 1, "malformed": 0, "orphan": 0 },
+        "hasPreExecutionChecklist": true,
+        "hasRollbackNotes": true,
+        "safety": {
+          "mutationPerformed": false,
+          "operatorApprovalRequired": true,
+          "backupRequired": true,
+          "staleWorkerRowsMayBeValid": true,
+          "liveProviderSendPerformed": false,
+          "terminalAckSent": false,
+          "dbMutationPerformed": false
+        }
+      }
+    }
+  ]
+}

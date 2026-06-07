@@ -167,8 +167,188 @@ describe('terminal outbox preflight', () => {
 
     assert.equal(report.ok, false);
     const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
-    assert.match(poll?.detail ?? '', /missing PR\/Done\/Block evidence=1/);
-    assert.match(poll?.detail ?? '', /missing worker=1/);
+    // The sparse row (no createdAt, no receipt, no evidence, no worker, no taskBrief)
+    // is unclassifiable and still blocks preflight as a current-window/unclassifiable candidate.
+    assert.match(poll?.detail ?? '', /current-window\/unclassifiable missing evidence=1/);
+    assert.match(poll?.detail ?? '', /current-window\/unclassifiable missing worker=1/);
+    assert.match(poll?.detail ?? '', /current-window\/unclassifiable missing task brief=1/);
+    assert.equal(poll?.readiness.unclassifiableCount, 1);
+  });
+
+  it('does not block fresh preflight on receipt-confirmed rows missing task brief', async () => {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === '/health') return jsonResponse({ ok: true });
+      return jsonResponse({
+        kind: 'task.terminal.outbox',
+        count: 1,
+        cursor: 'terminal-receipt-confirmed',
+        events: [{
+          id: 'terminal-receipt-confirmed',
+          ack: { status: 'receipt_confirmed', evidence: 'operator_visible', acknowledgedAt: '2026-05-04T00:00:01.000Z' },
+          receipt: { status: 'operator_visible', updatedAt: '2026-05-04T00:00:01.000Z' },
+          payload: {
+            status: 'succeeded',
+            worker: 'bangtong',
+            prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/323',
+          },
+        }],
+      });
+    };
+
+    const report = await runPreflight({ baseUrl: 'http://broker.local', fetchImpl });
+
+    assert.equal(report.ok, true);
+    const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
+    // The row is receipt-confirmed, so it is not a blocker candidate.
+    // currentWindowMissingTaskBriefCount counts only blocker candidates (unacked + current-window).
+    assert.equal(poll?.readiness.currentWindowMissingTaskBriefCount, 0);
+    // receiptConfirmedMissingTaskBriefCount tracks the total receipt-confirmed rows missing taskBrief.
+    assert.equal(poll?.readiness.receiptConfirmedMissingTaskBriefCount, 1);
+    assert.equal(poll?.readiness.currentWindowCount, 1); // classified as current-window
+    assert.equal(poll?.readiness.legacyResidueCount, 0); // not legacy
+    assert.match(poll?.detail ?? '', /receiptConfirmed=1/);
+  });
+
+  it('does not block preflight on legacy-unacked row missing taskBrief (pre-cutoff)', async () => {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === '/health') return jsonResponse({ ok: true });
+      return jsonResponse({
+        kind: 'task.terminal.outbox',
+        count: 1,
+        cursor: 'terminal-legacy-unacked',
+        events: [{
+          id: 'terminal-legacy-unacked',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          receipt: { status: 'accepted', updatedAt: '2026-05-01T00:00:00.000Z' },
+          payload: {
+            status: 'succeeded',
+            worker: 'old-worker',
+            prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/1',
+          },
+        }],
+      });
+    };
+
+    const report = await runPreflight({ baseUrl: 'http://broker.local', fetchImpl });
+
+    assert.equal(report.ok, true);
+    const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
+    // Legacy-unacked row pre-cutoff: classified as legacy-residue, does not block
+    assert.equal(poll?.readiness.legacyResidueCount, 1);
+    assert.equal(poll?.readiness.currentWindowCount, 0);
+    assert.equal(poll?.readiness.currentWindowMissingTaskBriefCount, 0);
+    assert.equal(poll?.readiness.legacyMissingTaskBriefCount, 1); // missing taskBrief is noted but non-blocking
+    assert.match(poll?.detail ?? '', /legacy-residue=1/);
+  });
+
+  it('blocks preflight on current-window unacked row missing taskBrief', async () => {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === '/health') return jsonResponse({ ok: true });
+      return jsonResponse({
+        kind: 'task.terminal.outbox',
+        count: 1,
+        cursor: 'terminal-current-no-brief',
+        events: [{
+          id: 'terminal-current-no-brief',
+          createdAt: '2026-05-06T00:00:00.000Z',
+          receipt: { status: 'accepted', updatedAt: '2026-05-06T00:00:00.000Z' },
+          payload: {
+            status: 'succeeded',
+            worker: 'new-worker',
+            prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/2',
+          },
+        }],
+      });
+    };
+
+    const report = await runPreflight({ baseUrl: 'http://broker.local', fetchImpl });
+
+    assert.equal(report.ok, false);
+    const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
+    assert.match(poll?.detail ?? '', /current-window.*missing task brief=1/);
+    assert.equal(poll?.readiness.currentWindowCount, 1);
+    assert.equal(poll?.readiness.legacyResidueCount, 0);
+    assert.equal(poll?.readiness.currentWindowMissingTaskBriefCount, 1);
+  });
+
+  it('does not block on legacy row with legacy receipt status and no evidence', async () => {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === '/health') return jsonResponse({ ok: true });
+      return jsonResponse({
+        kind: 'task.terminal.outbox',
+        count: 1,
+        cursor: 'terminal-legacy-receipt-status',
+        events: [{
+          id: 'terminal-legacy-receipt-status',
+          createdAt: '2026-05-06T00:00:00.000Z',
+          receipt: { status: 'sent', updatedAt: '2026-05-06T00:00:00.000Z' },
+          payload: {
+            status: 'succeeded',
+            worker: 'old-worker',
+            taskBrief: 'legacy receipt format',
+          },
+        }],
+      });
+    };
+
+    const report = await runPreflight({ baseUrl: 'http://broker.local', fetchImpl });
+
+    assert.equal(report.ok, true);
+    const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
+    // Legacy receipt status (sent) marks it as legacy residue despite post-cutoff createdAt
+    assert.equal(poll?.readiness.legacyResidueCount, 1);
+    assert.equal(poll?.readiness.currentWindowCount, 0);
+  });
+
+  it('blocks on current-window issues even when legacy residue is also present', async () => {
+    const fetchImpl = async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === '/health') return jsonResponse({ ok: true });
+      return jsonResponse({
+        kind: 'task.terminal.outbox',
+        count: 2,
+        cursor: 'terminal-mixed',
+        events: [
+          {
+            id: 'terminal-legacy-part',
+            createdAt: '2026-05-01T00:00:00.000Z',
+            receipt: { status: 'accepted', updatedAt: '2026-05-01T00:00:00.000Z' },
+            payload: {
+              status: 'succeeded',
+              worker: 'old-worker',
+              prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/10',
+            },
+          },
+          {
+            id: 'terminal-current-bad',
+            createdAt: '2026-05-06T00:00:00.000Z',
+            receipt: { status: 'accepted', updatedAt: '2026-05-06T00:00:00.000Z' },
+            payload: {
+              status: 'succeeded',
+              worker: 'new-worker',
+              prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/11',
+              // No taskBrief — blocks on this current-window row
+            },
+          },
+        ],
+      });
+    };
+
+    const report = await runPreflight({ baseUrl: 'http://broker.local', fetchImpl });
+
+    assert.equal(report.ok, false);
+    const poll = report.checks.find((check) => check.check === 'terminal-outbox poll');
+    // Legacy row does not block, current-window missing taskBrief does
+    assert.equal(poll?.readiness.legacyResidueCount, 1);
+    assert.equal(poll?.readiness.currentWindowCount, 1);
+    assert.equal(poll?.readiness.currentWindowMissingTaskBriefCount, 1);
+    // legacyResidueSummary contains the classified legacy entry
+    assert.equal(poll?.readiness.legacyResidueSummary.length, 1);
+    assert.match(poll?.readiness.legacyResidueSummary[0]?.reason ?? '', /legacy residue/);
     assert.match(poll?.detail ?? '', /missing task brief=1/);
   });
 

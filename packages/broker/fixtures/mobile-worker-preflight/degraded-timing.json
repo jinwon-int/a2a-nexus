@@ -1,0 +1,21 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Daegyo-style Termux worker in stale last-seen window without poll-interval failure. Timing is degraded but not disconnected; wake-lock is missing and active lane is planned.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "daegyo",
+    "workerMode": "termux-mobile",
+    "status": "online",
+    "lastSeenAgeSec": 45,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": false,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": true,
+    "isolatedWorkspaceRootShape": "~/.hermes/a2a-workspaces/<homeBrokerId>/<taskId>"
+  }
+}

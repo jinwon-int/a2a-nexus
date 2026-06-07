@@ -22,6 +22,16 @@ npm run terminal_brief_activation_report -- --markdown \
   --code-merged-evidence=https://github.com/jinwon-int/a2a-broker/issues/392#code-merged
 ```
 
+Optional R9 context flags (metadata only; they do not perform live actions):
+
+- `--issue=#570`
+- `--parent=#567`
+- `--run=<parent-round-id>` / `--parent-round-id=<parent-round-id>`
+- `--parent-broker=seoseo`
+- `--handoff-broker=gwakga`
+- `--worker=dungae`
+- `--known-total=7`
+
 Optional evidence flags:
 
 - `--code-merged-evidence=<http-url>`
@@ -51,6 +61,23 @@ Expected gate semantics:
 | Final no-live restoration | Operator bridge/provider delivery was disabled again and no-live status was confirmed after the proof. | Earlier gates unless their own evidence is present. |
 
 The report returns `Block` until all seven gates have bounded HTTP evidence and no separation warnings are present. It is still a successful no-live validation artifact when it blocks activation because evidence is missing.
+
+## R9 parent-round projection parity addendum
+
+For Seoseo-owned parent rounds receiving Gwakga handoff child Terminal Briefs, no-live activation evidence must prove:
+
+- projected records preserve `brokerOfRecordId=seoseo`, `originBrokerId=gwakga`, the child worker id, and the parent-round total;
+- parent-broker outbox records render compact titles as `A2A Terminal Brief 완료: <worker>(n/7)` only when both numerator and denominator are known;
+- notification ownership stays parent-only: the broker exposes replayable outbox/evidence records but does not send providers or ACK terminal rows;
+- activation remains blocked until the no-live report links bounded PR/Done/Block evidence and excludes OpenClaw runtime/bootstrap context paths.
+
+
+The generated packet now includes:
+
+- a GO/NO-GO decision that remains `NO-GO` until all seven bounded HTTP evidence gates pass;
+- Seoseo/Gwakga projection parity metadata (`parentRoundId`, parent/finalizer broker, handoff broker, worker, known total, compact title target);
+- receipt/ACK boundary proof that provider accepted/message-id evidence is not terminal ACK evidence;
+- an approval-gated activation and rollback plan that forbids deploy/restart/reload, live sends, terminal ACK/replay, DB mutation, secret/visibility changes, and release/tag actions without fresh explicit operator approval.
 
 Validation:
 

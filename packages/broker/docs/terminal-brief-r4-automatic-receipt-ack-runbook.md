@@ -47,7 +47,7 @@ Keep these states separate in every report, PR, and issue comment:
    - The manual receipt must identify the exact proof task/outbox item and should be recorded as bounded evidence only, not raw logs or session dumps.
 
 5. **Automatic receipt contract**
-   - Automatic ACK may be enabled only when the notification path returns manual operator receipt (`operator_visible`) or an equivalent explicit ACK-safe signal for the exact terminal outbox id.
+   - Automatic ACK may be enabled only when the notification path returns current-session-visible receipt (`operator_visible`) or an equivalent ACK-safe signal for the exact terminal outbox id.
    - The contract must make provider send success non-ACKable by construction; `provider_accepted`, `provider_sent`, and generic send success remain pending/manual.
 
 6. **Enablement and restoration**
@@ -73,7 +73,7 @@ The 00:58 supplemental requirement in [#398](https://github.com/jinwon-int/a2a-b
 | --- | --- | --- |
 | Child lanes | PR/Done/Block evidence exists for all R4 lanes and required code changes are merged/deployed to the proof candidate. | Any required lane is Start-only or has unresolved Block evidence. |
 | Backlog safety | Read-only checks show no unsafely replayable historical backlog, or an exact allowlist is documented. | Current gaps could be replayed or ACKed accidentally. |
-| Receipt contract | Tests/proof show `provider_accepted` is pending/manual and current-session-visible receipt is ACK-safe. | Provider send success or message id must not be converted to ACK evidence. |
+| Receipt contract | Tests/proof show `provider_accepted` is pending/manual and current-session-visible receipt is ACK-safe. | Provider send success can be converted to ACK evidence. |
 | Fuse | One-shot fuse prevents repeat sends until receipt/ACK handling closes the row. | A missing receipt can trigger duplicate Telegram/operator messages. |
 | Post-dispatch verifier | All late comments after PR open time are reviewed, generic-handler false success is ruled out, PR diff coverage is complete, CI/mergeability is acceptable, and no live ACK/deploy assumptions are made. | Any supplemental requirement, false-success symptom, diff gap, CI/mergeability blocker, or unapproved live action remains unresolved. |
 | Operator approval | The operator explicitly approves any live send, Gateway restart/reload, production mutation, worker rollout, and terminal ACK action. | Approval is absent, ambiguous, or bundled with unrelated actions. |

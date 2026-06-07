@@ -60,6 +60,33 @@ The local card names four plugin skills:
 These skills intentionally describe the plugin boundary, not the broker control
 plane or Docker runner internals.
 
+## Companion worker example: TweetClaw
+
+Do not add product-specific capabilities to the repository's local fixture
+unless this plugin owns them. A production card for a worker node can advertise
+capabilities supplied by installed companion OpenClaw plugins. For example, a
+node with TweetClaw installed can expose an `x-twitter.automation` skill:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+```
+
+Example public-safe skill fragment:
+
+```json
+{
+  "id": "x-twitter.automation",
+  "name": "X/Twitter automation",
+  "description": "Use TweetClaw for tweet search, reply search, follower export, user lookup, posting and replies, media upload/download, direct messages, monitors, webhooks, and giveaway draws. Visible actions require OpenClaw approval."
+}
+```
+
+Keep the A2A plugin's own card focused on task delegation, status, cancellation,
+and GitHub evidence projection. Put TweetClaw credentials only in TweetClaw
+config or environment variables on the worker node, never in the agent card,
+broker payloads, or fixture.
+
 ## Local fixture endpoint shape
 
 The fixture uses loopback example URLs:

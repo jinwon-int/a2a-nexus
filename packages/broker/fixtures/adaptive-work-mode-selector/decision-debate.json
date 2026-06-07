@@ -1,0 +1,21 @@
+{
+  "task": {
+    "taskId": "decision-debate",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1321,
+    "title": "Explicit architecture decision debate",
+    "taskClass": "decision_debate"
+  },
+  "signals": {
+    "expectedOutputSize": "medium",
+    "estimatedDuration": "moderate",
+    "riskLevel": "medium",
+    "needsEvidence": true,
+    "needsValidation": true,
+    "needsDurableState": true,
+    "needsOpposition": true,
+    "explicitDebate": true,
+    "roleSeparable": true
+  },
+  "finalizerOwner": "seoseo"
+}

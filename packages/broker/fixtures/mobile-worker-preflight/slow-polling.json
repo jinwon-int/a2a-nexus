@@ -1,0 +1,21 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Mobile worker is alive enough to inspect, but poll interval cannot satisfy broker stale threshold.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "daegyo",
+    "workerMode": "termux-mobile",
+    "status": "stale",
+    "lastSeenAgeSec": 50,
+    "pollIntervalSec": 300,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": false,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": true,
+    "isolatedWorkspaceRootShape": "~/.hermes/a2a-workspaces/<homeBrokerId>/<taskId>"
+  }
+}

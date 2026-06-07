@@ -1,17 +1,51 @@
 import type { NormalizedRunnerTask, RunnerRepo, RunnerTask } from "./types.js";
 
 const GITHUB_REPO_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const FAMILY_WIKI_READONLY_AUDIT_MODE = "family-wiki-readonly-audit";
+const FAMILY_WIKI_REPO_SLUG = "jinwon-int/seoyoon-family-wiki";
 
 export function normalizeTask(task: RunnerTask): NormalizedRunnerTask {
   const repos = normalizeRepos(task);
   const primaryRepo = repos.find((repo) => repo.primary) ?? repos[0];
-  const commands = task.commands?.length ? task.commands : defaultCommands(task, primaryRepo);
+  const familyWikiReadonlyAudit = task.mode === FAMILY_WIKI_READONLY_AUDIT_MODE;
+  const readOnlyValidation = task.readOnlyValidation === true || familyWikiReadonlyAudit;
+  const allowNoChanges = task.allowNoChanges === true || readOnlyValidation;
+  const env = normalizeTaskEnv({ ...task, readOnlyValidation }, allowNoChanges);
+  const normalizedTask = {
+    ...task,
+    ...(familyWikiReadonlyAudit ? { commentOnly: false, forbidNewPr: true } : {}),
+    ...(readOnlyValidation ? { readOnlyValidation: true } : {}),
+    allowNoChanges,
+    ...(env ? { env } : {}),
+  };
+  const commands = task.commands?.length ? task.commands : defaultCommands(normalizedTask, primaryRepo);
 
   return {
-    ...task,
+    ...normalizedTask,
     repos,
     commands,
   };
+}
+
+function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean): Record<string, string> | undefined {
+  const env = { ...(task.env ?? {}) };
+  const model = normalizeWorkerOverride(task.workerModel, "workerModel");
+  const thinking = normalizeWorkerOverride(task.workerThinking, "workerThinking");
+  if (model) env.A2A_OPENCLAW_MODEL = model;
+  if (thinking) env.A2A_OPENCLAW_THINKING = thinking;
+  if (allowNoChanges) env.A2A_RUNNER_ALLOW_NO_CHANGES = "1";
+  if (task.readOnlyValidation === true) env.A2A_RUNNER_READ_ONLY_VALIDATION = "1";
+  return Object.keys(env).length > 0 ? env : undefined;
+}
+
+function normalizeWorkerOverride(value: string | undefined, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`task.${field} must be a string`);
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/[\0\r\n]/.test(trimmed)) throw new Error(`task.${field} must be a single-line value`);
+  if (trimmed.length > 160) throw new Error(`task.${field} is too long`);
+  return trimmed;
 }
 
 export function normalizeRepoUrl(url: string): string {
@@ -57,8 +91,19 @@ function normalizeRepos(task: RunnerTask): RunnerRepo[] {
   }));
 }
 
+const GITHUB_RUNNER_EVIDENCE_MODES = new Set([
+  "github-propose-patch",
+  "propose_patch",
+  "github-verify",
+  "github-read-only-validation",
+  "read-only-validation",
+  "github-libero-validation",
+  "libero-validation",
+  FAMILY_WIKI_READONLY_AUDIT_MODE,
+]);
+
 export function isPatchMode(mode?: string): boolean {
-  return mode === "github-propose-patch" || mode === "propose_patch";
+  return mode ? GITHUB_RUNNER_EVIDENCE_MODES.has(mode) : false;
 }
 
 function defaultCommands(task: RunnerTask, primaryRepo?: RunnerRepo): string[] {
@@ -82,7 +127,7 @@ function defaultCommands(task: RunnerTask, primaryRepo?: RunnerRepo): string[] {
   }
 
   if (primaryRepo) {
-    return [`cd /work/${primaryRepo.path} && npm ci`, `cd /work/${primaryRepo.path} && npm test`];
+    return [buildToolchainDetectedCommandsForRepo(primaryRepo.path ?? "repo")];
   }
 
   return [];
@@ -111,6 +156,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
   const issueCommentTarget = task.issueUrl ? shellSingleQuote(task.issueUrl) : "";
   const issueClosingRef = buildIssueClosingRef(task, primaryRepo);
   const prBody = buildPrBody(task, safeTitle, issueClosingRef);
+  const bootstrapAllowedTrackedRepoEntries = buildBootstrapAllowedTrackedRepoEntries(task, primaryRepo);
 
   // Step 1: materialise prompt + task metadata as artifacts.
   const writePrompt = [
@@ -160,8 +206,122 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     `  printf 'error=start_comment_failed\\n' | tee -a /work/artifacts/summary.txt`,
     `  exit 2`,
     `fi`,
+    `START_COMMENT_URL="$(grep -Eo 'https://github.com/[^[:space:]]+/issues/[0-9]+#issuecomment-[0-9]+' /work/artifacts/issue-start-comment-output.txt | tail -n 1 || true)"`,
+    `if [ -n "$START_COMMENT_URL" ]; then`,
+    `  printf 'start_comment_url=%s\\n' "$START_COMMENT_URL" | tee -a /work/artifacts/summary.txt`,
+    `fi`,
     `printf 'start_comment=posted\\n' | tee -a /work/artifacts/summary.txt`,
   ].join("\n") : "";
+
+  const readOnlyValidationGuardBlock = task.readOnlyValidation ? [
+    `# Read-only validation/libero lanes may inspect and test, but must not`,
+    `# produce repository changes or create patch-lane PR evidence.`,
+    `READONLY_CHANGED_PATHS="$( {`,
+    `  git status --porcelain | sed -E 's/^...//'`,
+    `  git diff --name-only "origin/${baseBranch}...HEAD"`,
+    `} | sed '/^$/d' | sort -u )"`,
+    `if [ -n "$READONLY_CHANGED_PATHS" ]; then`,
+    `  printf 'error=read_only_validation_changed_repo\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'read_only_validation=blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'Read-only validation task produced repository changes; refusing to create a PR.\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf 'Files detected (repo-relative):\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$READONLY_CHANGED_PATHS" | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$READONLY_CHANGED_PATHS" | sed '/^$/d; s#^#read_only_change=#' >> /work/artifacts/summary.txt`,
+    `  exit 4`,
+    `fi`,
+    `printf 'read_only_validation=passed\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n") : "";
+
+  const prePrBootstrapGuardBlock = [
+    `# Re-run the bootstrap guard immediately before git add/commit/push.`,
+    `# The container-level post-guard is too late for PR safety because the`,
+    `# default pipeline creates the branch before returning to run.sh.`,
+    `: "\${BOOTSTRAP_BANNED:=AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md}"`,
+    `: "\${BOOTSTRAP_BANNED_DIRS:=.openclaw memory}"`,
+    `BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES=${shellSingleQuote(bootstrapAllowedTrackedRepoEntries.join(" "))}`,
+    `if ! command -v is_allowed_tracked_bootstrap_path >/dev/null 2>&1; then`,
+    `  is_allowed_tracked_bootstrap_path() {`,
+    `    repo_dir="$1"`,
+    `    path="$2"`,
+    `    for allowed in $BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES; do`,
+    `      allowed_repo="\${allowed%%:*}"`,
+    `      allowed_path="\${allowed#*:}"`,
+    `      [ "$repo_dir" = "$allowed_repo" ] || continue`,
+    `      [ "$path" = "$allowed_path" ] || continue`,
+    `      if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] && [ -z "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then`,
+    `        return 0`,
+    `      fi`,
+    `    done`,
+    `    return 1`,
+    `  }`,
+    `fi`,
+    `if ! command -v find_bootstrap_leaks >/dev/null 2>&1; then`,
+    `  find_bootstrap_leaks() {`,
+    `    repo_dir="$1"`,
+    `    (`,
+    `      cd "$repo_dir"`,
+    `      for name in $BOOTSTRAP_BANNED; do`,
+    `        if [ -e "$name" ]; then printf '%s\\n' "$name"; fi`,
+    `      done`,
+    `      for name in $BOOTSTRAP_BANNED_DIRS; do`,
+    `        if [ -d "$name" ]; then`,
+    `          found=0`,
+    `          while IFS= read -r path; do`,
+    `            found=1`,
+    `            printf '%s\\n' "\${path#./}"`,
+    `          done < <(find "$name" -mindepth 1 -print | sort)`,
+    `          if [ "$found" -eq 0 ]; then printf '%s\\n' "$name"; fi`,
+    `        fi`,
+    `      done`,
+    `    )`,
+    `  }`,
+    `fi`,
+    `if ! command -v filter_branch_bootstrap_leaks >/dev/null 2>&1; then`,
+    `  filter_branch_bootstrap_leaks() {`,
+    `    repo_dir="$1"`,
+    `    if ! git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
+    `      cat`,
+    `      return`,
+    `    fi`,
+    `    while IFS= read -r path; do`,
+    `      [ -n "$path" ] || continue`,
+    `      if is_allowed_tracked_bootstrap_path "$repo_dir" "$path"; then`,
+    `        continue`,
+    `      fi`,
+    `      if [ -n "$(git -C "$repo_dir" ls-files -- "$path")" ] || [ -n "$(git -C "$repo_dir" status --porcelain -- "$path")" ]; then`,
+    `        printf '%s\\n' "$path"`,
+    `      fi`,
+    `    done`,
+    `  }`,
+    `fi`,
+    `BOOTSTRAP_LEAKS_BEFORE_PR="$(find_bootstrap_leaks "." | filter_branch_bootstrap_leaks "." || true)"`,
+    `ARTIFACT_BOOTSTRAP_LEAKS_BEFORE_PR="$(`,
+    `  cd /work/artifacts`,
+    `  for name in $BOOTSTRAP_BANNED; do`,
+    `    if [ -e "$name" ]; then printf 'artifacts/%s\\n' "$name"; fi`,
+    `  done`,
+    `  for name in $BOOTSTRAP_BANNED_DIRS; do`,
+    `    if [ -d "$name" ]; then`,
+    `      found=0`,
+    `      while IFS= read -r path; do`,
+    `        found=1`,
+    `        printf 'artifacts/%s\\n' "\${path#./}"`,
+    `      done < <(find "$name" -mindepth 1 -print | sort)`,
+    `      if [ "$found" -eq 0 ]; then printf 'artifacts/%s\\n' "$name"; fi`,
+    `    fi`,
+    `  done`,
+    `)"`,
+    `BOOTSTRAP_BLOCK_PATHS="$(printf '%s\\n%s\\n' "$BOOTSTRAP_LEAKS_BEFORE_PR" "$ARTIFACT_BOOTSTRAP_LEAKS_BEFORE_PR" | sed '/^$/d')"`,
+    `if [ -n "$BOOTSTRAP_BLOCK_PATHS" ]; then`,
+    `  printf 'error=pre_pr_bootstrap_guard_blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'PR blocked: OpenClaw bootstrap context files appeared before PR creation or artifact evidence capture.\\n' | tee /work/artifacts/patch-command.log`,
+    `  printf 'Parent: a2a-broker#446\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf 'Files detected (repo-relative or artifact-relative):\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$BOOTSTRAP_BLOCK_PATHS" | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$BOOTSTRAP_BLOCK_PATHS" | sed '/^$/d; s#^#bootstrap_leak=#' >> /work/artifacts/summary.txt`,
+    `  exit 4`,
+    `fi`,
+  ].join("\n");
 
   const issueCommentBlock = task.issueUrl ? [
     `  cat > /work/artifacts/issue-comment.md <<A2A_ISSUE_COMMENT_EOF`,
@@ -185,16 +345,37 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     ``,
     patchCommandBlock,
     ``,
-    `# Commit and create PR if changes exist.`,
-    `if [ -n "$(git status --porcelain)" ]; then`,
+    `# A coding agent must not manage git branches itself, but some do.`,
+    `# Normalize back to the runner-owned branch before commit/push so we`,
+    `# never push the pre-agent empty branch and then fail with`,
+    `# "No commits between main and <branch>".`,
+    `CURRENT_BRANCH="$(git branch --show-current || true)"`,
+    `if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "$BRANCH" ]; then`,
+    `  printf 'notice=agent_changed_branch from=%s to=%s\n' "$CURRENT_BRANCH" "$BRANCH" | tee -a /work/artifacts/summary.txt`,
+    `  if git diff --quiet && git diff --cached --quiet; then`,
+    `    git branch -f "$BRANCH" HEAD`,
+    `    git checkout "$BRANCH"`,
+    `  else`,
+    `    git checkout "$BRANCH"`,
+    `  fi`,
+    `fi`,
+    readOnlyValidationGuardBlock,
+    prePrBootstrapGuardBlock,
+    `EXISTING_PR_URL="$(grep -RhoE 'https://github.com/[^[:space:]]+/pull/[0-9]+' /work/artifacts 2>/dev/null | tail -n 1 || true)"`,
+    `# Commit and create PR if changes exist or the agent already committed.`,
+    `if [ -n "$(git status --porcelain)" ] || ! git diff --quiet "origin/${baseBranch}...HEAD"; then`,
     ...(task.forbidNewPr ? [
       `  printf 'error=new_pr_forbidden\\n' | tee -a /work/artifacts/summary.txt`,
       `  printf 'Task forbids creating a new PR; use an existing PR refresh path or comment-only closeout.\\n' | tee /work/artifacts/pr-output.txt`,
       `  exit 2`,
     ] : [
-      `  git add -A`,
-      `  git commit -m "Auto-patch: ${safeTitle}"`,
-      `  git push origin "$BRANCH"`,
+      `  if [ -n "$(git status --porcelain)" ]; then`,
+      `    git add -A`,
+      `    git commit -m "Auto-patch: ${safeTitle}"`,
+      `  else`,
+      `    printf 'notice=agent_already_committed_changes\n' | tee -a /work/artifacts/summary.txt`,
+      `  fi`,
+      `  git push origin HEAD:"$BRANCH"`,
       `  cat > /work/artifacts/pr-body.md <<'A2A_PR_BODY_EOF'`,
       prBody,
       `A2A_PR_BODY_EOF`,
@@ -204,6 +385,10 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
       `    2>&1 | tee /work/artifacts/pr-output.txt || true`,
     ]),
     `  PR_URL="$(grep -Eo 'https://github.com/[^[:space:]]+/pull/[0-9]+' /work/artifacts/pr-output.txt | tail -n 1 || true)"`,
+    `  if [ -z "$PR_URL" ] && [ -n "$EXISTING_PR_URL" ]; then`,
+    `    PR_URL="$EXISTING_PR_URL"`,
+    `    printf 'notice=using_existing_pr_url_from_artifacts\n' | tee -a /work/artifacts/summary.txt`,
+    `  fi`,
     `  if [ -z "$PR_URL" ]; then`,
     `    printf 'error=pr_create_failed_or_missing_url\\n' | tee -a /work/artifacts/summary.txt`,
     `    exit 2`,
@@ -218,8 +403,15 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     `  fi`,
     issueCommentBlock,
     `else`,
-    `  printf 'error=no_changes_after_patch_command\\n' | tee -a /work/artifacts/summary.txt`,
-    `  exit 2`,
+    ...(task.allowNoChanges
+      ? [
+        `  printf 'status=no_changes_allowed\\n' | tee -a /work/artifacts/summary.txt`,
+        `  printf 'notice=no_code_changes_produced_evidence_only_lane\\n' | tee -a /work/artifacts/summary.txt`,
+      ]
+      : [
+        `  printf 'error=no_changes_after_patch_command\\n' | tee -a /work/artifacts/summary.txt`,
+        `  exit 2`,
+      ]),
     `fi`,
   ].join("\n");
 
@@ -230,6 +422,10 @@ function buildPrBody(task: RunnerTask, safeTitle: string, issueClosingRef?: stri
   const lines = [
     `Auto-generated patch for task \`${safeTitle}\`.`,
     ...(task.issueUrl ? [`Issue: ${singleLine(task.issueUrl)}`] : []),
+    ...(task.parentRoundId ? [`Parent round ID: \`${singleLine(task.parentRoundId)}\``] : []),
+    ...(task.parentRoundTotal && task.parentRoundOrder ? [`Round progress: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+    ...(task.brokerOfRecordId ? [`Broker of record: \`${singleLine(task.brokerOfRecordId)}\``] : []),
+    ...(task.policyContext?.policyScope ? [`Policy scope: ${singleLine(task.policyContext.policyScope)}`] : []),
     ...(task.requestedBy ? [`Requested by: ${singleLine(task.requestedBy)}`] : []),
     ...(issueClosingRef ? ["", `Closes ${issueClosingRef}`] : []),
     "",
@@ -267,6 +463,133 @@ function parseGitHubRepoSlug(repoUrl: string): string | undefined {
   const normalized = normalizeRepoUrl(repoUrl);
   const match = normalized.match(/^https?:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[/?#].*)?$/);
   return match?.[1];
+}
+
+function buildBootstrapAllowedTrackedRepoEntries(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
+  if (task.mode !== FAMILY_WIKI_READONLY_AUDIT_MODE) return [];
+  if (parseGitHubRepoSlug(primaryRepo.url) !== FAMILY_WIKI_REPO_SLUG) return [];
+  return [".:AGENTS.md"];
+}
+
+/**
+ * Build toolchain-aware default commands for a repository path.
+ *
+ * Detects the project language and runs appropriate install/test commands.
+ * Supports Node.js (package.json), Python (pyproject.toml, requirements.txt,
+ * setup.py, setup.cfg), Go (go.mod), and Java (pom.xml, build.gradle,
+ * build.gradle.kts).  Fails closed with a deterministic Block evidence marker
+ * when the toolchain cannot be determined or the required runtime is
+ * unavailable in the container.
+ *
+ * Parent: a2a-docker-runner#339
+ * Parent: a2a-docker-runner#343
+ */
+export function buildToolchainDetectedCommandsForRepo(repoPath: string): string {
+  const here = `/work/${repoPath}`;
+  const lines = [
+    `cd ${here}`,
+    `# ── Auto-detect toolchain ───────────────────────────────────`,
+    `# Check Node.js first (most common for this runner).`,
+    `if [ -f package.json ]; then`,
+    `  printf 'toolchain=nodejs\\n' | tee -a /work/artifacts/summary.txt`,
+    `  npm ci 2>&1 || exit 1`,
+    `  npm test 2>&1 || exit 1`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# ── Python projects ─────────────────────────────────────────`,
+    `# Accept python or python3; prefer python3.`,
+    `PYTHON=""`,
+    `if command -v python3 >/dev/null 2>&1; then`,
+    `  PYTHON="python3"`,
+    `elif command -v python >/dev/null 2>&1; then`,
+    `  PYTHON="python"`,
+    `fi`,
+    ``,
+    `# Detect Python project markers.`,
+    `if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ] || [ -f setup.cfg ]; then`,
+    `  if [ -z "$PYTHON" ]; then`,
+    `    printf 'error=python_unavailable\\n' | tee -a /work/artifacts/summary.txt`,
+    `    printf 'Python project detected but neither python3 nor python is available in the container.\\n' >&2`,
+    `    exit 1`,
+    `  fi`,
+    `  printf 'toolchain=python\\n' | tee -a /work/artifacts/summary.txt`,
+    ``,
+    `  # Install dependencies.`,
+    `  if [ -f requirements.txt ]; then`,
+    `    "$PYTHON" -m pip install -r requirements.txt 2>&1 || exit 1`,
+    `  elif [ -f setup.py ] || [ -f setup.cfg ]; then`,
+    `    "$PYTHON" -m pip install -e . 2>&1 || exit 1`,
+    `  elif [ -f pyproject.toml ]; then`,
+    `    "$PYTHON" -m pip install -e . 2>&1 || exit 1`,
+    `  fi`,
+    ``,
+    `  # Run tests.  Prefer pytest when installed; otherwise use unittest for conventional test files.`,
+    `  if "$PYTHON" -c 'import pytest' >/dev/null 2>&1; then`,
+    `    printf 'test_runner=pytest\\n' | tee -a /work/artifacts/summary.txt`,
+    `    "$PYTHON" -m pytest 2>&1 || exit 1`,
+    `  else`,
+    `    TEST_FILE="$(find . -path './.git' -prune -o -type f \\( -name 'test_*.py' -o -name '*_test.py' \\) -print -quit)"`,
+    `    if [ -n "$TEST_FILE" ]; then`,
+    `      printf 'test_runner=unittest\\n' | tee -a /work/artifacts/summary.txt`,
+    `      "$PYTHON" -m unittest discover 2>&1 || exit 1`,
+    `    else`,
+    `      printf 'warning=no_test_runner_found\\n' | tee -a /work/artifacts/summary.txt`,
+    `    fi`,
+    `  fi`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# ── Go projects ──────────────────────────────────────────────`,
+    `if [ -f go.mod ]; then`,
+    `  if ! command -v go >/dev/null 2>&1; then`,
+    `    printf 'error=go_unavailable\\n' | tee -a /work/artifacts/summary.txt`,
+    `    printf 'Go project detected (go.mod) but go is not available in the container.\\n' >&2`,
+    `    exit 1`,
+    `  fi`,
+    `  printf 'toolchain=go\\n' | tee -a /work/artifacts/summary.txt`,
+    `  go test ./... 2>&1 || exit 1`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# ── Java projects ────────────────────────────────────────────`,
+    `# Maven (pom.xml)`,
+    `if [ -f pom.xml ]; then`,
+    `  if ! command -v mvn >/dev/null 2>&1; then`,
+    `    printf 'error=maven_unavailable\\n' | tee -a /work/artifacts/summary.txt`,
+    `    printf 'Java/Maven project detected (pom.xml) but mvn is not available in the container.\\n' >&2`,
+    `    exit 1`,
+    `  fi`,
+    `  printf 'toolchain=java_maven\\n' | tee -a /work/artifacts/summary.txt`,
+    `  mvn test -B 2>&1 || exit 1`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# Gradle (build.gradle / build.gradle.kts)`,
+    `if [ -f build.gradle ] || [ -f build.gradle.kts ]; then`,
+    `  if [ -f gradlew ]; then`,
+    `    GRADLE="./gradlew"`,
+    `  elif command -v gradle >/dev/null 2>&1; then`,
+    `    GRADLE="gradle"`,
+    `  else`,
+    `    printf 'error=gradle_unavailable\\n' | tee -a /work/artifacts/summary.txt`,
+    `    printf 'Java/Gradle project detected but neither gradlew nor gradle is available in the container.\\n' >&2`,
+    `    exit 1`,
+    `  fi`,
+    `  printf 'toolchain=java_gradle\\n' | tee -a /work/artifacts/summary.txt`,
+    `  "$GRADLE" test 2>&1 || exit 1`,
+    `  exit 0`,
+    `fi`,
+    ``,
+    `# ── Unsupported toolchain ────────────────────────────────────`,
+    `printf 'error=toolchain_unsupported\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'ERROR: Unsupported repository toolchain.\\n' >&2`,
+    `printf 'No Node.js (package.json), Python (pyproject.toml, requirements.txt, setup.py, setup.cfg), Go (go.mod), or Java (pom.xml, build.gradle, build.gradle.kts) project files found.\\n' >&2`,
+    `printf 'Block evidence: a2a-docker-runner#343\\n' >&2`,
+    `printf 'To fix: add the missing project file, or specify explicit commands in the task configuration.\\n' >&2`,
+    `exit 1`,
+  ];
+  return lines.join("\n");
 }
 
 function singleLine(value: string): string {

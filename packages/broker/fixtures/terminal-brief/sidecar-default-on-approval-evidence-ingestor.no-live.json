@@ -1,0 +1,124 @@
+{
+  "defaultOnApprovalRequestPacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-default-on-approval-request.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T03:15:00.000Z",
+    "mode": "terminal-brief-default-on-approval-request-source-only",
+    "state": "approval_request_draft_ready",
+    "dryRunOnly": false,
+    "sourceOnlyNoLive": true,
+    "idempotencyKey": "tb-sidecar-default-on-approval-request:fixture-772",
+    "source": {
+      "finalGateState": "ready_for_default_on_candidate_review",
+      "finalGateIdempotencyKey": "tb-sidecar-default-on-final-gate:fixture-769",
+      "finalGateReady": true,
+      "gateReference": "default-on-gate-769",
+      "observationState": "bounded_observation_complete",
+      "operatorInstructionReference": "a2a-broker#772"
+    },
+    "approvalRequestDraft": {
+      "draftOnly": true,
+      "status": "draft_not_sent",
+      "requestedAction": "approve_terminal_brief_default_on_enablement",
+      "requestedBy": "seoseo",
+      "operatorTarget": "terminal-brief-default-on",
+      "operatorChannel": "telegram",
+      "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
+      "approvalExpiresAt": "2026-05-19T03:35:00.000Z",
+      "dispatchRequired": true,
+      "dispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "executionPermitted": false,
+      "transcriptDraft": "Terminal Brief default-on approval request.",
+      "requiredReply": "default-on 승인"
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "approvalRequestDraftReady": true,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "executionPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "missingEvidence": [],
+      "blockers": [
+        "approval request draft is not a provider send or approval grant",
+        "default-on, live send, terminal ACK, and DB mutation require later separate approved paths"
+      ],
+      "nextAction": "send this draft only after operator chooses a delivery path, then ingest explicit default-on approval evidence"
+    },
+    "blockers": [],
+    "nextActions": [],
+    "approvalSensitiveActionsExcluded": [],
+    "integrationContract": {
+      "transport": "json",
+      "defaultOnApprovalRequestVersion": 1,
+      "consumesDefaultOnCandidateFinalGatePacket": true,
+      "rendersApprovalRequestDraft": true,
+      "sendsApprovalRequest": false,
+      "grantsApproval": false,
+      "enablesDefaultOn": false,
+      "sendsProvider": false,
+      "performsTerminalAck": false,
+      "mutatesDb": false,
+      "spawnsProcess": false,
+      "restartsSidecar": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "approvalRequestDraftOnly": true,
+      "sourceOnlyNoLive": true,
+      "requestDoesNotGrantApproval": true,
+      "requestDoesNotEnableDefaultOn": true,
+      "requestDoesNotSendProviders": true,
+      "requestDoesNotAckTerminalRows": true,
+      "requestDoesNotMutateDb": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "terminalAckEligibleDoesNotPermitAck": true,
+      "defaultOnNotEnabledByThisPacket": true,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "evidence": [
+    {
+      "kind": "provider_accepted",
+      "observedAt": "2026-05-19T03:15:00.000Z",
+      "providerMessageId": "provider-772",
+      "target": "terminal-brief-default-on"
+    },
+    {
+      "kind": "current_session_visible",
+      "observedAt": "2026-05-19T03:15:00.000Z",
+      "receiptId": "visible-772",
+      "target": "terminal-brief-default-on"
+    },
+    {
+      "kind": "approval_grant",
+      "observedAt": "2026-05-19T03:15:00.000Z",
+      "approvedAction": "approve_terminal_brief_default_on_enablement",
+      "approvedTarget": "terminal-brief-default-on",
+      "operatorId": "operator-a"
+    }
+  ],
+  "defaultOnApprovalEvidenceIngestor": {
+    "now": "2026-05-19T03:15:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "maxAgeMs": 300000
+  }
+}

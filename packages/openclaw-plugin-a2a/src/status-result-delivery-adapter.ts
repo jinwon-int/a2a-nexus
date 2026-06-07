@@ -47,6 +47,18 @@ export type DeliveryFailureCode =
   | "deadline_exceeded"
   | "node_unreachable";
 
+/**
+ * Failure category separating retryable infrastructure failures from
+ * non-retryable source/application failures.
+ *
+ * - `infra`: temporary infrastructure issue (network, node, timeout, internal
+ *   error) — retrying the delivery may succeed.
+ * - `source`: permanent source/application issue (invalid payload, rejected by
+ *   broker, session gone) — retrying will not help; the task/app needs fixing.
+ * - `unknown`: cannot determine the category.
+ */
+export type DeliveryFailureCategory = "infra" | "source" | "unknown";
+
 /** Normalized status envelope from OpenClaw handoff surface. */
 export interface SessionStatusEnvelope {
   /** Delivery ID (from PayloadDeliveryAdapter). */
@@ -103,6 +115,11 @@ export interface BrokerDeliveryEvent {
   status: BrokerDeliveryStatus;
   /** Failure code (only when status is failed/timeout/stale). */
   failureCode?: DeliveryFailureCode;
+  /**
+   * Failure category distinguishing retryable infra failures from
+   * permanent source failures. Only present when failureCode is set.
+   */
+  failureCategory?: DeliveryFailureCategory;
   /** Human-readable status message. */
   message: string;
   /** ISO-8601 timestamp. */
@@ -125,6 +142,11 @@ export interface StatusDeliveryAuditEntry {
   fromStatus: BrokerDeliveryStatus | null;
   toStatus: BrokerDeliveryStatus;
   failureCode?: DeliveryFailureCode;
+  /**
+   * Failure category distinguishing retryable infra failures from
+   * permanent source failures. Only present when failureCode is set.
+   */
+  failureCategory?: DeliveryFailureCategory;
   timestamp: string;
   summary: string;
 }
@@ -231,6 +253,44 @@ function inferFailureCode(
   if (status === "timeout") return "deadline_exceeded";
   if (status === "stale") return "session_expired";
   return undefined;
+}
+
+/**
+ * Classify a failure code as retryable infrastructure failure (`infra`),
+ * permanent source/application failure (`source`), or `unknown`.
+ *
+ * Infrastructure failures are transient (network, node down, timeout,
+ * internal transient error) and retrying the delivery may succeed.
+ * Source failures are permanent (invalid payload, rejected by broker,
+ * session gone) and retrying will not help.
+ */
+function inferFailureCategory(
+  code: DeliveryFailureCode | undefined,
+): DeliveryFailureCategory | undefined {
+  if (!code) return undefined;
+
+  // Retryable infrastructure failures — transient conditions that may
+  // resolve on retry (network, node, timeout, internal server error).
+  const INFRA_CODES: ReadonlySet<DeliveryFailureCode> = new Set([
+    "target_unreachable",
+    "node_unreachable",
+    "deadline_exceeded",
+    "internal_error",
+  ]);
+
+  // Permanent source/application failures — retrying will not resolve
+  // the underlying issue (invalid payload, rejected, session gone).
+  const SOURCE_CODES: ReadonlySet<DeliveryFailureCode> = new Set([
+    "session_expired",
+    "session_not_found",
+    "payload_too_large",
+    "invalid_envelope",
+    "broker_rejected",
+  ]);
+
+  if (INFRA_CODES.has(code)) return "infra";
+  if (SOURCE_CODES.has(code)) return "source";
+  return "unknown";
 }
 
 // ── Tracked delivery state ─────────────────────────────────────
@@ -368,12 +428,14 @@ export class StatusResultDeliveryAdapter {
       fromStatus: existing?.currentStatus ?? null,
       toStatus: brokerStatus,
       failureCode,
+      failureCategory: inferFailureCategory(failureCode),
       timestamp: ts,
       summary: summary ? redactContent(summary) : `result: ${resultType}`,
     });
 
     const event = this.buildEvent(tracked, brokerStatus, ts, false);
     event.failureCode = failureCode;
+    event.failureCategory = inferFailureCategory(failureCode);
     return event;
   }
 
@@ -419,12 +481,14 @@ export class StatusResultDeliveryAdapter {
       fromStatus: existing?.currentStatus ?? null,
       toStatus: brokerStatus,
       failureCode,
+      failureCategory: inferFailureCategory(failureCode),
       timestamp: ts,
       summary: `bridged delivery state: ${entry.state} → ${brokerStatus}`,
     });
 
     const event = this.buildEvent(tracked, brokerStatus, ts, false);
     event.failureCode = failureCode;
+    event.failureCategory = inferFailureCategory(failureCode);
     return event;
   }
 
@@ -458,13 +522,15 @@ export class StatusResultDeliveryAdapter {
     ts: string,
     isDuplicate: boolean,
   ): BrokerDeliveryEvent {
+    const failureCode = inferFailureCode(status);
     return {
       eventId: tracked.lastEventId,
       deliveryId: tracked.deliveryId,
       taskId: tracked.taskId,
       wakeId: tracked.wakeId,
       status,
-      failureCode: inferFailureCode(status),
+      failureCode,
+      failureCategory: inferFailureCategory(failureCode),
       message: this.statusMessage(status, isDuplicate),
       timestamp: ts,
       sourceNodeRef: redactNodeRef(tracked.sourceNodeId),

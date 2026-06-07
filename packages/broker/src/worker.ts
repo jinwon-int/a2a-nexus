@@ -103,6 +103,7 @@ export class A2ABrokerWorker {
   private stopHeartbeatLoop: (() => void) | null = null;
   private loopAbort: (() => void) | null = null;
   private homeBrokerVerified = false;
+  private initialHeartbeatSent = false;
 
   constructor(config: BrokerWorkerConfig, options?: { fetchImpl?: FetchLike }) {
     this.config = config;
@@ -122,17 +123,20 @@ export class A2ABrokerWorker {
   }
 
   async heartbeat(): Promise<WorkerView> {
-    const payload: WorkerHeartbeatRequest = {
-      displayName: this.config.worker.displayName,
-      brokerUrl: this.config.worker.brokerUrl,
-      capabilities: this.config.worker.capabilities,
-      metadata: this.config.worker.metadata,
-    };
-
-    return this.requestJson<WorkerView>(`/workers/${encodeURIComponent(this.workerId)}/heartbeat`, {
+    const body: WorkerHeartbeatRequest = this.initialHeartbeatSent
+      ? {}
+      : {
+          displayName: this.config.worker.displayName,
+          brokerUrl: this.config.worker.brokerUrl,
+          capabilities: this.config.worker.capabilities,
+          metadata: this.config.worker.metadata,
+        };
+    const heartbeat = await this.requestJson<WorkerView>(`/workers/${encodeURIComponent(this.workerId)}/heartbeat`, {
       method: "POST",
-      body: payload,
+      body,
     });
+    this.initialHeartbeatSent = true;
+    return heartbeat;
   }
 
   async getWorker(): Promise<WorkerView> {
@@ -221,11 +225,15 @@ export class A2ABrokerWorker {
       throw error;
     }
 
+    let stopTaskHeartbeat: (() => void) | undefined;
     try {
       const runningTask = await this.startTask(task.id);
+      stopTaskHeartbeat = this.startTaskHeartbeatTimer(task.id);
       const outcome = normalizeWorkerHandlerOutcome(await this.config.handler(runningTask));
 
       if (outcome.error) {
+        stopTaskHeartbeat?.();
+        stopTaskHeartbeat = undefined;
         await this.failTask(task.id, outcome.error);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${outcome.error.message}`);
         return true;
@@ -233,16 +241,22 @@ export class A2ABrokerWorker {
 
       const completionEvidenceError = validateTaskCompletionEvidence(runningTask, outcome.result);
       if (completionEvidenceError) {
+        stopTaskHeartbeat?.();
+        stopTaskHeartbeat = undefined;
         await this.failTask(task.id, completionEvidenceError);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${completionEvidenceError.message}`);
         return true;
       }
 
+      stopTaskHeartbeat?.();
+      stopTaskHeartbeat = undefined;
       await this.completeTask(task.id, outcome.result);
       return true;
     } catch (error) {
       const taskError = toTaskError(error);
       try {
+        stopTaskHeartbeat?.();
+        stopTaskHeartbeat = undefined;
         await this.failTask(task.id, taskError);
       } catch (failError) {
         console.error(`[worker:${this.workerId}] failed to mark task ${task.id} as failed`, failError);
@@ -250,6 +264,8 @@ export class A2ABrokerWorker {
       }
       console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${taskError.message}`);
       return true;
+    } finally {
+      stopTaskHeartbeat?.();
     }
   }
 
@@ -265,6 +281,42 @@ export class A2ABrokerWorker {
       method: "POST",
       body: { workerId: this.workerId },
     });
+  }
+
+  private async heartbeatTask(taskId: string): Promise<TaskRecord> {
+    return this.requestJson<TaskRecord>(`/tasks/${encodeURIComponent(taskId)}/heartbeat`, {
+      method: "POST",
+      body: { workerId: this.workerId },
+    });
+  }
+
+  private startTaskHeartbeatTimer(taskId: string): () => void {
+    let stopped = false;
+    const heartbeatTimer = setInterval(() => {
+      if (stopped) {
+        return;
+      }
+      void this.safeTaskHeartbeat(taskId);
+    }, this.config.heartbeatIntervalMs);
+    if (typeof heartbeatTimer.unref === "function") {
+      heartbeatTimer.unref();
+    }
+    return () => {
+      stopped = true;
+      clearInterval(heartbeatTimer);
+    };
+  }
+
+  private async safeTaskHeartbeat(taskId: string): Promise<void> {
+    if (this.stopping) {
+      return;
+    }
+
+    try {
+      await this.heartbeatTask(taskId);
+    } catch (error) {
+      console.error(`[worker:${this.workerId}] task ${taskId} heartbeat failed`, error);
+    }
   }
 
   private async completeTask(taskId: string, result?: TaskResult): Promise<TaskRecord> {
@@ -621,6 +673,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     displayName: optionalTrimmed(env.WORKER_DISPLAY_NAME ?? env.A2A_WORKER_DISPLAY_NAME),
     brokerUrl: optionalTrimmed(env.WORKER_PUBLIC_URL ?? env.A2A_WORKER_PUBLIC_URL),
     capabilities: parseWorkerCapabilities(env, role),
+    workerMode: parseWorkerMode(env.WORKER_MODE ?? env.A2A_WORKER_MODE),
     metadata: parseMetadataEnv(env.WORKER_METADATA_JSON ?? env.A2A_WORKER_METADATA_JSON),
   };
 
@@ -1029,6 +1082,8 @@ function parseWorkerCapabilities(
     }
 
     const record = parsed as Record<string, unknown>;
+    const runtimeFlavor = parseWorkerRuntimeFlavor(record.runtimeFlavor);
+    const gatewayRequired = parseOptionalBoolean(record.gatewayRequired);
     return {
       canAnalyze: Boolean(record.canAnalyze),
       canBackfill: Boolean(record.canBackfill),
@@ -1042,6 +1097,8 @@ function parseWorkerCapabilities(
             .map((item) => String(item))
             .filter(isWorkerEnvironment)
         : [],
+      ...(runtimeFlavor ? { runtimeFlavor } : {}),
+      ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
     };
   }
 
@@ -1052,11 +1109,38 @@ function parseWorkerCapabilities(
     canPromoteLive: parseBooleanEnv(env.WORKER_CAN_PROMOTE_LIVE ?? env.A2A_WORKER_CAN_PROMOTE_LIVE, false),
     workspaceIds: parseCsvEnv(env.WORKER_WORKSPACE_IDS ?? env.A2A_WORKER_WORKSPACE_IDS),
     environments: parseCsvEnv(env.WORKER_ENVIRONMENTS ?? env.A2A_WORKER_ENVIRONMENTS).filter(isWorkerEnvironment),
+    ...(parseWorkerRuntimeFlavor(env.WORKER_RUNTIME_FLAVOR ?? env.A2A_WORKER_RUNTIME_FLAVOR) ? { runtimeFlavor: parseWorkerRuntimeFlavor(env.WORKER_RUNTIME_FLAVOR ?? env.A2A_WORKER_RUNTIME_FLAVOR) } : {}),
+    ...(parseOptionalBoolean(env.WORKER_GATEWAY_REQUIRED ?? env.A2A_WORKER_GATEWAY_REQUIRED) !== undefined ? { gatewayRequired: parseOptionalBoolean(env.WORKER_GATEWAY_REQUIRED ?? env.A2A_WORKER_GATEWAY_REQUIRED) } : {}),
   };
 }
 
 function isWorkerEnvironment(value: string): value is RegisterWorkerRequest["capabilities"]["environments"][number] {
   return value === "research" || value === "staging" || value === "live";
+}
+
+function parseWorkerRuntimeFlavor(value: unknown): RegisterWorkerRequest["capabilities"]["runtimeFlavor"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "gateway" || normalized === "termux-hermes") return normalized;
+  if (normalized.length > 0) return "unknown";
+  return undefined;
+}
+
+function parseWorkerMode(value: unknown): RegisterWorkerRequest["workerMode"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "persistent" || normalized === "mobile") return normalized;
+  return undefined;
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
 }
 
 if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {

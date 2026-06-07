@@ -317,10 +317,13 @@ test("audit projection redacts target ref", () => {
   const result = adapter.wake(makeRequest());
   const projection = adapter.getAuditProjection(result.entry.wakeId);
   assert.ok(projection.length > 0);
-  // Target ref should be truncated, not full session key
+  // R29: targetRef must not contain raw or partial sessionKey values
+  // See openclaw-plugin-a2a#337 (R28 HOLD) and openclaw-plugin-a2a#338
   for (const event of projection) {
     if (event.targetRef) {
       assert.ok(!event.targetRef.includes("session:worker-alpha:main"), `Full session key in targetRef: ${event.targetRef}`);
+      // Also verify it's a nodeId/hex-digest format
+      assert.match(event.targetRef, /^[a-zA-Z0-9_-]+\/[0-9a-f]{16}$/, `targetRef must be nodeId/hexdigest, got: ${event.targetRef}`);
     }
   }
 });

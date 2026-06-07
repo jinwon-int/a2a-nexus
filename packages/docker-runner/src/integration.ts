@@ -8,7 +8,7 @@
  * Broker claim/heartbeat logic is NOT touched by this module.
  */
 
-import type { ArtifactManifest, GitHubEvidence, ResultSummary, RunnerBuildMetadata, RunnerTask } from "./types.js";
+import type { ArtifactManifest, GitHubCommentProjection, GitHubEvidence, ResultSummary, RunnerBuildMetadata, RunnerCrossBrokerHandoff, RunnerPolicyContext, RunnerTask } from "./types.js";
 
 // ── Handler payload shape (what the broker sends to the worker) ────────────
 
@@ -41,6 +41,13 @@ export interface HandlerTaskPayload {
   noNewPr?: boolean;
   commentOnly?: boolean;
   evidenceOnly?: boolean;
+  /** Read-only validation/libero lane: run validation but fail closed on repo diffs and allow Done evidence without PR. */
+  readOnlyValidation?: boolean;
+  validationOnly?: boolean;
+  /** When true, the no-changes guard must not fail the task.
+   *  The runner accepts terminal evidence without PR for audit/preflight/libero lanes.
+   *  Auto-set by github-verify mode. */
+  allowNoChanges?: boolean;
   baseBranch?: string;
   title?: string;
   focus?: string;
@@ -50,8 +57,59 @@ export interface HandlerTaskPayload {
   runnerPreset?: string;
   requestedBy?: string;
   worker?: string;
+  workerModel?: string;
+  workerThinking?: string;
   runId?: string;
   traceId?: string;
+  /** Parent-broker aggregation id for concise cross-broker Terminal Brief rounds. */
+  parentRoundId?: string;
+  /** Broker that owns/finalizes the parent round; alias used by R12 broker metadata. */
+  originBrokerId?: string;
+  /** Expected number of children in the parent round; alias for Terminal Brief total. */
+  parentRoundTotal?: string | number;
+  /** 1-based worker order in the parent round; alias for Terminal Brief sequence. */
+  parentRoundOrder?: string | number;
+  /** Backward-compatible alias for parentRoundOrder. */
+  parentRoundIndex?: string | number;
+  /** Cross-broker handoff routing context for delegated children. */
+  crossBrokerHandoff?: RunnerCrossBrokerHandoff;
+  /** Initiating/parent broker that owns operator-facing Terminal Brief sends. */
+  parentBroker?: string;
+  /** Broker where the child task originated before projection to the parent. */
+  originBroker?: string;
+  /** Broker of record for routing/aggregation decisions. */
+  brokerOfRecord?: string;
+  /** Optional parent-round context for concise Terminal Brief titles. */
+  terminalBrief?: HandlerTerminalBriefPayload;
+  /** Optional human-authored Terminal Brief summary; preserved separately from runner closeout summaries. */
+  terminalBriefSummary?: string;
+  terminalBriefWorker?: string;
+  terminalBriefSequence?: string | number;
+  terminalBriefTotal?: string | number;
+}
+
+export interface HandlerTerminalBriefPayload {
+  worker?: string;
+  workerLabel?: string;
+  sequence?: string | number;
+  total?: string | number;
+  parentRoundId?: string;
+  roundId?: string;
+  parentBroker?: string;
+  originBroker?: string;
+  brokerOfRecord?: string;
+  /** Broker that owns/finalizes the parent round; alias used by R12 broker metadata. */
+  originBrokerId?: string;
+  /** Expected number of children in the parent round; alias for total. */
+  parentRoundTotal?: string | number;
+  /** 1-based worker order in the parent round; alias for sequence. */
+  parentRoundOrder?: string | number;
+  /** Backward-compatible alias for parentRoundOrder. */
+  parentRoundIndex?: string | number;
+  /** Human-authored all-hands Terminal Brief summary. Never replaced by runner evidence summary text. */
+  summary?: string;
+  /** Cross-broker handoff routing context for delegated children. */
+  crossBrokerHandoff?: RunnerCrossBrokerHandoff;
 }
 
 /** Minimal broker-task shape needed by the integration helpers. */
@@ -68,6 +126,8 @@ export interface HandlerResult {
   status: "pr_opened" | "done" | "blocked";
   summary: string;
   prUrl?: string;
+  /** Start comment URL for the evidence round, when the runner posted one. */
+  startCommentUrl?: string;
   blockCommentUrl?: string;
   doneCommentUrl?: string;
   branch?: string;
@@ -94,11 +154,50 @@ export interface OperatorTaskReportEvidence {
   taskBrief?: string;
   /** Canonical PR/Done/Block URL, when available. */
   url?: string;
+  /** Start comment URL for the evidence round, when available. */
+  startCommentUrl?: string;
   summary: string;
   tests: string[];
   risks: string[];
   runnerBuild?: RunnerBuildMetadata;
   dedupeKey: string;
+}
+
+export type CanaryRecoveryOperatorAction =
+  | "monitor_pr"
+  | "review_done_evidence"
+  | "review_block_evidence"
+  | "approve_bounded_continuation"
+  | "retry_or_block_recovery"
+  | "operator_visible_receipt_required";
+
+export interface CanaryRecoveryAuditReport {
+  schemaVersion: "a2a.runner.canary-recovery-audit.v1";
+  /** Stable replay key inherited from terminal evidence, safe for broker recovery dedupe. */
+  eventId: string;
+  dedupeKey: string;
+  taskId: string;
+  worker: string;
+  repo?: string;
+  issueUrl?: string;
+  evidenceKind: TerminalEvidenceKind;
+  status: TerminalEvidenceStatus;
+  evidenceUrl?: string;
+  acknowledged: boolean;
+  cursorComplete: boolean;
+  operatorAction: CanaryRecoveryOperatorAction;
+  reason: string;
+  diagnostics: {
+    exitCode?: number | null;
+    timedOut?: boolean;
+    artifactCount?: number;
+    stdoutTruncated?: boolean;
+    stderrTruncated?: boolean;
+    manifestPath?: string;
+  };
+  safetyState: TerminalEvidenceEvent["safetyState"];
+  runnerBuild?: RunnerBuildMetadata;
+  timestamps: TerminalEvidenceEvent["timestamps"];
 }
 
 export type TerminalEvidenceStatus = "succeeded" | "failed" | "cancelled" | "blocked";
@@ -123,12 +222,33 @@ export interface TerminalEvidenceEvent {
   prUrl?: string;
   doneUrl?: string;
   blockUrl?: string;
+  /** Start comment URL posted at the beginning of the evidence round. */
+  startCommentUrl?: string;
+  /**
+   * GitHub comment evidence ledger.
+   * Comments are evidence ledger entries only — not ACK, read receipt,
+   * visibility proof, or operator approval.  Explicitly separate from
+   * Terminal Brief ACK/read-receipt decisions.
+   *
+   * Parent: a2a-plane#204
+   * Parent: a2a-docker-runner#285
+   * Parent: a2a-docker-runner#284
+   */
+  commentLedger?: import("./types.js").GitHubCommentLedger;
   /** Preformatted compact alert text for terminal notifications; never contains raw runner logs. */
   alert: {
     title: string;
     body: string;
     url?: string;
   };
+  /** Concise parent-round Terminal Brief title context. Parent broker sends; child brokers relay only. */
+  terminalBrief?: TerminalBriefContext;
+  /** Changed file paths captured for audit and summary. Stable, bounded, no raw paths. */
+  filesChanged?: string[];
+  /** Concise risk notes for operator attention. Stable, bounded, no raw logs. */
+  risks?: string[];
+  /** Validation command labels for audit traceability. Stable, bounded. */
+  validationCommands?: string[];
   /** Short human-facing outcome reason; never contains raw runner logs. */
   reason?: string;
   testSummary: {
@@ -139,7 +259,13 @@ export interface TerminalEvidenceEvent {
     stdoutTruncated?: boolean;
     stderrTruncated?: boolean;
   };
-  /** Explicit no-live/no-ACK state; provider send success is not receipt evidence. */
+  /** First-class GitHub comment ledger projection. Not ACK, read receipt, visibility proof, or operator approval. */
+  githubCommentProjection?: GitHubCommentProjection;
+  /**
+   * Explicit no-live/no-ACK state; provider send success is not receipt evidence.
+   *
+   * Parent: a2a-docker-runner#284
+   */
   safetyState: {
     noLiveProviderSend: true;
     terminalAck: "requires_operator_receipt";
@@ -147,8 +273,74 @@ export interface TerminalEvidenceEvent {
   };
   /** Bounded build/source metadata; no raw env, secrets, or host paths. */
   runnerBuild?: RunnerBuildMetadata;
+  /** Cross-broker handoff routing context for delegated children. */
+  crossBrokerHandoff?: RunnerCrossBrokerHandoff;
+  /** Embedded OpenClaw worker model override. */
+  workerModel?: string;
+  /** Embedded OpenClaw worker reasoning/thinking override. */
+  workerThinking?: string;
+  /** Source-only policy context for dispatch verification. */
+  policyContext?: RunnerPolicyContext;
   timestamps: {
     emittedAt: string;
+  };
+}
+
+/**
+ * Terminal Brief progress context for operator-facing "n/N" notifications.
+ *
+ * n (sequence) = completed canonical tasks in the parent round.
+ * N (total)    = total canonical tasks in the parent round.
+ *
+ * Canonical n/N semantics:
+ * - n MUST be completed canonical tasks only. It MUST NOT represent:
+ *   worker lane/order index, event sequence number, origin-local projection
+ *   count, or a standalone fallback count.
+ * - Retries or superseded originals, duplicate/replay events, failed or
+ *   cancelled events, and broker restart MUST NOT inflate the completed count.
+ * - Provider accepted/message-id evidence is send-acceptance only and MUST
+ *   NOT advance n. Only operator-visible Terminal Brief ACK is authoritative.
+ *
+ * Parent: a2a-docker-runner#285
+ */
+export interface TerminalBriefContext {
+  schemaVersion: "a2a.runner.terminal-brief-context.v1";
+  /** Operator-facing concise title, e.g. "A2A Terminal Brief 완료: dungae(1/7)". */
+  title: string;
+  /** Stable worker/node label used in the title. */
+  worker: string;
+  /** Human-authored all-hands summary preserved without being overwritten by runner closeout text. */
+  summary?: string;
+  /** Explicit ownership rule: only the initiating parent broker should send operator-facing Briefs. */
+  ownership: "parent-broker-only";
+  /** Optional initiating parent round/work-order id when supplied by the broker. */
+  roundId?: string;
+  /** Preferred parent-broker aggregation id; duplicated from roundId for old consumers when available. */
+  parentRoundId?: string;
+  /** Initiating parent broker; only this owner should emit operator-facing Terminal Brief notifications. */
+  parentBroker?: string;
+  /** Origin broker for projected handoff children. */
+  originBroker?: string;
+  /** Broker that owns/finalizes the parent round; preserved for R12 parity. */
+  originBrokerId?: string;
+  /** Broker of record for routing and parent aggregation. */
+  brokerOfRecord?: string;
+  /** Expected number of children in the parent round, preserved alongside progress.total. */
+  parentRoundTotal?: number;
+  /** Cross-broker handoff routing context for delegated children. */
+  crossBrokerHandoff?: RunnerCrossBrokerHandoff;
+  /**
+   * Terminal Brief progress: n/N = completed canonical tasks / total canonical tasks.
+   *
+   * Present only when both numerator and denominator are known and valid.
+   * sequence = number of completed canonical tasks (numerator, n).
+   * total    = number of total canonical tasks (denominator, N).
+   *
+   * Parent: a2a-docker-runner#285
+   */
+  progress?: {
+    sequence: number;
+    total: number;
   };
 }
 
@@ -255,28 +447,60 @@ export function buildRunnerTaskFromHandlerPayload(
     task?.payload?.runnerPreset ?? env.A2A_DOCKER_RUNNER_PRESET,
   );
 
+  const requestedMode = normalizeString(task?.payload?.mode) ?? "github-propose-patch";
+  const isVerifyMode = requestedMode === "github-verify";
+  const isReadOnlyAuditMode = isVerifyMode || requestedMode === "family-wiki-readonly-audit";
+
   const envTimeoutMs =
     env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS != null ? Number(env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS) : NaN;
   const runnerTask: RunnerTask = {
     id: normalizeString(task?.id) ?? `task-${Date.now()}`,
     intent: normalizeString(task?.intent) ?? "propose_patch",
-    mode: "github-propose-patch",
+    mode: requestedMode,
     prompt: normalizeString(task?.message ?? task?.payload?.prompt) ?? "",
     issueUrl: normalizeString(task?.payload?.issueUrl) ?? undefined,
     issueTitle: safeEvidenceText(task?.payload?.title, 160),
     taskBrief: safeEvidenceText(task?.payload?.focus ?? task?.message ?? task?.payload?.prompt, 240),
     reportLanguage: "ko",
     requestedBy: safeEvidenceText(task?.payload?.requestedBy ?? task?.payload?.worker, 80),
+    workerModel: safeEvidenceText(task?.payload?.workerModel, 160),
+    workerThinking: safeEvidenceText(task?.payload?.workerThinking, 160),
     runId: safeEvidenceText(task?.payload?.runId, 120),
     traceId: safeEvidenceText(task?.payload?.traceId, 120),
+    parentRoundId: safeEvidenceText(
+      task?.payload?.parentRoundId ?? task?.payload?.terminalBrief?.parentRoundId ?? task?.payload?.terminalBrief?.roundId ?? task?.payload?.crossBrokerHandoff?.parentRoundId,
+      120,
+    ),
+    originBrokerId: safeEvidenceText(
+      task?.payload?.originBrokerId ?? task?.payload?.terminalBrief?.originBrokerId ?? task?.payload?.crossBrokerHandoff?.originBrokerId,
+      80,
+    ),
+    parentRoundTotal: positiveInteger(task?.payload?.parentRoundTotal ?? task?.payload?.terminalBrief?.parentRoundTotal ?? task?.payload?.terminalBriefTotal ?? task?.payload?.terminalBrief?.total),
+    parentRoundOrder: positiveInteger(
+      task?.payload?.parentRoundOrder ??
+        task?.payload?.parentRoundIndex ??
+        task?.payload?.terminalBrief?.parentRoundOrder ??
+        task?.payload?.terminalBrief?.parentRoundIndex ??
+        task?.payload?.terminalBriefSequence ??
+        task?.payload?.terminalBrief?.sequence,
+    ),
+    crossBrokerHandoff: sanitizeCrossBrokerHandoff(task?.payload?.crossBrokerHandoff ?? task?.payload?.terminalBrief?.crossBrokerHandoff),
     existingPrUrl: normalizeExistingPrUrl(task, repo),
     existingPrNumber: task?.payload?.existingPrNumber ?? task?.payload?.prNumber,
-    forbidNewPr: Boolean(task?.payload?.forbidNewPr ?? task?.payload?.noNewPr),
-    commentOnly: Boolean(task?.payload?.commentOnly ?? task?.payload?.evidenceOnly),
+    forbidNewPr: isReadOnlyAuditMode || Boolean(task?.payload?.forbidNewPr ?? task?.payload?.noNewPr),
+    commentOnly: isReadOnlyAuditMode ? false : Boolean(task?.payload?.commentOnly ?? task?.payload?.evidenceOnly),
+    allowNoChanges: isReadOnlyAuditMode
+      ? true
+      : task?.payload?.allowNoChanges === true ||
+          task?.payload?.readOnlyValidation === true ||
+          task?.payload?.validationOnly === true
+        ? true
+        : undefined,
+    readOnlyValidation: isReadOnlyAuditMode || Boolean(task?.payload?.readOnlyValidation ?? task?.payload?.validationOnly),
     timeoutMs:
       !isNaN(envTimeoutMs)
         ? envTimeoutMs
-        : task?.payload?.timeoutMs ?? 45 * 60 * 1000,
+        : task?.payload?.timeoutMs ?? 60 * 60 * 1000,
   };
 
   // ── issueUrl fallback: construct from repo + issue/issueNumber ──
@@ -330,6 +554,7 @@ export interface RawRunnerOutput {
   prUrl?: string;
   error?: string;
   github?: GitHubEvidence;
+  executionProof?: import("./types.js").ExecutionProof;
 }
 
 /**
@@ -351,7 +576,9 @@ export function parseRunnerOutput(raw: string): RawRunnerOutput {
 /**
  * Extract structured GitHub completion evidence from raw runner output.
  *
- * Precedence: prUrl > blockCommentUrl > doneCommentUrl.
+ * Precedence follows explicit structured outcome first, then legacy
+ * PR/Block/Done ordering. Stale non-canonical URLs are stripped only when the
+ * structured outcome tells us which evidence is canonical.
  */
 export function extractGitHubEvidence(
   result: RawRunnerOutput,
@@ -360,17 +587,72 @@ export function extractGitHubEvidence(
   // Runner already produced structured evidence (github property)
   if (result.github) {
     const g = result.github;
-    if (g.prUrl) return { ...g, outcome: "pr", prUrl: g.prUrl, blockUrl: undefined, blockCommentUrl: undefined, doneUrl: undefined, doneCommentUrl: undefined };
     const blockUrl = g.blockUrl ?? g.blockCommentUrl;
-    if (blockUrl) return { ...g, outcome: "block", blockUrl, blockCommentUrl: blockUrl };
     const doneUrl = g.doneUrl ?? g.doneCommentUrl;
-    if (doneUrl && !budgetLimited && result.ok && result.status === "completed") return { ...g, outcome: "done", doneUrl, doneCommentUrl: doneUrl };
+    const doneEvidenceIsTerminal = Boolean(doneUrl && !budgetLimited && result.ok && result.status === "completed");
+
+    if (blockUrl && isStructuredBlockOutcome(g)) return canonicalBlockEvidence(g, blockUrl);
+    if (doneUrl && doneEvidenceIsTerminal && isStructuredDoneOutcome(g)) return canonicalDoneEvidence(g, doneUrl);
+    if (g.prUrl) return canonicalPrEvidence(g);
+    if (blockUrl) return canonicalBlockEvidence(g, blockUrl);
+    if (doneUrl && doneEvidenceIsTerminal) return canonicalDoneEvidence(g, doneUrl);
   }
 
   // Fallback: legacy PR URL from stdout parsing
   if (result.prUrl) return { prUrl: result.prUrl };
 
   return null;
+}
+
+function canonicalPrEvidence(evidence: GitHubEvidence): GitHubEvidence {
+  return {
+    ...evidence,
+    outcome: "pr",
+    prUrl: evidence.prUrl,
+    blockUrl: undefined,
+    blockCommentUrl: undefined,
+    doneUrl: undefined,
+    doneCommentUrl: undefined,
+  };
+}
+
+function canonicalBlockEvidence(evidence: GitHubEvidence, blockUrl: string): GitHubEvidence {
+  return {
+    ...evidence,
+    outcome: canonicalStructuredOutcome(evidence, "block"),
+    prUrl: undefined,
+    blockUrl,
+    blockCommentUrl: blockUrl,
+    doneUrl: undefined,
+    doneCommentUrl: undefined,
+  };
+}
+
+function canonicalDoneEvidence(evidence: GitHubEvidence, doneUrl: string): GitHubEvidence {
+  return {
+    ...evidence,
+    outcome: canonicalStructuredOutcome(evidence, "done"),
+    prUrl: undefined,
+    blockUrl: undefined,
+    blockCommentUrl: undefined,
+    doneUrl,
+    doneCommentUrl: doneUrl,
+  };
+}
+
+function isStructuredBlockOutcome(evidence: GitHubEvidence): boolean {
+  return evidence.outcome === "block" || evidence.outcome === "blocked_no_changes_with_evidence";
+}
+
+function isStructuredDoneOutcome(evidence: GitHubEvidence): boolean {
+  return evidence.outcome === "done" || evidence.outcome === "succeeded_no_changes_with_done_evidence";
+}
+
+function canonicalStructuredOutcome(evidence: GitHubEvidence, fallback: "block" | "done"): GitHubEvidence["outcome"] {
+  if (evidence.outcome === "succeeded_no_changes_with_done_evidence" || evidence.outcome === "blocked_no_changes_with_evidence") {
+    return evidence.outcome;
+  }
+  return fallback;
 }
 
 // ── Handler result builder ─────────────────────────────────────────────────
@@ -414,16 +696,48 @@ export function buildHandlerResult(
 
   return {
     status,
-    summary: `Docker runner completed ${task?.id ?? "unknown task"}`,
+    summary: buildEvidenceBackedSummary(evidence, task),
     prUrl: evidence.prUrl,
+    startCommentUrl: evidence.startCommentUrl,
     blockCommentUrl: evidence.blockCommentUrl,
     doneCommentUrl: evidence.doneCommentUrl,
-    tests: ["a2a-docker-runner run -> completed"],
+    tests: buildEvidenceBackedTests(evidence),
     filesChanged: resultFilesChanged(result),
-    risks: evidence.prUrl ? [] : ["runner completed without PR evidence"],
+    risks: buildEvidenceBackedRisks(evidence),
     terminalEvidence: buildTerminalEvidenceEvent(result, task, nodeId),
     runnerRaw: brokerFacingRunnerRaw(result),
   };
+}
+
+function buildEvidenceBackedSummary(evidence: GitHubEvidence, task: HandlerTask): string {
+  const taskId = task?.id ?? "unknown task";
+  if (evidence.prUrl) return `Docker runner opened PR evidence — task ${taskId}`;
+  if (evidence.outcome === "succeeded_no_changes_with_done_evidence") {
+    return `Docker runner completed PR-less validation with Done evidence — task ${taskId}`;
+  }
+  if (evidence.outcome === "blocked_no_changes_with_evidence") {
+    return `Docker runner blocked PR-less validation with Block evidence — task ${taskId}`;
+  }
+  if (evidence.blockCommentUrl) return `Docker runner posted Block evidence — task ${taskId}`;
+  return `Docker runner posted Done evidence — task ${taskId}`;
+}
+
+function buildEvidenceBackedTests(evidence: GitHubEvidence): string[] {
+  if (evidence.outcome === "succeeded_no_changes_with_done_evidence") {
+    return ["a2a-docker-runner run -> PR-less validation Done evidence"];
+  }
+  if (evidence.outcome === "blocked_no_changes_with_evidence") {
+    return ["a2a-docker-runner run -> PR-less validation Block evidence"];
+  }
+  return ["a2a-docker-runner run -> completed"];
+}
+
+function buildEvidenceBackedRisks(evidence: GitHubEvidence): string[] {
+  if (evidence.prUrl) return [];
+  if (evidence.outcome === "succeeded_no_changes_with_done_evidence") return [];
+  if (evidence.outcome === "blocked_no_changes_with_evidence") return ["PR-less validation blocked; review Block evidence"];
+  if (evidence.blockCommentUrl) return ["runner blocked; review Block evidence"];
+  return ["runner completed with Done evidence and no PR"];
 }
 
 export function buildTerminalEvidenceEvent(
@@ -455,7 +769,7 @@ export function buildTerminalEvidenceEvent(
         : result.ok
           ? "blocked"
           : "failed";
-  const url = evidence?.prUrl ?? evidence?.doneCommentUrl ?? evidence?.blockCommentUrl;
+  const url = terminalEvidenceUrl(evidence, evidenceKind);
   const taskId = task?.id ?? result.taskId ?? "unknown";
   const summary = result.resultSummary;
   const worker = normalizeString(nodeId) ?? "unknown";
@@ -464,6 +778,9 @@ export function buildTerminalEvidenceEvent(
   const issueUrl = normalizeGitHubIssueUrl(task?.payload?.issueUrl ?? evidence?.issueUrl, repo, task?.payload?.issue ?? task?.payload?.issueNumber);
   const issueTitle = safeEvidenceText(task?.payload?.title ?? evidence?.issueTitle, 160);
   const taskBrief = safeEvidenceText(task?.payload?.focus ?? task?.message ?? task?.payload?.prompt ?? evidence?.taskBrief, 240);
+  const filesChanged = resultFilesChanged(result);
+  const risks = evidence ? buildEvidenceBackedRisks(evidence) : ["runner completed without structured GitHub evidence"];
+  const validationCommands = buildValidationCommands(task);
   const testSummary = {
     label: buildTestSummaryLabel(result, evidenceKind),
     exitCode: summary?.exitCode ?? result.exitCode,
@@ -473,6 +790,11 @@ export function buildTerminalEvidenceEvent(
     stderrTruncated: summary?.stderrTruncated,
   };
   const eventId = stableEventId(taskId, status, evidenceKind, url ?? "none");
+  const githubCommentProjection = safeGitHubCommentProjection(
+    result.resultSummary?.githubCommentProjection ?? result.artifactManifest?.githubCommentProjection,
+    eventId,
+  );
+  const terminalBrief = buildTerminalBriefContext(task, worker, status, evidenceKind);
 
   return {
     schemaVersion: "a2a.runner.terminal-evidence.v1",
@@ -487,20 +809,39 @@ export function buildTerminalEvidenceEvent(
     issueUrl,
     issueTitle,
     taskBrief,
+    filesChanged,
+    risks,
+    validationCommands,
     prUrl: evidence?.prUrl,
     doneUrl: evidence?.doneCommentUrl,
     blockUrl: evidence?.blockCommentUrl,
-    alert: buildTerminalAlert({ taskId, status, evidenceKind, worker, repo, issue, issueTitle, taskBrief, url, result, testSummary }),
+    startCommentUrl: evidence?.startCommentUrl,
+    commentLedger: evidence?.commentLedger,
+    alert: buildTerminalAlert({ taskId, status, evidenceKind, worker, repo, issue, issueTitle, taskBrief, filesChanged, risks, url, result, testSummary, terminalBriefTitle: terminalBrief?.title, terminalBriefSummary: terminalBrief?.summary }),
+    ...(terminalBrief ? { terminalBrief } : {}),
     reason: buildTerminalReason(result, evidenceKind),
     testSummary,
+    ...(githubCommentProjection ? { githubCommentProjection } : {}),
     safetyState: {
       noLiveProviderSend: true,
       terminalAck: "requires_operator_receipt",
       providerSendIsReceiptEvidence: false,
     },
     runnerBuild: summary?.runnerBuild ?? result.runnerBuild,
+    crossBrokerHandoff: evidence?.crossBrokerHandoff ?? terminalBrief?.crossBrokerHandoff,
+    workerModel: safeEvidenceText(evidence?.workerModel ?? task?.payload?.workerModel, 160),
+    workerThinking: safeEvidenceText(evidence?.workerThinking ?? task?.payload?.workerThinking, 160),
+    policyContext: evidence?.policyContext,
     timestamps: { emittedAt },
   };
+}
+
+function terminalEvidenceUrl(evidence: GitHubEvidence | null, evidenceKind: TerminalEvidenceKind): string | undefined {
+  if (!evidence) return undefined;
+  if (evidenceKind === "PR") return evidence.prUrl;
+  if (evidenceKind === "Done") return evidence.doneCommentUrl;
+  if (evidenceKind === "Block" || evidenceKind === "BudgetLimited") return evidence.blockCommentUrl;
+  return undefined;
 }
 
 /**
@@ -553,6 +894,7 @@ export function buildOperatorTaskReportEvidence(result: HandlerResult): Operator
     issueTitle: event.issueTitle,
     taskBrief: event.taskBrief,
     url: result.prUrl ?? result.doneCommentUrl ?? result.blockCommentUrl ?? event.prUrl ?? event.doneUrl ?? event.blockUrl,
+    startCommentUrl: result.startCommentUrl ?? event.startCommentUrl,
     summary: result.summary,
     tests: result.tests,
     risks: result.risks,
@@ -593,14 +935,132 @@ export function buildTerminalAckDecision(
   return decision;
 }
 
+/**
+ * Build a compact post-action audit report for canary/recovery lanes.
+ *
+ * The report deliberately projects only bounded, replay-safe fields from the
+ * runner result and terminal-ack decision. It omits raw stdout/stderr, workDir,
+ * provider-send metadata, and terminal message bodies so broker recovery and
+ * operator dashboards can summarize PR/Done/Block outcomes without leaking host
+ * paths or accidentally treating provider send success as terminal ACK.
+ */
+export function buildCanaryRecoveryAuditReport(
+  result: RawRunnerOutput,
+  task: HandlerTask,
+  nodeId: string,
+  receipt?: TerminalAckReceipt,
+  emittedAt = new Date().toISOString(),
+): CanaryRecoveryAuditReport {
+  const event = buildTerminalEvidenceEvent(result, task, nodeId, emittedAt);
+  const ack = buildTerminalAckDecision(event, receipt);
+  const diagnostics = omitUndefined({
+    exitCode: event.testSummary.exitCode,
+    timedOut: event.testSummary.timedOut,
+    artifactCount: event.testSummary.artifactCount,
+    stdoutTruncated: event.testSummary.stdoutTruncated,
+    stderrTruncated: event.testSummary.stderrTruncated,
+    manifestPath: result.resultSummary?.manifestPath ?? result.artifactManifest?.manifestPath,
+  }) as CanaryRecoveryAuditReport["diagnostics"];
+
+  const report: CanaryRecoveryAuditReport = {
+    schemaVersion: "a2a.runner.canary-recovery-audit.v1",
+    eventId: event.eventId,
+    dedupeKey: event.dedupeKey,
+    taskId: event.taskId,
+    worker: event.worker,
+    evidenceKind: event.evidenceKind,
+    status: event.status,
+    acknowledged: ack.acknowledged,
+    cursorComplete: ack.cursorComplete,
+    operatorAction: selectCanaryRecoveryOperatorAction(event, ack),
+    reason: boundReason(!ack.acknowledged ? ack.reason : event.reason ?? ack.reason),
+    diagnostics,
+    safetyState: event.safetyState,
+    timestamps: event.timestamps,
+  };
+  if (event.repo) report.repo = event.repo;
+  if (event.issueUrl) report.issueUrl = event.issueUrl;
+  const evidenceUrl = event.prUrl ?? event.doneUrl ?? event.blockUrl;
+  if (evidenceUrl) report.evidenceUrl = evidenceUrl;
+  if (event.runnerBuild) report.runnerBuild = event.runnerBuild;
+  return report;
+}
+
+function selectCanaryRecoveryOperatorAction(
+  event: TerminalEvidenceEvent,
+  ack: TerminalAckDecision,
+): CanaryRecoveryOperatorAction {
+  if (!ack.acknowledged && (event.evidenceKind === "PR" || event.evidenceKind === "Done" || event.evidenceKind === "Block")) {
+    return "operator_visible_receipt_required";
+  }
+  if (event.evidenceKind === "PR") return "monitor_pr";
+  if (event.evidenceKind === "Done") return "review_done_evidence";
+  if (event.evidenceKind === "Block") return "review_block_evidence";
+  if (event.evidenceKind === "BudgetLimited") return "approve_bounded_continuation";
+  return "retry_or_block_recovery";
+}
+
 // ── Internal helpers ───────────────────────────────────────────────────────
+
+function safeGitHubCommentProjection(
+  projection: GitHubCommentProjection | undefined,
+  fallbackDedupeKey: string,
+): GitHubCommentProjection | undefined {
+  if (!projection || !isGitHubCommentProjectionKind(projection.kind) || !isSafeTerminalGitHubUrl(projection.url)) return undefined;
+  if (projection.issueUrl && !isSafeTerminalGitHubUrl(projection.issueUrl)) return undefined;
+  if (projection.commentIsTerminalAck !== false || projection.commentIsVisibilityReceipt !== false || projection.commentIsOperatorApproval !== false) return undefined;
+  const manifestPath = "artifacts/manifest.json";
+  const dedupeKey = safeEvidenceText(projection.dedupeKey, 300) ?? fallbackDedupeKey;
+  return {
+    schemaVersion: "a2a.runner.github-comment-projection.v1",
+    kind: projection.kind,
+    url: projection.url,
+    ...(projection.issueUrl ? { issueUrl: projection.issueUrl } : {}),
+    manifestPath,
+    dedupeKey,
+    commentIsTerminalAck: false,
+    commentIsVisibilityReceipt: false,
+    commentIsOperatorApproval: false,
+  };
+}
+
+function isGitHubCommentProjectionKind(value: unknown): value is "pr" | "done" | "block" {
+  return value === "pr" || value === "done" || value === "block";
+}
+
+function isSafeTerminalGitHubUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "github.com" && /^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues|pull)\/\d+/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
 
 function resultFilesChanged(result: RawRunnerOutput): string[] {
   const manifestArtifacts = result.artifactManifest?.artifacts;
   if (manifestArtifacts && manifestArtifacts.length > 0) {
     return manifestArtifacts.map((artifact) => artifact.path);
   }
-  return result.artifacts ?? [];
+  const artifacts = result.artifacts ?? [];
+  const workDir = result.workDir;
+  if (workDir) {
+    return artifacts.map((p) => p.startsWith(workDir) ? p.slice(workDir.length + 1) : p);
+  }
+  return artifacts;
+}
+
+function buildValidationCommands(task: HandlerTask): string[] {
+  const commands: string[] = [];
+  const taskFocus = task?.payload?.focus ?? task?.message ?? task?.payload?.prompt;
+  if (typeof taskFocus === "string") {
+    commands.push(taskFocus.slice(0, 240));
+  }
+  const acceptance = task?.payload?.acceptance;
+  if (typeof acceptance === "string") {
+    commands.push(acceptance.slice(0, 240));
+  }
+  return commands.length > 0 ? commands : ["a2a-docker-runner default patch pipeline"];
 }
 
 function brokerFacingRunnerRaw(result: RawRunnerOutput): Record<string, unknown> {
@@ -726,8 +1186,12 @@ function buildTerminalAlert(input: {
   issueTitle?: string;
   taskBrief?: string;
   url?: string;
+  filesChanged?: string[];
+  risks?: string[];
   result: RawRunnerOutput;
   testSummary: { exitCode?: number | null; timedOut?: boolean; artifactCount?: number };
+  terminalBriefTitle?: string;
+  terminalBriefSummary?: string;
 }): { title: string; body: string; url?: string } {
   const icon = input.evidenceKind === "PR"
     ? "PR"
@@ -741,7 +1205,7 @@ function buildTerminalAlert(input: {
             ? "Timeout"
             : "Needs review";
   const target = input.repo ?? input.issue ?? input.taskId;
-  const title = boundAlertPart(`A2A ${icon}: ${target}`, 96);
+  const title = input.terminalBriefTitle ?? boundAlertPart(`A2A ${icon}: ${target}`, 96);
   const bodyParts = [
     `task=${input.taskId}`,
     `worker=${input.worker}`,
@@ -752,8 +1216,11 @@ function buildTerminalAlert(input: {
   ];
   const issueRef = compactIssueRef(input.issue);
   if (issueRef) bodyParts.push(`issue=${issueRef}`);
+  if (input.terminalBriefSummary) bodyParts.push(`summary=${input.terminalBriefSummary}`);
   if (input.issueTitle) bodyParts.push(`title=${input.issueTitle}`);
   if (input.taskBrief) bodyParts.push(`brief=${input.taskBrief}`);
+  if (input.filesChanged && input.filesChanged.length > 0) bodyParts.push(`changes=${input.filesChanged.length}`);
+  if (input.risks && input.risks.length > 0) bodyParts.push(`risks=${input.risks.length}`);
   const reason = buildTerminalReason(input.result, input.evidenceKind);
   bodyParts.push(`reason=${reason}`);
   return omitUndefined({
@@ -761,6 +1228,98 @@ function buildTerminalAlert(input: {
     body: boundAlertPart(bodyParts.join(" · "), 360),
     url: input.url,
   }) as { title: string; body: string; url?: string };
+}
+
+function buildTerminalBriefContext(
+  task: HandlerTask,
+  worker: string,
+  status: TerminalEvidenceStatus,
+  evidenceKind: TerminalEvidenceKind,
+): TerminalBriefContext | undefined {
+  const payload = task?.payload;
+  const brief = payload?.terminalBrief;
+  const handoff = sanitizeCrossBrokerHandoff(brief?.crossBrokerHandoff ?? payload?.crossBrokerHandoff);
+  const parentRoundId = safeEvidenceText(brief?.parentRoundId ?? payload?.parentRoundId ?? brief?.roundId ?? handoff?.parentRoundId, 120);
+  const originBrokerId = safeEvidenceText(brief?.originBrokerId ?? payload?.originBrokerId ?? handoff?.originBrokerId, 80);
+  const total = positiveInteger(brief?.total ?? payload?.terminalBriefTotal ?? brief?.parentRoundTotal ?? payload?.parentRoundTotal);
+  const hasTerminalBriefInput = Boolean(
+    brief ||
+      payload?.terminalBriefWorker != null ||
+      payload?.terminalBriefSequence != null ||
+      payload?.terminalBriefTotal != null ||
+      payload?.parentRoundOrder != null ||
+      payload?.parentRoundIndex != null ||
+      payload?.parentRoundId != null ||
+      payload?.originBrokerId != null ||
+      payload?.parentRoundTotal != null ||
+      payload?.crossBrokerHandoff != null,
+  );
+  if (!hasTerminalBriefInput) return undefined;
+
+  const workerLabel = safeEvidenceText(
+    brief?.workerLabel ?? brief?.worker ?? payload?.terminalBriefWorker ?? handoff?.childWorkerId ?? payload?.worker ?? worker,
+    48,
+  );
+  if (!workerLabel) return undefined;
+
+  const sequence = positiveInteger(
+    brief?.sequence ??
+      brief?.parentRoundOrder ??
+      brief?.parentRoundIndex ??
+      payload?.terminalBriefSequence ??
+      payload?.parentRoundOrder ??
+      payload?.parentRoundIndex,
+  );
+  const hasValidProgress = sequence !== undefined && total !== undefined && sequence <= total;
+  const subject = hasValidProgress ? `${workerLabel}(${sequence}/${total})` : workerLabel;
+  const title = boundAlertPart(`A2A Terminal Brief ${terminalBriefOutcomeLabel(status, evidenceKind)}: ${subject}`, 96);
+  const summary = safeEvidenceText(brief?.summary ?? payload?.terminalBriefSummary, 240);
+  const roundId = safeEvidenceText(brief?.roundId ?? parentRoundId, 120);
+  const parentBroker = safeEvidenceText(brief?.parentBroker ?? payload?.parentBroker ?? originBrokerId, 80);
+  const originBroker = safeEvidenceText(brief?.originBroker ?? payload?.originBroker ?? handoff?.handoffBrokerId, 80);
+  const brokerOfRecord = safeEvidenceText(brief?.brokerOfRecord ?? payload?.brokerOfRecord ?? parentBroker, 80);
+
+  return omitUndefined({
+    schemaVersion: "a2a.runner.terminal-brief-context.v1",
+    title,
+    worker: workerLabel,
+    summary,
+    ownership: "parent-broker-only",
+    roundId,
+    parentRoundId,
+    parentBroker,
+    originBroker,
+    originBrokerId,
+    brokerOfRecord,
+    parentRoundTotal: total,
+    crossBrokerHandoff: handoff,
+    progress: hasValidProgress ? { sequence, total } : undefined,
+  }) as unknown as TerminalBriefContext;
+}
+
+function sanitizeCrossBrokerHandoff(value: RunnerCrossBrokerHandoff | undefined): RunnerCrossBrokerHandoff | undefined {
+  if (!value) return undefined;
+  const handoff = omitUndefined({
+    parentRoundId: safeEvidenceText(value.parentRoundId, 120),
+    originBrokerId: safeEvidenceText(value.originBrokerId, 80),
+    handoffBrokerId: safeEvidenceText(value.handoffBrokerId, 80),
+    childWorkerId: safeEvidenceText(value.childWorkerId, 80),
+  }) as RunnerCrossBrokerHandoff;
+  return Object.keys(handoff).length ? handoff : undefined;
+}
+
+function positiveInteger(value: string | number | undefined): number | undefined {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string" || !/^\d+$/.test(value.trim())) return undefined;
+  const parsed = Number(value.trim());
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function terminalBriefOutcomeLabel(status: TerminalEvidenceStatus, kind: TerminalEvidenceKind): string {
+  if (status === "succeeded" || kind === "PR" || kind === "Done") return "완료";
+  if (kind === "TimedOut" || status === "cancelled") return "시간초과";
+  if (kind === "Block" || kind === "BudgetLimited" || status === "blocked") return "차단";
+  return "확인필요";
 }
 
 function compactIssueRef(issue?: string): string | undefined {
@@ -771,8 +1330,15 @@ function compactIssueRef(issue?: string): string | undefined {
 }
 
 function boundAlertPart(value: string, max: number): string {
-  const compact = boundReason(value);
-  return compact.length <= max ? compact : `${compact.slice(0, Math.max(0, max - 3))}...`;
+  const compact = value
+    .replace(/x-access-token:[^@\s]+@github\.com/g, "x-access-token:<redacted>@github.com")
+    .replace(/(token|password|secret|api[_-]?key)=\S+/gi, "$1=<redacted>")
+    .replace(/\b[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD)=\S+/g, "<redacted-secret-env>")
+    .replace(/\/[^\s:;,)]+(?:\/[^\s:;,)]+)+/g, "<path>")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, Math.max(0, max - 3))}...`;
 }
 
 function buildTerminalReason(result: RawRunnerOutput, kind: TerminalEvidenceKind): string {

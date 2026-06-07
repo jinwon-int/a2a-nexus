@@ -121,7 +121,7 @@ describe('broker migration health gate', () => {
     const report = runMigrationHealthGate({ dbFile: file, nowMs: Date.parse('2026-05-03T00:05:00.000Z') });
 
     assert.equal(report.ok, true);
-    assert.equal(report.checks.length, 6);
+    assert.equal(report.checks.length, 8);
     assert.match(report.checks.find((check) => check.check === 'worker hot-table quarantine')?.detail ?? '', /normalized capabilities/);
   });
 
@@ -446,5 +446,54 @@ describe('broker migration health gate legacy residue cutoff', () => {
     assert.equal(queueCheck?.legacyResidue[0].id, 'task-legacy');
     assert.equal(queueCheck?.violations.length, 1);
     assert.equal(queueCheck?.violations[0].id, 'task-current');
+  });
+
+  it('reports stale blocked task rows as residue instead of critical actionable backlog', () => {
+    const { db, file } = createDb();
+    db.prepare('INSERT INTO broker_tasks (id, payload) VALUES (?, ?)')
+      .run('terminal-brief-old-blocked', taskPayload({
+        id: 'terminal-brief-old-blocked',
+        status: 'blocked',
+        createdAt: '2026-05-03T00:00:00.000Z',
+        updatedAt: '2026-05-03T00:00:00.000Z',
+      }));
+    db.close();
+
+    const report = runMigrationHealthGate({
+      dbFile: file,
+      nowMs: Date.parse('2026-05-04T00:30:00.000Z'),
+    });
+    const queueCheck = report.checks.find((check) => check.check === 'queue hygiene');
+
+    assert.equal(report.ok, true);
+    assert.equal(queueCheck?.ok, true);
+    assert.equal(queueCheck?.activeTasks, 1);
+    assert.equal(queueCheck?.actionableActiveTasks, 0);
+    assert.equal(queueCheck?.blockedResidue.staleCount, 1);
+    assert.deepEqual(queueCheck?.blockedResidue.sampleTaskIds, ['terminal-brief-old-blocked']);
+    assert.match(queueCheck?.detail ?? '', /0 actionable active/);
+  });
+
+  it('still fails critical for stale actionable active task rows', () => {
+    const { db, file } = createDb();
+    db.prepare('INSERT INTO broker_tasks (id, payload) VALUES (?, ?)')
+      .run('current-stale-queued', taskPayload({
+        id: 'current-stale-queued',
+        status: 'queued',
+        createdAt: '2026-05-03T00:00:00.000Z',
+        updatedAt: '2026-05-03T00:00:00.000Z',
+      }));
+    db.close();
+
+    const report = runMigrationHealthGate({
+      dbFile: file,
+      nowMs: Date.parse('2026-05-04T00:30:00.000Z'),
+    });
+    const queueCheck = report.checks.find((check) => check.check === 'queue hygiene');
+
+    assert.equal(report.ok, false);
+    assert.equal(queueCheck?.ok, false);
+    assert.equal(queueCheck?.actionableActiveTasks, 1);
+    assert.match(queueCheck?.detail ?? '', /oldest actionable active task age/);
   });
 });

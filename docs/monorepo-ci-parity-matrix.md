@@ -7,7 +7,8 @@
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
-> **Status:** phase 3 package CI jobs wired; package mirror refresh remains blocked until fresh mirrored content is proven. Split repo CI remains canonical.
+> **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
+> **Status:** phase-4 fresh prefix import candidate is under package CI parity validation; split repo CI remains canonical until the candidate is merged and a separate canonical-flip approval exists.
 
 ## Summary
 
@@ -21,9 +22,11 @@ The result is intentionally conservative:
   plugin implementation truth.
 - `a2a-plane` keeps first-class contract, conformance, scanner, and release
   gate checks for the umbrella workspace.
-- The current `packages/*` mirrors are still stale and must not become
-  authoritative until a fresh import rehearsal proves equal-or-stricter package
-  coverage.
+- The `#538` candidate replaces `packages/*` with fresh tracked split-repo
+  trees and then proves them under package-local parity jobs.
+- Even when package parity is green, canonical flip remains blocked until a
+  separate operator decision records that split-repo implementation truth can
+  move.
 - Agent Olympics is out of scope for A2A monorepo CI parity, package boundary,
   import rehearsal, and issue routing.
 
@@ -31,9 +34,9 @@ The result is intentionally conservative:
 
 | Surface | Split repo canonical CI | Plane workspace job today | Parity status | Required before authoritative |
 | --- | --- | --- | --- | --- |
-| Broker | `jinwon-int/a2a-broker` `ci`: `npm ci`, `npm test`; source `test` runs `build`, script syntax checks, and built JS tests. | `broker` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs broker`; runner executes package `check`, build-info generation, syntax checks, built JS tests, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because mirrored content is still behind the split repo. | Fresh prefix import from `fae438a4fba301c2a9a02ca7cb11282867327920`; compare post-import scripts and generated build-info before authoritative use. |
-| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs docker-runner`; runner executes `check`, `build`, `lint`, `test`, pre-PR bootstrap guard, chaos E2E, no-publish release-candidate dry-run, package metadata checks, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because mirrored content is still behind the split repo. | Fresh prefix import from `269a0ef90737158b41f8da26241b9f7f4b14af5e`; compare package metadata and release-gate scripts before authoritative use. |
-| OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` `ci`: `npm ci`, `scan:public-readiness`, `smoke:a2a-conformance`, `npm test`; package build copies `openclaw.plugin.json`; `prepack` scans then builds. | `plugin` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a`; runner executes plugin-local public-readiness scan, A2A conformance smoke, tests, `prepack`, manifest copy check, OpenClaw peer-boundary check, and `npm pack --dry-run`. | CI job parity wiring is present, but canonical flip remains blocked because current split plugin bin/files shape still needs a fresh prefix import comparison. | Fresh prefix import from `a2e521271483ef0b6a29907c8228f0a442dd2db9`; compare bin/files metadata and sidecar surfaces before authoritative use. |
+| Broker | `jinwon-int/a2a-broker` `ci`: `npm ci`, `npm test`; source `test` runs `build`, script syntax checks, and built JS tests. | `broker` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs broker`; runner executes source-equivalent `npm test`, package `check` alias, build-info generation, syntax checks, built JS tests, and `npm pack --dry-run`. | Fresh import candidate is package-CI green locally; canonical flip remains blocked. | Candidate imports `f9f4af5a76649a37b8a3d492805b6e5f410683a6`; keep split repo canonical until PR/CI and separate flip approval complete. |
+| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs docker-runner`; runner executes `check`, `build`, `lint`, `test`, pre-PR bootstrap guard, chaos E2E, no-publish release-candidate parity audit, package metadata checks, and `npm pack --dry-run`. | Fresh import candidate is package-CI green locally; canonical flip remains blocked. | Candidate imports `269a0ef90737158b41f8da26241b9f7f4b14af5e`; no tag/release/publish path is authorized. |
+| OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` `ci`: `npm ci`, `scan:public-readiness`, `smoke:a2a-conformance`, `npm test`; package build copies `openclaw.plugin.json`; `prepack` scans then builds. | `plugin` job: `npm ci --include=dev`, `node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a`; runner executes plugin-local public-readiness scan, A2A conformance smoke, tests, `prepack`, manifest copy check, OpenClaw peer-boundary check, and `npm pack --dry-run`. | Fresh import candidate is package-CI green locally; canonical flip remains blocked. | Candidate imports `a2e521271483ef0b6a29907c8228f0a442dd2db9` with monorepo-compatible `tsc` and `check` aliases only. |
 
 ## Shared Umbrella Gates
 
@@ -50,8 +53,8 @@ duplicate:
   - `check:monorepo-import-rehearsal`;
   - `check:monorepo-ci-parity`.
 
-These are umbrella gates, not proof that the stale package mirrors can replace
-the split repos.
+These are umbrella gates. In `#538` they are used to test the fresh import
+candidate; they still are not a canonical flip approval by themselves.
 
 ## Known CI Differences
 
@@ -128,10 +131,26 @@ and the release-gate check is
 `a2a-plane#536` is `scripts/run-monorepo-package-ci-parity.mjs`, and the root
 release gate also runs `check:monorepo-package-ci-parity-jobs`.
 
-This wires concrete package jobs, but it still does not refresh `packages/*` as
-implementation truth. Split repos remain canonical until the next fresh prefix
-import proves the mirrored content and package metadata are current under these
-jobs.
+This wired concrete package jobs, but did not itself refresh `packages/*` as
+implementation truth.
+
+## Phase-4 Fresh Prefix Import Candidate (#538)
+
+The phase-4 candidate imports tracked files from fresh split-repo refs into the
+three package paths, then runs the package parity jobs before any canonical
+flip:
+
+| Surface | Candidate source ref | Candidate parity evidence | Remaining decision |
+| --- | --- | --- | --- |
+| Broker | `f9f4af5a76649a37b8a3d492805b6e5f410683a6` | `node scripts/run-monorepo-package-ci-parity.mjs broker` passed locally. | PR/CI evidence and separate canonical-flip approval. |
+| Docker runner | `269a0ef90737158b41f8da26241b9f7f4b14af5e` | `node scripts/run-monorepo-package-ci-parity.mjs docker-runner` passed locally. | PR/CI evidence and separate canonical-flip approval. |
+| OpenClaw plugin | `a2e521271483ef0b6a29907c8228f0a442dd2db9` | `node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a` passed locally. | PR/CI evidence and separate canonical-flip approval. |
+
+The candidate uses `git archive` tracked-tree imports, not history-preserving
+subtree merges. Closed issue/PR history remains in the split repos; future
+source provenance must cite the split repo and source ref. This is acceptable
+for the candidate PR because it is not a canonical flip and it keeps rollback
+as a normal PR revert.
 
 ## Canonical Flip Gate
 

@@ -147,14 +147,30 @@ function createRuntimeMock(options: { timeoutWaits?: boolean } = {}) {
 }
 
 describe("sessions_send hook registration", () => {
-  it("registers the plugin-owned sessions_send hook", () => {
+  it("does not register sessions_send unless the host advertises that typed hook", () => {
     const hookNames: string[] = [];
     const { runtime } = createRuntimeMock();
     plugin.register({
       config: {},
       runtime,
       on: (hookName: string) => {
-        hookNames.push(hookName);
+        if (hookName === "sessions_send") hookNames.push(hookName);
+      },
+      registerConfigMigration: () => {},
+      registerGatewayMethod: () => {},
+    } as never);
+    assert.deepEqual(hookNames, []);
+  });
+
+  it("registers the plugin-owned sessions_send hook when explicitly supported", () => {
+    const hookNames: string[] = [];
+    const { runtime } = createRuntimeMock();
+    plugin.register({
+      config: {},
+      runtime,
+      supportsTypedHook: (hookName: string) => hookName === "sessions_send",
+      on: (hookName: string) => {
+        if (hookName === "sessions_send") hookNames.push(hookName);
       },
       registerConfigMigration: () => {},
       registerGatewayMethod: () => {},
@@ -308,7 +324,7 @@ describe("createA2ASessionsSendHook", () => {
     assert.equal(result.dispatch.wake?.taskId, "task-wake-1");
   });
 
-  it("keeps Wake-on-Task default-off and suppresses duplicate wake keys", async () => {
+  it("no-duplicate-send gate blocks replayed sends with Wake-on-Task (hardened)", async () => {
     let wakeCalls = 0;
     let createCalls = 0;
     const hook = createA2ASessionsSendHook(
@@ -364,14 +380,76 @@ describe("createA2ASessionsSendHook", () => {
     const first = await hook(event);
     const second = await hook(event);
 
+    // First send succeeds normally with wake scheduled
     assert.equal(wakeCalls, 1);
+    assert.equal(createCalls, 1);
     assert.equal(first.handled, true);
     assert.equal(first.mode, "delegated");
     assert.equal(first.dispatch.wake?.status, "scheduled");
+
+    // Second send blocked entirely by no-duplicate-send gate
+    assert.equal(second.handled, false);
+    assert.equal(second.reason, "duplicate send suppressed by no-duplicate-send gate");
+    assert.equal(wakeCalls, 1);
+    assert.equal(createCalls, 1);
+  });
+
+  it("no-duplicate-send gate can be disabled via config", async () => {
+    let createCalls = 0;
+    const hook = createA2ASessionsSendHook(
+      {
+        plugins: {
+          entries: {
+            "a2a-broker-adapter": {
+              enabled: true,
+              config: {
+                baseUrl: "https://broker.example",
+                wakeOnTask: { enabled: true },
+                noDuplicateSend: { enabled: false },
+              },
+            },
+          },
+        },
+      },
+      undefined,
+      {
+        createBrokerClient: () => ({
+          createTask: async (request: Record<string, unknown>) => {
+            createCalls += 1;
+            return {
+              id: `task-dup-disabled-${createCalls}`,
+              intent: "chat",
+              status: "queued",
+              requester: { id: "hub-session", kind: "session", role: "hub" },
+              target: { id: "worker-node", kind: "node" },
+              targetNodeId: "worker-node",
+              payload: request.payload,
+              createdAt: "2026-04-19T00:00:00Z",
+              updatedAt: "2026-04-19T00:00:00Z",
+            };
+          },
+        }) as never,
+      },
+    );
+    const event = {
+      sessionKey: "worker-session",
+      target: { sessionKey: "worker-session", displayKey: "worker-node" },
+      message: "delegate this",
+      task: {
+        intent: "delegate",
+        instructions: "delegate this",
+        correlationId: "corr-legacy",
+      },
+      rawParams: {},
+    };
+
+    const first = await hook(event);
+    const second = await hook(event);
+
+    // Gate disabled: both go through, wake suppressed on replay
+    assert.equal(createCalls, 2);
+    assert.equal(first.handled, true);
     assert.equal(second.handled, true);
-    assert.equal(second.mode, "delegated");
-    assert.equal(second.dispatch.wake?.status, "skipped");
-    assert.equal(second.dispatch.wake?.code, "duplicate_wake");
   });
 
   it("runs the extracted delegated runtime in direct mode", async () => {

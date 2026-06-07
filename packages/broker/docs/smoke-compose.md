@@ -43,10 +43,28 @@ This compose stack has no secrets, no edge secret, and no reverse
 proxy. It is for single-host smoke verification only. Do not use it
 for production.
 
+## Build provenance (optional)
+
+The compose file accepts `A2A_BROKER_REVISION` and `A2A_BROKER_CREATED` as
+environment variables to stamp the Docker image with the exact git commit
+and build timestamp. If omitted, the image defaults to `unknown` for
+revision — sufficient for smoke tests but not for production images.
+
+```bash
+# Before docker compose build, set the revision to the current git commit
+cd a2a-broker
+export A2A_BROKER_REVISION=$(git rev-parse HEAD)
+export A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+These env vars propagate to both the `org.opencontainers.image.revision`
+Docker label and the runtime `A2A_BROKER_REVISION` env, so
+`/health.build.revision` and `docker inspect` labels match the
+deployed commit.
+
 ## Start the stack
 
 ```bash
-cd a2a-broker
 docker compose -f examples/docker-compose.smoke.yml up --build -d
 ```
 

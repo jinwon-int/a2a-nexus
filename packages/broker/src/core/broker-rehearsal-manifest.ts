@@ -44,7 +44,7 @@ export interface BrokerRehearsalManifest {
   terminalOutboxReadinessGate: {
     subscribeOnly: true;
     ackEndpointExercised: false;
-    requiredAckEvidence: ["operator_visible", "operator_confirmed", "provider_delivery_receipt"];
+    requiredAckEvidence: ["current_session_visible", "operator_visible", "operator_confirmed"];
     rejectedEvidence: ["provider_send_success"];
     readyWhen: string[];
   };
@@ -52,7 +52,7 @@ export interface BrokerRehearsalManifest {
     receiptStatus: "accepted" | "provider_sent" | "provider_accepted" | "current_session_visible" | "operator_visible" | "failed" | "timed_out" | "stale";
     decision: "pending" | "eligible" | "rejected";
     ackAllowed: boolean;
-    evidence?: "current_session_visible" | "operator_visible" | "operator_confirmed" | "provider_delivery_receipt";
+    evidence?: "current_session_visible" | "operator_visible" | "operator_confirmed";
     reason: string;
   }>;
   safeEvidenceFields: {
@@ -102,11 +102,11 @@ export function buildBrokerRehearsalManifest(options: BrokerRehearsalManifestOpt
     terminalOutboxReadinessGate: {
       subscribeOnly: true,
       ackEndpointExercised: false,
-      requiredAckEvidence: ["operator_visible", "operator_confirmed", "provider_delivery_receipt"],
+      requiredAckEvidence: ["current_session_visible", "operator_visible", "operator_confirmed"],
       rejectedEvidence: ["provider_send_success"],
       readyWhen: [
         "terminal event is replayable from the broker outbox cursor",
-        "operator-visible or provider-delivery receipt evidence exists",
+        "current-session-visible or operator-visible receipt evidence exists",
         "provider send acceptance alone is held unacked",
       ],
     },
@@ -159,7 +159,7 @@ export function buildBrokerRehearsalManifest(options: BrokerRehearsalManifestOpt
     operatorSummary: [
       "no-live rehearsal only; no provider send or broker terminal ACK is attempted",
       "canonical GitHub task payload is present for runner/plugin lanes",
-      "terminal outbox ACK remains gated on operator-visible/provider-delivery receipt evidence",
+      "terminal outbox ACK remains gated on current-session-visible/operator-visible receipt evidence",
       `receipt-gate canary verdict: ${receiptGateCanary.overallVerdict}`,
     ],
     overallVerdict: receiptGateCanary.overallVerdict,

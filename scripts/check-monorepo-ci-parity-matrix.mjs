@@ -64,13 +64,15 @@ if (fixture) {
   expect(fixture.childIssue === 'https://github.com/jinwon-int/a2a-plane/issues/514', 'fixture: childIssue must be #514');
   expect(fixture.refreshIssue === 'https://github.com/jinwon-int/a2a-plane/issues/528', 'fixture: refreshIssue must be #528');
   expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
+  expect(fixture.phase4FreshImportCandidateIssue === 'https://github.com/jinwon-int/a2a-plane/issues/538', 'fixture: phase4FreshImportCandidateIssue must be #538');
   expect(fixture.phase2Decision === 'package_ci_parity_not_equal_or_stricter_yet', 'fixture: phase2 decision must keep parity blocked');
+  expect(fixture.phase4CandidateDecision === 'package_ci_green_locally_but_canonical_flip_not_approved', 'fixture: phase4 decision must keep canonical flip blocked');
   expect(fixture.decision === 'record_ci_parity_matrix_without_canonical_flip', 'fixture: decision must be matrix-only');
   expect(fixture.canonicalUntilParityGreen === 'split_repos', 'fixture: split repos must remain canonical');
   expect(fixture.canonicalFlipApproved === false, 'fixture: canonical flip must not be approved');
 
   const expected = new Map([
-    ['broker', ['jinwon-int/a2a-broker', 'packages/broker', 'fae438a4fba301c2a9a02ca7cb11282867327920']],
+    ['broker', ['jinwon-int/a2a-broker', 'packages/broker', 'f9f4af5a76649a37b8a3d492805b6e5f410683a6']],
     ['docker-runner', ['jinwon-int/a2a-docker-runner', 'packages/docker-runner', '269a0ef90737158b41f8da26241b9f7f4b14af5e']],
     ['openclaw-plugin-a2a', ['jinwon-int/openclaw-plugin-a2a', 'packages/openclaw-plugin-a2a', 'a2e521271483ef0b6a29907c8228f0a442dd2db9']],
   ]);
@@ -84,13 +86,14 @@ if (fixture) {
     expect(repo.sourceRepo === sourceRepo, `fixture: ${surface} sourceRepo mismatch`);
     expect(repo.targetPath === targetPath, `fixture: ${surface} targetPath mismatch`);
     expect(repo.sourceMain === sourceMain, `fixture: ${surface} sourceMain mismatch`);
-    expect(repo.parityStatus === 'not_green_for_canonical_flip', `fixture: ${surface} parity must not be green`);
+    expect(repo.parityStatus === 'fresh_import_candidate_package_ci_green_canonical_flip_blocked', `fixture: ${surface} parity must be candidate-green but flip-blocked`);
     expect((repo.sourceWorkflow?.actions || []).includes('actions/checkout@v5'), `fixture: ${surface} must record split checkout@v5`);
     expect((repo.sourceWorkflow?.actions || []).includes('actions/setup-node@v5'), `fixture: ${surface} must record split setup-node@v5`);
-    expect((repo.planeJob?.actions || []).includes('actions/checkout@v4'), `fixture: ${surface} must record plane checkout@v4`);
-    expect((repo.planeJob?.actions || []).includes('actions/setup-node@v4'), `fixture: ${surface} must record plane setup-node@v4`);
+    expect((repo.planeJob?.actions || []).includes('actions/checkout@v5'), `fixture: ${surface} must record plane checkout@v5`);
+    expect((repo.planeJob?.actions || []).includes('actions/setup-node@v5'), `fixture: ${surface} must record plane setup-node@v5`);
     expect((repo.sourceWorkflow?.commands || []).includes('npm ci'), `fixture: ${surface} source workflow must include npm ci`);
-    expect((repo.planeJob?.commands || []).some((command) => /--ignore-scripts/.test(command)), `fixture: ${surface} plane job must record ignore-scripts install`);
+    expect((repo.planeJob?.commands || []).includes('npm ci --include=dev'), `fixture: ${surface} plane job must record npm ci --include=dev`);
+    expect(!(repo.planeJob?.commands || []).some((command) => /--ignore-scripts/.test(command)), `fixture: ${surface} plane job must not ignore lifecycle scripts`);
     expect((repo.requiredBeforeAuthoritative || []).length >= 5, `fixture: ${surface} needs required-before-authoritative items`);
     expect((repo.knownDifferences || []).length >= 5, `fixture: ${surface} needs known differences`);
     expect(repo.phase2PackageParity?.equalOrStricter === false, `fixture: ${surface} phase2 parity must not be equal-or-stricter yet`);

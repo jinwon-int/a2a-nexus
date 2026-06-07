@@ -112,9 +112,9 @@ EOF
   "exitCode": null,
   "signal": "SIGTERM",
   "stdout": "partial output before timeout",
-  "stderr": "container timed out after 2700000ms",
+  "stderr": "container timed out after 3600000ms",
   "artifacts": [],
-  "error": "container timed out after 2700000ms"
+  "error": "container timed out after 3600000ms"
 }
 EOF
     exit 1

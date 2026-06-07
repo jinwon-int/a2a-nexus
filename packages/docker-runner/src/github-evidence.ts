@@ -1,6 +1,144 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { GitHubEvidence, NormalizedRunnerTask, RunnerConfig, RunnerResult } from "./types.js";
+import { buildEmbeddedModelTimeoutSummary, detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
+import type { GitHubCommentLedger, GitHubEvidence, NormalizedRunnerTask, RunnerConfig, RunnerResult } from "./types.js";
+
+/**
+ * Post a Start comment on the linked GitHub issue to begin an evidence round.
+ *
+ * The Start comment is the first ledger entry.  It is idempotent:
+ * before posting, we check for an existing comment with the same dedupe key
+ * and return that URL instead of creating a duplicate.
+ *
+ * Parent: a2a-plane#204
+ */
+export async function postStartComment(
+  config: RunnerConfig,
+  task: NormalizedRunnerTask,
+): Promise<{ url: string; dedupeKey: string } | undefined> {
+  if (!task.issueUrl) {
+    console.error("[github-evidence] no issue URL; cannot post start comment");
+    return undefined;
+  }
+
+  const token = await readGitHubToken(config);
+  if (!token) {
+    console.error("[github-evidence] no GitHub token available; cannot post start comment");
+    return undefined;
+  }
+
+  const dedupeKey = buildStartCommentDedupeKey(task);
+  const dedupeMarker = `<!-- a2a-runner-start-comment:${dedupeKey} -->`;
+
+  // Idempotency: check if a Start comment with this dedupe marker already exists.
+  const existingUrl = await findExistingCommentByMarker(token, task.issueUrl, "a2a-runner-start-comment");
+  if (existingUrl) {
+    return { url: existingUrl, dedupeKey };
+  }
+
+  const body = buildStartCommentBody(task) + "\n" + dedupeMarker;
+  const url = await postGitHubComment(token, task.issueUrl, body);
+  if (!url) return undefined;
+  return { url, dedupeKey };
+}
+
+/**
+ * Build a replay-safe dedupe key for the Start comment.
+ *
+ * Uses task ID + run ID when available, falling back to task ID + issue URL.
+ */
+function buildStartCommentDedupeKey(task: NormalizedRunnerTask): string {
+  const taskPart = task.id.slice(0, 64);
+  const runPart = (task.runId ?? task.traceId ?? task.env?.A2A_RUN_ID ?? task.env?.RUN_ID ?? "").slice(0, 40);
+  const unique = runPart ? `${taskPart}-${runPart}` : taskPart;
+  // Remove characters that could break the HTML comment or URL.
+  return unique.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120) || "start";
+}
+
+/**
+ * Post a GitHub issue comment (internal helper).
+ *
+ * Returns the html_url of the created comment, or undefined on failure.
+ */
+async function postGitHubComment(
+  token: string,
+  issueUrl: string,
+  body: string,
+): Promise<string | undefined> {
+  const issueCommentUrl = parseIssueCommentApiUrl(issueUrl);
+  if (!issueCommentUrl) {
+    console.error(`[github-evidence] cannot parse issue URL: ${issueUrl}`);
+    return undefined;
+  }
+
+  const response = await fetch(issueCommentUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ body }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`GitHub API ${response.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await response.json() as { html_url?: string };
+  return data.html_url;
+}
+
+/**
+ * Find an existing issue comment that contains the given marker substring.
+ *
+ * Used for idempotent comment posting — if a comment with the dedupe marker
+ * already exists, return its URL instead of creating a duplicate.
+ */
+async function findExistingCommentByMarker(
+  token: string,
+  issueUrl: string,
+  marker: string,
+): Promise<string | undefined> {
+  const issueNumber = extractIssueNumber(issueUrl);
+  const ownerRepo = extractOwnerRepo(issueUrl);
+  if (!issueNumber || !ownerRepo) return undefined;
+
+  const listUrl = `https://api.github.com/repos/${ownerRepo}/issues/${issueNumber}/comments?per_page=100&sort=created&direction=desc`;
+
+  try {
+    const response = await fetch(listUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (!response.ok) return undefined;
+
+    const comments = await response.json() as Array<{ body?: string; html_url?: string }>;
+    for (const comment of comments) {
+      if (comment.body?.includes(marker) && comment.html_url) {
+        return comment.html_url;
+      }
+    }
+  } catch {
+    // If we can't check, proceed with posting.
+  }
+
+  return undefined;
+}
+
+function extractIssueNumber(issueUrl: string): string | undefined {
+  const match = issueUrl.match(/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/);
+  return match?.[1];
+}
+
+function extractOwnerRepo(issueUrl: string): string | undefined {
+  const match = issueUrl.match(/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/\d+/);
+  return match?.[1];
+}
 
 /**
  * Collect structured GitHub evidence after a runner task completes.
@@ -56,6 +194,14 @@ export async function collectGitHubEvidence(
     }
   }
 
+  // Build the GitHub comment evidence ledger from any posted comments.
+  // Comments are evidence ledger entries only — not ACK, read receipt,
+  // visibility proof, or operator approval.
+  // Parent: a2a-plane#204
+  // Parent: a2a-docker-runner#285
+  // Parent: a2a-docker-runner#284
+  evidence.commentLedger = buildCommentLedger(evidence, task);
+
   evidence.outcome = classifyGitHubEvidenceOutcome(result, evidence);
   const validationErrors = validateReleaseGateEvidence(evidence);
   if (validationErrors.length > 0) {
@@ -70,6 +216,18 @@ export async function collectGitHubEvidence(
 
 function classifyGitHubEvidenceOutcome(result: RunnerResult, evidence: GitHubEvidence): GitHubEvidence["outcome"] {
   if (evidence.prUrl) return "pr";
+
+  // Evidence-only / allowNoChanges lanes: classify no-change terminal
+  // evidence separately from infrastructure and patch failures. The marker
+  // alone is not terminal Done/Block evidence.
+  // Parent: a2a-docker-runner#169
+  const isNoChangeAllowed = isNoChangeAllowedResult(result);
+  if (isNoChangeAllowed) {
+    if (evidence.doneUrl || evidence.doneCommentUrl) return "succeeded_no_changes_with_done_evidence";
+    if (evidence.blockUrl || evidence.blockCommentUrl) return "blocked_no_changes_with_evidence";
+    return "missing_evidence";
+  }
+
   if (evidence.blockUrl || evidence.blockCommentUrl) return "block";
   if (evidence.doneUrl || evidence.doneCommentUrl) return "done";
   if (result.resultSummary?.status === "budget_limited" || result.artifactManifest?.status === "budget_limited") return "budget_limited";
@@ -77,7 +235,22 @@ function classifyGitHubEvidenceOutcome(result: RunnerResult, evidence: GitHubEvi
   return "missing_evidence";
 }
 
+/**
+ * Detect a no-change-allowed evidence-only / preflight outcome from container
+ * stdout markers.  The embedded script outputs `status=no_changes_allowed` when
+ * `allowNoChanges` is set and no code diff was produced.
+ *
+ * Parent: a2a-docker-runner#169
+ */
+function isNoChangeAllowedResult(result: RunnerResult): boolean {
+  const text = `${result.stdout}\n${result.stderr}`;
+  return /(?:^|\n)(?:status=no_changes_allowed|openclaw_no_changes=allowed)\b/.test(text);
+}
+
 function validateReleaseGateEvidence(evidence: GitHubEvidence): string[] {
+  // Evidence-only outcomes that terminate with valid Done/Block evidence are
+  // accepted without requiring PR-level release-gate checks.
+  if (evidence.outcome === "succeeded_no_changes_with_done_evidence" || evidence.outcome === "blocked_no_changes_with_evidence") return [];
   if (evidence.outcome !== "pr" && evidence.outcome !== "done" && evidence.outcome !== "block") return [];
 
   const errors: string[] = [];
@@ -154,11 +327,39 @@ function buildBaseEvidence(task: NormalizedRunnerTask, result: RunnerResult): Gi
       terminalAck: "requires_operator_receipt",
       providerSendIsReceiptEvidence: false,
     },
+    parentRoundId: safeOptionalText(task.parentRoundId, 64),
+    parentRoundTotal: task.parentRoundTotal,
+    parentRoundOrder: task.parentRoundOrder,
+    parentRoundProgress: safeOptionalText(task.parentRoundProgress, 64),
+    brokerOfRecordId: safeOptionalText(task.brokerOfRecordId, 64),
+    policyContext: task.policyContext ? {
+      policyMode: safeOptionalText(task.policyContext.policyMode, 64),
+      policyScope: safeOptionalText(task.policyContext.policyScope, 64),
+      policyParams: task.policyContext.policyParams ? { ...task.policyContext.policyParams } : undefined,
+    } : undefined,
     runId: safeOptionalText(task.runId ?? task.env?.A2A_RUN_ID ?? task.env?.RUN_ID, 120),
     traceId: safeOptionalText(task.traceId ?? task.env?.A2A_TRACE_ID ?? task.env?.TRACE_ID, 120),
+    crossBrokerHandoff: task.crossBrokerHandoff ? {
+      parentRoundId: safeOptionalText(task.crossBrokerHandoff.parentRoundId, 64),
+      originBrokerId: safeOptionalText(task.crossBrokerHandoff.originBrokerId, 64),
+      handoffBrokerId: safeOptionalText(task.crossBrokerHandoff.handoffBrokerId, 64),
+      childWorkerId: safeOptionalText(task.crossBrokerHandoff.childWorkerId, 64),
+    } : undefined,
+    workerModel: safeOptionalText(task.workerModel, 160),
+    workerThinking: safeOptionalText(task.workerThinking, 160),
+    startCommentUrl: extractStartCommentUrl(result),
     branch: extractBranch(result),
     commit: extractCommit(result),
   };
+}
+
+function extractStartCommentUrl(result: RunnerResult): string | undefined {
+  const lines = `${result.stdout}\n${result.stderr}`.split(/\r?\n/);
+  const startPostedIndex = lines.findIndex((line) => line.trim() === "start_comment=posted");
+  const candidates = (startPostedIndex >= 0 ? lines.slice(0, startPostedIndex + 1) : lines)
+    .flatMap((line) => [...line.matchAll(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+#issuecomment-\d+/g)].map((match) => match[0]))
+    .filter(isSafeGitHubEvidenceUrl);
+  return candidates[0];
 }
 
 function normalizeRepo(task: NormalizedRunnerTask): string | undefined {
@@ -213,6 +414,54 @@ function extractFirstMatch(result: RunnerResult, patterns: RegExp[]): string | u
   return undefined;
 }
 
+/**
+ * Build a GitHub comment evidence ledger from the current evidence state.
+ *
+ * Comments are evidence ledger entries only — not ACK, read receipt,
+ * visibility proof, or operator approval.  The ledger is explicitly
+ * separate from Terminal Brief ACK/read-receipt decisions.
+ *
+ * Parent: a2a-plane#204
+ * Parent: a2a-docker-runner#285
+ * Parent: a2a-docker-runner#284
+ */
+export function buildCommentLedger(evidence: GitHubEvidence, task: NormalizedRunnerTask): GitHubCommentLedger {
+  const entries: GitHubCommentLedger["entries"] = [];
+
+  if (evidence.startCommentUrl) {
+    entries.push({
+      dedupeKey: buildStartCommentDedupeKey(task),
+      url: evidence.startCommentUrl,
+      kind: "start",
+      postedAt: new Date().toISOString(),
+    });
+  }
+
+  if (evidence.blockCommentUrl) {
+    entries.push({
+      dedupeKey: `block:${task.id}`,
+      url: evidence.blockCommentUrl,
+      kind: "block",
+      postedAt: new Date().toISOString(),
+    });
+  }
+
+  if (evidence.doneCommentUrl) {
+    entries.push({
+      dedupeKey: `done:${task.id}`,
+      url: evidence.doneCommentUrl,
+      kind: "done",
+      postedAt: new Date().toISOString(),
+    });
+  }
+
+  return {
+    schemaVersion: "a2a.runner.github-comment-ledger.v1",
+    entries,
+    disclaimer: "GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval.",
+  };
+}
+
 function isMissingPatchCommand(result: RunnerResult): boolean {
   return [result.stdout, result.stderr]
     .flatMap((text) => text.split(/\r?\n/).map((line) => line.trim()))
@@ -220,7 +469,16 @@ function isMissingPatchCommand(result: RunnerResult): boolean {
 }
 
 function isGitHubEvidenceMode(mode?: string): boolean {
-  return mode === "github-propose-patch" || mode === "propose_patch" || mode === "github-verify";
+  return Boolean(mode && [
+    "github-propose-patch",
+    "propose_patch",
+    "github-verify",
+    "github-read-only-validation",
+    "read-only-validation",
+    "github-libero-validation",
+    "libero-validation",
+    "family-wiki-readonly-audit",
+  ].includes(mode));
 }
 
 /**
@@ -264,24 +522,9 @@ async function postBlockComment(
     return undefined;
   }
 
+  const marker = buildEvidenceMarker(task, "block");
   const body = buildBlockCommentBody(task, result);
-  const response = await fetch(issueCommentUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ body }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`GitHub API ${response.status}: ${text.slice(0, 200)}`);
-  }
-
-  const data = await response.json() as { html_url?: string };
-  return data.html_url;
+  return postIdempotentEvidenceComment(token, issueCommentUrl, marker, body);
 }
 
 /**
@@ -307,7 +550,26 @@ async function postDoneComment(
     return undefined;
   }
 
+  const marker = buildEvidenceMarker(task, "done");
   const body = buildDoneCommentBody(task, result);
+  return postIdempotentEvidenceComment(token, issueCommentUrl, marker, body);
+}
+
+/**
+ * Parse a GitHub issue URL into the API endpoint for issue comments.
+ *
+ * Input:  https://github.com/jinwon-int/a2a-docker-runner/issues/5
+ * Output: https://api.github.com/repos/jinwon-int/a2a-docker-runner/issues/5/comments
+ */
+async function postIdempotentEvidenceComment(
+  token: string,
+  issueCommentUrl: string,
+  marker: string,
+  body: string,
+): Promise<string | undefined> {
+  const existingUrl = await findExistingEvidenceComment(token, issueCommentUrl, marker);
+  if (existingUrl) return existingUrl;
+
   const response = await fetch(issueCommentUrl, {
     method: "POST",
     headers: {
@@ -327,12 +589,51 @@ async function postDoneComment(
   return data.html_url;
 }
 
-/**
- * Parse a GitHub issue URL into the API endpoint for issue comments.
- *
- * Input:  https://github.com/jinwon-int/a2a-docker-runner/issues/5
- * Output: https://api.github.com/repos/jinwon-int/a2a-docker-runner/issues/5/comments
- */
+async function findExistingEvidenceComment(
+  token: string,
+  issueCommentUrl: string,
+  marker: string,
+): Promise<string | undefined> {
+  const url = new URL(issueCommentUrl);
+  url.searchParams.set("per_page", "100");
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+    },
+  });
+  if (!response.ok) return undefined;
+  const comments = await response.json().catch(() => []) as Array<{ body?: string; html_url?: string }>;
+  const match = comments.find((comment) => comment.body?.includes(marker) && isSafeGitHubEvidenceUrl(comment.html_url));
+  return match?.html_url;
+}
+
+function buildEvidenceMarker(task: NormalizedRunnerTask, outcome: "done" | "block"): string {
+  const taskId = (task.id || "task").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 120);
+  const issue = (normalizeIssue(task) ?? "issue").replace(/[^A-Za-z0-9_.#/-]+/g, "_").slice(0, 160);
+  return `<!-- a2a:github-evidence:v1 task=${taskId} issue=${issue} outcome=${outcome} -->`;
+}
+
+function buildGitHubProjectionSafetyLines(lang: string): string[] {
+  if (lang === "ko") {
+    return [
+      "- GitHub comment evidence projection: `ledger-only` (Terminal Brief 확장)",
+      "- commentIsTerminalAck: `false` (ACK, read receipt, visibility 증거 아님)",
+      "- commentIsVisibilityReceipt: `false` (visibility receipt 증거 아님)",
+      "- commentIsOperatorApproval: `false` (operator approval 아님)",
+      "- manifest binding: `artifacts/manifest.json` / `resultSummary.evidenceHints`",
+    ];
+  }
+  return [
+    "- GitHub comment evidence projection: `ledger-only` (Terminal Brief extension)",
+    "- commentIsTerminalAck: `false` (not ACK, read receipt, or visibility evidence)",
+    "- commentIsVisibilityReceipt: `false` (not visibility receipt evidence)",
+    "- commentIsOperatorApproval: `false` (not operator approval)",
+    "- manifest binding: `artifacts/manifest.json` / `resultSummary.evidenceHints`",
+  ];
+}
+
 function parseIssueCommentApiUrl(issueUrl: string | undefined): string | undefined {
   if (!issueUrl) return undefined;
   const match = issueUrl.match(
@@ -340,6 +641,81 @@ function parseIssueCommentApiUrl(issueUrl: string | undefined): string | undefin
   );
   if (!match) return undefined;
   return `https://api.github.com/repos/${match[1]}/issues/${match[2]}/comments`;
+}
+
+/**
+ * Build a Start comment body.
+ *
+ * The Start comment marks the beginning of an evidence round.
+ * It is an evidence ledger entry, not ACK, read receipt, visibility proof,
+ * or operator approval.
+ *
+ * Parent: a2a-plane#204
+ * Parent: a2a-docker-runner#285
+ * Parent: a2a-docker-runner#284
+ */
+export function buildStartCommentBody(task: NormalizedRunnerTask): string {
+  const lang = task.reportLanguage ?? "ko";
+  const requestedBy = task.requestedBy ?? "a2a-broker";
+  const issueUrl = normalizeIssueUrl(task) ?? "N/A";
+
+  const disclaimerLine = lang === "ko"
+    ? "> 이 코멘트는 증거 원장(evidence ledger) 항목입니다. ACK, 읽음 확인, 표시 증거 또는 운영자 승인 증거가 아닙니다."
+    : "> This comment is an evidence ledger entry. It is not ACK, read receipt, visibility proof, or operator approval.";
+
+  if (lang === "ko") {
+    return [
+      "## 🟢 Start",
+      "",
+      `**요청 노드**: ${requestedBy}`,
+      `**Task ID**: \`${task.id}\``,
+      `**Issue URL**: ${issueUrl}`,
+      `**의도**: ${task.intent}`,
+      `**모드**: ${task.mode ?? "N/A"}`,
+      ...(task.issueTitle ? [`**이슈 제목**: ${task.issueTitle}`] : []),
+      ...(task.taskBrief ? [`**작업 요약**: ${task.taskBrief}`] : []),
+      ...(task.parentRoundId ? [`**부모 라운드 ID**: \`${task.parentRoundId}\``] : []),
+      ...(task.parentRoundTotal && task.parentRoundOrder ? [`**라운드 진행**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+      ...(task.parentRoundProgress ? [`**라운드 진행률**: ${task.parentRoundProgress}`] : []),
+      ...(task.brokerOfRecordId ? [`**Broker of Record**: \`${task.brokerOfRecordId}\``] : []),
+      ...(task.policyContext?.policyScope ? [`**정책 범위**: ${task.policyContext.policyScope}`] : []),
+      ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
+      "",
+      "작업을 시작합니다. 저장소를 검사하고 필요한 코드/문서/테스트 변경을 진행합니다.",
+      "",
+      disclaimerLine,
+      "",
+      "> 자동 생성된 Start 코멘트 — A2A Docker Runner",
+    ].join("\n");
+  }
+
+  return [
+    "## 🟢 Start",
+    "",
+    `**Requested by**: ${requestedBy}`,
+    `**Task ID**: \`${task.id}\``,
+    `**Issue URL**: ${issueUrl}`,
+    `**Intent**: ${task.intent}`,
+    `**Mode**: ${task.mode ?? "N/A"}`,
+    ...(task.issueTitle ? [`**Issue title**: ${task.issueTitle}`] : []),
+    ...(task.taskBrief ? [`**Task brief**: ${task.taskBrief}`] : []),
+    ...(task.parentRoundId ? [`**Parent round ID**: \`${task.parentRoundId}\``] : []),
+    ...(task.parentRoundTotal && task.parentRoundOrder ? [`**Round progress**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+    ...(task.parentRoundProgress ? [`**Round progress indicator**: ${task.parentRoundProgress}`] : []),
+    ...(task.brokerOfRecordId ? [`**Broker of record**: \`${task.brokerOfRecordId}\``] : []),
+    ...(task.policyContext?.policyScope ? [`**Policy scope**: ${task.policyContext.policyScope}`] : []),
+    ...(task.policyContext?.policyMode ? [`**Policy mode**: ${task.policyContext.policyMode}`] : []),
+    ...(task.workerModel ? [`**Worker Model**: \`${task.workerModel}\``] : []),
+    ...(task.workerThinking ? [`**Worker Thinking**: \`${task.workerThinking}\``] : []),
+    ...(task.crossBrokerHandoff?.handoffBrokerId ? [`**Handoff Broker**: \`${task.crossBrokerHandoff.handoffBrokerId}\``] : []),
+    ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
+    "",
+    "Beginning work. Inspecting repository and making warranted code/docs/tests changes.",
+    "",
+    disclaimerLine,
+    "",
+    "> Auto-generated Start comment — A2A Docker Runner",
+  ].join("\n");
 }
 
 /**
@@ -358,9 +734,12 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
   const issueUrl = normalizeIssueUrl(task) ?? "N/A";
   const validationLines = buildValidationSummaryLines(result, lang);
   const safetyLines = buildNoLiveNoAckSafetyLines(lang);
+  const projectionLines = buildGitHubProjectionSafetyLines(lang);
+  const marker = buildEvidenceMarker(task, "block");
 
   if (lang === "ko") {
     return [
+      marker,
       "## 🚫 Block",
       "",
       `**요청 노드**: ${requestedBy}`,
@@ -369,6 +748,15 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
       `**상태**: ${result.status}`,
       `**종료 코드**: ${result.exitCode ?? "N/A"}`,
       ...(result.signal ? [`**시그널**: ${result.signal}`] : []),
+      ...(task.parentRoundId ? [`**부모 라운드 ID**: \`${task.parentRoundId}\``] : []),
+      ...(task.parentRoundTotal && task.parentRoundOrder ? [`**라운드 진행**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+      ...(task.parentRoundProgress ? [`**라운드 진행률**: ${task.parentRoundProgress}`] : []),
+      ...(task.policyContext?.policyScope ? [`**정책 범위**: ${task.policyContext.policyScope}`] : []),
+      ...(task.policyContext?.policyMode ? [`**정책 모드**: ${task.policyContext.policyMode}`] : []),
+      ...(task.workerModel ? [`**Worker Model**: \`${task.workerModel}\``] : []),
+      ...(task.workerThinking ? [`**Worker Thinking**: \`${task.workerThinking}\``] : []),
+      ...(task.crossBrokerHandoff?.handoffBrokerId ? [`**Handoff Broker**: \`${task.crossBrokerHandoff.handoffBrokerId}\``] : []),
+      ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
       "",
       "### 사유",
       reason,
@@ -381,6 +769,7 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
       "",
       "### 안전 상태",
       ...safetyLines,
+      ...projectionLines,
       "",
       "### 아티팩트 manifest 요약",
       ...artifactLines,
@@ -396,6 +785,7 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
   }
 
   return [
+    marker,
     "## 🚫 Block",
     "",
     `**Requested by**: ${requestedBy}`,
@@ -404,6 +794,15 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
     `**Status**: ${result.status}`,
     `**Exit code**: ${result.exitCode ?? "N/A"}`,
     ...(result.signal ? [`**Signal**: ${result.signal}`] : []),
+    ...(task.parentRoundId ? [`**Parent round ID**: \`${task.parentRoundId}\``] : []),
+    ...(task.parentRoundTotal && task.parentRoundOrder ? [`**Round progress**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+    ...(task.parentRoundProgress ? [`**Round progress indicator**: ${task.parentRoundProgress}`] : []),
+    ...(task.policyContext?.policyScope ? [`**Policy scope**: ${task.policyContext.policyScope}`] : []),
+    ...(task.policyContext?.policyMode ? [`**Policy mode**: ${task.policyContext.policyMode}`] : []),
+    ...(task.workerModel ? [`**Worker Model**: \`${task.workerModel}\``] : []),
+    ...(task.workerThinking ? [`**Worker Thinking**: \`${task.workerThinking}\``] : []),
+    ...(task.crossBrokerHandoff?.handoffBrokerId ? [`**Handoff Broker**: \`${task.crossBrokerHandoff.handoffBrokerId}\``] : []),
+    ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
     "",
     "### Reason",
     reason,
@@ -416,6 +815,7 @@ export function buildBlockCommentBody(task: NormalizedRunnerTask, result: Runner
     "",
     "### Safety state",
     ...safetyLines,
+    ...projectionLines,
     "",
     "### Artifact manifest summary",
     ...artifactLines,
@@ -443,14 +843,26 @@ export function buildDoneCommentBody(task: NormalizedRunnerTask, result: RunnerR
   const issueUrl = normalizeIssueUrl(task) ?? "N/A";
   const validationLines = buildValidationSummaryLines(result, lang);
   const safetyLines = buildNoLiveNoAckSafetyLines(lang);
+  const projectionLines = buildGitHubProjectionSafetyLines(lang);
+  const marker = buildEvidenceMarker(task, "done");
 
   if (lang === "ko") {
     return [
+      marker,
       "## ✅ Done",
       "",
       `**요청 노드**: ${requestedBy}`,
       `**Task ID**: \`${task.id}\``,
       `**Issue URL**: ${issueUrl}`,
+      ...(task.parentRoundId ? [`**부모 라운드 ID**: \`${task.parentRoundId}\``] : []),
+      ...(task.parentRoundTotal && task.parentRoundOrder ? [`**라운드 진행**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+      ...(task.parentRoundProgress ? [`**라운드 진행률**: ${task.parentRoundProgress}`] : []),
+      ...(task.policyContext?.policyScope ? [`**정책 범위**: ${task.policyContext.policyScope}`] : []),
+      ...(task.policyContext?.policyMode ? [`**정책 모드**: ${task.policyContext.policyMode}`] : []),
+      ...(task.workerModel ? [`**Worker Model**: \`${task.workerModel}\``] : []),
+      ...(task.workerThinking ? [`**Worker Thinking**: \`${task.workerThinking}\``] : []),
+      ...(task.crossBrokerHandoff?.handoffBrokerId ? [`**Handoff Broker**: \`${task.crossBrokerHandoff.handoffBrokerId}\``] : []),
+      ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
       `**상태**: ${result.status} (PR URL 없음 — no-op 또는 PR 생성 불필요 태스크)`,
       ...(existingPr ? [existingPr] : []),
       "",
@@ -465,6 +877,7 @@ export function buildDoneCommentBody(task: NormalizedRunnerTask, result: RunnerR
       "",
       "### 안전 상태",
       ...safetyLines,
+      ...projectionLines,
       "",
       "### 아티팩트 manifest 요약",
       ...artifactLines,
@@ -480,11 +893,21 @@ export function buildDoneCommentBody(task: NormalizedRunnerTask, result: RunnerR
   }
 
   return [
+    marker,
     "## ✅ Done",
     "",
     `**Requested by**: ${requestedBy}`,
     `**Task ID**: \`${task.id}\``,
     `**Issue URL**: ${issueUrl}`,
+    ...(task.parentRoundId ? [`**Parent round ID**: \`${task.parentRoundId}\``] : []),
+    ...(task.parentRoundTotal && task.parentRoundOrder ? [`**Round progress**: ${task.parentRoundOrder}/${task.parentRoundTotal}`] : []),
+    ...(task.parentRoundProgress ? [`**Round progress indicator**: ${task.parentRoundProgress}`] : []),
+    ...(task.policyContext?.policyScope ? [`**Policy scope**: ${task.policyContext.policyScope}`] : []),
+    ...(task.policyContext?.policyMode ? [`**Policy mode**: ${task.policyContext.policyMode}`] : []),
+    ...(task.workerModel ? [`**Worker Model**: \`${task.workerModel}\``] : []),
+    ...(task.workerThinking ? [`**Worker Thinking**: \`${task.workerThinking}\``] : []),
+    ...(task.crossBrokerHandoff?.handoffBrokerId ? [`**Handoff Broker**: \`${task.crossBrokerHandoff.handoffBrokerId}\``] : []),
+    ...(task.runId ? [`**Run ID**: \`${task.runId}\``] : []),
     `**Status**: ${result.status} (no PR URL — no-op or PR-less task)`,
     ...(existingPr ? [existingPr] : []),
     "",
@@ -499,6 +922,7 @@ export function buildDoneCommentBody(task: NormalizedRunnerTask, result: RunnerR
     "",
     "### Safety state",
     ...safetyLines,
+    ...projectionLines,
     "",
     "### Artifact manifest summary",
     ...artifactLines,
@@ -541,6 +965,8 @@ function buildReason(task: NormalizedRunnerTask, result: RunnerResult): string {
   if (isMissingPatchCommand(result)) {
     return "GitHub patch task reached the default pipeline, but no coding-agent patch command was configured. Configure `A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT` or `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` and retry.";
   }
+  const embeddedTimeoutSummary = buildEmbeddedModelTimeoutSummary(result, task.reportLanguage ?? "ko");
+  if (embeddedTimeoutSummary) return embeddedTimeoutSummary;
   if (result.error) return `\`\`\`\n${sanitizeCommentText(truncate(result.error, 2000))}\n\`\`\``;
   return `Runner task failed with status \`${result.status}\`.`;
 }
@@ -553,6 +979,9 @@ function buildAction(task: NormalizedRunnerTask, result: RunnerResult, lang: str
     if (isMissingPatchCommand(result)) {
       return "Inject patch command configuration, then retry the same task.";
     }
+    if (detectEmbeddedModelTimeoutNoFallback(result)) {
+      return "Treat this as a worker/runtime model-timeout failure. Add fallback or timeout policy before retrying long embedded OpenClaw patch lanes.";
+    }
     if (result.status === "timeout") return "Investigate the timeout and retry with adjusted timeout/resources.";
     return "Review command logs and artifacts, fix the failure cause, then retry.";
   }
@@ -561,6 +990,9 @@ function buildAction(task: NormalizedRunnerTask, result: RunnerResult, lang: str
   }
   if (isMissingPatchCommand(result)) {
     return "패치 명령 설정을 주입한 뒤 동일 task를 재시도하세요.";
+  }
+  if (detectEmbeddedModelTimeoutNoFallback(result)) {
+    return "worker/runtime 모델 timeout 장애로 분류하세요. 긴 embedded OpenClaw patch lane을 재시도하기 전에 fallback 또는 timeout 정책을 보강하세요.";
   }
   if (result.status === "timeout") return "타임아웃 원인을 확인하고 timeout/resources 조정 후 재시도하세요.";
   return "명령 로그와 아티팩트를 확인해 실패 원인을 수정한 뒤 재시도하세요.";

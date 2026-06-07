@@ -270,18 +270,18 @@ test("redacts gh auth login --with-token commands", () => {
 });
 
 test("redacts xai API key patterns", () => {
-  const xaiApiKeyFixture = "xai-" + "fixture".repeat(7);
-  const raw = `XAI_API_KEY=${xaiApiKeyFixture}`;
+  const key = ["xai", "Qi2qGiM318OjhTm3lJmK0fBPlaQs8Sygz4hxmWZYA9oog32BLsRvK2SDplxzfPuivoZ88QRrwBMnyFE2"].join("-");
+  const raw = `XAI_API_KEY=${key}`;
   const redacted = redactSecrets(raw);
   assert.doesNotMatch(redacted, /xai-[A-Za-z0-9_]+/);
   assert.match(redacted, /<redacted-api-key>/);
 });
 
 test("redacts supermemory API key patterns", () => {
-  const supermemoryApiKeyFixture = "sm_" + "fixture".repeat(7);
-  const raw = `SUPERMEMORY_KEY=${supermemoryApiKeyFixture}`;
+  const key = ["sm", "n8ahWEKy9qpUHCJuytAe9q_QTpBKiBZFVPDPeBqjrYIPpUrxLATdmUmsHLSaAWnSSKALdMAPJJyWBFHgpgaDxcR"].join("_");
+  const raw = `SUPERMEMORY_KEY=${key}`;
   const redacted = redactSecrets(raw);
-  assert.doesNotMatch(redacted, /sm_fixture/);
+  assert.doesNotMatch(redacted, /sm_n8ah/);
   assert.match(redacted, /<redacted-api-key>/);
 });
 

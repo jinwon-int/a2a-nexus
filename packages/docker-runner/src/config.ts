@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -6,6 +6,55 @@ import type { RunnerBuildMetadata, RunnerConfig, RunnerEngine, RunnerExtraMount 
 
 const DEFAULT_ROOT = "/var/lib/openclaw-a2a/tasks";
 const DEFAULT_IMAGE = "node:22-bookworm-slim";
+const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
+const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
+export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
+
+export function loadEnvFile(path: string): Record<string, string> {
+  const parsed: Record<string, string> = {};
+  const text = readFileSync(path, "utf8");
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("export ")) line = line.slice("export ".length).trim();
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2].trim();
+    if (
+      (value.startsWith("'") && value.endsWith("'")) ||
+      (value.startsWith('"') && value.endsWith('"'))
+    ) {
+      const quote = value[0];
+      value = value.slice(1, -1);
+      if (quote === '"') {
+        value = value
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\(["\\$])/g, "$1");
+      }
+    } else {
+      value = value.replace(/\s+#.*$/, "").trim();
+    }
+    parsed[key] = value;
+  }
+  return parsed;
+}
+
+export function mergeRunnerEnvFile(
+  env: NodeJS.ProcessEnv = process.env,
+  envFilePath = env.A2A_DOCKER_RUNNER_ENV_FILE || DEFAULT_SERVICE_ENV_FILE,
+): NodeJS.ProcessEnv {
+  const merged: NodeJS.ProcessEnv = {};
+  if (envFilePath && existsSync(envFilePath)) {
+    Object.assign(merged, loadEnvFile(envFilePath));
+  }
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged;
+}
 
 export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   const engine = normalizeEngine(env.A2A_DOCKER_RUNNER_ENGINE) ?? (env.A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT ? "docker" : detectEngine());
@@ -21,19 +70,62 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
   const image = env.A2A_DOCKER_RUNNER_IMAGE || DEFAULT_IMAGE;
 
-  return {
+  const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT,
     engine,
     image,
     buildMetadata: loadBuildMetadata(env, image),
     githubTokenFile,
-    defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || 15 * 60 * 1000),
+    defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
     network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" ? "host" : "bridge"),
     extraMounts,
     ...patchCommand,
   };
+
+  validateRunnerConfig(config);
+
+  return config;
+}
+
+/**
+ * Pre-deploy config validation: fail-fast on schema/config mismatch before the
+ * runner starts executing tasks. Catches operator misconfiguration early so a
+ * bad deploy never reaches Gateway restart or container launch.
+ *
+ * Parent: a2a-plane#249
+ */
+export function validateRunnerConfig(config: RunnerConfig): void {
+  const errors: string[] = [];
+
+  if (!config.image || typeof config.image !== "string" || !config.image.trim()) {
+    errors.push("image must be a non-empty string");
+  }
+
+  if (!config.rootDir || !config.rootDir.startsWith("/")) {
+    errors.push("rootDir must be a non-empty absolute path starting with /");
+  }
+
+  if (config.network && !/^(bridge|host|none)$/.test(config.network)) {
+    errors.push(`unsupported network mode: ${JSON.stringify(config.network)} (expected bridge, host, or none)`);
+  }
+
+  if (config.memory && !/^\d+[bkmgtpe]?$/i.test(config.memory)) {
+    errors.push(`invalid memory limit: ${JSON.stringify(config.memory)} (expected format like "2g" or "512m")`);
+  }
+
+  if (config.cpus && !/^\d+(\.\d+)?$/.test(config.cpus)) {
+    errors.push(`invalid cpus: ${JSON.stringify(config.cpus)} (expected format like "2" or "1.5")`);
+  }
+
+  if (!Number.isFinite(config.defaultTimeoutMs) || config.defaultTimeoutMs <= 0) {
+    errors.push(`invalid defaultTimeoutMs: ${config.defaultTimeoutMs} (expected positive number)`);
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`runner pre-deploy config validation failed:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
+  }
 }
 
 function loadBuildMetadata(env: NodeJS.ProcessEnv, runtimeImage: string): RunnerBuildMetadata | undefined {
@@ -61,7 +153,6 @@ function looksSensitiveOrHostSpecific(value: string): boolean {
   if (/gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{32,}/i.test(value)) return true;
   if (/(token|password|secret|api[_-]?key)\s*[:=]/i.test(value)) return true;
   if (/^[a-z][a-z0-9+.-]*:\/\/[^/\s]+@/i.test(value)) return true;
-  if (/^<[^>]*(?:private|host|checkout|path|secret)[^>]*>$/i.test(value)) return true;
   if (/^\/(?:home|root|Users|var|opt|srv|tmp)\b/.test(value)) return true;
   return false;
 }
@@ -92,7 +183,7 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
     throw new Error("invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: expected an array");
   }
 
-  return parsed.map((entry, index): RunnerExtraMount => {
+  const mounts = parsed.map((entry, index): RunnerExtraMount => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`invalid extra mount at index ${index}: expected object`);
     }
@@ -114,6 +205,35 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
     validateOpenClawRuntimeMount(mount, index);
     return mount;
   });
+
+  validateOpenClawProfileMountSelection(mounts, env);
+  return mounts;
+}
+
+function validateOpenClawProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): void {
+  const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
+  if (profile !== "openclaw") return;
+
+  const target = "/run/secrets/openclaw-dir";
+  const profileMounts = mounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.target) === target);
+  if (profileMounts.length === 0) {
+    throw new Error(
+      `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: openclaw patch profile requires a ${target} mount; ` +
+      "omit A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON or include the OpenClaw config mount explicitly",
+    );
+  }
+
+  const expectedSource = env.A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR;
+  if (!expectedSource) return;
+
+  const normalizedExpected = normalizeAbsolutePathForPolicy(expectedSource);
+  const conflicts = profileMounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.source) !== normalizedExpected);
+  if (conflicts.length === 0) return;
+
+  throw new Error(
+    `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${target} source conflicts with ` +
+    "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR; mount the configured OpenClaw profile directory or omit the duplicate mount",
+  );
 }
 
 function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): void {
@@ -148,7 +268,9 @@ function isProtectedOpenClawRuntimePath(value: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
-function loadPatchCommandConfig(env: NodeJS.ProcessEnv): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate"> {
+function loadPatchCommandConfig(
+  env: NodeJS.ProcessEnv,
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -156,7 +278,15 @@ function loadPatchCommandConfig(env: NodeJS.ProcessEnv): Pick<RunnerConfig, "com
   if (commandJson) return { commandJson };
 
   const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
-  if (profile === "openclaw") return { commandScript: buildOpenClawPatchCommandScript(env) };
+  if (profile === "openclaw") {
+    return {
+      commandProfile: "openclaw",
+      commandScript: buildOpenClawPatchCommandScript(env),
+      openclawProfile: {
+        allowNpmInstallFallback: env.A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK === "1",
+      },
+    };
+  }
 
   return { commandTemplate: env.A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE || undefined };
 }
@@ -170,14 +300,31 @@ function normalizePatchCommandProfile(value?: string): "openclaw" | undefined {
 
 function buildOpenClawPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const agent = shellSingleQuote(env.A2A_OPENCLAW_AGENT_ID || "main");
-  const model = shellSingleQuote(env.A2A_OPENCLAW_MODEL || "openai-codex/gpt-5.5");
-  const thinking = shellSingleQuote(env.A2A_OPENCLAW_THINKING || "medium");
-  const timeout = shellSingleQuote(env.A2A_OPENCLAW_TIMEOUT_SEC || "1800");
+  const defaultModel = shellSingleQuote(env.A2A_OPENCLAW_MODEL || "openai-codex/gpt-5.5");
+  const defaultThinking = shellSingleQuote(env.A2A_OPENCLAW_THINKING || "medium");
+  const defaultTimeout = shellSingleQuote(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC);
   const disableBundledPlugins = shellSingleQuote(env.A2A_OPENCLAW_DISABLE_BUNDLED_PLUGINS || "0");
+  const allowNpmInstallFallback = shellSingleQuote(env.A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK || "0");
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export OPENCLAW_DISABLE_BUNDLED_PLUGINS=${disableBundledPlugins}
+export A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK=${allowNpmInstallFallback}
+if [ -z "\${A2A_OPENCLAW_MODEL:-}" ]; then
+  export A2A_OPENCLAW_MODEL=${defaultModel}
+else
+  export A2A_OPENCLAW_MODEL
+fi
+if [ -z "\${A2A_OPENCLAW_THINKING:-}" ]; then
+  export A2A_OPENCLAW_THINKING=${defaultThinking}
+else
+  export A2A_OPENCLAW_THINKING
+fi
+if [ -z "\${A2A_OPENCLAW_TIMEOUT_SEC:-}" ]; then
+  export A2A_OPENCLAW_TIMEOUT_SEC=${defaultTimeout}
+else
+  export A2A_OPENCLAW_TIMEOUT_SEC
+fi
 
 if [ ! -d /run/secrets/openclaw-dir ]; then
   printf 'error=openclaw_config_mount_missing\\n' | tee -a /work/artifacts/summary.txt
@@ -186,8 +333,35 @@ if [ ! -d /run/secrets/openclaw-dir ]; then
 fi
 
 if ! command -v openclaw >/dev/null 2>&1; then
-  npm install -g openclaw >/work/artifacts/openclaw-install.log 2>&1
+  if [ "\${A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK:-0}" = "1" ]; then
+    printf 'notice=openclaw_cli_missing_install_attempted\\n' | tee -a /work/artifacts/summary.txt
+    if npm install -g openclaw >/work/artifacts/openclaw-install.log 2>&1; then
+      printf 'openclaw_cli=installed_via_npm\\n' | tee -a /work/artifacts/summary.txt
+    else
+      install_exit=$?
+      printf 'error=openclaw_install_failed\\n' | tee -a /work/artifacts/summary.txt
+      printf 'failure_category=openclaw_cli_unavailable\\n' | tee -a /work/artifacts/summary.txt
+      printf 'openclaw_install_exit=%s\\n' "$install_exit" | tee -a /work/artifacts/summary.txt
+      {
+        printf 'Embedded OpenClaw CLI is missing from the runner image and explicit npm install fallback failed.\\n'
+        printf 'See artifacts/openclaw-install.log for npm output.\\n'
+        printf 'Use a runner image with OpenClaw preinstalled or an approved trusted read-only OpenClaw CLI/package mount.\\n'
+      } | tee /work/artifacts/patch-command.log
+      exit 2
+    fi
+  else
+    printf 'error=openclaw_cli_missing\\n' | tee -a /work/artifacts/summary.txt
+    printf 'failure_category=openclaw_cli_unavailable\\n' | tee -a /work/artifacts/summary.txt
+    printf 'openclaw_install_fallback=disabled\\n' | tee -a /work/artifacts/summary.txt
+    {
+      printf 'Embedded OpenClaw CLI is missing from the runner image and per-task npm install fallback is disabled.\\n'
+      printf 'Use a runner image with OpenClaw preinstalled or an approved trusted read-only OpenClaw CLI/package mount.\\n'
+      printf 'Set A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK=1 only as an explicit compatibility escape hatch.\\n'
+    } | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
 fi
+printf 'openclaw_cli=%s\\n' "$(openclaw --version | head -n 1)" | tee -a /work/artifacts/summary.txt
 
 rm -rf /root/.openclaw
 mkdir -p /root/.openclaw/agents/${agent}/agent
@@ -238,20 +412,31 @@ delete config.gateway;
 delete config.cron;
 delete config.bindings;
 delete config.hooks;
+delete config.surfaces;
 
+const selectedModel = process.env.A2A_OPENCLAW_MODEL || "openai-codex/gpt-5.5";
+const selectedProvider = selectedModel.includes("/") ? selectedModel.split("/")[0] : "";
 const providers = config.models?.providers;
-if (providers && typeof providers === "object" && providers["openai-codex"]) {
-  config.models.providers = { "openai-codex": providers["openai-codex"] };
+if (providers && typeof providers === "object") {
+  const preservedProviders = {};
+  for (const providerId of ["openai-codex", selectedProvider]) {
+    if (providerId && providers[providerId]) preservedProviders[providerId] = providers[providerId];
+  }
+  if (Object.keys(preservedProviders).length > 0) {
+    config.models.providers = preservedProviders;
+  }
 }
 
 const defaults = config.agents?.defaults;
 if (defaults && typeof defaults === "object") {
   delete defaults.heartbeat;
+  delete defaults.silentReply;
+  delete defaults.silentReplyRewrite;
   if (defaults.agentRuntime && typeof defaults.agentRuntime === "object") {
     delete defaults.agentRuntime.fallback;
   }
   if (defaults.model && typeof defaults.model === "object") {
-    defaults.model.primary = "openai-codex/gpt-5.5";
+    defaults.model.primary = selectedModel;
     defaults.model.fallbacks = [];
   }
   delete defaults.models;
@@ -262,12 +447,14 @@ if (Array.isArray(agentList)) {
   for (const entry of agentList) {
     if (!entry || typeof entry !== "object") continue;
     delete entry.heartbeat;
+    delete entry.silentReply;
+    delete entry.silentReplyRewrite;
     if (entry.agentRuntime && typeof entry.agentRuntime === "object") {
       delete entry.agentRuntime.fallback;
     }
     delete entry.models;
     if (entry.model && typeof entry.model === "object") {
-      entry.model.primary = "openai-codex/gpt-5.5";
+      entry.model.primary = selectedModel;
       entry.model.fallbacks = [];
     }
   }
@@ -284,8 +471,7 @@ fi
 # copied in-container config. This copy lives only inside the disposable runner
 # container and is never written to artifacts.
 if [ -n "\${GH_TOKEN:-}" ] && [ -f /root/.openclaw/openclaw.json ]; then
-  export GITHUB_TOKEN
-  node <<'A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW'
+  env GITHUB_TOKEN="\${GITHUB_TOKEN:-$GH_TOKEN}" node <<'A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW'
 const fs = require("node:fs");
 const path = "/root/.openclaw/openclaw.json";
 const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
@@ -364,16 +550,21 @@ A2A_GUARD_OPENCLAW_SESSION_STORE
 
 chmod -R u+rwX /root/.openclaw
 
-# Point embedded OpenClaw at the checked-out repository without mutating
-# /root/.openclaw/workspace. Host OpenClaw workspaces contain identity,
-# bootstrap, memory, and operator state; runner code must never delete or
-# recreate that path as a sandbox alignment mechanism.
-export OPENCLAW_WORKSPACE_DIR="$PWD"
+# Point embedded OpenClaw at a separate temp workspace directory so
+# identity/bootstrap files (AGENTS.md, SOUL.md, etc.) created during
+# OpenClaw initialization do not pollute the checked-out repository.
+# OpenClaw tools can still access and modify files anywhere in the
+# container filesystem; the workspace dir only holds agent runtime
+# state, not the repo checkout.
+# Ref: a2a-docker-runner#209 regression — agents created bootstrap
+# files in /work/repo, causing pre-PR guard false-block with exit 4.
+export OPENCLAW_WORKSPACE_DIR="/tmp/openclaw-agent-workspace"
+mkdir -p "$OPENCLAW_WORKSPACE_DIR"
 
-# Embedded OpenClaw resolves the active agent workspace from config, not only
-# from OPENCLAW_WORKSPACE_DIR. Point the disposable in-container config at the
-# checked-out repository so repo patch runs do not fall back to the host/default
-# agent workspace or its bootstrap files.
+# Point the disposable in-container config at the temp workspace so
+# OpenClaw does not fall back to cwd (/work/repo) or the host/default
+# agent workspace. Config workspace and OPENCLAW_WORKSPACE_DIR must
+# agree, otherwise the agent may reset cwd-derived workspace state.
 if [ -f /root/.openclaw/openclaw.json ]; then
   node <<'A2A_SET_OPENCLAW_WORKSPACE'
 const fs = require("node:fs");
@@ -400,7 +591,11 @@ printf 'openclaw_workspace=%s\n' "$OPENCLAW_WORKSPACE_DIR" | tee -a /work/artifa
 cat > /work/artifacts/openclaw-prompt.md <<'A2A_OPENCLAW_PROMPT_EOF'
 You are running inside the A2A Docker Runner on a checked-out GitHub repository.
 
-Use /work/artifacts/prompt.md as the assignment. Complete a minimal, safe patch in the current repository only.
+The repository is checked out at /work/repo (or /work/<repo-name> for named checkouts).
+Your OpenClaw workspace is a separate temp directory for agent state only.
+Make all code changes in the repository checkout, not your workspace.
+
+Use /work/artifacts/prompt.md as the assignment. Complete a minimal, safe patch in the repository only.
 
 Rules:
 - Use OpenClaw tools available inside this container.
@@ -415,28 +610,90 @@ printf '\\n--- A2A assignment ---\\n' >> /work/artifacts/openclaw-prompt.md
 cat /work/artifacts/prompt.md >> /work/artifacts/openclaw-prompt.md
 
 OPENCLAW_ASSIGNMENT_PROMPT="$(cat /work/artifacts/openclaw-prompt.md)"
+set +e
 openclaw agent \\
   --local \\
   --agent ${agent} \\
-  --model ${model} \\
+  --model "$A2A_OPENCLAW_MODEL" \\
   --message "$OPENCLAW_ASSIGNMENT_PROMPT" \\
-  --thinking ${thinking} \\
-  --timeout ${timeout} \\
+  --thinking "$A2A_OPENCLAW_THINKING" \\
+  --timeout "$A2A_OPENCLAW_TIMEOUT_SEC" \\
   --json \\
   2>&1 | tee /work/artifacts/openclaw-output.txt
+OPENCLAW_EXIT="\${PIPESTATUS[0]}"
+set -e
+printf 'openclaw_exit_code=%s\n' "$OPENCLAW_EXIT" | tee -a /work/artifacts/summary.txt
+if [ "$OPENCLAW_EXIT" -ne 0 ]; then
+  if { [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; } \\
+    && grep -Eiq '(^|[[:space:]*_#-])(Done evidence|Done comment|Done[[:space:]]*[^[:alnum:]]|##[[:space:]]*Done|Block evidence|Block comment|Block[[:space:]]*[^[:alnum:]]|##[[:space:]]*Block)' /work/artifacts/openclaw-output.txt; then
+    printf 'notice=openclaw_nonzero_allowed_for_evidence_only_lane exit=%s\n' "$OPENCLAW_EXIT" | tee -a /work/artifacts/summary.txt
+  else
+    printf 'error=openclaw_agent_failed\n' | tee -a /work/artifacts/summary.txt
+    exit "$OPENCLAW_EXIT"
+  fi
+fi
 
 # Fail closed if the embedded agent left its workspace bootstrap/persona files
 # in the checkout. These files are prompt/runtime context, not repository
-# artifacts, and must never be swept into PRs by broad git-add behavior.
-bootstrap_leaks="$(git status --porcelain -- .openclaw AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md memory 2>/dev/null | sed -n 's/^?? //p' || true)"
+# artifacts, and must never be swept into PRs by broad git-add behavior. Use
+# the same ignored-file-aware scanner shape as the runner pre/post guard rather
+# than git status, because workspace files may be covered by .gitignore.
+BOOTSTRAP_BANNED="AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md"
+BOOTSTRAP_BANNED_DIRS=".openclaw memory"
+find_bootstrap_leaks() {
+  repo_dir="$1"
+  (
+    cd "$repo_dir"
+    for name in $BOOTSTRAP_BANNED; do
+      if [ -e "$name" ]; then
+        printf '%s\n' "$name"
+      fi
+    done
+    for name in $BOOTSTRAP_BANNED_DIRS; do
+      if [ -d "$name" ]; then
+        found=0
+        while IFS= read -r path; do
+          found=1
+          printf '%s\n' "\${path#./}"
+        done < <(find "$name" -mindepth 1 -print | sort)
+        if [ "$found" -eq 0 ]; then
+          printf '%s\n' "$name"
+        fi
+      fi
+    done
+  )
+}
+bootstrap_leaks="$(find_bootstrap_leaks . 2>/dev/null || true)"
 if [ -n "$bootstrap_leaks" ]; then
-  printf 'error=openclaw_workspace_bootstrap_leak\n' | tee -a /work/artifacts/summary.txt
-  printf 'OpenClaw workspace bootstrap artifacts appeared in the checkout; refusing to produce a PR with runtime context files.\n' | tee /work/artifacts/patch-command.log
-  printf '%s\n' "$bootstrap_leaks" | sed 's#^#bootstrap_leak=#' >> /work/artifacts/summary.txt
-  exit 4
+  unsafe_bootstrap_leaks=""
+  while IFS= read -r leak; do
+    [ -n "$leak" ] || continue
+    if [ -e "$leak" ] && [ -z "$(git ls-files -- "$leak")" ] && git check-ignore -q -- "$leak"; then
+      rm -rf -- "$leak"
+      printf 'notice=scrubbed_ignored_openclaw_bootstrap %s\n' "$leak" | tee -a /work/artifacts/summary.txt
+    else
+      unsafe_bootstrap_leaks="\${unsafe_bootstrap_leaks}\${leak}
+"
+    fi
+  done <<A2A_BOOTSTRAP_LEAKS
+$bootstrap_leaks
+A2A_BOOTSTRAP_LEAKS
+  if [ -n "$unsafe_bootstrap_leaks" ]; then
+    printf 'error=openclaw_workspace_bootstrap_leak\n' | tee -a /work/artifacts/summary.txt
+    printf 'OpenClaw workspace bootstrap artifacts appeared in the checkout and were not safe to scrub; refusing to produce a PR with runtime context files.\n' | tee /work/artifacts/patch-command.log
+    printf 'Files detected (repo-relative):\n' | tee -a /work/artifacts/patch-command.log
+    printf '%s\n' "$unsafe_bootstrap_leaks" | tee -a /work/artifacts/patch-command.log
+    printf '%s\n' "$unsafe_bootstrap_leaks" | sed '/^$/d; s#^#bootstrap_leak=#' >> /work/artifacts/summary.txt
+    exit 4
+  fi
 fi
 
 if [ -z "$(git status --porcelain)" ]; then
+  if [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; then
+    printf 'openclaw_no_changes=allowed\\n' | tee -a /work/artifacts/summary.txt
+    printf 'OpenClaw produced no repository changes; task-level evidence-only/no-change mode allows runner closeout.\\n' | tee -a /work/artifacts/patch-command.log
+    exit 0
+  fi
   printf 'error=openclaw_completed_without_changes\\n' | tee -a /work/artifacts/summary.txt
   printf 'OpenClaw produced no repository changes; refusing false Done.\\n' | tee -a /work/artifacts/patch-command.log
   exit 2
@@ -459,7 +716,13 @@ function validatePatchExecutorPolicy(
     );
   }
 
-  for (const [key, value] of Object.entries(patchCommand)) {
+  const executablePatchCommands = {
+    commandScript: patchCommand.commandScript,
+    commandJson: patchCommand.commandJson,
+    commandTemplate: patchCommand.commandTemplate,
+  };
+
+  for (const [key, value] of Object.entries(executablePatchCommands)) {
     if (!value) continue;
     if (referencesClaudeExecutor(value)) {
       throw new Error(

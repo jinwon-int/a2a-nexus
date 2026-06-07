@@ -1,12 +1,16 @@
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
+import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const TERMINAL_TASK_EVENT_KINDS = new Set<TaskStatusEvent["kind"]>(["succeeded", "failed", "canceled"]);
-const TERMINAL_TASK_ACK_EVIDENCE = new Set<TerminalTaskOutboxAckEvidence>([
+const TERMINAL_TASK_ACK_INPUT_EVIDENCE = new Set<TerminalTaskOutboxAckInputEvidence>([
   "current_session_visible",
   "operator_visible",
   "operator_confirmed",
+]);
+const LEGACY_TERMINAL_TASK_ACK_EVIDENCE = new Set<TerminalTaskOutboxAckEvidence>([
+  ...TERMINAL_TASK_ACK_INPUT_EVIDENCE,
   "provider_delivery_receipt",
 ]);
 const TERMINAL_TASK_RECEIPT_STATUSES = new Set<TerminalTaskReceiptStatus>([
@@ -22,11 +26,11 @@ const TERMINAL_TASK_RECEIPT_STATUSES = new Set<TerminalTaskReceiptStatus>([
   "failed",
 ]);
 const LEGACY_TERMINAL_TASK_RECEIPT_STATUSES = new Set(["sent", "provider_delivered_if_known"]);
-const URL_KEYS = ["prUrl", "doneUrl", "blockUrl"] as const;
 const TASK_BRIEF_KEYS = ["githubIssueTitle", "taskTitle", "title", "taskBrief"] as const;
 const MAX_SUMMARY_CHARS = 500;
 const MAX_TASK_BRIEF_CHARS = 160;
 const MAX_ACK_NOTE_CHARS = 240;
+const MAX_TERMINAL_BRIEF_TITLE_CHARS = 240;
 
 export const DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION = 1000;
 
@@ -36,6 +40,12 @@ export type TerminalTaskStatus = Extract<TaskStatus, "succeeded" | "failed" | "c
 export interface TerminalTaskEventPayload {
   taskId: string;
   status: TerminalTaskStatus;
+  /** Canonical Terminal Brief parent round id. Mirrors `run` for legacy consumers. */
+  parentRoundId?: string;
+  /** Broker that produced the Terminal Brief projection. */
+  originBrokerId?: string;
+  /** Broker of record that owns operator notification/ACK. */
+  brokerOfRecordId?: string;
   /** Operator-safe round/run key for grouping worker terminal notifications. */
   run?: string;
   /** Transport trace id when the assignment came through an A2A exchange. */
@@ -54,6 +64,54 @@ export interface TerminalTaskEventPayload {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  crossBrokerHandoff?: {
+    parentRoundId: string;
+    originBrokerId: string;
+    handoffBrokerId?: string;
+    originTaskId?: string;
+    childWorkerId?: string;
+  };
+  /** Explicit delivery ownership for projected child briefs; projections never send or ACK. */
+  notificationOwnership?: {
+    ownerBrokerId: string;
+    scope: "parent-broker-only";
+    providerSendPermittedByProjection: false;
+    terminalAckPermittedByProjection: false;
+    reason: string;
+  };
+  /**
+   * Parent broker completion sequence for this round (1-based numerator).
+   * This is a succeeded-child count, not lane order or terminal-event order.
+   * Only populated when the broker has a round progress counter; absent for
+   * child/handoff brokers and when round total is unknown.
+   */
+  parentRoundProgress?: number;
+  /**
+   * Parent broker terminal-event sequence for this round (1-based numerator).
+   * Counts unique canonical children that reached any terminal status. This is
+   * used to make failed/canceled/blocked titles show round closure progress
+   * separately from succeeded-child progress.
+   */
+  parentRoundTerminalProgress?: number;
+  /**
+   * Explains how the progress numerator was derived. Parent-owned handoff
+   * tasks use the parent round lane/order because the handoff broker only sees
+   * its local child completion.
+   */
+  parentRoundProgressSource?: "broker_local_count" | "parent_round_order";
+  /**
+   * Total worker/task count expected for this parent round (denominator).
+   * Derived from task payload metadata set by the orchestrator/operator.
+   * Absent when unknown — downstream notifiers should fall back to a readable
+   * default title.
+   */
+  parentRoundTotal?: number;
+  /** 1-based worker/task lane/order within the parent round. */
+  parentRoundOrder?: number;
+  /** Compact operator title for parent-round Terminal Brief notifications. */
+  terminalBriefTitle?: string;
+  /** Compatibility alias consumed by older Terminal Brief renderers. */
+  title?: string;
 }
 
 export interface TerminalTaskOutboxEvent {
@@ -65,8 +123,8 @@ export interface TerminalTaskOutboxEvent {
   createdAt: string;
   /**
    * Receipt-confirmed terminal ack state. This is intentionally stricter than
-   * Gateway/provider send success: callers must supply operator-visible or
-   * provider delivery receipt evidence before the broker marks this cursor acked.
+   * Gateway/provider send success: callers must supply current-session-visible
+   * or operator-visible evidence before the broker marks this cursor acked.
    */
   ack?: TerminalTaskOutboxAckState;
   /**
@@ -87,6 +145,8 @@ export type TerminalTaskOutboxAckEvidence =
   | "operator_confirmed"
   | "provider_delivery_receipt";
 
+export type TerminalTaskOutboxAckInputEvidence = Exclude<TerminalTaskOutboxAckEvidence, "provider_delivery_receipt">;
+
 export type TerminalTaskReceiptStatus =
   | "accepted"
   | "started"
@@ -100,7 +160,7 @@ export type TerminalTaskReceiptStatus =
   | "failed";
 
 export interface TerminalTaskOutboxAckInput {
-  evidence: TerminalTaskOutboxAckEvidence;
+  evidence: TerminalTaskOutboxAckInputEvidence;
   acknowledgedAt?: string;
   receiptId?: string;
   note?: string;
@@ -180,6 +240,15 @@ export class TerminalTaskEventOutbox {
   private readonly maxEvents: number;
   private readonly maxSeen: number;
 
+  /**
+   * Tracks unique terminal canonical child task IDs per run/round key.
+   * The set size is used as the parentRoundProgress numerator so that n/N
+   * reflects terminal lane arrivals, regardless of succeeded/failed/canceled
+   * outcome. A failed Terminal Brief still closes that lane for operator
+   * progress purposes.
+   */
+  private readonly terminalChildIds = new Map<string, Set<string>>();
+
   constructor(options: TerminalTaskEventOutboxOptions = {}) {
     this.maxEvents = normalizePositiveInt(options.maxEvents, DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION);
     this.maxSeen = this.maxEvents * 2;
@@ -198,6 +267,9 @@ export class TerminalTaskEventOutbox {
     if (this.seen.has(id)) return null;
 
     const payload = buildTerminalTaskPayload(task);
+    applyRoundProgressMetadata(payload, this.terminalChildIds);
+    applyTerminalBriefTitle(payload);
+    applyTerminalBriefCompatibilityAliases(payload);
     const event: TerminalTaskOutboxEvent = {
       id,
       kind: "task.terminal",
@@ -210,7 +282,7 @@ export class TerminalTaskEventOutbox {
       },
       ackAudit: buildAckAudit(payload, {
         decision: "pending",
-        reason: "terminal event accepted; awaiting current-session-visible/operator-visible/provider-delivery evidence before ACK",
+        reason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
         updatedAt: taskEvent.timestamp,
         receiptStatus: "accepted",
       }),
@@ -219,6 +291,142 @@ export class TerminalTaskEventOutbox {
     this.events.push(event);
     this.markSeen(id);
     this.enforceRetention();
+    return event;
+  }
+
+
+  enqueueCrossBrokerProjection(projection: CrossBrokerTerminalBriefProjection): TerminalTaskOutboxEvent | null {
+    // Stable notification idempotency key:
+    //   parentRoundId + canonicalChildTaskId + terminal status + notification owner
+    //
+    // The canonical child task id is, in order of preference:
+    //   1. projection.childTaskId  (explicit child broker task id)
+    //   2. worker:<childWorkerId>   (discriminates multiple workers from same origin broker)
+    //   3. broker:<originBrokerId>  (fallback — origin broker id alone)
+    //
+    // completedAt is intentionally EXCLUDED from this key so that replay/retry
+    // with slightly different timestamps (clock skew, retransmission) does not
+    // create duplicate operator-facing Terminal Brief events.
+    const canonicalChildTaskId = projection.childTaskId
+      ?? (projection.childWorkerId ? `worker:${projection.childWorkerId}` : undefined)
+      ?? `broker:${projection.originBrokerId}`;
+    const notificationOwner = projection.brokerOfRecordId ?? "unknown-parent-broker";
+    const stableId = `cross-broker:${projection.parentRoundId}:${canonicalChildTaskId}:${projection.status}:${notificationOwner}`;
+    const id = `terminal:${encodeURIComponent(stableId)}`;
+
+    const existing = this.events.find((event) => event.id === id);
+    if (existing) return existing;
+    if (this.seen.has(id)) return null;
+
+    // syntheticTaskId is used for the outbox event payload taskId (cosmetic),
+    // not for idempotency. Use childTaskId or a descriptive fallback.
+    const syntheticTaskId = projection.childTaskId
+      ?? (projection.childWorkerId ? `cross-broker-worker:${projection.childWorkerId}` : undefined)
+      ?? `cross-broker:${projection.parentRoundId}:${projection.originBrokerId}`;
+
+    const taskBrief = sanitizeTaskBrief(projection.taskBrief)
+      ?? sanitizeTaskBrief(`Cross-broker Terminal Brief from ${projection.originBrokerId}`);
+    const testSummary = sanitizeSummary(projection.summary);
+    const terminalBriefTitle = sanitizeRenderedTerminalBriefText(projection.terminalBriefTitle, MAX_TERMINAL_BRIEF_TITLE_CHARS);
+    const evidenceUrl = firstSafeHttpUrl(projection.evidenceUrl);
+    const parentBrokerId = projection.brokerOfRecordId ?? "unknown-parent-broker";
+    const payload: TerminalTaskEventPayload = {
+      taskId: syntheticTaskId,
+      status: projection.status,
+      parentRoundId: projection.parentRoundId,
+      originBrokerId: projection.originBrokerId,
+      ...(projection.brokerOfRecordId ? { brokerOfRecordId: projection.brokerOfRecordId } : {}),
+      run: projection.parentRoundId,
+      taskDescription: `Cross-broker Terminal Brief from ${projection.originBrokerId}`,
+      worker: projection.childWorkerId ?? projection.originBrokerId,
+      ...(taskBrief ? { taskBrief } : {}),
+      ...(evidenceUrl ? { doneUrl: evidenceUrl } : {}),
+      ...(testSummary ? { testSummary } : {}),
+      createdAt: projection.emittedAt,
+      updatedAt: projection.completedAt,
+      completedAt: projection.completedAt,
+      ...(projection.parentRoundTotal ? { parentRoundTotal: projection.parentRoundTotal } : {}),
+      ...(projection.parentRoundOrder ? { parentRoundProgress: projection.parentRoundOrder, parentRoundOrder: projection.parentRoundOrder } : {}),
+      crossBrokerHandoff: {
+        parentRoundId: projection.parentRoundId,
+        originBrokerId: parentBrokerId,
+        handoffBrokerId: projection.originBrokerId,
+        ...(projection.childTaskId ? { originTaskId: projection.childTaskId } : {}),
+        ...(projection.childWorkerId ? { childWorkerId: projection.childWorkerId } : {}),
+      },
+      notificationOwnership: {
+        ownerBrokerId: parentBrokerId,
+        scope: "parent-broker-only",
+        providerSendPermittedByProjection: false,
+        terminalAckPermittedByProjection: false,
+        reason: "cross-broker projection rows are aggregation evidence only; provider send and terminal ACK belong to a separate parent-broker operator-facing Terminal Brief row",
+      },
+    };
+    applyRoundProgressMetadata(payload, this.terminalChildIds);
+    applyTerminalBriefTitle(payload);
+    if (terminalBriefTitle) payload.terminalBriefTitle = terminalBriefTitle;
+    applyTerminalBriefCompatibilityAliases(payload);
+    const event: TerminalTaskOutboxEvent = {
+      id,
+      kind: "task.terminal",
+      taskEventId: 0,
+      payload,
+      createdAt: projection.receivedAt,
+      receipt: {
+        status: "accepted",
+        updatedAt: projection.receivedAt,
+      },
+      ackAudit: buildAckAudit(payload, {
+        decision: "pending",
+        reason: "cross-broker terminal projection accepted as evidence only; create or update a separate parent-broker operator-facing row before ACK",
+        updatedAt: projection.receivedAt,
+        receiptStatus: "accepted",
+      }),
+      attempts: 0,
+    };
+    this.events.push(event);
+    this.markSeen(id);
+    this.enqueueCrossBrokerOperatorFacingRow(projection, payload, stableId);
+    this.enforceRetention();
+    return event;
+  }
+
+  private enqueueCrossBrokerOperatorFacingRow(
+    projection: CrossBrokerTerminalBriefProjection,
+    evidencePayload: TerminalTaskEventPayload,
+    projectionStableId: string,
+  ): TerminalTaskOutboxEvent | null {
+    const stableId = `cross-broker-operator:${projectionStableId}`;
+    const id = `terminal:${encodeURIComponent(stableId)}`;
+    const existing = this.events.find((event) => event.id === id);
+    if (existing) return existing;
+    if (this.seen.has(id)) return null;
+
+    const {
+      notificationOwnership: _notificationOwnership,
+      ...payload
+    } = structuredClone(evidencePayload);
+
+    const event: TerminalTaskOutboxEvent = {
+      id,
+      kind: "task.terminal",
+      taskEventId: 0,
+      payload,
+      createdAt: projection.receivedAt,
+      receipt: {
+        status: "accepted",
+        updatedAt: projection.receivedAt,
+      },
+      ackAudit: buildAckAudit(payload, {
+        decision: "pending",
+        reason: "parent-broker operator-facing Terminal Brief row materialized from cross-broker projection; awaiting current-session-visible/operator-visible evidence before ACK",
+        updatedAt: projection.receivedAt,
+        receiptStatus: "accepted",
+      }),
+      attempts: 0,
+    };
+    this.events.push(event);
+    this.markSeen(id);
     return event;
   }
 
@@ -264,18 +472,32 @@ export class TerminalTaskEventOutbox {
    */
   acknowledge(id: string, receipt: TerminalTaskOutboxAckInput): TerminalTaskOutboxEvent | null {
     const event = this.events.find((candidate) => candidate.id === id);
-    if (!receipt || !isTerminalTaskOutboxAckEvidence(receipt.evidence)) {
+    if (!receipt || !isTerminalTaskOutboxAckInputEvidence(receipt.evidence)) {
       if (event) {
         event.ackAudit = buildAckAudit(event.payload, {
           decision: "rejected",
-          reason: "terminal ACK rejected: provider send success is not current-session-visible/operator-visible/provider-delivery evidence",
+          reason: "terminal ACK rejected: provider evidence is not current-session-visible/operator-visible evidence",
           updatedAt: new Date().toISOString(),
           receiptStatus: event.receipt.status,
         });
       }
-      throw new TypeError("terminal outbox ack requires current-session-visible/receipt/operator-visible evidence");
+      throw new TypeError("terminal outbox ack requires current-session-visible/operator-visible evidence");
     }
     if (!event) return null;
+    if (event.ack) {
+      return event;
+    }
+    // Projection/evidence rows are never terminal-ACK eligible themselves. A parent
+    // broker must ACK its separate operator-facing Terminal Brief row instead.
+    if (event.payload.notificationOwnership?.terminalAckPermittedByProjection === false) {
+      event.ackAudit = buildAckAudit(event.payload, {
+        decision: "rejected",
+        reason: "terminal ACK rejected: parent-owned cross-broker projection row is evidence-only; the parent broker (" + (event.payload.notificationOwnership.ownerBrokerId ?? "unknown") + ") must ACK a separate operator-facing Terminal Brief row.",
+        updatedAt: new Date().toISOString(),
+        receiptStatus: event.receipt.status,
+      });
+      throw new TypeError("terminal outbox ack rejected: parent-owned cross-broker projection row is evidence-only");
+    }
     event.ack = buildAckState(receipt);
     event.receipt = buildReceiptStateFromAck(event.ack);
     event.ackAudit = buildAckAudit(event.payload, {
@@ -298,6 +520,19 @@ export class TerminalTaskEventOutbox {
     }
     const event = this.events.find((candidate) => candidate.id === id);
     if (!event) return null;
+    // Projection/evidence rows must not record provider-send or visibility receipts.
+    // Those belong to the parent broker's separate operator-facing row.
+    if (event.payload.notificationOwnership?.providerSendPermittedByProjection === false) {
+      if (receipt.status === "provider_sent" || receipt.status === "provider_accepted" || receipt.status === "operator_visible" || receipt.status === "current_session_visible") {
+        event.ackAudit = buildAckAudit(event.payload, {
+          decision: "rejected",
+          reason: "receipt status rejected: parent-owned cross-broker projection row is evidence-only; the parent broker (" + (event.payload.notificationOwnership.ownerBrokerId ?? "unknown") + ") must record provider/operator receipt on a separate operator-facing Terminal Brief row.",
+          updatedAt: new Date().toISOString(),
+          receiptStatus: event.receipt.status,
+        });
+        throw new TypeError("terminal outbox receipt rejected: parent-owned cross-broker projection row is evidence-only");
+      }
+    }
     event.receipt = buildReceiptState(receipt.status, receipt.updatedAt ?? new Date().toISOString(), receipt.note);
     event.ackAudit = buildAckAudit(event.payload, ackAuditFromReceipt(event.receipt));
     return event;
@@ -318,6 +553,7 @@ export class TerminalTaskEventOutbox {
       this.restore(event);
     }
     this.enforceRetention();
+    this.rebuildRoundCounters();
   }
 
   private restore(event: TerminalTaskOutboxEvent): void {
@@ -355,6 +591,21 @@ export class TerminalTaskEventOutbox {
   private forwardEvents(options: TerminalTaskOutboxSubscribeOptions): TerminalTaskOutboxEvent[] {
     const start = this.indexAfter(options.afterId);
     return this.applyLimit(this.events.slice(start), options.limit);
+  }
+
+  /**
+   * Rebuild terminal child counters from stored events so that fresh enqueues
+   * resume at the correct completed-lane count after a snapshot restore.
+   */
+  private rebuildRoundCounters(): void {
+    this.terminalChildIds.clear();
+    for (const event of this.events) {
+      const runKey = event.payload.run;
+      if (!runKey) continue;
+      const terminalCounted = this.terminalChildIds.get(runKey) ?? new Set<string>();
+      terminalCounted.add(event.payload.taskId);
+      this.terminalChildIds.set(runKey, terminalCounted);
+    }
   }
 
   private indexAfter(afterId: string | undefined): number {
@@ -401,7 +652,11 @@ export function isTerminalStatus(status: TaskStatus): status is TerminalTaskStat
 }
 
 export function isTerminalTaskOutboxAckEvidence(value: unknown): value is TerminalTaskOutboxAckEvidence {
-  return typeof value === "string" && TERMINAL_TASK_ACK_EVIDENCE.has(value as TerminalTaskOutboxAckEvidence);
+  return typeof value === "string" && LEGACY_TERMINAL_TASK_ACK_EVIDENCE.has(value as TerminalTaskOutboxAckEvidence);
+}
+
+export function isTerminalTaskOutboxAckInputEvidence(value: unknown): value is TerminalTaskOutboxAckInputEvidence {
+  return typeof value === "string" && TERMINAL_TASK_ACK_INPUT_EVIDENCE.has(value as TerminalTaskOutboxAckInputEvidence);
 }
 
 export function isTerminalTaskReceiptStatus(value: unknown): value is TerminalTaskReceiptStatus {
@@ -423,44 +678,351 @@ function isReceiptConfirmed(event: TerminalTaskOutboxEvent): boolean {
   return event.ack?.status === "receipt_confirmed" || Boolean(event.deliveredAt);
 }
 
-function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPayload {
-  const output = task.result?.output ?? {};
+function normalizeBrokerToken(value?: string): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
+function sameBrokerToken(left?: string, right?: string): boolean {
+  const leftToken = normalizeBrokerToken(left);
+  const rightToken = normalizeBrokerToken(right);
+  return Boolean(leftToken && rightToken && leftToken === rightToken);
+}
+
+function ownerTokenMeansParent(owner?: string): boolean {
+  const token = normalizeBrokerToken(owner);
+  return token === "parent" || token === "origin" || token === "parent-owned" || token === "parent_owned";
+}
+
+function ownerTokenNamesOrigin(owner?: string, originBrokerId?: string, localBrokerId?: string): boolean {
+  return Boolean(
+    owner &&
+      originBrokerId &&
+      sameBrokerToken(owner, originBrokerId) &&
+      (!localBrokerId || !sameBrokerToken(originBrokerId, localBrokerId)),
+  );
+}
+
+export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPayload {
+  const output = isRecord(task.result?.output) ? task.result.output : {};
+  const githubOutput = isRecord(output["github"]) ? output["github"] : {};
+  const payloadTerminalBrief = isRecord(task.payload["terminalBrief"]) ? task.payload["terminalBrief"] : {};
+  const payloadMetadata = isRecord(task.payload["metadata"]) ? task.payload["metadata"] : {};
+  const outputTerminalBrief = isRecord(output["terminalBrief"]) ? output["terminalBrief"] : {};
+  const outputMetadata = isRecord(output["metadata"]) ? output["metadata"] : {};
+  const payloadNotificationOwnership = isRecord(task.payload["notificationOwnership"]) ? task.payload["notificationOwnership"] : {};
+  const payloadTerminalBriefNotificationOwnership = isRecord(payloadTerminalBrief["notificationOwnership"])
+    ? payloadTerminalBrief["notificationOwnership"]
+    : {};
+  const payloadMetadataNotificationOwnership = isRecord(payloadMetadata["notificationOwnership"])
+    ? payloadMetadata["notificationOwnership"]
+    : {};
+  const outputNotificationOwnership = isRecord(output["notificationOwnership"]) ? output["notificationOwnership"] : {};
+  const outputTerminalBriefNotificationOwnership = isRecord(outputTerminalBrief["notificationOwnership"])
+    ? outputTerminalBrief["notificationOwnership"]
+    : {};
+  const outputMetadataNotificationOwnership = isRecord(outputMetadata["notificationOwnership"])
+    ? outputMetadata["notificationOwnership"]
+    : {};
+  const parentOwnedTerminalBrief = firstTruthyFlag(
+    task.payload["parentOwnedTerminalBrief"],
+    payloadTerminalBrief["parentOwnedTerminalBrief"],
+    payloadMetadata["parentOwnedTerminalBrief"],
+    output["parentOwnedTerminalBrief"],
+    outputTerminalBrief["parentOwnedTerminalBrief"],
+    outputMetadata["parentOwnedTerminalBrief"],
+  );
+  const operatorFacingOwner = firstSafeText(
+    task.payload["operatorFacingOwner"],
+    payloadTerminalBrief["operatorFacingOwner"],
+    payloadMetadata["operatorFacingOwner"],
+    output["operatorFacingOwner"],
+    outputTerminalBrief["operatorFacingOwner"],
+    outputMetadata["operatorFacingOwner"],
+    payloadNotificationOwnership["owner"],
+    payloadTerminalBriefNotificationOwnership["owner"],
+    payloadMetadataNotificationOwnership["owner"],
+    outputNotificationOwnership["owner"],
+    outputTerminalBriefNotificationOwnership["owner"],
+    outputMetadataNotificationOwnership["owner"],
+  );
   const payload: TerminalTaskEventPayload = {
     taskId: task.id,
     status: task.status as TerminalTaskStatus,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
+  const explicitParentRoundId = firstSafeText(
+    task.payload["parentRoundId"],
+    payloadTerminalBrief["parentRoundId"],
+    payloadMetadata["parentRoundId"],
+    output["parentRoundId"],
+    outputTerminalBrief["parentRoundId"],
+    outputMetadata["parentRoundId"],
+  );
   const run = firstSafeText(
+    explicitParentRoundId,
     task.payload["run"],
     task.payload["runId"],
     task.payload["round"],
     task.payload["roundId"],
     output["run"],
     output["runId"],
+    output["round"],
+    output["roundId"],
   );
-  if (run) payload.run = run;
+  if (run) {
+    payload.run = run;
+  }
+  if (explicitParentRoundId) {
+    payload.parentRoundId = explicitParentRoundId;
+  }
+  let originBrokerId = firstSafeText(
+    task.payload["originBrokerId"],
+    payloadTerminalBrief["originBrokerId"],
+    payloadMetadata["originBrokerId"],
+    output["originBrokerId"],
+    outputTerminalBrief["originBrokerId"],
+    outputMetadata["originBrokerId"],
+  );
+  const lifecycleBrokerOfRecordId = firstSafeText(
+    task.payload["brokerOfRecordId"],
+    payloadTerminalBrief["brokerOfRecordId"],
+    payloadMetadata["brokerOfRecordId"],
+    output["brokerOfRecordId"],
+    outputTerminalBrief["brokerOfRecordId"],
+    outputMetadata["brokerOfRecordId"],
+    task.brokerOfRecord,
+  );
+  if (!originBrokerId && run && lifecycleBrokerOfRecordId) originBrokerId = lifecycleBrokerOfRecordId;
+  const explicitNotificationOwnerBrokerId = firstSafeText(
+    task.payload["parentOwnerBrokerId"],
+    task.payload["ownerBrokerId"],
+    payloadTerminalBrief["parentOwnerBrokerId"],
+    payloadTerminalBrief["ownerBrokerId"],
+    payloadMetadata["parentOwnerBrokerId"],
+    payloadMetadata["ownerBrokerId"],
+    output["parentOwnerBrokerId"],
+    output["ownerBrokerId"],
+    outputTerminalBrief["parentOwnerBrokerId"],
+    outputTerminalBrief["ownerBrokerId"],
+    outputMetadata["parentOwnerBrokerId"],
+    outputMetadata["ownerBrokerId"],
+    payloadNotificationOwnership["ownerBrokerId"],
+    payloadTerminalBriefNotificationOwnership["ownerBrokerId"],
+    payloadMetadataNotificationOwnership["ownerBrokerId"],
+    outputNotificationOwnership["ownerBrokerId"],
+    outputTerminalBriefNotificationOwnership["ownerBrokerId"],
+    outputMetadataNotificationOwnership["ownerBrokerId"],
+  );
+  const parentOwnedByMetadata =
+    parentOwnedTerminalBrief ||
+    ownerTokenMeansParent(operatorFacingOwner) ||
+    ownerTokenNamesOrigin(operatorFacingOwner, originBrokerId, lifecycleBrokerOfRecordId);
+  const notificationOwnerBrokerId = parentOwnedByMetadata
+    ? explicitNotificationOwnerBrokerId ?? originBrokerId ?? lifecycleBrokerOfRecordId
+    : lifecycleBrokerOfRecordId;
+  if (notificationOwnerBrokerId) payload.brokerOfRecordId = notificationOwnerBrokerId;
+  if (originBrokerId) payload.originBrokerId = originBrokerId;
+  const parentRoundTotal = firstSafePositiveInt(
+    task.payload["roundTotal"],
+    task.payload["parentRoundTotal"],
+    payloadTerminalBrief["parentRoundTotal"],
+    payloadMetadata["parentRoundTotal"],
+    task.payload["expectedWorkers"],
+    task.payload["taskCount"],
+    output["roundTotal"],
+    output["parentRoundTotal"],
+    outputTerminalBrief["parentRoundTotal"],
+    outputMetadata["parentRoundTotal"],
+    output["expectedWorkers"],
+  );
+  if (parentRoundTotal) payload.parentRoundTotal = parentRoundTotal;
+  const parentRoundOrder = firstSafePositiveInt(
+    task.payload["parentRoundNum"],
+    task.payload["parentRoundOrder"],
+    task.payload["parentRoundIndex"],
+    task.payload["roundNum"],
+    task.payload["roundOrder"],
+    task.payload["roundIndex"],
+    payloadTerminalBrief["parentRoundNum"],
+    payloadTerminalBrief["parentRoundOrder"],
+    payloadTerminalBrief["parentRoundIndex"],
+    payloadTerminalBrief["roundNum"],
+    payloadTerminalBrief["roundOrder"],
+    payloadTerminalBrief["roundIndex"],
+    payloadMetadata["parentRoundNum"],
+    payloadMetadata["parentRoundOrder"],
+    payloadMetadata["parentRoundIndex"],
+    payloadMetadata["roundNum"],
+    payloadMetadata["roundOrder"],
+    payloadMetadata["roundIndex"],
+    output["parentRoundNum"],
+    output["parentRoundOrder"],
+    output["parentRoundIndex"],
+    output["roundNum"],
+    output["roundOrder"],
+    output["roundIndex"],
+    outputTerminalBrief["parentRoundNum"],
+    outputTerminalBrief["parentRoundOrder"],
+    outputTerminalBrief["parentRoundIndex"],
+    outputTerminalBrief["roundNum"],
+    outputTerminalBrief["roundOrder"],
+    outputTerminalBrief["roundIndex"],
+    outputMetadata["parentRoundNum"],
+    outputMetadata["parentRoundOrder"],
+    outputMetadata["parentRoundIndex"],
+    outputMetadata["roundNum"],
+    outputMetadata["roundOrder"],
+    outputMetadata["roundIndex"],
+  );
+  if (parentRoundOrder) {
+    payload.parentRoundOrder = parentRoundOrder;
+  }
+  if (!payload.parentRoundId && run && parentRoundTotal && parentRoundOrder) {
+    payload.parentRoundId = run;
+  }
   const traceId = firstSafeText(task.via?.traceId, task.payload["traceId"], output["traceId"]);
   if (traceId) payload.traceId = traceId;
   const taskDescription = buildTaskDescription(task, output);
   if (taskDescription) payload.taskDescription = taskDescription;
-  if (task.claimedBy) payload.worker = task.claimedBy;
-  else if (task.assignedWorkerId) payload.worker = task.assignedWorkerId;
+  const worker = firstSafeText(
+    task.claimedBy,
+    task.assignedWorkerId,
+    task.targetNodeId,
+    task.payload["worker"],
+    task.payload["workerId"],
+    task.payload["assignedWorkerId"],
+    task.payload["targetNodeId"],
+    payloadTerminalBrief["worker"],
+    payloadTerminalBrief["workerId"],
+    payloadMetadata["worker"],
+    payloadMetadata["workerId"],
+    output["worker"],
+    output["workerId"],
+    outputTerminalBrief["worker"],
+    outputTerminalBrief["workerId"],
+    outputMetadata["worker"],
+    outputMetadata["workerId"],
+  );
+  if (worker) payload.worker = worker;
   const repo = task.payload["githubRepo"];
   if (typeof repo === "string" && repo.length > 0) payload.repo = repo;
   const issue = task.payload["githubIssueNumber"];
   if (typeof issue === "number" && Number.isFinite(issue)) payload.issue = issue;
   const taskBrief = buildTaskBrief(task, output);
   if (taskBrief) payload.taskBrief = taskBrief;
-  for (const key of URL_KEYS) {
-    const value = firstSafeHttpUrl(output[key], task.payload[key]);
-    if (value) payload[key] = value;
+  const prUrl = firstSafeHttpUrl(
+    output["prUrl"],
+    output["pullRequestUrl"],
+    githubOutput["prUrl"],
+    githubOutput["pullRequestUrl"],
+    task.payload["prUrl"],
+    task.payload["pullRequestUrl"],
+  );
+  if (prUrl) payload.prUrl = prUrl;
+  const doneUrl = firstSafeHttpUrl(
+    output["doneUrl"],
+    output["doneCommentUrl"],
+    githubOutput["doneUrl"],
+    githubOutput["doneCommentUrl"],
+    task.payload["doneUrl"],
+    task.payload["doneCommentUrl"],
+  );
+  if (doneUrl) payload.doneUrl = doneUrl;
+  const blockUrl = firstSafeHttpUrl(
+    output["blockUrl"],
+    output["blockCommentUrl"],
+    githubOutput["blockUrl"],
+    githubOutput["blockCommentUrl"],
+    task.payload["blockUrl"],
+    task.payload["blockCommentUrl"],
+  );
+  if (blockUrl) payload.blockUrl = blockUrl;
+  const handoffBrokerId = firstSafeText(
+    task.payload["handoffBrokerId"],
+    payloadTerminalBrief["handoffBrokerId"],
+    payloadMetadata["handoffBrokerId"],
+    output["handoffBrokerId"],
+    outputTerminalBrief["handoffBrokerId"],
+    outputMetadata["handoffBrokerId"],
+  );
+  const effectiveHandoffBrokerId =
+    handoffBrokerId ??
+    (parentOwnedByMetadata &&
+    notificationOwnerBrokerId &&
+    lifecycleBrokerOfRecordId &&
+    !sameBrokerToken(notificationOwnerBrokerId, lifecycleBrokerOfRecordId)
+      ? lifecycleBrokerOfRecordId
+      : undefined);
+  const crossBrokerHandoff = buildCrossBrokerHandoff(
+    task.payload["crossBrokerHandoff"],
+    payloadTerminalBrief["crossBrokerHandoff"],
+    payloadMetadata["crossBrokerHandoff"],
+    output["crossBrokerHandoff"],
+    outputTerminalBrief["crossBrokerHandoff"],
+    outputMetadata["crossBrokerHandoff"],
+    effectiveHandoffBrokerId
+      ? {
+        parentRoundId: run,
+        originBrokerId: originBrokerId ?? notificationOwnerBrokerId,
+        handoffBrokerId: effectiveHandoffBrokerId,
+        childWorkerId: worker,
+      }
+      : undefined,
+  );
+  if (crossBrokerHandoff) payload.crossBrokerHandoff = crossBrokerHandoff;
+  if (
+    parentOwnedByMetadata &&
+    notificationOwnerBrokerId &&
+    (
+      (lifecycleBrokerOfRecordId && !sameBrokerToken(notificationOwnerBrokerId, lifecycleBrokerOfRecordId)) ||
+      Boolean(crossBrokerHandoff?.handoffBrokerId)
+    )
+  ) {
+    payload.parentRoundProgressSource = "parent_round_order";
+    payload.notificationOwnership = {
+      ownerBrokerId: notificationOwnerBrokerId,
+      scope: "parent-broker-only",
+      providerSendPermittedByProjection: false,
+      terminalAckPermittedByProjection: false,
+      reason: "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
+    };
   }
   const summary = task.result?.summary ?? task.result?.note ?? task.error?.message;
   const safeSummary = sanitizeSummary(summary);
   if (safeSummary) payload.testSummary = safeSummary;
   if (task.completedAt) payload.completedAt = task.completedAt;
   return payload;
+}
+
+
+function buildCrossBrokerHandoff(...values: unknown[]): TerminalTaskEventPayload["crossBrokerHandoff"] | undefined {
+  for (const value of values) {
+    if (!isRecord(value)) continue;
+    const parentRoundId = sanitizeCrossBrokerToken(value["parentRoundId"] ?? value["roundId"]);
+    const originBrokerId = sanitizeCrossBrokerToken(value["originBrokerId"] ?? (isRecord(value["originBroker"]) ? value["originBroker"]["id"] : undefined) ?? value["origin"]);
+    if (!parentRoundId || !originBrokerId) continue;
+    const handoffBrokerId = sanitizeCrossBrokerToken(value["handoffBrokerId"] ?? value["localBrokerId"] ?? value["brokerId"]);
+    const originTaskId = sanitizeCrossBrokerToken(value["originTaskId"] ?? value["parentTaskId"]);
+    const childWorkerId = sanitizeCrossBrokerToken(value["childWorkerId"] ?? value["workerId"]);
+    return {
+      parentRoundId,
+      originBrokerId,
+      ...(handoffBrokerId ? { handoffBrokerId } : {}),
+      ...(originTaskId ? { originTaskId } : {}),
+      ...(childWorkerId ? { childWorkerId } : {}),
+    };
+  }
+  return undefined;
+}
+
+function sanitizeCrossBrokerToken(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 160) return undefined;
+  if (/token|secret|password|authorization|api[_-]?key/i.test(trimmed)) return undefined;
+  return sanitizeSummary(trimmed);
 }
 
 function buildTaskBrief(task: TaskRecord, output: Record<string, unknown>): string | undefined {
@@ -485,6 +1047,10 @@ function sanitizeTaskBrief(value: unknown): string | undefined {
   const sanitized = sanitizeSummary(withoutIssuePrefix);
   if (!sanitized) return undefined;
   return sanitized.slice(0, MAX_TASK_BRIEF_CHARS);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function firstSafeHttpUrl(...values: unknown[]): string | undefined {
@@ -536,10 +1102,21 @@ function sanitizeSummary(value: unknown): string | undefined {
   return trimmed
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat|sk|xox[abp])-[-_A-Za-z0-9]+\b/g, "[redacted]")
     .replace(/\b(token|secret|password|api[_-]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]")
-    .replace(/<private-[^>]+>/g, "[path]")
     .replace(/(^|\s)(?:[A-Za-z]:)?\/[\w./-]+/g, "$1[path]")
     .replace(/\s+/g, " ")
     .slice(0, MAX_SUMMARY_CHARS);
+}
+
+function sanitizeRenderedTerminalBriefText(value: unknown, maxChars: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed
+    .replace(/```[\s\S]*?```/g, "[redacted]")
+    .replace(/\b(?:ghp|gho|ghu|ghs|github_pat|sk|xox[abp])-[-_A-Za-z0-9]+\b/g, "[redacted]")
+    .replace(/\b(token|secret|password|api[_-]?key)\s*[:=]\s*\S+/gi, "$1=[redacted]")
+    .replace(/(^|\s)(?:[A-Za-z]:)?\/[\w./-]+/g, "$1[path]")
+    .slice(0, maxChars);
 }
 
 function buildAckState(receipt: TerminalTaskOutboxAckInput): TerminalTaskOutboxAckState {
@@ -607,7 +1184,7 @@ function ackAuditFromReceipt(receipt: TerminalTaskOutboxReceiptState): Omit<Term
     case "provider_accepted":
       return {
         decision: "pending",
-        reason: "provider send-only success recorded; awaiting provider-delivery receipt or operator-visible evidence before ACK",
+        reason: "provider send-only success recorded; awaiting current-session-visible/operator-visible evidence before ACK",
         updatedAt: receipt.updatedAt,
         receiptStatus: receipt.status,
         evidence: receipt.evidence,
@@ -618,7 +1195,7 @@ function ackAuditFromReceipt(receipt: TerminalTaskOutboxReceiptState): Omit<Term
     case "stale":
       return {
         decision: "pending",
-        reason: `terminal ACK pending: notification receipt is ${receipt.status} without current-session-visible/operator-visible/provider-delivery evidence`,
+        reason: `terminal ACK pending: notification receipt is ${receipt.status} without current-session-visible/operator-visible evidence`,
         updatedAt: receipt.updatedAt,
         receiptStatus: receipt.status,
         evidence: receipt.evidence,
@@ -627,7 +1204,7 @@ function ackAuditFromReceipt(receipt: TerminalTaskOutboxReceiptState): Omit<Term
     default:
       return {
         decision: "pending",
-        reason: "terminal ACK pending: notification has not produced current-session-visible/operator-visible/provider-delivery evidence",
+        reason: "terminal ACK pending: notification has not produced current-session-visible/operator-visible evidence",
         updatedAt: receipt.updatedAt,
         receiptStatus: receipt.status,
         evidence: receipt.evidence,
@@ -638,7 +1215,7 @@ function ackAuditFromReceipt(receipt: TerminalTaskOutboxReceiptState): Omit<Term
 
 function ackConfirmedReason(evidence: TerminalTaskOutboxAckEvidence): string {
   return evidence === "provider_delivery_receipt"
-    ? "terminal ACK confirmed from provider-delivery receipt evidence, not provider send-only success"
+    ? "legacy terminal ACK confirmed from provider-delivery receipt evidence; new ACKs require current-session-visible/operator-visible evidence"
     : evidence === "current_session_visible"
       ? "terminal ACK confirmed from current-session-visible evidence, not provider send-only success or manual operator confirmation"
       : "terminal ACK confirmed from operator-visible evidence";
@@ -674,4 +1251,135 @@ function sanitizeAckText(value: unknown, maxChars: number): string | undefined {
 
 function normalizePositiveInt(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Set broker-local progress counters by incrementing a sequence keyed by the
+ * payload's run key. Cross-broker title rendering prefers explicit
+ * parentRoundOrder when present, so a child/handoff broker cannot rewrite
+ * parent lane 2/2 to local completion 1/2.
+ *
+ * When the payload has no run key this is a no-op. When parentRoundTotal is
+ * unknown, the sequence counter still advances but the payload field is omitted
+ * so downstream notifiers fall back instead of rendering misleading `n/?`
+ * progress.
+ */
+function applyRoundProgressMetadata(
+  payload: TerminalTaskEventPayload,
+  terminalChildIds: Map<string, Set<string>>,
+): void {
+  const runKey = payload.run;
+  if (!runKey) return;
+
+  const terminalCounted = terminalChildIds.get(runKey) ?? new Set<string>();
+  terminalCounted.add(payload.taskId);
+  terminalChildIds.set(runKey, terminalCounted);
+
+  // Numerator = count of unique terminal canonical children for this run.
+  // Success/failure/canceled/blocked all mean that lane has reported in.
+  const terminalCount = terminalChildIds.get(runKey)?.size ?? 0;
+
+  // Only set progress when total is known
+  if (payload.parentRoundTotal) {
+    const useParentRoundOrder = payload.parentRoundProgressSource === "parent_round_order"
+      && payload.parentRoundOrder !== undefined;
+    payload.parentRoundProgress = useParentRoundOrder
+      ? payload.parentRoundOrder
+      : terminalCount;
+    payload.parentRoundTerminalProgress = useParentRoundOrder
+      ? payload.parentRoundOrder
+      : terminalCount;
+    if (!payload.parentRoundProgressSource) {
+      payload.parentRoundProgressSource = "broker_local_count";
+    }
+  }
+}
+
+function applyTerminalBriefTitle(payload: TerminalTaskEventPayload): void {
+  const title = buildTerminalBriefTitle(payload);
+  if (title) payload.terminalBriefTitle = title;
+}
+
+function applyTerminalBriefCompatibilityAliases(payload: TerminalTaskEventPayload): void {
+  if (
+    payload.run &&
+    !payload.parentRoundId &&
+    payload.parentRoundTotal !== undefined &&
+    (payload.parentRoundOrder !== undefined || payload.parentRoundProgress !== undefined)
+  ) {
+    payload.parentRoundId = payload.run;
+  }
+  // parentRoundOrder and parentRoundProgress now have distinct semantics —
+  // parentRoundProgress is the succeeded-count numerator, parentRoundOrder is
+  // the explicit lane order. The old alias is intentionally not recreated.
+  if (payload.terminalBriefTitle && !payload.title) payload.title = payload.terminalBriefTitle;
+}
+
+const TERMINAL_BRIEF_STATUS_LABELS: Record<string, string> = {
+  succeeded: "완료",
+  failed: "실패",
+  canceled: "취소",
+  blocked: "차단",
+};
+
+export function buildTerminalBriefTitle(payload: TerminalTaskEventPayload): string | undefined {
+  if (!payload.worker) return undefined;
+  const label = TERMINAL_BRIEF_STATUS_LABELS[payload.status] ?? "완료";
+  const preserveParentOrder = shouldPreserveParentRoundOrderInTitle(payload);
+  const displayProgress = preserveParentOrder ? payload.parentRoundOrder ?? payload.parentRoundProgress : payload.parentRoundProgress;
+  const total = payload.parentRoundTotal;
+  const hasParentRoundContext = Boolean(
+    payload.parentRoundId ||
+    payload.parentRoundTotal !== undefined ||
+    payload.parentRoundOrder !== undefined ||
+    payload.parentRoundProgress !== undefined,
+  );
+  if (displayProgress !== undefined && total !== undefined) {
+    return `A2A Terminal Brief ${label}: ${payload.worker}(완료 ${displayProgress}/${total})`;
+  }
+  if (hasParentRoundContext) {
+    // Ambiguous round metadata: emit diagnostic fallback instead of
+    // silent ?/? which misleads operators into thinking a round is
+    // tracking progress. The payload carries a round-like key
+    // (parentRoundId / run) but is missing required fields to compute
+    // deterministic n/N.
+    const missingFields: string[] = [];
+    if (payload.parentRoundTotal === undefined) missingFields.push("parentRoundTotal");
+    if (payload.parentRoundOrder === undefined && payload.parentRoundProgress === undefined) {
+      missingFields.push("parentRoundOrder");
+    }
+    return `A2A Terminal Brief ${label}: ${payload.worker}(진단: ${missingFields.join(", ")} 누락)`;
+  }
+  return `A2A Terminal Brief ${label}: ${payload.worker}`;
+}
+
+function shouldPreserveParentRoundOrderInTitle(payload: TerminalTaskEventPayload): boolean {
+  return Boolean(payload.crossBrokerHandoff || payload.notificationOwnership?.scope === "parent-broker-only");
+}
+
+/**
+ * Return the first argument that resolves to a positive finite integer.
+ * Returns undefined when none match.
+ */
+function firstSafePositiveInt(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isInteger(value) && value > 0 && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+      const parsed = Number(value.trim());
+      if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function firstTruthyFlag(...values: unknown[]): boolean {
+  for (const value of values) {
+    if (value === true) return true;
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  }
+  return false;
 }

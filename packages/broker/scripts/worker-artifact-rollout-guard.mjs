@@ -8,6 +8,7 @@
 //   node scripts/worker-artifact-rollout-guard.mjs [--dry-run] [--smoke] [--verbose]
 //   node scripts/worker-artifact-rollout-guard.mjs --docker-check
 //   node scripts/worker-artifact-rollout-guard.mjs --deployed
+//   A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed
 //
 // Exit codes:
 //   0  — all guards passed / dry-run completed
@@ -19,6 +20,7 @@
 //   A2A_DOCKER_RUNNER_SCOPE   — runner scope (plugin-only|all-github)
 //   OPENCLAW_BIN              — host OpenClaw bridge binary path
 //   A2A_WORKER_HANDLER_COMMAND / WORKER_HANDLER_COMMAND
+//   A2A_WORKER_ROOT / WORKER_ROOT — deployed worker root containing scripts/ and handlers/
 //   HANDLERS_ROOT             — override handlers/ directory (default: ./handlers)
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
 
@@ -43,12 +45,13 @@ const DOCKER_CHECK = process.argv.includes('--docker-check');
 const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.includes('--runtime');
 
 const HANDLER_FILENAME = 'openclaw-a2a-task-handler.mjs';
+const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
 const handlersRoot = resolve(
-  process.env.HANDLERS_ROOT || join(brokerRoot, 'handlers'),
+  process.env.HANDLERS_ROOT || (workerRoot ? join(workerRoot, 'handlers') : join(brokerRoot, 'handlers')),
 );
 const scriptsRoot = resolve(
-  process.env.SCRIPTS_ROOT || join(brokerRoot, 'scripts'),
+  process.env.SCRIPTS_ROOT || (workerRoot ? join(workerRoot, 'scripts') : join(brokerRoot, 'scripts')),
 );
 
 function safeBasename(value) {
@@ -247,7 +250,9 @@ guard('handlers-compat-path', () => {
         sourcePath,
         sourceHash,
         hint:
-          'copy scripts/openclaw-a2a-task-handler.mjs → handlers/openclaw-a2a-task-handler.mjs',
+          'copy scripts/openclaw-a2a-task-handler.mjs → handlers/openclaw-a2a-task-handler.mjs before restarting the worker',
+        runtimeCheck:
+          'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
         fix: DRY_RUN
           ? '[dry-run] would copy handlers/'
           : undefined,
@@ -273,7 +278,9 @@ guard('handlers-compat-path', () => {
         handlersPath,
         sourceHash,
         handlersHash,
-        hint: 'update handlers/ copy to match scripts/',
+        hint: 'update handlers/ copy to match scripts/ before restarting the worker',
+        runtimeCheck:
+          'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
       },
     );
   }

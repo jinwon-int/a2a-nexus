@@ -1,0 +1,30 @@
+{
+  "runId": "oi-v2-validation-score-partial",
+  "evidence": [
+    {
+      "id": "wiki-large-refactor",
+      "baselineMetrics": {
+        "elapsed_time_minutes": 120,
+        "human_intervention_count": 5,
+        "estimated_cost_usd": 18,
+        "output_quality_score": 3,
+        "system_stability_score": 4,
+        "approval_boundary_violated": false
+      },
+      "candidateMetrics": {
+        "elapsed_time_minutes": 75,
+        "human_intervention_count": 2,
+        "estimated_cost_usd": 11,
+        "output_quality_score": 4,
+        "system_stability_score": 4,
+        "approval_boundary_violated": false
+      },
+      "evidenceUrls": [
+        "https://github.com/jinwon-int/a2a-broker/issues/968"
+      ],
+      "notes": [
+        "Example partial evidence; remaining scenarios intentionally omitted."
+      ]
+    }
+  ]
+}

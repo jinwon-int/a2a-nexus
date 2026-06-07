@@ -1,0 +1,146 @@
+{
+  "kind": "a2a-broker.terminal-brief-auto-closeout-planner.fixture",
+  "version": 1,
+  "mode": "read-only/no-live",
+  "policyMode": "draft",
+  "parentRoundId": "round-833-no-live",
+  "parentRoundTotal": 4,
+  "parentRoundOrder": 2,
+  "hasGitHubToken": true,
+  "ciPassUrls": [
+    "https://github.com/jinwon-int/a2a-broker/actions/runs/100"
+  ],
+  "finalCountInput": {
+    "parentRoundId": "round-833-no-live",
+    "expectedWorkers": ["bangtong", "yukson", "sogyo", "nosuk"],
+    "expectedTotal": 4,
+    "finalCountSignals": [
+      {
+        "id": "telegram-terminal-brief-final-4-of-4",
+        "source": "envelope",
+        "parentRoundId": "round-833-no-live",
+        "worker": "nosuk",
+        "text": "A2A Terminal Brief: nosuk completed final worker (4/4)",
+        "createdAt": "2026-05-20T11:32:00.000Z"
+      }
+    ],
+    "events": [
+      {
+        "id": "task-bangtong-succeeded-20260520T113000Z",
+        "kind": "task.terminal",
+        "taskEventId": 1,
+        "payload": {
+          "taskId": "task-bangtong",
+          "status": "succeeded",
+          "parentRoundId": "round-833-no-live",
+          "originBrokerId": "seoseo",
+          "brokerOfRecordId": "seoseo",
+          "worker": "bangtong",
+          "repo": "jinwon-int/a2a-docker-runner",
+          "issue": 833,
+          "taskBrief": "A2A auto-closeout fixture lane 1 (bangtong/a2a-docker-runner)",
+          "prUrl": "https://github.com/jinwon-int/a2a-docker-runner/pull/298",
+          "parentRoundProgress": 1,
+          "parentRoundTotal": 4,
+          "createdAt": "2026-05-20T11:30:00.000Z",
+          "updatedAt": "2026-05-20T11:30:00.000Z",
+          "completedAt": "2026-05-20T11:30:00.000Z"
+        },
+        "createdAt": "2026-05-20T11:30:00.000Z",
+        "receipt": {
+          "status": "provider_accepted",
+          "updatedAt": "2026-05-20T11:30:00.000Z",
+          "receiptId": "provider-message-bangtong"
+        },
+        "attempts": 1
+      },
+      {
+        "id": "task-yukson-succeeded-20260520T113100Z",
+        "kind": "task.terminal",
+        "taskEventId": 2,
+        "payload": {
+          "taskId": "task-yukson",
+          "status": "succeeded",
+          "parentRoundId": "round-833-no-live",
+          "originBrokerId": "seoseo",
+          "brokerOfRecordId": "seoseo",
+          "worker": "yukson",
+          "repo": "jinwon-int/a2a-broker",
+          "issue": 833,
+          "taskBrief": "A2A auto-closeout fixture lane 2 (yukson/a2a-broker)",
+          "prUrl": "https://github.com/jinwon-int/a2a-broker/pull/833",
+          "parentRoundProgress": 2,
+          "parentRoundTotal": 4,
+          "createdAt": "2026-05-20T11:31:00.000Z",
+          "updatedAt": "2026-05-20T11:31:00.000Z",
+          "completedAt": "2026-05-20T11:31:00.000Z"
+        },
+        "createdAt": "2026-05-20T11:31:00.000Z",
+        "receipt": {
+          "status": "provider_accepted",
+          "updatedAt": "2026-05-20T11:31:00.000Z",
+          "receiptId": "provider-message-yukson"
+        },
+        "attempts": 1
+      },
+      {
+        "id": "task-sogyo-succeeded-20260520T113150Z",
+        "kind": "task.terminal",
+        "taskEventId": 3,
+        "payload": {
+          "taskId": "task-sogyo",
+          "status": "succeeded",
+          "parentRoundId": "round-833-no-live",
+          "originBrokerId": "seoseo",
+          "brokerOfRecordId": "seoseo",
+          "worker": "sogyo",
+          "repo": "jinwon-int/openclaw-plugin-a2a",
+          "issue": 833,
+          "taskBrief": "A2A auto-closeout fixture lane 3 (sogyo/openclaw-plugin-a2a)",
+          "doneUrl": "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398",
+          "parentRoundProgress": 3,
+          "parentRoundTotal": 4,
+          "createdAt": "2026-05-20T11:31:50.000Z",
+          "updatedAt": "2026-05-20T11:31:50.000Z",
+          "completedAt": "2026-05-20T11:31:50.000Z"
+        },
+        "createdAt": "2026-05-20T11:31:50.000Z",
+        "receipt": {
+          "status": "provider_accepted",
+          "updatedAt": "2026-05-20T11:31:50.000Z",
+          "receiptId": "provider-message-sogyo"
+        },
+        "attempts": 1
+      },
+      {
+        "id": "task-nosuk-succeeded-20260520T113200Z",
+        "kind": "task.terminal",
+        "taskEventId": 4,
+        "payload": {
+          "taskId": "task-nosuk",
+          "status": "succeeded",
+          "parentRoundId": "round-833-no-live",
+          "originBrokerId": "seoseo",
+          "brokerOfRecordId": "seoseo",
+          "worker": "nosuk",
+          "repo": "jinwon-int/a2a-plane",
+          "issue": 833,
+          "taskBrief": "A2A auto-closeout fixture lane 4 (nosuk/a2a-plane)",
+          "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/395",
+          "parentRoundProgress": 4,
+          "parentRoundTotal": 4,
+          "createdAt": "2026-05-20T11:32:00.000Z",
+          "updatedAt": "2026-05-20T11:32:00.000Z",
+          "completedAt": "2026-05-20T11:32:00.000Z"
+        },
+        "createdAt": "2026-05-20T11:32:00.000Z",
+        "receipt": {
+          "status": "provider_accepted",
+          "updatedAt": "2026-05-20T11:32:00.000Z",
+          "receiptId": "provider-message-nosuk"
+        },
+        "attempts": 1
+      }
+    ]
+  }
+}

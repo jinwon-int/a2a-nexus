@@ -19,7 +19,7 @@ const surfaces = {
   broker: {
     packageDir: 'packages/broker',
     commands: [
-      ['npm', ['run', 'check', '-w', 'packages/broker']],
+      ['npm', ['test', '-w', 'packages/broker']],
     ],
     metadata: {
       private: true,
@@ -41,23 +41,13 @@ const surfaces = {
       ['npm', ['test', '-w', 'packages/docker-runner']],
       ['node', ['packages/docker-runner/scripts/pre-pr-bootstrap-guard.mjs', '--repo-dir', 'packages/docker-runner']],
       ['npm', ['run', 'chaos:e2e', '-w', 'packages/docker-runner']],
-      [
-        'node',
-        [
-          'packages/docker-runner/scripts/tag-release-candidate.mjs',
-          '--version',
-          '0.1.0',
-          '--dry-run',
-          '--output',
-          'tmp/monorepo-package-ci-parity/docker-runner-release-candidate.json',
-        ],
-      ],
+      ['sh', ['-lc', 'cd packages/docker-runner && node scripts/release-candidate-parity-audit.mjs']],
     ],
     metadata: {
       private: false,
       license: 'MIT',
       requiredScripts: ['build', 'check', 'lint', 'test', 'chaos:e2e'],
-      requiredFiles: ['scripts/pre-pr-bootstrap-guard.mjs', 'scripts/tag-release-candidate.mjs'],
+      requiredFiles: ['scripts/pre-pr-bootstrap-guard.mjs', 'scripts/release-candidate-parity-audit.mjs'],
       requiredBin: ['a2a-docker-runner'],
     },
   },
@@ -72,7 +62,7 @@ const surfaces = {
     metadata: {
       private: true,
       peerDependencies: ['openclaw'],
-      requiredScripts: ['build', 'test', 'prepack', 'scan:public-readiness', 'smoke:a2a-conformance'],
+      requiredScripts: ['build', 'check', 'test', 'prepack', 'scan:public-readiness', 'smoke:a2a-conformance'],
       requiredFiles: ['scripts/scan-public-readiness.sh', 'scripts/smoke-a2a-conformance.sh', 'openclaw.plugin.json'],
       requiredExports: ['./openclaw.plugin.json', './package.json'],
     },

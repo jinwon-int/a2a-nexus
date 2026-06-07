@@ -1,8 +1,6 @@
-# OpenClaw A2A Plugin
-
-> Monorepo import provenance: sanitized/squash copy from `jinwon-int/openclaw-plugin-a2a` commit `3c12b937f727a874174b172cf34de65d771177f2` for R3 issue #14. Private git history is not preserved. Runtime/bootstrap/cache artifacts, local OpenClaw context files, `node_modules`, and build outputs are excluded.
-
 # openclaw-plugin-a2a
+
+[![ci](https://github.com/jinwon-int/openclaw-plugin-a2a/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/openclaw-plugin-a2a/actions/workflows/ci.yml)
 
 Standalone OpenClaw plugin repo for the A2A broker adapter.
 
@@ -30,24 +28,6 @@ Current production shape as of 2026-04-30:
 ```text
 OpenClaw/plugin request → a2a-broker task lifecycle → worker handler → a2a-docker-runner for GitHub patch execution
 ```
-
-## Gateway canary adapter boundary
-
-`a2a-broker-adapter` is a Gateway-side OpenClaw plugin canary, not a Dockerized broker workload.
-It is loaded inside the OpenClaw Gateway plugin runtime so it can verify the OpenClaw-specific seams that cannot be proven by the standalone broker container alone:
-
-- `a2a.task.*`, `a2a.peer.status`, `a2a.alerts.list`, and `a2a.monitor.status` Gateway method ownership;
-- `sessions_send` interception and remote handoff policy before broker dispatch;
-- Wake-on-Task acceptance/coalescing through OpenClaw runtime adapters;
-- operator-event and terminal-outbox projections with receipt-gated notification behavior.
-
-Docker ownership stays with the independent runtime components:
-
-- `packages/broker` / `a2a-broker` owns the broker process and may run under Docker Compose.
-- `packages/docker-runner` owns isolated GitHub patch execution for workers.
-- `packages/openclaw-plugin-a2a` owns only the Gateway adapter boundary and must not start, stop, or manage broker Docker Compose/systemd units.
-
-For production-like validation, prefer a separate staging/canary OpenClaw Gateway process or container with this plugin mounted and isolated state. If only a host-native Gateway is available, enabling this plugin is the canary activation; disabling it must leave the broker container and worker fleet running.
 
 This repo remains the plugin home and compatibility boundary, not the home for all A2A runtime code.
 ## Current scope
@@ -88,10 +68,12 @@ Primary docs under [`docs/`](./docs) drive the remaining work. Start there befor
 
 - [`docs/migration-plan.md`](./docs/migration-plan.md) — inventory of what still lives in OpenClaw core (notably the delegated-task runtime in the `sessions_send` path), the plugin-SDK seams that need to be added, the dependency-aware order to do the extraction in, and the broker contract fields that must stay aligned.
 - [`docs/protocol.md`](./docs/protocol.md) — the durable-runtime boundary this plugin currently owns, including how `a2a.task.request | update | cancel | status` map onto broker lifecycle calls and what fields must round-trip intact.
-- [`docs/agent-card-discovery.md`](./docs/agent-card-discovery.md) — A2A agent-card discovery profile, capability flags, local/dev fixture, and the production opt-in/redaction requirements for any exposed card.
+- [`docs/agent-card-discovery.md`](./docs/agent-card-discovery.md) — A2A agent-card discovery profile, capability flags, local/dev fixture, production opt-in/redaction requirements, and a public-safe companion-worker example for a TweetClaw-enabled X/Twitter automation node.
 - [`docs/regression-matrix.md`](./docs/regression-matrix.md) — scenario-by-scenario coverage plan for plugin-to-broker lifecycle behavior (success, timeout, stale worker / requeue / dead-letter, auth failure, rate limit, mapping/error shaping, cancel, not-found), with automated-vs-smoke classification and a plugin-symptom → broker-cause correlation table.
 - [`docs/compatibility-matrix.md`](./docs/compatibility-matrix.md) — compatibility definition across plugin release, OpenClaw seam baseline, and supported `a2a-broker` version/schema ranges.
+- [`docs/alpha-boundaries.md`](./docs/alpha-boundaries.md) — what "alpha" means for this plugin, operational constraints, and exit criteria for leaving alpha.
 - [`docs/public-stable-readiness.md`](./docs/public-stable-readiness.md) — public-safe plugin config placeholders, compatibility boundary, and no-live-notification defaults for stable readiness checks.
+- [`docs/operator-install-checklist.md`](./docs/operator-install-checklist.md) — operator-facing install and configuration checklist, diagnostics commands reference, safety boundary summary, and verification runbook. Start here as a new operator.
 - [`docs/operator-terminal-notification-receipts.md`](./docs/operator-terminal-notification-receipts.md) — receipt-confirmed ack policy for terminal operator notifications; Gateway/provider send success alone must not ack broker terminal-outbox events.
 - [`docs/goal-operator-ux.md`](./docs/goal-operator-ux.md) — plugin-side goal method surface and concise operator summaries that distinguish child task success from goal achievement.
 
@@ -176,3 +158,48 @@ Observed successful smoke result:
 - returned output included the echoed task message and succeeded broker status
 
 This validates that the standalone plugin can build on Termux, reach a standalone broker, and complete at least one delegated-task round trip when the environment is configured with the Termux-specific workarounds above.
+
+##  Operator quick-start
+
+New operators should start with the dedicated
+[`docs/operator-install-checklist.md`](./docs/operator-install-checklist.md) document.
+It covers:
+
+- **Plugin installation** — build-from-source steps for all platforms.
+- **Configuration checklist** — per-field guidance with safety-default emphasis.
+- **Diagnostics commands** — `a2a.monitor.status` (including preflight mode),
+  `a2a.alerts.list`, and `a2a.task.status` with example request/response patterns.
+- **Safety boundaries** — accepted-send vs ACK policy, no-live-send defaults,
+  status wording semantics, and the full non-ACK status set.
+- **Verification runbook** — a copy-paste sequence of `npm run` commands that
+  exercise all pre-flight and conformance checks without live sends.
+
+### Single-task diagnostics from the Gateway
+
+```bash
+# Full operator status projection (broker health + no-live rehearsal + readiness)
+# Gateway RPC: a2a.monitor.status
+
+# No-live preflight — checks readiness layers without sending or ACKing
+# a2a.monitor.status with params.operatorEvents.preflight=true
+
+# Single-task diagnostics by taskId
+# a2a.monitor.status with params.taskId
+
+# Operator alerts
+# a2a.alerts.list
+
+# Task-level status (executionStatus + deliveryStatus)
+# a2a.task.status
+```
+
+All diagnostics surfaces are read-only. They do not send messages, restart the
+Gateway, or ACK terminal outbox records. See the
+[operator install checklist](./docs/operator-install-checklist.md#4-verification-diagnostics-commands)
+for full request/response patterns.
+
+## Community
+
+- [`SECURITY.md`](./SECURITY.md) — vulnerability reporting and safety invariants
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — development setup, safety gates, and PR checklist
+- [Issue templates](./.github/ISSUE_TEMPLATE/) — bug report template and issue tracker configuration

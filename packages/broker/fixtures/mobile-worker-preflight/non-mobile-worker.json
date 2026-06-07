@@ -1,0 +1,19 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Docker worker should be skipped by mobile worker preflight.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "dungae",
+    "workerMode": "docker-runner",
+    "status": "online",
+    "lastSeenAgeSec": 5,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": false,
+    "activeLanePlanned": false
+  }
+}

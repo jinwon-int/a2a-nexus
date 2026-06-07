@@ -397,6 +397,196 @@ test("sessions_send wake envelope is produced only after broker task acceptance"
   });
 });
 
+test("sessions_send no-duplicate-send gate blocks replayed sends (hardened)", async () => {
+  const createTaskCalls = [];
+  const hook = createA2ASessionsSendHook(
+    {
+      plugins: {
+        entries: {
+          "a2a-broker-adapter": {
+            enabled: true,
+            config: { baseUrl: "https://broker.example" },
+          },
+        },
+      },
+    },
+    undefined,
+    {
+      createBrokerClient: () => ({
+        createTask: async (request) => {
+          createTaskCalls.push(request);
+          return {
+            id: `task-${createTaskCalls.length}`,
+            intent: "chat",
+            status: "queued",
+            requester: { id: "hub-session", kind: "session", role: "hub" },
+            target: { id: "worker-node", kind: "node" },
+            targetNodeId: "worker-node",
+            payload: request.payload,
+            createdAt: "2026-04-19T00:00:00Z",
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+        },
+      }),
+    },
+  );
+
+  const event = {
+    sessionKey: "worker-session",
+    target: { sessionKey: "worker-session", displayKey: "worker-node" },
+    message: "delegate this",
+    task: {
+      intent: "delegate",
+      instructions: "delegate this",
+      correlationId: "corr-901",
+      requester: { sessionKey: "hub-session", channel: "telegram" },
+    },
+    rawParams: {},
+  };
+
+  // First send — should succeed normally
+  const first = await hook(event);
+  assert.equal(first.handled, true);
+  assert.equal(first.mode, "delegated");
+  assert.equal(createTaskCalls.length, 1);
+
+  // Second send with same fingerprint — blocked by no-duplicate-send gate
+  const second = await hook(event);
+  assert.equal(second.handled, false);
+  assert.equal(second.reason, "duplicate send suppressed by no-duplicate-send gate");
+  // No additional broker task created
+  assert.equal(createTaskCalls.length, 1);
+
+  // Different message — should succeed normally
+  const third = await hook({ ...event, message: "delegate something else" });
+  assert.equal(third.handled, true);
+  assert.equal(createTaskCalls.length, 2);
+});
+
+test("sessions_send no-duplicate-send gate can be disabled via config", async () => {
+  const createTaskCalls = [];
+  const hook = createA2ASessionsSendHook(
+    {
+      plugins: {
+        entries: {
+          "a2a-broker-adapter": {
+            enabled: true,
+            config: {
+              baseUrl: "https://broker.example",
+              noDuplicateSend: { enabled: false },
+            },
+          },
+        },
+      },
+    },
+    undefined,
+    {
+      createBrokerClient: () => ({
+        createTask: async (request) => {
+          createTaskCalls.push(request);
+          return {
+            id: `task-${createTaskCalls.length}`,
+            intent: "chat",
+            status: "queued",
+            requester: { id: "hub-session", kind: "session", role: "hub" },
+            target: { id: "worker-node", kind: "node" },
+            targetNodeId: "worker-node",
+            payload: request.payload,
+            createdAt: "2026-04-19T00:00:00Z",
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+        },
+      }),
+    },
+  );
+
+  const event = {
+    sessionKey: "worker-session",
+    target: { sessionKey: "worker-session", displayKey: "worker-node" },
+    message: "delegate this",
+    task: {
+      intent: "delegate",
+      instructions: "delegate this",
+      correlationId: "corr-legacy",
+      requester: { sessionKey: "hub-session", channel: "telegram" },
+    },
+    rawParams: {},
+  };
+
+  // First send
+  const first = await hook(event);
+  assert.equal(first.handled, true);
+  assert.equal(first.mode, "delegated");
+  assert.equal(createTaskCalls.length, 1);
+
+  // Second send — gate disabled, broker task still created, wake suppressed
+  const second = await hook(event);
+  assert.equal(second.handled, true);
+  assert.equal(second.mode, "delegated");
+  assert.equal(createTaskCalls.length, 2);
+});
+
+test("sessions_send dupe gate treats different correlationIds as distinct sends", async () => {
+  const createTaskCalls = [];
+  const hook = createA2ASessionsSendHook(
+    {
+      plugins: {
+        entries: {
+          "a2a-broker-adapter": {
+            enabled: true,
+            config: { baseUrl: "https://broker.example" },
+          },
+        },
+      },
+    },
+    undefined,
+    {
+      createBrokerClient: () => ({
+        createTask: async (request) => {
+          createTaskCalls.push(request);
+          return {
+            id: `task-${createTaskCalls.length}`,
+            intent: "chat",
+            status: "queued",
+            requester: { id: "hub-session", kind: "session", role: "hub" },
+            target: { id: "worker-node", kind: "node" },
+            targetNodeId: "worker-node",
+            payload: request.payload,
+            createdAt: "2026-04-19T00:00:00Z",
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+        },
+      }),
+    },
+  );
+
+  await hook({
+    sessionKey: "worker-session",
+    target: { sessionKey: "worker-session", displayKey: "worker-node" },
+    message: "delegate this",
+    task: {
+      intent: "delegate",
+      instructions: "delegate this",
+      correlationId: "corr-aaa",
+    },
+    rawParams: {},
+  });
+
+  await hook({
+    sessionKey: "worker-session",
+    target: { sessionKey: "worker-session", displayKey: "worker-node" },
+    message: "delegate this",
+    task: {
+      intent: "delegate",
+      instructions: "delegate this",
+      correlationId: "corr-bbb", // Different correlation
+    },
+    rawParams: {},
+  });
+
+  assert.equal(createTaskCalls.length, 2);
+});
+
 test("sessions_send wake envelope is not produced when broker acceptance fails", async () => {
   let wakeCalled = false;
   const hook = createA2ASessionsSendHook(

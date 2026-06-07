@@ -25,6 +25,13 @@ import {
   writeBrokerSnapshotFile,
   type BrokerSnapshot,
 } from "./store.js";
+import {
+  BROKER_CLEANUP_CONFIRMATION,
+  buildBrokerCleanupPlan,
+  executeBrokerCleanupPlan,
+  validateCleanupExecution,
+} from "./broker-cleanup.js";
+import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 
 function withTempFile(name: string): {
   dir: string;
@@ -232,7 +239,12 @@ test("SqliteBrokerStateStore saves and reloads snapshots with WAL metadata", () 
 
     const reloaded = new SqliteBrokerStateStore(temp.filePath);
     assert.deepEqual(reloaded.load(), snapshot);
-    assert.deepEqual(reloaded.getPersistenceInfo(), {
+    const persistenceInfo = reloaded.getPersistenceInfo();
+    assert.ok(persistenceInfo.lastPersistAt, "lastPersistAt should be reported after saving");
+    assert.equal(persistenceInfo.lastPersistSkippedFullSnapshot, false);
+    delete persistenceInfo.lastPersistAt;
+    delete persistenceInfo.lastPersistSkippedFullSnapshot;
+    assert.deepEqual(persistenceInfo, {
       kind: "sqlite",
       dbFile: temp.filePath,
       stateVersion: CURRENT_BROKER_STATE_VERSION,
@@ -311,6 +323,38 @@ test("SqliteBrokerStateStore saves and reloads snapshots with WAL metadata", () 
       },
       hotEntityDiagnostics: {
         invalidRows: [],
+      },
+      hotTableLoadMetrics: {
+        tables: {
+          broker_exchanges: { count: 1, maxPayloadBytes: 506 },
+          broker_exchange_messages: { count: 1, maxPayloadBytes: 215 },
+          broker_proposals: { count: 1, maxPayloadBytes: 397 },
+          broker_artifacts: { count: 1, maxPayloadBytes: 128 },
+          broker_validations: { count: 1, maxPayloadBytes: 171 },
+          broker_tasks: {
+            count: 1,
+            maxPayloadBytes: 381,
+            runtimeLoad: { limit: 2000, loadedCount: 1, skippedCount: 0, activeCount: 1, terminalCount: 0 },
+          },
+          broker_tombstones: { count: 1, maxPayloadBytes: 203 },
+          broker_workers: { count: 1, maxPayloadBytes: 313 },
+          broker_audit_events: {
+            count: 1,
+            maxPayloadBytes: 142,
+            runtimeLoad: { limit: 5000, loadedCount: 1, skippedCount: 0 },
+          },
+          broker_terminal_outbox: {
+            count: 0,
+            maxPayloadBytes: 0,
+            unackedCount: 0,
+            runtimeLoad: { limit: 1000, loadedCount: 0, skippedCount: 0 },
+          },
+        },
+      },
+      hotTableRuntimeLoadLimits: {
+        terminalTasks: 2000,
+        auditEvents: 5000,
+        terminalOutboxEvents: 1000,
       },
       importedFromJsonFile: undefined,
       lastImportAt: undefined,
@@ -572,6 +616,21 @@ test("SqliteBrokerStateStore reads hot entities from mirrored tables with filter
       ["task-running", "task-queued"],
     );
     assert.deepEqual(
+      store.readHotTaskListItems({ targetNodeId: "worker-a", intent: "chat", taskOrigin: "api", limit: 1 }),
+      [{
+        id: "task-running",
+        intent: "chat",
+        status: "running",
+        targetNodeId: "worker-a",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "worker-a",
+        taskOrigin: "api",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:02:00.000Z",
+      }],
+    );
+    assert.deepEqual(
       store.readHotExchanges().map((exchange) => exchange.id),
       ["exchange-b", "exchange-a"],
     );
@@ -637,6 +696,150 @@ test("SqliteBrokerStateStore projects empty hot tables as an empty runtime snaps
   }
 });
 
+test("SqliteBrokerStateStore readHotTasks respects maxRows cap", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [
+        makeTask("task-a", "queued", "worker-a"),
+        makeTask("task-b", "running", "worker-a"),
+        makeTask("task-c", "running", "worker-b"),
+        makeTask("task-d", "succeeded", "worker-b"),
+        makeTask("task-e", "succeeded", "worker-b"),
+      ],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+    });
+
+    assert.equal(store.readHotTasks().length, 5, "bounded: no maxRows returns all 5 tasks");
+    assert.equal(store.readHotTasks({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1 task");
+    assert.equal(store.readHotTasks({ maxRows: 3 }).length, 3, "maxRows=3 must return at most 3 tasks");
+    assert.equal(store.readHotTasks({ maxRows: 100 }).length, 5, "maxRows larger than dataset returns all rows");
+    assert.equal(store.readHotTasks({ maxRows: 0 }).length, 5, "maxRows=0 (disabled) returns all rows");
+    // With AND filter + maxRows
+    assert.equal(store.readHotTasks({ status: "succeeded", maxRows: 1 }).length, 1, "filtered + maxRows=1 returns 1");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore readHotAuditEvents respects maxRows cap", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [
+        makeAuditEvent("audit-1", "task.created", "task-a"),
+        makeAuditEvent("audit-2", "task.started", "task-b"),
+        makeAuditEvent("audit-3", "task.succeeded", "task-b"),
+        makeAuditEvent("audit-4", "task.created", "task-b"),
+      ],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+    });
+
+    assert.equal(store.readHotAuditEvents().length, 4, "no maxRows returns all 4 audit events");
+    assert.equal(store.readHotAuditEvents({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
+    assert.equal(store.readHotAuditEvents({ maxRows: 2 }).length, 2, "maxRows=2 must return at most 2");
+    assert.equal(store.readHotAuditEvents({ maxRows: 100 }).length, 4, "maxRows > dataset returns all");
+    assert.equal(store.readHotAuditEvents({ maxRows: 0 }).length, 4, "maxRows=0 returns all");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore readHotWorkers respects maxRows cap", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [
+        makeWorker("worker-a"),
+        makeWorker("worker-b"),
+        makeWorker("worker-c"),
+      ],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+    });
+
+    assert.equal(store.readHotWorkers().length, 3, "no maxRows returns all 3 workers");
+    assert.equal(store.readHotWorkers({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
+    assert.equal(store.readHotWorkers({ maxRows: 100 }).length, 3, "maxRows > dataset returns all");
+    assert.equal(store.readHotWorkers({ maxRows: 0 }).length, 3, "maxRows=0 returns all");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore readHotTombstones respects maxRows cap", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      version: CURRENT_BROKER_STATE_VERSION,
+      exchanges: [],
+      exchangeMessages: [],
+      proposals: [],
+      artifacts: [],
+      validations: [],
+      workers: [],
+      tasks: [],
+      auditEvents: [],
+      tombstones: [
+        makeTombstone("t1", "failed", "2026-04-27T01:00:00.000Z"),
+        makeTombstone("t2", "dead_lettered", "2026-04-26T01:00:00.000Z"),
+        makeTombstone("t3", "canceled", "2026-04-25T01:00:00.000Z"),
+      ],
+      terminalOutbox: [],
+      crossBrokerTerminalBriefs: [],
+    });
+
+    assert.equal(store.readHotTombstones().length, 3, "no maxRows returns all 3 tombstones");
+    assert.equal(store.readHotTombstones({ maxRows: 1 }).length, 1, "maxRows=1 must return at most 1");
+    assert.equal(store.readHotTombstones({ maxRows: 2 }).length, 2, "maxRows=2 must return at most 2");
+    assert.equal(store.readHotTombstones({ maxRows: 100 }).length, 3, "maxRows > dataset returns all");
+    assert.equal(store.readHotTombstones({ maxRows: 0 }).length, 3, "maxRows=0 returns all");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore skips invalid worker hot rows and reports diagnostics", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -673,6 +876,51 @@ test("SqliteBrokerStateStore skips invalid worker hot rows and reports diagnosti
       table: "broker_workers",
       primaryKey: "worker-invalid",
       schemaError: "Invalid input: expected object, received undefined",
+      count: 1,
+    }]);
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore skips invalid task hot rows and reports diagnostics", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const validTask = makeTask("task-valid", "queued", "worker-valid");
+    store.upsertHotTasks([validTask]);
+
+    const invalidTask = {
+      ...makeTask("task-invalid", "queued", "dungae"),
+      workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "dungae" },
+    };
+    const db = new DatabaseSync(temp.filePath);
+    try {
+      db.prepare(
+        `INSERT INTO broker_tasks
+          (id, status, intent, target_node_id, assigned_worker_id, task_origin, updated_at, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        invalidTask.id,
+        invalidTask.status,
+        invalidTask.intent,
+        invalidTask.targetNodeId,
+        invalidTask.assignedWorkerId ?? null,
+        invalidTask.taskOrigin ?? "unknown",
+        invalidTask.updatedAt,
+        JSON.stringify(invalidTask),
+      );
+    } finally {
+      db.close();
+    }
+
+    assert.deepEqual(store.load().tasks.map((task) => task.id), ["task-valid"]);
+    assert.deepEqual(store.readHotTasks().map((task) => task.id), ["task-valid"]);
+    assert.deepEqual(store.getPersistenceInfo().hotEntityDiagnostics?.invalidRows, [{
+      table: "broker_tasks",
+      primaryKey: "task-invalid",
+      schemaError: "Invalid input: expected string, received undefined",
       count: 1,
     }]);
     store.close();
@@ -727,6 +975,56 @@ test("SqliteBrokerStateStore projects a runtime snapshot from hot tables without
     } finally {
       db.close();
     }
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore bounds hot runtime hydration without hiding table-native reads", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const activeTask = makeTask("task-running", "running", "worker-a");
+    const oldTerminalTask = {
+      ...makeTask("task-terminal-old", "succeeded", "worker-a"),
+      completedAt: "2026-04-27T00:01:00.000Z",
+      updatedAt: "2026-04-27T00:01:00.000Z",
+    };
+    const newestTerminalTask = {
+      ...makeTask("task-terminal-new", "failed", "worker-a"),
+      completedAt: "2026-04-27T00:03:00.000Z",
+      updatedAt: "2026-04-27T00:03:00.000Z",
+    };
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks: [oldTerminalTask, newestTerminalTask, activeTask],
+      auditEvents: [
+        makeAuditEvent("audit-old", "task.created", "task-terminal-old", "2026-04-27T00:01:00.000Z"),
+        makeAuditEvent("audit-mid", "task.failed", "task-terminal-new", "2026-04-27T00:02:00.000Z"),
+        makeAuditEvent("audit-new", "task.started", "task-running", "2026-04-27T00:03:00.000Z"),
+      ],
+      terminalOutbox: [
+        makeTerminalOutboxEvent("outbox-old", "task-terminal-old", "2026-04-27T00:01:00.000Z"),
+        makeTerminalOutboxEvent("outbox-mid", "task-terminal-new", "2026-04-27T00:02:00.000Z"),
+        makeTerminalOutboxEvent("outbox-new", "task-running", "2026-04-27T00:03:00.000Z"),
+      ],
+    };
+
+    const store = new SqliteBrokerStateStore(temp.filePath, {
+      maxHotRuntimeTerminalTasks: 1,
+      maxHotRuntimeAuditEvents: 2,
+      maxHotRuntimeTerminalOutboxEvents: 2,
+    });
+    store.save(snapshot);
+
+    const hotRuntime = store.readHotRuntimeSnapshot();
+    assert.deepEqual(new Set(hotRuntime.tasks.map((task) => task.id)), new Set(["task-running", "task-terminal-new"]));
+    assert.deepEqual(hotRuntime.auditEvents.map((event) => event.id), ["audit-new", "audit-mid"]);
+    assert.deepEqual(hotRuntime.terminalOutbox?.map((event) => event.id), ["outbox-mid", "outbox-new"]);
+
+    assert.equal(store.readHotTasks().length, 3);
+    assert.equal(store.readHotAuditEvents().length, 3);
+    assert.equal(store.readHotTerminalOutbox().length, 3);
+    store.close();
   } finally {
     temp.cleanup();
   }
@@ -1071,6 +1369,18 @@ test("SqliteAuditRuntimeRepository coalesces worker heartbeats and enforces hot-
       repository.listAuditEvents({ action: "worker.heartbeat" }).map((event) => [event.id, event.createdAt]),
       [["worker-heartbeat:worker-runtime", "2026-04-27T00:01:00.000Z"]],
     );
+    repository.appendAuditEvent({
+      ...makeAuditEvent("task-heartbeat-1", "task.heartbeat", "task-runtime", "2026-04-27T00:01:30.000Z"),
+      actorId: "worker-runtime",
+    });
+    repository.appendAuditEvent({
+      ...makeAuditEvent("task-heartbeat-2", "task.heartbeat", "task-runtime", "2026-04-27T00:01:45.000Z"),
+      actorId: "worker-runtime",
+    });
+    assert.deepEqual(
+      repository.listAuditEvents({ action: "task.heartbeat" }).map((event) => [event.id, event.createdAt]),
+      [["task-heartbeat:task-runtime", "2026-04-27T00:01:45.000Z"]],
+    );
 
     repository.appendAuditEvent(makeAuditEvent("audit-runtime-created", "task.created", "task-runtime", "2026-04-27T00:02:00.000Z"));
     repository.appendAuditEvent(makeAuditEvent("audit-runtime-started", "task.started", "task-runtime", "2026-04-27T00:03:00.000Z"));
@@ -1086,14 +1396,55 @@ test("SqliteAuditRuntimeRepository coalesces worker heartbeats and enforces hot-
     );
     assert.deepEqual(store.readHotAuditDiagnostics(), {
       total: 3,
+      heartbeat: 0,
+      heartbeatRatio: 0,
       workerHeartbeat: 0,
       workerHeartbeatRatio: 0,
+      taskHeartbeat: 0,
+      taskHeartbeatRatio: 0,
       recentWindowMs: 600_000,
       recentTotal: 0,
+      recentHeartbeat: 0,
+      recentHeartbeatRatio: 0,
       recentWorkerHeartbeat: 0,
       recentWorkerHeartbeatRatio: 0,
+      recentTaskHeartbeat: 0,
+      recentTaskHeartbeatRatio: 0,
       warnings: [],
     });
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteAuditRuntimeRepository caps heartbeat audit rows separately from meaningful audit rows", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const repository = new SqliteAuditRuntimeRepository(store, {
+      maxHotAuditEvents: 20,
+      maxHotHeartbeatAuditEvents: 3,
+    });
+
+    for (let i = 0; i < 8; i += 1) {
+      repository.appendAuditEvent({
+        ...makeAuditEvent(`task-heartbeat-${i}`, "task.heartbeat", `task-${i}`, `2026-04-27T00:0${i}:00.000Z`),
+        actorId: `worker-${i}`,
+      });
+    }
+    for (let i = 0; i < 4; i += 1) {
+      repository.appendAuditEvent(makeAuditEvent(`audit-meaningful-${i}`, "task.created", `meaningful-${i}`, `2026-04-27T00:1${i}:00.000Z`));
+    }
+
+    assert.deepEqual(
+      repository.listAuditEvents({ action: "task.heartbeat" }).map((event) => event.id),
+      ["task-heartbeat:task-7", "task-heartbeat:task-6", "task-heartbeat:task-5"],
+    );
+    assert.deepEqual(
+      repository.listAuditEvents({ action: "task.created" }).map((event) => event.id),
+      ["audit-meaningful-3", "audit-meaningful-2", "audit-meaningful-1", "audit-meaningful-0"],
+    );
     store.close();
   } finally {
     temp.cleanup();
@@ -1119,7 +1470,10 @@ test("hot audit diagnostics separate historical heartbeat residue from recent ch
 
     const historical = store.readHotAuditDiagnostics();
     assert.equal(historical.total, 25);
+    assert.equal(historical.heartbeat, 24);
     assert.equal(historical.workerHeartbeat, 24);
+    assert.equal(historical.taskHeartbeat, 0);
+    assert.equal(historical.recentHeartbeat, 0);
     assert.equal(historical.recentWorkerHeartbeat, 0);
     assert.deepEqual(historical.warnings, [], "historical heartbeat-heavy residue should not look like active churn");
 
@@ -1139,9 +1493,11 @@ test("hot audit diagnostics separate historical heartbeat residue from recent ch
     });
 
     const active = store.readHotAuditDiagnostics();
+    assert.equal(active.recentHeartbeat, 20);
     assert.equal(active.recentWorkerHeartbeat, 20);
+    assert.ok(active.recentHeartbeatRatio > 0.8);
     assert.ok(active.recentWorkerHeartbeatRatio > 0.8);
-    assert.match(active.warnings.join("\n"), /worker\.heartbeat audit events are \d+% of broker_audit_events in the last 10 minutes/);
+    assert.match(active.warnings.join("\n"), /heartbeat audit events are \d+% of broker_audit_events in the last 10 minutes/);
     store.close();
   } finally {
     temp.cleanup();
@@ -1384,6 +1740,60 @@ test("SqliteBrokerStateStore save hints update dirty task and audit rows while p
   }
 });
 
+test("SqliteBrokerStateStore incremental hints leave unrelated hot tables untouched", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const task = makeTask("task-stable", "succeeded", "worker-a");
+    const outbox = makeTerminalOutboxEvent("outbox-stable", "task-stable", "2026-04-27T00:03:00.000Z");
+    const worker = makeWorker("worker-a");
+    const audit = makeAuditEvent("audit-stable", "task.succeeded", "task-stable");
+    store.save({
+      ...emptySnapshot(),
+      tasks: [task],
+      workers: [worker],
+      auditEvents: [audit],
+      terminalOutbox: [outbox],
+    });
+
+    const heartbeat = {
+      ...worker,
+      updatedAt: "2026-04-27T00:04:00.000Z",
+      lastSeenAt: "2026-04-27T00:04:00.000Z",
+    };
+    const heartbeatAudit = {
+      ...makeAuditEvent("worker-heartbeat:worker-a", "worker.heartbeat", "worker-a", "2026-04-27T00:04:00.000Z"),
+      targetType: "worker",
+    } satisfies BrokerSnapshot["auditEvents"][number];
+
+    store.save(
+      {
+        ...emptySnapshot(),
+        tasks: [task],
+        workers: [heartbeat],
+        auditEvents: [audit, heartbeatAudit],
+        terminalOutbox: [outbox],
+      },
+      {
+        hotWorkers: [heartbeat],
+        hotAuditEvents: [heartbeatAudit],
+      },
+    );
+
+    assert.deepEqual(store.readHotTasks().map((row) => row.id), ["task-stable"]);
+    assert.deepEqual(store.readHotTerminalOutbox().map((row) => row.id), ["outbox-stable"]);
+    assert.equal(store.readHotWorkers({ nodeId: "worker-a" })[0]?.lastSeenAt, heartbeat.lastSeenAt);
+    assert.deepEqual(
+      store.readHotAuditEvents().map((row) => row.id).sort(),
+      ["audit-stable", "worker-heartbeat:worker-a"],
+    );
+    assert.equal(store.getPersistenceInfo().lastPersistSkippedFullSnapshot, true);
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore plans task hot-table retention from DB rows", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -1504,6 +1914,37 @@ test("SqliteBrokerStateStore caps recent worker heartbeat audit rows even when w
   }
 });
 
+test("SqliteBrokerStateStore caps recent task heartbeat audit rows even when task is protected", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const taskId = "task-hot";
+    const heartbeats = [
+      makeAuditEvent("task-heartbeat-1", "task.heartbeat", taskId, "2026-04-27T00:00:01.000Z"),
+      makeAuditEvent("task-heartbeat-2", "task.heartbeat", taskId, "2026-04-27T00:00:02.000Z"),
+      makeAuditEvent("task-heartbeat-3", "task.heartbeat", taskId, "2026-04-27T00:00:03.000Z"),
+    ];
+    const created = makeAuditEvent("task-created", "task.created", taskId, "2026-04-27T00:00:00.000Z");
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      auditEvents: [created, ...heartbeats],
+    });
+
+    const plan = store.planHotAuditRetention({
+      nowMs: Date.parse("2026-04-27T00:01:00.000Z"),
+      retentionMs: 60 * 60 * 1000,
+      maxRecords: 2,
+      protectedIds: { taskIds: [taskId] },
+    });
+
+    assert.deepEqual(plan.pruneIds, ["task-heartbeat-1"]);
+    assert.deepEqual(plan.retainedIds, ["task-created", "task-heartbeat-2", "task-heartbeat-3"]);
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore applies task and audit hot retention plans", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -1584,6 +2025,167 @@ test("SqliteBrokerStateStore save hints prune missing task and audit rows throug
     assert.deepEqual(store.readHotTasks().map((task) => task.id), ["task-keep"]);
     assert.deepEqual(store.readHotAuditEvents().map((event) => event.id), ["audit-keep"]);
     assert.equal(store.readHotEntityMirrorStatus().ok, true);
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("broker cleanup plan reports dry-run candidates with stable gates", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const oldTerminal = {
+      ...makeTask("cleanup-old-terminal", "failed", "worker-idle"),
+      completedAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+    };
+    const active = {
+      ...makeTask("cleanup-active", "running", "worker-active"),
+      updatedAt: "2026-04-27T00:00:00.000Z",
+    };
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      tasks: [oldTerminal, active],
+      workers: [makeWorker("worker-idle"), makeWorker("worker-active")],
+      auditEvents: [
+        makeAuditEvent("cleanup-audit-old-terminal", "task.failed", oldTerminal.id, "2026-04-27T00:00:00.000Z"),
+        makeAuditEvent("cleanup-audit-active", "task.started", active.id, "2026-04-27T00:00:00.000Z"),
+      ],
+      terminalOutbox: [
+        makeOutboxEvent("cleanup-outbox-acked", oldTerminal.id, 1, "2026-04-27T00:00:00.000Z", "2026-04-27T00:00:00.000Z"),
+        makeOutboxEvent("cleanup-outbox-unacked", oldTerminal.id, 2, "2026-04-27T00:00:00.000Z", null),
+      ],
+    });
+
+    const plan = buildBrokerCleanupPlan(store, {
+      nowMs: Date.parse("2026-04-27T01:00:00.000Z"),
+      taskRetentionMs: 30 * 60 * 1000,
+      maxTerminalTasks: 0,
+      auditRetentionMs: 30 * 60 * 1000,
+      maxAuditEvents: 0,
+      workerRetentionMs: 30 * 60 * 1000,
+      maxInactiveWorkers: 0,
+      terminalOutboxRetentionMs: 30 * 60 * 1000,
+      maxAcknowledgedTerminalOutboxEvents: 0,
+    });
+
+    assert.equal(plan.kind, "broker.cleanup.plan");
+    assert.equal(plan.mode, "dry-run");
+    assert.equal(plan.summary.totalPruneCandidates, 4);
+    assert.equal(plan.summary.highestRisk, "high");
+    assert.equal(plan.planId.length, 16);
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_tasks")?.pruneIds, [oldTerminal.id]);
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_audit_events")?.pruneIds, ["cleanup-audit-old-terminal"]);
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_workers")?.pruneIds, ["worker-idle"]);
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_terminal_outbox")?.pruneIds, ["cleanup-outbox-acked"]);
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_terminal_outbox")?.retainedIds, ["cleanup-outbox-unacked"]);
+    assert.equal(plan.tables.find((table) => table.table === "broker_workers")?.executionBlockedByDefault, true);
+    assert.equal(plan.tables.find((table) => table.table === "broker_terminal_outbox")?.executionBlockedByDefault, true);
+    assert.match(plan.notes.join("\n"), /Terminal outbox pruning is dry-run-only/);
+    assert.equal(store.readHotTasks().length, 2, "dry-run plan must not mutate task rows");
+    assert.equal(store.readHotTerminalOutbox().length, 2, "dry-run plan must not mutate terminal outbox rows");
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("broker cleanup execution blocks terminal outbox pruning as dry-run-only", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      terminalOutbox: [
+        makeOutboxEvent("cleanup-outbox-acked", "task-outbox", 1, "2026-04-27T00:00:00.000Z", "2026-04-27T00:00:00.000Z"),
+      ],
+    });
+
+    const plan = buildBrokerCleanupPlan(store, {
+      nowMs: Date.parse("2026-04-27T01:00:00.000Z"),
+      terminalOutboxRetentionMs: 30 * 60 * 1000,
+      maxAcknowledgedTerminalOutboxEvents: 0,
+    });
+
+    assert.deepEqual(plan.tables.find((table) => table.table === "broker_terminal_outbox")?.pruneIds, ["cleanup-outbox-acked"]);
+    assert.throws(
+      () => executeBrokerCleanupPlan(store, plan, {
+        approvalToken: plan.planId,
+        confirmation: BROKER_CLEANUP_CONFIRMATION,
+        backupProof: "sqlite backup: /tmp/backup.sqlite sha256=abc123",
+      }),
+      /terminal outbox prune candidates are dry-run-only/,
+    );
+    assert.equal(store.readHotTerminalOutbox().length, 1, "blocked execution must not mutate terminal outbox rows");
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("broker cleanup execution requires approval, backup proof, and worker override", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const oldTerminal = {
+      ...makeTask("cleanup-exec-terminal", "failed", "worker-prune"),
+      completedAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+    };
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      tasks: [oldTerminal],
+      workers: [makeWorker("worker-prune")],
+      auditEvents: [makeAuditEvent("cleanup-exec-audit", "task.failed", oldTerminal.id, "2026-04-27T00:00:00.000Z")],
+    });
+
+    const plan = buildBrokerCleanupPlan(store, {
+      nowMs: Date.parse("2026-04-27T01:00:00.000Z"),
+      taskRetentionMs: 30 * 60 * 1000,
+      maxTerminalTasks: 0,
+      auditRetentionMs: 30 * 60 * 1000,
+      maxAuditEvents: 0,
+      workerRetentionMs: 30 * 60 * 1000,
+      maxInactiveWorkers: 0,
+    });
+
+    assert.deepEqual(validateCleanupExecution(plan, {}), [
+      "approvalToken does not match planId",
+      `confirmation must equal ${BROKER_CLEANUP_CONFIRMATION}`,
+      "backupProof is required before cleanup execution",
+      "worker prune candidates require allowWorkerPrune=true because stale workers may still be valid home-broker records",
+    ]);
+
+    assert.throws(
+      () => executeBrokerCleanupPlan(store, plan, {
+        approvalToken: plan.planId,
+        confirmation: BROKER_CLEANUP_CONFIRMATION,
+        backupProof: "sqlite backup: /tmp/backup.sqlite sha256=abc123",
+      }),
+      /worker prune candidates require allowWorkerPrune=true/,
+    );
+
+    const result = executeBrokerCleanupPlan(store, plan, {
+      approvalToken: plan.planId,
+      confirmation: BROKER_CLEANUP_CONFIRMATION,
+      backupProof: "sqlite backup: /tmp/backup.sqlite sha256=abc123",
+      allowWorkerPrune: true,
+    });
+
+    assert.equal(result.kind, "broker.cleanup.execution");
+    assert.deepEqual(result.results.map((item) => [item.table, item.prunedCount]), [
+      ["broker_tasks", 1],
+      ["broker_audit_events", 1],
+      ["broker_workers", 1],
+      ["broker_terminal_outbox", 0],
+    ]);
+    assert.equal(result.auditEvent.action, "broker.cleanup.applied");
+    assert.equal(result.auditEvent.targetType, "broker");
+    assert.equal(result.auditEvent.targetId, plan.planId);
+    assert.equal(store.readHotTasks().length, 0);
+    assert.deepEqual(store.readHotAuditEvents().map((event) => event.action), ["broker.cleanup.applied"]);
+    assert.equal(store.readHotWorkers().length, 0);
     store.close();
   } finally {
     temp.cleanup();
@@ -2060,3 +2662,681 @@ function makeAuditEvent(
     createdAt,
   };
 }
+
+function makeTerminalOutboxEvent(id: string, taskId: string, createdAt: string): TerminalTaskOutboxEvent {
+  return {
+    id,
+    kind: "task.terminal",
+    taskEventId: Number(createdAt.slice(17, 19)),
+    payload: {
+      taskId,
+      status: "succeeded",
+      worker: "worker-a",
+      createdAt,
+      updatedAt: createdAt,
+      completedAt: createdAt,
+    },
+    createdAt,
+    receipt: {
+      status: "accepted",
+      updatedAt: createdAt,
+    },
+    attempts: 0,
+  };
+}
+
+function makeOutboxEvent(
+  id: string,
+  taskId: string,
+  eventId: number,
+  createdAt: string,
+  acknowledgedAt: string | null,
+): BrokerSnapshot["terminalOutbox"] extends (infer T)[] | undefined ? T : never {
+  const event: Record<string, unknown> = {
+    id,
+    kind: "task.terminal" as const,
+    taskEventId: eventId,
+    payload: {
+      taskId,
+      status: "succeeded" as const,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    createdAt,
+    receipt: {
+      status: "produced" as const,
+      updatedAt: createdAt,
+    },
+    attempts: 0,
+  };
+  if (acknowledgedAt) {
+    event.ack = {
+      status: "receipt_confirmed" as const,
+      evidence: "operator_visible" as const,
+      acknowledgedAt,
+    };
+  }
+  return event as unknown as NonNullable<BrokerSnapshot["terminalOutbox"]>[number];
+}
+
+test("SqliteBrokerStateStore.readHotTableLoadMetrics returns per-table counts and max payload sizes", () => {
+  const temp = withTempFile("hot-metrics.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+
+    // Seed with known counts using save (which writes to hot tables)
+    const t0 = "2026-04-27T00:00:00.000Z";
+    const tasks: BrokerSnapshot["tasks"] = Array.from({ length: 5 }, (_, i) => ({
+      ...makeTask(`task-${i}`, "succeeded", "worker-0"),
+      createdAt: t0,
+      updatedAt: t0,
+    }));
+    const auditEvents = Array.from({ length: 10 }, (_, i) =>
+      makeAuditEvent(`audit-${i}`, "task.created", "task-0", t0),
+    );
+    const workers = [makeWorker("worker-0")];
+    const terminalOutbox = [
+      makeOutboxEvent("outbox-acked", "task-0", 0, t0, t0),
+      makeOutboxEvent("outbox-unacked", "task-1", 1, t0, null),
+    ];
+    const tombstones = [makeTombstone("task-0", "failed", t0)];
+
+    store.save(
+      {
+        ...emptySnapshot(),
+        tasks,
+        auditEvents,
+        workers,
+        terminalOutbox,
+        tombstones,
+      },
+      {},
+    );
+
+    const metrics = store.readHotTableLoadMetrics();
+
+    // Verify task counts and payload size
+    assert.ok(metrics.tables["broker_tasks"], "broker_tasks should exist");
+    assert.equal(metrics.tables["broker_tasks"].count, 5, "task count");
+    assert.ok(metrics.tables["broker_tasks"].maxPayloadBytes > 0, "tasks should have nonzero max payload");
+    assert.deepEqual(metrics.tables["broker_tasks"].runtimeLoad, {
+      limit: 2000,
+      loadedCount: 5,
+      skippedCount: 0,
+      activeCount: 0,
+      terminalCount: 5,
+    });
+
+    // Verify audit event counts
+    assert.equal(metrics.tables["broker_audit_events"].count, 10, "audit event count");
+    assert.deepEqual(metrics.tables["broker_audit_events"].runtimeLoad, {
+      limit: 5000,
+      loadedCount: 10,
+      skippedCount: 0,
+    });
+
+    // Verify terminal outbox with unacked count
+    assert.equal(metrics.tables["broker_terminal_outbox"].count, 2, "terminal outbox count");
+    assert.equal(metrics.tables["broker_terminal_outbox"].unackedCount, 1, "unacked count should be 1");
+    assert.deepEqual(metrics.tables["broker_terminal_outbox"].runtimeLoad, {
+      limit: 1000,
+      loadedCount: 2,
+      skippedCount: 0,
+    });
+
+    // Verify tombstone counts
+    assert.equal(metrics.tables["broker_tombstones"].count, 1, "tombstone count");
+
+    // Verify worker counts
+    assert.equal(metrics.tables["broker_workers"].count, 1, "worker count");
+
+    // Verify empty tables report zero
+    assert.equal(metrics.tables["broker_artifacts"].count, 0, "artifacts should be zero");
+    assert.equal(metrics.tables["broker_validations"].count, 0, "validations should be zero");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore hot-table runtime load caps hydrate bounded rows and expose skipped counts", () => {
+  const temp = withTempFile("hot-runtime-caps.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, {
+      loadSource: "hot-tables",
+      maxHotRuntimeTerminalTasks: 2,
+      maxHotRuntimeAuditEvents: 3,
+      maxHotRuntimeTerminalOutboxEvents: 1,
+    });
+    const t0 = "2026-04-27T00:00:00.000Z";
+    const activeTasks: BrokerSnapshot["tasks"] = Array.from({ length: 3 }, (_, i) => ({
+      ...makeTask(`active-${i}`, (["queued", "claimed", "running"] as const)[i], "worker-0"),
+      createdAt: t0,
+      updatedAt: t0,
+    }));
+    const terminalTasks: BrokerSnapshot["tasks"] = Array.from({ length: 5 }, (_, i) => ({
+      ...makeTask(`terminal-${i}`, i % 2 === 0 ? "succeeded" : "failed", "worker-0"),
+      createdAt: t0,
+      updatedAt: `2026-04-27T00:00:0${i}.000Z`,
+    }));
+    const auditEvents = Array.from({ length: 6 }, (_, i) =>
+      makeAuditEvent(`audit-cap-${i}`, "task.created", `terminal-${i % terminalTasks.length}`, t0),
+    );
+    const terminalOutbox = Array.from({ length: 4 }, (_, i) =>
+      makeOutboxEvent(`outbox-cap-${i}`, `terminal-${i}`, i, `2026-04-27T00:00:0${i}.000Z`, i === 0 ? null : t0),
+    );
+
+    store.save({
+      ...emptySnapshot(),
+      tasks: [...activeTasks, ...terminalTasks],
+      auditEvents,
+      terminalOutbox,
+    }, {});
+
+    const loaded = store.load();
+    assert.equal(loaded.tasks.length, 5, "active tasks plus the newest two terminal tasks hydrate");
+    assert.equal(loaded.auditEvents.length, 3, "audit runtime hydration respects configured cap");
+    assert.equal(loaded.terminalOutbox?.length ?? 0, 1, "terminal outbox runtime hydration respects configured cap");
+
+    const metrics = store.readHotTableLoadMetrics();
+    assert.deepEqual(metrics.tables["broker_tasks"].runtimeLoad, {
+      limit: 2,
+      loadedCount: 5,
+      skippedCount: 3,
+      activeCount: 3,
+      terminalCount: 5,
+    });
+    assert.deepEqual(metrics.tables["broker_audit_events"].runtimeLoad, {
+      limit: 3,
+      loadedCount: 3,
+      skippedCount: 3,
+    });
+    assert.equal(metrics.tables["broker_terminal_outbox"].unackedCount, 1);
+    assert.deepEqual(metrics.tables["broker_terminal_outbox"].runtimeLoad, {
+      limit: 1,
+      loadedCount: 1,
+      skippedCount: 3,
+    });
+    assert.deepEqual(store.readHotTableRuntimeLoadLimits(), {
+      terminalTasks: 2,
+      auditEvents: 3,
+      terminalOutboxEvents: 1,
+    });
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore.readHotRuntimeSnapshot survives representative load (hot-tables load source)", () => {
+  const temp = withTempFile("hot-regr.db");
+  try {
+    // Create with hot-tables load source to exercise the exact regression path from #497
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+
+    // Seed representative data matching observed seoseo broker shape
+    const t0 = "2026-04-27T00:00:00.000Z";
+    const taskCount = 660;
+    const auditCount = 1908;
+    const workerCount = 21;
+    const tombstoneCount = 177;
+    const outboxCount = 389;
+    const exchangeCount = 15;
+    const exchangeMessageCount = 31;
+    const proposalCount = 13;
+
+    const tasks: BrokerSnapshot["tasks"] = Array.from({ length: taskCount }, (_, i) => ({
+      ...makeTask(`task-r-${i}`, i % 4 === 0 ? "failed" : "succeeded", "worker-0"),
+      createdAt: t0,
+      updatedAt: t0,
+    }));
+    const auditEvents = Array.from({ length: auditCount }, (_, i) =>
+      makeAuditEvent(`audit-r-${i}`, i % 3 === 0 ? "worker.heartbeat" : "task.created", "task-0", t0),
+    );
+    const workers = Array.from({ length: workerCount }, (_, i) =>
+      makeWorker(`worker-r-${i}`),
+    );
+    const terminalOutbox = Array.from({ length: outboxCount }, (_, i) =>
+      makeOutboxEvent(
+        `outbox-r-${i}`,
+        `task-r-${i % taskCount}`,
+        i,
+        t0,
+        i < 200 ? null : t0,
+      ),
+    );
+    const tombstones = Array.from({ length: tombstoneCount }, (_, i) =>
+      makeTombstone(`task-r-${i}`, "failed", t0),
+    );
+    const exchanges = Array.from({ length: exchangeCount }, (_, i) =>
+      makeExchange(`ex-r-${i}`, "worker-0", t0),
+    );
+    const exchangeMessages = Array.from({ length: exchangeMessageCount }, (_, i) =>
+      makeExchangeMessage(`exmsg-r-${i}`, `ex-r-${i % exchangeCount}`, "root", undefined, t0),
+    );
+    const proposals = Array.from({ length: proposalCount }, (_, i) =>
+      makeProposal(`proposal-r-${i}`, "submitted", "worker-0", t0),
+    );
+
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks,
+      auditEvents,
+      workers,
+      terminalOutbox,
+      tombstones,
+      exchanges,
+      exchangeMessages,
+      proposals,
+    };
+
+    store.save(snapshot, {});
+
+    // Read back the entire hot-table snapshot — this is the exact code path
+    // that caused OOM in issue #497
+    const loaded = store.load();
+
+    // Verify counts match (this asserts the read path is correct and doesn't crash)
+    assert.equal(loaded.tasks.length, taskCount, "loaded task count should match seeded");
+    assert.equal(loaded.auditEvents.length, auditCount, "loaded audit event count should match seeded");
+    assert.equal(loaded.workers.length, workerCount, "loaded worker count should match seeded");
+    assert.equal(loaded.terminalOutbox?.length ?? 0, outboxCount, "loaded terminal outbox count should match seeded");
+    assert.equal(loaded.tombstones?.length ?? 0, tombstoneCount, "loaded tombstone count should match seeded");
+    assert.equal(loaded.exchanges.length, exchangeCount, "loaded exchange count should match seeded");
+    assert.equal(loaded.exchangeMessages.length, exchangeMessageCount, "loaded exchange message count should match seeded");
+    assert.equal(loaded.proposals.length, proposalCount, "loaded proposal count should match seeded");
+
+    // Verify structural integrity: all tasks have id and status
+    assert.ok(loaded.tasks.every((t) => typeof t.id === "string" && typeof t.status === "string"), "all tasks have id and status");
+    assert.ok(loaded.auditEvents.every((e) => typeof e.id === "string" && typeof e.action === "string"), "all audit events have id and action");
+    assert.ok(loaded.workers.every((w) => typeof w.nodeId === "string"), "all workers have nodeId");
+
+    // Verify readHotEntityMirrorStatus reports OK after consistent save/load
+    const mirror = store.readHotEntityMirrorStatus();
+    assert.ok(mirror.ok, `mirror status should be ok: ${JSON.stringify(mirror.mismatches)}`);
+    assert.equal(mirror.mismatches.length, 0, "no mismatches after consistent load");
+
+    // Verify readHotTableLoadMetrics gives correct counts
+    const metrics = store.readHotTableLoadMetrics();
+    assert.equal(metrics.tables["broker_tasks"].count, taskCount, "hot table metrics: task count");
+    assert.equal(metrics.tables["broker_terminal_outbox"].unackedCount, 200, "hot table metrics: unacked count");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore planHotTaskRetention identifies prune candidates", () => {
+  const temp = withTempFile("hot-retention.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const t0 = "2026-04-27T00:00:00.000Z";
+
+    // 500 terminal tasks + 160 active tasks
+    const terminalTasks: BrokerSnapshot["tasks"] = Array.from({ length: 500 }, (_, i) => ({
+      ...makeTask(`rt-${i}`, i % 3 === 0 ? "failed" : "succeeded", "worker-0"),
+      createdAt: t0,
+      updatedAt: t0,
+    }));
+    const activeTasks: BrokerSnapshot["tasks"] = Array.from({ length: 160 }, (_, i) => ({
+      ...makeTask(`ra-${i}`, (["queued", "running", "claimed"] as const)[i % 3], "worker-0"),
+      createdAt: t0,
+      updatedAt: t0,
+    }));
+
+    store.save(
+      { ...emptySnapshot(), tasks: [...terminalTasks, ...activeTasks], workers: [makeWorker("worker-0")] },
+      {},
+    );
+
+    // Plan retention with a short window — should identify many terminal tasks for pruning
+    const plan = store.planHotTaskRetention({
+      retentionMs: 60 * 60 * 1000, // 1 hour
+      maxTerminalRecords: 100,
+    });
+
+    // The plan should have retain and prune recommendations
+    assert.equal(plan.table, "broker_tasks", "plan should target broker_tasks");
+    assert.ok(plan.retainedIds.length >= 100, `should retain at least maxTerminalRecords (got ${plan.retainedIds.length})`);
+    assert.ok(plan.pruneIds.length > 0, "should identify prune candidates");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore readHotRuntimeSnapshot caps non-terminal tasks with maxHotRuntimeNonTerminalTasks", () => {
+  const temp = withTempFile("hot-nonterminal-cap.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, {
+      loadSource: "hot-tables",
+      maxHotRuntimeNonTerminalTasks: 3,
+      maxHotRuntimeTerminalTasks: 2,
+    });
+
+    // 10 non-terminal tasks (queued/claimed/running) + 5 terminal tasks (succeeded/failed)
+    const nonTerminal: BrokerSnapshot["tasks"] = Array.from({ length: 10 }, (_, i) => ({
+      ...makeTask(`nt-${i}`, (["queued", "claimed", "running"] as const)[i % 3], "worker-0"),
+      createdAt: `2026-04-27T00:0${i}:00.000Z`,
+      updatedAt: `2026-04-27T00:0${i}:00.000Z`,
+    }));
+    const terminal: BrokerSnapshot["tasks"] = Array.from({ length: 5 }, (_, i) => ({
+      ...makeTask(`t-${i}`, i % 2 === 0 ? "succeeded" : "failed", "worker-0"),
+      createdAt: `2026-04-27T01:0${i}:00.000Z`,
+      updatedAt: `2026-04-27T01:0${i}:00.000Z`,
+    }));
+
+    store.save({ ...emptySnapshot(), tasks: [...nonTerminal, ...terminal], workers: [makeWorker("worker-0")] });
+
+    const hotSnapshot = store.readHotRuntimeSnapshot();
+    const hotTasks = hotSnapshot.tasks;
+    // Should have at most 3 non-terminal (ordered by updated_at DESC, id ASC) + at most 2 terminal
+    assert.ok(hotTasks.length <= 5, `expected at most 5 hot tasks, got ${hotTasks.length}`);
+
+    const nonTerminalIds = hotTasks
+      .filter((t) => ["queued", "claimed", "running"].includes(t.status))
+      .map((t) => t.id);
+    assert.ok(nonTerminalIds.length <= 3, `expected at most 3 non-terminal tasks, got ${nonTerminalIds.length}`);
+    // The most recent non-terminal tasks should be included
+    assert.ok(nonTerminalIds.includes("nt-9"), "most recent non-terminal task should be included");
+    assert.ok(nonTerminalIds.includes("nt-8"), "second most recent non-terminal task should be included");
+
+    const terminalIds = hotTasks
+      .filter((t) => ["succeeded", "failed", "canceled"].includes(t.status))
+      .map((t) => t.id);
+    assert.ok(terminalIds.length <= 2, `expected at most 2 terminal tasks, got ${terminalIds.length}`);
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore readHotTerminalOutboxDiagnostics reports unacked staleness", () => {
+  const temp = withTempFile("hot-outbox-diag.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const now = new Date();
+    const oldDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      terminalOutbox: [
+        makeTerminalOutboxEvent("outbox-1", "task-1", oldDate),
+        {
+          ...makeTerminalOutboxEvent("outbox-2", "task-2", now.toISOString()),
+          ack: {
+            status: "receipt_confirmed" as const,
+            evidence: "operator_visible" as const,
+            acknowledgedAt: now.toISOString(),
+          },
+        },
+        makeTerminalOutboxEvent("outbox-3", "task-3", oldDate),
+      ],
+    };
+    store.save(snapshot);
+
+    const diag = store.readHotTerminalOutboxDiagnostics();
+    assert.equal(diag.total, 3);
+    assert.equal(diag.acked, 1);
+    assert.equal(diag.unacked, 2);
+    assert.ok(diag.unackedRatio > 0.5);
+    assert.ok(diag.oldestUnackedCreatedAt !== null);
+    assert.ok(diag.oldestUnackedAgeMs !== null);
+    assert.ok(diag.oldestUnackedAgeMs! > 12 * 24 * 60 * 60 * 1000, "oldest unacked should be >12 days old");
+    // The oldest unacked warning should fire (>7 days)
+    assert.ok(diag.warnings.some((w) => w.includes("days old")), "should warn about old unacked entry");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore incremental persist skips full snapshot serialization when hot hints present", () => {
+  const temp = withTempFile("incremental-persist.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks: [makeTask("task-1", "queued", "worker-a"), makeTask("task-2", "running", "worker-b")],
+      auditEvents: [makeAuditEvent("audit-1", "task.created", "task-1"), makeAuditEvent("audit-2", "task.claimed", "task-2")],
+      workers: [makeWorker("worker-a"), makeWorker("worker-b")],
+      terminalOutbox: [makeTerminalOutboxEvent("outbox-1", "task-1", "2026-04-27T00:00:00.000Z"), makeTerminalOutboxEvent("outbox-2", "task-2", "2026-04-27T00:00:00.000Z")],
+    };
+    // Full persist: snapshot row MUST be written
+    store.save(snapshot);
+
+    let info = store.getPersistenceInfo();
+    assert.ok(info.lastPersistAt !== undefined, "lastPersistAt should be set after persist");
+    assert.equal(info.lastPersistSkippedFullSnapshot, false, "full persist should not skip snapshot");
+
+    // Incremental persist: snapshot row should NOT be serialized again; only hot tables written
+    const dirtyTask = { ...snapshot.tasks[0], status: "claimed" as const, claimedAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" };
+    store.save(
+      {
+        ...emptySnapshot(),
+        tasks: [dirtyTask, snapshot.tasks[1]],
+        auditEvents: snapshot.auditEvents,
+        terminalOutbox: snapshot.terminalOutbox,
+      },
+      {
+        hotTasks: [dirtyTask],
+        hotAuditEvents: [snapshot.auditEvents[0]],
+      },
+    );
+
+    info = store.getPersistenceInfo();
+    assert.equal(info.lastPersistSkippedFullSnapshot, true, "incremental persist should skip snapshot");
+    assert.ok(info.lastHotHintCounts !== undefined, "hot hint counts should be recorded");
+    assert.equal(info.lastHotHintCounts!.hotTasks, 1, "should report 1 dirty task hint");
+    assert.equal(info.lastHotHintCounts!.hotAuditEvents, 1, "should report 1 dirty audit hint");
+
+    // Verify hot table has the updated data
+    const hotTasks = store.readHotTasks();
+    const task1 = hotTasks.find((t) => t.id === "task-1");
+    assert.equal(task1?.status, "claimed", "hot table should contain updated task");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore saves hot entity hints without a snapshot", () => {
+  const temp = withTempFile("hot-only-persist.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath, { maxBytes: 128 });
+    const dirtyTask = {
+      ...makeTask("task-hot-only", "queued", "worker-hot-only"),
+      payload: { large: "x".repeat(1024) },
+    };
+    const audit = makeAuditEvent("audit-hot-only", "task.created", dirtyTask.id);
+
+    store.saveHotEntities({
+      hotTasks: [dirtyTask],
+      hotAuditEvents: [audit],
+      hotWorkers: [makeWorker("worker-hot-only")],
+      hotTerminalOutboxEvents: [
+        makeTerminalOutboxEvent("outbox-hot-only", dirtyTask.id, "2026-04-27T00:00:00.000Z"),
+      ],
+    });
+
+    const info = store.getPersistenceInfo();
+    assert.equal(info.lastPersistSkippedFullSnapshot, true);
+    assert.equal(info.lastHotHintCounts?.hotTasks, 1);
+    assert.equal(info.lastHotHintCounts?.hotAuditEvents, 1);
+    assert.equal(info.lastHotHintCounts?.hotWorkers, 1);
+    assert.equal(info.lastHotHintCounts?.hotTerminalOutboxEvents, 1);
+    assert.equal(store.readHotTasks({ id: dirtyTask.id })[0]?.payload.large, "x".repeat(1024));
+    assert.equal(store.readHotAuditEvents({ targetId: dirtyTask.id })[0]?.id, audit.id);
+    assert.equal(store.readHotWorkers({ nodeId: "worker-hot-only" })[0]?.nodeId, "worker-hot-only");
+    assert.equal(store.readHotTerminalOutbox().find((event) => event.id === "outbox-hot-only")?.payload.taskId, dirtyTask.id);
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("SqliteBrokerStateStore getPersistenceInfo returns incremental persist diagnostics", () => {
+  const temp = withTempFile("persist-diag.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const snapshot: BrokerSnapshot = {
+      ...emptySnapshot(),
+      tasks: [makeTask("task-pd-1", "queued", "worker-a"), makeTask("task-pd-2", "running", "worker-b")],
+      auditEvents: [makeAuditEvent("audit-pd-1", "task.created", "task-pd-1")],
+      workers: [makeWorker("worker-a")],
+    };
+    // Full persist
+    store.save(snapshot);
+    let info = store.getPersistenceInfo();
+    assert.ok(info.lastPersistAt !== undefined, "lastPersistAt should be set");
+    assert.equal(info.lastPersistSkippedFullSnapshot, false, "full persist should not skip snapshot");
+    assert.equal(info.lastHotHintCounts, undefined, "no hot hints should mean no hot hint counts");
+
+    // Incremental persist with hints
+    const dirtyTask = { ...snapshot.tasks[0], status: "claimed" as const, claimedAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" };
+    store.save(
+      {
+        ...emptySnapshot(),
+        tasks: [dirtyTask, snapshot.tasks[1]],
+        auditEvents: snapshot.auditEvents,
+        workers: snapshot.workers,
+      },
+      {
+        hotTasks: [dirtyTask],
+        hotWorkers: [snapshot.workers[0]],
+      },
+    );
+
+    info = store.getPersistenceInfo();
+    assert.ok(info.lastPersistAt !== undefined, "lastPersistAt should still be set");
+    assert.equal(info.lastPersistSkippedFullSnapshot, true, "incremental persist should skip snapshot");
+    assert.ok(info.lastHotHintCounts !== undefined, "hot hint counts should be present");
+    assert.equal(info.lastHotHintCounts!.hotTasks, 1, "should report 1 dirty task");
+    assert.equal(info.lastHotHintCounts!.hotWorkers, 1, "should report 1 dirty worker");
+    // No terminal outbox events were dirty
+    assert.equal(info.lastHotHintCounts!.hotTerminalOutboxEvents, 0, "no terminal outbox hints");
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("BrokerCleanupPlan totalPruneCandidates=0 when all candidates are non-terminal or blocked (actionability gap)", () => {
+  const temp = withTempFile("actionability-gap.db");
+  try {
+    const staleWorkerId = "stale-active-w";
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      tasks: [
+        // Active (claimed) task assigned to stale worker — prevents worker pruning
+        {
+          ...makeTask("active-task", "claimed", staleWorkerId),
+          claimedBy: staleWorkerId,
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        },
+        // Another old queued task — non-terminal, not a retention target
+        {
+          ...makeTask("queued-old", "queued", "worker-b"),
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        },
+      ],
+      workers: [
+        makeWorker(staleWorkerId),
+        makeWorker("worker-b"),
+      ],
+      auditEvents: [
+        makeAuditEvent("audit-old-1", "task.created", "active-task"),
+        makeAuditEvent("audit-old-2", "task.created", "queued-old"),
+      ],
+    });
+
+    const plan = buildBrokerCleanupPlan(store, {
+      nowMs: Date.parse("2026-04-27T01:00:00.000Z"),
+      taskRetentionMs: 30 * 60 * 1000,
+      maxTerminalTasks: 100,
+      auditRetentionMs: 30 * 60 * 1000,
+      maxAuditEvents: 100,
+      workerRetentionMs: 30 * 60 * 1000,
+      maxInactiveWorkers: 0,
+    });
+
+    // Plan summary reflects no prunable rows
+    assert.equal(plan.summary.candidateTables, 0, "no tables should have prune candidates");
+    assert.equal(plan.summary.totalPruneCandidates, 0, "totalPruneCandidates should be 0");
+    assert.equal(plan.summary.highestRisk, "low");
+
+    // Verify each table individually has pruneCount 0
+    for (const tablePlan of plan.tables) {
+      assert.equal(
+        tablePlan.pruneCount,
+        0,
+        `table ${tablePlan.table} should have 0 prune count: found ${tablePlan.pruneCount} candidates`,
+      );
+    }
+
+    // Reason: no terminal tasks past retention, stale worker protected by active task,
+    // queued task is non-terminal so not a retention target.
+    const taskPlan = plan.tables.find((t) => t.table === "broker_tasks");
+    assert.equal(taskPlan?.pruneCount, 0, "no terminal tasks past retention window");
+
+    const workerPlan = plan.tables.find((t) => t.table === "broker_workers");
+    assert.equal(workerPlan?.pruneCount, 0, "stale worker has active task so it is retained");
+
+    // verify the store was NOT mutated
+    assert.equal(store.readHotTasks().length, 2, "plan must not mutate task rows");
+    assert.equal(store.readHotWorkers().length, 2, "plan must not mutate worker rows");
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("BrokerCleanupPlan totalPruneCandidates=0 when only queued residue exists (no terminal tasks)", () => {
+  const temp = withTempFile("queued-residue-gap.db");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      tasks: [
+        {
+          ...makeTask("residue-task-1", "queued", "worker-active"),
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        },
+        {
+          ...makeTask("residue-task-2", "queued", "worker-active"),
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        },
+      ],
+      workers: [makeWorker("worker-active")],
+    });
+
+    const plan = buildBrokerCleanupPlan(store, {
+      nowMs: Date.parse("2026-04-27T01:00:00.000Z"),
+      taskRetentionMs: 30 * 60 * 1000,
+      maxTerminalTasks: 0,
+      auditRetentionMs: 30 * 60 * 1000,
+      maxAuditEvents: 100,
+      workerRetentionMs: 30 * 60 * 1000,
+      maxInactiveWorkers: 0,
+    });
+
+    // Queued tasks are non-terminal; retention planner only prunes terminal tasks
+    assert.equal(
+      plan.summary.totalPruneCandidates,
+      0,
+      "queued residue is not a retention pruning target",
+    );
+    // Worker is still active (recent lastSeenAt) so not pruned
+    assert.equal(
+      plan.tables.find((t) => t.table === "broker_workers")?.pruneCount,
+      0,
+      "active worker is not a prune candidate",
+    );
+
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});

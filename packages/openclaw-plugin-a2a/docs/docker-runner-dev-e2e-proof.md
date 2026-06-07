@@ -82,9 +82,40 @@ type DockerRunnerResultArtifact = {
 - `runnerPreset`, `repository`, `commitSha`, `artifactUrl`, `round`는 `a2a.monitor.status`나 동등한 status projection에서 drilldown metadata로 보존한다.
 - artifact ingestion은 additive-tolerant 해야 하며, 알 수 없는 필드는 무시하되 secret-like 값은 status/audit summary에 출력하지 않는다.
 
+## Docker Runner branch mismatch / no-diff terminal evidence
+
+Docker Runner가 GitHub 저장소를 clean clone하고 패치 브랜치를 생성한 후,
+해당 브랜치에 `main`(또는 base ref) 대비 실질적인 diff가 없는 경우
+(예: 빈 커밋, reset-only, 잘못된 base ref, no-diff clone),
+runner는 다음 조건으로 terminal evidence를 남겨야 한다:
+
+- terminal marker는 **Block**이어야 한다 (Done이나 generic success 아님).
+- Block reason text는 `No commits between main and <branch>` 형식을 포함해야 한다.
+- 복구 가능한 branch URL은 marker text 안에 온전히 보존해야 한다.
+- plugin-side receipt는 이 evidence를 actionable branch-mismatch/no-diff Block으로
+  분류하고, generic success로 처리하지 않아야 한다.
+
+### Evidence format (expected)
+
+```text
+**Block** No commits between main and worker-alpha/issue-242
+branch: worker-alpha/issue-242
+status: no-diff
+```
+
+### Plugin receipt contract
+
+- `parseWorkerStatusMarker`는 `**Block**` marker를 `WorkerStatusBlockEvent`로 파싱한다.
+- `payload.reason`에 `No commits between main and ...` 텍스트가 온전히 보존된다.
+- `detectMarker`는 marker line을 인식하고, `parseBlockMarker`는 본문을 reason으로 추출한다.
+- 실패한 Done marker (failure indicator `no commits between` 포함)는 `success: false`로 분류된다.
+- proposal bridge는 Block event를 `ProposalState.BLOCKED`로 매핑하며, APPLIED/APPLY_SUCCEEDED로 처리하지 않는다.
+- canonical GitHub payload (`intent=propose_patch`, `payload.mode=github-propose-patch`, repo, issueNumber, issueUrl)은 변경 없이 보존된다.
+
 ## PR 체크리스트
 
 - [ ] `docs/docker-runner-dev-e2e-proof.md`가 `openclaw-plugin-a2a-dev` preset을 명시한다.
 - [ ] `npm ci && npm test` clean container command evidence를 포함한다.
 - [ ] runner result artifact를 plugin-side monitoring/status에 연결하는 contract note를 포함한다.
+- [ ] Docker Runner branch mismatch / no-diff terminal evidence contract를 포함한다.
 - [ ] `npm test`가 이 fixture를 검사한다.

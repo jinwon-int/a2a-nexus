@@ -4,6 +4,7 @@
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/513",
   "refreshIssue": "https://github.com/jinwon-int/a2a-plane/issues/528",
+  "phase4FreshImportCandidateIssue": "https://github.com/jinwon-int/a2a-plane/issues/538",
   "decision": "plan_import_rehearsal_before_canonical_flip",
   "canonicalDuringRehearsal": "split_repos",
   "rehearsalWorkspace": {
@@ -229,6 +230,45 @@
       "docker_runner_rehearsal_uses_new_split_head_after_phase1_and_plane_job_is_narrower_than_split_ci",
       "openclaw_plugin_rehearsal_lacks_plugin_local_scan_a2a_conformance_and_packaging_parity",
       "plane_package_jobs_still_use_ignore_scripts_install_while_split_repos_use_npm_ci_lifecycle_behavior"
+    ]
+  },
+  "phase4FreshImportCandidate": {
+    "status": "package_ci_green_locally_canonical_flip_blocked",
+    "performedOn": "2026-06-07",
+    "baseCommit": "1eb67fa55f756c9b47db4ec9b6b1d604683c618d",
+    "method": "git_archive_tracked_files_into_prefixed_package_paths_on_pr_branch",
+    "sourceSelection": "fresh_default_branch_heads",
+    "importedTrackedFilesOnly": true,
+    "historyPreserving": false,
+    "historyDecision": "closed_issue_pr_history_remains_in_split_repos_until_separate_canonical_flip",
+    "importToMain": false,
+    "canonicalFlip": false,
+    "localPackageCiParityPassed": true,
+    "sources": [
+      {
+        "surface": "broker",
+        "sourceRepo": "jinwon-int/a2a-broker",
+        "sourceRef": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+        "targetPath": "packages/broker",
+        "splitTrackedFiles": 869,
+        "packageCiEvidence": "node scripts/run-monorepo-package-ci-parity.mjs broker"
+      },
+      {
+        "surface": "docker-runner",
+        "sourceRepo": "jinwon-int/a2a-docker-runner",
+        "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+        "targetPath": "packages/docker-runner",
+        "splitTrackedFiles": 138,
+        "packageCiEvidence": "node scripts/run-monorepo-package-ci-parity.mjs docker-runner"
+      },
+      {
+        "surface": "openclaw-plugin-a2a",
+        "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+        "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+        "targetPath": "packages/openclaw-plugin-a2a",
+        "splitTrackedFiles": 179,
+        "packageCiEvidence": "node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a"
+      }
     ]
   }
 }

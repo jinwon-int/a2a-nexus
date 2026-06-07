@@ -1,0 +1,145 @@
+{
+  "kind": "a2a-broker.operator-approval-request.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "state": "approval_request_ready",
+  "idempotencyKey": "operator-approval-request:5bb4fe33f597b8bf73eb0fb2",
+  "sourcePlanIdempotencyKey": "complexity-execution-plan:6ee1699c03f3031103865094",
+  "sourceEnvelopeIdempotencyKey": "complexity-finalizer-approval-envelope:9638c13238ea0bea56694f7c",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:43f864cd5758f0cb936f9b3d",
+  "selectedPlanId": "complexity-execution-plan:6ee1699c03f3031103865094",
+  "title": "Operator approval required for parallel_subagents",
+  "summary": "The execution plan for \"parallel_subagents\" requires explicit operator approval before any execution steps can proceed. The plan has 5 step(s) at complex complexity, with the first step being an approval gate. 2 risk(s) identified, 1 approval gate(s) required, 3 abort condition(s) defined.",
+  "risks": [
+    {
+      "riskId": "risk-1ee4f393cb29",
+      "severity": "medium",
+      "label": "Approval-gated subagent execution",
+      "description": "Plan requires explicit operator approval before any subagent execution steps proceed.",
+      "requiresAcknowledgment": true,
+      "mitigation": "Review all subagent roles and safety gates. Only approve after thorough review."
+    },
+    {
+      "riskId": "risk-30cc9737e46a",
+      "severity": "medium",
+      "label": "Subagent complexity risk",
+      "description": "Subagent execution involves moderately complex orchestration with sequential or parallel steps.",
+      "requiresAcknowledgment": true,
+      "mitigation": "Verify subagent roles are bounded and have disjoint write sets where applicable."
+    }
+  ],
+  "requiredApprovals": [
+    {
+      "gateId": "gate-82172c76a308",
+      "label": "Operator approval gate",
+      "description": "Explicit operator approval is required before any execution step can proceed.",
+      "approver": "authorized operator",
+      "mandatory": true
+    }
+  ],
+  "abortConditions": [
+    {
+      "abortId": "abort-05f79d5079ee",
+      "condition": "Operator declines approval",
+      "triggerDescription": "Operator explicitly declines or rejects the approval request.",
+      "severity": "high",
+      "hardAbort": true
+    },
+    {
+      "abortId": "abort-77cbfc0ab333",
+      "condition": "Approval window expires",
+      "triggerDescription": "Approval request reaches its expiration timestamp without a decision.",
+      "severity": "medium",
+      "hardAbort": true
+    },
+    {
+      "abortId": "abort-5801e2883268",
+      "condition": "Subagent execution failure",
+      "triggerDescription": "Any subagent execution step returns a non-success or error status.",
+      "severity": "high",
+      "hardAbort": false
+    }
+  ],
+  "evidenceRefs": [
+    {
+      "refId": "ref-706eefb29227",
+      "label": "Complexity execution plan preflight seal",
+      "uri": "seal:complexity-execution-plan-preflight-seal:447cfcd218eefbc5fcbc434d",
+      "required": true
+    },
+    {
+      "refId": "ref-2bf59e915e40",
+      "label": "Execution plan draft",
+      "uri": "plan:complexity-execution-plan:6ee1699c03f3031103865094",
+      "required": true
+    },
+    {
+      "refId": "ref-2c0c6e6ab6fb",
+      "label": "Approval envelope draft",
+      "uri": "source-approval-envelope-draft",
+      "required": true
+    }
+  ],
+  "expiration": {
+    "expiresAt": "2026-06-02T12:00:00.000Z",
+    "reason": "Approval requests for subagent execution should be reviewed and decided promptly.",
+    "hardExpiry": true
+  },
+  "operatorNotes": [
+    "Operator approval is required before any execution step proceeds.",
+    "The first step in the execution plan is an approval gate.",
+    "All subagent steps depend on passing the approval gate first.",
+    "Do NOT approve without reviewing subagent roles, safety gates, and risks."
+  ],
+  "executionMode": "operator_approval_gated",
+  "executionBlocked": false,
+  "approvalRequired": true,
+  "envelopeCategory": "operator_approval_required",
+  "action": "parallel_subagents",
+  "complexity": "complex",
+  "stepCount": 5,
+  "blockers": [],
+  "nextActions": [
+    "Action \"parallel_subagents\" requires explicit operator approval before any execution.",
+    "Route this approval request through a separate approval grant path.",
+    "The approval grant path must be a separate, source-only step that does NOT",
+    "mutate the request itself.",
+    "Approval window expires at the expiration timestamp in this request.",
+    "After expiry, a new approval request must be generated."
+  ],
+  "boundaries": {
+    "runtimeBehaviorChanged": false,
+    "mandatoryProductionSpawn": false,
+    "brokerDispatchSemanticsChanged": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false,
+    "sealedPlanConsumed": false,
+    "executionWindowOpened": false
+  },
+  "semantics": {
+    "approvalRequestDraftOnly": true,
+    "approvalNotGranted": true,
+    "autonomousExecutionBlocked": false,
+    "sourceOnlyNoLive": true,
+    "planStepsNotExecuted": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false,
+    "performsApprovalGrant": false,
+    "performsExecutionDispatch": false,
+    "performsSeal": false,
+    "opensExecutionWindow": false
+  }
+}

@@ -237,7 +237,7 @@ test("timeoutMs from env A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS takes precedence", ()
   assert.equal(runnerTask.timeoutMs, 180000, "env timeout should override payload timeout");
 });
 
-test("default timeoutMs is 45 minutes when no override", () => {
+test("default timeoutMs is 60 minutes when no override", () => {
   const handlerTask: HandlerTask = {
     id: "canary-default-timeout",
     payload: {
@@ -247,7 +247,7 @@ test("default timeoutMs is 45 minutes when no override", () => {
   };
 
   const runnerTask = buildRunnerTaskFromHandlerPayload(handlerTask, baseEnv);
-  assert.equal(runnerTask.timeoutMs, 45 * 60 * 1000);
+  assert.equal(runnerTask.timeoutMs, 60 * 60 * 1000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

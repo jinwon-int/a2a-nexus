@@ -1,0 +1,66 @@
+{
+  "kind": "a2a-broker.finalizer-approval-envelope-draft.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "idempotencyKey": "complexity-finalizer-approval-envelope:5f8cc0dd91f485eee197f900",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:9b76bb970251c61bd3b3015b",
+  "sourceOrchestrationAction": "sequential_subagent",
+  "envelopeCategory": "operator_approval_required",
+  "decision": "envelope_draft_ready",
+  "approvalMode": "operator_approval_gated",
+  "autonomousApprovalPossible": false,
+  "subagentSpawnPermitted": false,
+  "directExecutionPermitted": false,
+  "liveDeploymentPermitted": false,
+  "requestedItems": [
+    {
+      "orchestrationAction": "sequential_subagent",
+      "complexity": "moderate",
+      "operatorApprovalRequired": true,
+      "autonomousExecutionBlocked": false,
+      "subagentPermitted": true,
+      "reason": "Role \"verifier\": review output for correctness within bounded scope"
+    }
+  ],
+  "action": "sequential_subagent",
+  "parallelismHint": 1,
+  "safetyGate": "Sequential subagent gate: moderate complexity. Spawn exactly one verifier subagent. Wait for completion before any subsequent action. No parallel dispatch.",
+  "blockers": [],
+  "nextActions": [
+    "Action \"sequential_subagent\" requires explicit operator approval before any execution.",
+    "Recommended parallelism: .",
+    "Route this envelope through a separate approval grant path.",
+    "Do NOT use this envelope to autonomously spawn subagents or execute actions."
+  ],
+  "boundaries": {
+    "runtimeBehaviorChanged": false,
+    "mandatoryProductionSpawn": false,
+    "brokerDispatchSemanticsChanged": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false
+  },
+  "semantics": {
+    "envelopeDraftOnly": true,
+    "approvalNotGranted": true,
+    "autonomousExecutionBlockedForOperatorReview": false,
+    "sourceOnlyNoLive": true,
+    "recommendationSeparated": true,
+    "approvalRequestDraftSeparated": true,
+    "approvalGrantSeparated": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false
+  }
+}

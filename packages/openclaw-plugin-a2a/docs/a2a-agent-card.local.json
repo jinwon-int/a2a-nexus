@@ -71,7 +71,8 @@
     "Alpha discovery profile; exact A2A 1.0 field names may change before stable release.",
     "Production agent-card exposure is opt-in and must be configured by the operator.",
     "The plugin does not own broker process management, Docker Compose, systemd, or worker execution.",
-    "Operator events and push notifications require explicit configuration and may be unavailable in minimal deployments."
+    "Operator events and push notifications require explicit configuration and may be unavailable in minimal deployments.",
+    "Unsupported A2A features: multipart/form-data input is not supported (JSON/text only); inline binary artifacts are disabled (links only); agent-to-agent chaining via broker relay is not exposed; the plugin does not implement the A2A streaming push endpoint as a standalone server — streaming is broker-side only; task list pagination limits are broker-defined and not configurable through the plugin."
   ],
   "exposure": {
     "productionDefault": "disabled",

@@ -87,6 +87,42 @@ export interface TerminalTaskEvent {
   issue?: number;
   /** Short operator-safe task description for terminal notices. */
   taskBrief?: string;
+  /** Canonical Terminal Brief parent round id. Mirrors `run` for legacy consumers. */
+  parentRoundId?: string;
+  /** Broker that produced or originated the parent-owned Terminal Brief. */
+  originBrokerId?: string;
+  /** Broker that owns the operator-facing Terminal Brief notification/ACK. */
+  brokerOfRecordId?: string;
+  /** Safe cross-broker routing metadata needed by Gateway suppression/relay logic. */
+  crossBrokerHandoff?: {
+    parentRoundId: string;
+    originBrokerId: string;
+    handoffBrokerId?: string;
+    originTaskId?: string;
+    childWorkerId?: string;
+  };
+  /** Explicit parent-owned notification contract for cross-broker child briefs. */
+  notificationOwnership?: {
+    ownerBrokerId: string;
+    scope: "parent-broker-only";
+    providerSendPermittedByProjection: false;
+    terminalAckPermittedByProjection: false;
+    reason: string;
+  };
+  /** Parent broker completion sequence for this round (1-based numerator). */
+  parentRoundProgress?: number;
+  /** Parent broker terminal-event sequence for this round (1-based numerator). */
+  parentRoundTerminalProgress?: number;
+  /** Explains how the progress numerator was derived. */
+  parentRoundProgressSource?: "broker_local_count" | "parent_round_order";
+  /** Total worker/task count expected for this parent round (denominator). */
+  parentRoundTotal?: number;
+  /** 1-based worker/task lane/order within the parent round. */
+  parentRoundOrder?: number;
+  /** Compact operator title for parent-round Terminal Brief notifications. */
+  terminalBriefTitle?: string;
+  /** Compatibility alias consumed by older Terminal Brief renderers. */
+  title?: string;
   prUrl?: string;
   doneUrl?: string;
   blockUrl?: string;

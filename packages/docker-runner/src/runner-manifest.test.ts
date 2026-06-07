@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildArtifactManifest, buildResultSummary, buildRunnerEvidenceHints, redactAndBound, RESULT_STREAM_LIMIT, sanitizeReceiptTrace } from "./runner.js";
+import { buildArtifactManifest, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
+import { buildBlockCommentBody } from "./github-evidence.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -64,6 +65,29 @@ test("redactAndBound redacts secret-like values and truncates large output", () 
   assert.match(bounded, /<truncated \d+ chars>/);
 });
 
+test("sanitizeTaskArtifactPayload redacts env secrets and secret-like prompt text", () => {
+  const syntheticSecret = "github" + "_pat" + "_" + "B".repeat(90);
+  const sanitized = sanitizeTaskArtifactPayload({
+    id: "task",
+    env: {
+      GH_TOKEN: "short-but-sensitive",
+      OPENAI_API_KEY: "also-sensitive",
+      SAFE_VALUE: "kept",
+    },
+    prompt: `please do work with token=${syntheticSecret}`,
+    credentials: { nested: "must not leak" },
+  }) as Record<string, unknown>;
+
+  const serialized = JSON.stringify(sanitized);
+  assert.ok(!serialized.includes("short-but-sensitive"));
+  assert.ok(!serialized.includes("also-sensitive"));
+  assert.ok(!serialized.includes(syntheticSecret));
+  assert.ok(!serialized.includes("must not leak"));
+  assert.ok(serialized.includes("SAFE_VALUE"));
+  assert.ok(serialized.includes("kept"));
+  assert.ok(serialized.includes("<redacted>"));
+});
+
 test("buildResultSummary is bounded payload-compatible while RunnerResult fields remain additive", async () => {
   const dir = await mkdtemp(join(tmpdir(), "a2a-summary-"));
   try {
@@ -72,7 +96,7 @@ test("buildResultSummary is bounded payload-compatible while RunnerResult fields
     await writeFile(artifact, "ok");
     const manifest = await buildArtifactManifest(dir, [artifact]);
     const stdout = redactAndBound("ok");
-    const stderr = redactAndBound("secret=<synthetic-value>");
+    const stderr = redactAndBound("secret=synthetic-value");
 
     const summary = buildResultSummary(
       { code: 0, signal: null, stdout: "ok", stderr: "", timedOut: false },
@@ -215,8 +239,8 @@ test("buildRunnerEvidenceHints recovers Block URL from non-zero GitHub evidence 
     workDir: "/tmp/private-task",
     exitCode: 2,
     signal: null,
-    stdout: "Authorization: Bearer redacted-github-token-fixture",
-    stderr: "secret=<synthetic-value>",
+    stdout: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
+    stderr: "secret=synthetic-value",
     artifacts: [],
     github: {
       schemaVersion: "a2a.runner.github-evidence.v1",
@@ -226,6 +250,7 @@ test("buildRunnerEvidenceHints recovers Block URL from non-zero GitHub evidence 
       worker: "worker-a",
       issueTitle: "Recovery proof",
       outcome: "block",
+      startCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-111",
       blockCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-123",
       branch: "fix/issue-5",
       validation: { status: "failed", exitCode: 2, signal: null, timedOut: false, artifactCount: 0 },
@@ -235,6 +260,7 @@ test("buildRunnerEvidenceHints recovers Block URL from non-zero GitHub evidence 
   assert.deepEqual(hints, {
     schemaVersion: "a2a.runner.evidence-hints.v1",
     issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+    startCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-111",
     blockUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-123",
     branch: "fix/issue-5",
     branchUrl: "https://github.com/jinwon-int/repo/tree/fix/issue-5",
@@ -242,6 +268,192 @@ test("buildRunnerEvidenceHints recovers Block URL from non-zero GitHub evidence 
   });
   assert.ok(!JSON.stringify(hints).includes("ghp_"));
   assert.ok(!JSON.stringify(hints).includes("/tmp/private-task"));
+});
+
+
+test("buildRunnerEvidenceHints classifies resource-limited failures for stability gates", () => {
+  const baseTask = {
+    id: "task-oom",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["npm test"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+  };
+
+  const exit137Hints = buildRunnerEvidenceHints(baseTask, {
+    ok: false,
+    taskId: "task-oom",
+    status: "failed",
+    workDir: "/tmp/private-task",
+    exitCode: 137,
+    signal: null,
+    stdout: "",
+    stderr: "Killed",
+    artifacts: [],
+  });
+
+  assert.equal(exit137Hints?.failureCategory, "resource_limited");
+
+  const enospcHints = buildRunnerEvidenceHints(baseTask, {
+    ok: false,
+    taskId: "task-enospc",
+    status: "failed",
+    workDir: "/tmp/private-task",
+    exitCode: 1,
+    signal: null,
+    stdout: "",
+    stderr: "npm ERR! ENOSPC: no space left on device",
+    artifacts: [],
+  });
+
+  assert.equal(enospcHints?.failureCategory, "resource_limited");
+});
+
+test("buildRunnerEvidenceHints classifies OpenClaw CLI provisioning failures", () => {
+  const task = {
+    id: "task-openclaw-install",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["/work/patch-command.sh"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+  };
+
+  const hints = buildRunnerEvidenceHints(task, {
+    ok: false,
+    taskId: "task-openclaw-install",
+    status: "failed",
+    workDir: "/tmp/private-task",
+    exitCode: 2,
+    signal: null,
+    stdout: "error=openclaw_install_failed\nfailure_category=openclaw_cli_unavailable\n",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.equal(hints?.failureCategory, "openclaw_cli_unavailable");
+});
+
+test("buildRunnerEvidenceHints classifies OpenClaw profile mount failures", () => {
+  const task = {
+    id: "task-openclaw-profile",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["/work/patch-command.sh"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/6",
+  };
+
+  const hints = buildRunnerEvidenceHints(task, {
+    ok: false,
+    taskId: "task-openclaw-profile",
+    status: "failed",
+    workDir: "/tmp/private-task",
+    exitCode: 2,
+    signal: null,
+    stdout: "error=openclaw_config_mount_missing\nfailure_category=openclaw_profile_unavailable\n",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.equal(hints?.failureCategory, "openclaw_profile_unavailable");
+});
+
+test("buildRunnerEvidenceHints classifies OpenClaw version probe failures", () => {
+  const task = {
+    id: "task-openclaw-version",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["/work/patch-command.sh"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/7",
+  };
+
+  const hints = buildRunnerEvidenceHints(task, {
+    ok: false,
+    taskId: "task-openclaw-version",
+    status: "failed",
+    workDir: "/tmp/private-task",
+    exitCode: 2,
+    signal: null,
+    stdout: "failure_category=openclaw_version_failed\n",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.equal(hints?.failureCategory, "openclaw_version_failed");
+});
+
+test("buildRunnerEvidenceHints classifies embedded OpenClaw model timeout without fallback", () => {
+  const task = {
+    id: "task-embedded-timeout",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["/work/patch-command.sh"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/8",
+  };
+  const stdout = [
+    "[agent/embedded] embedded run agent end: runId=abc isError=true model=deepseek-v4-flash provider=deepseek error=LLM request timed out. rawError=terminated",
+    "[agent/embedded] embedded run failover decision: runId=abc stage=assistant decision=surface_error reason=timeout from=deepseek/deepseek-v4-flash rawError=terminated",
+    "[model-fallback/decision] model fallback decision: decision=candidate_failed requested=deepseek/deepseek-v4-flash candidate=deepseek/deepseek-v4-flash reason=timeout next=none detail=terminated",
+    "[diagnostic] lane task error: lane=main durationMs=433591 error=\"FailoverError: LLM request timed out.\"",
+  ].join("\n");
+
+  const hints = buildRunnerEvidenceHints(task, {
+    ok: false,
+    taskId: "task-embedded-timeout",
+    status: "failed",
+    workDir: "/private-task",
+    exitCode: 1,
+    signal: null,
+    stdout,
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.equal(hints?.failureCategory, "embedded_model_timeout_no_fallback");
+});
+
+test("Block comment explains embedded OpenClaw timeout without fallback as runtime failure", () => {
+  const task = {
+    id: "task-embedded-timeout",
+    intent: "propose_patch",
+    mode: "github-propose-patch" as const,
+    repo: "jinwon-int/repo",
+    repos: [],
+    commands: ["/work/patch-command.sh"],
+    issueUrl: "https://github.com/jinwon-int/repo/issues/8",
+    reportLanguage: "ko",
+  };
+  const stdout = [
+    "[agent/embedded] embedded run agent end: runId=abc isError=true model=deepseek-v4-flash provider=deepseek error=LLM request timed out. rawError=terminated",
+    "[model-fallback/decision] model fallback decision: decision=candidate_failed requested=deepseek/deepseek-v4-flash candidate=deepseek/deepseek-v4-flash reason=timeout next=none detail=terminated",
+    "[diagnostic] lane task error: lane=main durationMs=433591 error=\"FailoverError: LLM request timed out.\"",
+  ].join("\n");
+
+  const body = buildBlockCommentBody(task, {
+    ok: false,
+    taskId: "task-embedded-timeout",
+    status: "failed",
+    workDir: "/private-task",
+    exitCode: 1,
+    signal: null,
+    stdout,
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.match(body, /Embedded OpenClaw 모델 호출이 timeout/);
+  assert.match(body, /fallback=none/);
+  assert.match(body, /worker\/runtime 실행 인프라 실패/);
+  assert.match(body, /deepseek\/deepseek-v4-flash/);
 });
 
 
@@ -264,4 +476,290 @@ test("artifact manifest schema and dummy sample stay aligned", async () => {
   }
   assert.equal(sample.receiptTrace.schemaVersion, "a2a.runner.receipt-trace.v1");
   assert.match(sample.receiptTrace.status, /^(pending|accepted|started|produced|provider_sent|operator_visible|operator_confirmed|provider_delivery_receipt|timed_out|stale|failed|receipt_confirmed)$/);
+});
+
+test("buildGitHubCommentProjection and manifest carry replay-safe ledger-only metadata", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-github-projection-"));
+  try {
+    await mkdir(join(dir, "artifacts"), { recursive: true });
+    const artifact = join(dir, "artifacts", "summary.txt");
+    await writeFile(artifact, "Done: https://github.com/jinwon-int/repo/issues/5#issuecomment-123");
+    const task = {
+      id: "task-5",
+      intent: "propose_patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/repo",
+      repos: [],
+      commands: ["npm test"],
+      issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+    };
+    const projection = buildGitHubCommentProjection(task, {
+      ok: true,
+      taskId: "task-5",
+      status: "completed",
+      workDir: dir,
+      exitCode: 0,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      artifacts: [artifact],
+      artifactManifest: { artifactVersion: 1, schemaVersion: 1, manifestPath: "artifacts/manifest.json", generatedAt: "1970-01-01T00:00:00.000Z", status: "done", summary: "ok", evidence: [], artifacts: [] },
+      github: {
+        schemaVersion: "a2a.runner.github-evidence.v1",
+        outcome: "done",
+        doneCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-123",
+        issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+      },
+    });
+
+    assert.deepEqual(projection, {
+      schemaVersion: "a2a.runner.github-comment-projection.v1",
+      kind: "done",
+      url: "https://github.com/jinwon-int/repo/issues/5#issuecomment-123",
+      issueUrl: "https://github.com/jinwon-int/repo/issues/5",
+      manifestPath: "artifacts/manifest.json",
+      dedupeKey: "a2a-github-comment:task-5:done:https://github.com/jinwon-int/repo/issues/5#issuecomment-123",
+      commentIsTerminalAck: false,
+      commentIsVisibilityReceipt: false,
+      commentIsOperatorApproval: false,
+    });
+
+    const manifest = await buildArtifactManifest(dir, [artifact], { status: "done", githubCommentProjection: projection });
+    const summary = buildResultSummary({ code: 0, signal: null, stdout: "ok", stderr: "", timedOut: false }, "ok", "", [artifact], manifest);
+    assert.deepEqual(manifest.githubCommentProjection, projection);
+    assert.deepEqual(summary.githubCommentProjection, projection);
+    assert.ok(!JSON.stringify(projection).includes("/tmp/"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("cleanup rehearsal is preserved only as no-live backup and rollback evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-cleanup-rehearsal-"));
+  try {
+    await mkdir(join(dir, "artifacts"), { recursive: true });
+    const artifact = join(dir, "artifacts", "cleanup-rehearsal.json");
+    await writeFile(artifact, "synthetic cleanup dry-run rehearsal only");
+    const cleanupRehearsal = sanitizeCleanupRehearsal({
+      schemaVersion: "a2a.runner.cleanup-rehearsal.v1",
+      generatedAt: "1970-01-01T00:00:00.000Z",
+      runId: "a2a-cleanup-20260512-1810r2-jingun",
+      target: "broker_db",
+      mode: "simulate",
+      status: "ready_for_operator_approval",
+      planId: "cleanup-rehearsal-jingun",
+      candidateCounts: { total: 4, highRisk: 1, staleWorkerRows: 2, terminalOutboxRows: 2 },
+      checkpoint: {
+        requiredBeforeExecution: true,
+        rehearsalOnly: true,
+        evidenceBundlePath: "artifacts/manifest.json",
+        checkpointId: "checkpoint-required-before-safe-prune",
+        backupVerified: false,
+      },
+      rollback: {
+        rehearsed: true,
+        rollbackPlanPath: "rollback/cleanup-safe-prune.md",
+        abortPlanPath: "abort/cleanup-safe-prune.md",
+        restoreVerificationRequired: true,
+      },
+      failClosedReasons: [],
+      safetyGates: {
+        explicitOperatorApprovalRequired: true,
+        backupCheckpointRequired: true,
+        dryRunOnly: true,
+        liveExecutionBlocked: true,
+        dbMutationPerformed: false,
+        prunePerformed: false,
+        migrationPerformed: false,
+        deployOrRestartPerformed: false,
+        liveProviderSendPerformed: false,
+        terminalAckSent: false,
+      },
+    });
+    assert.ok(cleanupRehearsal);
+
+    const manifest = await buildArtifactManifest(dir, [artifact], { status: "done", cleanupRehearsal });
+    const summary = buildResultSummary({ code: 0, signal: null, stdout: "ok", stderr: "", timedOut: false }, "ok", "", [artifact], manifest);
+
+    assert.equal(manifest.cleanupRehearsal?.schemaVersion, "a2a.runner.cleanup-rehearsal.v1");
+    assert.equal(manifest.cleanupRehearsal?.checkpoint.requiredBeforeExecution, true);
+    assert.equal(manifest.cleanupRehearsal?.checkpoint.backupVerified, false);
+    assert.equal(manifest.cleanupRehearsal?.rollback.restoreVerificationRequired, true);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.dbMutationPerformed, false);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.prunePerformed, false);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.migrationPerformed, false);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.deployOrRestartPerformed, false);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.liveProviderSendPerformed, false);
+    assert.equal(manifest.cleanupRehearsal?.safetyGates.terminalAckSent, false);
+    assert.deepEqual(summary.cleanupRehearsal, manifest.cleanupRehearsal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("cleanup rehearsal fails closed when live cleanup flags appear", () => {
+  const unsafe = sanitizeCleanupRehearsal({
+    schemaVersion: "a2a.runner.cleanup-rehearsal.v1",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    target: "broker_db",
+    mode: "dry_run",
+    status: "blocked",
+    planId: "unsafe-cleanup",
+    candidateCounts: { total: 1, highRisk: 1 },
+    checkpoint: {
+      requiredBeforeExecution: true,
+      rehearsalOnly: true,
+      evidenceBundlePath: "artifacts/manifest.json",
+      checkpointId: "checkpoint-required-before-safe-prune",
+      backupVerified: false,
+    },
+    rollback: {
+      rehearsed: true,
+      rollbackPlanPath: "rollback/cleanup-safe-prune.md",
+      abortPlanPath: "abort/cleanup-safe-prune.md",
+      restoreVerificationRequired: true,
+    },
+    failClosedReasons: ["unsafe live mutation flag present"],
+    safetyGates: {
+      explicitOperatorApprovalRequired: true,
+      backupCheckpointRequired: true,
+      dryRunOnly: true,
+      liveExecutionBlocked: true,
+      dbMutationPerformed: true,
+      prunePerformed: false,
+      migrationPerformed: false,
+      deployOrRestartPerformed: false,
+      liveProviderSendPerformed: false,
+      terminalAckSent: false,
+    },
+  });
+
+  assert.equal(unsafe, undefined);
+});
+
+test("source-public approval rehearsal is preserved only as no-live deterministic evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-source-public-rehearsal-"));
+  try {
+    await mkdir(join(dir, "artifacts"), { recursive: true });
+    const artifact = join(dir, "artifacts", "source-public-approval-rehearsal.json");
+    await writeFile(artifact, "synthetic source-public approval rehearsal only");
+    const rehearsal = sanitizeSourcePublicApprovalRehearsal({
+      schemaVersion: "a2a.runner.source-public-approval-rehearsal.v1",
+      generatedAt: "1970-01-01T00:00:00.000Z",
+      runId: "a2a-source-public-approval-rehearsal-20260511T014240Z",
+      decision: "GO_CANDIDATE",
+      terminalBriefRehearsalOnly: true,
+      approvalPackets: [{
+        schemaVersion: "a2a.runner.source-public-approval-packet.v1",
+        packetId: "packet-001",
+        targetRepo: "jinwon-int/a2a-docker-runner",
+        decision: "GO_CANDIDATE",
+        dedupeKey: "source-public:packet-001",
+        evidenceBundlePath: "artifacts/manifest.json",
+        operatorApprovalRequired: true,
+        approvalExecuted: false,
+        releaseExecuted: false,
+        visibilityChanged: false,
+        terminalAckSent: false,
+        providerSendPerformed: false,
+        dbMutationPerformed: false,
+        rollbackPath: "rollback/source-public-rehearsal.md",
+        abortPath: "abort/source-public-rehearsal.md",
+      }],
+      replayNoDuplicateProof: { dedupeKey: "source-public:packet-001", noDuplicatePacketIds: true },
+      rollbackAbort: { rollbackPath: "rollback/source-public-rehearsal.md", abortPath: "abort/source-public-rehearsal.md" },
+      safetyGates: {
+        operatorApprovalRequired: true,
+        sourcePublicExecutionBlocked: true,
+        approvalExecuted: false,
+        releaseExecuted: false,
+        visibilityChanged: false,
+        liveProviderSendPerformed: false,
+        terminalAckSent: false,
+        dbMutationPerformed: false,
+      },
+    });
+    assert.ok(rehearsal);
+
+    const manifest = await buildArtifactManifest(dir, [artifact], { status: "done", sourcePublicApprovalRehearsal: rehearsal });
+    const summary = buildResultSummary({ code: 0, signal: null, stdout: "ok", stderr: "", timedOut: false }, "ok", "", [artifact], manifest);
+
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.decision, "GO_CANDIDATE");
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.terminalBriefRehearsalOnly, true);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.approvalExecuted, false);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.releaseExecuted, false);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.visibilityChanged, false);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.terminalAckSent, false);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.providerSendPerformed, false);
+    assert.equal(manifest.sourcePublicApprovalRehearsal?.approvalPackets[0]?.dbMutationPerformed, false);
+    assert.deepEqual(summary.sourcePublicApprovalRehearsal, manifest.sourcePublicApprovalRehearsal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("source-public approval rehearsal fails closed when live execution flags appear", () => {
+  const unsafe = sanitizeSourcePublicApprovalRehearsal({
+    schemaVersion: "a2a.runner.source-public-approval-rehearsal.v1",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    decision: "NEEDS_OPERATOR_APPROVAL",
+    terminalBriefRehearsalOnly: true,
+    approvalPackets: [{
+      schemaVersion: "a2a.runner.source-public-approval-packet.v1",
+      packetId: "packet-unsafe",
+      targetRepo: "jinwon-int/a2a-docker-runner",
+      decision: "NEEDS_OPERATOR_APPROVAL",
+      dedupeKey: "source-public:packet-unsafe",
+      evidenceBundlePath: "artifacts/manifest.json",
+      operatorApprovalRequired: true,
+      approvalExecuted: true,
+      releaseExecuted: false,
+      visibilityChanged: false,
+      terminalAckSent: false,
+      providerSendPerformed: false,
+      dbMutationPerformed: false,
+      rollbackPath: "rollback/source-public-rehearsal.md",
+      abortPath: "abort/source-public-rehearsal.md",
+    }],
+    replayNoDuplicateProof: { dedupeKey: "source-public:packet-unsafe", noDuplicatePacketIds: true },
+    rollbackAbort: { rollbackPath: "rollback/source-public-rehearsal.md", abortPath: "abort/source-public-rehearsal.md" },
+    safetyGates: {
+      operatorApprovalRequired: true,
+      sourcePublicExecutionBlocked: true,
+      approvalExecuted: false,
+      releaseExecuted: false,
+      visibilityChanged: false,
+      liveProviderSendPerformed: false,
+      terminalAckSent: false,
+      dbMutationPerformed: false,
+    },
+  });
+
+  assert.equal(unsafe, undefined);
+});
+
+test("buildSourcePublicApprovalRehearsal produces deterministic packets", () => {
+  const first = buildSourcePublicApprovalRehearsal({
+    targetRepo: "jinwon-int/a2a-docker-runner",
+    decision: "NO_GO",
+    runId: "a2a-source-public-approval-rehearsal-20260511T014240Z",
+  });
+  const second = buildSourcePublicApprovalRehearsal({
+    targetRepo: "jinwon-int/a2a-docker-runner",
+    decision: "NO_GO",
+    runId: "a2a-source-public-approval-rehearsal-20260511T014240Z",
+  });
+
+  assert.deepEqual(first, second);
+  assert.equal(first.generatedAt, "1970-01-01T00:00:00.000Z");
+  assert.equal(first.decision, "NO_GO");
+  assert.equal(first.approvalPackets.length, 1);
+  assert.equal(first.approvalPackets[0]?.operatorApprovalRequired, true);
+  assert.equal(first.safetyGates.sourcePublicExecutionBlocked, true);
+  assert.equal(first.safetyGates.approvalExecuted, false);
+  assert.equal(first.safetyGates.releaseExecuted, false);
+  assert.equal(first.safetyGates.visibilityChanged, false);
+  assert.equal(first.safetyGates.liveProviderSendPerformed, false);
+  assert.equal(first.safetyGates.terminalAckSent, false);
+  assert.equal(first.safetyGates.dbMutationPerformed, false);
 });

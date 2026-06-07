@@ -1,7 +1,7 @@
 {
   "id": "a2a-broker-adapter",
   "name": "A2A Broker Adapter",
-  "description": "Opt-in OpenClaw Gateway adapter for standalone A2A broker routing, sessions_send interception, Wake-on-Task, and operator monitoring.",
+  "description": "Config-only opt-in surface for standalone A2A broker routing.",
   "uiHints": {
     "baseUrl": {
       "label": "Broker Base URL",
@@ -28,6 +28,10 @@
       "label": "Operator Event Bridge",
       "help": "Opt-in SSE bridge for broker /a2a/operator/events, surfaced through a2a.monitor.status operatorEvents mode."
     },
+    "noDuplicateSend.enabled": {
+      "label": "No-Duplicate-Send Gate",
+      "help": "Hardened pre-send gate that blocks duplicate broker task creation when the same session+intent+message fingerprint is replayed. Defaults to enabled (fail-closed)."
+    },
     "wakeOnTask.enabled": {
       "label": "Wake on Task",
       "help": "Opt-in task wake bridge for accepted broker tasks."
@@ -52,9 +56,46 @@
       "label": "Operator Notification Thread ID",
       "help": "Optional thread/topic id for notification delivery."
     },
+    "operatorEvents.terminalOutboxCursor": {
+      "label": "Terminal Outbox Cursor",
+      "help": "Optional one-shot canary cursor for controlled Terminal Brief live proof."
+    },
+    "operatorEvents.terminalOutboxAllowedIds": {
+      "label": "Terminal Outbox Allowed IDs",
+      "help": "Optional one-shot canary allowlist of terminal outbox event ids/prefixes."
+    },
+    "operatorEvents.terminalOutboxReconcileUnackedOnStart": {
+      "label": "Terminal Outbox Startup Reconcile",
+      "help": "Optional canary switch; false skips startup unacked backlog reconciliation."
+    },
+    "operatorEvents.localBrokerId": {
+      "label": "Local Broker ID",
+      "help": "Stable broker id for this Gateway, used to decide whether parent-owned Terminal Brief rows are locally sendable or must be suppressed."
+    },
+    "operatorEvents.notification.allowUnconfirmedProviderSend": {
+      "label": "Allow unconfirmed provider send",
+      "help": "Canary-only: send one provider message even when current-session-visible receipt capability is unavailable; never counts as Terminal ACK."
+    },
     "operatorEvents.crossBrokers": {
-      "label": "Cross-Broker Operator Event Sources",
-      "help": "Optional read-only broker endpoints to poll for terminal outbox/operator event parity validation. Each entry requires baseUrl and may include edgeSecret and label."
+      "label": "Cross-broker Projections",
+      "help": "Bounded remote broker projections for Terminal Brief handoff monitoring; does not execute provider sends or Terminal ACKs."
+    },
+    "operatorEvents.crossBrokerTerminalRelay.enabled": {
+      "label": "Cross-broker Terminal Relay",
+      "help": "Relays fresh post-cursor terminal outbox projections with cross-broker handoff metadata to the configured origin broker."
+    },
+    "operatorEvents.crossBrokerTerminalRelay.originBroker.baseUrl": {
+      "label": "Origin Broker Base URL",
+      "help": "Origin broker URL that accepts bounded cross-broker terminal projections."
+    },
+    "operatorEvents.crossBrokerTerminalRelay.originBroker.edgeSecret": {
+      "label": "Origin Broker Edge Secret",
+      "help": "Optional edge secret for the origin broker projection endpoint.",
+      "sensitive": true
+    },
+    "operatorEvents.crossBrokerTerminalRelay.handoffBrokerId": {
+      "label": "Handoff Broker ID",
+      "help": "Stable id for this handoff broker included in terminal projections."
     }
   },
   "configSchema": {
@@ -63,20 +104,24 @@
     "properties": {
       "baseUrl": {
         "type": "string",
+        "minLength": 1,
         "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
       },
       "edgeSecret": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       },
       "requester": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "kind": {
             "type": "string",
+            "minLength": 1,
             "enum": [
               "session",
               "node",
@@ -86,6 +131,7 @@
           },
           "role": {
             "type": "string",
+            "minLength": 1,
             "enum": [
               "hub",
               "live-trader",
@@ -103,6 +149,10 @@
           "enabled": {
             "type": "boolean",
             "default": false
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1
           },
           "notification": {
             "type": "object",
@@ -138,8 +188,29 @@
                     "type": "number"
                   }
                 ]
+              },
+              "allowUnconfirmedProviderSend": {
+                "type": "boolean"
               }
             }
+          },
+          "terminalOutboxCursor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "terminalOutboxAllowedIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "terminalOutboxReconcileUnackedOnStart": {
+            "type": "boolean"
+          },
+          "localBrokerId": {
+            "type": "string",
+            "minLength": 1
           },
           "crossBrokers": {
             "type": "array",
@@ -157,11 +228,108 @@
                 "edgeSecret": {
                   "type": "string"
                 },
+                "edgeSecretFile": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "label": {
                   "type": "string"
+                },
+                "requesterId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "terminalOutboxAllowedIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "terminalOutboxCursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "terminalOutboxReconcileUnackedOnStart": {
+                  "type": "boolean"
+                },
+                "handoffBrokerId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "localBrokerId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "maxSummaryChars": {
+                  "type": "number",
+                  "minimum": 80,
+                  "maximum": 2000
                 }
               }
             }
+          },
+          "crossBrokerTerminalRelay": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "originBroker": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "baseUrl"
+                ],
+                "properties": {
+                  "baseUrl": {
+                    "type": "string",
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
+                  },
+                  "edgeSecret": {
+                    "type": "string"
+                  },
+                  "edgeSecretFile": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              },
+              "handoffBrokerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "localBrokerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxSummaryChars": {
+                "type": "number",
+                "minimum": 80,
+                "maximum": 2000
+              }
+            }
+          }
+        }
+      },
+      "noDuplicateSend": {
+        "uiHints": {
+          "enabled": {
+            "label": "No-Duplicate-Send Gate",
+            "help": "Hardened gate: blocks duplicate broker task creation from replay-prone callsites. Defaults to enabled (fail-closed)."
+          }
+        },
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
           }
         }
       },

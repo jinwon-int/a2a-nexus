@@ -1,0 +1,30 @@
+{
+  "now": "2026-06-06T21:00:00.000Z",
+  "task": {
+    "taskId": "example-solo-known-path",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1277,
+    "title": "Terminal Brief progress numerator fix",
+    "workProfile": "narrow_source_fix",
+    "ambiguity": "low",
+    "urgency": "urgent",
+    "desiredOptimization": "latency",
+    "hasIndependentEvidenceLanes": false,
+    "tightlyCoupledWriteSet": true
+  },
+  "workers": {
+    "capacityState": "healthy",
+    "staleTasks": 0,
+    "activeRounds": 0
+  },
+  "boundaries": {
+    "liveDeployOrRestart": false,
+    "dbMutation": false,
+    "terminalAckOrReplay": false,
+    "providerSend": false,
+    "releaseOrVisibilityChange": false,
+    "credentialOrSecretChange": false,
+    "approvalSensitiveCloseout": false
+  },
+  "finalizerOwner": "seoseo"
+}

@@ -21,6 +21,7 @@ import type {
   WorkerListFilters,
   WorkerRecord,
 } from "./types.js";
+import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -29,7 +30,10 @@ import type { TaskRuntimeRepository } from "./task-repository.js";
 import type { TombstoneRuntimeRepository } from "./tombstone-repository.js";
 import type { ValidationRuntimeRepository } from "./validation-repository.js";
 import type { WorkerRuntimeRepository } from "./worker-repository.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import {
+  DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
+  type TerminalTaskOutboxEvent,
+} from "./terminal-event-outbox.js";
 
 export const CURRENT_BROKER_STATE_VERSION = 8;
 export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
@@ -47,11 +51,24 @@ export interface BrokerSnapshot {
   goals?: GoalRecord[];
   tombstones?: TaskTombstone[];
   terminalOutbox?: TerminalTaskOutboxEvent[];
+  crossBrokerTerminalBriefs?: CrossBrokerTerminalBriefProjection[];
 }
 
 export interface BrokerStateStore {
   load(): BrokerSnapshot;
   save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void;
+  /**
+   * Persist dirty hot-table rows without requiring the caller to build a full
+   * BrokerSnapshot first. Stores that cannot support granular writes should
+   * leave this undefined so callers can fall back to save().
+   */
+  saveHotEntities?(hints: BrokerStateSaveHints): void;
+  /**
+   * Optional durable-write acknowledgement hook for queued/asynchronous stores.
+   * Mutating HTTP routes call this after broker mutation and before returning
+   * success, preserving the existing "persistState returned" ACK boundary.
+   */
+  awaitDurablePersistenceAck?(): Promise<void>;
   getPersistenceInfo?(): BrokerPersistenceInfo;
 }
 
@@ -65,6 +82,8 @@ export interface BrokerStateSaveHints {
   hotTombstones?: TaskTombstone[];
   hotAuditEvents?: AuditEvent[];
   hotWorkers?: WorkerRecord[];
+  /** Dirty terminal-outbox rows whose ack/receipt state must be table-persisted immediately. */
+  hotTerminalOutboxEvents?: TerminalTaskOutboxEvent[];
 }
 
 export interface BrokerPersistenceInfo {
@@ -80,8 +99,29 @@ export interface BrokerPersistenceInfo {
   hotEntityHintCoverage?: BrokerHotEntityHintCoverage;
   hotEntityMirror?: BrokerHotEntityMirrorStatus;
   hotEntityDiagnostics?: BrokerHotEntityDiagnostics;
+  hotTableLoadMetrics?: BrokerHotTableLoadMetrics;
+  hotTableRuntimeLoadLimits?: BrokerHotTableRuntimeLoadLimits;
   importedFromJsonFile?: string;
   lastImportAt?: string;
+  /** ISO timestamp of the most recent persist. */
+  lastPersistAt?: string;
+  /** Whether the most recent persist skipped full snapshot serialization (incremental hot-table mode). */
+  lastPersistSkippedFullSnapshot?: boolean;
+  /** Dirty-table hint counts for the most recent persist. */
+  lastHotHintCounts?: BrokerHotHintCounts;
+}
+
+export interface BrokerHotHintCounts {
+  hotExchanges: number;
+  hotExchangeMessages: number;
+  hotProposals: number;
+  hotArtifacts: number;
+  hotValidations: number;
+  hotTasks: number;
+  hotTombstones: number;
+  hotAuditEvents: number;
+  hotWorkers: number;
+  hotTerminalOutboxEvents: number;
 }
 
 export interface BrokerHotEntityDiagnostics {
@@ -126,13 +166,66 @@ export interface BrokerHotEntityMirrorRetentionWindow extends BrokerHotEntityMir
 
 export interface BrokerHotAuditDiagnostics {
   total: number;
+  heartbeat: number;
+  heartbeatRatio: number;
   workerHeartbeat: number;
   workerHeartbeatRatio: number;
+  taskHeartbeat: number;
+  taskHeartbeatRatio: number;
   recentWindowMs: number;
   recentTotal: number;
+  recentHeartbeat: number;
+  recentHeartbeatRatio: number;
   recentWorkerHeartbeat: number;
   recentWorkerHeartbeatRatio: number;
+  recentTaskHeartbeat: number;
+  recentTaskHeartbeatRatio: number;
   warnings: string[];
+}
+
+export interface BrokerHotTerminalOutboxDiagnostics {
+  total: number;
+  acked: number;
+  rawUnacked: number;
+  unacked: number;
+  ackEligibleUnacked: number;
+  ackIneligibleUnacked: number;
+  unackedRatio: number;
+  oldestUnackedCreatedAt: string | null;
+  oldestUnackedAgeMs: number | null;
+  warnings: string[];
+}
+
+export interface BrokerHotTableRuntimeLoadLimits {
+  /** Terminal task rows retained in live memory; active tasks always hydrate. */
+  terminalTasks: number;
+  auditEvents: number;
+  terminalOutboxEvents: number;
+}
+
+export interface BrokerHotTableRuntimeLoadMetric {
+  /** Configured runtime hydration cap for this table/window. */
+  limit: number;
+  /** Rows expected to hydrate into the in-memory runtime snapshot. */
+  loadedCount: number;
+  /** Rows left queryable in SQLite but skipped from startup/runtime hydration. */
+  skippedCount: number;
+  /** Only set for broker_tasks: active rows are always hydrated outside the terminal cap. */
+  activeCount?: number;
+  /** Only set for broker_tasks: completed/failed/canceled rows subject to the terminal cap. */
+  terminalCount?: number;
+}
+
+export interface BrokerHotTableLoadMetricEntry {
+  count: number;
+  maxPayloadBytes: number;
+  runtimeLoad?: BrokerHotTableRuntimeLoadMetric;
+  /** Only set for broker_terminal_outbox. */
+  unackedCount?: number;
+}
+
+export interface BrokerHotTableLoadMetrics {
+  tables: Record<string, BrokerHotTableLoadMetricEntry>;
 }
 
 export interface JsonFileBrokerStateStoreOptions {
@@ -145,10 +238,28 @@ export interface SqliteBrokerStateStoreOptions {
   maxBytes?: number;
   importJsonFile?: string;
   loadSource?: SqliteBrokerLoadSource;
+  /**
+   * Maximum non-terminal (queued/claimed/running/blocked) task rows to hydrate into live
+   * memory when using loadSource=hot-tables. Non-terminal tasks are always loaded up to this
+   * limit (ordered by updated_at DESC, id ASC). Default: 500.
+   */
+  maxHotRuntimeNonTerminalTasks?: number;
+  /**
+   * Maximum terminal task rows to hydrate into live memory when using
+   * loadSource=hot-tables. Active/non-terminal tasks are always loaded.
+   */
+  maxHotRuntimeTerminalTasks?: number;
+  /** Maximum audit rows to hydrate into live memory when using loadSource=hot-tables. */
+  maxHotRuntimeAuditEvents?: number;
+  /** Maximum heartbeat audit rows retained in the SQLite hot audit table. */
+  maxHotRuntimeHeartbeatAuditEvents?: number;
+  /** Maximum terminal outbox rows to hydrate into live memory when using loadSource=hot-tables. */
+  maxHotRuntimeTerminalOutboxEvents?: number;
 }
 
 export interface SqliteAuditRuntimeRepositoryOptions {
   maxHotAuditEvents?: number;
+  maxHotHeartbeatAuditEvents?: number;
 }
 
 export interface SqliteTaskHotTableFilters {
@@ -158,6 +269,33 @@ export interface SqliteTaskHotTableFilters {
   intent?: TaskRecord["intent"];
   assignedWorkerId?: string;
   taskOrigin?: TaskRecord["taskOrigin"];
+  /** Optional cap on result rows to prevent unbounded heap materialization on hot-table diagnostic/cleanup reads. */
+  maxRows?: number;
+  /** Runtime listing cap. Unlike maxRows, limit=0 intentionally returns no rows. */
+  limit?: number;
+}
+
+export interface SqliteTaskListItemProjection {
+  id: string;
+  intent: TaskRecord["intent"];
+  status: TaskRecord["status"];
+  targetNodeId: string;
+  requester: TaskRecord["requester"];
+  target: TaskRecord["target"];
+  exchangeId?: string;
+  parentTaskId?: string;
+  proposalId?: string;
+  assignedWorkerId?: string;
+  claimedBy?: string;
+  taskOrigin?: TaskRecord["taskOrigin"];
+  artifactIds?: string[];
+  resultSummary?: string;
+  error?: Pick<NonNullable<TaskRecord["error"]>, "code" | "message">;
+  requeueCount?: number;
+  createdAt: string;
+  updatedAt: string;
+  claimedAt?: string;
+  completedAt?: string;
 }
 
 export interface SqliteExchangeHotTableFilters {
@@ -193,11 +331,15 @@ export interface SqliteAuditHotTableFilters {
   action?: AuditEvent["action"];
   targetType?: AuditEvent["targetType"];
   targetId?: string;
+  /** Optional cap on result rows to prevent unbounded heap materialization on hot-table diagnostic/cleanup reads. */
+  maxRows?: number;
 }
 
 export interface SqliteWorkerHotTableFilters {
   nodeId?: string;
   role?: WorkerRecord["role"];
+  /** Optional cap on result rows to prevent unbounded heap materialization on hot-table diagnostic/cleanup reads. */
+  maxRows?: number;
 }
 
 export interface SqliteTombstoneHotTableFilters {
@@ -205,6 +347,8 @@ export interface SqliteTombstoneHotTableFilters {
   tombstoneReason?: TaskTombstone["tombstoneReason"];
   terminalStatus?: TaskTombstone["terminalStatus"];
   since?: string;
+  /** Optional cap on result rows to prevent unbounded heap materialization on hot-table diagnostic/cleanup reads. */
+  maxRows?: number;
 }
 
 export interface SqliteHotRetentionPlan {
@@ -212,6 +356,14 @@ export interface SqliteHotRetentionPlan {
   cutoffMs: number;
   retainedIds: string[];
   pruneIds: string[];
+  /**
+   * Count of records retained solely because the max-records cap (e.g.
+   * maxTerminalRecords or maxInactiveWorkers) prevented them from entering
+   * the prune set. These are past the retention window but under the cap
+   * limit. A value > 0 signals that these items are retention_not_due
+   * rather than genuinely active/executable cleanup candidates.
+   */
+  retainedByCapCount?: number;
 }
 
 export interface SqliteHotRetentionApplyResult {
@@ -251,6 +403,12 @@ export interface SqliteWorkerHotRetentionPlanOptions {
   retentionMs: number;
   maxInactiveWorkers: number;
   protectedWorkerIds?: string[];
+}
+
+export interface SqliteTerminalOutboxHotRetentionPlanOptions {
+  nowMs?: number;
+  retentionMs: number;
+  maxAcknowledgedRecords: number;
 }
 
 const SQLITE_SCHEMA_VERSION = 10;
@@ -412,8 +570,12 @@ const taskCancellationSchema = z
   .object({
     requestedAt: z.string(),
     requestedBy: z.string().min(1),
+    kind: z.enum(["operator_cancel", "superseded"]).optional(),
     reason: z.string().optional(),
     sourceTaskId: z.string().min(1).optional(),
+    supersededByTaskId: z.string().min(1).optional(),
+    supersededByPrUrl: z.string().min(1).optional(),
+    roundId: z.string().min(1).optional(),
   })
   .passthrough();
 
@@ -617,6 +779,7 @@ const terminalOutboxEventSchema = z
         worker: z.string().optional(),
         repo: z.string().optional(),
         issue: z.number().int().nonnegative().optional(),
+        terminalBriefTitle: z.string().optional(),
         prUrl: z.string().url().optional(),
         doneUrl: z.string().url().optional(),
         blockUrl: z.string().url().optional(),
@@ -652,6 +815,44 @@ const terminalOutboxEventSchema = z
   })
   .passthrough();
 
+export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
+export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
+export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
+export const DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS = 500;
+export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS = DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION;
+
+const crossBrokerTerminalBriefProjectionSchema = z
+  .object({
+    id: z.string().min(1),
+    parentRoundId: z.string().min(1),
+    originBrokerId: z.string().min(1),
+    brokerOfRecordId: z.string().min(1).optional(),
+    childTaskId: z.string().min(1).optional(),
+    childRunId: z.string().min(1).optional(),
+    childWorkerId: z.string().min(1).optional(),
+    status: z.enum(["succeeded", "failed", "canceled", "blocked"]),
+    summary: z.string().optional(),
+    taskBrief: z.string().optional(),
+    terminalBriefTitle: z.string().optional(),
+    evidenceUrl: z.string().url().optional(),
+    completedAt: z.string(),
+    emittedAt: z.string(),
+    receivedAt: z.string(),
+    sourceDigest: z.string().min(1),
+    replayCount: z.number().int().nonnegative(),
+    parentRoundTotal: z.number().int().positive().optional(),
+    parentRoundOrder: z.number().int().positive().optional(),
+    ack: z
+      .object({
+        decision: z.enum(["accepted", "duplicate_replay"]),
+        terminalAck: z.literal(false),
+        reason: z.string(),
+        updatedAt: z.string(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 const brokerSnapshotSchema = z
   .object({
     version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
@@ -665,8 +866,15 @@ const brokerSnapshotSchema = z
     tasks: z.array(taskSchema).optional().default([]),
     tombstones: z.array(tombstoneSchema).optional().default([]),
     terminalOutbox: z.array(terminalOutboxEventSchema).optional().default([]),
+    crossBrokerTerminalBriefs: z.array(crossBrokerTerminalBriefProjectionSchema).optional().default([]),
   })
   .passthrough();
+
+function coerceSqliteCount(row: { count?: number | bigint } | undefined): number {
+  return typeof row?.count === "bigint"
+    ? Number(row.count)
+    : typeof row?.count === "number" ? row.count : 0;
+}
 
 export class JsonFileBrokerStateStore implements BrokerStateStore {
   private readonly maxBytes: number;
@@ -720,6 +928,11 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private readonly maxBytes: number;
   private readonly importJsonFile?: string;
   private readonly loadSource: SqliteBrokerLoadSource;
+  private readonly maxHotRuntimeNonTerminalTasks: number;
+  private readonly maxHotRuntimeTerminalTasks: number;
+  private readonly maxHotRuntimeAuditEvents: number;
+  private readonly maxHotRuntimeHeartbeatAuditEvents: number;
+  private readonly maxHotRuntimeTerminalOutboxEvents: number;
   private readonly db: DatabaseSync;
   private readonly journalMode: string;
 
@@ -730,6 +943,26 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES);
     this.importJsonFile = options.importJsonFile;
     this.loadSource = options.loadSource ?? "snapshot";
+    this.maxHotRuntimeNonTerminalTasks = normalizeNonNegativeSqliteLimit(
+      options.maxHotRuntimeNonTerminalTasks,
+      DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
+    );
+    this.maxHotRuntimeTerminalTasks = normalizeNonNegativeSqliteLimit(
+      options.maxHotRuntimeTerminalTasks,
+      DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS,
+    );
+    this.maxHotRuntimeAuditEvents = normalizeNonNegativeSqliteLimit(
+      options.maxHotRuntimeAuditEvents,
+      DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS,
+    );
+    this.maxHotRuntimeHeartbeatAuditEvents = normalizeNonNegativeSqliteLimit(
+      options.maxHotRuntimeHeartbeatAuditEvents,
+      Math.min(this.maxHotRuntimeAuditEvents, DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS),
+    );
+    this.maxHotRuntimeTerminalOutboxEvents = normalizeNonNegativeSqliteLimit(
+      options.maxHotRuntimeTerminalOutboxEvents,
+      DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS,
+    );
     if (dbFile !== ":memory:") {
       mkdirSync(dirname(dbFile), { recursive: true });
     }
@@ -748,6 +981,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.saveSnapshot(snapshot, hints);
   }
 
+  saveHotEntities(hints: BrokerStateSaveHints): void {
+    this.saveHotEntityHints(hints);
+  }
+
   readHotRuntimeSnapshot(): BrokerSnapshot {
     return {
       version: CURRENT_BROKER_STATE_VERSION,
@@ -756,11 +993,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       proposals: this.readHotProposals(),
       artifacts: this.readHotArtifacts(),
       validations: this.readHotValidations(),
-      auditEvents: this.readHotAuditEvents(),
+      auditEvents: this.readHotAuditEventsForRuntime(),
       workers: this.readHotWorkers(),
-      tasks: this.readHotTasks(),
+      tasks: this.readHotTasksForRuntime(),
       tombstones: this.readHotTombstones(),
-      terminalOutbox: this.readHotTerminalOutbox(),
+      terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
+      crossBrokerTerminalBriefs: [],
     };
   }
 
@@ -776,11 +1014,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ["task_origin", filters.taskOrigin],
       ],
       "updated_at DESC, id ASC",
+      filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0 ? normalizeOptionalSqliteLimit(filters.maxRows) : undefined),
     );
     return this.db
       .prepare(sql)
       .all(...params)
-      .map((row) => parseHotEntityPayload(row, taskSchema, "broker_tasks")) as TaskRecord[];
+      .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+  }
+
+  readHotTaskListItems(filters: SqliteTaskHotTableFilters = {}): SqliteTaskListItemProjection[] {
+    const { sql, params } = buildHotTaskListItemSelect(filters);
+    return this.db
+      .prepare(sql)
+      .all(...params)
+      .flatMap((row) => parseHotTaskListItemProjection(row));
   }
 
   readHotExchanges(filters: SqliteExchangeHotTableFilters = {}): A2AExchangeState[] {
@@ -866,6 +1113,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ["role", filters.role],
       ],
       "last_seen_at DESC, node_id ASC",
+      filters.maxRows,
     );
     return this.db
       .prepare(sql)
@@ -882,6 +1130,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ["terminal_status", filters.terminalStatus],
       ],
       "tombstoned_at DESC, task_id ASC",
+      filters.maxRows,
     );
     const tombstones = this.db
       .prepare(sql)
@@ -892,10 +1141,24 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       : tombstones;
   }
 
-  readHotTerminalOutbox(): TerminalTaskOutboxEvent[] {
-    return this.db
-      .prepare("SELECT payload FROM broker_terminal_outbox ORDER BY created_at ASC, id ASC")
-      .all()
+  readHotTerminalOutbox(options: { limit?: number } = {}): TerminalTaskOutboxEvent[] {
+    const limit = normalizeOptionalSqliteLimit(options.limit);
+    const rows = limit === undefined
+      ? this.db
+        .prepare("SELECT payload FROM broker_terminal_outbox ORDER BY created_at ASC, id ASC")
+        .all()
+      : this.db
+        .prepare(
+          `SELECT payload FROM (
+             SELECT payload, created_at, id
+             FROM broker_terminal_outbox
+             ORDER BY created_at DESC, id DESC
+             LIMIT ?
+           )
+           ORDER BY created_at ASC, id ASC`,
+        )
+        .all(limit);
+    return rows
       .map((row) => parseHotEntityPayload(row, terminalOutboxEventSchema, "broker_terminal_outbox")) as TerminalTaskOutboxEvent[];
   }
 
@@ -908,6 +1171,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ["target_id", filters.targetId],
       ],
       "created_at DESC, id ASC",
+      filters.maxRows,
     );
     const events = this.db
       .prepare(sql)
@@ -924,12 +1188,50 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     });
   }
 
+  private readHotTasksForRuntime(): TaskRecord[] {
+    return this.db
+      .prepare(
+        `SELECT payload FROM (
+           SELECT payload, updated_at, id
+           FROM broker_tasks
+           WHERE status NOT IN ('succeeded', 'failed', 'canceled')
+           ORDER BY updated_at DESC, id ASC
+           LIMIT ?
+         )
+         UNION ALL
+         SELECT payload FROM (
+           SELECT payload
+           FROM broker_tasks
+           WHERE status IN ('succeeded', 'failed', 'canceled')
+           ORDER BY updated_at DESC, id ASC
+           LIMIT ?
+         )`,
+      )
+      .all(this.maxHotRuntimeNonTerminalTasks, this.maxHotRuntimeTerminalTasks)
+      .flatMap((row) => parseHotEntityPayloadSafe(row, taskSchema, "broker_tasks")) as TaskRecord[];
+  }
+
+  private readHotAuditEventsForRuntime(): AuditEvent[] {
+    return this.db
+      .prepare(
+        `SELECT payload FROM (
+           SELECT payload, created_at, id
+           FROM broker_audit_events
+           ORDER BY created_at DESC, id ASC
+           LIMIT ?
+         )
+         ORDER BY created_at DESC, id ASC`,
+      )
+      .all(this.maxHotRuntimeAuditEvents)
+      .map((row) => parseHotEntityPayload(row, auditEventSchema, "broker_audit_events")) as AuditEvent[];
+  }
+
   close(): void {
     this.db.close();
   }
 
   getPersistenceInfo(): BrokerPersistenceInfo {
-    return {
+    const info: BrokerPersistenceInfo = {
       kind: "sqlite",
       dbFile: this.dbFile,
       stateVersion: CURRENT_BROKER_STATE_VERSION,
@@ -941,9 +1243,16 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       hotEntityHintCoverage: this.readHotEntityHintCoverage(),
       hotEntityMirror: this.readHotEntityMirrorStatus(),
       hotEntityDiagnostics: this.readHotEntityDiagnostics(),
+      hotTableLoadMetrics: this.readHotTableLoadMetrics(),
+      hotTableRuntimeLoadLimits: this.readHotTableRuntimeLoadLimits(),
       importedFromJsonFile: this.readMetadata("imported_from_json_file"),
       lastImportAt: this.readMetadata("last_import_at"),
     };
+    const persistDiag = this.readLastPersistDiagnostics();
+    if (persistDiag.lastPersistAt !== undefined) info.lastPersistAt = persistDiag.lastPersistAt;
+    info.lastPersistSkippedFullSnapshot = persistDiag.lastPersistSkippedFullSnapshot;
+    if (persistDiag.lastHotHintCounts !== undefined) info.lastHotHintCounts = persistDiag.lastHotHintCounts;
+    return info;
   }
 
   readHotEntityHintCoverage(): BrokerHotEntityHintCoverage {
@@ -952,8 +1261,47 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   readHotEntityDiagnostics(): BrokerHotEntityDiagnostics {
     return {
-      invalidRows: this.readInvalidHotWorkerRows(),
+      invalidRows: coalesceInvalidHotEntityRows([
+        ...this.readInvalidHotTaskRows(),
+        ...this.readInvalidHotWorkerRows(),
+      ]),
     };
+  }
+
+  private readInvalidHotTaskRows(): BrokerInvalidHotEntityRow[] {
+    return (this.db
+      .prepare(
+        `SELECT id AS primaryKey, payload FROM (
+           SELECT id, payload, updated_at
+           FROM broker_tasks
+           WHERE status NOT IN ('succeeded', 'failed', 'canceled')
+           ORDER BY updated_at DESC, id ASC
+           LIMIT ?
+         )
+         UNION ALL
+         SELECT id AS primaryKey, payload FROM (
+           SELECT id, payload, updated_at
+           FROM broker_tasks
+           WHERE status IN ('succeeded', 'failed', 'canceled')
+           ORDER BY updated_at DESC, id ASC
+           LIMIT ?
+         )`,
+      )
+      .all(this.maxHotRuntimeNonTerminalTasks, this.maxHotRuntimeTerminalTasks) as Array<{
+      primaryKey?: unknown;
+      payload?: unknown;
+    }>).flatMap((row): BrokerInvalidHotEntityRow[] => {
+        const parsed = parseHotEntityPayloadResult(row, taskSchema, "broker_tasks");
+        if (parsed.success) {
+          return [];
+        }
+        return [{
+          table: "broker_tasks",
+          primaryKey: sanitizeDiagnosticValue(row.primaryKey),
+          schemaError: parsed.error,
+          count: 1,
+        }];
+      });
   }
 
   private readInvalidHotWorkerRows(): BrokerInvalidHotEntityRow[] {
@@ -977,6 +1325,21 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   readHotEntityMirrorStatus(): BrokerHotEntityMirrorStatus {
     const tableCounts = this.readHotEntityTableCounts();
     const snapshot = this.readSnapshotRow();
+    const persistDiag = this.readLastPersistDiagnostics();
+    if (snapshot && persistDiag.lastPersistSkippedFullSnapshot) {
+      // In incremental hot-table mode, the canonical snapshot row is intentionally
+      // left at the last full checkpoint. Treat the hot tables as authoritative
+      // for mirror health until the next full snapshot/checkpoint is written.
+      // Drift against an older snapshot would be expected and should not surface
+      // as corruption. Manual drift after a full persist is still detected when
+      // this flag is false.
+      return {
+        ok: true,
+        tableCounts,
+        snapshotCounts: countSnapshotEntities(snapshot),
+        mismatches: [],
+      };
+    }
     if (!snapshot) {
       return {
         ok: Object.values(tableCounts).every((count) => count === 0),
@@ -1046,44 +1409,182 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   readHotAuditDiagnostics(): BrokerHotAuditDiagnostics {
     const total = this.readTableCount("broker_audit_events");
-    const row = this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat'").get() as
-      | { count?: number | bigint }
-      | undefined;
-    const workerHeartbeat = typeof row?.count === "bigint"
-      ? Number(row.count)
-      : typeof row?.count === "number" ? row.count : 0;
+    const workerHeartbeat = coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat'").get() as
+        | { count?: number | bigint }
+        | undefined,
+    );
+    const taskHeartbeat = coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'task.heartbeat'").get() as
+        | { count?: number | bigint }
+        | undefined,
+    );
+    const heartbeat = workerHeartbeat + taskHeartbeat;
+    const heartbeatRatio = total > 0 ? heartbeat / total : 0;
     const workerHeartbeatRatio = total > 0 ? workerHeartbeat / total : 0;
+    const taskHeartbeatRatio = total > 0 ? taskHeartbeat / total : 0;
     const recentCutoff = new Date(Date.now() - HOT_AUDIT_RECENT_WINDOW_MS).toISOString();
-    const recentTotalRow = this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE created_at >= ?").get(recentCutoff) as
-      | { count?: number | bigint }
-      | undefined;
-    const recentWorkerHeartbeatRow = this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat' AND created_at >= ?").get(recentCutoff) as
-      | { count?: number | bigint }
-      | undefined;
-    const recentTotal = typeof recentTotalRow?.count === "bigint"
-      ? Number(recentTotalRow.count)
-      : typeof recentTotalRow?.count === "number" ? recentTotalRow.count : 0;
-    const recentWorkerHeartbeat = typeof recentWorkerHeartbeatRow?.count === "bigint"
-      ? Number(recentWorkerHeartbeatRow.count)
-      : typeof recentWorkerHeartbeatRow?.count === "number" ? recentWorkerHeartbeatRow.count : 0;
+    const recentTotal = coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE created_at >= ?").get(recentCutoff) as
+        | { count?: number | bigint }
+        | undefined,
+    );
+    const recentWorkerHeartbeat = coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'worker.heartbeat' AND created_at >= ?").get(recentCutoff) as
+        | { count?: number | bigint }
+        | undefined,
+    );
+    const recentTaskHeartbeat = coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action = 'task.heartbeat' AND created_at >= ?").get(recentCutoff) as
+        | { count?: number | bigint }
+        | undefined,
+    );
+    const recentHeartbeat = recentWorkerHeartbeat + recentTaskHeartbeat;
+    const recentHeartbeatRatio = recentTotal > 0 ? recentHeartbeat / recentTotal : 0;
     const recentWorkerHeartbeatRatio = recentTotal > 0 ? recentWorkerHeartbeat / recentTotal : 0;
+    const recentTaskHeartbeatRatio = recentTotal > 0 ? recentTaskHeartbeat / recentTotal : 0;
     const warnings: string[] = [];
     if (total > 8_000) {
       warnings.push(`broker_audit_events has ${total} rows; expected SQLite hot-table retention near 5000`);
     }
-    if (recentWorkerHeartbeat >= HOT_AUDIT_HEARTBEAT_CHURN_WARNING_COUNT && recentWorkerHeartbeatRatio > 0.8) {
-      warnings.push(`worker.heartbeat audit events are ${Math.round(recentWorkerHeartbeatRatio * 100)}% of broker_audit_events in the last ${Math.round(HOT_AUDIT_RECENT_WINDOW_MS / 60_000)} minutes`);
+    if (recentHeartbeat >= HOT_AUDIT_HEARTBEAT_CHURN_WARNING_COUNT && recentHeartbeatRatio > 0.8) {
+      warnings.push(`heartbeat audit events are ${Math.round(recentHeartbeatRatio * 100)}% of broker_audit_events in the last ${Math.round(HOT_AUDIT_RECENT_WINDOW_MS / 60_000)} minutes`);
     }
     return {
       total,
+      heartbeat,
+      heartbeatRatio,
       workerHeartbeat,
       workerHeartbeatRatio,
+      taskHeartbeat,
+      taskHeartbeatRatio,
       recentWindowMs: HOT_AUDIT_RECENT_WINDOW_MS,
       recentTotal,
+      recentHeartbeat,
+      recentHeartbeatRatio,
       recentWorkerHeartbeat,
       recentWorkerHeartbeatRatio,
+      recentTaskHeartbeat,
+      recentTaskHeartbeatRatio,
       warnings,
     };
+  }
+
+  readHotTerminalOutboxDiagnostics(): BrokerHotTerminalOutboxDiagnostics {
+    const nowMs = Date.now();
+    const total = this.readTableCount("broker_terminal_outbox");
+    const ackedRow = this.db.prepare(
+      "SELECT COUNT(*) AS count FROM broker_terminal_outbox WHERE acknowledged_at IS NOT NULL",
+    ).get() as { count?: number | bigint } | undefined;
+    const acked = coerceSqliteCount(ackedRow);
+    const rawUnacked = total - acked;
+    const unackedRows = this.db.prepare(
+      "SELECT created_at AS createdAt, payload FROM broker_terminal_outbox WHERE acknowledged_at IS NULL ORDER BY created_at ASC",
+    ).all() as Array<{ createdAt?: string; payload?: string }>;
+    let ackIneligibleUnacked = 0;
+    let oldestUnackedCreatedAt: string | null = null;
+    for (const row of unackedRows) {
+      if (isAckIneligibleTerminalOutboxPayload(row.payload)) {
+        ackIneligibleUnacked += 1;
+        continue;
+      }
+      if (oldestUnackedCreatedAt === null && typeof row.createdAt === "string") {
+        oldestUnackedCreatedAt = row.createdAt;
+      }
+    }
+    const ackEligibleUnacked = Math.max(0, rawUnacked - ackIneligibleUnacked);
+    const unacked = ackEligibleUnacked;
+    const unackedRatio = total > 0 ? unacked / total : 0;
+    const oldestUnackedAgeMs = oldestUnackedCreatedAt !== null
+      ? nowMs - Date.parse(oldestUnackedCreatedAt)
+      : null;
+    const warnings: string[] = [];
+    if (unacked > 500) {
+      warnings.push(`broker_terminal_outbox has ${unacked} unacked entries; may indicate stalled provider delivery`);
+    }
+    if (oldestUnackedAgeMs !== null && oldestUnackedAgeMs > 7 * 24 * 60 * 60 * 1000) {
+      warnings.push(`oldest unacked terminal outbox entry is ${Math.round(oldestUnackedAgeMs / (24 * 60 * 60 * 1000))} days old`);
+    }
+    return {
+      total,
+      acked,
+      rawUnacked,
+      unacked,
+      ackEligibleUnacked,
+      ackIneligibleUnacked,
+      unackedRatio,
+      oldestUnackedCreatedAt,
+      oldestUnackedAgeMs,
+      warnings,
+    };
+  }
+
+  readHotTableRuntimeLoadLimits(): BrokerHotTableRuntimeLoadLimits {
+    return {
+      terminalTasks: this.maxHotRuntimeTerminalTasks,
+      auditEvents: this.maxHotRuntimeAuditEvents,
+      terminalOutboxEvents: this.maxHotRuntimeTerminalOutboxEvents,
+    };
+  }
+
+  readHotTableLoadMetrics(): BrokerHotTableLoadMetrics {
+    const tables: Record<string, BrokerHotTableLoadMetricEntry> = {};
+    for (const table of SQLITE_HOT_ENTITY_TABLES) {
+      const count = this.readTableCount(table);
+      const maxPayloadBytes = count === 0 ? 0 : this.readMaxPayloadBytes(table);
+      const entry: BrokerHotTableLoadMetricEntry = { count, maxPayloadBytes };
+      if (table === "broker_tasks") {
+        const terminalCount = this.readTerminalTaskCount();
+        const activeCount = count - terminalCount;
+        const terminalLoadedCount = Math.min(terminalCount, this.maxHotRuntimeTerminalTasks);
+        entry.runtimeLoad = {
+          limit: this.maxHotRuntimeTerminalTasks,
+          loadedCount: activeCount + terminalLoadedCount,
+          skippedCount: Math.max(0, terminalCount - terminalLoadedCount),
+          activeCount,
+          terminalCount,
+        };
+      } else if (table === "broker_audit_events") {
+        const loadedCount = Math.min(count, this.maxHotRuntimeAuditEvents);
+        entry.runtimeLoad = {
+          limit: this.maxHotRuntimeAuditEvents,
+          loadedCount,
+          skippedCount: Math.max(0, count - loadedCount),
+        };
+      } else if (table === "broker_terminal_outbox") {
+        const unackedRow = this.db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM broker_terminal_outbox WHERE acknowledged_at IS NULL",
+          )
+          .get() as { count?: number | bigint } | undefined;
+        const unackedCount = coerceSqliteCount(unackedRow);
+        const loadedCount = Math.min(count, this.maxHotRuntimeTerminalOutboxEvents);
+        entry.unackedCount = unackedCount;
+        entry.runtimeLoad = {
+          limit: this.maxHotRuntimeTerminalOutboxEvents,
+          loadedCount,
+          skippedCount: Math.max(0, count - loadedCount),
+        };
+      }
+      tables[table] = entry;
+    }
+    return { tables };
+  }
+
+  private readMaxPayloadBytes(table: SqliteHotEntityTable): number {
+    const maxRow = this.db
+      .prepare(`SELECT COALESCE(MAX(LENGTH(payload)), 0) AS maxLen FROM ${table}`)
+      .get() as { maxLen?: number | bigint } | undefined;
+    return typeof maxRow?.maxLen === "bigint"
+      ? Number(maxRow.maxLen)
+      : typeof maxRow?.maxLen === "number" ? maxRow.maxLen : 0;
+  }
+
+  private readTerminalTaskCount(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS count FROM broker_tasks WHERE status IN ('succeeded', 'failed', 'canceled')")
+      .get() as { count?: number | bigint } | undefined;
+    return coerceSqliteCount(row);
   }
 
   planHotTaskRetention(options: SqliteTaskHotRetentionPlanOptions): SqliteHotRetentionPlan {
@@ -1108,6 +1609,14 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       .all()
       .map((row) => parseHotEntityPayload(row, workerSchema, "broker_workers")) as WorkerRecord[];
     return planWorkerRetentionFromRecords(records, options);
+  }
+
+  planHotTerminalOutboxRetention(options: SqliteTerminalOutboxHotRetentionPlanOptions): SqliteHotRetentionPlan {
+    const records = this.db
+      .prepare("SELECT payload FROM broker_terminal_outbox")
+      .all()
+      .map((row) => parseHotEntityPayload(row, terminalOutboxEventSchema, "broker_terminal_outbox")) as TerminalTaskOutboxEvent[];
+    return planTerminalOutboxRetentionFromRecords(records, options);
   }
 
   applyHotRetentionPlan(plan: SqliteHotRetentionPlan): SqliteHotRetentionApplyResult {
@@ -1171,36 +1680,17 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   pruneHotAuditEventsToMax(maxRecords: number): SqliteHotRetentionApplyResult {
-    const max = Math.max(0, Math.floor(maxRecords));
     let result: SqliteHotRetentionApplyResult | undefined;
     this.runImmediateTransaction(() => {
-      const before = this.readTableCount("broker_audit_events");
-      if (before <= max) {
-        result = {
-          table: "broker_audit_events",
-          retainedCount: before,
-          requestedPruneCount: 0,
-          prunedCount: 0,
-          remainingCount: before,
-        };
-        return;
-      }
-      const deleteResult = this.db.prepare(
-        `DELETE FROM broker_audit_events
-         WHERE id IN (
-           SELECT id FROM broker_audit_events
-           ORDER BY created_at DESC, id DESC
-           LIMIT -1 OFFSET ?
-         )`,
-      ).run(max);
-      const remaining = this.readTableCount("broker_audit_events");
-      result = {
-        table: "broker_audit_events",
-        retainedCount: max,
-        requestedPruneCount: before - max,
-        prunedCount: Number(deleteResult.changes ?? 0),
-        remainingCount: remaining,
-      };
+      result = this.pruneHotAuditEventsToMaxUnsafe(maxRecords);
+    });
+    return result!;
+  }
+
+  pruneHotHeartbeatAuditEventsToMax(maxRecords: number): SqliteHotRetentionApplyResult {
+    let result: SqliteHotRetentionApplyResult | undefined;
+    this.runImmediateTransaction(() => {
+      result = this.pruneHotHeartbeatAuditEventsToMaxUnsafe(maxRecords);
     });
     return result!;
   }
@@ -1430,24 +1920,79 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private saveSnapshot(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
-      this.writeSnapshotRow(snapshot, updatedAt, hints);
+      const hasHotHints = hintsHasAnyEntries(hints);
+      this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot: hasHotHints });
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: hasHotHints });
     });
   }
 
-  private writeSnapshotRow(snapshot: BrokerSnapshot, updatedAt: string, hints?: BrokerStateSaveHints): void {
-    const payload = serializeBrokerSnapshot(snapshot, this.maxBytes);
-    this.db
-      .prepare(
-        `INSERT INTO broker_snapshots (id, version, payload, updated_at)
-         VALUES (1, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           version = excluded.version,
-           payload = excluded.payload,
-           updated_at = excluded.updated_at`,
-      )
-      .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
+  private saveHotEntityHints(hints: BrokerStateSaveHints): void {
+    const updatedAt = new Date().toISOString();
+    this.runImmediateTransaction(() => {
+      this.writeHotEntityHintRows(hints);
+      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
+    });
+  }
+
+  private writeSnapshotRow(
+    snapshot: BrokerSnapshot,
+    updatedAt: string,
+    hints?: BrokerStateSaveHints,
+    options?: { skipFullSnapshot?: boolean },
+  ): void {
+    if (!options?.skipFullSnapshot) {
+      const payload = serializeBrokerSnapshot(snapshot, this.maxBytes);
+      this.db
+        .prepare(
+          `INSERT INTO broker_snapshots (id, version, payload, updated_at)
+           VALUES (1, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             version = excluded.version,
+             payload = excluded.payload,
+             updated_at = excluded.updated_at`,
+        )
+        .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
+    }
     this.writeHotEntityTables(snapshot, hints);
+  }
+
+  private writePersistDiagnostics(
+    updatedAt: string,
+    hints: BrokerStateSaveHints | undefined,
+    options: { skipFullSnapshot: boolean },
+  ): void {
+    this.writeMetadata("last_persist_at", updatedAt);
+    this.writeMetadata("last_persist_skipped_full_snapshot", options.skipFullSnapshot ? "true" : "false");
+    if (hints && hintsHasAnyEntries(hints)) {
+      const counts: BrokerHotHintCounts = countHotHintEntries(hints);
+      this.writeMetadata("last_hot_hint_counts", JSON.stringify(counts));
+    } else {
+      this.deleteMetadata("last_hot_hint_counts");
+    }
+  }
+
+  readLastPersistDiagnostics(): { lastPersistAt: string | undefined; lastPersistSkippedFullSnapshot: boolean; lastHotHintCounts: BrokerHotHintCounts | undefined } {
+    const lastPersistAt = this.readMetadata("last_persist_at") ?? undefined;
+    const skippedRaw = this.readMetadata("last_persist_skipped_full_snapshot");
+    const countsRaw = this.readMetadata("last_hot_hint_counts");
+    let lastHotHintCounts: BrokerHotHintCounts | undefined;
+    if (countsRaw) {
+      try {
+        const parsed = JSON.parse(countsRaw);
+        if (typeof parsed === "object" && parsed !== null) {
+          lastHotHintCounts = parsed as BrokerHotHintCounts;
+        }
+      } catch {
+        // ignore parse failures
+      }
+    }
+    return {
+      lastPersistAt,
+      lastPersistSkippedFullSnapshot: skippedRaw === "true",
+      lastHotHintCounts: lastHotHintCounts,
+    };
   }
 
   private readSnapshotRow(): BrokerSnapshot | undefined {
@@ -1468,6 +2013,14 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return typeof row?.count === "number" ? row.count : 0;
   }
 
+  private readHotHeartbeatAuditCount(): number {
+    return coerceSqliteCount(
+      this.db.prepare("SELECT COUNT(*) AS count FROM broker_audit_events WHERE action IN ('worker.heartbeat', 'task.heartbeat')").get() as
+        | { count?: number | bigint }
+        | undefined,
+    );
+  }
+
   private writeHotEntityTables(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void {
     const hotExchangeHints = hints?.hotExchanges;
     const hotExchangeMessageHints = hints?.hotExchangeMessages;
@@ -1478,6 +2031,61 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const hotTombstoneHints = hints?.hotTombstones;
     const hotAuditHints = hints?.hotAuditEvents;
     const hotWorkerHints = hints?.hotWorkers;
+    const hotTerminalOutboxHints = hints?.hotTerminalOutboxEvents;
+    const incrementalHotWrite = hintsHasAnyEntries(hints);
+    if (incrementalHotWrite) {
+      if (hotExchangeHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_exchanges", snapshot.exchanges.map((exchange) => exchange.id));
+        this.upsertHotExchangesUnsafe(hotExchangeHints);
+      }
+      if (hotExchangeMessageHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_exchange_messages", snapshot.exchangeMessages.map((message) => message.id));
+        this.upsertHotExchangeMessagesUnsafe(hotExchangeMessageHints);
+      }
+      if (hotProposalHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_proposals", snapshot.proposals.map((proposal) => proposal.id));
+        this.upsertHotProposalsUnsafe(hotProposalHints);
+      }
+      if (hotArtifactHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_artifacts", snapshot.artifacts.map((artifact) => artifact.id));
+        this.upsertHotArtifactsUnsafe(hotArtifactHints);
+      }
+      if (hotValidationHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_validations", snapshot.validations.map((validation) => validation.id));
+        this.upsertHotValidationsUnsafe(hotValidationHints);
+      }
+      if (hotTaskHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_tasks", snapshot.tasks.map((task) => task.id));
+        this.upsertHotTasksUnsafe(hotTaskHints);
+      }
+      if (hotTombstoneHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_tombstones", (snapshot.tombstones ?? []).map((tombstone) => tombstone.taskId));
+        this.upsertHotTombstonesUnsafe(hotTombstoneHints);
+      }
+      if (hotAuditHints !== undefined) {
+        const onlyHeartbeatAuditHints =
+          hotAuditHints.length > 0 &&
+          hotAuditHints.every(isHeartbeatAuditEvent);
+        if (!onlyHeartbeatAuditHints) {
+          this.applyCanonicalHotRetentionPlan("broker_audit_events", snapshot.auditEvents.map((event) => event.id));
+        }
+        this.upsertHotAuditEventsUnsafe(hotAuditHints);
+        if (onlyHeartbeatAuditHints) {
+          this.pruneHotHeartbeatAuditEventsToMaxUnsafe(this.maxHotRuntimeHeartbeatAuditEvents);
+          this.pruneHotAuditEventsToMaxUnsafe(this.maxHotRuntimeAuditEvents);
+        }
+      }
+      if (hotWorkerHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_workers", snapshot.workers.map((worker) => worker.nodeId));
+        this.upsertHotWorkersUnsafe(hotWorkerHints);
+      }
+      if (hotTerminalOutboxHints !== undefined) {
+        this.applyCanonicalHotRetentionPlan("broker_terminal_outbox", (snapshot.terminalOutbox ?? []).map((event) => event.id));
+        this.upsertHotTerminalOutboxUnsafe(hotTerminalOutboxHints);
+      }
+      return;
+    }
+
     if (hotExchangeHints) {
       this.applyCanonicalHotRetentionPlan("broker_exchanges", snapshot.exchanges.map((exchange) => exchange.id));
     } else {
@@ -1540,7 +2148,43 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
     this.upsertHotAuditEventsUnsafe(hotAuditHints ?? snapshot.auditEvents);
 
-    this.upsertHotTerminalOutboxUnsafe(snapshot.terminalOutbox ?? []);
+    this.upsertHotTerminalOutboxUnsafe(hotTerminalOutboxHints ?? snapshot.terminalOutbox ?? []);
+  }
+
+  private writeHotEntityHintRows(hints: BrokerStateSaveHints): void {
+    if (hints.hotExchanges !== undefined) {
+      this.upsertHotExchangesUnsafe(hints.hotExchanges);
+    }
+    if (hints.hotExchangeMessages !== undefined) {
+      this.upsertHotExchangeMessagesUnsafe(hints.hotExchangeMessages);
+    }
+    if (hints.hotProposals !== undefined) {
+      this.upsertHotProposalsUnsafe(hints.hotProposals);
+    }
+    if (hints.hotArtifacts !== undefined) {
+      this.upsertHotArtifactsUnsafe(hints.hotArtifacts);
+    }
+    if (hints.hotValidations !== undefined) {
+      this.upsertHotValidationsUnsafe(hints.hotValidations);
+    }
+    if (hints.hotTasks !== undefined) {
+      this.upsertHotTasksUnsafe(hints.hotTasks);
+    }
+    if (hints.hotTombstones !== undefined) {
+      this.upsertHotTombstonesUnsafe(hints.hotTombstones);
+    }
+    if (hints.hotAuditEvents !== undefined) {
+      this.upsertHotAuditEventsUnsafe(hints.hotAuditEvents);
+      // Runtime audit repositories already prune on append. Avoid repeating
+      // count/delete scans on the hot-only persist path, which can sit on the
+      // heartbeat response-critical section under worker churn.
+    }
+    if (hints.hotWorkers !== undefined) {
+      this.upsertHotWorkersUnsafe(hints.hotWorkers);
+    }
+    if (hints.hotTerminalOutboxEvents !== undefined) {
+      this.upsertHotTerminalOutboxUnsafe(hints.hotTerminalOutboxEvents);
+    }
   }
 
   private applyCanonicalHotRetentionPlan(
@@ -1762,6 +2406,67 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     }
   }
 
+  private pruneHotAuditEventsToMaxUnsafe(maxRecords: number): SqliteHotRetentionApplyResult {
+    const max = Math.max(0, Math.floor(maxRecords));
+    const before = this.readTableCount("broker_audit_events");
+    if (before <= max) {
+      return {
+        table: "broker_audit_events",
+        retainedCount: before,
+        requestedPruneCount: 0,
+        prunedCount: 0,
+        remainingCount: before,
+      };
+    }
+    const deleteResult = this.db.prepare(
+      `DELETE FROM broker_audit_events
+       WHERE id IN (
+         SELECT id FROM broker_audit_events
+         ORDER BY created_at DESC, id DESC
+         LIMIT -1 OFFSET ?
+       )`,
+    ).run(max);
+    const remaining = this.readTableCount("broker_audit_events");
+    return {
+      table: "broker_audit_events",
+      retainedCount: max,
+      requestedPruneCount: before - max,
+      prunedCount: Number(deleteResult.changes ?? 0),
+      remainingCount: remaining,
+    };
+  }
+
+  private pruneHotHeartbeatAuditEventsToMaxUnsafe(maxRecords: number): SqliteHotRetentionApplyResult {
+    const max = Math.max(0, Math.floor(maxRecords));
+    const before = this.readHotHeartbeatAuditCount();
+    if (before <= max) {
+      return {
+        table: "broker_audit_events",
+        retainedCount: before,
+        requestedPruneCount: 0,
+        prunedCount: 0,
+        remainingCount: before,
+      };
+    }
+    const deleteResult = this.db.prepare(
+      `DELETE FROM broker_audit_events
+       WHERE id IN (
+         SELECT id FROM broker_audit_events
+         WHERE action IN ('worker.heartbeat', 'task.heartbeat')
+         ORDER BY created_at DESC, id DESC
+         LIMIT -1 OFFSET ?
+       )`,
+    ).run(max);
+    const remaining = this.readHotHeartbeatAuditCount();
+    return {
+      table: "broker_audit_events",
+      retainedCount: max,
+      requestedPruneCount: before - max,
+      prunedCount: Number(deleteResult.changes ?? 0),
+      remainingCount: remaining,
+    };
+  }
+
   private upsertHotWorkersUnsafe(workers: WorkerRecord[]): void {
     const upsertWorker = this.db.prepare(
       `INSERT INTO broker_workers
@@ -1870,12 +2575,34 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return typeof row?.value === "string" ? row.value : undefined;
   }
 
+  private deleteMetadata(key: string): void {
+    this.db.prepare("DELETE FROM broker_metadata WHERE key = ?").run(key);
+  }
+
   private ensureColumn(tableName: string, columnName: string, columnDefinition: string): void {
     const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>;
     if (rows.some((row) => row.name === columnName)) {
       return;
     }
     this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+  }
+}
+
+function isAckIneligibleTerminalOutboxPayload(payload: unknown): boolean {
+  if (typeof payload !== "string" || !payload.trim()) {
+    return false;
+  }
+  try {
+    const event = JSON.parse(payload) as {
+      payload?: {
+        notificationOwnership?: {
+          terminalAckPermittedByProjection?: unknown;
+        };
+      };
+    };
+    return event.payload?.notificationOwnership?.terminalAckPermittedByProjection === false;
+  } catch {
+    return false;
   }
 }
 
@@ -1887,6 +2614,7 @@ export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {
   }
 
   listTasks(filters: TaskListFilters = {}): TaskRecord[] {
+    const sqliteCanApplyLimit = !filters.exchangeId && !filters.proposalId && !filters.claimedBy;
     return this.store
       .readHotTasks({
         status: filters.status,
@@ -1894,8 +2622,10 @@ export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {
         intent: filters.intent,
         assignedWorkerId: filters.assignedWorkerId,
         taskOrigin: filters.taskOrigin,
+        limit: sqliteCanApplyLimit ? filters.limit : undefined,
       })
-      .filter((task) => taskMatchesRuntimeFilters(task, filters));
+      .filter((task) => taskMatchesRuntimeFilters(task, filters))
+      .slice(0, normalizeRuntimeTaskListLimit(filters.limit));
   }
 
   upsertTask(task: TaskRecord): void {
@@ -2044,12 +2774,17 @@ function workerMatchesRuntimeFilters(worker: WorkerRecord, filters: WorkerListFi
 
 export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
   private readonly maxHotAuditEvents: number;
+  private readonly maxHotHeartbeatAuditEvents: number;
 
   constructor(
     private readonly store: SqliteBrokerStateStore,
     options: SqliteAuditRuntimeRepositoryOptions = {},
   ) {
     this.maxHotAuditEvents = Math.max(0, Math.floor(options.maxHotAuditEvents ?? 5_000));
+    this.maxHotHeartbeatAuditEvents = Math.max(
+      0,
+      Math.floor(options.maxHotHeartbeatAuditEvents ?? Math.min(this.maxHotAuditEvents, DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS)),
+    );
   }
 
   listAuditEvents(filters: AuditListFilters = {}): AuditEvent[] {
@@ -2057,10 +2792,11 @@ export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
   }
 
   appendAuditEvent(event: AuditEvent): void {
-    const hotEvent = event.action === "worker.heartbeat" && event.targetType === "worker"
-      ? { ...event, id: `worker-heartbeat:${event.targetId}` }
-      : event;
+    const hotEvent = { ...event, id: getHeartbeatAuditEventId(event) ?? event.id };
     this.store.upsertHotAuditEvents([hotEvent]);
+    if (isHeartbeatAuditEvent(hotEvent)) {
+      this.store.pruneHotHeartbeatAuditEventsToMax(this.maxHotHeartbeatAuditEvents);
+    }
     this.store.pruneHotAuditEventsToMax(this.maxHotAuditEvents);
   }
 }
@@ -2094,6 +2830,7 @@ export function emptySnapshot(): BrokerSnapshot {
     tasks: [],
     tombstones: [],
     terminalOutbox: [],
+    crossBrokerTerminalBriefs: [],
   };
 }
 
@@ -2104,6 +2841,18 @@ function isMissingFileError(error: unknown): boolean {
     "code" in error &&
     error.code === "ENOENT"
   );
+}
+
+function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  return Math.max(0, Math.trunc(fallback));
+}
+
+function normalizeOptionalSqliteLimit(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return normalizeNonNegativeSqliteLimit(value, 0);
 }
 
 export function serializeBrokerSnapshot(
@@ -2155,8 +2904,9 @@ function buildHotTableSelect(
   tableName: SqliteHotEntityTable,
   filters: Array<[string, string | undefined]>,
   orderBy: string,
-): { sql: string; params: string[] } {
-  const params: string[] = [];
+  limit?: number,
+): { sql: string; params: Array<string | number> } {
+  const params: Array<string | number> = [];
   const clauses = filters.flatMap(([column, value]) => {
     if (!value) {
       return [];
@@ -2164,10 +2914,129 @@ function buildHotTableSelect(
     params.push(value);
     return [`${column} = ?`];
   });
+  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
   return {
-    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}`,
-    params,
+    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}${hasLimit ? " LIMIT ?" : ""}`,
+    params: hasLimit ? [...params, limit] : params,
   };
+}
+
+function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): { sql: string; params: Array<string | number> } {
+  const params: Array<string | number> = [];
+  const clauses = [
+    ["id", filters.id],
+    ["status", filters.status],
+    ["target_node_id", filters.targetNodeId],
+    ["intent", filters.intent],
+    ["assigned_worker_id", filters.assignedWorkerId],
+    ["task_origin", filters.taskOrigin],
+  ].flatMap(([column, value]) => {
+    if (!value) {
+      return [];
+    }
+    params.push(value);
+    return [`${column} = ?`];
+  });
+  clauses.push("json_valid(payload)");
+  const limit = filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
+    ? normalizeOptionalSqliteLimit(filters.maxRows)
+    : undefined);
+  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
+  return {
+    sql: `SELECT
+        id,
+        status,
+        intent,
+        target_node_id AS targetNodeId,
+        assigned_worker_id AS assignedWorkerId,
+        task_origin AS taskOrigin,
+        updated_at AS updatedAt,
+        json_extract(payload, '$.requester') AS requester,
+        json_extract(payload, '$.target') AS target,
+        json_extract(payload, '$.exchangeId') AS exchangeId,
+        json_extract(payload, '$.parentTaskId') AS parentTaskId,
+        json_extract(payload, '$.proposalId') AS proposalId,
+        json_extract(payload, '$.claimedBy') AS claimedBy,
+        COALESCE(json_extract(payload, '$.result.artifactIds'), json_extract(payload, '$.artifactIds')) AS artifactIds,
+        COALESCE(json_extract(payload, '$.result.summary'), json_extract(payload, '$.result.note')) AS resultSummary,
+        json_extract(payload, '$.error') AS error,
+        json_extract(payload, '$.requeueCount') AS requeueCount,
+        json_extract(payload, '$.createdAt') AS createdAt,
+        json_extract(payload, '$.claimedAt') AS claimedAt,
+        json_extract(payload, '$.completedAt') AS completedAt
+      FROM broker_tasks
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY updated_at DESC, id ASC${hasLimit ? " LIMIT ?" : ""}`,
+    params: hasLimit ? [...params, limit] : params,
+  };
+}
+
+function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItemProjection[] {
+  const record = row as Record<string, unknown>;
+  const id = optionalStringValue(record.id);
+  const intent = optionalStringValue(record.intent) as TaskRecord["intent"] | undefined;
+  const status = optionalStringValue(record.status) as TaskRecord["status"] | undefined;
+  const targetNodeId = optionalStringValue(record.targetNodeId);
+  const requester = parseJsonColumn<TaskRecord["requester"]>(record.requester);
+  const target = parseJsonColumn<TaskRecord["target"]>(record.target);
+  const updatedAt = optionalStringValue(record.updatedAt);
+  const createdAt = optionalStringValue(record.createdAt) ?? updatedAt;
+  if (!id || !intent || !status || !targetNodeId || !requester || !target || !updatedAt || !createdAt) {
+    return [];
+  }
+  const error = parseJsonColumn<TaskRecord["error"]>(record.error);
+  return [omitUndefinedProperties({
+    id,
+    intent,
+    status,
+    targetNodeId,
+    requester,
+    target,
+    exchangeId: optionalStringValue(record.exchangeId),
+    parentTaskId: optionalStringValue(record.parentTaskId),
+    proposalId: optionalStringValue(record.proposalId),
+    assignedWorkerId: optionalStringValue(record.assignedWorkerId),
+    claimedBy: optionalStringValue(record.claimedBy),
+    taskOrigin: optionalStringValue(record.taskOrigin) as TaskRecord["taskOrigin"] | undefined,
+    artifactIds: parseJsonColumn<string[]>(record.artifactIds),
+    resultSummary: optionalStringValue(record.resultSummary),
+    error: error ? { code: error.code, message: error.message } : undefined,
+    requeueCount: optionalNumberValue(record.requeueCount),
+    createdAt,
+    updatedAt,
+    claimedAt: optionalStringValue(record.claimedAt),
+    completedAt: optionalStringValue(record.completedAt),
+  })];
+}
+
+function parseJsonColumn<T>(value: unknown): T | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return value as T;
+  }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function optionalStringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function optionalNumberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function normalizeRuntimeTaskListLimit(limit: number | undefined): number | undefined {
+  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : undefined;
 }
 
 function countSnapshotEntities(snapshot: BrokerSnapshot): Record<string, number> {
@@ -2204,12 +3073,14 @@ function planTaskRetentionFromRecords(
     olderTerminalCandidates.push({ id: task.id, timestampMs });
   }
 
-  [...olderTerminalCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id))
-    .slice(0, options.maxTerminalRecords)
-    .forEach((entry) => retainedIds.add(entry.id));
+  const capSorted = [...olderTerminalCandidates]
+    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
+  const capRetained = capSorted.slice(0, options.maxTerminalRecords);
+  capRetained.forEach((entry) => retainedIds.add(entry.id));
 
-  return buildRetentionPlan("broker_tasks", cutoffMs, records.map((record) => record.id), retainedIds);
+  const plan = buildRetentionPlan("broker_tasks", cutoffMs, records.map((record) => record.id), retainedIds);
+  plan.retainedByCapCount = capRetained.length;
+  return plan;
 }
 
 function planAuditRetentionFromRecords(
@@ -2231,13 +3102,15 @@ function planAuditRetentionFromRecords(
     retentionCandidates.push({ id: event.id, timestampMs });
   }
 
-  [...retentionCandidates]
+  const capSorted = [...retentionCandidates]
     .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id))
-    .filter((entry) => entry.timestampMs >= cutoffMs)
-    .slice(0, options.maxRecords)
-    .forEach((entry) => retainedIds.add(entry.id));
+    .filter((entry) => entry.timestampMs >= cutoffMs);
+  const capRetained = capSorted.slice(0, options.maxRecords);
+  capRetained.forEach((entry) => retainedIds.add(entry.id));
 
-  return buildRetentionPlan("broker_audit_events", cutoffMs, records.map((record) => record.id), retainedIds);
+  const plan = buildRetentionPlan("broker_audit_events", cutoffMs, records.map((record) => record.id), retainedIds);
+  plan.retainedByCapCount = capRetained.length;
+  return plan;
 }
 
 function planWorkerRetentionFromRecords(
@@ -2261,12 +3134,47 @@ function planWorkerRetentionFromRecords(
     olderInactiveCandidates.push({ id: worker.nodeId, timestampMs });
   }
 
-  [...olderInactiveCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id))
-    .slice(0, options.maxInactiveWorkers)
-    .forEach((entry) => retainedIds.add(entry.id));
+  const capSorted = [...olderInactiveCandidates]
+    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
+  const capRetained = capSorted.slice(0, options.maxInactiveWorkers);
+  capRetained.forEach((entry) => retainedIds.add(entry.id));
 
-  return buildRetentionPlan("broker_workers", cutoffMs, records.map((record) => record.nodeId), retainedIds);
+  const plan = buildRetentionPlan("broker_workers", cutoffMs, records.map((record) => record.nodeId), retainedIds);
+  plan.retainedByCapCount = capRetained.length;
+  return plan;
+}
+
+function planTerminalOutboxRetentionFromRecords(
+  records: TerminalTaskOutboxEvent[],
+  options: SqliteTerminalOutboxHotRetentionPlanOptions,
+): SqliteHotRetentionPlan {
+  const nowMs = options.nowMs ?? Date.now();
+  const cutoffMs = nowMs - options.retentionMs;
+  const retainedIds = new Set<string>();
+  const acknowledgedCandidates: Array<{ id: string; timestampMs: number }> = [];
+
+  for (const event of records) {
+    const acknowledgedAt = event.ack?.acknowledgedAt ?? event.deliveredAt;
+    const acknowledgedMs = acknowledgedAt ? parseRetentionTimestamp(acknowledgedAt) : null;
+    if (acknowledgedMs === null) {
+      retainedIds.add(event.id);
+      continue;
+    }
+    if (acknowledgedMs >= cutoffMs) {
+      retainedIds.add(event.id);
+      continue;
+    }
+    acknowledgedCandidates.push({ id: event.id, timestampMs: acknowledgedMs });
+  }
+
+  const capSorted = [...acknowledgedCandidates]
+    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
+  const capRetained = capSorted.slice(0, options.maxAcknowledgedRecords);
+  capRetained.forEach((entry) => retainedIds.add(entry.id));
+
+  const plan = buildRetentionPlan("broker_terminal_outbox", cutoffMs, records.map((record) => record.id), retainedIds);
+  plan.retainedByCapCount = capRetained.length;
+  return plan;
 }
 
 export function buildHotEntityHintCoverage(
@@ -2317,6 +3225,9 @@ function isAuditEventProtected(
   event: AuditEvent,
   protectedIds: Required<Record<keyof SqliteAuditHotRetentionProtection, Set<string>>>,
 ): boolean {
+  if (isHeartbeatAuditEvent(event)) {
+    return false;
+  }
   if (event.proposalId && protectedIds.proposalIds.has(event.proposalId)) {
     return true;
   }
@@ -2328,9 +3239,6 @@ function isAuditEventProtected(
     case "validation":
       return protectedIds.validationIds.has(event.targetId);
     case "worker":
-      if (event.action === "worker.heartbeat") {
-        return false;
-      }
       return protectedIds.workerIds.has(event.targetId);
     case "task":
       return protectedIds.taskIds.has(event.targetId);
@@ -2338,7 +3246,28 @@ function isAuditEventProtected(
       return protectedIds.exchangeIds.has(event.targetId);
     case "exchange-message":
       return protectedIds.exchangeMessageIds.has(event.targetId);
+    case "broker":
+      return false;
   }
+}
+
+function isHeartbeatAuditEvent(event: Pick<AuditEvent, "action" | "targetType">): boolean {
+  return (
+    (event.action === "worker.heartbeat" && event.targetType === "worker") ||
+    (event.action === "task.heartbeat" && event.targetType === "task")
+  );
+}
+
+function getHeartbeatAuditEventId(
+  event: Pick<AuditEvent, "action" | "targetType" | "targetId">,
+): string | null {
+  if (event.action === "worker.heartbeat" && event.targetType === "worker") {
+    return `worker-heartbeat:${event.targetId}`;
+  }
+  if (event.action === "task.heartbeat" && event.targetType === "task") {
+    return `task-heartbeat:${event.targetId}`;
+  }
+  return null;
 }
 
 function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
@@ -2414,4 +3343,35 @@ function readSqlitePayload(row: unknown, tableName: string): string {
     return row.payload;
   }
   throw new Error(`missing payload column from ${tableName}`);
+}
+
+function hintsHasAnyEntries(hints: BrokerStateSaveHints | undefined): boolean {
+  if (!hints) return false;
+  return (
+    (hints.hotExchanges?.length ?? 0) > 0 ||
+    (hints.hotExchangeMessages?.length ?? 0) > 0 ||
+    (hints.hotProposals?.length ?? 0) > 0 ||
+    (hints.hotArtifacts?.length ?? 0) > 0 ||
+    (hints.hotValidations?.length ?? 0) > 0 ||
+    (hints.hotTasks?.length ?? 0) > 0 ||
+    (hints.hotTombstones?.length ?? 0) > 0 ||
+    (hints.hotAuditEvents?.length ?? 0) > 0 ||
+    (hints.hotWorkers?.length ?? 0) > 0 ||
+    (hints.hotTerminalOutboxEvents?.length ?? 0) > 0
+  );
+}
+
+function countHotHintEntries(hints: BrokerStateSaveHints): BrokerHotHintCounts {
+  return {
+    hotExchanges: hints.hotExchanges?.length ?? 0,
+    hotExchangeMessages: hints.hotExchangeMessages?.length ?? 0,
+    hotProposals: hints.hotProposals?.length ?? 0,
+    hotArtifacts: hints.hotArtifacts?.length ?? 0,
+    hotValidations: hints.hotValidations?.length ?? 0,
+    hotTasks: hints.hotTasks?.length ?? 0,
+    hotTombstones: hints.hotTombstones?.length ?? 0,
+    hotAuditEvents: hints.hotAuditEvents?.length ?? 0,
+    hotWorkers: hints.hotWorkers?.length ?? 0,
+    hotTerminalOutboxEvents: hints.hotTerminalOutboxEvents?.length ?? 0,
+  };
 }

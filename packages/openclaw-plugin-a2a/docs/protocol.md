@@ -109,12 +109,30 @@ release an already-audited blocked announce delivery.
 
 Broker records map back into monitoring-friendly gateway fields:
 
+- broker `blocked` -> gateway `accepted` (the A2A vocabulary has no first-class
+  blocked status; callers that need to distinguish a blocked task MUST inspect
+  `metadata.evidenceRefs` for a `blockUrl` or `metadata.taskInput.blockUrl`)
 - broker `queued | claimed` -> gateway `accepted`
 - broker `running` -> gateway `running`
 - broker `succeeded` -> gateway `completed`
 - broker `failed` with timeout code -> gateway `timed_out`
 - broker `failed` otherwise -> gateway `failed`
 - broker `canceled` -> gateway `cancelled`
+
+**Evidence-only and no-change outcomes:** Both map to broker `succeeded` → gateway
+`completed`. The distinction is carried in task metadata:
+
+- `metadata.evidenceRefs` — array of evidence URLs (Start comment, Block comment,
+  Done comment) captured from the worker's GitHub issue comments.
+- `metadata.taskInput.doneUrl` — the Done comment URL on the issue.
+- `metadata.taskInput.blockUrl` — the Block comment URL (when the task was blocked).
+- For worker-status-marker consumers, the `WorkerStatusDoneEvent.payload.outcome`
+  field classifies the result as `done_with_changes`, `done_evidence_only`, or
+  `done_no_changes`.
+
+**Done evidence never implies terminal ACK, read receipt, live-send success, or
+visibility confirmation.** Provider-accepted-only states are permanently
+insufficient for terminal-outbox ACK evidence (see `docs/public-stable-readiness.md`).
 
 The plugin also shapes:
 

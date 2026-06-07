@@ -1,0 +1,21 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Hermes-mobile worker with healthy timing and wake-lock. Hermes onboarding kind is recognized as a mobile worker mode.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "yukson",
+    "workerMode": "hermes-mobile",
+    "status": "online",
+    "lastSeenAgeSec": 10,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": true,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": true,
+    "isolatedWorkspaceRootShape": "$A2A_MOBILE_WORK_ROOT/<homeBrokerId>/<taskId>"
+  }
+}
