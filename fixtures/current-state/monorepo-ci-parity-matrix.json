@@ -3,6 +3,7 @@
   "snapshotDate": "2026-06-07",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/514",
+  "refreshIssue": "https://github.com/jinwon-int/a2a-plane/issues/528",
   "decision": "record_ci_parity_matrix_without_canonical_flip",
   "canonicalUntilParityGreen": "split_repos",
   "canonicalFlipApproved": false,
@@ -60,7 +61,7 @@
     {
       "surface": "docker-runner",
       "sourceRepo": "jinwon-int/a2a-docker-runner",
-      "sourceMain": "dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe",
+      "sourceMain": "0aafede5e9869ea78da2707fe5e334d9530cba96",
       "targetPath": "packages/docker-runner",
       "sourceWorkflow": {
         "path": ".github/workflows/ci.yml",

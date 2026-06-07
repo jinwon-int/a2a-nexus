@@ -3,6 +3,7 @@
 > **Snapshot date:** 2026-06-07
 > **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
 > **Child:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514)
+> **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
 > **Status:** phase 0 matrix recorded. Split repo CI remains canonical.
 
 ## Summary
@@ -28,7 +29,7 @@ The result is intentionally conservative:
 | Surface | Split repo canonical CI | Plane workspace job today | Parity status | Required before authoritative |
 | --- | --- | --- | --- | --- |
 | Broker | `jinwon-int/a2a-broker` `ci`: `npm ci`, `npm test`; source `test` runs `build`, script syntax checks, and built JS tests. | `broker` job: `npm ci --ignore-scripts --include=dev`, `npm run check -w packages/broker`, root `scan:public-readiness`. | Not green for canonical flip. Plane mirror is stale and its broker build omits current split-repo build-info generation and script syntax checks. | Fresh prefix import from `fae438a4fba301c2a9a02ca7cb11282867327920`; preserve `scripts/generate-build-info.mjs`; compare `npm ci` lifecycle behavior; prove script syntax checks and test globs; decide actions v4/v5 policy. |
-| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: root install, package `npm run check`, root `scan:public-readiness`. | Not green for canonical flip. Plane job is narrower than split CI and does not cover release-gate dry-run behavior. | Fresh prefix import from `dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe`; preserve CLI/package files; add build/lint/test/pre-pr-bootstrap parity; model release-gate dry-run evidence without tag/publish; decide artifact policy. |
+| Docker runner | `jinwon-int/a2a-docker-runner` `ci`: `npm ci`, `check`, `build`, `lint`, `test`, fail-closed `pre-pr-bootstrap-guard`; release-gate adds chaos E2E and release candidate dry-run evidence. | `docker-runner` job: root install, package `npm run check`, root `scan:public-readiness`. | Not green for canonical flip. Plane job is narrower than split CI and does not cover release-gate dry-run behavior. | Fresh prefix import from `0aafede5e9869ea78da2707fe5e334d9530cba96`; preserve CLI/package files; add build/lint/test/pre-pr-bootstrap parity; model release-gate dry-run evidence without tag/publish; decide artifact policy. |
 | OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` `ci`: `npm ci`, `scan:public-readiness`, `smoke:a2a-conformance`, `npm test`; package build copies `openclaw.plugin.json`; `prepack` scans then builds. | `plugin` job: `npm ci --ignore-scripts --include=dev`, `npm run check -w packages/openclaw-plugin-a2a`, root `scan:public-readiness`. | Not green for canonical flip. Plane mirror lacks current bin/docs/files shape and does not run plugin-local public scan or A2A conformance smoke. | Fresh prefix import from `a2e521271483ef0b6a29907c8228f0a442dd2db9`; preserve `openclaw` peer boundary; preserve manifest copy/prepack behavior; add plugin-local scan and conformance smoke; verify package files/bin exports. |
 
 ## Shared Umbrella Gates
@@ -59,6 +60,20 @@ the split repos.
 | Runner release policy | Split runner has an approval-gated release workflow with dry-run evidence and isolated tag path. | Mirror release-gate evidence without creating tags, releases, npm packages, images, deploys, or live mutations. |
 | Plugin packaging | Split plugin build copies `openclaw.plugin.json`, exposes CLI bins, and `prepack` scans then builds. | Preserve manifest packaging, bin exports, OpenClaw peer dependency, and local fixture boundary. |
 | Scanner coverage | Split plugin runs plugin-local `scan:public-readiness`; plane runs root public readiness. | Keep root scanner and add/retain package-local scanners where split repos have them. |
+
+## Phase-1 Refresh (#528)
+
+The 2026-06-07 KST phase-1 refresh updated the current split-repo source refs
+used by the matrix:
+
+| Surface | Current split ref | Current conclusion |
+| --- | --- | --- |
+| Broker | `fae438a4fba301c2a9a02ca7cb11282867327920` | Still not green for canonical flip; build-info generation and script syntax checks remain missing from plane parity. |
+| Docker runner | `0aafede5e9869ea78da2707fe5e334d9530cba96` | Drift increased since phase 0; plane still lacks build/lint/test/pre-pr guard and release-gate dry-run parity. |
+| OpenClaw plugin | `a2e521271483ef0b6a29907c8228f0a442dd2db9` | Still not green for canonical flip; plugin-local public scan and A2A conformance smoke remain split-repo gates. |
+
+The phase-1 result is still **not green for canonical flip**. Package jobs must
+be equal-or-stricter than split repo CI before implementation truth can move.
 
 ## Canonical Flip Gate
 
