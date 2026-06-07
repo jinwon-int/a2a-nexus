@@ -18,6 +18,7 @@ const steps = [
   ['monorepo-reentry', 'npm', ['run', 'check:monorepo-reentry']],
   ['monorepo-import-rehearsal', 'npm', ['run', 'check:monorepo-import-rehearsal']],
   ['monorepo-ci-parity', 'npm', ['run', 'check:monorepo-ci-parity']],
+  ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
 ];
 
 for (const [name, command, args] of steps) {

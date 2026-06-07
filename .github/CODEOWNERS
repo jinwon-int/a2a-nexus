@@ -1,0 +1,24 @@
+# A2A monorepo rehearsal ownership draft.
+#
+# CODEOWNERS is a review-routing draft only. It does not move finalizer
+# authority to workers, does not approve a canonical flip, and does not replace
+# the split implementation repos while phase 0/1 remains active.
+
+* @jinon86
+
+# Public umbrella, contracts, fixtures, readiness gates, and coordination docs.
+/README.md @jinon86
+/docs/ @jinon86
+/contracts/ @jinon86
+/fixtures/ @jinon86
+/scanner/ @jinon86
+/.github/ @jinon86
+
+# A2A broker surface: task lifecycle, worker registry, evidence, broker API.
+/packages/broker/ @jinon86
+
+# Docker runner surface: isolated execution, checkout hygiene, PR/Done/Block evidence.
+/packages/docker-runner/ @jinon86
+
+# OpenClaw plugin surface: Gateway adapter, request/status/cancel mapping, diagnostics.
+/packages/openclaw-plugin-a2a/ @jinon86
