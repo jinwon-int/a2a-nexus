@@ -1,7 +1,7 @@
 # A2A Monorepo Re-entry Decision
 
 > **Decision date:** 2026-06-07
-> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#516](https://github.com/jinwon-int/a2a-plane/issues/516), and [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
+> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), and [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
 > **Decision:** proceed with a staged umbrella workspace rehearsal, not an immediate canonical monorepo flip.
 
 ## Summary
@@ -21,9 +21,9 @@ The concrete decision is:
 > docs migration, CODEOWNERS, branch protection, and explicit operator sign-off
 > are complete.
 
-`agent-olympics` stays private. In plain policy terms, agent-olympics stays private.
-Public A2A may mirror only redacted benchmark
-schemas, fixtures, and publication-gated docs.
+`agent-olympics` is an independent repository and is outside the A2A monorepo
+re-entry scope. The A2A rehearsal must not add an `agent-olympics` package,
+mirror path, import gate, or issue-routing lane.
 
 ## Why This Re-enters The Decision
 
@@ -49,7 +49,7 @@ Those read-only lanes agreed on the same shape:
 | Repo/package layout | `a2a-plane` already has `packages/*`, but those package mirrors are stale compared with the split repos. |
 | GitHub/history/release | Closed issue/PR history should stay in original repos; use `#511` as the finalizer hub; do not bulk-migrate old issues. |
 | CI/tooling | Keep path-filtered per-package jobs, contract/conformance jobs, scanner gates, and split repo CI parity until proven equivalent. |
-| Security/public-private | Do not import `agent-olympics` wholesale into a public monorepo; mirror only redacted benchmark artifacts after scanner gates. |
+| Security/public-private | Keep independent private benchmark repositories out of the public A2A monorepo/package scope. |
 | Operator/developer UX | Use an additive `a2a-monorepo-next` rehearsal. Do not mutate existing local checkouts or flip canonical ownership during planning. |
 
 ## Current Repo Facts
@@ -60,7 +60,6 @@ Those read-only lanes agreed on the same shape:
 | `a2a-broker` | Broker runtime, worker registry, task lifecycle, dispatch/readiness gates, durable evidence. | Import only after history-preserving rehearsal and CI parity. |
 | `a2a-docker-runner` | Isolated execution, checkout hygiene, PR/Done/Block evidence, runner CLI/package. | Preserve approval-gated release/tag workflow and CLI package boundary. |
 | `openclaw-plugin-a2a` | OpenClaw adapter, requester-visible status, diagnostics, ACK boundary. | Preserve plugin manifest packaging and OpenClaw peer boundary. |
-| `agent-olympics` | Private benchmark authority for solo/A2A effectiveness and judging. | Do not full-import; use redacted benchmark mirror only. |
 
 The existing local `a2a-monorepo` checkout is an old `a2a-plane` branch/workspace
 and must not be treated as the new canonical cutover base.
@@ -73,8 +72,6 @@ a2a-plane/
     broker/
     docker-runner/
     openclaw-plugin-a2a/
-  evaluation/
-    agent-olympics-redacted/
   contracts/
   fixtures/
   docs/
@@ -82,10 +79,6 @@ a2a-plane/
   scanner/
   .github/workflows/
 ```
-
-The `evaluation/agent-olympics-redacted` path is optional and must contain only
-allowlisted public-safe benchmark material. It is not a replacement for the
-private `agent-olympics` repository.
 
 ## Gates Before Canonical Flip
 
@@ -98,7 +91,6 @@ private `agent-olympics` repository.
 | CODEOWNERS | Package-level ownership and review routes are defined. | Not started |
 | Branch protection | `a2a-plane/main` protection is reviewed before any canonical flip. | Not started |
 | Release/package policy | npm/GitHub Packages, tags, images, and CLI canonical names are decided. | Not started |
-| Agent Olympics redaction | Public mirror allowlist and scanner evidence exist. | Not started |
 | Final sign-off | Operator approves canonical source flip after all evidence is green. | Not granted |
 
 ## Implementation Phases
@@ -108,7 +100,7 @@ private `agent-olympics` repository.
 - Record this decision in `#511`.
 - Add a fixture/validator that keeps the staged decision from drifting.
 - Open child issues for import rehearsal, CI parity, docs/CODEOWNERS, and
-  redacted benchmark mirror policy.
+  branch protection/release policy.
 - Record the import rehearsal plan in
   [`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) and keep it
   validated by `npm run check:monorepo-import-rehearsal`.
@@ -141,29 +133,15 @@ private `agent-olympics` repository.
 - Keep closed issues and PR history in their original repos.
 - Do not bulk-transfer old closed issues or PRs.
 - Use future labels such as `source:a2a-broker`, `source:a2a-docker-runner`,
-  `source:openclaw-plugin-a2a`, and `source:agent-olympics`.
+  and `source:openclaw-plugin-a2a`.
 - After an approved cutover, route new work to `a2a-plane` and leave old repos
   with README/pinned-issue backlinks.
 
-## Agent Olympics Boundary
+## Out-of-Scope Repositories
 
-`agent-olympics` must not be imported wholesale into a public A2A monorepo.
-
-Allowed mirror candidates:
-
-- public-safe schemas;
-- `fixtures/a2a-effectiveness/**`;
-- redacted A2A benchmark JSONL records;
-- publication-gated public docs.
-
-Never mirror:
-
-- `oracle/**`;
-- hidden judge notes or private answer keys;
-- raw `runs/**`, traces, adapter logs, live baseline packets, node inventory,
-  endpoint identifiers, hostnames, IPs, Telegram/provider identifiers, private
-  absolute paths, sessions, or runtime/bootstrap files;
-- credential values.
+`agent-olympics` is not an A2A implementation repository. Do not track it as an
+A2A package, monorepo import target, public mirror gate, issue-routing label, or
+phase 0/1 blocker in this repository.
 
 ## No-live Safety Boundary
 

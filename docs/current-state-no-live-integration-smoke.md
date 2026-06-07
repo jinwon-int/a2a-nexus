@@ -8,13 +8,12 @@ It is not a live dispatch test. It is a deterministic umbrella packet that prove
 
 The smoke fixture lives at `fixtures/current-state/no-live-integration-smoke.json` and uses schema `a2a.current-state.no-live-integration-smoke.v1`.
 
-It covers five phases:
+It covers four phases:
 
 1. `a2a-broker`: work-mode decision and dispatch gating dry-run.
 2. `a2a-docker-runner`: read-only / no-change evidence classification.
 3. `openclaw-plugin-a2a`: requester-visible status projection from injected broker fixtures.
-4. `agent-olympics`: live-runner boundary fixture validation for benchmark-only evidence.
-5. `a2a-plane`: one finalizer packet that aggregates worker evidence and next actions.
+4. `a2a-plane`: one finalizer packet that aggregates worker evidence and next actions.
 
 The validator is `scripts/check-current-state-no-live-integration-smoke.mjs`.
 
@@ -41,7 +40,9 @@ This smoke does not move implementation authority into `a2a-plane`.
 - `a2a-broker#1318` owns mandatory/durable work-mode decision enforcement.
 - `a2a-docker-runner#358` owns clean-main read-only/no-change evidence smoke.
 - `openclaw-plugin-a2a#457` owns requester-visible status and ACK-boundary fixture coverage.
-- `agent-olympics#205` owns the benchmark record format after the no-live proof path is stable.
+
+`agent-olympics` is independent and is not an A2A no-live smoke lane or A2A
+owning-repo gap.
 
 ## Finalizer Packet
 

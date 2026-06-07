@@ -72,10 +72,9 @@ if (fixture) {
     'broker-work-mode-decision',
     'docker-runner-readonly-nochange',
     'plugin-requester-visible-status',
-    'agent-olympics-live-runner-boundary',
     'single-finalizer-packet',
   ];
-  expect(phases.length === requiredPhaseIds.length, 'fixture: must define exactly five phases');
+  expect(phases.length === requiredPhaseIds.length, 'fixture: must define exactly four phases');
 
   const ids = new Set(phases.map((phase) => phase.id));
   for (const id of requiredPhaseIds) {
@@ -86,7 +85,6 @@ if (fixture) {
     ['broker-work-mode-decision', 'jinwon-int/a2a-broker'],
     ['docker-runner-readonly-nochange', 'jinwon-int/a2a-docker-runner'],
     ['plugin-requester-visible-status', 'jinwon-int/openclaw-plugin-a2a'],
-    ['agent-olympics-live-runner-boundary', 'jinwon-int/agent-olympics'],
     ['single-finalizer-packet', 'jinwon-int/a2a-plane'],
   ]);
 
@@ -113,11 +111,6 @@ if (fixture) {
   expect(plugin?.requiredAssertions?.some((item) => /brokerProtocolProfile/.test(item)), 'plugin phase: must assert brokerProtocolProfile projection');
   expect(plugin?.requiredAssertions?.some((item) => /not terminal ACK/i.test(item)), 'plugin phase: must separate provider accepted from terminal ACK');
   expect(plugin?.requiredAssertions?.some((item) => /do not notify or ACK/i.test(item)), 'plugin phase: must prevent evidence-only notify/ACK');
-
-  const olympics = phases.find((phase) => phase.id === 'agent-olympics-live-runner-boundary');
-  expect(olympics?.requiredAssertions?.some((item) => /blocked-missing-approval/.test(item)), 'Agent Olympics phase: must include blocked-missing-approval');
-  expect(olympics?.requiredAssertions?.some((item) => /mode=dry_run.*transport=stub/.test(item)), 'Agent Olympics phase: must constrain dry-run-ready to stub transport');
-  expect(olympics?.requiredAssertions?.some((item) => /not public A2A release readiness/i.test(item)), 'Agent Olympics phase: must not imply public release readiness');
 
   const finalizer = phases.find((phase) => phase.id === 'single-finalizer-packet');
   expect(finalizer?.requiredAssertions?.some((item) => /one finalizer/i.test(item)), 'finalizer phase: must enforce one finalizer');
@@ -146,10 +139,13 @@ if (fixture) {
     'jinwon-int/a2a-broker',
     'jinwon-int/a2a-docker-runner',
     'jinwon-int/openclaw-plugin-a2a',
-    'jinwon-int/agent-olympics',
   ]) {
     expect(gapRepos.has(repo), `fixture: missing owning repo gap for ${repo}`);
   }
+  expect(!gapRepos.has('jinwon-int/agent-olympics'), 'fixture: agent-olympics must not be an A2A owning-repo gap');
+
+  const outOfScopeRepos = new Set((fixture.outOfScopeRepos || []).map((repo) => repo.repo));
+  expect(outOfScopeRepos.has('jinwon-int/agent-olympics'), 'fixture: agent-olympics must be marked out of scope');
 }
 
 if (doc) {
