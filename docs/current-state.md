@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-08
-> **Active coordination:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
-> **Status:** public alpha, monorepo phase-6 branch protection approval packet active after #542 merged the canonical-flip readiness gate; `#506` source/no-live validation wave completed.
+> **Active coordination:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Status:** public alpha, monorepo phase-7 split-repo disposition and rollback owner packet active after #544 merged the branch protection approval packet; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,12 +10,12 @@ topology gates.
 
 ## Current Active Work
 
-The active A2A coordination work is the monorepo phase-6 branch protection
-approval packet and required-checks dry-run:
+The active A2A coordination work is the monorepo phase-7 split-repo
+disposition and rollback owner packet:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543) | `a2a-plane` | Record read-only branch protection/ruleset posture, required-check candidates, and approval text shape before any GitHub settings change or canonical flip. |
+| [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545) | `a2a-plane` | Record split-repo disposition options, rollback owner fields, and accepted-risk register entries before any split repo disposition change or canonical flip. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -48,6 +48,7 @@ Completed current-state and monorepo groundwork:
 | [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) | `a2a-plane` | Closed: package CI parity jobs wired into GitHub Actions and root release gate. |
 | [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538) | `a2a-plane` | Closed: phase-4 fresh tracked-tree import candidate under package CI parity jobs. |
 | [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541) | `a2a-plane` | Closed: phase-5 canonical-flip readiness packet and provenance gate. |
+| [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543) | `a2a-plane` | Closed: phase-6 branch protection approval packet and required-checks dry-run. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -98,6 +99,14 @@ and validated by `scripts/check-monorepo-branch-protection-approval-packet.mjs`.
 It records the live read-only finding that `a2a-plane/main` is not branch
 protected and has no rulesets, then proposes required-check and review decision
 fields without applying any GitHub settings.
+
+The `#545` phase-7 split-repo disposition and rollback owner packet is
+documented in
+[`docs/monorepo-split-repo-disposition-rollback.md`](monorepo-split-repo-disposition-rollback.md)
+and validated by `scripts/check-monorepo-split-repo-disposition-rollback.mjs`.
+It keeps the split implementation repos canonical while recording active,
+mirrored, read-only, and archive/redirect options plus rollback owner fields
+for before-flip and after-flip scenarios.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),

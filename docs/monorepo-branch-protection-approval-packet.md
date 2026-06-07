@@ -5,6 +5,7 @@
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
 > **Phase-5 PR:** [a2a-plane#542](https://github.com/jinwon-int/a2a-plane/pull/542)
 > **Phase-6 approval packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
+> **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
 > **Status:** approval packet only; GitHub settings changes are still `NO_GO / Waiting`.
 
 ## Summary
@@ -85,6 +86,10 @@ release, deploy, provider send, or credential work. It should name:
 
 Generic phrases such as "continue", "looks good", or green CI are not branch
 protection approval.
+
+Follow-up `a2a-plane#545` records the split-repo disposition and rollback owner
+packet required before a canonical flip. This branch protection packet does not
+settle split-repo disposition.
 
 ## Rollback / No-op Path
 

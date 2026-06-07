@@ -6,6 +6,7 @@
 > **Phase-4 PR:** [a2a-plane#540](https://github.com/jinwon-int/a2a-plane/pull/540)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
 > **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
+> **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
 > **Status:** readiness packet only; canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -107,6 +108,11 @@ accepted as risk in a separate operator approval:
 Follow-up `a2a-plane#543` records the branch protection approval packet and
 required-checks dry-run. It does not apply branch protection or rulesets; it
 keeps the canonical flip at `NO_GO / Waiting`.
+
+Follow-up `a2a-plane#545` records the split-repo disposition and rollback owner
+packet. It does not archive, redirect, or make any split repository read-only;
+split repos remain canonical while rollback owner and accepted-risk fields are
+still undecided.
 
 ## GO / NO-GO Fields
 

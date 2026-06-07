@@ -10,7 +10,8 @@
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
 > **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
-> **Status:** phase-4 fresh prefix import candidate merged through #540; split repo CI remains canonical until phase-6 branch protection approval evidence and a separate canonical-flip approval exist.
+> **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repo CI remains canonical until split-repo disposition, rollback ownership, settings, and canonical-flip approvals exist.
 
 ## Summary
 
@@ -30,6 +31,8 @@ The result is intentionally conservative:
   GO/NO-GO gates before any ownership transfer.
 - The `#543` branch protection approval packet records the required-check
   proposal and read-only GitHub settings posture before any settings change.
+- The `#545` split-repo disposition packet records repository disposition
+  options and rollback owner fields before any ownership transfer.
 - Even when package parity is green, canonical flip remains blocked until a
   separate operator decision records that split-repo implementation truth can
   move.
@@ -185,6 +188,19 @@ The packet proposes required root checks (`paths-filter`, `setup`, `layout`,
 `docker-runner`, and `plugin`). It does not apply the protection. The decision
 remains `NO_GO / Waiting` until a separate explicit operator approval names the
 settings action and scope.
+
+## Phase-7 Split-repo Disposition And Rollback Owner Packet (#545)
+
+The phase-7 disposition packet is documented in
+[`docs/monorepo-split-repo-disposition-rollback.md`](monorepo-split-repo-disposition-rollback.md)
+and validated by `scripts/check-monorepo-split-repo-disposition-rollback.mjs`.
+It records `active_canonical`, `active_mirrored`, `read_only_archive`, and
+`archived_redirect` as disposition options, but approves none of them.
+
+The current default remains `active_canonical` for `a2a-broker`,
+`a2a-docker-runner`, and `openclaw-plugin-a2a`. The packet also records that
+post-flip rollback ownership remains unassigned, so the canonical flip decision
+stays `NO_GO / Waiting`.
 
 ## Canonical Flip Gate
 

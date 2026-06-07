@@ -10,7 +10,8 @@
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
 > **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
-> **Status:** phase-4 fresh prefix import candidate merged through #540; split repos remain canonical until branch protection/ruleset approval and separate canonical-flip approval.
+> **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Status:** phase-4 fresh prefix import candidate merged through #540; split repos remain canonical until split-repo disposition, rollback owner, branch protection/ruleset, and canonical-flip approvals exist.
 
 ## Summary
 
@@ -176,6 +177,13 @@ rulesets, while `#542` proved the latest monorepo readiness packet under green
 CI. The packet proposes required-check and review fields but does not apply
 settings. Split repos remain canonical until settings and canonical-flip
 approvals are both explicit and separate.
+
+## Phase-7 Split-repo Disposition And Rollback Owner Packet (#545)
+
+The phase-7 packet records the repo-disposition gate left by the tracked-tree
+import mode. The split repos remain active canonical provenance stores by
+default. Any mirrored, read-only, or archive/redirect state requires a separate
+operator decision, and post-flip rollback ownership remains unassigned.
 
 ## Rehearsal Strategy
 
