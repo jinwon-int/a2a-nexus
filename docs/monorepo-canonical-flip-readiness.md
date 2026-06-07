@@ -7,6 +7,7 @@
 > **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
 > **Phase-6 branch protection packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
+> **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
 > **Status:** readiness packet only; canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -113,6 +114,11 @@ Follow-up `a2a-plane#545` records the split-repo disposition and rollback owner
 packet. It does not archive, redirect, or make any split repository read-only;
 split repos remain canonical while rollback owner and accepted-risk fields are
 still undecided.
+
+Follow-up `a2a-plane#547` records the release/package/tag approval packet and
+dry-run inventory. It does not create release tags, GitHub Releases, npm
+packages, Docker/GHCR images, or package ownership changes; release/package/tag
+execution remains `NO_GO / Waiting`.
 
 ## GO / NO-GO Fields
 

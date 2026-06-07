@@ -71,6 +71,14 @@ Future release/package approval must be separate from branch protection
 approval. A valid approval must name the package or image, version, registry,
 tag strategy, dry-run evidence, and rollback/disposition path.
 
+The phase-8 release/package/tag approval packet is tracked in
+[`a2a-plane#547`](https://github.com/jinwon-int/a2a-plane/issues/547) and
+documented in
+[`docs/monorepo-release-package-tag-approval-packet.md`](../monorepo-release-package-tag-approval-packet.md).
+It records the package metadata and approval fields only; it does not create
+tags, GitHub Releases, npm packages, Docker images, or package ownership
+changes.
+
 ## Canonical Flip Gate
 
 The canonical flip gate remains closed.

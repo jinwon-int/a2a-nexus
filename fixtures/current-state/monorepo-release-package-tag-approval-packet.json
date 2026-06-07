@@ -1,0 +1,118 @@
+{
+  "schema": "a2a.monorepo-release-package-tag-approval-packet.v1",
+  "snapshotDate": "2026-06-08",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "phase7DispositionPr": "https://github.com/jinwon-int/a2a-plane/pull/546",
+  "phase8ReleasePacketIssue": "https://github.com/jinwon-int/a2a-plane/issues/547",
+  "phase7MergeCommit": "03cb496a145c130186f6d08a3fd9fd12dc04ef31",
+  "releaseTagDecision": "NO_GO_WAITING",
+  "githubReleaseDecision": "NO_GO_WAITING",
+  "npmPublishDecision": "NO_GO_WAITING",
+  "dockerPublishDecision": "NO_GO_WAITING",
+  "packageOwnershipDecision": "NO_GO_WAITING",
+  "canonicalFlipDecision": "NO_GO_WAITING",
+  "historicalTagPreserved": "source-public-20260511",
+  "candidatePackages": [
+    {
+      "surface": "broker",
+      "path": "packages/broker",
+      "packageName": "a2a-broker",
+      "version": "0.1.0",
+      "private": true,
+      "binNames": [],
+      "candidatePublishSurface": "private_workspace_no_npm_publish",
+      "dockerAssets": [
+        "packages/broker/Dockerfile",
+        "packages/broker/docker-compose.yml"
+      ],
+      "dryRunCommand": "npm --workspace packages/broker run build"
+    },
+    {
+      "surface": "docker-runner",
+      "path": "packages/docker-runner",
+      "packageName": "@openclaw/a2a-docker-runner",
+      "version": "0.1.0",
+      "private": false,
+      "binNames": [
+        "a2a-docker-runner"
+      ],
+      "candidatePublishSurface": "npm_package_no_publish_approved",
+      "dockerAssets": [],
+      "dryRunCommand": "npm --workspace packages/docker-runner run verify:package"
+    },
+    {
+      "surface": "openclaw-plugin-a2a",
+      "path": "packages/openclaw-plugin-a2a",
+      "packageName": "openclaw-plugin-a2a",
+      "version": "0.1.0",
+      "private": true,
+      "binNames": [
+        "a2a-terminal-brief-hermes-gongyung",
+        "a2a-terminal-brief-openclaw-message",
+        "a2a-terminal-brief-sidecar"
+      ],
+      "candidatePublishSurface": "private_plugin_metadata_no_npm_publish",
+      "dockerAssets": [],
+      "dryRunCommand": "npm --workspace packages/openclaw-plugin-a2a run prepack"
+    }
+  ],
+  "approvalFields": {
+    "tagName": "unassigned",
+    "tagTarget": "unassigned",
+    "tagSigningPolicy": "unassigned",
+    "githubReleaseRepository": "unassigned",
+    "githubReleaseMode": "unassigned",
+    "npmRegistry": "unassigned",
+    "npmAccess": "unassigned",
+    "npmDistTag": "unassigned",
+    "npmTokenOwner": "unassigned",
+    "dockerRegistry": "unassigned",
+    "dockerImageTags": "unassigned",
+    "artifactProvenance": "unassigned",
+    "packageOwnershipOwner": "unassigned",
+    "rollbackOwner": "unassigned"
+  },
+  "goNoGoFields": {
+    "packageInventoryRecorded": true,
+    "approvalFieldsRecorded": true,
+    "dryRunCommandsRecorded": true,
+    "tagApproved": false,
+    "githubReleaseApproved": false,
+    "npmPublishApproved": false,
+    "dockerPublishApproved": false,
+    "packageOwnershipTransferApproved": false,
+    "rollbackOwnerAssigned": false,
+    "canonicalFlipApproved": false,
+    "decision": "NO_GO_WAITING"
+  },
+  "boundaries": {
+    "releaseTag": false,
+    "tagMovement": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "ghcrPublish": false,
+    "packageOwnershipTransfer": false,
+    "canonicalFlip": false,
+    "splitRepoArchive": false,
+    "splitRepoReadOnly": false,
+    "splitRepoRedirect": false,
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "permissionChange": false,
+    "codeownersEnforcementChange": false,
+    "repoVisibilityChange": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "historicalReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "forcePush": false,
+    "historyRewrite": false,
+    "workerOwnedGithubMutation": false
+  }
+}
