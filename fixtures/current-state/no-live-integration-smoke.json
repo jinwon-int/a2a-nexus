@@ -4,7 +4,7 @@
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/506",
   "trackingIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
   "snapshotDate": "2026-06-07",
-  "description": "Umbrella fixture for the #506 current-state wave. It proves the intended broker, runner, plugin, Agent Olympics, and finalizer boundaries through injected source fixtures only.",
+  "description": "Umbrella fixture for the #506 current-state wave. It proves the intended broker, runner, plugin, and finalizer boundaries through injected source fixtures only.",
   "sourceOnly": true,
   "finalizerRequired": true,
   "route": {
@@ -62,20 +62,6 @@
       "expectedOutput": "requester-visible no-live status projection"
     },
     {
-      "id": "agent-olympics-live-runner-boundary",
-      "ownerRepo": "jinwon-int/agent-olympics",
-      "childIssue": "https://github.com/jinwon-int/agent-olympics/issues/205",
-      "inputKind": "source-fixture-boundary-validation",
-      "requiredAssertions": [
-        "blocked-missing-approval remains blocked",
-        "dry-run-ready is ready only with mode=dry_run and transport=stub",
-        "private benchmark evidence is not public A2A release readiness",
-        "no credential-bearing live A2A dispatch approval is implied"
-      ],
-      "liveCallsAllowed": false,
-      "expectedOutput": "boundary fixture verdict for benchmark-only evidence"
-    },
-    {
       "id": "single-finalizer-packet",
       "ownerRepo": "jinwon-int/a2a-plane",
       "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
@@ -105,11 +91,12 @@
       "repo": "jinwon-int/openclaw-plugin-a2a",
       "issue": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457",
       "gap": "Requester-visible status projection needs a no-live fixture tied to broker evidence hints."
-    },
+    }
+  ],
+  "outOfScopeRepos": [
     {
       "repo": "jinwon-int/agent-olympics",
-      "issue": "https://github.com/jinwon-int/agent-olympics/issues/205",
-      "gap": "Benchmark record format should score solo versus A2A effectiveness after the no-live proof path is stable."
+      "reason": "independent repository; not an A2A no-live smoke lane or A2A owning-repo gap"
     }
   ],
   "boundary": {

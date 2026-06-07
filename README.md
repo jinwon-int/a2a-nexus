@@ -8,7 +8,7 @@ The current public source layout remains split across four repositories. Per the
 
 Start here:
 
-- [A2A current state](docs/current-state.md) - active #514-#517 monorepo phase 0 backlog, a2a-broker #1320/#1321 mode research, completed #506/#511/#513 groundwork, ownership boundaries, and checkout hygiene.
+- [A2A current state](docs/current-state.md) - active #514/#515/#517 monorepo phase 0 backlog, a2a-broker #1320/#1321 mode research, completed #506/#511/#513 groundwork, ownership boundaries, and checkout hygiene.
 - [A2A monorepo re-entry decision](docs/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
 - [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
@@ -28,7 +28,6 @@ Current active coordination:
 
 - [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
 - [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
-- [a2a-plane#516](https://github.com/jinwon-int/a2a-plane/issues/516) — Agent Olympics redacted benchmark mirror gate.
 - [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
 - [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) — A2A hybrid worker mode research.
 - [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) — adaptive workMode selector design.
@@ -112,7 +111,6 @@ Current public umbrella trackers:
 
 - [#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
 - [#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
-- [#516](https://github.com/jinwon-int/a2a-plane/issues/516) — Agent Olympics redacted benchmark mirror gate.
 - [#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
 
 Historical completed trackers:

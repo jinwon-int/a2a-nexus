@@ -1,7 +1,7 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active coordination:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#516](https://github.com/jinwon-int/a2a-plane/issues/516), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
+> **Active coordination:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
 > **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
@@ -16,7 +16,6 @@ The active A2A coordination work is:
 | --- | --- | --- |
 | [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Prove monorepo CI parity and package boundary matrix. |
 | [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) | `a2a-plane` | Draft monorepo docs, CODEOWNERS, and issue-routing policy. |
-| [a2a-plane#516](https://github.com/jinwon-int/a2a-plane/issues/516) | `a2a-plane` | Define Agent Olympics redacted benchmark mirror gate. |
 | [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
 | [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
 | [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
@@ -37,7 +36,6 @@ Completed current-state and monorepo groundwork:
 | [a2a-broker#1318](https://github.com/jinwon-int/a2a-broker/issues/1318) | `a2a-broker` | Closed: work-mode decision evidence across Team1/hybrid dispatch paths. |
 | [a2a-docker-runner#358](https://github.com/jinwon-int/a2a-docker-runner/issues/358) | `a2a-docker-runner` | Closed: read-only/no-change evidence on clean `main`. |
 | [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
-| [agent-olympics#205](https://github.com/jinwon-int/agent-olympics/issues/205) | `agent-olympics` | Closed: A2A effectiveness benchmark record format. |
 | [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) | `a2a-plane` | Closed: monorepo re-entry decision, staged umbrella rehearsal first. |
 | [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
 
@@ -70,7 +68,10 @@ These issues are completed and should not be treated as active blockers:
 | `a2a-broker` | Task lifecycle, worker registry/capacity, dispatch/readiness gates, work-mode decision enforcement, durable task/run records, evidence contract, stale/cancel/reconcile semantics. | Container execution, OpenClaw UX, benchmark scoring. |
 | `a2a-docker-runner` | Isolated execution, repo checkout hygiene, PR/Done/Block evidence, `readOnlyValidation` / `allowNoChanges`, artifact manifests, runner chaos/smoke reliability. | Routing decisions, task lifecycle authority, finalizer decisions. |
 | `openclaw-plugin-a2a` | OpenClaw adapter boundary: request/status/cancel mapping, operator-visible status, diagnostics, broker profile projection, provider-accepted-not-ACK policy. | Broker state machine, Docker execution, repo topology. |
-| `agent-olympics` | Neutral benchmark format: solo vs A2A result packets, judging dimensions, evidence/latency/cost/rework metrics, seed benchmark records. | A2A runtime, dispatch transport, live runner approval. |
+
+`agent-olympics` is an independent repository and is intentionally outside the
+A2A current-state backlog, package map, monorepo rehearsal, and issue routing
+scope.
 
 ## Checkout Hygiene
 

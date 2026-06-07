@@ -76,7 +76,6 @@ if (fixture) {
     'packages/broker',
     'packages/docker-runner',
     'packages/openclaw-plugin-a2a',
-    'evaluation/agent-olympics-redacted',
     'contracts',
     'fixtures',
     'docs',
@@ -93,13 +92,14 @@ if (fixture) {
     'jinwon-int/a2a-broker',
     'jinwon-int/a2a-docker-runner',
     'jinwon-int/openclaw-plugin-a2a',
-    'jinwon-int/agent-olympics',
   ]) {
     expect(repos.has(repo), `fixture: missing repo ${repo}`);
     expect(repos.get(repo)?.canonicalNow === true, `fixture: ${repo} must remain canonical now`);
   }
-  expect(repos.get('jinwon-int/agent-olympics')?.visibility === 'private', 'fixture: agent-olympics must stay private');
-  expect(repos.get('jinwon-int/agent-olympics')?.fullImportAllowed === false, 'fixture: agent-olympics full import must be forbidden');
+  expect(!repos.has('jinwon-int/agent-olympics'), 'fixture: agent-olympics must not be an A2A repo/package');
+
+  const outOfScopeRepos = new Set((fixture.outOfScopeRepos || []).map((repo) => repo.repo));
+  expect(outOfScopeRepos.has('jinwon-int/agent-olympics'), 'fixture: agent-olympics must be marked out of scope');
 
   const gates = new Set(fixture.requiredGatesBeforeCanonicalFlip || []);
   for (const gate of [
@@ -109,7 +109,6 @@ if (fixture) {
     'codeowners',
     'a2a_plane_branch_protection_review',
     'release_package_policy',
-    'agent_olympics_redaction_gate',
     'operator_final_signoff',
   ]) {
     expect(gates.has(gate), `fixture: missing gate ${gate}`);
@@ -119,14 +118,6 @@ if (fixture) {
     if (phase.phase !== 'phase3_canonical_flip_decision') {
       expect(phase.canonicalFlip === false, `fixture: ${phase.phase} must not flip canonical source`);
     }
-  }
-
-  const mirror = fixture.agentOlympicsMirrorPolicy || {};
-  expect(mirror.fullImportAllowed === false, 'fixture: Agent Olympics full import must be false');
-  expect(mirror.historyImportAllowed === false, 'fixture: Agent Olympics history import must be false');
-  expect(mirror.scannerGateRequired === true, 'fixture: Agent Olympics scanner gate is required');
-  for (const forbidden of ['oracle', 'credential values', 'runtime/bootstrap files']) {
-    expect((mirror.forbiddenPaths || []).includes(forbidden), `fixture: Agent Olympics forbidden path missing ${forbidden}`);
   }
 
   for (const [key, value] of Object.entries(fixture.boundaries || {})) {
@@ -139,7 +130,7 @@ if (doc) {
     'staged umbrella workspace',
     'not an immediate canonical monorepo flip',
     'split implementation repos remain canonical',
-    'agent-olympics stays private',
+    'outside the A2A monorepo',
     'Codex Read-Only Cross-Check Evidence',
     'not be counted as Team1/Team2 benchmark evidence',
     'history-preserving',
@@ -157,7 +148,6 @@ if (doc) {
 if (currentState) {
   expect(/#514/.test(currentState), 'current-state doc: must reference #514');
   expect(/#515/.test(currentState), 'current-state doc: must reference #515');
-  expect(/#516/.test(currentState), 'current-state doc: must reference #516');
   expect(/#517/.test(currentState), 'current-state doc: must reference #517');
   expect(/a2a-broker#1320/.test(currentState), 'current-state doc: must reference a2a-broker#1320');
   expect(/a2a-broker#1321/.test(currentState), 'current-state doc: must reference a2a-broker#1321');
