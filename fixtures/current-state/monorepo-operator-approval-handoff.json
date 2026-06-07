@@ -1,0 +1,98 @@
+{
+  "schema": "a2a.monorepo-operator-approval-handoff.v1",
+  "snapshotDate": "2026-06-08",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "phase9FinalSignoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/549",
+  "phase9FinalSignoffPr": "https://github.com/jinwon-int/a2a-plane/pull/550",
+  "phase9MergeCommit": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
+  "phase10OperatorHandoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/551",
+  "latestGreenCiRun": "https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372",
+  "operatorHandoffDecision": "NO_GO_WAITING",
+  "operatorResponse": {
+    "status": "UNANSWERED",
+    "humanOperatorOwner": "unassigned",
+    "rollbackOwner": "unassigned",
+    "targetCommit": "unassigned",
+    "acceptedRiskRegister": "unanswered",
+    "approvalSeparatedFromExecution": false
+  },
+  "questions": [
+    {
+      "area": "branch_protection_or_ruleset",
+      "sourceEvidence": "docs/monorepo-branch-protection-approval-packet.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "split_repo_disposition",
+      "sourceEvidence": "docs/monorepo-split-repo-disposition-rollback.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "release_tag_and_github_release",
+      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "npm_publish",
+      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "docker_ghcr_publish",
+      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "package_ownership_transfer",
+      "sourceEvidence": "docs/monorepo-canonical-flip-readiness.md",
+      "defaultDecision": "HOLD"
+    },
+    {
+      "area": "canonical_flip",
+      "sourceEvidence": "docs/monorepo-final-operator-signoff-matrix.md",
+      "defaultDecision": "HOLD"
+    }
+  ],
+  "approvalPreconditions": [
+    "human_operator_owner_named",
+    "rollback_owner_named",
+    "exact_target_named",
+    "latest_green_ci_run_recorded",
+    "branch_protection_posture_recorded",
+    "split_repo_disposition_recorded",
+    "package_ownership_transfer_policy_recorded",
+    "release_package_tag_policy_recorded",
+    "accepted_risks_recorded",
+    "approval_separate_from_execution"
+  ],
+  "boundaries": {
+    "canonicalFlip": false,
+    "packageOwnershipTransfer": false,
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "permissionChange": false,
+    "codeownersEnforcementChange": false,
+    "splitRepoArchive": false,
+    "splitRepoReadOnly": false,
+    "splitRepoRedirect": false,
+    "releaseTag": false,
+    "tagMovement": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "ghcrPublish": false,
+    "repoVisibilityChange": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "historicalReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "forcePush": false,
+    "historyRewrite": false,
+    "workerOwnedGithubMutation": false
+  }
+}

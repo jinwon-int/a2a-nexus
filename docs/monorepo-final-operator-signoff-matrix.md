@@ -6,6 +6,7 @@
 > **Phase-7 split-repo disposition packet:** [a2a-plane#546](https://github.com/jinwon-int/a2a-plane/pull/546)
 > **Phase-8 release/package/tag packet:** [a2a-plane#548](https://github.com/jinwon-int/a2a-plane/pull/548)
 > **Phase-9 final sign-off issue:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
+> **Phase-10 operator handoff issue:** [a2a-plane#551](https://github.com/jinwon-int/a2a-plane/issues/551)
 > **Status:** final operator matrix only; canonical flip, package ownership transfer, release, tag, publish, settings changes, and split-repo disposition execution remain `NO_GO / Waiting`.
 
 ## Summary
@@ -88,6 +89,10 @@ A future execution packet must name the human operator owner, exact execution
 surface, target SHA/tag/package/image/release, latest green CI run, rollback
 owner, abort conditions, and accepted risks. It must be separate from this
 source-only matrix.
+
+Follow-up `a2a-plane#551` records the operator approval handoff packet. It is
+still source-only and leaves the operator response `UNANSWERED` with every
+execution-sensitive action at `NO_GO / Waiting`.
 
 ## No-live Boundary
 

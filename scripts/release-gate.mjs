@@ -25,6 +25,7 @@ const steps = [
   ['monorepo-split-repo-disposition-rollback', 'npm', ['run', 'check:monorepo-split-repo-disposition-rollback']],
   ['monorepo-release-package-tag-approval', 'npm', ['run', 'check:monorepo-release-package-tag-approval']],
   ['monorepo-final-operator-signoff', 'npm', ['run', 'check:monorepo-final-operator-signoff']],
+  ['monorepo-operator-approval-handoff', 'npm', ['run', 'check:monorepo-operator-approval-handoff']],
   ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
 ];
