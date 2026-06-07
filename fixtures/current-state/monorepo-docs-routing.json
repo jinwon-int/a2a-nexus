@@ -1,0 +1,52 @@
+{
+  "schema": "a2a.monorepo-docs-routing.v1",
+  "snapshotDate": "2026-06-07",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/515",
+  "decision": "draft_docs_codeowners_issue_routing_without_canonical_flip",
+  "canonicalUntilExplicitSignoff": "split_repos",
+  "canonicalFlipApproved": false,
+  "docs": [
+    "docs/migration.md",
+    "docs/operators.md",
+    "docs/developers.md",
+    "docs/issue-routing.md",
+    ".github/CODEOWNERS"
+  ],
+  "sourceLabels": [
+    "source:a2a-plane",
+    "source:a2a-broker",
+    "source:a2a-docker-runner",
+    "source:openclaw-plugin-a2a"
+  ],
+  "forbiddenSourceLabels": [
+    "source:agent-olympics"
+  ],
+  "codeownersDraftOnly": true,
+  "finalizerAuthorityMovesToWorkers": false,
+  "closedIssuePrTransfer": false,
+  "backlinkPolicy": "future_flip_only_keep_closed_history_in_original_repos",
+  "agentOlympicsBoundary": "independent_repository_not_a2a_package_import_target_source_label_or_issue_routing_lane",
+  "boundaries": {
+    "oldIssuePrTransfer": false,
+    "repositoryArchive": false,
+    "visibilityChange": false,
+    "canonicalFlip": false,
+    "branchProtectionChange": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "historyRewrite": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}
