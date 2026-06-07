@@ -1,7 +1,7 @@
 # A2A Monorepo Re-entry Decision
 
 > **Decision date:** 2026-06-07
-> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), and [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
+> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#515](https://github.com/jinwon-int/a2a-plane/issues/515) and [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
 > **Decision:** proceed with a staged umbrella workspace rehearsal, not an immediate canonical monorepo flip.
 
 ## Summary
@@ -86,7 +86,7 @@ a2a-plane/
 | --- | --- | --- |
 | Operator re-entry | Explicit operator request to revisit monorepo after `#506`. | Green |
 | Import rehearsal | Disposable history-preserving import from clean upstream refs into prefixed paths. | Not started |
-| CI parity | Monorepo package jobs match or exceed split repo build/test/scanner coverage. | Not started |
+| CI parity | Monorepo package jobs match or exceed split repo build/test/scanner coverage. | Matrix recorded by `#514`; Not green |
 | Docs migration | README, current-state, developer, operator, migration, and backlink docs explain canonical state. | Not started |
 | CODEOWNERS | Package-level ownership and review routes are defined. | Not started |
 | Branch protection | `a2a-plane/main` protection is reviewed before any canonical flip. | Not started |
@@ -104,6 +104,10 @@ a2a-plane/
 - Record the import rehearsal plan in
   [`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) and keep it
   validated by `npm run check:monorepo-import-rehearsal`.
+- Record the CI parity matrix in
+  [`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md) and keep it
+  validated by `npm run check:monorepo-ci-parity`. Not green means split repo CI
+  remains canonical.
 - Keep all implementation repos canonical.
 
 ### Phase 1: Disposable Rehearsal

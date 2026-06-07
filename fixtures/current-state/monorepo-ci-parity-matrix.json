@@ -1,0 +1,220 @@
+{
+  "schema": "a2a.monorepo-ci-parity-matrix.v1",
+  "snapshotDate": "2026-06-07",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/514",
+  "decision": "record_ci_parity_matrix_without_canonical_flip",
+  "canonicalUntilParityGreen": "split_repos",
+  "canonicalFlipApproved": false,
+  "sourceRepos": [
+    {
+      "surface": "broker",
+      "sourceRepo": "jinwon-int/a2a-broker",
+      "sourceMain": "fae438a4fba301c2a9a02ca7cb11282867327920",
+      "targetPath": "packages/broker",
+      "sourceWorkflow": {
+        "path": ".github/workflows/ci.yml",
+        "actions": [
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci",
+          "npm test"
+        ]
+      },
+      "sourcePackageScripts": {
+        "build": "tsc -p tsconfig.json && node scripts/generate-build-info.mjs",
+        "test": "npm run build && node --check scripts/team1-dispatch-wrapper.mjs && node --check scripts/a2a-dispatch-helper.mjs && node --check scripts/cross-broker-terminal-brief-receiver.mjs && node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js"
+      },
+      "planeJob": {
+        "name": "broker",
+        "actions": [
+          "actions/checkout@v4",
+          "actions/setup-node@v4"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci --ignore-scripts --include=dev",
+          "npm run check -w packages/broker",
+          "npm run scan:public-readiness"
+        ]
+      },
+      "parityStatus": "not_green_for_canonical_flip",
+      "requiredBeforeAuthoritative": [
+        "fresh_prefix_import_from_source_main",
+        "preserve_build_info_generation",
+        "prove_script_syntax_checks_and_test_globs",
+        "decide_actions_v4_v5_policy",
+        "compare_npm_ci_lifecycle_behavior"
+      ],
+      "knownDifferences": [
+        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+        "source_build_generates_build_info_plane_mirror_does_not",
+        "source_test_runs_script_syntax_checks_plane_mirror_test_is_narrower",
+        "plane_adds_root_public_readiness_scan"
+      ]
+    },
+    {
+      "surface": "docker-runner",
+      "sourceRepo": "jinwon-int/a2a-docker-runner",
+      "sourceMain": "dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe",
+      "targetPath": "packages/docker-runner",
+      "sourceWorkflow": {
+        "path": ".github/workflows/ci.yml",
+        "releaseGatePath": ".github/workflows/release-gate.yml",
+        "actions": [
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci",
+          "npm run check",
+          "npm run build",
+          "npm run lint",
+          "npm test",
+          "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir ."
+        ],
+        "releaseGateCommands": [
+          "npm ci",
+          "npm run check",
+          "npm run build",
+          "npm run lint",
+          "npm test",
+          "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .",
+          "npm run chaos:e2e",
+          "node scripts/tag-release-candidate.mjs --version <version> --dry-run"
+        ]
+      },
+      "sourcePackageScripts": {
+        "check": "tsc -p tsconfig.json --noEmit",
+        "build": "tsc -p tsconfig.json",
+        "lint": "node --check dist/cli.js && node --check scripts/chaos-e2e-gate.mjs && node --check scripts/telegram-terminal-notification-smoke.mjs && node --check scripts/terminal-brief-receipt-r4-smoke.mjs && node --check scripts/rollout-receipt-evidence-guard.mjs && node --check scripts/public-demo-safety-audit.mjs && node --check scripts/pre-pr-bootstrap-guard.mjs && node --check scripts/release-candidate-parity-audit.mjs && node --check scripts/runner-canary-parity-smoke.mjs && node --check scripts/runner-canary-recovery-audit-smoke.mjs",
+        "smoke:conformance": "npm run check && npm run build && npm run lint && npm test && node scripts/pre-pr-bootstrap-guard.mjs --repo-dir . && npm run audit:release-candidate && npm run chaos:e2e && node --test dist/canary.test.js && node dist/cli.js --help"
+      },
+      "planeJob": {
+        "name": "docker-runner",
+        "actions": [
+          "actions/checkout@v4",
+          "actions/setup-node@v4"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci --ignore-scripts --include=dev",
+          "npm run check",
+          "npm run scan:public-readiness"
+        ]
+      },
+      "parityStatus": "not_green_for_canonical_flip",
+      "requiredBeforeAuthoritative": [
+        "fresh_prefix_import_from_source_main",
+        "preserve_cli_package_files_and_bin",
+        "add_build_lint_test_pre_pr_bootstrap_parity",
+        "model_release_gate_dry_run_without_publish",
+        "decide_artifact_and_tag_policy"
+      ],
+      "knownDifferences": [
+        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+        "source_ci_runs_check_build_lint_test_pre_pr_guard_plane_job_runs_check_only",
+        "source_release_gate_has_chaos_e2e_and_release_candidate_dry_run_plane_job_does_not",
+        "source_package_has_files_and_license_metadata_plane_mirror_is_stale",
+        "plane_adds_root_public_readiness_scan"
+      ]
+    },
+    {
+      "surface": "openclaw-plugin-a2a",
+      "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+      "sourceMain": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+      "targetPath": "packages/openclaw-plugin-a2a",
+      "sourceWorkflow": {
+        "path": ".github/workflows/ci.yml",
+        "actions": [
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci",
+          "npm run scan:public-readiness",
+          "npm run smoke:a2a-conformance",
+          "npm test"
+        ]
+      },
+      "sourcePackageScripts": {
+        "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json && cp openclaw.plugin.json dist/openclaw.plugin.json",
+        "smoke:a2a-conformance": "scripts/smoke-a2a-conformance.sh",
+        "scan:public-readiness": "scripts/scan-public-readiness.sh",
+        "prepack": "npm run scan:public-readiness && npm run build"
+      },
+      "planeJob": {
+        "name": "plugin",
+        "actions": [
+          "actions/checkout@v4",
+          "actions/setup-node@v4"
+        ],
+        "node": "22",
+        "commands": [
+          "npm ci --ignore-scripts --include=dev",
+          "npm run check -w packages/openclaw-plugin-a2a",
+          "npm run scan:public-readiness"
+        ]
+      },
+      "parityStatus": "not_green_for_canonical_flip",
+      "requiredBeforeAuthoritative": [
+        "fresh_prefix_import_from_source_main",
+        "preserve_openclaw_peer_boundary",
+        "preserve_manifest_copy_and_prepack_behavior",
+        "add_plugin_local_public_scan_and_a2a_conformance_smoke",
+        "verify_files_bin_exports"
+      ],
+      "knownDifferences": [
+        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+        "source_runs_plugin_local_public_scan_plane_runs_root_scan",
+        "source_runs_a2a_conformance_smoke_plane_mirror_does_not",
+        "source_package_has_bin_and_new_docs_files_plane_mirror_is_stale"
+      ]
+    }
+  ],
+  "sharedUmbrellaGates": [
+    "path_filtered_package_jobs",
+    "test:conformance",
+    "scan:external-secrets",
+    "scan:readiness-gates",
+    "check:compatibility-baselines",
+    "check:repo-protection-baseline",
+    "check:monorepo-reentry",
+    "check:monorepo-import-rehearsal",
+    "check:monorepo-ci-parity"
+  ],
+  "outOfScopeRepos": [
+    {
+      "repo": "jinwon-int/agent-olympics",
+      "reason": "independent_repository_not_a2a_ci_parity_package_boundary_or_issue_routing_input"
+    }
+  ],
+  "boundaries": {
+    "repositoryImportToMain": false,
+    "historyRewrite": false,
+    "canonicalFlip": false,
+    "branchProtectionChange": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "visibilityChange": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}
