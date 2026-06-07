@@ -68,7 +68,7 @@ if (fixture) {
 
   const expected = new Map([
     ['broker', ['jinwon-int/a2a-broker', 'packages/broker', 'fae438a4fba301c2a9a02ca7cb11282867327920']],
-    ['docker-runner', ['jinwon-int/a2a-docker-runner', 'packages/docker-runner', 'dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe']],
+    ['docker-runner', ['jinwon-int/a2a-docker-runner', 'packages/docker-runner', '0aafede5e9869ea78da2707fe5e334d9530cba96']],
     ['openclaw-plugin-a2a', ['jinwon-int/openclaw-plugin-a2a', 'packages/openclaw-plugin-a2a', 'a2e521271483ef0b6a29907c8228f0a442dd2db9']],
   ]);
   const repos = new Map((fixture.sourceRepos || []).map((repo) => [repo.surface, repo]));

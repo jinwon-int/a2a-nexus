@@ -3,6 +3,7 @@
   "snapshotDate": "2026-06-07",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/513",
+  "refreshIssue": "https://github.com/jinwon-int/a2a-plane/issues/528",
   "decision": "plan_import_rehearsal_before_canonical_flip",
   "canonicalDuringRehearsal": "split_repos",
   "rehearsalWorkspace": {
@@ -25,9 +26,9 @@
     {
       "surface": "docker-runner",
       "sourceRepo": "jinwon-int/a2a-docker-runner",
-      "sourceMain": "dc43cc1704bbc00abd8600cc05b2a1d5f4d1bdfe",
+      "sourceMain": "0aafede5e9869ea78da2707fe5e334d9530cba96",
       "targetPath": "packages/docker-runner",
-      "splitTrackedFiles": 97,
+      "splitTrackedFiles": 137,
       "planeTrackedFiles": 59,
       "freshness": "stale",
       "canonicalNow": "split_repo"
@@ -37,7 +38,7 @@
       "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
       "sourceMain": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
       "targetPath": "packages/openclaw-plugin-a2a",
-      "splitTrackedFiles": 177,
+      "splitTrackedFiles": 179,
       "planeTrackedFiles": 116,
       "freshness": "stale",
       "canonicalNow": "split_repo"
