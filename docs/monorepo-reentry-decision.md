@@ -105,6 +105,9 @@ private `agent-olympics` repository.
 - Add a fixture/validator that keeps the staged decision from drifting.
 - Open child issues for import rehearsal, CI parity, docs/CODEOWNERS, and
   redacted benchmark mirror policy.
+- Record the import rehearsal plan in
+  [`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md) and keep it
+  validated by `npm run check:monorepo-import-rehearsal`.
 - Keep all implementation repos canonical.
 
 ### Phase 1: Disposable Rehearsal
