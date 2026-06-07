@@ -1,0 +1,69 @@
+{
+  "description": "Mixed lane states: one succeeded with PR, one blocked with Block evidence, one stale (non-terminal past threshold), one pending (no tasks).",
+  "manifest": {
+    "roundLabel": "a2a-team1-round-coordinator-20260526T201140KST",
+    "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/934",
+    "lanes": [
+      { "workerId": "sogyo", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
+      { "workerId": "bangtong", "description": "Round manifest foundation" },
+      { "workerId": "nosuk", "description": "A2A definitions and types" },
+      { "workerId": "yukson", "description": "Validation and tests" }
+    ],
+    "staleAfterMs": 1800000,
+    "timeoutAt": "2026-05-27T06:00:00.000Z"
+  },
+  "tasks": [
+    {
+      "id": "task-sogyo-936",
+      "intent": "propose_patch",
+      "status": "succeeded",
+      "targetNodeId": "default",
+      "assignedWorkerId": "sogyo",
+      "requester": { "id": "broker", "kind": "service" },
+      "target": { "id": "default", "kind": "node" },
+      "payload": {},
+      "createdAt": "2026-05-26T10:00:00.000Z",
+      "updatedAt": "2026-05-26T14:30:00.000Z",
+      "completedAt": "2026-05-26T14:30:00.000Z",
+      "result": {
+        "summary": "Created round-coordinator-closeout-dry-run CLI",
+        "output": {
+          "prUrl": "https://github.com/jinwon-int/a2a-broker/pull/937",
+          "testSummary": "All 8 tests passed.",
+          "summary": "PR #937: Add round-coordinator-closeout-dry-run CLI"
+        }
+      }
+    },
+    {
+      "id": "task-bangtong-928",
+      "intent": "propose_patch",
+      "status": "blocked",
+      "targetNodeId": "default",
+      "assignedWorkerId": "bangtong",
+      "requester": { "id": "broker", "kind": "service" },
+      "target": { "id": "default", "kind": "node" },
+      "payload": {},
+      "createdAt": "2026-05-26T09:00:00.000Z",
+      "updatedAt": "2026-05-26T12:00:00.000Z",
+      "error": { "message": "Blocked by missing dependency: round manifest data model requires interface review", "code": "dependency_blocked" },
+      "result": {
+        "output": {
+          "blockUrl": "https://github.com/jinwon-int/a2a-broker/issues/928#issuecomment-67890",
+          "summary": "Blocked: dependency on types review"
+        }
+      }
+    },
+    {
+      "id": "task-nosuk-1",
+      "intent": "propose_patch",
+      "status": "running",
+      "targetNodeId": "default",
+      "assignedWorkerId": "nosuk",
+      "requester": { "id": "broker", "kind": "service" },
+      "target": { "id": "default", "kind": "node" },
+      "payload": {},
+      "createdAt": "2026-05-26T09:30:00.000Z",
+      "updatedAt": "2026-05-26T10:30:00.000Z"
+    }
+  ]
+}

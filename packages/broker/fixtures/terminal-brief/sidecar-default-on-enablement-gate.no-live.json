@@ -1,0 +1,155 @@
+{
+  "defaultOnApprovalEvidenceIngestorPacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-default-on-approval-evidence-ingestor.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T05:25:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "state": "accepted",
+    "dryRunOnly": false,
+    "sourceOnlyNoLive": true,
+    "receiptEvidenceAccepted": true,
+    "approvalEvidenceAccepted": true,
+    "idempotencyKey": "tb-sidecar-default-on-approval-evidence:fixture-774",
+    "source": {
+      "defaultOnApprovalRequestState": "approval_request_draft_ready",
+      "defaultOnApprovalRequestIdempotencyKey": "tb-sidecar-default-on-approval-request:fixture-772",
+      "requestedAction": "approve_terminal_brief_default_on_enablement",
+      "requestedBy": "seoseo",
+      "operatorTarget": "terminal-brief-default-on",
+      "operatorChannel": "telegram",
+      "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
+      "dispatchRequired": true,
+      "dispatchPermitted": false
+    },
+    "evidence": {
+      "received": 3,
+      "acceptedKinds": [
+        "current_session_visible",
+        "approval_grant"
+      ],
+      "staleKinds": [],
+      "conflictingKinds": [],
+      "rejectedKinds": [],
+      "records": [
+        {
+          "kind": "provider_accepted",
+          "rawKind": "provider_accepted",
+          "observedAt": "2026-05-19T05:25:00.000Z",
+          "providerMessageId": "provider-774",
+          "target": "terminal-brief-default-on",
+          "stale": false,
+          "conflict": false,
+          "reason": "provider accepted is transport evidence only, not operator-visible proof"
+        },
+        {
+          "kind": "current_session_visible",
+          "rawKind": "current_session_visible",
+          "observedAt": "2026-05-19T05:25:00.000Z",
+          "receiptId": "visible-774",
+          "target": "terminal-brief-default-on",
+          "stale": false,
+          "conflict": false,
+          "reason": "current session visibility can satisfy receipt proof"
+        },
+        {
+          "kind": "approval_grant",
+          "rawKind": "approval_grant",
+          "observedAt": "2026-05-19T05:25:00.000Z",
+          "approvedAction": "approve_terminal_brief_default_on_enablement",
+          "approvedTarget": "terminal-brief-default-on",
+          "operatorId": "operator-a",
+          "stale": false,
+          "conflict": false,
+          "reason": "approval grant evidence is source evidence only and does not grant approval by itself"
+        }
+      ]
+    },
+    "classification": {
+      "providerAccepted": true,
+      "currentSessionVisible": true,
+      "manualOperatorConfirmed": false,
+      "approvalGrantAccepted": true,
+      "receiptProofAccepted": true,
+      "rejected": false,
+      "expired": false,
+      "stale": false,
+      "terminalAckEligible": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "reason": "operator-visible receipt proof and matching default-on approval grant evidence accepted as source-only evidence"
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "receiptEvidenceAccepted": true,
+      "approvalEvidenceAccepted": true,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "executionPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "blockers": [
+        "approval grant evidence does not grant approval in this ingestor",
+        "default-on approval evidence still requires a separate runtime mutation gate"
+      ],
+      "nextAction": "feed accepted no-live default-on approval evidence into a separate default-on enablement gate"
+    },
+    "blockers": [],
+    "nextActions": [],
+    "approvalSensitiveActionsExcluded": [],
+    "integrationContract": {
+      "transport": "json",
+      "evidenceSchemaVersion": 1,
+      "harnessNeutral": true,
+      "openclawMessageSendRequired": false,
+      "hermesAdapterCompatible": true,
+      "gongyungAdapterCompatible": true,
+      "consumesDefaultOnApprovalRequestPacket": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "terminalAckRequiresVisibilityProof": true,
+      "grantsApproval": false,
+      "enablesDefaultOn": false,
+      "sendsProvider": false,
+      "performsTerminalAck": false,
+      "mutatesDb": false,
+      "spawnsProcess": false,
+      "startsSidecar": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "evidenceIngestorOnly": true,
+      "sourceOnlyNoLive": true,
+      "evidenceDoesNotMutateState": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "terminalAckEligibleDoesNotPermitAck": true,
+      "approvalGrantEvidenceDoesNotGrantApproval": true,
+      "defaultOnApprovalEvidenceDoesNotEnableDefaultOn": true,
+      "defaultOnRequiresSeparateRuntimeMutationGate": true,
+      "executionNotPermitted": true,
+      "processSpawnNotPermitted": true,
+      "sidecarStartNotPermitted": true,
+      "defaultOnNotEnabledByThisPacket": true,
+      "routeIsReadOnly": true,
+      "brokerFinalizerRequired": true,
+      "performsGitHubMutation": false,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "createsTaskFlowRecords": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "defaultOnEnablementGate": {
+    "now": "2026-05-19T05:25:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "finalizer": "seoseo",
+    "runtimeTarget": "terminal-brief-sidecar",
+    "operatorInstructionReference": "a2a-broker#774"
+  }
+}

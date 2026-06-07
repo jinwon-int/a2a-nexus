@@ -1,0 +1,21 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Daegyo-style Termux worker with fresh heartbeat and active wake-lock.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "daegyo",
+    "workerMode": "termux-mobile",
+    "status": "online",
+    "lastSeenAgeSec": 12,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": true,
+    "localForwardPresent": true,
+    "wakeLockHeld": true,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": true,
+    "isolatedWorkspaceRootShape": "~/.hermes/a2a-workspaces/<homeBrokerId>/<taskId>"
+  }
+}

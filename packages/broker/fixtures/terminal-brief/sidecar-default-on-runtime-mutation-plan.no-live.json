@@ -1,0 +1,129 @@
+{
+  "defaultOnEnablementGatePacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-default-on-enablement-gate.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T05:45:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "state": "ready_for_default_on_enablement_review",
+    "dryRunOnly": false,
+    "sourceOnlyNoLive": true,
+    "idempotencyKey": "tb-sidecar-default-on-enablement-gate:fixture-776",
+    "source": {
+      "approvalEvidenceKind": "a2a-broker.terminal-brief-sidecar-default-on-approval-evidence-ingestor.packet",
+      "approvalEvidenceState": "accepted",
+      "approvalEvidenceIdempotencyKey": "tb-sidecar-default-on-approval-evidence:fixture-774",
+      "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
+      "requestedAction": "approve_terminal_brief_default_on_enablement",
+      "requestedBy": "seoseo",
+      "operatorTarget": "terminal-brief-default-on",
+      "operatorChannel": "telegram",
+      "receiptEvidenceAccepted": true,
+      "approvalEvidenceAccepted": true,
+      "providerAcceptedIsVisibilityProof": false
+    },
+    "enablementGate": {
+      "reviewOnly": true,
+      "gateReference": "tb-sidecar-default-on-enablement-gate:fixture-776",
+      "finalizer": "seoseo",
+      "runtimeTarget": "terminal-brief-sidecar",
+      "operatorInstructionReference": "a2a-broker#774",
+      "requiredAcceptedEvidence": [
+        "accepted default-on approval evidence ingestor packet",
+        "operator-visible receipt proof",
+        "matching default-on approval_grant evidence",
+        "provider_accepted classified as non-visibility proof"
+      ],
+      "preRuntimeChecklist": [
+        "verify broker and sidecar runtime revisions before any later mutation",
+        "request a fresh explicit operator approval for the runtime mutation step"
+      ],
+      "abortConditions": [
+        "approval evidence is stale, conflicting, rejected, or blocked",
+        "provider accepted is treated as visibility proof"
+      ],
+      "rollbackChecklist": [
+        "leave default-on disabled until a later approved runtime mutation",
+        "do not ACK/replay terminal rows from this gate"
+      ]
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "enablementGateReady": true,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "executionPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "missingEvidence": [],
+      "blockers": [
+        "default-on enablement gate is source-only and does not mutate runtime state",
+        "runtime default-on change requires a later explicit approval and mutation path"
+      ],
+      "nextAction": "broker finalizer may review this gate and request separate runtime mutation approval"
+    },
+    "blockers": [],
+    "nextActions": [
+      "review the source-only default-on enablement gate",
+      "prepare a separate runtime mutation plan without executing it",
+      "do not enable default-on until a later explicit runtime approval"
+    ],
+    "approvalSensitiveActionsExcluded": [],
+    "integrationContract": {
+      "transport": "json",
+      "enablementGateVersion": 1,
+      "consumesDefaultOnApprovalEvidenceIngestorPacket": true,
+      "rendersDefaultOnEnablementGate": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "approvalGrantEvidenceExecutesGrant": false,
+      "enablesDefaultOn": false,
+      "sendsProvider": false,
+      "performsTerminalAck": false,
+      "mutatesDb": false,
+      "spawnsProcess": false,
+      "startsSidecar": false,
+      "restartsSidecar": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "finalGateReviewOnly": true,
+      "sourceOnlyNoLive": true,
+      "acceptedEvidenceIsInputOnly": true,
+      "approvalEvidenceDoesNotExecuteGrant": true,
+      "gateDoesNotEnableDefaultOn": true,
+      "gateDoesNotSendProviders": true,
+      "gateDoesNotAckTerminalRows": true,
+      "gateDoesNotMutateDb": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "terminalAckEligibleDoesNotPermitAck": true,
+      "defaultOnNotEnabledByThisPacket": true,
+      "executionNotPermitted": true,
+      "processSpawnNotPermitted": true,
+      "sidecarStartNotPermitted": true,
+      "routeIsReadOnly": true,
+      "brokerFinalizerRequired": true,
+      "performsGitHubMutation": false,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "createsTaskFlowRecords": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "defaultOnRuntimeMutationPlan": {
+    "now": "2026-05-19T05:45:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "finalizer": "seoseo",
+    "runtimeTarget": "terminal-brief-sidecar",
+    "operatorInstructionReference": "a2a-broker#776",
+    "configKey": "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
+    "proposedValue": "true"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "kind": "a2a-broker.complexity-execution-plan-draft.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "idempotencyKey": "complexity-execution-plan:bfb2d2639d7e7601f7f0716c",
+  "sourceEnvelopeIdempotencyKey": "complexity-finalizer-approval-envelope:ac294018d5643e0760ba1865",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:89d1150bab068f102e55c456",
+  "envelopeCategory": "operator_review_required",
+  "action": "operator_review",
+  "complexity": "critical",
+  "steps": [
+    {
+      "stepId": "step-a3f6d4ab0f78",
+      "kind": "operator_review",
+      "label": "Operator review required for critical action \"operator_review\"",
+      "dependsOn": [],
+      "executionBlocked": true,
+      "requiresApproval": true,
+      "roles": ["unknown"],
+      "safetyGate": "CRITICAL: Operator review gate. No autonomous subagent spawn or execution permitted."
+    },
+    {
+      "stepId": "step-f71978e588d5",
+      "kind": "completion",
+      "label": "Execution plan complete (blocked until operator review)",
+      "dependsOn": ["step-a3f6d4ab0f78"],
+      "executionBlocked": true,
+      "requiresApproval": true,
+      "roles": [],
+      "safetyGate": "Plan is structurally complete but execution remains blocked pending operator review."
+    }
+  ],
+  "executionBlocked": true,
+  "approvalRequired": true,
+  "executionMode": "operator_review_gated",
+  "decision": "plan_safety_blocked",
+  "blockers": [
+    "Safety issue: Critical complexity detected for action 'operator_review' with operator_review execution mode. Autonomous execution is unsafe without human review.",
+    "Operator review is required before any action can proceed."
+  ],
+  "description": "Execution plan safety blocked for critical action \"operator_review\". All execution is BLOCKED. Operator review required.",
+  "nextActions": [
+    "CRITICAL: Action \"operator_review\" (critical) detected safety issues. Execution is BLOCKED.",
+    "Inspect blockers and resolve safety concerns before retrying.",
+    "Route this plan to the operator review channel. No subagent spawn, no execution.",
+    "Do NOT use this plan to bypass the safety block."
+  ],
+  "boundaries": {
+    "runtimeBehaviorChanged": false,
+    "mandatoryProductionSpawn": false,
+    "brokerDispatchSemanticsChanged": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false
+  },
+  "semantics": {
+    "planDraftOnly": true,
+    "approvalNotGranted": true,
+    "autonomousExecutionBlocked": true,
+    "sourceOnlyNoLive": true,
+    "planStepsNotExecuted": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false
+  }
+}

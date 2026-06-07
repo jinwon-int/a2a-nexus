@@ -3,16 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A2A Plane broker adapter plugin for OpenClaw hosts",
+  "description": "Standalone A2A broker adapter plugin for OpenClaw",
   "scripts": {
     "build": "tsc -p tsconfig.json && cp openclaw.plugin.json dist/openclaw.plugin.json",
+    "check": "npm test",
     "test": "npm run build && node --test test/*.test.mjs tests/*.test.ts",
     "test:gateway": "rm -rf dist && tsc -p tsconfig.gateway-verify.json && node --test test/*.test.mjs",
     "preflight:canary:receipt-gated": "scripts/canary-receipt-gated-preflight.sh",
-    "prepack": "npm run scan:public-readiness && npm run build",
-    "check": "npm test",
-    "scan:public-readiness": "bash scripts/scan-public-readiness.sh",
-    "smoke:a2a-conformance": "bash scripts/smoke-a2a-conformance.sh"
+    "smoke:a2a-conformance": "scripts/smoke-a2a-conformance.sh",
+    "scan:public-readiness": "scripts/scan-public-readiness.sh",
+    "prepack": "npm run scan:public-readiness && npm run build"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.49",
@@ -28,6 +28,11 @@
     "typescript": "^5.9.3"
   },
   "main": "./dist/index.js",
+  "bin": {
+    "a2a-terminal-brief-sidecar": "./dist/terminal-brief-sidecar.js",
+    "a2a-terminal-brief-openclaw-message": "./dist/terminal-brief-openclaw-message.js",
+    "a2a-terminal-brief-hermes-gongyung": "./dist/terminal-brief-hermes-gongyung.js"
+  },
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
@@ -65,13 +70,17 @@
     "dist/",
     "openclaw.plugin.json",
     "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
     "docs/agent-card-discovery.md",
+    "docs/alpha-boundaries.md",
     "docs/a2a-agent-card.local.json",
     "docs/compatibility-matrix.md",
     "docs/public-stable-readiness.md",
     "docs/remote-handoff-visibility-policy.md",
     "docs/operator-terminal-notification-receipts.md",
-    "docs/operator-event-bridge-safety-layers.md",
+    "docs/terminal-brief-delivery-adapter-contract.md",
+    "docs/terminal-brief-sidecar.md",
     "docs/termux-mobile-smoke-test.md",
     "docs/termux-troubleshooting.md"
   ],

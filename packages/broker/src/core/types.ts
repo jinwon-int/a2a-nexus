@@ -9,6 +9,7 @@ export type A2APartyRole =
 export type A2AExchangeIntent =
   | "chat"
   | "analyze"
+  | "verify"
   | "backfill"
   | "propose_patch"
   | "propose_params"
@@ -44,6 +45,61 @@ export type TaskStatus =
   | "succeeded"
   | "failed"
   | "canceled";
+
+/**
+ * Broker closeout outcome classification (issue #471).
+ *
+ * Refines a terminal task status into evidence-aware categories for
+ * operator summaries, read-model projections, and round-closeout
+ * reconciliation. This classification is independent of task status:
+ * a `succeeded` task may map to `pr_success` or `no_change_done`
+ * depending on whether code/doc changes were produced; a `failed`
+ * task may map to `no_change_block` or `infra_failure` depending on
+ * whether the failure originated in infrastructure or a genuine
+ * no-change analysis.
+ *
+ * Provider message-id/send success is accepted-send evidence only,
+ * never read/visibility/terminal ACK.
+ */
+
+/**
+ * Requester-visible status visibility contract (issue #921).
+ *
+ * Every task carries a `requester` identity (x-a2a-requester-id header or
+ * session-level identity). The requester can see the task's status,
+ * result, error, and evidence URLs. Restriction rules:
+ *
+ * | Requester role | Task visibility |
+ * |---|---|
+ * | hub / operator | All tasks in the broker (role-based access) |
+ * | requester.id === task.requester.id | That specific task |
+ * | requester.id === task.targetNodeId | Tasks assigned to that node |
+ * | requester.id === task.assignedWorkerId | Tasks claimed by that worker |
+ * | other | `unauthorized` BrokerError |
+ *
+ * The `x-a2a-requester-role` header further gates privileged operations:
+ * - `hub`: subscribe to any task, access all statuses
+ * - `operator`: touch any proposal artifact, subscribe to any task
+ * - `analyst`/`researcher`/`live-trader`: restricted to their own tasks
+ *
+ * Missing or mismatched identity produces a typed BrokerError with
+ * code `"unauthorized"` or `"bad_request"` and a human-readable reason
+ * string. Callers SHOULD propagate these errors to the HTTP response or
+ * call edge; they must NOT silently degrade security.
+ *
+ * Permission failures (assertion methods) and rate-limit denials share
+ * the same error contract with distinct codes so upstream middleware can
+ * distinguish policy blocks from resource pressure.
+ */
+
+// ---------------------------------------------------------------------------
+// Rate limiting (requester-visible throttle state)
+// ---------------------------------------------------------------------------
+export type BrokerExitCondition =
+  | "pr_success"       // Code/doc changes were made; PR created/merged.
+  | "no_change_done"   // Task completed without code/doc changes; evidence-only Done.
+  | "no_change_block"  // Task blocked without changes possible; evidence-only Block.
+  | "infra_failure";   // Infrastructure/system failure, distinct from logical block.
 
 /**
  * Broker-side objective lifecycle above individual A2A tasks. Goals are
@@ -137,6 +193,7 @@ export type AuditAction =
   | "task.succeeded"
   | "task.failed"
   | "task.canceled"
+  | "task.updated"
   | "task.tombstoned"
   | "task.wake.planned"
   | "task.wake.scheduled"
@@ -144,12 +201,26 @@ export type AuditAction =
   | "task.wake.failed"
   | "worker.registered"
   | "worker.heartbeat"
-  | "task.paused"
-  | "task.resumed"
-  | "task.interrupt-requested"
-  | "task.interrupt-decided";
+  | "broker.cleanup.applied";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
+export type WorkerPlaneStatus = "online" | "unknown";
+export type ManagementPlaneStatus = "online" | "disconnected" | "unknown";
+
+/**
+ * Enriched worker health state that surfaces mobile-mode details when the
+ * worker is declared as `mobile`. Consumers should check `workerMode` first;
+ * ``persistent`` workers always report `"health_ok"` or `"stale"`.
+ *
+ * | Value | Meaning |
+ * |---|---|
+ * | `"health_ok"` | Heartbeat within mobile stale window (>0 && <= 30s) |
+ * | `"stale"` | Heartbeat beyond mobile stale window but still registered (>30s && <= 90s) |
+ * | `"disconnected"` | Heartbeat well beyond extended threshold (>90s) or worker unregistered |
+ * | `"unsupported_capability"` | Worker registered but declared capabilities cannot fulfil the lane's task type |
+ */
+export type WorkerMobileHealth = "health_ok" | "stale" | "disconnected" | "unsupported_capability";
+export type WorkerRuntimeFlavor = "gateway" | "termux-hermes" | "unknown";
 
 /**
  * Declared operating mode of a worker node.
@@ -248,6 +319,12 @@ export interface A2ATaskRequest {
   id: string;
   exchangeId?: string;
   parentTaskId?: string;
+  /**
+   * A2A-style lineage references for follow-up/refinement tasks in the same
+   * context. These are identifiers only; artifacts/results stay behind their
+   * normal broker access controls and projections.
+   */
+  referenceTaskIds?: string[];
   intent: A2AExchangeIntent;
   requester: A2APartyRef;
   target: A2APartyRef;
@@ -270,7 +347,12 @@ export interface CreateTaskRequest extends Omit<A2ATaskRequest, "id" | "createdA
   createdAt?: string;
   payload?: Record<string, unknown>;
   taskOrigin?: TaskOrigin;
-  /** Broker instance that owns lifecycle mutation authority for this task. */
+  /**
+   * Local broker instance that accepts and owns lifecycle mutation authority
+   * for this task row. Cross-broker parent/finalizer/operator ownership must
+   * stay in payload metadata such as brokerOfRecordId, parentBrokerId,
+   * crossBrokerHandoff, notificationOwnership, and terminalBrief.
+   */
   brokerOfRecord?: string;
   /** Team/tenant boundary that owns lifecycle mutation authority for this task. */
   teamId?: string;
@@ -309,8 +391,12 @@ export interface TaskError {
 export interface TaskCancellationInfo {
   requestedAt: string;
   requestedBy: string;
+  kind?: "operator_cancel" | "superseded";
   reason?: string;
   sourceTaskId?: string;
+  supersededByTaskId?: string;
+  supersededByPrUrl?: string;
+  roundId?: string;
 }
 
 export interface TaskApprovalInfo {
@@ -438,44 +524,25 @@ export interface TaskRecord extends A2ATaskRequest {
   brokerOfRecord?: string;
   /** Team/tenant boundary that owns claim/start/complete/fail authority. Optional for legacy tasks. */
   teamId?: string;
-}
-
-// ---- Checkpoint & Human-Interrupt Types (per contracts/a2a/checkpoint-interrupt.md v0 freeze) ----
-
-/** Per contract §2.2: types of decisions a worker can request from a human operator. */
-export type InterruptDecisionType = "safety_gate" | "ambiguous_scope" | "approval_required" | "conflict_detected";
-
-/** Per contract §2.3: operator action on a human-interrupt decision. */
-export type OperatorInterruptAction = "approved" | "refused" | "clarified";
-
-/** Per contract §1.2–1.4: checkpoint state record. Redacted, never contains secrets. */
-export interface CheckpointRecord {
-  checkpointId: string;
-  pausedAt: string;
-  reason: string;
-  artifactRefs: string[];
-  workerId?: string;
-  attemptId?: string;
-}
-
-/** Per contract §2.2–2.4: human-interrupt state record. Redacted, never contains secrets. */
-export interface HumanInterruptRecord {
-  interruptId: string;
-  decisionType: InterruptDecisionType;
-  summary: string;
-  requestedAt: string;
-  decidedAt?: string;
-  operatorAction?: OperatorInterruptAction;
-  operatorComment?: string;
-}
-
-/** Per contract §5: artifact version lineage metadata. */
-export interface ArtifactVersionLineage {
-  artifactPath: string;
-  versionRef: string;
-  parentVersionRef?: string;
-  producingTaskId?: string;
-  producingRunId?: string;
+  /**
+   * Evidence submitted by the worker after the task was canceled.
+   * Present only when a worker posts completion/fail evidence after
+   * the broker already transitioned the task to canceled. Enables
+   * diagnostics to distinguish plain canceled from canceled with
+   * late worker outcome (issue #954).
+   */
+  lateEvidenceAfterCancel?: {
+    /** Whether the worker posted "complete" or "fail" evidence. */
+    kind: "complete" | "fail";
+    /** Worker-submitted result, present when kind="complete". */
+    result?: TaskResult;
+    /** Worker-submitted error, present when kind="fail". */
+    error?: TaskError;
+    /** When the late evidence was received. */
+    submittedAt: string;
+    /** Which worker submitted the late evidence. */
+    submittedBy: string;
+  };
 }
 
 export interface TaskClaimRequest {
@@ -488,11 +555,45 @@ export interface TaskCompleteRequest extends TaskClaimRequest {
   result?: TaskResult;
 }
 
+/**
+ * Hermes/native worker terminal evidence outcome.
+ *
+ * Canonical outcomes for worker-submitted evidence (POST /tasks/:id/evidence):
+ * - "done" / "pr": task succeeds (calls completeTask)
+ * - "blocked" / "failed": task fails (calls failTask)
+ *
+ * Hermes workers submit redacted source-only evidence only — no credentials,
+ * provider message-ids, terminal ACK payloads, or session text. Provider-accepted
+ * / message-id send success is NOT terminal ACK/read/visibility evidence.
+ *
+ * @see TaskEvidenceRequest
+ * @see docs/hermes-native-worker-contract.md
+ */
 export type TaskEvidenceOutcome = "done" | "pr" | "blocked" | "failed";
 
+/**
+ * Worker-submitted terminal evidence request.
+ *
+ * This is the canonical endpoint for Hermes/native workers to post completion
+ * or failure evidence without inheriting Docker Runner or OpenClaw Gateway
+ * assumptions.
+ *
+ * Evidence categories (must be kept separate):
+ * 1. Provider-accepted / message-id evidence — send-surface accepted the
+ *    payload. This is NOT terminal ACK evidence.
+ * 2. Terminal ACK / read / visibility evidence — proof of recipient receipt.
+ *    Generated by the broker terminal-brief lifecycle, NOT by workers.
+ *
+ * Hermes/native worker evidence is always source-only and redacted:
+ * - `result.summary`: human-readable outcome note
+ * - `result.output`: safe structured metadata (no secrets, tokens, or ids)
+ * - `error`: structured error with code and message (no stack traces)
+ *
+ * @see docs/hermes-native-worker-contract.md
+ */
 export interface TaskEvidenceRequest extends TaskClaimRequest {
   /**
-   * Worker-facing terminal evidence summary. "done" and "pr" succeed the task;
+   * Worker-facing terminal evidence outcome. "done" and "pr" succeed the task;
    * "blocked" and "failed" fail it with redacted error evidence.
    */
   outcome?: TaskEvidenceOutcome;
@@ -507,6 +608,9 @@ export interface TaskFailRequest extends TaskClaimRequest {
 export interface TaskCancelRequest {
   actor: A2APartyRef;
   reason?: string;
+  supersededByTaskId?: string;
+  supersededByPrUrl?: string;
+  roundId?: string;
 }
 
 export interface TaskReassignRequest {
@@ -525,6 +629,8 @@ export interface TaskListFilters {
   claimedBy?: string;
   assignedWorkerId?: string;
   taskOrigin?: TaskOrigin;
+  /** Maximum number of newest matching tasks to return. */
+  limit?: number;
 }
 
 export interface ChangeProposal {
@@ -572,7 +678,7 @@ export interface AuditEvent {
   id: string;
   actorId: string;
   action: AuditAction;
-  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message";
+  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker";
   targetId: string;
   proposalId?: string;
   note?: string;
@@ -586,10 +692,18 @@ export interface WorkerCapabilities {
   canPromoteLive: boolean;
   workspaceIds: string[];
   environments: A2AWorkerEnvironment[];
-  /** Per contract checkpoint-interrupt §7: worker can save/restore checkpoint state. */
-  canCheckpoint?: boolean;
-  /** Per contract checkpoint-interrupt §7: worker can request human-operator interrupt decisions. */
-  canHumanInterrupt?: boolean;
+  /**
+   * Runtime flavor reported by native/external workers; absent keeps legacy
+   * gateway semantics. Canonical Hermes value: "termux-hermes".
+   * @see docs/hermes-native-worker-contract.md
+   */
+  runtimeFlavor?: WorkerRuntimeFlavor;
+  /**
+   * False for Hermes/Termux native workers that do not require a full OpenClaw
+   * Gateway on-device. Absent implies legacy Gateway assumption.
+   * @see docs/hermes-native-worker-contract.md
+   */
+  gatewayRequired?: boolean;
 }
 
 export interface WorkerRecord {
@@ -601,6 +715,8 @@ export interface WorkerRecord {
   /** Declared operating mode. Defaults to "persistent" when absent. */
   workerMode?: WorkerMode;
   metadata?: Record<string, string>;
+  /** Management-plane reachability. Defaults to "unknown" when never reported. */
+  managementPlane?: ManagementPlaneStatus;
   createdAt: string;
   updatedAt: string;
   lastSeenAt: string;
@@ -614,6 +730,8 @@ export interface RegisterWorkerRequest {
   capabilities: WorkerCapabilities;
   workerMode?: WorkerMode;
   metadata?: Record<string, string>;
+  /** Management-plane reachability. When absent defaults to "unknown". */
+  managementPlane?: ManagementPlaneStatus;
 }
 
 export interface WorkerHeartbeatRequest {
@@ -622,6 +740,11 @@ export interface WorkerHeartbeatRequest {
   capabilities?: WorkerCapabilities;
   workerMode?: WorkerMode;
   metadata?: Record<string, string>;
+  /**
+   * Management-plane reachability reported by the worker.
+   * When absent the broker defaults to "unknown".
+   */
+  managementPlane?: ManagementPlaneStatus;
 }
 
 export interface WorkerListFilters {
@@ -632,6 +755,15 @@ export interface WorkerListFilters {
 
 export interface WorkerView extends WorkerRecord {
   status: WorkerStatus;
+  /** Worker-plane (heartbeat/poll/task-execution) availability. */
+  workerPlane: WorkerPlaneStatus;
+  /** Management-plane (SSH/node-host/admin) reachability. */
+  managementPlane: ManagementPlaneStatus;
+  /**
+   * True only when workerPlane is "online" and managementPlane is not
+   * "disconnected". Operators may override this decision externally.
+   */
+  updateEligible: boolean;
 }
 
 export interface WorkerRegistrationResponse extends WorkerView {
@@ -714,6 +846,8 @@ export type TaskInterruptionKind =
   | "stale_worker"
   | "requeued"
   | "operator_canceled"
+  | "superseded"
+  | "late_completion_after_cancel"  // worker posted completion/fail after cancel
   | "timeout"
   | "worker_lost"
   | "dead_lettered"
@@ -733,6 +867,7 @@ export interface TaskInterruptionDiagnostic {
 export type TombstoneReason =
   | "failed"              // task completed with error
   | "canceled"            // operator/requester canceled
+  | "canceled_with_late_completion"  // operator canceled, worker posted evidence later
   | "timeout"             // exceeded maximum allowed run time
   | "dead_lettered"       // requeue limit exhausted
   | "worker_lost";        // assigned worker went offline
@@ -778,6 +913,15 @@ export interface TaskDiagnosticReport {
     lastRequeueReason?: string;
     workerLastSeenAt?: string;
     tombstoneReason?: TombstoneReason;
+    supersededByTaskId?: string;
+    supersededByPrUrl?: string;
+    supersededRoundId?: string;
+    /** Present when a worker posted outcome evidence after the task was already canceled. */
+    lateEvidenceAfterCancel?: {
+      kind: "complete" | "fail";
+      submittedAt: string;
+      submittedBy: string;
+    };
   };
   /** For terminal tasks: the tombstone, if one was written. */
   tombstone?: TaskTombstone;
@@ -897,6 +1041,14 @@ export interface WorkerFleetSummary {
     activeTaskCount: number;
     lastSeenAt: string;
     lastSeenAgeSec: number;
+    /** Declared operating mode; absent defaults to "persistent". */
+    workerMode?: WorkerMode;
+    /**
+     * Enriched health for mobile workers. Present when `workerMode === "mobile"`
+     * and the broker has enough registry data to classify the state.
+     * Persistent workers omit this field to keep payloads compact.
+     */
+    mobileHealth?: WorkerMobileHealth;
   }>;
 }
 
@@ -915,6 +1067,14 @@ export interface WorkerCapacitySummaryItem {
     active: number;
   };
   latestTaskUpdatedAt?: string;
+  /** Declared operating mode; absent defaults to "persistent". */
+  workerMode?: WorkerMode;
+  /**
+   * Enriched health for mobile workers. Present when `workerMode === "mobile"`
+   * and the broker has enough registry data to classify the state.
+   * Persistent workers omit this field to keep payloads compact.
+   */
+  mobileHealth?: WorkerMobileHealth;
 }
 
 export interface WorkerCapacitySummary {
@@ -932,6 +1092,82 @@ export interface WorkerCapacitySummary {
     active: number;
   };
   items: WorkerCapacitySummaryItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup candidate types (issue #520)
+// ---------------------------------------------------------------------------
+
+/** Cleanup candidate class for brokered DB hygiene discovery. */
+export type CleanupCandidateClass =
+  | "stale_worker"
+  | "malformed_task"
+  | "queued_residue"
+  | "terminal_outbox_backlog"
+  | "historical_terminal_task"
+  | "orphaned_claim";
+
+/** Risk classification for cleanup candidates. */
+export type CleanupRiskClass = "safe" | "caution" | "high_risk";
+
+/** Operator actionability classification for cleanup candidates. */
+export type CleanupCandidateActionability =
+  | "advisory"
+  | "blocked"
+  | "executable"
+  | "cursor_skipped"
+  | "retention_not_due";
+
+/**
+ * Single cleanup candidate discovered from broker state.
+ *
+ * Each candidate has a stable id for idempotent tracking across dry-run
+ * iterations. The `reason` field explains why this record qualifies as a
+ * candidate, and `risk` reflects the safety classification.
+ */
+export interface CleanupCandidate {
+  /** Stable id for idempotent tracking across dry-run iterations. */
+  id: string;
+  /** Candidate class. */
+  class: CleanupCandidateClass;
+  /** Human-readable reason for qualification. */
+  reason: string;
+  /** Risk classification. */
+  risk: CleanupRiskClass;
+  /** Whether the candidate is actionable, advisory, blocked, or retained by policy. */
+  actionability: CleanupCandidateActionability;
+  /** Human-readable explanation of the actionability classification. */
+  actionabilityReason: string;
+  /** Associated entity identifier (taskId, worker nodeId, etc.). */
+  entityId: string;
+  /** When the entity last changed state. */
+  updatedAt: string;
+  /** Age in milliseconds since last update. */
+  ageMs: number;
+  /** Additional metadata (task status, worker role, outbox ack status, etc.). */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Read-only cleanup dry-run plan.
+ *
+ * Aggregates discovered candidates with summary counts and explicit
+ * risk notes. This plan never mutates broker state; execution requires
+ * a separate operator approval gate.
+ */
+export interface CleanupDryRunPlan {
+  /** Generation timestamp. */
+  generatedAt: string;
+  /** Summary counts by candidate class. */
+  summary: Record<CleanupCandidateClass, number>;
+  /** Summary counts by operator actionability class. */
+  actionabilitySummary: Record<CleanupCandidateActionability, number>;
+  /** Total candidates across all classes. */
+  totalCandidates: number;
+  /** Discovered candidates ordered by risk (high_risk first). */
+  candidates: CleanupCandidate[];
+  /** Risk notes for the operator (e.g. backup requirements). */
+  riskNotes: string[];
 }
 
 // ---------------------------------------------------------------------------

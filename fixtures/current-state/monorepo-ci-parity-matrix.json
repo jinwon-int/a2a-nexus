@@ -4,6 +4,10 @@
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/514",
   "refreshIssue": "https://github.com/jinwon-int/a2a-plane/issues/528",
+  "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
+  "phase3Issue": "https://github.com/jinwon-int/a2a-plane/issues/534",
+  "phase3ImplementationIssue": "https://github.com/jinwon-int/a2a-plane/issues/536",
+  "phase4FreshImportCandidateIssue": "https://github.com/jinwon-int/a2a-plane/issues/538",
   "decision": "record_ci_parity_matrix_without_canonical_flip",
   "canonicalUntilParityGreen": "split_repos",
   "canonicalFlipApproved": false,
@@ -11,7 +15,7 @@
     {
       "surface": "broker",
       "sourceRepo": "jinwon-int/a2a-broker",
-      "sourceMain": "fae438a4fba301c2a9a02ca7cb11282867327920",
+      "sourceMain": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
       "targetPath": "packages/broker",
       "sourceWorkflow": {
         "path": ".github/workflows/ci.yml",
@@ -32,17 +36,16 @@
       "planeJob": {
         "name": "broker",
         "actions": [
-          "actions/checkout@v4",
-          "actions/setup-node@v4"
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
         ],
         "node": "22",
         "commands": [
-          "npm ci --ignore-scripts --include=dev",
-          "npm run check -w packages/broker",
-          "npm run scan:public-readiness"
+          "npm ci --include=dev",
+          "node scripts/run-monorepo-package-ci-parity.mjs broker"
         ]
       },
-      "parityStatus": "not_green_for_canonical_flip",
+      "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
       "requiredBeforeAuthoritative": [
         "fresh_prefix_import_from_source_main",
         "preserve_build_info_generation",
@@ -61,8 +64,8 @@
         "equalOrStricter": false,
         "gateStatus": "blocked_until_package_jobs_match_or_exceed_split_repo_ci",
         "freshPrefixRehearsal": {
-          "sourceRef": "fae438a4fba301c2a9a02ca7cb11282867327920",
-          "splitTrackedFiles": 857,
+          "sourceRef": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+          "splitTrackedFiles": 869,
           "planeTrackedFiles": 236,
           "statusCounts": {
             "addedOrUntracked": 633,
@@ -140,7 +143,7 @@
           "npm test",
           "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .",
           "npm run chaos:e2e",
-          "node scripts/tag-release-candidate.mjs --version <version> --dry-run"
+          "node scripts/release-candidate-parity-audit.mjs"
         ]
       },
       "sourcePackageScripts": {
@@ -152,17 +155,16 @@
       "planeJob": {
         "name": "docker-runner",
         "actions": [
-          "actions/checkout@v4",
-          "actions/setup-node@v4"
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
         ],
         "node": "22",
         "commands": [
-          "npm ci --ignore-scripts --include=dev",
-          "npm run check",
-          "npm run scan:public-readiness"
+          "npm ci --include=dev",
+          "node scripts/run-monorepo-package-ci-parity.mjs docker-runner"
         ]
       },
-      "parityStatus": "not_green_for_canonical_flip",
+      "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
       "requiredBeforeAuthoritative": [
         "fresh_prefix_import_from_source_main",
         "preserve_cli_package_files_and_bin",
@@ -256,17 +258,16 @@
       "planeJob": {
         "name": "plugin",
         "actions": [
-          "actions/checkout@v4",
-          "actions/setup-node@v4"
+          "actions/checkout@v5",
+          "actions/setup-node@v5"
         ],
         "node": "22",
         "commands": [
-          "npm ci --ignore-scripts --include=dev",
-          "npm run check -w packages/openclaw-plugin-a2a",
-          "npm run scan:public-readiness"
+          "npm ci --include=dev",
+          "node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a"
         ]
       },
-      "parityStatus": "not_green_for_canonical_flip",
+      "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
       "requiredBeforeAuthoritative": [
         "fresh_prefix_import_from_source_main",
         "preserve_openclaw_peer_boundary",
@@ -371,6 +372,6 @@
     "destructiveCleanup": false,
     "workerOwnedGithubMutation": false
   },
-  "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
-  "phase2Decision": "package_ci_parity_not_equal_or_stricter_yet"
+  "phase2Decision": "package_ci_parity_not_equal_or_stricter_yet",
+  "phase4CandidateDecision": "package_ci_green_locally_but_canonical_flip_not_approved"
 }

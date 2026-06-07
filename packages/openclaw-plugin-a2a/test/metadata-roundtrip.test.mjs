@@ -230,7 +230,7 @@ test('status projection keeps taskInput metadata compact while preserving eviden
         token: 'ghp_should_not_leak',
         rawBrokerResponse: { token: 'ghp_nested', payload: 'x'.repeat(8_000) },
         rawLog: 'secret log '.repeat(1_000),
-        privatePath: '<private-key-path>',
+        privatePath: '/home/alice/.ssh/id_rsa',
       },
     },
     message: 'compact projection check',
@@ -256,6 +256,6 @@ test('status projection keeps taskInput metadata compact while preserving eviden
   assert.equal(serialized.includes('ghp_should_not_leak'), false);
   assert.equal(serialized.includes('rawBrokerResponse'), false);
   assert.equal(serialized.includes('rawLog'), false);
-  assert.equal(serialized.includes('<private-home>'), false);
+  assert.equal(serialized.includes('/home/alice'), false);
   assert.ok(serialized.length < 1_500, 'metadata should stay compact, got ' + serialized.length + ' bytes');
 });

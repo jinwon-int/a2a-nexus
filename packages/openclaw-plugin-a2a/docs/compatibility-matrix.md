@@ -135,6 +135,41 @@ In the current extraction plan, the critical seams are:
 
 If a plugin release assumes these seams but the target OpenClaw build does not expose them, that build is not compatible even if version labels look close.
 
+### 2.6 Broker protocol profile contract
+
+The plugin extracts the broker-advertised A2A protocol profile from the broker
+health endpoint's `protocol` block and surfaces it through `a2a.monitor.status`
+diagnostics as `brokerProtocolProfile`.
+
+Contract expectations:
+
+- **`protocol.protocolVersion`** — the A2A protocol version the broker advertises
+  (for example `"1.0"`, `"0.3"`). The plugin falls back to `protocol.version`
+  and `protocol.target` when `protocolVersion` is absent.
+- **`protocol.capabilities.streaming`** — boolean indicating SSE streaming support.
+  Absent or `false` means streaming is unavailable.
+- **`protocol.capabilities.pushNotifications`** — boolean indicating A2A push
+  notification support. `false` is the expected value for standard broker
+  deployments; the plugin surfaces this explicitly so operators can distinguish
+  Terminal Brief/outbox ACK from A2A push notification conformance.
+- **`protocol.inputModes`** and **`protocol.outputModes`** — string arrays
+  describing supported media types (for example `["text/plain","application/json"]`).
+- **`protocol.transportHints`** — object indicating support status for specific
+  transports (`"rest"`, `"grpc"`, `"push"`). Each value must be one of
+  `"supported"`, `"unsupported"`, or `"deferred"`.
+
+Compatibility rules:
+
+1. The `protocol` block is optional. Its absence does not degrade diagnostics.
+2. The plugin reads the protocol block from the same health endpoint it already
+   calls; no additional endpoint or AgentCard fetch is required.
+3. Provider accepted/message-id evidence remains send-acceptance telemetry and
+   is not operator-visible ACK. Terminal Brief/outbox boundaries are distinct
+   from A2A push notification conformance.
+4. If the broker changes the protocol block shape in a way that drops or renames
+   fields the plugin expects, the `brokerProtocolProfile` output will omit those
+   fields gracefully.
+
 ## 3. Proposed published matrix format
 
 Each published row should include:

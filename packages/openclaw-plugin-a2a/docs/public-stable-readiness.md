@@ -2,8 +2,6 @@
 
 This note documents the public-safe configuration boundary for the OpenClaw A2A plugin adapter. It is intended for operators wiring a private/local `a2a-broker` to OpenClaw without copying host-specific values into docs, examples, or issues.
 
-The adapter is a Gateway plugin canary: it runs in the OpenClaw Gateway plugin runtime to validate OpenClaw-specific method, hook, wake, and operator-monitoring seams. It is not the broker Docker container and it should not manage Docker Compose or systemd ownership for the broker. Use a separate staging/canary Gateway runtime when production-like isolation is required.
-
 ## Public-safe plugin configuration
 
 Use placeholders in shared docs and issue evidence. Do not paste real broker URLs, edge secrets, node IDs, Telegram targets, bot tokens, cookies, or raw runtime dumps.
@@ -49,6 +47,57 @@ Field notes:
 - `operatorEvents.notification.enabled` is a second explicit gate for legacy per-worker terminal notification delivery. Leave it `false` for public/stable defaults.
 - `wakeOnTask.enabled` is opt-in. Leave it `false` unless the OpenClaw/broker deployment has validated the wake path.
 
+## Diagnostics commands (read-only operator verification)
+
+The plugin exposes these diagnostics surfaces for operators to verify configuration
+and broker connectivity without live sends or Gateway restarts:
+
+| Command | Purpose | Safety |
+|---------|---------|--------|
+| `a2a.monitor.status` | Full operator status projection (health, readiness, receipt gaps) | Read-only; no messages, no ACK |
+| `a2a.monitor.status` (preflight mode) | Checks all four readiness layers with `operatorEvents.preflight=true` | No-live; reports `liveSendPerformed=false` |
+| `a2a.alerts.list` | Fetches operator-facing alerts from broker diagnostics | Read-only |
+| `a2a.task.status` | Fetches specific task execution/delivery status | Read-only |
+
+See [`docs/operator-install-checklist.md`](./operator-install-checklist.md#4-verification-diagnostics-commands)
+for full request/response patterns and verification runbook.
+
+## Provider-accepted evidence: permanent fail-closed policy (#229)
+
+As of `jinwon-int/openclaw-plugin-a2a#229` (direction reset post-#78261-close),
+provider-accepted delivery is **permanently insufficient for terminal-outbox ACK
+evidence**. The upstream `openclaw/openclaw#78261` was closed by a maintainer
+without merge; the plugin's fail-closed stance is now an intentional permanent
+policy, not a temporary gate awaiting an upstream PR.
+
+Provider-accepted-only states (`providerAccepted: true`, `provider_accepted: true`,
+`accepted: true`, `sendAccepted: true`, `status: "accepted"`, `status: "sent"`,
+`status: "provider_sent"`) are explicitly skipped by the plugin's receipt-boundary
+gate (`candidateIsAcceptedButNotAcknowledged`). These states may indicate the
+provider/Gateway accepted the send request, but they do not prove the operator
+saw the message.
+
+Terminal ACK requires one of:
+
+1. **Current-session/user-visible receipt** — the channel adapter returns
+   `currentSessionVisible: true` or equivalent with a `confirmed`/`delivered` status.
+2. **Manual operator receipt** — an explicit `manualReceiptConfirmed: true` or
+   equivalent operator confirmation.
+
+This policy is enforced by:
+
+- The receipt-boundary gate (`candidateIsAcceptedButNotAcknowledged`) in
+  `src/operator-notification-adapter.ts`.
+- `OPERATOR_VISIBLE_TERMINAL_RECEIPT_PROJECTIONS` in `src/delegated-task-runtime.ts`,
+  which only recognizes `current_session_visible` and `manual_operator_receipt`.
+- The conformance smoke gate (`receiptRuntimeBoundary`) in
+  `src/conformance-smoke-gate.ts`.
+- `scripts/scan-public-readiness.sh` which enforces fail-closed no-live-send.
+
+Provider-accepted-only evidence will never become terminal ACK evidence. The
+receipt bar remains at current-session-visible or manual-operator receipt
+evidence only.
+
 ## Compatibility boundary
 
 Until those boundaries are validated together, `openclaw-plugin-a2a` remains a
@@ -74,3 +123,28 @@ The public/stable default is **no live operator notification delivery**:
 Provider/Gateway send acceptance is not a terminal-outbox ACK. A terminal notification can only be ACKed after a current-session/user-visible receipt or an explicit manual operator receipt, as defined in [`operator-terminal-notification-receipts.md`](./operator-terminal-notification-receipts.md).
 
 Use dry-run/projection tests for public evidence. If a live send is needed, pause for explicit operator approval and keep secrets/targets redacted in the resulting evidence.
+
+### Quick-start verification (no-live, read-only)
+
+```bash
+# 1. Build
+npm ci && npm run build
+
+# 2. Public-readiness scan (must pass)
+npm run scan:public-readiness
+
+# 3. Full test suite
+npm test
+
+# 4. No-live canany
+node --test tests/no-live-canary.test.ts
+
+# 5. Status wording safety tests
+node --test tests/status-card-wording.test.ts
+```
+
+All commands are no-live: no Telegram messages, no Gateway restarts,
+no terminal-outbox ACKs.
+
+See [`docs/operator-install-checklist.md`](./operator-install-checklist.md#9-verification-runbook-quick-start)
+for the complete runbook.

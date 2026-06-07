@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jinwon-int/a2a-broker/fixtures/work-mode-benchmark/result-record.schema.json",
+  "title": "A2A Work Mode Benchmark v1 Result Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmarkVersion",
+    "sampleId",
+    "repo",
+    "taskType",
+    "mode",
+    "validity",
+    "milestones",
+    "metrics",
+    "outcome"
+  ],
+  "properties": {
+    "benchmarkVersion": {
+      "const": "a2a-work-mode-benchmark-v1"
+    },
+    "sampleId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[^/]+/[^/]+$"
+    },
+    "issueNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "taskType": {
+      "enum": [
+        "small_patch",
+        "bug_rca",
+        "candidate_review",
+        "ops_closeout",
+        "runbook_policy"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "solo",
+        "team1",
+        "hybrid"
+      ]
+    },
+    "validity": {
+      "enum": [
+        "valid",
+        "paired",
+        "replay",
+        "contaminated",
+        "excluded"
+      ]
+    },
+    "pairId": {
+      "type": "string"
+    },
+    "milestones": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instructionReceivedAt": { "type": "string", "format": "date-time" },
+        "workStartedAt": { "type": "string", "format": "date-time" },
+        "firstEvidenceAt": { "type": "string", "format": "date-time" },
+        "prOpenedAt": { "type": "string", "format": "date-time" },
+        "ciGreenAt": { "type": "string", "format": "date-time" },
+        "decisionAt": { "type": "string", "format": "date-time" },
+        "mergedAt": { "type": "string", "format": "date-time" },
+        "closeoutDoneAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisionWallSeconds",
+        "closeoutWallSeconds",
+        "activeAgentSeconds",
+        "totalWorkerSeconds",
+        "workerPrCount",
+        "selectedPrCount",
+        "reworkCount",
+        "qualityFindingsCount",
+        "followupDefectCount7d",
+        "operatorInteractions",
+        "telegramMessages"
+      ],
+      "properties": {
+        "decisionWallSeconds": { "type": "integer", "minimum": 0 },
+        "closeoutWallSeconds": { "type": "integer", "minimum": 0 },
+        "activeAgentSeconds": { "type": "integer", "minimum": 0 },
+        "totalWorkerSeconds": { "type": "integer", "minimum": 0 },
+        "speedupRatio": { "type": "number", "minimum": 0 },
+        "workAmplificationRatio": { "type": "number", "minimum": 0 },
+        "workerPrCount": { "type": "integer", "minimum": 0 },
+        "selectedPrCount": { "type": "integer", "minimum": 0 },
+        "reworkCount": { "type": "integer", "minimum": 0 },
+        "qualityFindingsCount": { "type": "integer", "minimum": 0 },
+        "followupDefectCount7d": { "type": "integer", "minimum": 0 },
+        "operatorInteractions": { "type": "integer", "minimum": 0 },
+        "telegramMessages": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "merged",
+            "closed",
+            "blocked",
+            "deferred",
+            "docs_only",
+            "excluded"
+          ]
+        },
+        "prUrl": { "type": "string", "format": "uri" },
+        "mergeCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "issueUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

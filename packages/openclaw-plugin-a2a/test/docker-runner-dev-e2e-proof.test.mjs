@@ -19,3 +19,13 @@ test('docker-runner result artifact contract is linkable to plugin monitoring st
   assert.match(proof, /artifactUrl/);
   assert.match(proof, /additive-tolerant/);
 });
+
+test('docker-runner dev E2E proof documents branch mismatch / no-diff terminal evidence contract', () => {
+  assert.match(proof, /No commits between main and/);
+  assert.match(proof, /Block.*reason.*No commits/);
+  assert.match(proof, /propose_patch/);
+  assert.match(proof, /github-propose-patch/);
+  assert.match(proof, /ProposalState\.BLOCKED/);
+  assert.match(proof, /success:\s*false/);
+  assert.match(proof, /no-diff/);
+});

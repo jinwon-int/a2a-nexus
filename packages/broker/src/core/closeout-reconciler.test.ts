@@ -380,6 +380,93 @@ describe("closeout: review chain", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Idempotency key dedup
+// ---------------------------------------------------------------------------
+
+describe("closeout: idempotency key dedup", () => {
+  it("rejects duplicate idempotency key (replay guard)", () => {
+    const r = new CloseoutReconciler();
+    const key = "c1-succeeded-20260525T120000Z";
+    const v1 = r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: key }));
+    assert.equal(v1.seq, 1);
+    assert.equal(v1.idempotencyStatus, "accepted", "first ingest should be accepted");
+    // Replay with same key — should be rejected as seen
+    const v2 = r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: key }));
+    assert.equal(v2.seq, 1, "seq must not increment on duplicate idempotency key");
+    assert.equal(v2.stateCounts.succeeded, 1);
+    assert.equal(v2.idempotencyStatus, "deduped", "replay with same idempotency key should be deduped");
+  });
+
+  it("accepts different idempotency keys for same child + status", () => {
+    const r = new CloseoutReconciler();
+    const v1 = r.ingest(child({ childTaskId: "c1", status: "running", idempotencyKey: "k1" }));
+    assert.equal(v1.seq, 1);
+    assert.equal(v1.idempotencyStatus, "accepted");
+    // Same child/status but different key — treated as meaningful update
+    const v2 = r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: "k2" }));
+    assert.equal(v2.seq, 2);
+    assert.equal(v2.idempotencyStatus, "accepted");
+    assert.equal(v2.stateCounts.succeeded, 1);
+    assert.equal(v2.stateCounts.active, 0);
+  });
+
+  it("legacy dedup (no idempotencyKey) still works", () => {
+    const r = new CloseoutReconciler();
+    r.ingest(child({ childTaskId: "c1", status: "succeeded" }));
+    const v1 = r.currentVerdict();
+    r.ingest(child({ childTaskId: "c1", status: "succeeded" }));
+    const v2 = r.currentVerdict();
+    assert.equal(v2.seq, v1.seq, "legacy dedup: same status+stale should not increment seq");
+  });
+
+  it("different idempotency keys on same child+status still hit legacy dedup", () => {
+    const r = new CloseoutReconciler();
+    r.ingest(child({ childTaskId: "c1", status: "running", idempotencyKey: "k1" }));
+    // Different explicit key but same status+stale — legacy dedup still applies
+    const v2 = r.ingest(child({ childTaskId: "c1", status: "running", idempotencyKey: "k2" }));
+    const v = r.currentVerdict();
+    assert.equal(v.seq, 1, "legacy dedup prevents duplicate even with different idempotency key");
+    assert.equal(v2.idempotencyStatus, "accepted", "new idempotency key should not be reported as replay-deduped");
+  });
+
+  it("reset clears seen idempotency keys", () => {
+    const r = new CloseoutReconciler();
+    r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: "k1" }));
+    r.reset();
+    r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: "k1" }));
+    const v = r.currentVerdict();
+    assert.equal(v.seq, 1, "after reset the same idempotency key should be accepted");
+    assert.equal(v.stateCounts.succeeded, 1);
+  });
+
+  it("events without idempotencyKey still use legacy dedup", () => {
+    const r = new CloseoutReconciler();
+    // Two different children without keys
+    r.ingest(child({ childTaskId: "c1", status: "succeeded" }));
+    r.ingest(child({ childTaskId: "c2", status: "succeeded" }));
+    const v = r.currentVerdict();
+    assert.equal(v.seq, 2);
+    assert.equal(v.stateCounts.succeeded, 2);
+    assert.equal(v.decision, "ready");
+  });
+
+  it("replay of terminal event after previous terminal event with same key does not double-count", () => {
+    const r = new CloseoutReconciler();
+    const key = "c1-succeeded-20260525T120000Z";
+    r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: key }));
+    r.ingest(child({ childTaskId: "c2", status: "succeeded", idempotencyKey: "c2-succeeded-20260525T120001Z" }));
+    const v1 = r.currentVerdict();
+    assert.equal(v1.seq, 2);
+    assert.equal(v1.decision, "ready");
+    // Replay c1's event
+    const v2 = r.ingest(child({ childTaskId: "c1", status: "succeeded", idempotencyKey: key }));
+    assert.equal(v2.seq, 2, "seq must not change on replay");
+    assert.equal(v2.stateCounts.succeeded, 2, "succeeded count must be stable");
+    assert.equal(v2.idempotencyStatus, "deduped", "replayed key must show deduped status");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Cross-decision matrix
 // ---------------------------------------------------------------------------
 

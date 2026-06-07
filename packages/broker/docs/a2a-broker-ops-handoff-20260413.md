@@ -154,3 +154,44 @@
 - direct exposure config: `docker-compose.yml`, `.env`, `docker ps`, `ss -ltnp`
 - Caddy issues: `caddy validate --config /etc/caddy/Caddyfile`, `journalctl -u caddy --no-pager -n 100`
 - host-local broker reachability on `127.0.0.1:8787`
+- log redaction reference: `config/caddy-broker-log-redaction.caddy`, `docs/caddy-502-log-redaction.md`
+- edge-secret leakage in Caddy logs during 502: check `log_redact` global option and `handle_errors` block
+
+## Log redaction during broker downtime (502 windows)
+
+When the broker Docker container is restarting or stopped, Caddy returns
+`502 Bad Gateway`. Without explicit log redaction, Caddy access logs and
+error diagnostics may capture the `X-A2A-Edge-Secret` header value in
+plaintext.
+
+**Required Caddy hardening** (reference config at
+`config/caddy-broker-log-redaction.caddy`, guide at
+`docs/caddy-502-log-redaction.md`):
+
+1. **Global `log_redact`** — redact `X-A2A-Edge-Secret` and other
+   sensitive headers from all Caddy log output (requires Caddy >= 2.7.0).
+2. **`handle_errors` block** — serve a generic `502 Service Unavailable`
+   response instead of Caddy's default error page, which may include
+   request metadata.
+3. **Safe log format** — exclude `request>headers` from the access log
+   format so headers are never written to disk even if `log_redact` is
+   misconfigured.
+
+Apply with:
+```bash
+cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak_$(date +%Y%m%d_%H%M%S)
+caddy validate --config /etc/caddy/Caddyfile
+caddy reload --config /etc/caddy/Caddyfile
+```
+
+Verify with the broker stopped:
+```bash
+curl -v -H 'X-A2A-Edge-Secret: test-secret-abc123' https://broker.example.com/tasks/xyz
+tail -1 /var/log/caddy/broker-access.log | jq .
+# Must show status 502; X-A2A-Edge-Secret must be absent or REDACTED.
+```
+
+Preflight check (CI-safe, no secrets):
+```bash
+node scripts/caddy-log-redaction-preflight.mjs --json
+```

@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active coordination:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
-> **Status:** public alpha, monorepo phase-3 package CI parity jobs active; phase-2 rehearsal evidence complete; `#506` source/no-live validation wave completed.
+> **Active coordination:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
+> **Status:** public alpha, monorepo phase-4 fresh prefix import candidate active under package CI parity jobs; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,11 +10,12 @@ topology gates.
 
 ## Current Active Work
 
-The active A2A coordination work is the monorepo phase-3 package CI parity job:
+The active A2A coordination work is the monorepo phase-4 fresh prefix import
+candidate under the package CI parity jobs:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) | `a2a-plane` | Wire broker, Docker runner, and OpenClaw plugin package CI parity jobs before any package mirror refresh. |
+| [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538) | `a2a-plane` | Import fresh broker, Docker runner, and OpenClaw plugin tracked trees into `packages/*` and prove the candidate under package CI parity jobs before any canonical flip. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -44,6 +45,7 @@ Completed current-state and monorepo groundwork:
 | [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528) | `a2a-plane` | Closed: phase-1 import rehearsal gate refresh after the all-repo audit. |
 | [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) | `a2a-plane` | Closed: phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence. |
 | [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534) | `a2a-plane` | Closed: phase-3 package CI gate fixture/checker/release-gate blocker before package mirror refresh. |
+| [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) | `a2a-plane` | Closed: package CI parity jobs wired into GitHub Actions and root release gate. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -75,9 +77,11 @@ The `a2a-plane#534` phase-3 package CI gate is documented in
 [`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md),
 [`docs/monorepo-import-rehearsal.md`](monorepo-import-rehearsal.md), and
 [`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](../fixtures/current-state/monorepo-phase3-package-ci-gate.json).
-`a2a-plane#536` wires the package CI parity runner into GitHub Actions and the
-root release gate while keeping package mirror refresh blocked until a separate
-fresh prefix import proves the mirrored content itself is authoritative.
+`a2a-plane#536` wired the package CI parity runner into GitHub Actions and the
+root release gate. `a2a-plane#538` is the follow-up fresh prefix import
+candidate: it imports tracked split-repo trees into `packages/*` under those
+jobs, but still does not approve canonical ownership, release, deploy,
+provider send, Terminal ACK, or credential movement.
 
 The `#515` docs, CODEOWNERS, and issue-routing policy is documented in
 [`docs/migration.md`](migration.md), [`docs/operators.md`](operators.md),

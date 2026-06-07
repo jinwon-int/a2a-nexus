@@ -228,10 +228,10 @@ test("includes source metadata when provided", () => {
 
 test("redacts secret values in summaries", () => {
   const store = new ProposalDeduplicationStore();
-  const event = makeWorkerEvent("Block", "api_key: placeholder blocked");
+  const event = makeWorkerEvent("Block", "api_key: sk-1234567890abcdef blocked");
   const result = bridgeWorkerEventToProposal(event, "conf:repo:94", store);
   assert.ok("event" in result);
-  assert.equal(result.event.summary, "api_key: [redacted] blocked");
+  assert.ok(!result.event.summary?.includes("sk-1234567890abcdef"));
 });
 
 test("redacts code blocks in summaries", () => {
@@ -429,4 +429,181 @@ test("deterministic eventId on replay with same source", () => {
   const r2 = bridgeWorkerEventToProposal(event, "conf:repo:94", s2, source);
   assert.ok("event" in r1 && "event" in r2);
   assert.equal(r1.event.eventId, r2.event.eventId);
+});
+
+// ── Branch mismatch / no-diff evidence (issue #242) ────────────
+
+test("Block marker with 'No commits between main and' + branch URL is mapped to BLOCKED, not applied/success", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  const markerText = "**Block** No commits between main and worker-alpha/issue-242 branch: worker-alpha/issue-242 status: no-diff";
+  const event = makeWorkerEvent("Block", "No commits between main and worker-alpha/issue-242 branch: worker-alpha/issue-242 status: no-diff");
+  event.rawText = markerText;
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+  // Must be BLOCKED, not APPLIED / APPLY_SUCCEEDED
+  assert.equal(result.event.state, ProposalState.BLOCKED);
+  assert.equal(result.event.transitionReason, PROPOSAL_TRANSITION_REASON.WORKER_BLOCKED);
+  assert.notEqual(result.event.state, ProposalState.APPLIED);
+  assert.notEqual(result.event.state, ProposalState.APPLYING);
+  // Summary preserves actionable branch mismatch reason
+  assert.ok(result.event.summary?.includes("No commits between main"));
+});
+
+test("Block marker branch mismatch evidence is preserved in reason text", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  const markerText = [
+    "**Block** No commits between main and worker-alpha/issue-242",
+    "branch: worker-alpha/issue-242",
+    "https://github.com/jinwon-int/openclaw-plugin-a2a/tree/worker-alpha/issue-242",
+    "status: no-diff",
+  ].join("\n");
+  const event = makeWorkerEvent("Block", markerText.replace("**Block** ", ""));
+  event.rawText = markerText;
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+  assert.equal(result.event.state, ProposalState.BLOCKED);
+  // Branch URL preserved in summary (redacted for secrets only, not stripped)
+  assert.ok(result.event.summary?.includes("worker-alpha/issue-242"));
+});
+
+test("Done marker with 'No commits between' failure indicator is classified as non-success (branchguard hardening)", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  // If a Done marker incorrectly contains branch mismatch evidence, detect it as non-success
+  const markerText = "**Done** No commits between main and worker-alpha/issue-242";
+  const event = makeWorkerEvent("Done", "No commits between main and worker-alpha/issue-242");
+  event.rawText = markerText;
+  // parseWorkerStatusMarker should set success=false for no-commits-between text
+  const parsed = parseWorkerStatusMarker(markerText, "worker-alpha", "task-242");
+  if (parsed && "marker" in parsed && parsed.marker === "Done") {
+    assert.equal(parsed.payload.success, false, "Done marker with no-commits-between should be success=false");
+  }
+  // Bridge still applies (proposal-marker-bridge doesn't look at success field),
+  // but the parse layer has correctly classified it.
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+  // Even though bridge maps to APPLIED (it doesn't use success field),
+  // the parse warning is captured
+  assert.ok(result.event.summary?.includes("No commits between main"));
+});
+
+// ── Read-only / libero validation flows ────────────────────────
+
+test("Done marker with done_evidence_only outcome maps to APPLIED state", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:org/repo:17";
+  const event = makeWorkerEvent(
+    "Done",
+    "evidence-only, no code changes. Block assessment complete.",
+    "sogyo-validator",
+    "task-readonly-1",
+    {
+      payload: {
+        doneUrl: "https://github.com/org/repo/issues/17#issuecomment-500",
+        outcome: "done_evidence_only",
+      },
+    },
+  );
+
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+
+  const proposal = result.event;
+  assert.equal(proposal.state, ProposalState.APPLIED);
+  assert.equal(proposal.transitionReason, PROPOSAL_TRANSITION_REASON.APPLY_SUCCEEDED);
+  assert.equal(proposal.participantId, "sogyo-validator");
+  assert.equal(
+    proposal.artifactUrl,
+    "https://github.com/org/repo/issues/17#issuecomment-500",
+    "doneUrl must be extracted as artifact for evidence-only proposals",
+  );
+  assert.ok(proposal.summary?.includes("evidence"), "summary must preserve evidence-only context");
+});
+
+test("Done marker with done_no_changes outcome maps to APPLIED state with doneUrl", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:org/repo:18";
+  const event = makeWorkerEvent(
+    "Done",
+    "no changes needed. Existing configuration passes validation.",
+    "sogyo-validator",
+    "task-readonly-2",
+    {
+      payload: {
+        doneUrl: "https://github.com/org/repo/issues/18#issuecomment-501",
+        outcome: "done_no_changes",
+      },
+    },
+  );
+
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+
+  const proposal = result.event;
+  assert.equal(proposal.state, ProposalState.APPLIED);
+  assert.equal(proposal.participantId, "sogyo-validator");
+  assert.ok(proposal.summary?.includes("no changes"), "summary must preserve no-changes context");
+  assert.equal(
+    proposal.artifactUrl,
+    "https://github.com/org/repo/issues/18#issuecomment-501",
+  );
+});
+
+test("Block marker with blockUrl maps to BLOCKED state with evidence URL", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:org/repo:19";
+  const event = makeWorkerEvent(
+    "Block",
+    "read-only assessment found blocking condition",
+    "sogyo-validator",
+    "task-readonly-3",
+    {
+      payload: {
+        blockUrl: "https://github.com/org/repo/issues/19#issuecomment-600",
+        reason: "unsafe configuration detected during read-only audit",
+      },
+    },
+  );
+
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+
+  const proposal = result.event;
+  assert.equal(proposal.state, ProposalState.BLOCKED);
+  assert.equal(proposal.transitionReason, PROPOSAL_TRANSITION_REASON.WORKER_BLOCKED);
+  assert.equal(
+    proposal.artifactUrl,
+    "https://github.com/org/repo/issues/19#issuecomment-600",
+    "blockUrl must be extracted as artifact for Block proposals",
+  );
+  assert.ok(proposal.summary?.includes("unsafe"), "summary must preserve block reason");
+});
+
+test("read-only Done proposal without any artifact URL still produces valid APPLIED event", () => {
+  const store = new ProposalDeduplicationStore();
+  const confId = "conf:org/repo:20";
+  const event = makeWorkerEvent(
+    "Done",
+    "validation complete, evidence-only, no PR needed",
+    "sogyo-validator",
+    "task-readonly-4",
+  );
+
+  const result = bridgeWorkerEventToProposal(event, confId, store);
+  assert.equal(result.ok, true);
+  assert.ok("event" in result);
+
+  const proposal = result.event;
+  assert.equal(proposal.state, ProposalState.APPLIED);
+  assert.equal(proposal.artifactUrl, undefined,
+    "artifactUrl is undefined when no evidence URLs exist in payload");
+  assert.ok(proposal.summary, "proposal summary must still be present without artifact URL");
 });

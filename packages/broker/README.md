@@ -1,17 +1,3 @@
-# packages/broker
-
-## Import provenance
-
-- Source repository: `jinwon-int/a2a-broker`
-- Source commit: `a6096882a781fb13c68ec526fee897a00724f9a0`
-- Import date: 2026-05-07
-- Import method: clean GitHub tarball copy of source `main` into `packages/broker`; private git history was not imported.
-- R1 evidence/blocker reference: https://github.com/jinwon-int/a2a-broker/issues/427
-- R2 monorepo import issue: https://github.com/jinwon-int/a2a-plane/issues/2
-- Parent readiness issue: https://github.com/jinwon-int/a2a-plane/issues/1
-
----
-
 # a2a-broker
 
 Minimal standalone A2A broker scaffold.
@@ -48,8 +34,11 @@ map.
 ## Design docs
 
 - `docs/a2a-protocol.md` for the canonical A2A task protocol: envelope shape, lifecycle, cancel semantics, event/state model, and the migration map from the retired legacy library entrypoints
+- `docs/a2a-dialectic-lite.md` for the ordinary A2A team-round convention that uses light dialectic review by default, while reserving explicit strong `a2ad 로 진행` / `a2ad 라운드로 진행` rounds for heavier thesis / antithesis / synthesis work without changing approval boundaries
 - `docs/protocol-compatibility.md` for the public A2A compatibility matrix, current supported profile, non-goals, and conformance/golden gate
 - `docs/public-stable-readiness.md` for the public/stable release decision checklist, license/secret/history gates, and broker/plugin/runner responsibility boundaries
+- `docs/source-public-risk-audit-20260510.md` for the Team2 independent broker source-public risk audit and parity evidence for the 2026-05-10 gate
+- `SECURITY.md` and `CONTRIBUTING.md` for vulnerability-reporting, contribution, and release-safety boundaries
 - `docs/v1-acceptance-handoff.md` for the v1 acceptance gate, the plugin-facing contract, and the cross-repo handoff bar for `openclaw-plugin-a2a`
 - `docs/trading-partner-refactor-design.md` for the broker evolution plan that supports stateful trading-partner workers such as `bangtong` and `dengae`
 - `docs/phase-1-implementation-checklist.md` for the first implementation slice
@@ -61,11 +50,22 @@ map.
 - `docs/operator-dashboard-snapshot.md` for the `GET /dashboard` operator snapshot JSON projection: workers, task status counters, stale/retry/dead-letter summary, and attention items
 - `docs/wake-on-task-live-canary-runbook.md` for the live Wake-on-Task canary proof, resource-warning classification, and rollback/reset checklist
 - `docs/docker-runner-rollout-runbook.md` for the A2A docker-runner worker rollout and rollback procedure: canary smoke, node expansion, feature flags, and failure rollback
+- `docs/superseded-running-task-policy.md` for the finalizer policy that marks slower sibling lanes as superseded after a winning PR/evidence is selected
+- `docs/hot-table-memory-warning-policy.md` for interpreting hot-table warnings as observe, investigate, or approval-required operator actions
+- `docs/terminal-brief-sidecar-operator-runbook.md` for the Terminal Brief sidecar supervised dry-run/default-on operator approval, observation, and rollback checklist
+- `docs/a2a-work-mode-routing-rules.md` for choosing Seoseo `solo`, Team1, or `hybrid` work modes from the 2026-06-06 benchmark evidence
+- `docs/a2a-work-mode-pre-dispatch-decision.md` plus `npm run work_mode_pre_dispatch_decision` for a source-only packet that records the selected work mode before any worker dispatch
+- `docs/a2a-adaptive-work-mode-selector.md` plus `npm run adaptive_work_mode_selector` for a source-only record that selects `solo`, `a2a_direct`, `a2a_hybrid`, `a2a_team`, or `a2ad` after planning and output estimation
+- `docs/a2a-hybrid-worker-mode-design.md` plus `npm run a2a_hybrid_worker_mode_benchmark` for `a2a_hybrid` worker-internal role semantics, evidence format, finalizer ownership, and no-live benchmark gates
 - `docs/team2-gwakga-worker-onboarding-retargeting.md` plus `examples/team2-gwakga.worker.env.example` for the Team2/Gwakga worker onboarding and Seoseo→Gwakga retarget safety runbook
+- `docs/gwakga-seoseo-handoff-receiver-ops.md` plus `examples/gwakga-seoseo.receiver.env.example` and the `gwakga_seoseo_receiver_*` npm scripts for default-off Gwakga→Seoseo handoff receiver operations
+- `docs/complexity-execution-plan-draft.md` plus `npm run complexity_execution_plan_draft` for source-only complexity orchestration execution-plan draft artifacts
 - `docs/docker-broker-live-smoke.md` for the repeatable live Docker broker no-op smoke script and <broker-host> run command
 - `docs/edge-secret-rotation-runbook.md` for the no-secret-values rotation checklist after an edge secret exposure
 - `docs/durable-persistence-path.md` for the recommended next persistence step beyond the phase-1 JSON snapshot backend
 - `docs/sqlite-persistence.md` and `docs/release-notes-round-34-sqlite.md` for the SQLite schema v8 operator baseline, hot-table coverage, and diagnostics hot-read release notes
+- `docs/release-notes-7655e9d-a2a-livez-persistence.md` for the draft release notes covering the #1032/#1250 `/livez` diagnostics closeout and worker-thread SQLite persistence canary
+- `docs/socket-reuse-probe-policy.md` for the strict wall-clock gate policy that treats reused-socket idle-before-request-event tails as client/probe residuals when fresh and standalone `/livez` probes are clean
 - `docs/production-stabilization-20260429.md` for the live production closeout: SQLite hot-table cutover, stale-reaper threshold, worker session isolation, active-worker scope, and 502 mitigation notes
 - `docs/phase-8-peer-status-rfc.md` for the `a2a.peer.status` RPC design contract: health semantics, mobile-aware thresholding, busy detection, rate limiting, privacy summary-mode output, and caller guidance
 
@@ -153,6 +153,12 @@ for (const worker of workers) {
 
 `GET /workers/capacity` returns a compact pre-dispatch view for repeated A2A rounds. It omits task payloads/messages and reports per-worker `queued`, `claimed`, `running`, `stale`, and `active` counts plus `latestTaskUpdatedAt`.
 
+`GET /control-tower` returns the read-only control tower slice for operator tools: queue status, recovery/attention signals, worker capacity, and Terminal Brief inbox health in one bounded response. It does not dispatch work, ACK terminal rows, replay providers, prune state, restart services, or mutate the database.
+
+`GET /terminal-brief/inbox` returns the operator-facing Terminal Brief inbox summary plus a bounded unacked event page. The summary separates raw unacked rows from actionable unacked rows, ACK-eligible rows, provider-send-only rows, and parent-broker-only projection rows that are ACK-ineligible.
+
+For the Team2/Gwakga R8 comparison against Team1/Seoseo, see [`docs/team2-gwakga-ops-dashboard-capacity-parity.md`](docs/team2-gwakga-ops-dashboard-capacity-parity.md) for the bounded dashboard/capacity semantics and GO/NO-GO checklist.
+
 Before a seoseo → gwakga broker cutover, run the read-only two-broker guard to fail closed if the same worker id is online in both broker worker lists:
 
 ```bash
@@ -172,6 +178,21 @@ curl -s "$BROKER_URL/workers/capacity?stale_after_ms=120000" \
 
 If the command exits non-zero, pause dispatch and inspect the compact response instead of repeatedly fetching large `/tasks?detail=full` snapshots.
 
+For Termux/mobile workers such as Daegyo, use the source-only mobile preflight
+packet before active lane assignment:
+
+```bash
+npm run mobile_worker_preflight -- \
+  --input fixtures/mobile-worker-preflight/slow-polling.json
+```
+
+See [`docs/mobile-worker-preflight.md`](docs/mobile-worker-preflight.md). This
+is separate from Docker-runner doctor: it evaluates supplied mobile signals such
+as poll interval, broker stale windows, tmux supervisor presence, local-forward
+presence, and wake-lock state. It does not change live Daegyo settings, execute
+`termux-wake-lock`, dispatch work, restart services, mutate DB state, send
+providers, or ACK/replay Terminal Brief rows.
+
 ## What is included
 
 Release note: this repository currently has no root `LICENSE` file. Treat public/stable release or visibility changes as blocked until the license decision is approved and recorded in `docs/public-stable-readiness.md`.
@@ -183,6 +204,8 @@ Release note: this repository currently has no root `LICENSE` file. Treat public
 - JSON-RPC facade at `POST /a2a/jsonrpc` with initial `SendMessage`, `GetTask`, `ListTasks`, `CancelTask`, and `GetExtendedAgentCard` methods
 - create/list/get exchange endpoints
 - operator read model for trading dialectic tasks at `GET /tasks/:id/trading-dialectic` (returns stage rail, decision card, and summary projection of a `trading.dialectic` v1 task payload)
+- operator read model for generic decision dialectic tasks at `GET /tasks/:id/decision-dialectic` (returns stage rail, decision card, dynamic worker roles, and summary projection of a `decision.dialectic` v1 task payload; see `docs/decision-dialectic.md`)
+- ordinary team-round guidance and source guard for `A2A Dialectic Lite` (`docs/a2a-dialectic-lite.md`, `npm run a2a_dialectic_lite_finalizer`), where normal A2A gets light dialectic review by default, explicit `a2ad` asks for stronger dialectic review, and the dialectic synthesis is still only a candidate solution
 - Dockerfile
 - docker-compose.yml
 

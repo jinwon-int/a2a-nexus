@@ -1,0 +1,23 @@
+{
+  "kind": "a2a-broker.mobile-worker-preflight.fixture",
+  "version": 1,
+  "description": "Daegyo-style Termux worker where tmux supervisor and local-forward are deliberately not expected. Both supervisor and local-forward signals skip (pass) instead of failing.",
+  "now": "2026-05-29T10:00:00.000Z",
+  "input": {
+    "nodeId": "daegyo",
+    "workerMode": "termux-mobile",
+    "status": "online",
+    "lastSeenAgeSec": 12,
+    "pollIntervalSec": 20,
+    "staleAfterSec": 30,
+    "disconnectedAfterSec": 90,
+    "tmuxSessionPresent": false,
+    "localForwardPresent": false,
+    "wakeLockHeld": true,
+    "activeLanePlanned": true,
+    "isolatedWorkspaceRootConfigured": true,
+    "isolatedWorkspaceRootShape": "~/.hermes/a2a-workspaces/<homeBrokerId>/<taskId>",
+    "expectedTmuxSession": false,
+    "expectedLocalForward": false
+  }
+}

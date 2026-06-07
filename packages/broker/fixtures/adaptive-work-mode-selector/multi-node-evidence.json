@@ -1,0 +1,21 @@
+{
+  "task": {
+    "taskId": "multi-node-evidence",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 1321,
+    "title": "Multi-node evidence task",
+    "taskClass": "multi_node_evidence"
+  },
+  "signals": {
+    "expectedOutputSize": "large",
+    "estimatedDuration": "long",
+    "riskLevel": "medium",
+    "repoCount": 2,
+    "nodeCount": 3,
+    "needsEvidence": true,
+    "needsValidation": true,
+    "needsDurableState": true,
+    "roleSeparable": true
+  },
+  "finalizerOwner": "seoseo"
+}

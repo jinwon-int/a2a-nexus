@@ -12,6 +12,7 @@ import type {
   BrokerDeliveryEvent,
   BrokerDeliveryStatus,
   DeliveryFailureCode,
+  DeliveryFailureCategory,
 } from "../dist/src/status-result-delivery-adapter.js";
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ describe("StatusResultDeliveryAdapter — status ingestion", () => {
     const event = adapter.ingestStatus(makeStatus({ rawStatus: "failed" }));
     assert.equal(event.status, "failed");
     assert.equal(event.failureCode, "internal_error");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("normalizes raw 'timeout' to timeout with deadline_exceeded", () => {
@@ -74,6 +76,7 @@ describe("StatusResultDeliveryAdapter — status ingestion", () => {
     const event = adapter.ingestStatus(makeStatus({ rawStatus: "timeout" }));
     assert.equal(event.status, "timeout");
     assert.equal(event.failureCode, "deadline_exceeded");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("normalizes raw 'expired' to stale with session_expired", () => {
@@ -81,6 +84,7 @@ describe("StatusResultDeliveryAdapter — status ingestion", () => {
     const event = adapter.ingestStatus(makeStatus({ rawStatus: "expired" }));
     assert.equal(event.status, "stale");
     assert.equal(event.failureCode, "session_expired");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("normalizes unknown status to in_progress", () => {
@@ -143,6 +147,7 @@ describe("StatusResultDeliveryAdapter — result ingestion", () => {
     const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "connection unreachable" }));
     assert.equal(event.status, "failed");
     assert.equal(event.failureCode, "target_unreachable");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("maps timeout result to timeout", () => {
@@ -150,6 +155,7 @@ describe("StatusResultDeliveryAdapter — result ingestion", () => {
     const event = adapter.ingestResult(makeResult({ resultType: "timeout" }));
     assert.equal(event.status, "timeout");
     assert.equal(event.failureCode, "deadline_exceeded");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("maps partial result to completed", () => {
@@ -163,24 +169,28 @@ describe("StatusResultDeliveryAdapter — result ingestion", () => {
     const event = adapter.ingestResult(makeResult({ resultType: "stale" }));
     assert.equal(event.status, "stale");
     assert.equal(event.failureCode, "session_expired");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("infers session_not_found from rawResultText", () => {
     const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
     const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "no session found" }));
     assert.equal(event.failureCode, "session_not_found");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("infers payload_too_large from rawResultText", () => {
     const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
     const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "payload too large" }));
     assert.equal(event.failureCode, "payload_too_large");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("infers broker_rejected from rawResultText", () => {
     const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
     const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "rejected by broker" }));
     assert.equal(event.failureCode, "broker_rejected");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("duplicate result suppressed", () => {
@@ -245,6 +255,7 @@ describe("StatusResultDeliveryAdapter — delivery entry bridge", () => {
     });
     assert.equal(event.status, "failed");
     assert.equal(event.failureCode, "internal_error");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("bridges timeout entry to timeout", () => {
@@ -256,6 +267,7 @@ describe("StatusResultDeliveryAdapter — delivery entry bridge", () => {
       updatedAt: fixedNow().toISOString(), warnings: [],
     });
     assert.equal(event.status, "timeout");
+    assert.equal(event.failureCategory, "infra");
   });
 
   it("bridges stale_session entry to stale", () => {
@@ -268,6 +280,7 @@ describe("StatusResultDeliveryAdapter — delivery entry bridge", () => {
     });
     assert.equal(event.status, "stale");
     assert.equal(event.failureCode, "session_expired");
+    assert.equal(event.failureCategory, "source");
   });
 
   it("duplicate bridge suppressed", () => {
@@ -455,5 +468,79 @@ describe("StatusResultDeliveryAdapter — status message format", () => {
     adapter.ingestStatus(env);
     const dup = adapter.ingestStatus(env);
     assert.ok(dup.message.startsWith("[duplicate]"));
+  });
+});
+
+describe("DeliveryFailureCategory — failure classification", () => {
+  it("classifies target_unreachable as infra (retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "target unreachable" }));
+    assert.equal(event.failureCategory, "infra");
+  });
+
+  it("classifies node_unreachable as infra (retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "node unreachable" }));
+    assert.equal(event.failureCode, "target_unreachable");
+    assert.equal(event.failureCategory, "infra");
+  });
+
+  it("classifies deadline_exceeded as infra (retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestStatus(makeStatus({ rawStatus: "timeout" }));
+    assert.equal(event.failureCategory, "infra");
+  });
+
+  it("classifies internal_error as infra (retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestStatus(makeStatus({ rawStatus: "failed" }));
+    assert.equal(event.failureCategory, "infra");
+  });
+
+  it("classifies session_expired as source (non-retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestStatus(makeStatus({ rawStatus: "expired" }));
+    assert.equal(event.failureCategory, "source");
+  });
+
+  it("classifies session_not_found as source (non-retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "no session found" }));
+    assert.equal(event.failureCategory, "source");
+  });
+
+  it("classifies payload_too_large as source (non-retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "payload too large" }));
+    assert.equal(event.failureCategory, "source");
+  });
+
+  it("classifies broker_rejected as source (non-retryable)", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "failure", rawResultText: "rejected by broker" }));
+    assert.equal(event.failureCategory, "source");
+  });
+
+  it("no failureCategory for non-failure statuses", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestStatus(makeStatus({ rawStatus: "running" }));
+    assert.equal(event.failureCode, undefined);
+    assert.equal(event.failureCategory, undefined);
+  });
+
+  it("no failureCategory for completed delivery", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    const event = adapter.ingestResult(makeResult({ resultType: "success" }));
+    assert.equal(event.failureCode, undefined);
+    assert.equal(event.failureCategory, undefined);
+  });
+
+  it("failureCategory set in audit entry for failures", () => {
+    const adapter = new StatusResultDeliveryAdapter({ now: fixedNow });
+    adapter.ingestResult(makeResult({ resultType: "stale" }));
+    const audit = adapter.getAuditLog("del-001");
+    const failureAudit = audit.find((a) => a.failureCode);
+    assert.ok(failureAudit);
+    assert.equal(failureAudit!.failureCategory, "source");
   });
 });

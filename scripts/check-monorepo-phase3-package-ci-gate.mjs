@@ -58,6 +58,7 @@ if (fixture) {
   expect(fixture.schema === 'a2a.monorepo-phase3-package-ci-gate.v1', 'fixture: unexpected schema');
   expect(fixture.issue === 'https://github.com/jinwon-int/a2a-plane/issues/534', 'fixture: issue must be #534');
   expect(fixture.implementationIssue === 'https://github.com/jinwon-int/a2a-plane/issues/536', 'fixture: implementationIssue must be #536');
+  expect(fixture.freshImportCandidateIssue === 'https://github.com/jinwon-int/a2a-plane/issues/538', 'fixture: freshImportCandidateIssue must be #538');
   expect(fixture.parentIssue === 'https://github.com/jinwon-int/a2a-plane/issues/511', 'fixture: parentIssue must be #511');
   expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
   expect(fixture.gateStatus === 'blocked', 'fixture: phase-3 gate must remain blocked');
@@ -106,7 +107,7 @@ if (fixture) {
   expect((broker?.requiredPackageJobBeforeMirrorRefresh || []).some((gate) => /node --check scripts\/team1-dispatch-wrapper/.test(gate)), 'fixture: broker must preserve script syntax checks');
 
   const runner = surfaces.get('docker-runner');
-  for (const gate of ['npm run build', 'npm run lint', 'npm test', 'pre-pr-bootstrap-guard', 'chaos:e2e', 'tag-release-candidate']) {
+  for (const gate of ['npm run build', 'npm run lint', 'npm test', 'pre-pr-bootstrap-guard', 'chaos:e2e', 'release-candidate-parity-audit']) {
     expect((runner?.requiredPackageJobBeforeMirrorRefresh || []).some((item) => item.includes(gate)), `fixture: docker-runner missing ${gate}`);
   }
 
@@ -132,7 +133,7 @@ if (pkg) {
     'package.json: missing check:monorepo-phase3-package-ci-gate script'
   );
   expect(
-    pkg.scripts?.['check:monorepo-package-ci-parity-jobs'] === 'node scripts/run-monorepo-package-ci-parity.mjs broker && node scripts/run-monorepo-package-ci-parity.mjs docker-runner && node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a',
+    pkg.scripts?.['check:monorepo-package-ci-parity-jobs'] === 'node scripts/run-monorepo-package-ci-parity.mjs broker && node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a && node scripts/run-monorepo-package-ci-parity.mjs docker-runner',
     'package.json: missing check:monorepo-package-ci-parity-jobs script'
   );
 }

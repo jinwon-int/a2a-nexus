@@ -5,6 +5,13 @@ import {
   createA2AGatewayBrokerClient,
   createA2AGatewayHandlers,
 } from '../dist/src/gateway-handlers.js';
+import { validateParams } from '../dist/src/gateway-validators.js';
+import { safeSessionKeyLabel } from '../dist/src/plugin-errors.js';
+
+/**
+ * Mutable capture so we can test one export without the full handler setup.
+ */
+import { validateA2ATaskRequestParams } from '../dist/src/gateway-validators.js';
 
 function createBaseConfig() {
   return {
@@ -427,6 +434,91 @@ test('approval handlers return not found when broker has no task', async () => {
   });
 });
 
+test('status handler projects receipt status separate from delivery status', async () => {
+  // Task that completed with delivery confirmation evidence
+  const deliveredTask = createBrokerTask({
+    id: 'task-delivered',
+    status: 'succeeded',
+    payload: {
+      correlationId: 'corr-delivered',
+      requesterSessionKey: 'session-alpha',
+      targetSessionKey: 'session-beta',
+      evidenceRefs: ['delivery-confirmed-check'],
+    },
+    result: { summary: 'completed' },
+  });
+  // Task that completed without delivery confirmation
+  const completedTask = createBrokerTask({
+    id: 'task-completed',
+    status: 'succeeded',
+    payload: {
+      requesterSessionKey: 'session-alpha',
+      targetSessionKey: 'session-beta',
+    },
+    result: { summary: 'done' },
+  });
+  // Active task with stale session evidence
+  const staleTask = createBrokerTask({
+    id: 'task-stale',
+    status: 'claimed',
+    payload: {
+      requesterSessionKey: 'session-alpha',
+      targetSessionKey: 'session-beta',
+      evidenceRefs: ['stale-session-evidence'],
+    },
+  });
+
+  const tasks = new Map([
+    ['task-delivered', deliveredTask],
+    ['task-completed', completedTask],
+    ['task-stale', staleTask],
+  ]);
+
+  const handlers = createA2AGatewayHandlers(createBaseConfig(), {
+    createBrokerClient: (config) =>
+      createA2AGatewayBrokerClient(config, {
+        createRawBrokerClient: () => ({
+          async getTask(taskId) {
+            return tasks.get(taskId);
+          },
+        }),
+      }),
+  });
+
+  // Operator-visible receipt
+  let response;
+  await handlers.handleA2ATaskStatus({
+    params: { sessionKey: 'session-alpha', taskId: 'task-delivered' },
+    respond(ok, result) {
+      response = { ok, result };
+    },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.receiptStatus, 'operator_visible');
+  assert.equal(response.result.deliveryStatus, 'skipped');
+
+  // Provider-delivered (no operator confirmation)
+  await handlers.handleA2ATaskStatus({
+    params: { sessionKey: 'session-alpha', taskId: 'task-completed' },
+    respond(ok, result) {
+      response = { ok, result };
+    },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.receiptStatus, 'provider_delivered_if_known');
+
+  // Stale session on active task
+  await handlers.handleA2ATaskStatus({
+    params: { sessionKey: 'session-alpha', taskId: 'task-stale' },
+    respond(ok, result) {
+      response = { ok, result };
+    },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.receiptStatus, 'stale');
+  assert.equal(response.result.executionStatus, 'accepted');
+});
+
 test('status handler maps timeout and cancel states through the plugin contract', async () => {
   const timeoutTask = createBrokerTask({
     id: 'task-timeout',
@@ -494,4 +586,94 @@ test('status handler maps timeout and cancel states through the plugin contract'
   assert.equal(cancelResponse.result.executionStatus, 'cancelled');
   assert.equal(cancelResponse.result.deliveryStatus, 'skipped');
   assert.equal(cancelResponse.result.taskId, 'task-cancel');
+});
+
+// ── safeSessionKeyLabel unit tests ──────────────────────────────
+
+test('safeSessionKeyLabel returns <missing> for undefined / null', () => {
+  assert.equal(safeSessionKeyLabel(undefined), '<missing>');
+  assert.equal(safeSessionKeyLabel(null), '<missing>');
+});
+
+test('safeSessionKeyLabel returns <empty> for empty / whitespace strings', () => {
+  assert.equal(safeSessionKeyLabel(''), '<empty>');
+  assert.equal(safeSessionKeyLabel('   '), '<empty>');
+});
+
+test('safeSessionKeyLabel returns <present> for valid non-empty strings', () => {
+  assert.equal(safeSessionKeyLabel('session-alpha'), '<present>');
+  assert.equal(safeSessionKeyLabel('any-secret-key'), '<present>');
+  assert.equal(safeSessionKeyLabel(123), '<present>');
+});
+
+// ── validateParams sessionKey redaction tests ───────────────────
+
+test('validateParams redacts missing sessionKey as <missing>', () => {
+  const result = validateParams(
+    { instructions: 'hello' },  // no sessionKey at all
+    validateA2ATaskRequestParams,
+    'a2a.task.request',
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.error.message.includes('<missing>'),
+    `expected <missing> in error, got: ${result.error.message}`);
+  // Raw value markers must not appear in error
+  assert.ok(!result.error.message.includes('undefined'),
+    `raw "undefined" leaked: ${result.error.message}`);
+});
+
+test('validateParams redacts empty sessionKey as <empty>', () => {
+  const result = validateParams(
+    { sessionKey: '', request: { method: 'a2a.task.request', target: { sessionKey: 't', displayKey: 't' }, task: { intent: 'ask', instructions: 'hello' } } },
+    validateA2ATaskRequestParams,
+    'a2a.task.request',
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.error.message.includes('<empty>'),
+    `expected <empty> in error, got: ${result.error.message}`);
+  // The raw empty string must not cause "" to appear literally
+  assert.ok(!result.error.message.includes('""'),
+    `raw empty-string "" leaked: ${result.error.message}`);
+});
+
+test('validateParams never includes raw sessionKey value in error message', () => {
+  // Pass a valid sessionKey alongside intentionally bad params so AJV
+  // generates errors that do *not* involve sessionKey itself.
+  const SENSITIVE_VALUE = 'super-secret-session-key-abc123';
+  const result = validateParams(
+    {
+      sessionKey: SENSITIVE_VALUE,
+      request: {
+        method: 'a2a.task.request',
+        target: { sessionKey: SENSITIVE_VALUE, displayKey: 't' },
+        task: { intent: 'ask', instructions: '' },  // empty instructions → fails
+      },
+    },
+    validateA2ATaskRequestParams,
+    'a2a.task.request',
+  );
+  assert.equal(result.valid, false);
+  assert.ok(!result.error.message.includes(SENSITIVE_VALUE),
+    `raw sessionKey value leaked into error message: ${result.error.message}`);
+  assert.ok(!result.error.message.includes('super-secret'),
+    `sessionKey substring leaked: ${result.error.message}`);
+});
+
+test('validateParams redacts nested target.sessionKey correctly', () => {
+  // Provide a valid top-level sessionKey but an empty nested sessionKey in target
+  const result = validateParams(
+    {
+      sessionKey: 'valid-session',
+      request: {
+        method: 'a2a.task.request',
+        target: { sessionKey: '', displayKey: '' },  // both empty
+        task: { intent: 'ask', instructions: 'hello' },
+      },
+    },
+    validateA2ATaskRequestParams,
+    'a2a.task.request',
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.error.message.includes('<empty>'),
+    `expected <empty> for nested sessionKey, got: ${result.error.message}`);
 });

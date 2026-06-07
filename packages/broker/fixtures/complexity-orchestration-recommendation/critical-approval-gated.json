@@ -1,0 +1,22 @@
+{
+  "kind": "a2a-broker.complexity-orchestration-recommendation.fixture",
+  "version": 1,
+  "description": "Critical live-impact task that must route to operator review.",
+  "now": "2026-05-29T08:35:00.000Z",
+  "format": "json",
+  "taskComplexityInput": {
+    "intent": "promote_to_live",
+    "targetEnvironment": "live",
+    "policyContext": {
+      "requiresApproval": true,
+      "liveImpact": true
+    },
+    "referenceCount": 2,
+    "artifactCount": 1,
+    "turnCount": 5
+  },
+  "bounds": {
+    "min": "simple",
+    "max": "critical"
+  }
+}

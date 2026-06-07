@@ -7,7 +7,7 @@
  * Decision types: `ready` | `waiting` | `blocked` | `failed`
  */
 
-import type { TaskStatus } from "./types.js";
+import type { BrokerExitCondition, TaskStatus } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Closeout decision
@@ -36,6 +36,23 @@ export interface CloseoutVerdict {
   decidedAt: string;
   /** Sequence number (monotonically increasing). */
   seq: number;
+  /**
+   * Broker outcome classification (issue #471).
+   * Refines the closeout decision with the exit condition:
+   * pr_success, no_change_done, no_change_block, or infra_failure.
+   * Set when the reconciler can determine why a task ended based on
+   * child evidence.
+   */
+  outcomeClass?: BrokerExitCondition;
+  /**
+   * Idempotency status of the most recent ingest call (issue #923).
+   *
+   * - "accepted": event was processed (new idempotency key or no key).
+   * - "deduped": event was rejected as a replay of a previously-seen
+   *   idempotency key; the verdict reflects the prior state, not new data.
+   * - undefined: no ingest has been called yet.
+   */
+  idempotencyStatus?: "accepted" | "deduped";
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +72,19 @@ export interface ChildTaskEvent {
   artifactIds?: string[];
   /** Optional: timestamp of this observation. */
   observedAt?: string;
+  /**
+   * Idempotency key for replay-safe event ingestion (issue #921).
+   *
+   * When provided, the reconciler tracks seen keys and rejects
+   * duplicate event deliveries. This protects against at-least-once
+   * delivery from terminal outbox replays or stale-task reaper
+   * double-fire where the same event carries the same key.
+   *
+   * Callers SHOULD produce stable keys derived from the original
+   * event source (e.g. `${childTaskId}-${status}-${observedAt}`)
+   * to survive outbox replays without double-counting.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CloseoutConfig {
@@ -78,6 +108,7 @@ const DEFAULT_CONFIG: Required<CloseoutConfig> = {
 
 export class CloseoutReconciler {
   private readonly children = new Map<string, ChildTaskEvent>();
+  private readonly seenKeys = new Set<string>();
   private seq = 0;
   private readonly config: Required<CloseoutConfig>;
 
@@ -87,14 +118,29 @@ export class CloseoutReconciler {
 
   /** Ingest a child task event. Returns the updated verdict. */
   ingest(event: ChildTaskEvent): CloseoutVerdict {
+    // Explicit idempotency key dedup: reject replay of a previously-seen key.
+    if (event.idempotencyKey) {
+      if (this.seenKeys.has(event.idempotencyKey)) {
+        const deduped = this.computeVerdict();
+        deduped.idempotencyStatus = "deduped";
+        return deduped;
+      }
+      this.seenKeys.add(event.idempotencyKey);
+    }
+
+    // Legacy implicit dedup: same status + stale flag == no-op.
     const existing = this.children.get(event.childTaskId);
     if (existing && existing.status === event.status && existing.stale === event.stale) {
       // No-op: same state
-      return this.computeVerdict();
+      const noop = this.computeVerdict();
+      noop.idempotencyStatus = event.idempotencyKey ? "accepted" : undefined;
+      return noop;
     }
     this.children.set(event.childTaskId, { ...event, observedAt: event.observedAt ?? new Date().toISOString() });
     this.seq++;
-    return this.computeVerdict();
+    const verdict = this.computeVerdict();
+    verdict.idempotencyStatus = "accepted";
+    return verdict;
   }
 
   /** Get current verdict without ingesting new data. */
@@ -115,6 +161,7 @@ export class CloseoutReconciler {
   /** Reset reconciler state. */
   reset(): void {
     this.children.clear();
+    this.seenKeys.clear();
     this.seq = 0;
   }
 

@@ -1,6 +1,16 @@
 services:
   a2a-broker:
-    build: .
+    build:
+      context: .
+      args:
+        # Pass git SHA and timestamp as build args so Docker labels
+        # (org.opencontainers.image.revision) and runtime env vars
+        # (A2A_BROKER_REVISION) reflect the deployed commit.
+        # Set these before building: export A2A_BROKER_REVISION=$(git rev-parse HEAD)
+        # export A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:-unknown}
+        A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:-}
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped
@@ -15,7 +25,7 @@ services:
     networks:
       - a2a
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5

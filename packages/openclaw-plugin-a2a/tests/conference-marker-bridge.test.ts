@@ -181,3 +181,128 @@ test("full pipeline handles skips, invalid payloads, worker mapping, and batches
   assert.equal(batch.skipped, 1);
   assert.equal(batch.errors, 1);
 });
+
+// ── Read-only / libero validation flows ────────────────────────
+
+test("Done marker with done_evidence_only outcome bridges to conference 'done' action", () => {
+  const event = parseEvent(
+    "Done",
+    "— evidence-only assessment. Block evaluation complete, no code changes.",
+  );
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(event, "conference:org/repo:1", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.action, "done");
+  assert.equal(bridged.participantId, "worker-alpha");
+  assert.ok(bridged.summary, "must have a summary for read-only done");
+  assert.match(bridged.summary ?? "", /evidence/i);
+});
+
+test("Done marker with done_no_changes outcome bridges to conference 'done' action", () => {
+  const event = parseEvent(
+    "Done",
+    "— no changes needed. Existing configuration is correct.",
+  );
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(event, "conference:org/repo:1", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.action, "done");
+  assert.ok(bridged.summary, "must have a summary for no-changes done");
+  assert.match(bridged.summary ?? "", /no changes/i);
+});
+
+test("Done marker with evidence-only outcome and doneUrl extracts artifactUrl", () => {
+  const event = parseEvent(
+    "Done",
+    "— evidence-only, no code changes. Assessment complete.",
+  );
+  // Simulate the ingestion pipeline enriching with a doneUrl
+  const enrichedEvent = {
+    ...event,
+    payload: {
+      ...event.payload,
+      doneUrl: "https://github.com/org/repo/issues/1#issuecomment-99",
+    },
+  };
+
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(enrichedEvent, "conference:org/repo:1", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.action, "done");
+  assert.equal(
+    bridged.artifactUrl,
+    "https://github.com/org/repo/issues/1#issuecomment-99",
+    "evidence-only doneUrl must be extracted as artifact URL",
+  );
+});
+
+test("Block marker with blockUrl extracts evidence URL", () => {
+  const event = parseEvent(
+    "Block",
+    "— read-only assessment identifies blocking condition",
+  );
+  // Simulate enrichment with blockUrl
+  const enrichedEvent = {
+    ...event,
+    payload: {
+      ...event.payload,
+      blockUrl: "https://github.com/org/repo/issues/2#issuecomment-200",
+    },
+  };
+
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(enrichedEvent, "conference:org/repo:2", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.action, "block");
+  assert.equal(
+    bridged.artifactUrl,
+    "https://github.com/org/repo/issues/2#issuecomment-200",
+    "blockUrl must be extracted as artifact URL for block markers",
+  );
+});
+
+test("read-only Done without PR URL still produces valid conference event", () => {
+  // A libero lane produces Done evidence without a PR — no prUrl or issueUrl
+  const event = parseEvent(
+    "Done",
+    "— evidence-only validation complete. No PR needed.",
+  );
+
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(event, "conference:org/repo:3", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.action, "done");
+  assert.equal(bridged.participantId, "worker-alpha");
+  // artifactUrl is undefined when no prUrl/issueUrl/doneUrl/blockUrl
+  // This is valid — the evidence is the comment itself
+  assert.equal(bridged.artifactUrl, undefined, "no artifact URL when no evidence URLs present");
+  assert.ok(bridged.summary, "conference summary must still be present");
+});
+
+test("artifactUrl extraction priority: prUrl > issueUrl > doneUrl > blockUrl", () => {
+  // When all URL types are present, prUrl takes priority
+  const event = parseEvent("PR", "— https://github.com/org/repo/pull/10");
+  const multiUrlEvent = {
+    ...event,
+    marker: "PR" as const,
+    payload: {
+      ...event.payload,
+      prUrl: "https://github.com/org/repo/pull/10",
+      issueUrl: "https://github.com/org/repo/issues/10",
+      doneUrl: "https://github.com/org/repo/issues/10#issuecomment-300",
+      blockUrl: "https://github.com/org/repo/issues/10#issuecomment-299",
+    },
+  };
+
+  const bridged = assertBridgeSuccess(
+    bridgeWorkerEventToConference(multiUrlEvent, "conference:org/repo:10", new ConferenceDeduplicationStore()),
+  );
+
+  assert.equal(bridged.artifactUrl, "https://github.com/org/repo/pull/10",
+    "prUrl must take priority when multiple artifact URLs are present");
+});

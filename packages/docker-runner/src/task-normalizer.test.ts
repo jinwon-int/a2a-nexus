@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultCheckoutPath, isPatchMode, normalizeRepoUrl, normalizeTask } from "./task-normalizer.js";
+import { buildToolchainDetectedCommandsForRepo, defaultCheckoutPath, isPatchMode, normalizeRepoUrl, normalizeTask } from "./task-normalizer.js";
 
 test("normalizes GitHub shorthand repo URLs", () => {
   assert.equal(normalizeRepoUrl("jinwon-int/openclaw-plugin-a2a"), "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
@@ -70,13 +70,55 @@ test("passes through mode, issueUrl, reportLanguage, and requestedBy", () => {
   assert.ok(task.commands.length > 0);
 });
 
+test("normalizes per-task OpenClaw worker overrides into container env", () => {
+  const task = normalizeTask({
+    id: "libero-pro",
+    intent: "propose_patch",
+    mode: "github-libero-validation",
+    repo: "jinwon-int/test-repo",
+    env: {
+      KEEP_ME: "1",
+      A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+    },
+    allowNoChanges: true,
+    workerModel: "deepseek/deepseek-v4-pro",
+    workerThinking: "high",
+  });
+
+  assert.equal(task.env?.KEEP_ME, "1");
+  assert.equal(task.env?.A2A_OPENCLAW_MODEL, "deepseek/deepseek-v4-pro");
+  assert.equal(task.env?.A2A_OPENCLAW_THINKING, "high");
+  assert.equal(task.env?.A2A_RUNNER_ALLOW_NO_CHANGES, "1");
+  assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, undefined);
+});
+
+test("normalizes read-only validation into OpenClaw no-change env guards", () => {
+  const task = normalizeTask({
+    id: "readonly-env",
+    intent: "propose_patch",
+    mode: "github-libero-validation",
+    repo: "jinwon-int/test-repo",
+    readOnlyValidation: true,
+  });
+
+  assert.equal(task.allowNoChanges, true);
+  assert.equal(task.env?.A2A_RUNNER_ALLOW_NO_CHANGES, "1");
+  assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, "1");
+});
+
 // ---------------------------------------------------------------------------
 // isPatchMode
 // ---------------------------------------------------------------------------
 
-test("isPatchMode recognises github-propose-patch and propose_patch", () => {
+test("isPatchMode recognises patch and read-only GitHub evidence modes", () => {
   assert.equal(isPatchMode("github-propose-patch"), true);
   assert.equal(isPatchMode("propose_patch"), true);
+  assert.equal(isPatchMode("github-verify"), true);
+  assert.equal(isPatchMode("github-read-only-validation"), true);
+  assert.equal(isPatchMode("read-only-validation"), true);
+  assert.equal(isPatchMode("github-libero-validation"), true);
+  assert.equal(isPatchMode("libero-validation"), true);
+  assert.equal(isPatchMode("family-wiki-readonly-audit"), true);
   assert.equal(isPatchMode("chat"), false);
   assert.equal(isPatchMode(undefined), false);
   assert.equal(isPatchMode(""), false);
@@ -120,6 +162,7 @@ test("generates PR-producing default commands for github-propose-patch mode with
   assert.ok(pipeline.indexOf("issue-start-comment.md") < pipeline.indexOf("patch-command.sh"), "Expected start comment before patch execution");
   assert.ok(pipeline.includes("error=gh_unavailable_start_comment_required"), "Expected gh-missing start comment to fail closed");
   assert.ok(pipeline.includes("error=start_comment_failed"), "Expected failed start comment to fail closed");
+  assert.ok(pipeline.includes("start_comment_url=%s"), "Expected Start comment URL to be captured for evidence");
   assert.ok(pipeline.includes("start_comment=posted"), "Expected posted start comment evidence marker");
   assert.ok(pipeline.includes("gh issue comment 'https://github.com/jinwon-int/test-repo/issues/5'"), "Expected issue PR comment");
   assert.ok(pipeline.includes("/work/artifacts/issue-comment-output.txt"), "Expected issue comment output artifact");
@@ -137,6 +180,17 @@ test("generates PR-producing default commands for github-propose-patch mode with
   assert.ok(pipeline.includes("warning=pr_update_branch_failed"), "Expected non-fatal update-branch fallback marker");
   assert.ok(pipeline.includes("error=pr_create_failed_or_missing_url"), "Expected missing PR URL to fail safely");
   assert.ok(pipeline.includes("error=no_changes_after_patch_command"), "Expected no-changes fallback to fail safely");
+  assert.ok(pipeline.includes("notice=agent_changed_branch"), "Expected agent-created branch normalization marker");
+  assert.ok(pipeline.includes("git branch -f \"$BRANCH\" HEAD"), "Expected runner branch to be moved to agent HEAD when the agent changed branches");
+  assert.ok(pipeline.includes("git push origin HEAD:\"$BRANCH\""), "Expected pushing current HEAD, not a stale pre-agent branch ref");
+  assert.ok(pipeline.includes("BOOTSTRAP_LEAKS_BEFORE_PR"), "Expected a pre-PR bootstrap leak re-check after agent execution");
+  assert.ok(pipeline.includes("filter_branch_bootstrap_leaks"), "Expected ignored-file-aware branch-entry filter before PR creation");
+  assert.ok(pipeline.includes("git -C \"$repo_dir\" ls-files -- \"$path\""), "Expected tracked bootstrap paths to block before PR creation");
+  assert.ok(pipeline.includes("git -C \"$repo_dir\" status --porcelain -- \"$path\""), "Expected staged/unignored bootstrap paths to block before PR creation");
+  assert.ok(pipeline.includes("ARTIFACT_BOOTSTRAP_LEAKS_BEFORE_PR"), "Expected artifact evidence bootstrap leak re-check after agent execution");
+  assert.ok(pipeline.includes("OpenClaw bootstrap context files appeared before PR creation or artifact evidence capture"), "Expected pre-PR bootstrap leak block evidence");
+  assert.ok(pipeline.indexOf("BOOTSTRAP_BLOCK_PATHS") < pipeline.indexOf("git add -A"), "Expected bootstrap re-check before git add can stage runtime files");
+  assert.ok(pipeline.includes("notice=using_existing_pr_url_from_artifacts"), "Expected PR URL recovery from agent-created PR artifacts");
 
   const generated = task.commands.join("\n");
   assert.doesNotMatch(generated, /claude-(install|output|prompt)|@anthropic-ai\/claude-code|claude --/i);
@@ -319,14 +373,14 @@ test("cross-repo closing ref uses owner/repo#N format in PR body", () => {
     id: "cross-repo-issue",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/other-repo",
+    repo: "jinon86/other-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/7",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/7",
   });
 
   const pipeline = task.commands[1] ?? "";
   const prBody = extractPrBodyFromPipeline(pipeline);
-  assert.ok(prBody.includes("Closes example-org/test-repo#7"), `Expected cross-repo closing ref, got: ${prBody}`);
+  assert.ok(prBody.includes("Closes jinon86/test-repo#7"), `Expected cross-repo closing ref, got: ${prBody}`);
   assert.ok(!prBody.includes("Closes #7"), "Should not use bare #N for cross-repo issue");
 });
 
@@ -335,15 +389,15 @@ test("same-repo closing ref uses bare #N format in PR body", () => {
     id: "same-repo-issue",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/12",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/12",
   });
 
   const pipeline = task.commands[1] ?? "";
   const prBody = extractPrBodyFromPipeline(pipeline);
   assert.ok(prBody.includes("Closes #12"), "Expected bare #N closing ref for same-repo issue");
-  assert.ok(!prBody.includes("Closes example-org/test-repo#12"), "Should not use full org/repo#N for same-repo");
+  assert.ok(!prBody.includes("Closes jinon86/test-repo#12"), "Should not use full org/repo#N for same-repo");
 });
 
 test("no Closes keyword in PR body when issueUrl is absent", () => {
@@ -351,7 +405,7 @@ test("no Closes keyword in PR body when issueUrl is absent", () => {
     id: "no-issue-url",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
     prompt: "Fix a bug.",
   });
@@ -366,16 +420,16 @@ test("PR body contains issue URL and requestedBy when set", () => {
     id: "with-requester",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
     requestedBy: "jinwon",
-    issueUrl: "https://github.com/example-org/test-repo/issues/3",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/3",
   });
 
   const pipeline = task.commands[1] ?? "";
   const prBody = extractPrBodyFromPipeline(pipeline);
   assert.ok(prBody.includes("jinwon"), "PR body should include requestedBy");
-  assert.ok(prBody.includes("https://github.com/example-org/test-repo/issues/3"), "PR body should include issue URL");
+  assert.ok(prBody.includes("https://github.com/jinon86/test-repo/issues/3"), "PR body should include issue URL");
 });
 
 test("PR body is written to pr-body.md artifact path", () => {
@@ -383,7 +437,7 @@ test("PR body is written to pr-body.md artifact path", () => {
     id: "pr-body-path",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
   });
 
@@ -397,9 +451,9 @@ test("PR body heredoc uses quoted delimiter to prevent shell expansion", () => {
     id: "heredoc-safety",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/1",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/1",
     prompt: "Fix: add $VARIABLE handling and `backtick` support.",
   });
 
@@ -416,7 +470,7 @@ test("no gh issue comment in pipeline when issueUrl is absent", () => {
     id: "no-issue-comment",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
   });
 
@@ -429,9 +483,9 @@ test("issue comment uses --body-file for safety, not inline --body arg", () => {
     id: "issue-comment-bodyfile",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/20",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/20",
   });
 
   const pipeline = task.commands[1] ?? "";
@@ -448,16 +502,16 @@ test("issue URL is single-quoted in gh issue comment for shell metacharacter saf
     id: "url-quoting",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/5",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/5",
   });
 
   const pipeline = task.commands[1] ?? "";
   const ghCommentIdx = pipeline.indexOf("gh issue comment");
   const ghCommentLine = pipeline.slice(ghCommentIdx, pipeline.indexOf("\n", ghCommentIdx));
   assert.ok(
-    ghCommentLine.includes("'https://github.com/example-org/test-repo/issues/5'"),
+    ghCommentLine.includes("'https://github.com/jinon86/test-repo/issues/5'"),
     `Issue URL must be single-quoted in gh issue comment, got: ${ghCommentLine}`,
   );
 });
@@ -469,9 +523,9 @@ test("issue URL single quote is shell-escaped in gh issue comment (defensive met
     id: "singlequote-url",
     intent: "propose_patch",
     mode: "github-propose-patch",
-    repo: "example-org/test-repo",
+    repo: "jinon86/test-repo",
     baseBranch: "main",
-    issueUrl: "https://github.com/example-org/test-repo/issues/5'x",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/5'x",
   });
 
   const pipeline = task.commands[1] ?? "";
@@ -481,7 +535,502 @@ test("issue URL single quote is shell-escaped in gh issue comment (defensive met
   assert.ok(ghCommentLine.includes("'\\''"), `Single quote in URL must be POSIX-escaped, got: ${ghCommentLine}`);
   // The fully-escaped URL argument must appear in one piece
   assert.ok(
-    ghCommentLine.includes("'https://github.com/example-org/test-repo/issues/5'\\''x'"),
+    ghCommentLine.includes("'https://github.com/jinon86/test-repo/issues/5'\\''x'"),
     `Expected full POSIX-escaped URL in gh issue comment line, got: ${ghCommentLine}`,
   );
+});
+
+// ---------------------------------------------------------------------------
+// allowNoChanges: evidence-only / preflight lanes (a2a-docker-runner#169)
+// ---------------------------------------------------------------------------
+
+test("allowNoChanges: defaults to error+exit 2 when flag is absent", () => {
+  const task = normalizeTask({
+    id: "no-allow-flag",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "main",
+    commands: [],
+  });
+
+  // Default patch commands are synthesized.  Sanity-check.
+  const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("error=no_changes_after_patch_command"), "Expected no-changes error marker when allowNoChanges is absent");
+  assert.ok(pipeline.includes("exit 2"), "Expected exit 2 when allowNoChanges is absent");
+  assert.ok(!pipeline.includes("status=no_changes_allowed"), "Must not emit no_changes_allowed when flag is absent");
+});
+
+test("allowNoChanges: exits cleanly with evidence marker when flag is set", () => {
+  const task = normalizeTask({
+    id: "evidence-only-lane",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "main",
+    allowNoChanges: true,
+    commands: [],
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no_changes_allowed marker when allowNoChanges is true");
+  assert.ok(pipeline.includes("notice=no_code_changes_produced_evidence_only_lane"), "Expected notice for evidence-only lane");
+  assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not emit error marker when allowNoChanges is true");
+  // When allowNoChanges is true, the no-changes else branch must output
+  // status=no_changes_allowed (not exit 2).  Other exit 2 calls for PR
+  // creation or start-comment failures are unrelated.
+  const noChangesIdx = pipeline.indexOf("status=no_changes_allowed");
+  assert.ok(noChangesIdx >= 0, "Expected status=no_changes_allowed marker");
+  // The exit 2 must not appear immediately after the no-changes-allowed branch
+  // (the default behavior is `exit 2` right after the else).
+  const snippetAfter = pipeline.slice(noChangesIdx, noChangesIdx + 200);
+  assert.ok(!snippetAfter.includes("exit 2"), "No exit 2 must follow status=no_changes_allowed in the no-changes branch");
+});
+
+test("allowNoChanges: explicit commands are not overridden", () => {
+  const task = normalizeTask({
+    id: "explicit-cmds",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    allowNoChanges: true,
+    commands: ["echo 'custom'", "printf 'done\\n'"],
+  });
+
+  // Explicit commands pass through; the default pipeline is NOT synthesized.
+  assert.deepStrictEqual(task.commands, ["echo 'custom'", "printf 'done\\n'"]);
+});
+
+// github-verify mode (a2a-docker-runner#231)
+
+test("github-verify: isPatchMode recognises the mode and generates patch pipeline with no-change guard", () => {
+  const task = normalizeTask({
+    id: "verify-lane",
+    intent: "verify",
+    mode: "github-verify",
+    repo: "jinwon-int/a2a-docker-runner",
+    baseBranch: "main",
+    allowNoChanges: true,
+    forbidNewPr: true,
+    commands: [],
+  });
+
+  // Mode is preserved.
+  assert.equal(task.mode, "github-verify");
+
+  // Should generate patch pipeline (isPatchMode returns true for github-verify).
+  assert.ok(task.commands.length >= 2, "Expected patch pipeline commands");
+  const pipeline = task.commands[1] ?? "";
+
+  // allowNoChanges=true → no-changes branch uses status=no_changes_allowed, not exit 2.
+  assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no_changes_allowed for verify mode");
+  assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not emit no-changes error for verify mode");
+
+  // forbidNewPr=true → changes trigger new_pr_forbidden, not PR creation.
+  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected new_pr_forbidden when verify lane produces changes");
+  assert.ok(!pipeline.includes("gh pr create"), "Must not create PR in verify lane");
+
+  // Still includes create-branch + patch command execution.
+  assert.ok(pipeline.includes("git checkout -b"), "Expected branch creation");
+  assert.ok(
+    pipeline.includes("/work/patch-command.sh") || pipeline.includes("A2A_PATCH_COMMAND"),
+    "Expected patch command execution",
+  );
+});
+
+test("github-libero-validation: generates evidence pipeline with read-only no-change guard", () => {
+  const task = normalizeTask({
+    id: "libero-lane",
+    intent: "verify",
+    mode: "github-libero-validation",
+    repo: "jinwon-int/a2a-broker",
+    baseBranch: "main",
+    readOnlyValidation: true,
+    forbidNewPr: true,
+    commands: [],
+  });
+
+  assert.equal(task.mode, "github-libero-validation");
+  assert.equal(task.allowNoChanges, true);
+  assert.ok(task.commands.length >= 2, "Expected GitHub evidence pipeline commands");
+
+  const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("read_only_validation=passed"), "Expected read-only validation guard");
+  assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no-change Done path");
+  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected PR creation guard");
+  assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not fail no-change libero validation");
+});
+
+test("family-wiki-readonly-audit: permits tracked wiki AGENTS.md but remains read-only and no-PR", () => {
+  const task = normalizeTask({
+    id: "family-wiki-audit",
+    intent: "verify",
+    mode: "family-wiki-readonly-audit",
+    repo: "jinwon-int/seoyoon-family-wiki",
+    baseBranch: "master",
+    commands: [],
+  });
+
+  assert.equal(task.mode, "family-wiki-readonly-audit");
+  assert.equal(task.readOnlyValidation, true);
+  assert.equal(task.allowNoChanges, true);
+  assert.equal(task.forbidNewPr, true);
+  assert.equal(task.commentOnly, false);
+  assert.ok(task.commands.length >= 2, "Expected GitHub evidence pipeline commands");
+
+  const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("read_only_validation=passed"), "Expected read-only validation guard");
+  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected PR creation guard");
+  assert.ok(pipeline.includes("BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES='.:AGENTS.md'"), "Expected canonical wiki AGENTS.md allowance");
+  assert.ok(pipeline.includes("artifacts/%s"), "Artifact bootstrap paths must remain blocked");
+  assert.ok(!pipeline.includes("gh pr create"), "Family Wiki audit mode must not create PRs");
+});
+
+test("allowNoChanges: flag is preserved through normalization", () => {
+  const task = normalizeTask({
+    id: "preserve-flag",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    allowNoChanges: true,
+    commands: [],
+  });
+  assert.equal(task.allowNoChanges, true);
+});
+
+// ---------------------------------------------------------------------------
+// readOnlyValidation: validation/libero lanes must not create patch evidence
+// from repository mutations.
+// ---------------------------------------------------------------------------
+
+test("readOnlyValidation: implies allowNoChanges for Done evidence without PR", () => {
+  const task = normalizeTask({
+    id: "readonly-validation",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    readOnlyValidation: true,
+    commands: [],
+  });
+
+  assert.equal(task.readOnlyValidation, true);
+  assert.equal(task.allowNoChanges, true);
+});
+
+test("readOnlyValidation: default pipeline fails closed on repository changes before push or PR", () => {
+  const task = normalizeTask({
+    id: "readonly-pipeline",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    readOnlyValidation: true,
+    commands: [],
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  const guardIdx = pipeline.indexOf("error=read_only_validation_changed_repo");
+  const pushIdx = pipeline.indexOf("git push origin");
+  const prIdx = pipeline.indexOf("gh pr create");
+  assert.ok(guardIdx >= 0, "Expected read-only validation guard in default pipeline");
+  assert.ok(pipeline.includes("read_only_validation=passed"), "Expected pass marker for unchanged validation lanes");
+  assert.ok(pipeline.includes("read_only_change="), "Expected exact changed path evidence markers");
+  assert.ok(pushIdx > guardIdx, "Read-only guard must run before git push");
+  assert.ok(prIdx > guardIdx, "Read-only guard must run before gh pr create");
+  assert.ok(pipeline.includes("status=no_changes_allowed"), "Read-only validation must allow no-change Done evidence");
+});
+
+// ---------------------------------------------------------------------------
+// Parent round field preservation: Team1 dispatch-wrapper (a2a-broker#847)
+// ---------------------------------------------------------------------------
+
+test("normalizeTask preserves parentRoundId and parent round fields", () => {
+  const task = normalizeTask({
+    id: "parent-round-test",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    parentRoundId: "round-abc-123",
+    parentRoundTotal: 5,
+    parentRoundOrder: 3,
+    parentRoundProgress: "3/5",
+    brokerOfRecordId: "broker-alpha",
+    policyContext: {
+      policyMode: "dispatch",
+      policyScope: "team1",
+      policyParams: { lane: "dispatch-wrapper" },
+    },
+  });
+
+  assert.equal(task.parentRoundId, "round-abc-123");
+  assert.equal(task.parentRoundTotal, 5);
+  assert.equal(task.parentRoundOrder, 3);
+  assert.equal(task.parentRoundProgress, "3/5");
+  assert.equal(task.brokerOfRecordId, "broker-alpha");
+  assert.deepEqual(task.policyContext, {
+    policyMode: "dispatch",
+    policyScope: "team1",
+    policyParams: { lane: "dispatch-wrapper" },
+  });
+});
+
+test("PR body includes parent round fields when present", () => {
+  const task = normalizeTask({
+    id: "pr-parent-round",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "main",
+    parentRoundId: "pr-abc-99",
+    parentRoundTotal: 4,
+    parentRoundOrder: 2,
+    brokerOfRecordId: "broker-beta",
+    policyContext: { policyScope: "team1-dispatch" },
+    issueUrl: "https://github.com/jinwon-int/test-repo/issues/42",
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  const prBody = extractPrBodyFromPipeline(pipeline);
+
+  assert.ok(prBody.includes("Parent round ID: `pr-abc-99`"), `Expected parent round ID in PR body, got: ${prBody}`);
+  assert.ok(prBody.includes("Round progress: 2/4"), `Expected round progress in PR body, got: ${prBody}`);
+  assert.ok(prBody.includes("Broker of record: `broker-beta`"), `Expected broker of record in PR body, got: ${prBody}`);
+  assert.ok(prBody.includes("Policy scope: team1-dispatch"), `Expected policy scope in PR body, got: ${prBody}`);
+});
+
+test("PR body omits parent round fields when absent", () => {
+  const task = normalizeTask({
+    id: "pr-no-parent-round",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "main",
+    issueUrl: "https://github.com/jinwon-int/test-repo/issues/1",
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  const prBody = extractPrBodyFromPipeline(pipeline);
+
+  assert.ok(!prBody.includes("Parent round"), "PR body must not mention parent round when not provided");
+  assert.ok(!prBody.includes("Broker of record"), "PR body must not mention broker of record when not provided");
+  assert.ok(!prBody.includes("Policy scope"), "PR body must not mention policy scope when not provided");
+});
+
+// ---------------------------------------------------------------------------
+// buildToolchainDetectedCommandsForRepo: Python-only repo detection and
+// unconditional npm bootstrap removal (a2a-docker-runner#339)
+// ---------------------------------------------------------------------------
+
+test("toolchain-detect: non-patch-mode fallback uses toolchain detection instead of unconditional npm ci", () => {
+  // Tasks with a repo, no explicit commands, and NOT in patch mode should
+  // no longer produce unconditional "npm ci" / "npm test".
+  const task = normalizeTask({
+    id: "non-python-task",
+    intent: "smoke",
+    repo: "jinwon-int/test-repo",
+  });
+
+  assert.equal(task.commands.length, 1, "Expected exactly one generated command");
+  const cmd = task.commands[0] ?? "";
+  assert.ok(cmd.startsWith("cd /work/repo"), `Expected cd to repo path, got: ${cmd.slice(0, 60)}`);
+  // npm ci/npm test should appear only inside the conditional Node.js detection block.
+  // They are NOT at the top level (unconditional).
+  const lines = cmd.split("\n");
+  const npmCiLine = lines.findIndex((l) => l.includes("npm ci"));
+  const npmTestLine = lines.findIndex((l) => l.includes("npm test"));
+  assert.ok(npmCiLine >= 0, "npm ci must appear in generated command");
+  assert.ok(npmTestLine >= 0, "npm test must appear in generated command");
+  // Both must be inside the Node.js if-block, not at the top level.
+  const beforeFirstIf = cmd.slice(0, cmd.indexOf("if [ -f package.json ]"));
+  assert.ok(!beforeFirstIf.includes("npm ci"), "npm ci must only appear inside conditional check");
+  assert.ok(!beforeFirstIf.includes("npm test"), "npm test must only appear inside conditional check");
+  // Should still contain toolchain detection markers.
+  assert.ok(cmd.includes("package.json"), "Expected Node.js detection check");
+  assert.ok(cmd.includes("pyproject.toml") || cmd.includes("requirements.txt"), "Expected Python detection check");
+  assert.ok(cmd.includes("toolchain_unsupported"), "Expected unsupported toolchain Block marker");
+});
+
+test("toolchain-detect: generated command includes Node.js detection and npm path", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("my-app");
+
+  assert.ok(cmd.startsWith("cd /work/my-app"), "Expected cd to the repo path");
+  assert.ok(cmd.includes("if [ -f package.json ]"), "Expected Node.js project file check");
+  assert.ok(cmd.includes("npm ci 2>&1 || exit 1"), "Expected npm ci in Node detection path");
+  assert.ok(cmd.includes("npm test 2>&1 || exit 1"), "Expected npm test in Node detection path");
+  assert.ok(cmd.includes("toolchain=nodejs"), "Expected Node.js toolchain evidence marker");
+});
+
+test("toolchain-detect: generated command includes Python detection with python3/python fallback", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("python-app");
+
+  // Python detection.
+  assert.ok(cmd.includes("command -v python3 >/dev/null 2>&1"), "Expected python3 check");
+  assert.ok(cmd.includes("elif command -v python >/dev/null 2>&1"), "Expected python fallback check");
+  assert.ok(cmd.includes("PYTHON=\"\""), "Expected empty default PYTHON variable");
+  assert.ok(cmd.includes("if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ] || [ -f setup.cfg ]"), "Expected Python project file markers");
+
+  // pip install paths.
+  assert.ok(cmd.includes("-m pip install -r requirements.txt"), "Expected requirements.txt install");
+  assert.ok(cmd.includes("-m pip install -e ."), "Expected editable install for setup.py/pyproject.toml");
+
+  // Test runners.
+  assert.ok(cmd.includes("-c 'import pytest'"), "Expected pytest availability check");
+  assert.ok(cmd.includes("test_runner=pytest"), "Expected pytest evidence marker");
+  assert.ok(cmd.includes("\"$PYTHON\" -m pytest 2>&1 || exit 1"), "Expected pytest failures to fail closed");
+  assert.ok(cmd.includes("test_runner=unittest"), "Expected unittest evidence marker");
+  assert.ok(cmd.includes("-m unittest discover"), "Expected unittest fallback");
+  assert.ok(cmd.includes("toolchain=python"), "Expected Python toolchain evidence marker");
+});
+
+test("toolchain-detect: Python test failures cannot fall through to a successful fallback", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("python-app");
+
+  assert.ok(!cmd.includes("if \"$PYTHON\" -m pytest 2>&1; then"), "pytest failure must not fall through to unittest");
+  assert.ok(cmd.includes("\"$PYTHON\" -m pytest 2>&1 || exit 1"), "pytest failures must fail the command");
+  assert.ok(cmd.includes("\"$PYTHON\" -m unittest discover 2>&1 || exit 1"), "unittest failures must fail the command");
+  assert.ok(!cmd.includes("-m pip install -e . 2>&1 || true"), "pyproject install failures must not be ignored");
+});
+
+test("toolchain-detect: unsupported toolchain produces Block evidence marker", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("unknown-app");
+
+  assert.ok(cmd.includes("error=toolchain_unsupported"), "Expected unsupported toolchain error marker");
+  assert.ok(cmd.includes("a2a-docker-runner#343"), "Expected issue reference in block message");
+  assert.ok(cmd.includes("exit 1"), "Expected non-zero exit for unsupported toolchain");
+  assert.ok(cmd.includes("No Node.js (package.json), Python") && cmd.includes("Go (go.mod)") && cmd.includes("Java (pom.xml, build.gradle, build.gradle.kts)"), "Expected descriptive error message covering all toolchains");
+});
+
+test("toolchain-detect: explicit commands override toolchain detection entirely", () => {
+  const task = normalizeTask({
+    id: "explicit-override",
+    intent: "smoke",
+    repo: "jinwon-int/my-repo",
+    commands: ["echo custom-command"],
+  });
+
+  // Explicit commands should pass through unchanged.
+  assert.deepEqual(task.commands, ["echo custom-command"]);
+});
+
+test("toolchain-detect: github-verify patch mode still generates patch pipeline, not toolchain detection", () => {
+  // GitHub evidence modes should NOT trigger the fallback toolchain detection
+  // path — they use the coding-agent patch pipeline.
+  const task = normalizeTask({
+    id: "verify-still-patch",
+    intent: "verify",
+    mode: "github-verify",
+    repo: "jinwon-int/test-repo",
+    commands: [],
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  // Must be the patch pipeline, not the toolchain detection fallback.
+  assert.ok(pipeline.includes("git checkout -b"), "Verify mode must still generate patch pipeline");
+  assert.ok(pipeline.includes("/work/patch-command.sh"), "Patch pipeline must reference patch command");
+  // The first command should be writing artifacts (prompt), not toolchain detection.
+  assert.ok(task.commands[0]?.includes("/work/artifacts/prompt.md"), "First command should be prompt artifact");
+});
+
+test("toolchain-detect: python_unavailable error when python binary is missing", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("missing-python");
+
+  // When Python project markers exist but python3/python are unavailable, the
+  // script should error with a clear message.
+  assert.ok(cmd.includes("error=python_unavailable"), "Expected unavailable-python error marker");
+  assert.ok(cmd.includes("Python project detected but neither python3 nor python is available"), "Expected descriptive error");
+});
+
+// ── Go/Java toolchain detection (a2a-docker-runner#343) ─────────────────────
+
+test("toolchain-detect: Go detection from go.mod", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("go-app");
+
+  assert.ok(cmd.includes("if [ -f go.mod ]"), "Expected go.mod file check");
+  assert.ok(cmd.includes("command -v go >/dev/null 2>&1"), "Expected go availability check");
+  assert.ok(cmd.includes("toolchain=go"), "Expected Go toolchain evidence marker");
+  assert.ok(cmd.includes("go test ./... 2>&1 || exit 1"), "Expected go test command");
+  // Go detection must appear after Python but before unsupported fallback.
+  const goIndex = cmd.indexOf("# ── Go projects");
+  const pythonEndIndex = cmd.indexOf("# ── Java projects");
+  const unsupportedIndex = cmd.indexOf("# ── Unsupported toolchain");
+  assert.ok(goIndex > 0, "Go detection block must exist");
+  assert.ok(goIndex < pythonEndIndex, "Go block must appear before Java block");
+  assert.ok(pythonEndIndex < unsupportedIndex, "Java block must appear before unsupported fallback");
+});
+
+test("toolchain-detect: go_unavailable error when go binary is missing", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("go-app");
+
+  assert.ok(cmd.includes("error=go_unavailable"), "Expected go_unavailable error marker");
+  assert.ok(cmd.includes("Go project detected (go.mod) but go is not available"), "Expected descriptive error");
+});
+
+test("toolchain-detect: Java Maven detection from pom.xml", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("maven-app");
+
+  assert.ok(cmd.includes("if [ -f pom.xml ]"), "Expected pom.xml file check");
+  assert.ok(cmd.includes("command -v mvn >/dev/null 2>&1"), "Expected mvn availability check");
+  assert.ok(cmd.includes("toolchain=java_maven"), "Expected Java/Maven toolchain evidence marker");
+  assert.ok(cmd.includes("mvn test -B 2>&1 || exit 1"), "Expected bounded mvn test command");
+});
+
+test("toolchain-detect: maven_unavailable error when mvn binary is missing", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("maven-app");
+
+  assert.ok(cmd.includes("error=maven_unavailable"), "Expected maven_unavailable error marker");
+  assert.ok(cmd.includes("Java/Maven project detected (pom.xml) but mvn is not available"), "Expected descriptive error");
+});
+
+test("toolchain-detect: Java Gradle detection from build.gradle", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("gradle-app");
+
+  assert.ok(cmd.includes("if [ -f build.gradle ] || [ -f build.gradle.kts ]"), "Expected build.gradle / build.gradle.kts check");
+  assert.ok(cmd.includes("GRADLE"), "Expected GRADLE variable");
+  assert.ok(cmd.includes("toolchain=java_gradle"), "Expected Java/Gradle toolchain evidence marker");
+  // Must try gradlew first, then fall back to gradle.
+  const gradlewIdx = cmd.indexOf("./gradlew");
+  const gradleFallbackIdx = cmd.indexOf("command -v gradle >/dev/null 2>&1");
+  assert.ok(gradlewIdx > 0, "Must check gradlew first");
+  assert.ok(gradlewIdx < gradleFallbackIdx, "gradlew check must precede gradle fallback");
+  assert.ok(cmd.includes('"$GRADLE" test 2>&1 || exit 1'), "Expected bounded gradle test command");
+});
+
+test("toolchain-detect: gradle_unavailable error when neither gradlew nor gradle is available", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("gradle-app");
+
+  assert.ok(cmd.includes("error=gradle_unavailable"), "Expected gradle_unavailable error marker");
+  assert.ok(cmd.includes("Java/Gradle project detected but neither gradlew nor gradle is available"), "Expected descriptive error");
+});
+
+test("toolchain-detect: unsupported toolchain message lists Go and Java file markers", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("unknown-app");
+
+  assert.ok(cmd.includes("error=toolchain_unsupported"), "Expected unsupported toolchain error marker");
+  assert.ok(cmd.includes("Go (go.mod)"), "Unsupported message must mention go.mod");
+  assert.ok(cmd.includes("Java (pom.xml, build.gradle, build.gradle.kts)"), "Unsupported message must mention Java markers");
+  assert.ok(cmd.includes("a2a-docker-runner#343"), "Expected issue #343 reference in block message");
+  assert.ok(cmd.includes("exit 1"), "Expected non-zero exit for unsupported toolchain");
+});
+
+test("toolchain-detect: Node.js and Python paths are preserved after Go/Java additions", () => {
+  const cmd = buildToolchainDetectedCommandsForRepo("normal-repo");
+
+  // Node.js path must still exist.
+  assert.ok(cmd.includes("if [ -f package.json ]"), "Node.js detection must be preserved");
+  assert.ok(cmd.includes("toolchain=nodejs"), "Node.js evidence marker must be preserved");
+  assert.ok(cmd.includes("npm ci 2>&1 || exit 1"), "npm ci must be preserved");
+  assert.ok(cmd.includes("npm test 2>&1 || exit 1"), "npm test must be preserved");
+
+  // Python path must still exist.
+  assert.ok(cmd.includes("if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ] || [ -f setup.cfg ]"), "Python detection must be preserved");
+  assert.ok(cmd.includes("toolchain=python"), "Python evidence marker must be preserved");
+  assert.ok(cmd.includes("error=python_unavailable"), "python_unavailable error must be preserved");
+
+  // Node.js detection must precede Go, Java, and unsupported fallback.
+  const nodeIdx = cmd.indexOf("if [ -f package.json ]");
+  const goIdx = cmd.indexOf("# ── Go projects");
+  const javaIdx = cmd.indexOf("# ── Java projects");
+  const unsupportedIdx = cmd.indexOf("# ── Unsupported toolchain");
+  assert.ok(nodeIdx < goIdx, "Node.js detection must come before Go");
+  assert.ok(goIdx < javaIdx, "Go detection must come before Java");
+  assert.ok(javaIdx < unsupportedIdx, "Java detection must come before unsupported fallback");
 });

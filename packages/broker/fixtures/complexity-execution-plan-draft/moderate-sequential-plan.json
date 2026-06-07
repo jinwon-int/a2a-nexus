@@ -1,0 +1,90 @@
+{
+  "kind": "a2a-broker.complexity-execution-plan-draft.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "idempotencyKey": "complexity-execution-plan:976213bbe662ed31a6247d17",
+  "sourceEnvelopeIdempotencyKey": "complexity-finalizer-approval-envelope:5f8cc0dd91f485eee197f900",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:9b76bb970251c61bd3b3015b",
+  "envelopeCategory": "operator_approval_required",
+  "action": "sequential_subagent",
+  "complexity": "moderate",
+  "steps": [
+    {
+      "stepId": "step-649d374b07d1",
+      "kind": "approval_gate",
+      "label": "Operator approval gate for \"sequential_subagent\"",
+      "dependsOn": [],
+      "executionBlocked": false,
+      "requiresApproval": true,
+      "roles": [
+        "verifier"
+      ],
+      "safetyGate": "Operator must explicitly approve before any execution step proceeds."
+    },
+    {
+      "stepId": "step-c214eca99393",
+      "kind": "subagent_sequential",
+      "label": "Sequential subagent execution for \"sequential_subagent\"",
+      "dependsOn": [
+        "step-649d374b07d1"
+      ],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": [
+        "verifier"
+      ],
+      "safetyGate": "Sequential subagent bound to verified roles. Must pass the approval gate first."
+    },
+    {
+      "stepId": "step-aa8bb2fe408a",
+      "kind": "completion",
+      "label": "Execution plan complete",
+      "dependsOn": [
+        "step-c214eca99393"
+      ],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": [],
+      "safetyGate": "All subagent execution steps complete. Awaiting final verification if applicable."
+    }
+  ],
+  "executionBlocked": false,
+  "approvalRequired": true,
+  "executionMode": "operator_approval_gated",
+  "decision": "plan_ready",
+  "blockers": [],
+  "description": "Execution plan for \"sequential_subagent\" (operator approval required). 2 execution step(s) gated behind explicit operator approval. 3 total step(s) in the plan.",
+  "nextActions": [
+    "Route this plan through a separate approval grant path.",
+    "The first execution step is an approval gate that requires explicit operator approval."
+  ],
+  "boundaries": {
+    "runtimeBehaviorChanged": false,
+    "mandatoryProductionSpawn": false,
+    "brokerDispatchSemanticsChanged": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false
+  },
+  "semantics": {
+    "planDraftOnly": true,
+    "approvalNotGranted": true,
+    "autonomousExecutionBlocked": false,
+    "sourceOnlyNoLive": true,
+    "planStepsNotExecuted": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false
+  }
+}

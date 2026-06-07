@@ -1,0 +1,102 @@
+{
+  "kind": "a2a-broker.complexity-execution-plan-draft.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "idempotencyKey": "complexity-execution-plan:6ee1699c03f3031103865094",
+  "sourceEnvelopeIdempotencyKey": "complexity-finalizer-approval-envelope:9638c13238ea0bea56694f7c",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:43f864cd5758f0cb936f9b3d",
+  "envelopeCategory": "operator_approval_required",
+  "action": "parallel_subagents",
+  "complexity": "complex",
+  "steps": [
+    {
+      "stepId": "step-837eca6369fe",
+      "kind": "approval_gate",
+      "label": "Operator approval gate for \"parallel_subagents\"",
+      "dependsOn": [],
+      "executionBlocked": false,
+      "requiresApproval": true,
+      "roles": ["explorer", "implementer", "verifier"],
+      "safetyGate": "Operator must explicitly approve before any execution step proceeds."
+    },
+    {
+      "stepId": "step-6d4c209c6e6f",
+      "kind": "subagent_parallel",
+      "label": "Parallel subagent \"explorer\" for \"parallel_subagents\"",
+      "dependsOn": ["step-837eca6369fe"],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": ["explorer"],
+      "safetyGate": "Parallel subagent \"explorer\" with disjoint write set. Must pass the approval gate first."
+    },
+    {
+      "stepId": "step-1ebc651c272a",
+      "kind": "subagent_parallel",
+      "label": "Parallel subagent \"implementer\" for \"parallel_subagents\"",
+      "dependsOn": ["step-837eca6369fe"],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": ["implementer"],
+      "safetyGate": "Parallel subagent \"implementer\" with disjoint write set. Must pass the approval gate first."
+    },
+    {
+      "stepId": "step-0c7585c6eae3",
+      "kind": "subagent_parallel",
+      "label": "Parallel subagent \"verifier\" for \"parallel_subagents\"",
+      "dependsOn": ["step-837eca6369fe"],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": ["verifier"],
+      "safetyGate": "Parallel subagent \"verifier\" with disjoint write set. Must pass the approval gate first."
+    },
+    {
+      "stepId": "step-5a2950b5bb17",
+      "kind": "completion",
+      "label": "Execution plan complete",
+      "dependsOn": ["step-6d4c209c6e6f", "step-1ebc651c272a", "step-0c7585c6eae3"],
+      "executionBlocked": false,
+      "requiresApproval": false,
+      "roles": [],
+      "safetyGate": "All subagent execution steps complete."
+    }
+  ],
+  "executionBlocked": false,
+  "approvalRequired": true,
+  "executionMode": "operator_approval_gated",
+  "decision": "plan_ready",
+  "blockers": [],
+  "description": "Execution plan for \"parallel_subagents\" (operator approval required).",
+  "nextActions": [
+    "Route this plan through a separate approval grant path.",
+    "The first execution step is an approval gate that requires explicit operator approval."
+  ],
+  "boundaries": {
+    "runtimeBehaviorChanged": false,
+    "mandatoryProductionSpawn": false,
+    "brokerDispatchSemanticsChanged": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false
+  },
+  "semantics": {
+    "planDraftOnly": true,
+    "approvalNotGranted": true,
+    "autonomousExecutionBlocked": false,
+    "sourceOnlyNoLive": true,
+    "planStepsNotExecuted": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false
+  }
+}

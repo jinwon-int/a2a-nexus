@@ -7,3 +7,6 @@ export * from "./src/runtime-wake-adapter.js";
 export * from "./src/wake-layer.js";
 export * from "./src/wake-envelope.js";
 export * from "./src/goal-operator-summary.js";
+export * from "./src/conformance-smoke-gate.js";
+export * from "./src/source-public-execution-orchestrator.js";
+export * from "./src/plugin-go-no-go-projection.js";

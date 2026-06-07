@@ -61,6 +61,7 @@ if (fixture) {
   expect(fixture.childIssue === 'https://github.com/jinwon-int/a2a-plane/issues/513', 'fixture: childIssue must be #513');
   expect(fixture.refreshIssue === 'https://github.com/jinwon-int/a2a-plane/issues/528', 'fixture: refreshIssue must be #528');
   expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
+  expect(fixture.phase4FreshImportCandidateIssue === 'https://github.com/jinwon-int/a2a-plane/issues/538', 'fixture: phase4FreshImportCandidateIssue must be #538');
   expect(fixture.decision === 'plan_import_rehearsal_before_canonical_flip', 'fixture: decision must require rehearsal before flip');
   expect(fixture.canonicalDuringRehearsal === 'split_repos', 'fixture: split repos must remain canonical');
   expect(fixture.rehearsalWorkspace?.additiveOnly === true, 'fixture: rehearsal workspace must be additive only');
@@ -74,6 +75,12 @@ if (fixture) {
     /block_package_mirror_refresh/.test(fixture.phase2Rehearsal?.phase3Recommendation || ''),
     'fixture: phase2 must block package mirror refresh until parity gaps close'
   );
+  expect(
+    fixture.phase4FreshImportCandidate?.status === 'package_ci_green_locally_canonical_flip_blocked',
+    'fixture: phase4 candidate must be package-CI green locally but canonical-flip blocked'
+  );
+  expect(fixture.phase4FreshImportCandidate?.localPackageCiParityPassed === true, 'fixture: phase4 candidate must record local package CI parity pass');
+  expect(fixture.phase4FreshImportCandidate?.historyPreserving === false, 'fixture: phase4 candidate must record non-history-preserving import mode');
 
   const mirrors = new Map((fixture.mirrors || []).map((mirror) => [mirror.surface, mirror]));
   for (const [surface, sourceRepo, targetPath] of [

@@ -1,0 +1,206 @@
+{
+  "$schema": "a2a-runner-redacted-log-proof-v1",
+  "description": "Synthetic, secret-free example showing a redacted log/artifact proof bundle produced by the scanner. Demonstrates the redacted manifest, redacted log content, deterministic timestamps, and no-live-impact safety markers. This is a stand-alone reference; no Docker, live broker, or GitHub writes are required.",
+  "worker": "bangtong",
+  "emittedAt": "1970-01-01T00:00:00.000Z",
+  "handlerTask": {
+    "id": "redacted-log-proof-example-335",
+    "intent": "propose_patch",
+    "payload": {
+      "mode": "github-propose-patch",
+      "repo": "jinwon-int/a2a-docker-runner",
+      "issue": "335",
+      "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335",
+      "title": "Release-blocker proof pack: redacted log/artifact proof example"
+    }
+  },
+  "runnerOutput": {
+    "ok": true,
+    "taskId": "redacted-log-proof-example-335",
+    "status": "completed",
+    "workDir": "/synthetic/workdir/not-forwarded",
+    "exitCode": 0,
+    "signal": null,
+    "stdout": "synthetic stdout omitted from broker summary",
+    "stderr": "",
+    "artifacts": [
+      "artifacts/summary.txt",
+      "artifacts/manifest.json",
+      "artifacts/patch-command.log",
+      "artifacts/command-0.log"
+    ],
+    "resultSummary": {
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "stdout": "npm run check && npm run build: ok",
+      "stderr": "",
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "artifactCount": 4,
+      "manifestPath": "artifacts/manifest.json",
+      "runnerBuild": {
+        "version": "0.1.0",
+        "source": "https://github.com/jinwon-int/a2a-docker-runner",
+        "revision": "synthetic-redacted-proof-fixture",
+        "builtAt": "1970-01-01T00:00:00.000Z",
+        "image": "ghcr.io/jinwon-int/a2a-docker-runner:proof-fixture"
+      }
+    },
+    "github": {
+      "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335#issuecomment-4537375563"
+    }
+  },
+  "artifactManifestFixture": {
+    "artifactVersion": 1,
+    "schemaVersion": 1,
+    "manifestPath": "artifacts/manifest.json",
+    "generatedAt": "1970-01-01T00:00:00.000Z",
+    "taskId": "redacted-log-proof-example-335",
+    "repo": "jinwon-int/a2a-docker-runner",
+    "branch": "a2a-patch-20260525-release-blocker-proof",
+    "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335",
+    "status": "done",
+    "summary": "Release-blocker proof pack: redacted log/artifact proof, external scanner placeholders, teardown guidance.",
+    "evidence": [
+      {
+        "kind": "log",
+        "label": "Package verification",
+        "status": "passed",
+        "path": "artifacts/command-0.log",
+        "excerpt": "npm run verify:package: check ok, build ok, lint ok, 62/62 tests passed"
+      },
+      {
+        "kind": "log",
+        "label": "Patch command output",
+        "status": "passed",
+        "path": "artifacts/patch-command.log",
+        "excerpt": "Redacted patch command log: changes to types.ts, scanner.ts, scanner.test.ts, package.json, docs, examples"
+      },
+      {
+        "kind": "file",
+        "label": "Redacted artifact manifest",
+        "status": "passed",
+        "path": "artifacts/manifest.json",
+        "excerpt": "Full artifact manifest with deterministic timestamps and bounded/redacted content"
+      }
+    ],
+    "artifacts": [
+      { "path": "summary.txt", "name": "summary.txt", "sizeBytes": 312 },
+      { "path": "manifest.json", "name": "manifest.json", "sizeBytes": 1842 },
+      { "path": "patch-command.log", "name": "patch-command.log", "sizeBytes": 4096 },
+      { "path": "command-0.log", "name": "command-0.log", "sizeBytes": 512 }
+    ],
+    "externalScannerEvidence": [
+      {
+        "schemaVersion": "a2a.runner.external-scanner-evidence.v1",
+        "tool": "cve_scan",
+        "toolName": "Trivy",
+        "toolVersion": "0.58.0",
+        "scannedAt": "2025-06-01T00:00:00.000Z",
+        "summary": { "total": 3, "critical": 0, "high": 1, "medium": 2, "low": 0, "info": 0 },
+        "findings": [
+          {
+            "id": "CVE-2025-1234",
+            "severity": "high",
+            "title": "High severity vulnerability in libfoo < 2.1.0",
+            "cveId": "CVE-2025-1234",
+            "location": "package-lock.json:lodash@4.17.20",
+            "remediation": "Upgrade lodash to >=4.17.21"
+          },
+          {
+            "id": "CVE-2025-5678",
+            "severity": "medium",
+            "title": "Medium severity vulnerability in express < 4.19.0",
+            "cveId": "CVE-2025-5678",
+            "location": "package-lock.json:express@4.18.2",
+            "remediation": "Upgrade express to >=4.19.0"
+          }
+        ],
+        "rawSummary": "Scanned 2 package files. Found 3 vulnerabilities: 1 high, 2 medium. Dependency tree audited with no errors."
+      }
+    ],
+    "evidenceHints": {
+      "schemaVersion": "a2a.runner.evidence-hints.v1",
+      "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335",
+      "startCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335#issuecomment-4537375563",
+      "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335#issuecomment-PLACEHOLDER",
+      "branch": "a2a-patch-20260525-release-blocker-proof"
+    },
+    "githubCommentProjection": {
+      "schemaVersion": "a2a.runner.github-comment-projection.v1",
+      "kind": "done",
+      "url": "https://github.com/jinwon-int/a2a-docker-runner/issues/335#issuecomment-PLACEHOLDER",
+      "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335",
+      "manifestPath": "artifacts/manifest.json",
+      "dedupeKey": "a2a-team1-release-blocker-proof-pack-20260526T0628KST-01-bangtong",
+      "commentIsTerminalAck": false,
+      "commentIsVisibilityReceipt": false,
+      "commentIsOperatorApproval": false
+    },
+    "cleanupRehearsal": {
+      "schemaVersion": "a2a.runner.cleanup-rehearsal.v1",
+      "mode": "dry_run",
+      "status": "ready_for_operator_approval",
+      "target": "runner_artifacts",
+      "dedupeKey": "cleanup-rehearsal-release-blocker-proof-pack",
+      "candidateCount": 0,
+      "backupRequired": true,
+      "operatorApprovalRequired": true,
+      "failClosedReason": null,
+      "rollbackPath": "Restore from backup taken before execution.",
+      "abortPath": "Abort before operator approval token is consumed.",
+      "approvalExecuted": false,
+      "releaseExecuted": false,
+      "visibilityChanged": false,
+      "liveProviderSendPerformed": false,
+      "terminalAckSent": false,
+      "dbMutationPerformed": false,
+      "prunePerformed": false
+    }
+  },
+  "redactedLogExamples": {
+    "command0": [
+      "# npm run verify:package (bounded and redacted)",
+      "> @openclaw/a2a-docker-runner@0.1.0 check",
+      "> tsc -p tsconfig.json --noEmit",
+      "# (no output — passed)",
+      "",
+      "> @openclaw/a2a-docker-runner@0.1.0 build",
+      "> tsc -p tsconfig.json",
+      "# (no output — passed)",
+      "",
+      "> @openclaw/a2a-docker-runner@0.1.0 lint",
+      "> node --check dist/cli.js && ...",
+      "# (no output — passed)",
+      "",
+      "> @openclaw/a2a-docker-runner@0.1.0 test",
+      "> node --test dist/**/*.test.js",
+      "# tests 62 passed 62 failed 0",
+      "# duration_ms 870",
+      "",
+      "exit code: 0"
+    ],
+    "patchCommand": [
+      "# Synthetic redacted patch command log",
+      "# The original file path and token patterns are redacted below.",
+      "",
+      "$ git diff --stat HEAD",
+      " src/scanner.ts                          | 35 ++++++++++++",
+      " src/scanner.test.ts                     | 90 +++++++++++++++++++++++++++++",
+      " src/types.ts                            | 120 +++++++++++++++++++++++++++++++++++",
+      " package.json                            |  1 +",
+      " docs/runner-teardown-no-live-impact.md  |  1 +",
+      " examples/runner-redacted-log-proof.json |  1 +",
+      " 6 files changed, 248 insertions(+)",
+      "",
+      "$ echo 'Token: <REDACTED>'",
+      "Token: <REDACTED_GITHUB_TOKEN_PLACEHOLDER>",
+      "",
+      "$ echo 'API-Key: <REDACTED>'",
+      "API-Key: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx <REDACTED>",
+      "",
+      "exit code: 0"
+    ]
+  }
+}

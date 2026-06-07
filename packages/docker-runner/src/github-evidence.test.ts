@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBlockCommentBody, buildDoneCommentBody, collectGitHubEvidence } from "./github-evidence.js";
+import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildStartCommentBody, collectGitHubEvidence } from "./github-evidence.js";
 import type { NormalizedRunnerTask, RunnerConfig } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -66,6 +66,22 @@ test("recognizes github-verify mode as evidence mode", async () => {
   assert.equal(evidence?.outcome, "missing_evidence");
   assert.equal(evidence?.doneCommentUrl, undefined);
   assert.equal(evidence?.blockCommentUrl, undefined);
+});
+
+test("recognizes github-libero-validation mode as evidence mode", async () => {
+  const task: NormalizedRunnerTask = {
+    ...baseTask,
+    intent: "verify",
+    mode: "github-libero-validation",
+    readOnlyValidation: true,
+  };
+  const result = {
+    ok: true, taskId: "t1", status: "completed" as const, workDir: "/tmp",
+    exitCode: 0, signal: null, stdout: "read-only evidence collected", stderr: "", artifacts: [],
+  };
+  const evidence = await collectGitHubEvidence({ ...baseConfig, githubTokenFile: undefined }, task, result);
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
 });
 
 test("extracts prUrl into release-gate evidence on success", async () => {
@@ -325,11 +341,11 @@ test("block comment includes artifact manifest, command logs, reason and next ac
     ok: false,
     taskId: "t1",
     status: "failed",
-    workDir: "<private-task-workdir>",
+    workDir: "/root/.openclaw/workspace/private-task/run-1",
     exitCode: 1,
     signal: null,
     stdout: "notice=no_patch_command_configured\nusing /root/.config/gh/hosts.yml",
-    stderr: "Authorization: Bearer redacted-github-token-fixture",
+    stderr: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
     artifacts: ["/tmp/a2a/private/run.log"],
     artifactManifest: {
       artifactVersion: 1,
@@ -346,7 +362,7 @@ test("block comment includes artifact manifest, command logs, reason and next ac
       signal: null,
       timedOut: false,
       stdout: "notice=no_patch_command_configured\nusing /root/.config/gh/hosts.yml",
-      stderr: "Authorization: Bearer redacted-github-token-fixture",
+      stderr: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
       stdoutTruncated: false,
       stderrTruncated: false,
       artifactCount: 1,
@@ -359,7 +375,7 @@ test("block comment includes artifact manifest, command logs, reason and next ac
         image: "ghcr.io/jinwon-int/a2a-docker-runner:abc123",
       },
     },
-    error: "raw error from <private-task-workdir>",
+    error: "raw error from /root/.openclaw/workspace/private-task/run-1",
   });
 
   assert.match(body, /### 사유/);
@@ -442,4 +458,589 @@ test("done comment includes manifest summary and bounded command log summary", (
   assert.match(body, /### 명령 로그 요약/);
   assert.match(body, /`artifacts\/result\.json` \(12 bytes\)/);
   assert.match(body, /all good/);
+});
+
+// ---------------------------------------------------------------------------
+// Evidence-only / allowNoChanges classification (a2a-docker-runner#169)
+// ---------------------------------------------------------------------------
+
+test("classifies no-change-allowed marker without Done/Block URL as missing evidence", async () => {
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "status=no_changes_allowed\nnotice=no_code_changes_produced_evidence_only_lane",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
+  assert.equal(evidence?.doneCommentUrl, undefined);
+  assert.equal(evidence?.blockCommentUrl, undefined);
+});
+
+test("classifies openclaw_no_changes=allowed marker without Done/Block URL as missing evidence", async () => {
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "openclaw_no_changes=allowed\nnotice=no_code_changes_produced_evidence_only_lane",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
+  assert.equal(evidence?.doneCommentUrl, undefined);
+  assert.equal(evidence?.blockCommentUrl, undefined);
+});
+
+test("captures Start comment URL for no-change validation evidence", async () => {
+  const startUrl = "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-111";
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: [
+      startUrl,
+      "start_comment_url=" + startUrl,
+      "start_comment=posted",
+      "status=no_changes_allowed",
+      "notice=no_code_changes_produced_evidence_only_lane",
+    ].join("\n"),
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
+  assert.equal(evidence?.startCommentUrl, startUrl);
+  assert.equal(evidence?.commentLedger?.entries[0]?.kind, "start");
+  assert.equal(evidence?.commentLedger?.entries[0]?.url, startUrl);
+});
+
+test("classifies no-change-allowed Block evidence as blocked_no_changes_with_evidence", async () => {
+  // When no GitHub token is available the block comment cannot actually be
+  // posted, so the classification falls through to
+  // succeeded_no_changes_with_done_evidence.  Instead, verify the block
+  // comment body is generated correctly for the no-changes-allowed case.
+  const body = buildBlockCommentBody(
+    { ...baseTask, allowNoChanges: true },
+    {
+      ok: false,
+      taskId: "t1",
+      status: "failed",
+      workDir: "/tmp/a2a/task/run-1",
+      exitCode: 1,
+      signal: null,
+      stdout: "status=no_changes_allowed\nsomething blocked",
+      stderr: "",
+      artifacts: [],
+    },
+  );
+
+  assert.ok(body.includes("### 사유"), "Block comment body must include reason section");
+  assert.ok(body.includes("### 다음 조치"), "Block comment body must include next-action section");
+});
+
+test("no-changes-allowed marker without terminal evidence stays missing evidence", async () => {
+  const evidence = await collectGitHubEvidence(baseConfig, {
+    ...baseTask,
+  }, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: [
+      "status=no_changes_allowed",
+      "notice=no_code_changes_produced_evidence_only_lane",
+    ].join("\n"),
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
+  // Missing evidence is not promoted to release-gate success or failure.
+  assert.equal(evidence?.validationErrors?.length ?? 0, 0, `Expected no validation errors, got: ${evidence?.validationErrors?.join(", ")}`);
+});
+
+test("no-changes-allowed marker absent does not affect normal classification", async () => {
+  // A normal successful PR task without the no-changes marker should still
+  // classify as "pr" not as a no-change outcome.
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "pr_created=1",
+    stderr: "",
+    artifacts: [],
+    prUrl: "https://github.com/jinwon-int/test-repo/pull/99",
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "pr", "Normal PR tasks must not be classified as no-change evidence");
+});
+
+// ---------------------------------------------------------------------------
+// readOnlyValidation evidence flow (a2a-docker-runner#237)
+// ---------------------------------------------------------------------------
+
+test("readOnlyValidation: marker without Done/Block URL does not overstate Done evidence", async () => {
+  // When readOnlyValidation is set and no changes are produced, the pipeline
+  // outputs read_only_validation=passed followed by status=no_changes_allowed.
+  // Evidence collection must still require terminal Done/Block evidence.
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: [
+      "read_only_validation=passed",
+      "status=no_changes_allowed",
+      "notice=no_code_changes_produced_evidence_only_lane",
+    ].join("\n"),
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.ok(evidence);
+  assert.equal(evidence?.outcome, "missing_evidence");
+  assert.equal(evidence?.doneCommentUrl, undefined);
+  assert.equal(evidence?.blockCommentUrl, undefined);
+  assert.equal(evidence?.validationErrors?.length ?? 0, 0,
+    "readOnlyValidation passed must not produce validation errors");
+});
+
+test("readOnlyValidation: blocked body reports error and changed file list", () => {
+  // When readOnlyValidation guard detects changes, the pipeline exits 4.
+  // The block comment body must include the readOnlyValidation error text
+  // and list of changed files.
+  const body = buildBlockCommentBody(
+    { ...baseTask, readOnlyValidation: true, reportLanguage: "en" },
+    {
+      ok: false,
+      taskId: "t1",
+      status: "failed",
+      workDir: "/tmp/a2a/task/run-1",
+      exitCode: 4,
+      signal: null,
+      stdout: [
+        "read_only_validation=blocked",
+        "error=read_only_validation_changed_repo",
+        "read_only_change=src/runner.ts",
+        "read_only_change=src/types.ts",
+      ].join("\n"),
+      stderr: "",
+      artifacts: [],
+      error: "read_only_validation_changed_repo",
+    },
+  );
+
+  assert.ok(body.includes("### Reason"), "Block comment must include reason section");
+  assert.ok(body.includes("### Next action"), "Block comment must include next-action section");
+  // The error text (read_only_validation_changed_repo) must appear in the body.
+  assert.ok(body.includes("read_only_validation_changed_repo"),
+    "Block comment body must include the readOnlyValidation error");
+  // Block outcome marker must be present.
+  assert.match(body, /outcome=block/);
+  // Changed files must be visible in the body (error text contains them).
+  assert.ok(body.includes("src/runner.ts"),
+    "Block comment body must include changed file paths");
+  assert.ok(body.includes("src/types.ts"),
+    "Block comment body must include changed file paths");
+});
+
+// ---------------------------------------------------------------------------
+// GitHub comment evidence ledger — Start comment & comment ledger projection
+// Parent: a2a-plane#204
+// ---------------------------------------------------------------------------
+
+test("buildStartCommentBody includes disclaimer that comment is NOT ACK/approval (ko)", () => {
+  const body = buildStartCommentBody(baseTask);
+
+  assert.match(body, /## 🟢 Start/);
+  assert.match(body, /\*\*요청 노드\*\*: seoseo/);
+  assert.match(body, /\*\*Task ID\*\*: `test-task`/);
+  assert.match(body, /\*\*Issue URL\*\*: https:\/\/github\.com\/jinwon-int\/test-repo\/issues\/1/);
+  assert.match(body, /\*\*의도\*\*: propose_patch/);
+  assert.match(body, /\*\*이슈 제목\*\*: Evidence contract proof/);
+  assert.match(body, /\*\*작업 요약\*\*: Produce compact terminal notice evidence without leaking raw logs/);
+
+  // MUST include the disclaimer that this is NOT ACK/approval proof
+  assert.match(body, /증거 원장.*evidence ledger.*ACK.*읽음 확인.*표시 증거.*운영자 승인/);
+  assert.match(body, /자동 생성된 Start 코멘트.*A2A Docker Runner/);
+});
+
+test("buildStartCommentBody produces English body when reportLanguage is en", () => {
+  const task = { ...baseTask, reportLanguage: "en" as const };
+  const body = buildStartCommentBody(task);
+
+  assert.match(body, /## 🟢 Start/);
+  assert.match(body, /\*\*Task ID\*\*: `test-task`/);
+  assert.match(body, /Beginning work\. Inspecting repository and making warranted code\/docs\/tests changes\./);
+
+  // English disclaimer must explicitly separate from ACK/read receipt/visibility/approval
+  assert.match(body, /not ACK, read receipt, visibility proof, or operator approval/);
+  assert.match(body, /Auto-generated Start comment/);
+});
+
+test("buildStartCommentBody includes runId when available", () => {
+  const task = { ...baseTask, runId: "a2a-run-abc-123" };
+  const body = buildStartCommentBody(task);
+
+  assert.match(body, /\*\*Run ID\*\*: `a2a-run-abc-123`/);
+});
+
+test("buildCommentLedger with start comment only", () => {
+  const evidence = {
+    startCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-111",
+  };
+  const ledger = buildCommentLedger(evidence, baseTask);
+
+  assert.equal(ledger.schemaVersion, "a2a.runner.github-comment-ledger.v1");
+  assert.equal(ledger.disclaimer, "GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval.");
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(ledger.entries[0].kind, "start");
+  assert.equal(ledger.entries[0].url, "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-111");
+  assert.ok(ledger.entries[0].dedupeKey, "Start comment must have a dedupe key");
+  assert.ok(ledger.entries[0].postedAt, "Start comment must have a postedAt timestamp");
+});
+
+test("buildCommentLedger with block comment", () => {
+  const evidence = {
+    blockCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-222",
+  };
+  const ledger = buildCommentLedger(evidence, baseTask);
+
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(ledger.entries[0].kind, "block");
+  assert.equal(ledger.entries[0].url, "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-222");
+  assert.match(ledger.entries[0].dedupeKey, /^block:test-task/);
+});
+
+test("buildCommentLedger with done comment", () => {
+  const evidence = {
+    doneCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-333",
+  };
+  const ledger = buildCommentLedger(evidence, baseTask);
+
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(ledger.entries[0].kind, "done");
+  assert.equal(ledger.entries[0].url, "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-333");
+  assert.match(ledger.entries[0].dedupeKey, /^done:test-task/);
+});
+
+test("buildCommentLedger with all comment types produces ordered entries", () => {
+  const evidence = {
+    startCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-100",
+    blockCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-200",
+    doneCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-300",
+  };
+  const ledger = buildCommentLedger(evidence, baseTask);
+
+  assert.equal(ledger.entries.length, 3);
+  // Start comment is always first (added first)
+  assert.equal(ledger.entries[0].kind, "start");
+  assert.equal(ledger.entries[1].kind, "block");
+  assert.equal(ledger.entries[2].kind, "done");
+});
+
+test("buildCommentLedger empty when no comments", () => {
+  const ledger = buildCommentLedger({}, baseTask);
+
+  assert.equal(ledger.schemaVersion, "a2a.runner.github-comment-ledger.v1");
+  assert.equal(ledger.entries.length, 0);
+  assert.ok(ledger.disclaimer.includes("not ACK"));
+});
+
+test("collectGitHubEvidence includes commentLedger in evidence", async () => {
+  const startUrl = "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-111";
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: [
+      startUrl,
+      "start_comment_url=" + startUrl,
+      "start_comment=posted",
+      "pr_created=1",
+    ].join("\n"),
+    stderr: "",
+    artifacts: [],
+    prUrl: "https://github.com/jinwon-int/test-repo/pull/99",
+  });
+
+  assert.ok(evidence);
+  assert.ok(evidence?.commentLedger, "GitHubEvidence must include a commentLedger");
+  assert.equal(evidence?.commentLedger?.schemaVersion, "a2a.runner.github-comment-ledger.v1");
+  assert.equal(evidence?.commentLedger?.disclaimer, "GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval.");
+  assert.equal(evidence?.startCommentUrl, startUrl);
+  assert.equal(evidence?.commentLedger?.entries[0]?.kind, "start");
+  assert.equal(evidence?.commentLedger?.entries[0]?.url, startUrl);
+});
+
+test("Start comment body never contains secret/credential patterns", () => {
+  // Redaction: the body must not leak secrets.
+  const task = {
+    ...baseTask,
+    env: { GH_TOKEN: ["ghp", "secret12345678901234567890"].join("_"), SECRET: "shhh" },
+  };
+  const body = buildStartCommentBody(task);
+
+  const forbidden = /ghp_|github_pat_|Bearer\s+|Authorization:/i;
+  assert.equal(forbidden.test(body), false, "Start comment body must not contain secret patterns");
+});
+
+test("comment ledger entries use stable replay-safe dedupe keys", () => {
+  // Same task ID should produce the same dedupe key (replay-safe).
+  const evidence = {
+    startCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-xyz",
+  };
+
+  const ledger1 = buildCommentLedger(evidence, baseTask);
+  const ledger2 = buildCommentLedger(evidence, baseTask);
+
+  assert.equal(ledger1.entries[0].dedupeKey, ledger2.entries[0].dedupeKey,
+    "Dedupe keys must be stable (replay-safe) across calls for the same task");
+});
+
+test("comment ledger dedupe keys differ across tasks", () => {
+  const evidence = {
+    startCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-xyz",
+  };
+  const taskA = { ...baseTask, id: "task-alpha" };
+  const taskB = { ...baseTask, id: "task-beta" };
+
+  const ledgerA = buildCommentLedger(evidence, taskA);
+  const ledgerB = buildCommentLedger(evidence, taskB);
+
+  assert.notEqual(ledgerA.entries[0].dedupeKey, ledgerB.entries[0].dedupeKey,
+    "Dedupe keys must differ across different tasks");
+});
+
+test("comment ledger disclaimer is identical across all invocations", () => {
+  const evidence = {
+    startCommentUrl: "https://github.com/jinwon-int/test-repo/issues/1#issuecomment-xyz",
+  };
+
+  const ledger1 = buildCommentLedger(evidence, baseTask);
+  const ledger2 = buildCommentLedger({}, baseTask);
+  const ledger3 = buildCommentLedger({ doneCommentUrl: "http://example.com" }, baseTask);
+
+  const expected = "GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval.";
+  assert.equal(ledger1.disclaimer, expected);
+  assert.equal(ledger2.disclaimer, expected);
+  assert.equal(ledger3.disclaimer, expected);
+});
+
+test("Done/Block comment bodies include idempotent GitHub projection safety marker", () => {
+  const result = {
+    ok: false,
+    taskId: "t1",
+    status: "failed" as const,
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 1,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    artifacts: [],
+  };
+
+  const block = buildBlockCommentBody({ ...baseTask, reportLanguage: "en" }, result);
+  assert.match(block, /<!-- a2a:github-evidence:v1 task=test-task issue=jinwon-int\/test-repo#1 outcome=block -->/);
+  assert.match(block, /GitHub comment evidence projection: `ledger-only`/);
+  assert.match(block, /commentIsTerminalAck: `false`/);
+  assert.match(block, /commentIsOperatorApproval: `false`/);
+
+  const done = buildDoneCommentBody({ ...baseTask, reportLanguage: "en" }, { ...result, ok: true, status: "completed", exitCode: 0 });
+  assert.match(done, /outcome=done/);
+  assert.match(done, /manifest binding: `artifacts\/manifest\.json` \/ `resultSummary\.evidenceHints`/);
+});
+
+// ---------------------------------------------------------------------------
+// Parent round field preservation in evidence: Team1 dispatch-wrapper
+// Parent: https://github.com/jinwon-int/a2a-broker/issues/847
+// ---------------------------------------------------------------------------
+
+test("Start comment body includes parent round fields when present (ko)", () => {
+  const task = {
+    ...baseTask,
+    parentRoundId: "round-abc-123",
+    parentRoundTotal: 5,
+    parentRoundOrder: 3,
+    parentRoundProgress: "3/5",
+    brokerOfRecordId: "broker-alpha",
+    policyContext: { policyMode: "dispatch", policyScope: "team1", policyParams: { lane: "dispatch-wrapper" } },
+  };
+  const body = buildStartCommentBody(task);
+
+  assert.match(body, /\*\*부모 라운드 ID\*\*: `round-abc-123`/);
+  assert.match(body, /\*\*라운드 진행\*\*: 3\/5/);
+  assert.match(body, /\*\*라운드 진행률\*\*: 3\/5/);
+  assert.match(body, /\*\*Broker of Record\*\*: `broker-alpha`/);
+  assert.match(body, /\*\*정책 범위\*\*: team1/);
+});
+
+test("Start comment body includes parent round fields when present (en)", () => {
+  const task = {
+    ...baseTask,
+    reportLanguage: "en" as const,
+    parentRoundId: "round-xyz-789",
+    parentRoundTotal: 10,
+    parentRoundOrder: 7,
+    parentRoundProgress: "70%",
+    brokerOfRecordId: "broker-beta",
+    policyContext: { policyMode: "verify", policyScope: "team1-dispatch" },
+  };
+  const body = buildStartCommentBody(task);
+
+  assert.match(body, /\*\*Parent round ID\*\*: `round-xyz-789`/);
+  assert.match(body, /\*\*Round progress\*\*: 7\/10/);
+  assert.match(body, /\*\*Round progress indicator\*\*: 70%/);
+  assert.match(body, /\*\*Broker of record\*\*: `broker-beta`/);
+  assert.match(body, /\*\*Policy scope\*\*: team1-dispatch/);
+});
+
+test("Start comment body omits parent round fields when absent", () => {
+  // baseTask has no parent round fields; body must not mention them.
+  const body = buildStartCommentBody(baseTask);
+
+  assert.ok(!body.includes("Parent round ID"), "Must not mention parent round ID when absent");
+  assert.ok(!body.includes("부모 라운드"), "Must not mention parent round in Korean when absent");
+  assert.ok(!body.includes("Broker of record"), "Must not mention broker of record when absent");
+  assert.ok(!body.includes("Policy scope"), "Must not mention policy scope when absent");
+  assert.ok(!body.includes("정책 범위"), "Must not mention policy in Korean when absent");
+});
+
+test("Block comment body includes parent round ID when present", () => {
+  const task = {
+    ...baseTask,
+    parentRoundId: "block-round-456",
+    parentRoundTotal: 3,
+    parentRoundOrder: 1,
+  };
+  const body = buildBlockCommentBody(task, {
+    ok: false,
+    taskId: "t1",
+    status: "failed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 1,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.match(body, /\*\*부모 라운드 ID\*\*: `block-round-456`/);
+  assert.match(body, /\*\*라운드 진행\*\*: 1\/3/);
+});
+
+test("Done comment body includes parent round ID when present (en)", () => {
+  const task = {
+    ...baseTask,
+    reportLanguage: "en" as const,
+    parentRoundId: "done-round-789",
+    parentRoundTotal: 2,
+    parentRoundOrder: 2,
+  };
+  const body = buildDoneCommentBody(task, {
+    ok: true,
+    taskId: "t1",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    artifacts: [],
+  });
+
+  assert.match(body, /\*\*Parent round ID\*\*: `done-round-789`/);
+  assert.match(body, /\*\*Round progress\*\*: 2\/2/);
+});
+
+test("collectGitHubEvidence includes parent round fields in evidence", async () => {
+  const task = {
+    ...baseTask,
+    id: "evidence-parent-round",
+    parentRoundId: "ev-round-001",
+    parentRoundTotal: 4,
+    parentRoundOrder: 2,
+    parentRoundProgress: "2/4",
+    brokerOfRecordId: "broker-gamma",
+    policyContext: {
+      policyMode: "dispatch",
+      policyScope: "team1",
+      policyParams: { lane: "dispatch-wrapper", source: "a2a-broker" },
+    },
+  };
+
+  const evidence = await collectGitHubEvidence(baseConfig, task, {
+    ok: true,
+    taskId: "evidence-parent-round",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "pr_created=1",
+    stderr: "",
+    artifacts: [],
+    prUrl: "https://github.com/jinwon-int/test-repo/pull/100",
+  });
+
+  assert.ok(evidence, "Evidence must be collected");
+  assert.equal(evidence?.parentRoundId, "ev-round-001");
+  assert.equal(evidence?.parentRoundTotal, 4);
+  assert.equal(evidence?.parentRoundOrder, 2);
+  assert.equal(evidence?.parentRoundProgress, "2/4");
+  assert.equal(evidence?.brokerOfRecordId, "broker-gamma");
+  assert.ok(evidence?.policyContext, "policyContext must be included in evidence");
+  assert.equal(evidence?.policyContext?.policyMode, "dispatch");
+  assert.equal(evidence?.policyContext?.policyScope, "team1");
+  assert.deepEqual(evidence?.policyContext?.policyParams, { lane: "dispatch-wrapper", source: "a2a-broker" });
+});
+
+test("collectGitHubEvidence produces undefined parent round fields when absent", async () => {
+  // baseTask has no parent round fields; evidence must not include them.
+  const evidence = await collectGitHubEvidence(baseConfig, baseTask, {
+    ok: true,
+    taskId: "no-parent-round",
+    status: "completed",
+    workDir: "/tmp/a2a/task/run-1",
+    exitCode: 0,
+    signal: null,
+    stdout: "pr_created=1",
+    stderr: "",
+    artifacts: [],
+    prUrl: "https://github.com/jinwon-int/test-repo/pull/101",
+  });
+
+  assert.ok(evidence, "Evidence must be collected");
+  assert.equal(evidence?.parentRoundId, undefined);
+  assert.equal(evidence?.parentRoundTotal, undefined);
+  assert.equal(evidence?.parentRoundOrder, undefined);
+  assert.equal(evidence?.parentRoundProgress, undefined);
+  assert.equal(evidence?.brokerOfRecordId, undefined);
+  assert.equal(evidence?.policyContext, undefined);
 });

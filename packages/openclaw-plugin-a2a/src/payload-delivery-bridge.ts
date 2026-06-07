@@ -148,8 +148,11 @@ function fingerprintPayload(payload: string): string {
 }
 
 function redactTargetRef(sessionKey: string, nodeId?: string): string {
-  const short = sessionKey.length > 12 ? `${sessionKey.slice(0, 6)}…${sessionKey.slice(-4)}` : sessionKey;
-  return nodeId ? `${nodeId}/${short}` : short;
+  // Use non-secret hash digest — never expose raw or partial sessionKey values
+  // R29 fix: previously showed first 6 + last 4 chars; now uses a one-way digest
+  // See openclaw-plugin-a2a#337 (R28 HOLD: raw sessionKey in error messages)
+  const digest = createHash("sha256").update(sessionKey).digest("hex").slice(0, 16);
+  return nodeId ? `${nodeId}/${digest}` : digest;
 }
 
 const REDACTED = "[redacted]";

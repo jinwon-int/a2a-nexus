@@ -3,6 +3,8 @@ import { access, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
+import { DEFAULT_PROFILE_MOUNT_PATH, validateOpenClawProfileReadiness } from "./openclaw-profile-readiness.js";
+import type { OpenClawProfileReadinessInput } from "./openclaw-profile-readiness.js";
 
 export type OpsStatus = "ok" | "warn" | "fail" | "skip";
 
@@ -23,6 +25,8 @@ export interface DoctorReport {
   extraMounts: OpsCheck;
   baseImage: OpsCheck;
   githubPatch: OpsCheck;
+  /** Deploy-marker validation: checks whether the deployed revision matches an expected deploy marker. */
+  deployMarker?: OpsCheck;
 }
 
 export interface InstallReport {
@@ -47,6 +51,11 @@ export interface CleanupReport {
   removed: string[];
   candidates: string[];
   skipped: string[];
+}
+
+export interface GitHubPatchReadinessOptions {
+  engine?: RunnerEngine;
+  openclawProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => OpenClawProfileReadinessInput;
 }
 
 /**
@@ -224,10 +233,19 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
   const baseImage = (engine === "docker" ? docker : podman).status === "ok"
     ? checkBaseImage(engine, config.image)
     : { status: "fail" as const, message: "no container engine available for base image check", detail: { image: config.image } };
-  const githubPatch = checkGitHubPatchReadiness(config);
+  const githubPatch = checkGitHubPatchReadiness(config, { engine });
   const engineReady = docker.status === "ok" || podman.status === "ok";
+  const checks = [runnerRevision, taskRoot, secretMount, extraMounts, baseImage, githubPatch];
+
+  // Deploy-marker is optional: only checked when buildMetadata.revision is provided.
+  let deployMarker: OpsCheck | undefined;
+  if (config.buildMetadata?.revision) {
+    deployMarker = await checkDeployMarker(config.buildMetadata.revision);
+    checks.push(deployMarker);
+  }
+
   return {
-    ok: engineReady && [runnerRevision, taskRoot, secretMount, extraMounts, baseImage, githubPatch].every((check) => check.status !== "fail"),
+    ok: engineReady && checks.every((check) => check.status !== "fail"),
     engine,
     runnerRevision,
     docker,
@@ -237,6 +255,7 @@ export async function doctor(config: RunnerConfig): Promise<DoctorReport> {
     extraMounts,
     baseImage,
     githubPatch,
+    ...(deployMarker ? { deployMarker } : {}),
   };
 }
 
@@ -257,7 +276,19 @@ export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "
   const fullLocalSha = normalizeSha(git(cwd, ["rev-parse", "HEAD"]).stdout.trim());
   const localSha = fullLocalSha?.slice(0, 12);
   const branch = git(cwd, ["branch", "--show-current"]).stdout.trim() || "detached";
-  const dirty = git(cwd, ["status", "--porcelain"]).stdout.trim().length > 0;
+
+  // Compute dirty flag, but exclude .deploy-source-sha as an expected
+  // deployment marker — it records the deployed SHA and should not trigger
+  // a misleading dirty-worktree warning.
+  const porcelainAll = git(cwd, ["status", "--porcelain"]).stdout;
+  const porcelainLines = porcelainAll.split("\n").filter((l) => l.trim().length > 0);
+  const realChanges = porcelainLines.filter((l) => !l.includes(".deploy-source-sha"));
+  const dirty = realChanges.length > 0;
+
+  // Detect .deploy-source-sha as a deployment marker.
+  const deploySourceShaStatus = porcelainLines.find((l) => l.includes(".deploy-source-sha"));
+  const deploymentMarker = deploySourceShaStatus !== undefined;
+
   const upstreamSha = await resolveUpstreamMainSha(cwd, upstreamRef);
 
   const reasons: string[] = [];
@@ -283,9 +314,88 @@ export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "
       upstreamMainFullSha: upstreamSha?.full,
       branch,
       dirty,
+      deploymentMarker,
       summaryStatus,
       reason: reasons.join("; ") || undefined,
     }),
+  };
+}
+
+/**
+ * Check whether the deployed revision matches an expected deploy marker.
+ *
+ * A deploy marker is a specific git revision (full or short SHA) that a rollout
+ * target should be running after a deploy. This check validates that the local
+ * checkout is on the expected revision, which is useful for pre-rollout doctor
+ * verification and refresh safety evidence.
+ *
+ * When the checkout is not a git worktree or the local SHA cannot be determined,
+ * the check fails closed (status "fail") because the deploy marker cannot be
+ * verified.
+ */
+export async function checkDeployMarker(
+  expectedRevision: string,
+  cwd = process.cwd(),
+): Promise<OpsCheck> {
+  const version = await readPackageVersion(cwd);
+  const insideWorkTree = git(cwd, ["rev-parse", "--is-inside-work-tree"]);
+
+  if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== "true") {
+    return {
+      status: "fail",
+      message: "deploy marker not inspectable: not a git checkout",
+      detail: {
+        expectedRevision,
+        version,
+        summary: `FAIL runner=${version ? `v${version}` : "unknown"} expected=${expectedRevision}`,
+        reason: "not a git checkout",
+      },
+    };
+  }
+
+  const fullLocalSha = normalizeSha(git(cwd, ["rev-parse", "HEAD"]).stdout.trim());
+  const localSha = fullLocalSha?.slice(0, 12);
+  const branch = git(cwd, ["branch", "--show-current"]).stdout.trim() || "detached";
+  const dirty = git(cwd, ["status", "--porcelain"]).stdout.trim().length > 0;
+
+  if (!fullLocalSha) {
+    return {
+      status: "fail",
+      message: "deploy marker not inspectable: local SHA unavailable",
+      detail: {
+        expectedRevision,
+        version,
+        branch,
+        dirty,
+        summary: `FAIL runner=${version ? `v${version}` : "unknown"} expected=${expectedRevision}`,
+        reason: "local SHA unavailable",
+      },
+    };
+  }
+
+  // Accept either full (40-char) or short (12-char) SHA match.
+  const marker = expectedRevision.toLowerCase();
+  const matches = fullLocalSha === marker || localSha === marker;
+
+  const status: OpsStatus = matches ? "ok" : "fail";
+  const summaryStatus = status === "ok" ? "PASS" : "FAIL";
+
+  return {
+    status,
+    message: matches
+      ? "deployed revision matches deploy marker"
+      : "deployed revision does not match deploy marker",
+    detail: {
+      version,
+      localSha,
+      localFullSha: fullLocalSha,
+      expectedRevision,
+      expectedRevisionShort: marker.slice(0, 12),
+      branch,
+      dirty,
+      summary: `${summaryStatus} runner=${version ? `v${version}` : "unknown"} local=${localSha ?? "unknown"} expected=${marker.slice(0, 12)}`,
+      ...(matches ? {} : { reason: "local revision is different from deploy marker" }),
+    },
   };
 }
 
@@ -333,7 +443,7 @@ async function checkSecretMount(githubTokenFile?: string): Promise<OpsCheck> {
   }
 }
 
-async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> {
+export async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> {
   const mounts = config.extraMounts ?? [];
   if (!mounts.length) return { status: "skip", message: "no extra mounts configured" };
 
@@ -362,7 +472,11 @@ async function checkExtraMounts(config: RunnerConfig): Promise<OpsCheck> {
   return { status: "ok", message: "extra mounts are readable", detail: { mounts: checked } };
 }
 
-export function checkGitHubPatchReadiness(config: RunnerConfig): OpsCheck {
+export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions = {}): OpsCheck {
+  if (config.commandProfile === "openclaw") {
+    return checkOpenClawProfilePatchReadiness(config, options);
+  }
+
   if (config.commandScript) {
     return {
       status: "ok",
@@ -413,6 +527,204 @@ export function checkGitHubPatchReadiness(config: RunnerConfig): OpsCheck {
   };
 }
 
+function checkOpenClawProfilePatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions): OpsCheck {
+  if (!config.commandScript) {
+    return {
+      status: "fail",
+      message: "GitHub patch execution is blocked: OpenClaw profile selected without a generated commandScript",
+      detail: { profile: "openclaw", safe: false, eval: false },
+    };
+  }
+
+  const engine = options.engine ?? config.engine ?? "docker";
+  const probeInput = options.openclawProfileProbe
+    ? options.openclawProfileProbe(config, engine)
+    : probeOpenClawProfileInContainer(config, engine);
+  const outcome = validateOpenClawProfileReadiness(probeInput);
+  const fallback = config.openclawProfile?.allowNpmInstallFallback === true;
+  const detail: Record<string, unknown> = {
+    path: "/work/patch-command.sh",
+    profile: "openclaw",
+    safe: true,
+    eval: false,
+    fallback: fallback ? "explicit_npm_install" : "disabled",
+    failureCategory: outcome.failureCategory,
+    summary: outcome.summary,
+    checks: outcome.checks.map((check) => ({ kind: check.kind, passed: check.passed })),
+  };
+  if (!outcome.ok && !fallback) {
+    detail.provisioningPaths = [
+      "preferred: pre-bake the OpenClaw CLI into the runner base image (e.g. RUN npm install -g openclaw)",
+      "alternative: set A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR and mount a host dir containing openclaw.json + credentials",
+      "escape-hatch: set A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK=1 to allow per-task npm install (requires network)",
+    ];
+  }
+
+  if (outcome.ok) {
+    return {
+      status: "ok",
+      message: "GitHub patch execution is ready via OpenClaw profile",
+      detail,
+    };
+  }
+
+  if (fallback) {
+    return {
+      status: "warn",
+      message: "OpenClaw profile probe failed, but explicit npm install fallback is enabled",
+      detail,
+    };
+  }
+
+  return {
+    status: "fail",
+    message: "GitHub patch execution is blocked: OpenClaw profile runtime is not ready",
+    detail,
+  };
+}
+
+function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEngine): OpenClawProfileReadinessInput {
+  const args = [
+    "run",
+    "--rm",
+    "--network",
+    config.network ?? "bridge",
+    "--entrypoint",
+    "sh",
+  ];
+
+  for (const mount of config.extraMounts ?? []) {
+    const mode = mount.readOnly === false ? "rw" : "ro";
+    args.push("-v", mount.source + ":" + mount.target + ":" + mode);
+  }
+
+  args.push(config.image, "-lc", OPENCLAW_PROFILE_PROBE_SCRIPT);
+
+  const result = spawnSync(engine, args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+  });
+
+  if (result.status !== 0) {
+    return {
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: false,
+      expectedMountPath: DEFAULT_PROFILE_MOUNT_PATH,
+      errors: [boundedProbeError(result.status, result.error)],
+    };
+  }
+
+  const values = parseProbeKeyValues(result.stdout ?? "");
+  const cliPath = boundedProbeValue(values.get("cli_path"), 200);
+  const cliVersion = boundedProbeValue(values.get("cli_version"), 100);
+  return {
+    cliOnPath: Boolean(cliPath),
+    cliPath,
+    cliVersionOk: values.get("cli_version_ok") === "1" && Boolean(cliVersion),
+    cliVersion,
+    profileMountExists: values.get("profile_mount_exists") === "1",
+    expectedMountPath: DEFAULT_PROFILE_MOUNT_PATH,
+    configFileExists: values.get("config_file_exists") === "1",
+    compactionModel: boundedProbeValue(values.get("compaction_model"), 160),
+    compactionProvider: boundedProbeValue(values.get("compaction_provider"), 80),
+    compactionProviderPresent: values.get("compaction_provider_present") === "1",
+    compactionModelDefined: values.get("compaction_model_defined") === "1",
+    configProbeError: boundedProbeValue(values.get("config_probe_error"), 180),
+    errors: [],
+  };
+}
+
+const OPENCLAW_PROFILE_PROBE_SCRIPT = [
+  "set -u",
+  "cli_path=\"$(command -v openclaw 2>/dev/null || true)\"",
+  "cli_version=\"\"",
+  "cli_version_ok=0",
+  "if [ -n \"$cli_path\" ]; then",
+  "  cli_version=\"$(openclaw --version 2>/dev/null | head -n 1 || true)\"",
+  "  if [ -n \"$cli_version\" ]; then",
+  "    cli_version_ok=1",
+  "  fi",
+  "fi",
+  "profile_mount_exists=0",
+  "if [ -d " + DEFAULT_PROFILE_MOUNT_PATH + " ]; then",
+  "  profile_mount_exists=1",
+  "fi",
+  "config_file_exists=0",
+  "compaction_model=\"\"",
+  "compaction_provider=\"\"",
+  "compaction_provider_present=0",
+  "compaction_model_defined=0",
+  "config_probe_error=\"\"",
+  "if [ -f " + DEFAULT_PROFILE_MOUNT_PATH + "/openclaw.json ]; then",
+  "  config_file_exists=1",
+  "  config_probe_output=/tmp/a2a-openclaw-config-probe.out",
+  "  if node >\"$config_probe_output\" 2>/tmp/a2a-openclaw-config-probe.err <<'A2A_CONFIG_PROBE'",
+  "const fs = require('fs');",
+  "const path = '" + DEFAULT_PROFILE_MOUNT_PATH + "/openclaw.json';",
+  "const config = JSON.parse(fs.readFileSync(path, 'utf8'));",
+  "const model = config?.agents?.defaults?.compaction?.model;",
+  "const compactionModel = typeof model === 'string' ? model : '';",
+  "const provider = compactionModel.includes('/') ? compactionModel.split('/')[0] : '';",
+  "const providers = config?.models?.providers && typeof config.models.providers === 'object'",
+  "  ? Object.keys(config.models.providers)",
+  "  : [];",
+  "const models = config?.agents?.defaults?.models && typeof config.agents.defaults.models === 'object'",
+  "  ? config.agents.defaults.models",
+  "  : {};",
+  "const safe = (value) => String(value ?? '').replace(/[\\r\\n=]/g, ' ').slice(0, 160);",
+  "console.log('compaction_model=' + safe(compactionModel));",
+  "console.log('compaction_provider=' + safe(provider));",
+  "console.log('compaction_provider_present=' + (provider && providers.includes(provider) ? '1' : '0'));",
+  "console.log('compaction_model_defined=' + (!compactionModel || Object.prototype.hasOwnProperty.call(models, compactionModel) ? '1' : '0'));",
+  "A2A_CONFIG_PROBE",
+  "  then",
+  "    while IFS='=' read -r key value; do",
+  "      case \"$key\" in",
+  "        compaction_model) compaction_model=\"$value\" ;;",
+  "        compaction_provider) compaction_provider=\"$value\" ;;",
+  "        compaction_provider_present) compaction_provider_present=\"$value\" ;;",
+  "        compaction_model_defined) compaction_model_defined=\"$value\" ;;",
+  "      esac",
+  "    done <\"$config_probe_output\"",
+  "  else",
+  "    config_probe_error=\"$(head -c 180 /tmp/a2a-openclaw-config-probe.err 2>/dev/null | tr '\\n\\r' '  ' || true)\"",
+  "  fi",
+  "fi",
+  "printf 'cli_path=%s\\n' \"$cli_path\"",
+  "printf 'cli_version_ok=%s\\n' \"$cli_version_ok\"",
+  "printf 'cli_version=%s\\n' \"$cli_version\"",
+  "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
+  "printf 'config_file_exists=%s\\n' \"$config_file_exists\"",
+  "printf 'compaction_model=%s\\n' \"$compaction_model\"",
+  "printf 'compaction_provider=%s\\n' \"$compaction_provider\"",
+  "printf 'compaction_provider_present=%s\\n' \"$compaction_provider_present\"",
+  "printf 'compaction_model_defined=%s\\n' \"$compaction_model_defined\"",
+  "printf 'config_probe_error=%s\\n' \"$config_probe_error\"",
+].join("\n");
+
+export function parseProbeKeyValues(output: string): Map<string, string> {
+  const values = new Map<string, string>();
+  for (const line of output.split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index <= 0) continue;
+    values.set(line.slice(0, index), line.slice(index + 1));
+  }
+  return values;
+}
+
+function boundedProbeValue(value: string | undefined, limit: number): string | undefined {
+  const normalized = value?.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  return normalized.length <= limit ? normalized : normalized.slice(0, limit);
+}
+
+function boundedProbeError(status: number | null, error: Error | undefined): string {
+  if (error) return (error.name + ": " + error.message).slice(0, 300);
+  return "container probe exited with status " + (status ?? "unknown");
+}
+
 function git(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 5000 });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
@@ -454,11 +766,14 @@ function compactRevisionDetail(input: {
   upstreamMainFullSha?: string;
   branch?: string;
   dirty?: boolean;
+  /** True when .deploy-source-sha was detected as an expected deployment marker. */
+  deploymentMarker?: boolean;
   summaryStatus: "PASS" | "WARN" | "FAIL";
   reason?: string;
 }): Record<string, unknown> {
   const branch = input.branch ?? "unknown";
   const dirty = input.dirty ?? false;
+  const deploymentMarker = input.deploymentMarker ?? false;
   const summary = [
     input.summaryStatus,
     `runner=${input.version ? `v${input.version}` : "unknown"}`,
@@ -466,6 +781,7 @@ function compactRevisionDetail(input: {
     `upstreamMain=${input.upstreamMainSha ?? "unknown"}`,
     `branch=${branch}`,
     `dirty=${dirty ? "yes" : "no"}`,
+    ...(deploymentMarker ? ["deploy-source-sha=present"] : []),
   ].join(" ");
 
   return {
@@ -476,6 +792,7 @@ function compactRevisionDetail(input: {
     upstreamMainFullSha: input.upstreamMainFullSha,
     branch,
     dirty,
+    ...(deploymentMarker ? { deploymentMarker } : {}),
     summary,
     ...(input.reason ? { reason: input.reason } : {}),
   };

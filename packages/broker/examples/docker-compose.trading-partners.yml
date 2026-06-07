@@ -5,6 +5,10 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:-unknown}
+        A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:-}
     container_name: a2a-broker
     restart: unless-stopped
     env_file:

@@ -1,0 +1,277 @@
+{
+  "kind": "a2a-broker.complexity-execution-plan-preflight-seal.packet",
+  "version": 1,
+  "generatedAt": "2026-06-01T12:00:00.000Z",
+  "idempotencyKey": "complexity-execution-plan-preflight-seal:447cfcd218eefbc5fcbc434d",
+  "sourcePlanIdempotencyKey": "complexity-execution-plan:6ee1699c03f3031103865094",
+  "sourceEnvelopeIdempotencyKey": "complexity-finalizer-approval-envelope:9638c13238ea0bea56694f7c",
+  "sourceRecommendationIdempotencyKey": "complexity-orch-recommendation:43f864cd5758f0cb936f9b3d",
+  "envelopeCategory": "operator_approval_required",
+  "action": "parallel_subagents",
+  "complexity": "complex",
+  "executionMode": "operator_approval_gated",
+  "planDecision": "plan_ready",
+  "state": "preflight_seal_ready",
+  "sealReady": true,
+  "checks": [
+    {
+      "code": "plan_kind",
+      "label": "Execution plan kind matches expected packet type",
+      "status": "pass",
+      "message": "Plan kind is a2a-broker.complexity-execution-plan-draft.packet",
+      "detail": "a2a-broker.complexity-execution-plan-draft.packet"
+    },
+    {
+      "code": "plan_version",
+      "label": "Execution plan version is supported",
+      "status": "pass",
+      "message": "Plan version 1 is supported",
+      "detail": "1"
+    },
+    {
+      "code": "plan_decision",
+      "label": "Execution plan decision is recognized (not safety blocked)",
+      "status": "pass",
+      "message": "Plan decision is \"plan_ready\"",
+      "detail": "plan_ready"
+    },
+    {
+      "code": "lineage_envelope_key",
+      "label": "Source approval envelope idempotency key is present",
+      "status": "pass",
+      "message": "sourceEnvelopeIdempotencyKey is present",
+      "detail": "complexity-finalizer-approval-envelope:9638c13238ea0bea56694f7c"
+    },
+    {
+      "code": "lineage_recommendation_key",
+      "label": "Source recommendation idempotency key is present",
+      "status": "pass",
+      "message": "sourceRecommendationIdempotencyKey is present",
+      "detail": "complexity-orch-recommendation:43f864cd5758f0cb936f9b3d"
+    },
+    {
+      "code": "envelope_category",
+      "label": "Envelope category is recognized",
+      "status": "pass",
+      "message": "Envelope category \"operator_approval_required\" is recognized",
+      "detail": "operator_approval_required"
+    },
+    {
+      "code": "idempotency_key",
+      "label": "Source plan idempotency key is present",
+      "status": "pass",
+      "message": "Plan idempotencyKey is present",
+      "detail": "complexity-execution-plan:6ee1699c03f3031103865094"
+    },
+    {
+      "code": "boundary_runtime_behavior",
+      "label": "No-live: runtimeBehaviorChanged is false",
+      "status": "pass",
+      "message": "runtimeBehaviorChanged is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_mandatory_spawn",
+      "label": "No-live: mandatoryProductionSpawn is false",
+      "status": "pass",
+      "message": "mandatoryProductionSpawn is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_broker_dispatch",
+      "label": "No-live: brokerDispatchSemanticsChanged is false",
+      "status": "pass",
+      "message": "brokerDispatchSemanticsChanged is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_taskflow",
+      "label": "No-live: taskFlowMutation is false",
+      "status": "pass",
+      "message": "taskFlowMutation is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_db",
+      "label": "No-live: dbMutation is false",
+      "status": "pass",
+      "message": "dbMutation is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_deploy",
+      "label": "No-live: deployOrRestart is false",
+      "status": "pass",
+      "message": "deployOrRestart is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_secret",
+      "label": "No-live: secretMovement is false",
+      "status": "pass",
+      "message": "secretMovement is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_approval",
+      "label": "No-live: approvalGranted is false",
+      "status": "pass",
+      "message": "approvalGranted is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_execution_dispatched",
+      "label": "No-live: executionDispatched is false",
+      "status": "pass",
+      "message": "executionDispatched is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_provider",
+      "label": "No-live: providerMessageSent is false",
+      "status": "pass",
+      "message": "providerMessageSent is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "boundary_terminal_ack",
+      "label": "No-live: terminalAckPerformed is false",
+      "status": "pass",
+      "message": "terminalAckPerformed is false (expected)",
+      "detail": "false"
+    },
+    {
+      "code": "semantic_plan_draft_only",
+      "label": "Semantic invariant: planDraftOnly is true",
+      "status": "pass",
+      "message": "planDraftOnly is true (expected)",
+      "detail": "true"
+    },
+    {
+      "code": "semantic_approval_not_granted",
+      "label": "Semantic invariant: approvalNotGranted is true",
+      "status": "pass",
+      "message": "approvalNotGranted is true (expected)",
+      "detail": "true"
+    },
+    {
+      "code": "semantic_source_only_no_live",
+      "label": "Semantic invariant: sourceOnlyNoLive is true",
+      "status": "pass",
+      "message": "sourceOnlyNoLive is true (expected)",
+      "detail": "true"
+    },
+    {
+      "code": "semantic_plan_steps_not_executed",
+      "label": "Semantic invariant: planStepsNotExecuted is true",
+      "status": "pass",
+      "message": "planStepsNotExecuted is true (expected)",
+      "detail": "true"
+    },
+    {
+      "code": "execution_blocked_consistency",
+      "label": "Execution blocked flag is consistent with execution mode",
+      "status": "pass",
+      "message": "executionBlocked=false is consistent with executionMode=operator_approval_gated",
+      "detail": "executionBlocked=false, executionMode=operator_approval_gated"
+    },
+    {
+      "code": "approval_required_consistency",
+      "label": "Approval required flag is consistent with execution mode",
+      "status": "pass",
+      "message": "approvalRequired=true is consistent with executionMode=operator_approval_gated",
+      "detail": "approvalRequired=true, executionMode=operator_approval_gated"
+    },
+    {
+      "code": "steps_structure",
+      "label": "Execution plan has at least one step",
+      "status": "pass",
+      "message": "Plan has 5 step(s)",
+      "detail": "5"
+    }
+  ],
+  "verification": {
+    "lineage": {
+      "valid": true,
+      "sourceEnvelopeIdempotencyKeyPresent": true,
+      "sourceRecommendationIdempotencyKeyPresent": true,
+      "envelopeCategoryValid": true
+    },
+    "boundaries": {
+      "allFalse": true,
+      "violatedBoundaries": []
+    },
+    "semantics": {
+      "planDraftOnly": true,
+      "approvalNotGranted": true,
+      "sourceOnlyNoLive": true,
+      "planStepsNotExecuted": true
+    },
+    "planState": {
+      "executionBlockedConsistent": true,
+      "decisionRecognized": true,
+      "approvalRequiredConsistent": true
+    }
+  },
+  "workerEligibility": {
+    "rolesRequested": [
+      "explorer",
+      "implementer",
+      "verifier"
+    ],
+    "subagentStepsPlanned": 3,
+    "approvalStepsPlanned": 1,
+    "operatorReviewStepsPlanned": 0,
+    "parallelStepsPlanned": true,
+    "sequentialStepsPlanned": false,
+    "approvalGatePresent": true
+  },
+  "rollbackStatus": {
+    "rollbackRequired": false,
+    "stepsExecuted": 0,
+    "stepsBlocked": 0,
+    "stepsPendingApproval": 1,
+    "notes": [
+      "Rollback/abort preflight: no steps in the execution plan draft have been executed. Rollback is not required at this stage.",
+      "1 step(s) require operator approval before execution. Approval must be obtained through a separate approval grant path."
+    ]
+  },
+  "blockers": [],
+  "nextActions": [
+    "Preflight seal is ready. The complexity execution plan draft can be presented for operator review.",
+    "This seal does NOT grant approval, dispatch execution, or authorize runtime action.",
+    "Route the sealed preflight to the operator review/approval channel for evaluation.",
+    "Do not use this seal as approval for execution. A separate approval grant path is required.",
+    "No live dispatch, subagent spawn, provider send, terminal ACK, DB mutation, or secret movement is permitted by this seal."
+  ],
+  "boundaries": {
+    "brokerStateRead": false,
+    "hostStateRead": false,
+    "workerDispatch": false,
+    "subagentSpawn": false,
+    "taskFlowMutation": false,
+    "dbMutation": false,
+    "deployOrRestart": false,
+    "providerMessageSent": false,
+    "terminalAckPerformed": false,
+    "secretMovement": false,
+    "approvalGranted": false,
+    "executionDispatched": false
+  },
+  "semantics": {
+    "preflightSealOnly": true,
+    "sourceOnlyNoLive": true,
+    "suppliedPlanOnly": true,
+    "sealDoesNotGrantApproval": true,
+    "sealDoesNotDispatchExecution": true,
+    "performsGitHubMutation": false,
+    "performsProviderSend": false,
+    "performsTerminalAck": false,
+    "performsRuntimeRestartOrDeploy": false,
+    "performsDbMutation": false,
+    "createsTaskFlowRecords": false,
+    "performsHistoricalReplay": false,
+    "performsReleaseOrPublish": false,
+    "movesSecretsOrCredentials": false
+  }
+}

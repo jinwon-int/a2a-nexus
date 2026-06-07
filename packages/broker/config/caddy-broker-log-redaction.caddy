@@ -1,0 +1,82 @@
+# Caddy broker reverse-proxy log redaction reference
+#
+# Purpose: Prevent A2A edge-secret/auth-like headers from appearing in
+# Caddy access logs, error pages, and proxy diagnostics, especially
+# during broker-restart windows when 502 Bad Gateway is returned.
+#
+# This file is a reference template. The live configuration lives at
+# /etc/caddy/Caddyfile on the production host.
+# Apply and verify with:
+#   cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak_$(date +%Y%m%d_%H%M%S)
+#   caddy validate --config /etc/caddy/Caddyfile
+#   caddy reload --config /etc/caddy/Caddyfile
+#
+# Requires Caddy >= 2.7.0 (log_redact global option).
+
+# ── Global options ──────────────────────────────────────────────────
+{
+	# Redact sensitive request headers from ALL access and error logs.
+	# Caddy replaces the field value with "REDACTED" in log output.
+	# Add every header that carries an auth secret or token.
+	log_redact "http.request.header.X-A2A-Edge-Secret"
+	log_redact "http.request.header.X-A2A-Requester-Id"
+	log_redact "http.request.header.X-A2A-Requester-Role"
+}
+
+# ── Broker site block ───────────────────────────────────────────────
+broker.example.com {
+	# Edge-secret auth: imported from /etc/caddy/broker-edge-auth.caddy
+	import /etc/caddy/broker-edge-auth.caddy
+
+	# Upstream: broker Docker container on loopback
+	reverse_proxy 127.0.0.1:8787 {
+		# Health check the upstream; if it's down, Caddy returns 502.
+		# The handle_errors block below prevents header leakage in those
+		# default 502 error pages.
+		health_uri /health
+		health_interval 10s
+		health_timeout 3s
+	}
+
+	# ── Custom error handling ────────────────────────────────────
+	# Replace Caddy's default error page with a generic response.
+	# The default error page can include request metadata; this block
+	# ensures 502 responses contain no request headers or diagnostics.
+	handle_errors {
+		@502 expression `{err.status_code} == 502`
+		respond @502 "Service Unavailable" 502 {
+			close
+		}
+		# Other errors: minimal status-only response
+		respond "Error {err.status_code}" {err.status_code}
+	}
+
+	# ── Safe access log format ───────────────────────────────────
+	# Log only safe fields: timestamp, status, upstream, path.
+	# Request headers are excluded entirely via the filter format.
+	log {
+		output file /var/log/caddy/broker-access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				# Safe fields to keep
+				ts include
+				request>method include
+				request>host include
+				request>uri include
+				request>remote_ip include
+				status include
+				resp_headers>Content-Type include
+				duration include
+				# Exclude all request headers
+				request>headers delete
+				# Exclude TLS and user info
+				request>tls delete
+				user_id delete
+			}
+		}
+	}
+}

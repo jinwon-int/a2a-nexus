@@ -1,0 +1,16 @@
+{
+  "task": {
+    "taskId": "short-answer",
+    "title": "Answer one operator question",
+    "taskClass": "short_answer"
+  },
+  "signals": {
+    "expectedOutputSize": "small",
+    "estimatedDuration": "short",
+    "riskLevel": "low",
+    "needsEvidence": false,
+    "needsValidation": false,
+    "needsDurableState": false
+  },
+  "finalizerOwner": "seoseo"
+}

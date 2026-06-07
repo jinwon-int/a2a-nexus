@@ -40,15 +40,48 @@ Capture sanitized evidence in the issue/PR comment before the cutover is conside
 
 Do not paste raw `.env` files, edge secrets, OpenClaw runtime context files, raw session dumps, or terminal outbox payloads.
 
-## Safe preflight: duplicate and lease checks
+## Safe preflight: duplicate, lease, revision, and terminal receipt parity checks
 
 Run these as read-only checks first. Replace placeholders in your local shell; keep secrets out of logs.
+
+For every two-broker deploy/restart/canary readiness packet, include the read-only worker preflight output. It fetches `/health` and `/workers` from both brokers with `GET` only, reports broker build revisions and worker metadata revisions, separates duplicate-online blockers from stale/inactive cross-broker rows, and applies fail-closed no-live safety gates for deploy/restart/canary/DB/ACK/release claims.
+
+```bash
+cat > /tmp/a2a-two-broker-safety-evidence.json <<'JSON'
+{
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "liveProviderCanary": false,
+    "dbMutation": false,
+    "terminalAckOrReplay": false,
+    "release": false,
+    "providerAcceptedMessageIdAsAck": false
+  }
+}
+JSON
+
+npm run two_broker_worker_preflight -- \
+  --seoseo-url "${OLD_BROKER_URL}" \
+  --gwakga-url "${NEW_BROKER_URL}" \
+  --safety-evidence /tmp/a2a-two-broker-safety-evidence.json \
+  --json
+```
+
+The output is **not** deployment approval. Treat it as Block evidence if either broker revision is `unknown`, any worker revision needed for the cutover is `unknown`, any duplicate-online worker ID appears, or any safety gate fails. Stale/inactive same-ID rows may be non-blocking only when the stale window/lastSeen evidence proves the old side cannot claim work and an operator-approved replacement/rollback plan is attached.
+
+Rollback notes to attach with the preflight:
+
+- rollback is not executed by the preflight and needs fresh explicit operator approval;
+- rollback must preserve unacknowledged/replayable terminal rows unless a separate ACK/prune approval exists;
+- provider accepted/message-id evidence is non-ACK and must not be counted as `receipt_confirmed` terminal ACK evidence;
+- rollback must not deploy/restart/reload, send a live provider canary, mutate DB state, replay/ACK terminal rows, or publish a release without separate approval.
 
 ```bash
 export WORKER_ID=soonwook
 export OLD_BROKER_URL=https://seoseo-broker.example.invalid
 export NEW_BROKER_URL=https://gwakga-broker.example.invalid
-export BROKER_EDGE_SECRET='<set in local shell only; never paste>'
+export BROKER_EDGE_SECRET=<edge-secret-placeholder>
 
 # Old broker: worker registration should be absent or stale after stop.
 curl -fsS \
@@ -72,6 +105,18 @@ curl -fsS \
 ```
 
 Fail closed if any old-broker task is `claimed` or `running`, if the target broker already has a fresh same-ID worker without an approved replacement, or if the checks require an unapproved production secret/routing change.
+
+Before considering terminal receipt behavior equivalent across Seoseo and Gwakga, run the read-only parity helper. It polls each broker terminal outbox with `GET` only and combines that shape check with the deterministic no-live receipt-gate canary; it never sends providers, mutates the broker DB, or ACKs terminal rows.
+
+```bash
+npm run broker_terminal_receipt_parity -- \
+  --seoseo-url "${OLD_BROKER_URL}" \
+  --gwakga-url "${NEW_BROKER_URL}" \
+  --edge-secret "${BROKER_EDGE_SECRET}" \
+  --limit 20
+```
+
+If the report lists observed bucket discrepancies, attach the fix proposal from the output and rerun `terminal_outbox_preflight` on both brokers with the same cursor and limit before any operator-approved backfill or ACK.
 
 ## Onboarding a new Gwakga worker
 

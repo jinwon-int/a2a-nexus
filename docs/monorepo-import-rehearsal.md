@@ -7,12 +7,14 @@
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
 > **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
-> **Status:** phase 3 package CI jobs wired; split repos remain canonical until fresh mirrored content is proven.
+> **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
+> **Status:** phase-4 fresh prefix import candidate is under parity validation; split repos remain canonical until PR/CI and separate canonical-flip approval.
 
 ## Summary
 
 This document turns the monorepo re-entry decision into a concrete import
-rehearsal and mirror freshness plan. It does not import repositories or flip
+rehearsal and mirror freshness plan. The `#538` candidate imports fresh tracked
+trees into `packages/*` through a PR branch, but it still does not flip
 canonical ownership.
 
 The immediate finding is that `a2a-plane/packages/*` is useful as an umbrella
@@ -123,6 +125,37 @@ refresh package content or approve canonical ownership. The next import
 rehearsal must run these jobs against a fresh prefix import and compare any
 remaining package metadata/bin/files drift before `packages/*` can become
 authoritative.
+
+## Phase-4 Fresh Prefix Import Candidate (#538)
+
+The `#538` candidate starts from the `#537` merge commit
+`1eb67fa55f756c9b47db4ec9b6b1d604683c618d`, removes the existing package
+mirrors, and expands fresh split-repo tracked trees into the same package paths
+with `git archive`. It intentionally imports tracked files only; ignored build
+outputs, `node_modules`, coverage, and local temporary files are excluded.
+
+| Surface | Fresh split repo head | Split tracked files | Target path | Candidate validation |
+| --- | --- | ---: | --- | --- |
+| Broker | `f9f4af5a76649a37b8a3d492805b6e5f410683a6` | 869 | `packages/broker` | `node scripts/run-monorepo-package-ci-parity.mjs broker` passed locally. |
+| Docker runner | `269a0ef90737158b41f8da26241b9f7f4b14af5e` | 138 | `packages/docker-runner` | `node scripts/run-monorepo-package-ci-parity.mjs docker-runner` passed locally. |
+| OpenClaw plugin | `a2e521271483ef0b6a29907c8228f0a442dd2db9` | 179 | `packages/openclaw-plugin-a2a` | `node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a` passed locally. |
+
+Candidate-only compatibility patches are limited to package/workspace
+execution:
+
+- Broker and OpenClaw plugin add `check: npm test` so the root
+  `check:packages` gate can run package checks without weakening source tests.
+- OpenClaw plugin uses `tsc` from npm script PATH instead of a nested
+  `./node_modules/typescript` path so workspace-hoisted installs and split
+  installs both work.
+- Docker runner uses the latest split-repo `release-candidate-parity-audit`
+  script as the no-publish release evidence path; tag/release creation remains
+  blocked.
+
+This import mode is not history-preserving. Closed issue/PR provenance remains
+in the split implementation repos, while the candidate PR records exact source
+refs and package parity evidence. If the candidate regresses, rollback is a
+normal PR revert; split repos remain canonical.
 
 ## Rehearsal Strategy
 

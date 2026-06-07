@@ -2,12 +2,117 @@
 // Broker terminal-outbox preflight for receipt-gated smoke readiness.
 // This script is intentionally read-only: it checks /health and polls/replays
 // terminal-outbox state, but it never calls the ACK endpoint or any notifier.
+// Uses an embedded legacy residue classifier (#886) to distinguish current-window
+// rows from legacy residue so that legacy rows do not block preflight health.
 
 import process from 'node:process';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
 const DEFAULT_LIMIT = 5;
 const REQUESTER_ID = 'terminal-outbox-preflight';
+
+// ---------------------------------------------------------------------------
+// Legacy residue classifier (embedded, mirrors src/core/terminal-outbox-legacy-classifier.ts)
+// Classifies terminal_outbox rows as current-window, legacy-residue, or unclassifiable.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LEGACY_RESIDUE_CUTOFF = '2026-05-04T07:10:00.000Z';
+const EVIDENCE_URL_KEYS = ['prUrl', 'doneUrl', 'blockUrl'];
+
+function classifyOutboxRow(row, cutoffMs) {
+  const id = typeof row?.id === 'string' ? row.id : null;
+  const effectiveCutoffMs = Number.isFinite(cutoffMs)
+    ? cutoffMs
+    : Date.parse(DEFAULT_LEGACY_RESIDUE_CUTOFF);
+
+  const createdAtMs = typeof row?.createdAt === 'string' ? Date.parse(row.createdAt) : NaN;
+  const preCutoff = Number.isFinite(createdAtMs) ? createdAtMs < effectiveCutoffMs : null;
+
+  const taskBrief = row?.payload?.taskBrief;
+  const hasTaskBrief = typeof taskBrief === 'string' && taskBrief.length > 0;
+  const hasAnyEvidenceUrl = EVIDENCE_URL_KEYS.some((key) => {
+    const value = row?.payload?.[key];
+    return typeof value === 'string' && value.length > 0;
+  });
+  const missingEvidence = !hasAnyEvidenceUrl;
+
+  const receiptStatus = row?.receipt?.status;
+  const legacyReceiptStatus = receiptStatus === 'sent' || receiptStatus === 'provider_delivered_if_known';
+  const ackEvidence = row?.ack?.evidence;
+  const legacyAckEvidence = ackEvidence === 'provider_delivery_receipt';
+  const receiptConfirmed = row?.ack?.status === 'receipt_confirmed';
+
+  const hasAnySignal = preCutoff !== null || hasTaskBrief || !missingEvidence || legacyReceiptStatus || legacyAckEvidence || receiptConfirmed;
+  if (!hasAnySignal) {
+    return {
+      id, origin: 'unclassifiable',
+      signals: { preCutoff, hasTaskBrief, missingEvidence, legacyReceiptStatus, legacyAckEvidence, receiptConfirmed },
+      reason: 'insufficient data to classify',
+    };
+  }
+
+  const strongLegacySignals = (preCutoff === true ? 1 : 0) + (legacyReceiptStatus ? 1 : 0) + (legacyAckEvidence ? 1 : 0);
+  const parts = [];
+  let origin;
+  let reason;
+
+  if (strongLegacySignals >= 1) {
+    origin = 'legacy-residue';
+    if (preCutoff === true) parts.push('pre-cutoff');
+    if (!hasTaskBrief) parts.push('missing taskBrief');
+    if (missingEvidence) parts.push('missing evidence');
+    if (legacyReceiptStatus) parts.push('legacy receipt status');
+    if (legacyAckEvidence) parts.push('legacy ACK evidence');
+    reason = `legacy residue: ${parts.join(', ')}`;
+  } else if (!hasTaskBrief && missingEvidence) {
+    origin = 'legacy-residue';
+    parts.push('missing taskBrief', 'missing evidence');
+    reason = `legacy residue: ${parts.join(', ')}`;
+  } else if (!hasTaskBrief && preCutoff !== false && !receiptConfirmed) {
+    origin = 'legacy-residue';
+    parts.push('missing taskBrief');
+    if (preCutoff === null) parts.push('cutoff unknown');
+    reason = `legacy residue: ${parts.join(', ')}`;
+  } else {
+    origin = 'current-window';
+    if (preCutoff === false) parts.push('post-cutoff');
+    if (hasTaskBrief) parts.push('has taskBrief');
+    if (!missingEvidence) parts.push('has evidence');
+    if (receiptConfirmed) parts.push('receipt-confirmed');
+    reason = `current window: ${parts.join(', ')}`;
+  }
+
+  return {
+    id, origin,
+    signals: { preCutoff, hasTaskBrief, missingEvidence, legacyReceiptStatus, legacyAckEvidence, receiptConfirmed },
+    reason,
+  };
+}
+
+function classifyOutboxRows(rows, cutoffMs) {
+  const classifications = rows.map((row) => classifyOutboxRow(row, cutoffMs));
+  const currentWindow = classifications.filter((c) => c.origin === 'current-window');
+  const legacyResidue = classifications.filter((c) => c.origin === 'legacy-residue');
+  const unclassifiable = classifications.filter((c) => c.origin === 'unclassifiable');
+  const currentWindowBlockers = {
+    missingEvidenceIds: currentWindow.filter((c) => c.signals.missingEvidence).map((c) => c.id).filter(Boolean),
+    missingTaskBriefIds: currentWindow.filter((c) => !c.signals.hasTaskBrief).map((c) => c.id).filter(Boolean),
+  };
+  const legacyResidueSummary = legacyResidue.map((c) => ({ id: c.id, reason: c.reason }));
+  return {
+    total: classifications.length,
+    currentWindow: currentWindow.length,
+    legacyResidue: legacyResidue.length,
+    unclassifiable: unclassifiable.length,
+    classifications,
+    currentWindowBlockers,
+    legacyResidueSummary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Preflight helpers
+// ---------------------------------------------------------------------------
 
 function ok(check, detail, extra = {}) {
   return { ok: true, check, detail, ...extra };
@@ -114,29 +219,86 @@ function isReceiptConfirmed(event) {
 
 function terminalReadiness(body, { reconcile }) {
   const events = Array.isArray(body?.events) ? body.events : [];
-  const unacked = events.filter((event) => !isReceiptConfirmed(event));
-  const receiptConfirmed = events.filter(isReceiptConfirmed);
   const staleReceipt = events.filter((event) => event?.receipt?.status === 'stale');
-  const missingEvidence = events.filter((event) => !firstEvidenceUrl(event?.payload));
-  const missingWorker = events.filter((event) => typeof event?.payload?.worker !== 'string' || event.payload.worker.length === 0);
-  const missingTaskBrief = events.filter((event) => typeof event?.payload?.taskBrief !== 'string' || event.payload.taskBrief.length === 0);
   const unsafeEvidence = events.filter(containsUnsafeEvidenceUrl);
   const replayCandidates = Number.isInteger(body?.reconciledUnacked) ? body.reconciledUnacked : 0;
-  const blockers = [];
-  if (unsafeEvidence.length > 0) blockers.push(`unsafe/non-HTTP evidence URLs=${unsafeEvidence.length}`);
-  if (missingEvidence.length > 0) blockers.push(`missing PR/Done/Block evidence=${missingEvidence.length}`);
-  if (missingWorker.length > 0) blockers.push(`missing worker=${missingWorker.length}`);
-  if (missingTaskBrief.length > 0) blockers.push(`missing task brief=${missingTaskBrief.length}`);
+
+  // Run the legacy residue classifier to separate current-window rows from
+  // legacy residue. Only current-window issues block the preflight; legacy
+  // residue is reported but tolerated (#886).
+  const classification = classifyOutboxRows(events);
+
+  // Block only on non-receipt-confirmed rows that are either:
+  //   - current-window (should have complete payload)
+  //   - unclassifiable (can't safely assume legacy — err on blocking side)
+  // Skip receipt-confirmed rows entirely (they are already terminal).
+  // Legacy-residue rows are reported but do not block (#886).
+  const blockerOriginSet = new Set(['current-window', 'unclassifiable']);
+  const blockerIdSet = new Set();
+  for (const c of classification.classifications) {
+    if (!c.signals.receiptConfirmed && blockerOriginSet.has(c.origin) && c.id !== null) {
+      blockerIdSet.add(c.id);
+    }
+  }
+
+  const blockerCandidates = events.filter(
+    (event) => event?.id && blockerIdSet.has(event.id),
+  );
+
+  const currentWindowBlockers = [];
+  const blockerMissingEvidence = blockerCandidates.filter((event) => !firstEvidenceUrl(event?.payload));
+  const blockerMissingTaskBrief = blockerCandidates.filter(
+    (event) => typeof event?.payload?.taskBrief !== 'string' || event.payload.taskBrief.length === 0,
+  );
+  const blockerMissingWorker = blockerCandidates.filter(
+    (event) => typeof event?.payload?.worker !== 'string' || event.payload.worker.length === 0,
+  );
+
+  if (unsafeEvidence.length > 0) currentWindowBlockers.push(`unsafe/non-HTTP evidence URLs=${unsafeEvidence.length}`);
+  if (blockerMissingEvidence.length > 0) currentWindowBlockers.push(`current-window/unclassifiable missing evidence=${blockerMissingEvidence.length}`);
+  if (blockerMissingWorker.length > 0) currentWindowBlockers.push(`current-window/unclassifiable missing worker=${blockerMissingWorker.length}`);
+  if (blockerMissingTaskBrief.length > 0) currentWindowBlockers.push(`current-window/unclassifiable missing task brief=${blockerMissingTaskBrief.length}`);
+
+  // Legacy residue counts (reported but do not block preflight)
+  const legacyResidue = classification.legacyResidueSummary;
+  const legacyMissingTaskBrief = legacyResidue.filter((r) => r.reason.includes('missing taskBrief'));
+  const legacyMissingEvidence = legacyResidue.filter((r) => r.reason.includes('missing evidence'));
+
   const staleCursorOrReplayCandidates = reconcile ? replayCandidates + staleReceipt.length : staleReceipt.length;
+
+  // Total counts for backward compatibility
+  const allUnacked = events.filter((event) => !isReceiptConfirmed(event));
+  const allMissingEvidence = events.filter((event) => !firstEvidenceUrl(event?.payload));
+  const allMissingTaskBrief = events.filter(
+    (event) => typeof event?.payload?.taskBrief !== 'string' || event.payload.taskBrief.length === 0,
+  );
+
   return {
-    unackedCount: unacked.length,
-    receiptConfirmedCount: receiptConfirmed.length,
+    unackedCount: allUnacked.length,
+    receiptConfirmedCount: events.length - allUnacked.length,
     staleCursorOrReplayCandidates,
-    missingEvidenceCount: missingEvidence.length,
-    missingWorkerCount: missingWorker.length,
-    missingTaskBriefCount: missingTaskBrief.length,
+    // Current-window breakdown (these block preflight when unacked)
+    currentWindowCount: classification.currentWindow,
+    currentWindowMissingEvidenceCount: blockerMissingEvidence.length,
+    currentWindowMissingWorkerCount: blockerMissingWorker.length,
+    currentWindowMissingTaskBriefCount: blockerMissingTaskBrief.length,
+    // Legacy residue breakdown (these do not block)
+    legacyResidueCount: classification.legacyResidue,
+    legacyResidueSummary: legacyResidue,
+    legacyMissingTaskBriefCount: legacyMissingTaskBrief.length,
+    legacyMissingEvidenceCount: legacyMissingEvidence.length,
+    unclassifiableCount: classification.unclassifiable,
+    // Total counts for backward compatibility
+    missingEvidenceCount: allMissingEvidence.length,
+    missingWorkerCount: allUnacked.filter(
+      (event) => typeof event?.payload?.worker !== 'string' || event.payload.worker.length === 0,
+    ).length,
+    missingTaskBriefCount: allMissingTaskBrief.length,
+    receiptConfirmedMissingTaskBriefCount: events.filter(isReceiptConfirmed).filter(
+      (event) => typeof event?.payload?.taskBrief !== 'string' || event.payload.taskBrief.length === 0,
+    ).length,
     unsafeEvidenceUrlCount: unsafeEvidence.length,
-    blockers,
+    blockers: currentWindowBlockers,
   };
 }
 
@@ -167,8 +329,11 @@ function evaluateOutbox(body, status, { reconcile }) {
   const replayNote = reconcile && Number.isInteger(body.reconciledUnacked)
     ? `; reconciledUnacked=${body.reconciledUnacked}`
     : '';
+  const cwNote = `; current-window=${readiness.currentWindowCount}, legacy-residue=${readiness.legacyResidueCount}`;
   const readyNote = `; readiness unacked=${readiness.unackedCount}, receiptConfirmed=${readiness.receiptConfirmedCount}, staleReplay=${readiness.staleCursorOrReplayCandidates}`;
-  return ok(label, `${count} event(s), cursor=${body.cursor ?? 'null'}${replayNote}${readyNote}`, { count, cursor: body.cursor ?? null, events: summaries, readiness });
+  return ok(label, `${count} event(s), cursor=${body.cursor ?? 'null'}${replayNote}${cwNote}${readyNote}`, {
+    count, cursor: body.cursor ?? null, events: summaries, readiness,
+  });
 }
 
 function sampleNoLiveOutboxBody() {

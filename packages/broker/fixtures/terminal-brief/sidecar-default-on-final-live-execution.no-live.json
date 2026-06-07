@@ -1,0 +1,217 @@
+{
+  "defaultOnRuntimeExecutorGatePacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-default-on-runtime-executor-gate.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T08:08:00.000Z",
+    "mode": "terminal-brief-default-on-runtime-executor-gate-source-only",
+    "state": "ready_for_runtime_executor_review",
+    "dryRunOnly": false,
+    "sourceOnlyNoLive": true,
+    "idempotencyKey": "tb-sidecar-default-on-runtime-executor-gate:8dd3cb264007d952941994bf",
+    "source": {
+      "runtimeExecutionApprovalEvidenceState": "accepted",
+      "runtimeExecutionApprovalEvidenceIdempotencyKey": "tb-sidecar-default-on-runtime-execution-approval-evidence:56ed319a47ef06ce436f7f49",
+      "receiptEvidenceAccepted": true,
+      "approvalEvidenceAccepted": true,
+      "requestedAction": "execute_terminal_brief_default_on_runtime_mutation",
+      "executionRequestReference": "tb-sidecar-default-on-runtime-execution-request:fixture-786",
+      "runtimeTarget": "terminal-brief-sidecar",
+      "configKey": "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
+      "proposedValue": "true",
+      "executorId": "terminal-brief-default-on-runtime-executor"
+    },
+    "executorGate": {
+      "reviewOnly": true,
+      "finalizer": "seoseo",
+      "runtimeExecutorGateReference": "tb-sidecar-default-on-runtime-executor-gate:fixture-790",
+      "gateReady": true,
+      "prerequisites": [
+        {
+          "id": "accepted_runtime_execution_approval_evidence",
+          "status": "ready",
+          "evidence": [
+            "tb-sidecar-default-on-runtime-execution-approval-evidence:56ed319a47ef06ce436f7f49",
+            "state=accepted"
+          ],
+          "permitsRuntimeAction": false
+        },
+        {
+          "id": "receipt_and_approval",
+          "status": "ready",
+          "evidence": [
+            "receiptEvidenceAccepted=true",
+            "approvalEvidenceAccepted=true"
+          ],
+          "permitsRuntimeAction": false
+        },
+        {
+          "id": "target_identity",
+          "status": "ready",
+          "evidence": [
+            "terminal-brief-sidecar",
+            "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
+            "terminal-brief-default-on-runtime-executor"
+          ],
+          "permitsRuntimeAction": false
+        },
+        {
+          "id": "runtime_action_boundary",
+          "status": "ready",
+          "evidence": [
+            "configWritePermitted=false",
+            "defaultOnPermitted=false",
+            "sidecarRestartPermitted=false",
+            "executionPermitted=false"
+          ],
+          "permitsRuntimeAction": false
+        },
+        {
+          "id": "terminal_boundary",
+          "status": "ready",
+          "evidence": [
+            "providerSendPermitted=false",
+            "terminalAckPermitted=false"
+          ],
+          "permitsRuntimeAction": false
+        },
+        {
+          "id": "state_boundary",
+          "status": "ready",
+          "evidence": [
+            "dbMutationPermitted=false",
+            "taskFlowMutationPermitted=false"
+          ],
+          "permitsRuntimeAction": false
+        }
+      ],
+      "abortConditions": [
+        "accepted runtime execution approval evidence is missing, stale, rejected, conflicting, or blocked",
+        "runtime target/config/executor identity cannot be matched to the approved evidence",
+        "Gateway readiness or event loop health is degraded",
+        "queue backlog exceeds the approved runtime bound",
+        "operator asks to perform a live provider send or terminal ACK from this packet",
+        "config write, sidecar restart, process spawn, or executor invocation is requested by this packet",
+        "secret values are required in the packet, logs, issue comments, or Wiki"
+      ],
+      "requiredSeparateApprovalForExecution": true
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "runtimeExecutorGateReady": true,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "approvalGrantExecutionPermitted": false,
+      "runtimeMutationPermitted": false,
+      "configWritePermitted": false,
+      "defaultOnPermitted": false,
+      "sidecarRestartPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "taskFlowMutationPermitted": false,
+      "startExecutorDispatchPermitted": false,
+      "executorInvocationPermitted": false,
+      "executionPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "brokerRestartPermitted": false,
+      "gatewayRestartPermitted": false,
+      "missingEvidence": [],
+      "blockers": [
+        "runtime executor gate is source-only and does not execute default-on",
+        "config write, default-on enablement, and sidecar restart require a later explicit runtime executor"
+      ],
+      "nextAction": "broker finalizer may review this source-only executor gate before any later separately approved runtime executor"
+    },
+    "blockers": [],
+    "nextActions": [
+      "broker finalizer may review this source-only executor gate before any later separately approved runtime executor",
+      "do not write config, enable default-on, restart sidecar, dispatch/invoke executor, spawn process, send provider, ACK terminal rows, or mutate state from this packet"
+    ],
+    "approvalSensitiveActionsExcluded": [
+      "approval request dispatch or approval grant execution",
+      "runtime config write",
+      "Terminal Brief default-on enablement",
+      "Terminal Brief sidecar start/restart",
+      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "terminal ACK/replay or terminal receipt DB mutation",
+      "start executor dispatch, executor invocation, or process spawn",
+      "GitHub PR merge, issue close, or comment post from the packet/route",
+      "TaskFlow record creation or broker DB mutation",
+      "Gateway/broker restart, production deploy, historical replay, release, publish, or secret movement"
+    ],
+    "integrationContract": {
+      "transport": "json",
+      "runtimeExecutorGateVersion": 1,
+      "harnessNeutral": true,
+      "openclawMessageSendRequired": false,
+      "hermesAdapterCompatible": true,
+      "gongyungAdapterCompatible": true,
+      "externalHarnessCompatible": true,
+      "consumesRuntimeExecutionApprovalEvidenceIngestorPacket": true,
+      "rendersRuntimeExecutorGate": true,
+      "sendsApprovalRequest": false,
+      "grantsApproval": false,
+      "executesApprovalGrant": false,
+      "writesConfig": false,
+      "enablesDefaultOn": false,
+      "dispatchesStartExecutor": false,
+      "invokesExecutor": false,
+      "spawnsProcess": false,
+      "startsSidecar": false,
+      "restartsSidecar": false,
+      "restartsBroker": false,
+      "restartsGateway": false,
+      "sendsProvider": false,
+      "performsTerminalAck": false,
+      "mutatesDb": false,
+      "mutatesTaskFlow": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "runtimeExecutorGateOnly": true,
+      "sourceOnlyNoLive": true,
+      "acceptedEvidenceDoesNotAuthorizeRuntime": true,
+      "executorGateDoesNotWriteConfig": true,
+      "executorGateDoesNotEnableDefaultOn": true,
+      "executorGateDoesNotRestartSidecar": true,
+      "executorGateDoesNotDispatchExecutor": true,
+      "executorGateDoesNotInvokeExecutor": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "approvalGrantEvidenceExecutesGrant": false,
+      "terminalAckEligibleDoesNotPermitAck": true,
+      "executionNotPermitted": true,
+      "processSpawnNotPermitted": true,
+      "sidecarStartNotPermitted": true,
+      "sidecarRestartNotPermitted": true,
+      "brokerRestartNotPermitted": true,
+      "gatewayRestartNotPermitted": true,
+      "defaultOnNotEnabledByThisPacket": true,
+      "routeIsReadOnly": true,
+      "brokerFinalizerRequired": true,
+      "performsGitHubMutation": false,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "createsTaskFlowRecords": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "finalLiveExecution": {
+    "now": "2026-05-19T09:05:00.000Z",
+    "mode": "terminal-brief-default-on-final-live-execution-source-only",
+    "finalizer": "seoseo",
+    "checkpointReference": "tb-sidecar-default-on-final-live-execution-checkpoint:fixture-792",
+    "targetConfigFile": "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
+    "backupLocation": "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env.pre-default-on.fixture-792.bak",
+    "executionCommand": "set TERMINAL_BRIEF_SIDECAR_DEFAULT_ON=true in /root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
+    "rollbackCommand": "restore /root/.openclaw/a2a-broker/terminal-brief-sidecar.env.pre-default-on.fixture-792.bak to /root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
+    "sidecarApplyCommand": "restart only the approved Terminal Brief sidecar runtime if required by the final operator window",
+    "healthcheckCommand": "verify broker /livez, sidecar health, and no provider send or terminal ACK occurred",
+    "executionWindowMinutes": 10
+  }
+}

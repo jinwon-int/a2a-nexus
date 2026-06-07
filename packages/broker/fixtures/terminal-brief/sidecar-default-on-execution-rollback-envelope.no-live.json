@@ -1,0 +1,148 @@
+{
+  "defaultOnRuntimeMutationPlanPacket": {
+    "kind": "a2a-broker.terminal-brief-sidecar-default-on-runtime-mutation-plan.packet",
+    "version": 1,
+    "generatedAt": "2026-05-19T06:05:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "state": "ready_for_runtime_mutation_review",
+    "dryRunOnly": false,
+    "sourceOnlyNoLive": true,
+    "idempotencyKey": "tb-sidecar-default-on-runtime-mutation-plan:fixture-778",
+    "source": {
+      "enablementGateKind": "a2a-broker.terminal-brief-sidecar-default-on-enablement-gate.packet",
+      "enablementGateState": "ready_for_default_on_enablement_review",
+      "enablementGateIdempotencyKey": "tb-sidecar-default-on-enablement-gate:fixture-776",
+      "gateReference": "tb-sidecar-default-on-enablement-gate:fixture-776",
+      "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
+      "requestedAction": "approve_terminal_brief_default_on_enablement",
+      "requestedBy": "seoseo",
+      "operatorTarget": "terminal-brief-default-on",
+      "providerAcceptedIsVisibilityProof": false,
+      "approvalGrantEvidenceExecutesGrant": false
+    },
+    "runtimeMutationPlan": {
+      "planOnly": true,
+      "planReference": "tb-sidecar-default-on-runtime-mutation-plan:fixture-778",
+      "finalizer": "seoseo",
+      "runtimeTarget": "terminal-brief-sidecar",
+      "operatorInstructionReference": "a2a-broker#776",
+      "configChange": {
+        "key": "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
+        "proposedValue": "true",
+        "valueContainsSecret": false,
+        "applied": false
+      },
+      "requiredPreflight": [
+        "confirm both brokers are on the expected source revision before any later runtime mutation",
+        "confirm sidecar runtime is healthy and single-process before any later default-on change"
+      ],
+      "requiredApproval": [
+        "fresh explicit operator approval for the runtime mutation step",
+        "broker finalizer confirmation that source-only gates remain clean"
+      ],
+      "executionEnvelope": {
+        "executable": false,
+        "commandIncluded": false,
+        "envValuesIncluded": false,
+        "secretValuesIncluded": false,
+        "operatorMustApproveRuntimeMutation": true
+      },
+      "abortConditions": [
+        "enablement gate is stale, conflicting, rejected, blocked, or not ready",
+        "any source packet permits default-on/provider send/terminal ACK/DB mutation"
+      ],
+      "rollbackChecklist": [
+        "leave default-on disabled until a later approved runtime mutation",
+        "do not ACK/replay terminal rows from this plan"
+      ]
+    },
+    "readiness": {
+      "sourceCriteriaMet": true,
+      "runtimeMutationPlanReady": true,
+      "runtimeMutationPermitted": false,
+      "configWritePermitted": false,
+      "approvalRequestDispatchPermitted": false,
+      "approvalGrantPermitted": false,
+      "defaultOnPermitted": false,
+      "liveActivationPermitted": false,
+      "providerSendPermitted": false,
+      "terminalAckPermitted": false,
+      "dbMutationPermitted": false,
+      "taskFlowMutationPermitted": false,
+      "executionPermitted": false,
+      "processSpawnPermitted": false,
+      "sidecarStartPermitted": false,
+      "sidecarRestartPermitted": false,
+      "brokerRestartPermitted": false,
+      "missingEvidence": [],
+      "blockers": [
+        "runtime mutation plan is source-only and does not write config or mutate runtime state",
+        "actual default-on enablement requires a later explicit runtime approval and execution path"
+      ],
+      "nextAction": "broker finalizer may review this plan and request separate runtime mutation approval"
+    },
+    "blockers": [],
+    "nextActions": [
+      "review the source-only runtime mutation plan",
+      "request a separate explicit approval before any config or service change",
+      "do not enable default-on from this packet"
+    ],
+    "approvalSensitiveActionsExcluded": [],
+    "integrationContract": {
+      "transport": "json",
+      "runtimeMutationPlanVersion": 1,
+      "consumesDefaultOnEnablementGatePacket": true,
+      "rendersRuntimeMutationPlan": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "approvalGrantEvidenceExecutesGrant": false,
+      "writesConfig": false,
+      "enablesDefaultOn": false,
+      "sendsProvider": false,
+      "performsTerminalAck": false,
+      "mutatesDb": false,
+      "mutatesTaskFlow": false,
+      "spawnsProcess": false,
+      "startsSidecar": false,
+      "restartsSidecar": false,
+      "restartsBroker": false,
+      "executesAction": false
+    },
+    "semantics": {
+      "runtimeMutationPlanOnly": true,
+      "sourceOnlyNoLive": true,
+      "acceptedGateIsInputOnly": true,
+      "approvalEvidenceDoesNotExecuteGrant": true,
+      "planDoesNotWriteConfig": true,
+      "planDoesNotEnableDefaultOn": true,
+      "planDoesNotSendProviders": true,
+      "planDoesNotAckTerminalRows": true,
+      "planDoesNotMutateDb": true,
+      "planDoesNotMutateTaskFlow": true,
+      "providerAcceptedIsVisibilityProof": false,
+      "defaultOnNotEnabledByThisPacket": true,
+      "executionNotPermitted": true,
+      "processSpawnNotPermitted": true,
+      "sidecarStartNotPermitted": true,
+      "sidecarRestartNotPermitted": true,
+      "brokerRestartNotPermitted": true,
+      "routeIsReadOnly": true,
+      "brokerFinalizerRequired": true,
+      "performsGitHubMutation": false,
+      "performsProviderSend": false,
+      "performsTerminalAck": false,
+      "performsRuntimeRestartOrDeploy": false,
+      "performsDbMutation": false,
+      "createsTaskFlowRecords": false,
+      "performsHistoricalReplay": false,
+      "performsReleaseOrPublish": false,
+      "movesSecretsOrCredentials": false
+    }
+  },
+  "defaultOnExecutionRollbackEnvelope": {
+    "now": "2026-05-19T06:05:00.000Z",
+    "mode": "fixture-source-only/no-live",
+    "finalizer": "seoseo",
+    "operatorInstructionReference": "a2a-broker#778",
+    "executorId": "terminal-brief-default-on-runtime-executor"
+  }
+}

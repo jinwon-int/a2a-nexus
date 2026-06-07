@@ -136,7 +136,17 @@ export const A2ATaskUpdateParamsSchema = Type.Object(
           ),
         ),
         deliveryStatus: Type.Optional(
-          Type.Union([Type.Literal("sent"), Type.Literal("skipped"), Type.Literal("failed")]),
+          Type.Union([
+            Type.Literal("pending"),
+            Type.Literal("sent"),
+            Type.Literal("accepted"),
+            Type.Literal("provider_delivered_if_known"),
+            Type.Literal("operator_visible"),
+            Type.Literal("skipped"),
+            Type.Literal("timed_out"),
+            Type.Literal("stale"),
+            Type.Literal("failed"),
+          ]),
         ),
         deliveryErrorMessage: Type.Optional(Type.String()),
       },
@@ -275,6 +285,25 @@ export const A2AMonitorStatusParamsSchema = Type.Object(
         {
           enabled: Type.Optional(Type.Boolean()),
           cursor: Type.Optional(NonEmptyString),
+          terminalOutboxCursor: Type.Optional(NonEmptyString),
+          terminalOutboxLimit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })),
+          preflight: Type.Optional(Type.Boolean()),
+          notification: Type.Optional(
+            Type.Object(
+              {
+                enabled: Type.Optional(Type.Boolean()),
+                channel: Type.Optional(NonEmptyString),
+                to: Type.Optional(NonEmptyString),
+                chatId: Type.Optional(NonEmptyString),
+                accountId: Type.Optional(NonEmptyString),
+                threadId: Type.Optional(
+                  Type.Union([NonEmptyString, Type.Number()]),
+                ),
+                allowUnconfirmedProviderSend: Type.Optional(Type.Boolean()),
+              },
+              { additionalProperties: false },
+            ),
+          ),
         },
         { additionalProperties: false },
       ),

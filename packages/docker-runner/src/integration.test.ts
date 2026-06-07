@@ -24,6 +24,7 @@ import {
   buildTerminalEvidenceEvent,
   decideTerminalEvidenceAck,
   buildTerminalAckDecision,
+  buildCanaryRecoveryAuditReport,
 } from "./integration.js";
 import type { HandlerTask, HandlerEnv, HandlerResult, RawRunnerOutput, TerminalAckDecision, TerminalEvidenceEvent, TerminalEvidenceKind, TerminalEvidenceStatus } from "./integration.js";
 
@@ -183,7 +184,7 @@ test("buildRunnerTaskFromHandlerPayload: openclaw-plugin-a2a-dev preset via payl
   assert.equal(result.mode, "github-propose-patch");
   assert.equal(result.preset, "openclaw-plugin-a2a-dev");
   assert.equal(result.baseBranch, "develop");
-  assert.equal(result.timeoutMs, 45 * 60 * 1000);
+  assert.equal(result.timeoutMs, 60 * 60 * 1000);
 });
 
 test("buildRunnerTaskFromHandlerPayload: env A2A_DOCKER_RUNNER_PRESET passthrough", () => {
@@ -243,6 +244,104 @@ test("buildRunnerTaskFromHandlerPayload: closeout/comment-only flags and existin
   assert.equal(result.existingPrNumber, "#12");
   assert.equal(result.forbidNewPr, true);
   assert.equal(result.commentOnly, true);
+  assert.equal(result.allowNoChanges, undefined);
+});
+
+test("buildRunnerTaskFromHandlerPayload: github-verify mode sets allowNoChanges, forbidNewPr, and runs patch pipeline", () => {
+  const task: HandlerTask = {
+    id: "task-verify",
+    intent: "verify",
+    payload: {
+      mode: "github-verify",
+      repo: "jinwon-int/a2a-docker-runner",
+      issueUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/240",
+      title: "Verification lane test",
+      focus: "read-only validation",
+      prompt: "Verify no diff needed; run audit checks.",
+      requestedBy: "soonwook",
+      runId: "a2a-plane-240-validation-soonwook-20260513T004643Z",
+    },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.mode, "github-verify");
+  assert.equal(result.intent, "verify");
+  assert.equal(result.allowNoChanges, true);
+  assert.equal(result.forbidNewPr, true);
+  assert.equal(result.commentOnly, false);
+  assert.equal(result.repo, "jinwon-int/a2a-docker-runner");
+  assert.equal(result.issueUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/240");
+  assert.equal(result.requestedBy, "soonwook");
+});
+
+test("buildRunnerTaskFromHandlerPayload: explicit allowNoChanges in payload flows to RunnerTask", () => {
+  const task: HandlerTask = {
+    id: "task-nodiff",
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-docker-runner",
+      issueUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/240",
+      allowNoChanges: true,
+    },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.mode, "github-propose-patch");
+  assert.equal(result.allowNoChanges, true);
+  assert.equal(result.forbidNewPr, false);
+  assert.equal(result.commentOnly, false);
+});
+
+test("buildRunnerTaskFromHandlerPayload: read-only validation lanes allow no-change evidence and guard diffs", () => {
+  const task: HandlerTask = {
+    id: "task-readonly-validation",
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/test-repo",
+      readOnlyValidation: true,
+    },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.readOnlyValidation, true);
+  assert.equal(result.allowNoChanges, true);
+  assert.equal(result.commentOnly, false);
+});
+
+test("buildRunnerTaskFromHandlerPayload: validationOnly is a broker alias for read-only validation", () => {
+  const task: HandlerTask = {
+    id: "task-validation-only",
+    intent: "propose_patch",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/test-repo", validationOnly: true },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.readOnlyValidation, true);
+  assert.equal(result.allowNoChanges, true);
+});
+
+test("buildRunnerTaskFromHandlerPayload: family wiki audit is read-only and no-PR", () => {
+  const task: HandlerTask = {
+    id: "family-wiki-audit",
+    intent: "verify",
+    payload: {
+      mode: "family-wiki-readonly-audit",
+      repo: "jinwon-int/seoyoon-family-wiki",
+      baseBranch: "master",
+      commentOnly: true,
+    },
+  };
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.mode, "family-wiki-readonly-audit");
+  assert.equal(result.repo, "jinwon-int/seoyoon-family-wiki");
+  assert.equal(result.baseBranch, "master");
+  assert.equal(result.forbidNewPr, true);
+  assert.equal(result.commentOnly, false);
+  assert.equal(result.allowNoChanges, true);
+  assert.equal(result.readOnlyValidation, true);
 });
 
 test("buildRunnerTaskFromHandlerPayload: payload timeout used when env timeout is unset", () => {
@@ -297,6 +396,54 @@ test("buildRunnerTaskFromHandlerPayload: explicit repo path with all fields", ()
   assert.equal(result.issueTitle, "Evidence contract proof");
   assert.equal(result.taskBrief, "Include safe terminal notice context.");
   assert.equal(result.requestedBy, "bangtong");
+});
+
+test("buildRunnerTaskFromHandlerPayload: preserves R12 parent and handoff metadata", () => {
+  const task: HandlerTask = {
+    id: "task-r12-handoff",
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-docker-runner",
+      parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+      originBrokerId: "seoseo",
+      parentRoundTotal: "7",
+      crossBrokerHandoff: {
+        parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+        originBrokerId: "seoseo",
+        handoffBrokerId: "gwakga",
+      },
+    },
+  };
+
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.parentRoundId, "a2a-r12-origin-terminal-brief-guard-20260513T235116Z");
+  assert.equal(result.originBrokerId, "seoseo");
+  assert.equal(result.parentRoundTotal, 7);
+  assert.deepEqual(result.crossBrokerHandoff, {
+    parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+    originBrokerId: "seoseo",
+    handoffBrokerId: "gwakga",
+  });
+});
+
+test("buildRunnerTaskFromHandlerPayload: preserves workerModel and workerThinking in RunnerTask", () => {
+  const task: HandlerTask = {
+    id: "task-worker-model",
+    intent: "propose_patch",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-docker-runner",
+      workerModel: "deepseek/deepseek-v4-pro",
+      workerThinking: "high",
+    },
+  };
+
+  const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
+
+  assert.equal(result.workerModel, "deepseek/deepseek-v4-pro");
+  assert.equal(result.workerThinking, "high");
 });
 
 test("buildRunnerTaskFromHandlerPayload: constructs issueUrl from repo + issue number", () => {
@@ -402,14 +549,14 @@ test("buildRunnerTaskFromHandlerPayload: reportLanguage defaults to ko", () => {
   assert.equal(result.reportLanguage, "ko");
 });
 
-test("buildRunnerTaskFromHandlerPayload: default timeout is 45 minutes", () => {
+test("buildRunnerTaskFromHandlerPayload: default timeout is 60 minutes", () => {
   const task: HandlerTask = {
     id: "task-default-timeout",
     payload: { mode: "github-propose-patch", repo: "jinwon-int/test-repo" },
   };
   const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
 
-  assert.equal(result.timeoutMs, 45 * 60 * 1000);
+  assert.equal(result.timeoutMs, 60 * 60 * 1000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -464,7 +611,7 @@ test("parseRunnerOutput: parses timeout runner JSON", () => {
     exitCode: null,
     signal: "SIGTERM",
     stdout: "partial output",
-    stderr: "container timed out after 2700000ms",
+    stderr: "container timed out after 3600000ms",
     artifacts: [],
     error: "timeout exceeded",
   });
@@ -603,6 +750,34 @@ test("extractGitHubEvidence: keeps legacy Done comment URLs for backwards-compat
   assert.equal(evidence?.doneCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-456");
 });
 
+test("extractGitHubEvidence: preserves PR-less no-change Done outcome for dashboard parity", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "t-prless", status: "completed", workDir: "/tmp",
+    stdout: "status=no_changes_allowed", stderr: "", artifacts: [],
+    github: {
+      outcome: "succeeded_no_changes_with_done_evidence",
+      doneCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-456",
+    },
+  };
+  const evidence = extractGitHubEvidence(result);
+  assert.equal(evidence?.outcome, "succeeded_no_changes_with_done_evidence");
+  assert.equal(evidence?.doneCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-456");
+});
+
+test("extractGitHubEvidence: preserves PR-less no-change Block outcome for dashboard parity", () => {
+  const result: RawRunnerOutput = {
+    ok: false, taskId: "t-prless-block", status: "failed", workDir: "/tmp",
+    stdout: "status=no_changes_allowed", stderr: "blocked", artifacts: [],
+    github: {
+      outcome: "blocked_no_changes_with_evidence",
+      blockCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-789",
+    },
+  };
+  const evidence = extractGitHubEvidence(result);
+  assert.equal(evidence?.outcome, "blocked_no_changes_with_evidence");
+  assert.equal(evidence?.blockCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-789");
+});
+
 test("extractGitHubEvidence: PR evidence takes precedence over block+done (multiple URLs in github block)", () => {
   const result: RawRunnerOutput = {
     ok: true, taskId: "t1", status: "completed", workDir: "/tmp",
@@ -729,6 +904,79 @@ test("buildHandlerResult: status done when receipt-gated doneCommentUrl present 
   assert.equal(handlerResult.doneCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-456");
 });
 
+test("buildHandlerResult: PR-less validation Done evidence is not reported as a runner failure", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "t-prless", status: "completed", workDir: "/tmp",
+    stdout: "status=no_changes_allowed", stderr: "", artifacts: [],
+    github: {
+      outcome: "succeeded_no_changes_with_done_evidence",
+      startCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-111",
+      doneCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-456",
+      validation: { status: "completed", exitCode: 0, timedOut: false, artifactCount: 0 },
+    },
+  };
+  const handlerResult = buildHandlerResult(result, { id: "t-prless" }, "sogyo");
+  assert.equal(handlerResult.status, "done");
+  assert.match(handlerResult.summary, /PR-less validation with Done evidence/);
+  assert.deepEqual(handlerResult.risks, []);
+  assert.deepEqual(handlerResult.tests, ["a2a-docker-runner run -> PR-less validation Done evidence"]);
+  assert.equal(handlerResult.startCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-111");
+  assert.equal(handlerResult.terminalEvidence.evidenceKind, "Done");
+  assert.equal(handlerResult.terminalEvidence.startCommentUrl, "https://github.com/jinwon-int/repo/issues/5#issuecomment-111");
+});
+
+test("buildHandlerResult: PR-less validation Block evidence stays distinct from missing evidence", () => {
+  const result: RawRunnerOutput = {
+    ok: false, taskId: "t-prless-block", status: "failed", workDir: "/tmp",
+    stdout: "status=no_changes_allowed", stderr: "validation blocked", artifacts: [],
+    github: {
+      outcome: "blocked_no_changes_with_evidence",
+      blockCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-789",
+      validation: { status: "failed", exitCode: 4, timedOut: false, artifactCount: 0 },
+    },
+  };
+  const handlerResult = buildHandlerResult(result, { id: "t-prless-block" }, "sogyo");
+  assert.equal(handlerResult.status, "blocked");
+  assert.match(handlerResult.summary, /blocked PR-less validation with Block evidence/);
+  assert.deepEqual(handlerResult.risks, ["PR-less validation blocked; review Block evidence"]);
+  assert.deepEqual(handlerResult.tests, ["a2a-docker-runner run -> PR-less validation Block evidence"]);
+  assert.equal(handlerResult.terminalEvidence.evidenceKind, "Block");
+});
+
+test("buildHandlerResult: openclaw_no_changes=allowed map to PR-less validation Done evidence", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "t-oclw-done", status: "completed", workDir: "/tmp",
+    stdout: "openclaw_no_changes=allowed\nnotice=no_code_changes_produced_evidence_only_lane\n", stderr: "", artifacts: [],
+    github: {
+      outcome: "succeeded_no_changes_with_done_evidence",
+      doneCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-456",
+      validation: { status: "completed", exitCode: 0, timedOut: false, artifactCount: 0 },
+    },
+  };
+  const handlerResult = buildHandlerResult(result, { id: "t-oclw-done" }, "sogyo");
+  assert.equal(handlerResult.status, "done");
+  assert.match(handlerResult.summary, /PR-less validation with Done evidence/);
+  assert.equal(handlerResult.terminalEvidence.evidenceKind, "Done");
+  assert.equal(handlerResult.terminalEvidence.status, "succeeded");
+});
+
+test("buildHandlerResult: openclaw_no_changes=allowed Block evidence stays blocked", () => {
+  const result: RawRunnerOutput = {
+    ok: false, taskId: "t-oclw-block", status: "failed", workDir: "/tmp",
+    stdout: "openclaw_no_changes=allowed\nvalidation blocked\n", stderr: "", artifacts: [],
+    github: {
+      outcome: "blocked_no_changes_with_evidence",
+      blockCommentUrl: "https://github.com/jinwon-int/repo/issues/5#issuecomment-789",
+      validation: { status: "failed", exitCode: 4, timedOut: false, artifactCount: 0 },
+    },
+  };
+  const handlerResult = buildHandlerResult(result, { id: "t-oclw-block" }, "sogyo");
+  assert.equal(handlerResult.status, "blocked");
+  assert.match(handlerResult.summary, /blocked PR-less validation with Block evidence/);
+  assert.equal(handlerResult.terminalEvidence.evidenceKind, "Block");
+  assert.equal(handlerResult.terminalEvidence.status, "blocked");
+});
+
 test("buildHandlerResult: blocked when no evidence at all (completed but no PR)", () => {
   const result: RawRunnerOutput = {
     ok: true, taskId: "t1", status: "completed", workDir: "/tmp",
@@ -801,7 +1049,8 @@ test("buildHandlerResult: includes filesChanged from artifacts", () => {
     github: { prUrl: "https://github.com/jinwon-int/repo/pull/1" },
   };
   const handlerResult = buildHandlerResult(result, { id: "t1" }, "sogyo");
-  assert.deepEqual(handlerResult.filesChanged, ["/tmp/a/task.json", "/tmp/a/summary.txt"]);
+  // workDir /tmp is stripped from artifact paths to prevent private path leaks
+  assert.deepEqual(handlerResult.filesChanged, ["a/task.json", "a/summary.txt"]);
 });
 
 test("buildHandlerResult: prefers artifactManifest paths for modern runner results", () => {
@@ -1082,7 +1331,7 @@ test("buildTerminalEvidenceEvent: emits compact safe PR evidence without raw log
   assert.equal(event.prUrl, "https://github.com/jinwon-int/repo/pull/79");
   assert.deepEqual(event.alert, {
     title: "A2A PR: jinwon-int/repo",
-    body: "task=task-79 · worker=sogyo · status=succeeded · exit=0 · timeout=false · artifacts=1 · issue=jinwon-int/repo#79 · reason=PR evidence is available for operator review.",
+    body: "task=task-79 · worker=sogyo · status=succeeded · exit=0 · timeout=false · artifacts=1 · issue=jinwon-int/repo#79 · changes=1 · reason=PR evidence is available for operator review.",
     url: "https://github.com/jinwon-int/repo/pull/79",
   });
   assert.equal(event.testSummary.label, "a2a-docker-runner completed; PR evidence; exit=0; timedOut=false; artifacts=1");
@@ -1100,6 +1349,450 @@ test("buildTerminalEvidenceEvent: emits compact safe PR evidence without raw log
   assert.ok(!serialized.includes("raw stderr"));
   assert.ok(!serialized.includes("/private/runner"));
   assert.ok(!serialized.includes("token=secret"));
+});
+
+test("buildTerminalEvidenceEvent: renders concise parent-round Terminal Brief progress title", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-dungae-1", status: "completed", workDir: "/private/runner/work/task-dungae-1",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: { prUrl: "https://github.com/jinwon-int/repo/pull/544" },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-dungae-1",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "544",
+        terminalBrief: {
+          workerLabel: "dungae",
+          sequence: "1",
+          total: 7,
+          roundId: "a2a-concise-brief-parent-seoseo-20260513T054937Z",
+        },
+      },
+    },
+    "fallback-node",
+    "2026-05-13T06:00:00.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: dungae(1/7)");
+  assert.deepEqual(event.terminalBrief, {
+    schemaVersion: "a2a.runner.terminal-brief-context.v1",
+    title: "A2A Terminal Brief 완료: dungae(1/7)",
+    worker: "dungae",
+    ownership: "parent-broker-only",
+    roundId: "a2a-concise-brief-parent-seoseo-20260513T054937Z",
+    parentRoundId: "a2a-concise-brief-parent-seoseo-20260513T054937Z",
+    parentRoundTotal: 7,
+    progress: { sequence: 1, total: 7 },
+  });
+  assert.equal(event.worker, "fallback-node");
+  assert.equal(event.alert.body.includes("issue=jinwon-int/repo#544"), true);
+});
+
+test("buildTerminalEvidenceEvent: preserves parent broker aggregation metadata without bloating title", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-gwakga-6", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: { prUrl: "https://github.com/jinwon-int/repo/pull/560" },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-gwakga-6",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "560",
+        parentRoundId: "a2a-r9-concise-brief-runtime-20260513T134143Z",
+        parentBroker: "seoseo",
+        originBroker: "gwakga",
+        brokerOfRecord: "seoseo",
+        terminalBrief: { workerLabel: "jingun", sequence: 6, total: "7" },
+      },
+    },
+    "jingun",
+    "2026-05-13T13:50:00.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: jingun(6/7)");
+  assert.deepEqual(event.terminalBrief, {
+    schemaVersion: "a2a.runner.terminal-brief-context.v1",
+    title: "A2A Terminal Brief 완료: jingun(6/7)",
+    worker: "jingun",
+    ownership: "parent-broker-only",
+    roundId: "a2a-r9-concise-brief-runtime-20260513T134143Z",
+    parentRoundId: "a2a-r9-concise-brief-runtime-20260513T134143Z",
+    parentBroker: "seoseo",
+    originBroker: "gwakga",
+    brokerOfRecord: "seoseo",
+    parentRoundTotal: 7,
+    progress: { sequence: 6, total: 7 },
+  });
+  assert.ok(!event.alert.title.includes("seoseo"));
+  assert.ok(!event.alert.title.includes("a2a-r9-concise-brief-runtime"));
+});
+
+test("buildTerminalEvidenceEvent: preserves R12 flat parent metadata and handoff context", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-r12-jingun", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: { prUrl: "https://github.com/jinwon-int/repo/pull/249" },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-r12-jingun",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "249",
+        worker: "jingun",
+        parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+        originBrokerId: "seoseo",
+        parentRoundTotal: 7,
+        terminalBriefSequence: 2,
+        crossBrokerHandoff: {
+          parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+          originBrokerId: "seoseo",
+          handoffBrokerId: "gwakga",
+        },
+      },
+    },
+    "jingun",
+    "2026-05-13T23:55:00.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: jingun(2/7)");
+  assert.deepEqual(event.terminalBrief, {
+    schemaVersion: "a2a.runner.terminal-brief-context.v1",
+    title: "A2A Terminal Brief 완료: jingun(2/7)",
+    worker: "jingun",
+    ownership: "parent-broker-only",
+    roundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+    parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+    parentBroker: "seoseo",
+    originBroker: "gwakga",
+    originBrokerId: "seoseo",
+    brokerOfRecord: "seoseo",
+    parentRoundTotal: 7,
+    crossBrokerHandoff: {
+      parentRoundId: "a2a-r12-origin-terminal-brief-guard-20260513T235116Z",
+      originBrokerId: "seoseo",
+      handoffBrokerId: "gwakga",
+    },
+    progress: { sequence: 2, total: 7 },
+  });
+});
+
+test("buildTerminalEvidenceEvent: preserves workerModel, workerThinking and policyContext in terminal event", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-wm", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: {
+      prUrl: "https://github.com/jinwon-int/repo/pull/250",
+      workerModel: "deepseek/deepseek-v4-pro",
+      workerThinking: "high",
+      policyContext: {
+        policyMode: "source-only",
+        policyScope: "a2a-allhands-dev-2026",
+        policyParams: { lane: "6/7", team: "team2" },
+      },
+    },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-wm",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "250",
+        worker: "jingun",
+      },
+    },
+    "jingun",
+    "2026-05-13T23:56:00.000Z",
+  );
+
+  assert.equal(event.workerModel, "deepseek/deepseek-v4-pro");
+  assert.equal(event.workerThinking, "high");
+  assert.equal(event.policyContext?.policyMode, "source-only");
+  assert.equal(event.policyContext?.policyScope, "a2a-allhands-dev-2026");
+  assert.deepEqual(event.policyContext?.policyParams, { lane: "6/7", team: "team2" });
+  assert.equal(event.evidenceKind, "PR");
+  assert.equal(event.status, "succeeded");
+  assert.equal(event.prUrl, "https://github.com/jinwon-int/repo/pull/250");
+});
+
+test("buildTerminalEvidenceEvent: preserves R13 Team2 jingun parent-owned compact title", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "a2a-r13-terminal-brief-realround-20260514T013556Z-06-jingun", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: { doneCommentUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/251#issuecomment-6" },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "a2a-r13-terminal-brief-realround-20260514T013556Z-06-jingun",
+      payload: {
+        repo: "jinwon-int/a2a-docker-runner",
+        issue: "251",
+        worker: "jingun",
+        parentRoundId: "a2a-r13-terminal-brief-realround-20260514T013556Z",
+        originBrokerId: "seoseo",
+        parentRoundTotal: 7,
+        terminalBriefSequence: 6,
+        crossBrokerHandoff: {
+          parentRoundId: "a2a-r13-terminal-brief-realround-20260514T013556Z",
+          originBrokerId: "seoseo",
+          handoffBrokerId: "gwakga",
+        },
+      },
+    },
+    "jingun",
+    "2026-05-14T01:35:56.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: jingun(6/7)");
+  assert.equal(event.terminalBrief?.ownership, "parent-broker-only");
+  assert.equal(event.terminalBrief?.parentRoundId, "a2a-r13-terminal-brief-realround-20260514T013556Z");
+  assert.equal(event.terminalBrief?.parentBroker, "seoseo");
+  assert.equal(event.terminalBrief?.originBrokerId, "seoseo");
+  assert.equal(event.terminalBrief?.originBroker, "gwakga");
+  assert.deepEqual(event.terminalBrief?.progress, { sequence: 6, total: 7 });
+  assert.deepEqual(event.terminalBrief?.crossBrokerHandoff, {
+    parentRoundId: "a2a-r13-terminal-brief-realround-20260514T013556Z",
+    originBrokerId: "seoseo",
+    handoffBrokerId: "gwakga",
+  });
+  assert.ok(!event.alert.title.includes("a2a-r13-terminal-brief-realround"));
+  assert.ok(!event.alert.title.includes("seoseo"));
+  assert.equal(event.issueUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/251");
+  assert.ok(event.alert.body.includes("issue=jinwon-int/a2a-docker-runner#2"));
+});
+
+test("buildTerminalEvidenceEvent: preserves human Terminal Brief summary separately from runner summary", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-r15-jingun", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    artifactManifest: {
+      artifactVersion: 1, schemaVersion: 1, manifestPath: "artifacts/manifest.json",
+      generatedAt: "1970-01-01T00:00:00.000Z", status: "done",
+      summary: "runner artifact summary must not clobber human brief", evidence: [], artifacts: [],
+    },
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: {
+      prUrl: "https://github.com/jinwon-int/repo/pull/615",
+      startCommentUrl: "https://github.com/jinwon-int/repo/issues/615#issuecomment-100",
+    },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-r15-jingun",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "615",
+        terminalBrief: {
+          workerLabel: "jingun",
+          sequence: 6,
+          total: 7,
+          summary: "Human all-hands brief: jingun opened the compatibility PR.",
+        },
+      },
+    },
+    "jingun",
+    "2026-05-14T07:00:00.000Z",
+  );
+
+  assert.equal(event.startCommentUrl, "https://github.com/jinwon-int/repo/issues/615#issuecomment-100");
+  assert.equal(event.prUrl, "https://github.com/jinwon-int/repo/pull/615");
+  assert.equal(event.terminalBrief?.summary, "Human all-hands brief: jingun opened the compatibility PR.");
+  assert.ok(event.alert.body.includes("summary=Human all-hands brief"));
+  assert.ok(!JSON.stringify(event).includes("runner artifact summary must not clobber"));
+});
+
+test("buildHandlerResult: stale PR URL cannot override canonical Done Terminal Brief evidence", () => {
+  const stalePrUrl = "https://github.com/jinwon-int/repo/pull/614";
+  const doneCommentUrl = "https://github.com/jinwon-int/repo/issues/615#issuecomment-200";
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-r16-jingun", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    artifactManifest: {
+      artifactVersion: 1, schemaVersion: 1, manifestPath: "artifacts/manifest.json",
+      generatedAt: "1970-01-01T00:00:00.000Z", status: "done",
+      prUrl: stalePrUrl,
+      summary: "runner summary must not replace Terminal Brief metadata",
+      evidence: [], artifacts: [],
+    },
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+      evidenceHints: {
+        schemaVersion: "a2a.runner.evidence-hints.v1",
+        issueUrl: "https://github.com/jinwon-int/repo/issues/615",
+        prUrl: stalePrUrl,
+        doneUrl: doneCommentUrl,
+      },
+    },
+    github: {
+      outcome: "done",
+      prUrl: stalePrUrl,
+      doneCommentUrl,
+      issueUrl: "https://github.com/jinwon-int/repo/issues/615",
+      validation: { status: "completed", exitCode: 0, timedOut: false, artifactCount: 0 },
+      safetyState: { noLiveProviderSend: true, terminalAck: "requires_operator_receipt", providerSendIsReceiptEvidence: false },
+    },
+  };
+
+  const handlerResult = buildHandlerResult(
+    result,
+    {
+      id: "task-r16-jingun",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "615",
+        terminalBrief: {
+          workerLabel: "jingun",
+          sequence: 3,
+          total: 7,
+          summary: "Human all-hands brief: jingun completed runner-lane evidence.",
+        },
+      },
+    },
+    "jingun",
+  );
+
+  assert.equal(handlerResult.status, "done");
+  assert.equal(handlerResult.prUrl, undefined);
+  assert.equal(handlerResult.doneCommentUrl, doneCommentUrl);
+  assert.equal(handlerResult.terminalEvidence.evidenceKind, "Done");
+  assert.equal(handlerResult.terminalEvidence.alert.title, "A2A Terminal Brief 완료: jingun(3/7)");
+  assert.equal(handlerResult.terminalEvidence.alert.url, doneCommentUrl);
+  assert.equal(handlerResult.terminalEvidence.terminalBrief?.summary, "Human all-hands brief: jingun completed runner-lane evidence.");
+  assert.ok(!JSON.stringify(handlerResult.terminalEvidence).includes(stalePrUrl));
+  assert.ok(!JSON.stringify(handlerResult.terminalEvidence).includes("runner summary must not replace"));
+});
+
+test("buildTerminalEvidenceEvent: uses parentRoundOrder and crossBroker child worker for default Terminal Brief title", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-r26-dungae", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: {
+      prUrl: "https://github.com/jinwon-int/repo/pull/626",
+      startCommentUrl: "https://github.com/jinwon-int/repo/issues/626#issuecomment-100",
+    },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-r26-dungae",
+      payload: {
+        repo: "jinwon-int/repo",
+        issue: "626",
+        parentRoundId: "round-r26",
+        parentRoundOrder: 2,
+        parentRoundTotal: 3,
+        originBrokerId: "seoseo",
+        crossBrokerHandoff: {
+          parentRoundId: "round-r26",
+          originBrokerId: "seoseo",
+          handoffBrokerId: "gwakga",
+          childWorkerId: "dungae",
+        },
+        terminalBriefSummary: "Human all-hands brief: dungae opened the compatibility PR.",
+      },
+    },
+    "gwakga",
+    "2026-05-15T11:00:00.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: dungae(2/3)");
+  assert.equal(event.terminalBrief?.title, "A2A Terminal Brief 완료: dungae(2/3)");
+  assert.equal(event.terminalBrief?.worker, "dungae");
+  assert.deepEqual(event.terminalBrief?.progress, { sequence: 2, total: 3 });
+  assert.equal(event.terminalBrief?.summary, "Human all-hands brief: dungae opened the compatibility PR.");
+  assert.equal(event.worker, "gwakga");
+  assert.ok(!JSON.stringify(event).includes("Docker runner opened PR evidence"));
+});
+
+test("buildTerminalEvidenceEvent: Terminal Brief title falls back safely when denominator is unknown", () => {
+  const result: RawRunnerOutput = {
+    ok: true, taskId: "task-nosuk-2", status: "completed", workDir: "/tmp/work",
+    stdout: "raw log omitted", stderr: "", artifacts: [],
+    resultSummary: {
+      exitCode: 0, signal: null, timedOut: false,
+      stdout: "bounded stdout", stderr: "", stdoutTruncated: false, stderrTruncated: false,
+      artifactCount: 0, manifestPath: "artifacts/manifest.json",
+    },
+    github: {
+      taskId: "task-nosuk-2",
+      issueUrl: "https://github.com/jinwon-int/repo/issues/544",
+      doneCommentUrl: "https://github.com/jinwon-int/repo/issues/544#issuecomment-2",
+      validation: { status: "completed", exitCode: 0, timedOut: false, artifactCount: 0 },
+      safetyState: { noLiveProviderSend: true, terminalAck: "requires_operator_receipt", providerSendIsReceiptEvidence: false },
+    },
+  };
+
+  const event = buildTerminalEvidenceEvent(
+    result,
+    {
+      id: "task-nosuk-2",
+      payload: {
+        repo: "jinwon-int/repo",
+        issueUrl: "https://github.com/jinwon-int/repo/issues/544",
+        terminalBrief: { worker: "nosuk", sequence: 2 },
+      },
+    },
+    "nosuk",
+    "2026-05-13T06:01:00.000Z",
+  );
+
+  assert.equal(event.alert.title, "A2A Terminal Brief 완료: nosuk");
+  assert.equal(event.terminalBrief?.progress, undefined);
+  assert.equal(event.terminalBrief?.ownership, "parent-broker-only");
+  assert.ok(!event.alert.title.includes("(2/"));
 });
 
 test("buildTerminalEvidenceEvent: includes safe task context required for terminal notices", () => {
@@ -1482,6 +2175,134 @@ test("R4 canonical Terminal Brief receipt smoke script emits safe artifacts", ()
   assert.equal(result.providerSendSuccessIsReceiptEvidence, false);
   assert.equal(result.artifacts.length, 4);
   assert.ok(result.artifacts.every((entry) => entry.taskId && entry.terminalOutboxId && entry.runId && entry.status && entry.testSummary));
+});
+
+test("R4+ terminal-outbox canary nosuk smoke script emits safe evidence for terminal-brief-activation run", () => {
+  const output = execFileSync(process.execPath, ["scripts/terminal-outbox-canary-smoke.mjs"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  });
+  const result = JSON.parse(output) as {
+    ok: boolean;
+    run: string;
+    worker: string;
+    issue: string;
+    terminalOutboxAckPerformed: boolean;
+    artifacts: Array<{ name: string; taskId: string; terminalOutboxId: string; evidenceKind: string; status: string; acknowledged: boolean; cursorComplete: boolean }>;
+  };
+  assert.equal(result.ok, true);
+  assert.equal(result.run, "terminal-brief-activation-20260511T080211Z");
+  assert.equal(result.worker, "nosuk");
+  assert.equal(result.issue, "https://github.com/jinwon-int/a2a-docker-runner/issues/204");
+  assert.equal(result.terminalOutboxAckPerformed, false);
+  assert.equal(result.artifacts.length, 4);
+  assert.ok(result.artifacts.every((entry) => entry.name && entry.taskId && entry.terminalOutboxId && entry.evidenceKind));
+  assert.ok(result.artifacts.some((a) => a.acknowledged === false), "must have provider-send-only rejection");
+  assert.ok(result.artifacts.some((a) => a.acknowledged === true), "must have receipt-confirmed ack");
+});
+
+test("buildCanaryRecoveryAuditReport: emits bounded recovery guidance without raw logs", () => {
+  const raw: RawRunnerOutput = {
+    ok: false,
+    taskId: "canary-recovery-block",
+    status: "failed",
+    workDir: "/work/private/canary-recovery-block",
+    stdout: "raw stdout token=secret ".repeat(200),
+    stderr: "raw stderr /root/private ".repeat(200),
+    artifacts: ["/work/private/canary-recovery-block/artifacts/summary.txt"],
+    resultSummary: {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      stdout: "bounded stdout",
+      stderr: "bounded stderr",
+      stdoutTruncated: true,
+      stderrTruncated: true,
+      artifactCount: 1,
+      manifestPath: "artifacts/manifest.json",
+    },
+    github: {
+      blockCommentUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/216#issuecomment-9001",
+      issueUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/216",
+    },
+  };
+
+  const report = buildCanaryRecoveryAuditReport(
+    raw,
+    { id: "canary-recovery-block", payload: { repo: "jinwon-int/a2a-docker-runner", issue: "216", title: "Canary recovery" } },
+    "jingun",
+    undefined,
+    "2026-05-12T04:30:00.000Z",
+  );
+
+  assert.equal(report.schemaVersion, "a2a.runner.canary-recovery-audit.v1");
+  assert.equal(report.evidenceKind, "Block");
+  assert.equal(report.status, "blocked");
+  assert.equal(report.evidenceUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/216#issuecomment-9001");
+  assert.equal(report.acknowledged, false);
+  assert.equal(report.cursorComplete, false);
+  assert.equal(report.operatorAction, "operator_visible_receipt_required");
+  assert.deepEqual(report.safetyState, { noLiveProviderSend: true, terminalAck: "requires_operator_receipt", providerSendIsReceiptEvidence: false });
+  assert.deepEqual(report.diagnostics, {
+    exitCode: 1,
+    timedOut: false,
+    artifactCount: 1,
+    stdoutTruncated: true,
+    stderrTruncated: true,
+    manifestPath: "artifacts/manifest.json",
+  });
+
+  const serialized = JSON.stringify(report);
+  assert.ok(!serialized.includes("raw stdout"));
+  assert.ok(!serialized.includes("raw stderr"));
+  assert.ok(!serialized.includes("/work/private"));
+  assert.ok(!serialized.includes("/root/private"));
+  assert.ok(!serialized.includes("token=secret"));
+  assert.ok(!serialized.includes("messageId"));
+});
+
+test("runner canary recovery audit smoke script emits no-live replay evidence", () => {
+  const output = execFileSync(process.execPath, ["scripts/runner-canary-recovery-audit-smoke.mjs"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  });
+  const result = JSON.parse(output) as {
+    ok: boolean;
+    worker: string;
+    team: string;
+    noLiveProviderSend: boolean;
+    providerSendSuccessIsReceiptEvidence: boolean;
+    terminalOutboxAckPerformed: boolean;
+    replayProof: {
+      deterministic: boolean;
+      replayCount: number;
+      uniqueDedupeKeys: number;
+      providerSendOnlyDoesNotAck: boolean;
+      receiptConfirmedCompletesCursor: number;
+      terminalAckRequiresOperatorVisibleReceipt: boolean;
+      noLiveProviderSend: boolean;
+      terminalOutboxAckPerformed: boolean;
+    };
+    reports: Array<{ eventId: string; dedupeKey: string; operatorAction: string; acknowledged: boolean; cursorComplete: boolean }>;
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.worker, "jingun");
+  assert.equal(result.team, "team2");
+  assert.equal(result.noLiveProviderSend, true);
+  assert.equal(result.providerSendSuccessIsReceiptEvidence, false);
+  assert.equal(result.terminalOutboxAckPerformed, false);
+  assert.equal(result.replayProof.deterministic, true);
+  assert.equal(result.replayProof.replayCount, result.reports.length);
+  assert.equal(result.replayProof.uniqueDedupeKeys, result.reports.length);
+  assert.equal(result.replayProof.providerSendOnlyDoesNotAck, true);
+  assert.ok(result.replayProof.receiptConfirmedCompletesCursor >= 3);
+  assert.equal(result.replayProof.terminalAckRequiresOperatorVisibleReceipt, true);
+  assert.equal(result.replayProof.noLiveProviderSend, true);
+  assert.equal(result.replayProof.terminalOutboxAckPerformed, false);
+  assert.ok(result.reports.every((entry) => entry.eventId === entry.dedupeKey));
+  assert.ok(result.reports.some((entry) => entry.operatorAction === "operator_visible_receipt_required"));
+  assert.ok(result.reports.some((entry) => entry.acknowledged === true && entry.cursorComplete === true));
 });
 
 test("public demo artifact fixtures pass the no-live safety audit", () => {

@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, utimes, stat, readdir } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkDeployedRevision, checkGitHubPatchReadiness, cleanup, install } from "./ops.js";
+import { checkDeployedRevision, checkDeployMarker, checkExtraMounts, checkGitHubPatchReadiness, cleanup, install, parseProbeKeyValues } from "./ops.js";
 import type { RunnerConfig } from "./types.js";
+import { buildExampleReadinessInput } from "./openclaw-profile-readiness.js";
 
 function runGit(cwd: string, args: string[]): void {
   const result = spawnSync("git", args, {
@@ -46,6 +47,205 @@ test("deployed revision doctor passes for clean main matching upstream", async (
   assert.match(String(report.detail?.summary), /^PASS /);
 });
 
+// ── deploy marker doctor ──────────────────────────────────────────────────
+
+test("deploy marker doctor passes when deployed revision matches the expected marker", async () => {
+  const { repo, head } = await makeRevisionRepo();
+
+  const report = await checkDeployMarker(head, repo);
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.localSha, head.slice(0, 12));
+  assert.equal(report.detail?.localFullSha, head);
+  assert.equal(report.detail?.expectedRevision, head);
+  assert.match(String(report.detail?.summary), /^PASS /);
+});
+
+test("deploy marker doctor passes with short SHA marker", async () => {
+  const { repo, head } = await makeRevisionRepo();
+
+  const shortSha = head.slice(0, 12);
+  const report = await checkDeployMarker(shortSha, repo);
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.localSha, shortSha);
+  assert.match(String(report.detail?.summary), /^PASS /);
+});
+
+test("deploy marker doctor fails when deployed revision mismatches the expected marker", async () => {
+  const { repo } = await makeRevisionRepo();
+
+  const report = await checkDeployMarker("0000000000000000000000000000000000000000", repo);
+
+  assert.equal(report.status, "fail");
+  assert.match(String(report.detail?.summary), /^FAIL /);
+  assert.match(report.message, /does not match/);
+});
+
+test("deploy marker doctor fails closed when not a git checkout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-deploy-marker-nongit-"));
+
+  const report = await checkDeployMarker("abc1234", dir);
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /not a git checkout/);
+  assert.match(String(report.detail?.summary), /^FAIL /);
+});
+
+test("deploy marker doctor includes branch and dirty metadata on failure", async () => {
+  const { repo } = await makeRevisionRepo();
+  // Create a new commit on a feature branch so the SHA differs
+  runGit(repo, ["checkout", "-b", "feature/rollout"]);
+  await writeFile(join(repo, "new-feature.txt"), "feature content");
+  runGit(repo, ["add", "new-feature.txt"]);
+  runGit(repo, ["commit", "-m", "feature commit"]);
+
+  // The deploy marker is the original main commit; we're now on a different SHA
+  const originalHead = execFileSync("git", ["rev-parse", "main"], { cwd: repo, encoding: "utf8" }).trim();
+
+  const report = await checkDeployMarker(originalHead, repo);
+
+  assert.equal(report.status, "fail");
+  assert.equal(report.detail?.branch, "feature/rollout");
+  assert.equal(report.detail?.dirty, false);
+  assert.match(String(report.detail?.summary), /^FAIL /);
+});
+
+test("parseProbeKeyValues parses key=value lines from container probe output", () => {
+  const output = [
+    "cli_path=/usr/local/bin/openclaw",
+    "cli_version_ok=1",
+    "cli_version=openclaw 1.0.0",
+    "profile_mount_exists=1",
+  ].join("\n");
+
+  const values = parseProbeKeyValues(output);
+
+  assert.equal(values.get("cli_path"), "/usr/local/bin/openclaw");
+  assert.equal(values.get("cli_version_ok"), "1");
+  assert.equal(values.get("cli_version"), "openclaw 1.0.0");
+  assert.equal(values.get("profile_mount_exists"), "1");
+  assert.equal(values.size, 4);
+});
+
+test("parseProbeKeyValues handles empty output", () => {
+  const values = parseProbeKeyValues("");
+  assert.equal(values.size, 0);
+});
+
+test("parseProbeKeyValues handles lines with no equals sign", () => {
+  const output = "no-equals\nanother-line\n";
+  const values = parseProbeKeyValues(output);
+  assert.equal(values.size, 0);
+});
+
+test("parseProbeKeyValues handles CRLF line endings", () => {
+  const output = "cli_path=/usr/bin/openclaw\r\ncli_version_ok=1\r\n";
+  const values = parseProbeKeyValues(output);
+  assert.equal(values.get("cli_path"), "/usr/bin/openclaw");
+  assert.equal(values.get("cli_version_ok"), "1");
+  assert.equal(values.size, 2);
+});
+
+test("parseProbeKeyValues preserves empty values", () => {
+  const output = "cli_path=\ncli_version_ok=0\n";
+  const values = parseProbeKeyValues(output);
+  assert.equal(values.get("cli_path"), "");
+  assert.equal(values.get("cli_version_ok"), "0");
+  assert.equal(values.size, 2);
+});
+
+test("parseProbeKeyValues skips lines starting with =", () => {
+  const output = "=value\ncli_path=/usr/bin/openclaw\n";
+  const values = parseProbeKeyValues(output);
+  assert.equal(values.size, 1);
+  assert.equal(values.get("cli_path"), "/usr/bin/openclaw");
+});
+
+test("parseProbeKeyValues handles multiple equals signs", () => {
+  const output = "cli_version=openclaw 1.0.0 (build sha=abc)\n";
+  const values = parseProbeKeyValues(output);
+  assert.equal(values.get("cli_version"), "openclaw 1.0.0 (build sha=abc)");
+});
+
+test("GitHub patch readiness OpenClaw profile failure detail includes provisioning guidance", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: false },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      cliOnPath: false,
+      cliPath: undefined,
+      cliVersionOk: false,
+      cliVersion: undefined,
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  const detail = report.detail as Record<string, unknown>;
+  assert.ok(Array.isArray(detail.provisioningPaths), "should include provisioningPaths array");
+  const paths = detail.provisioningPaths as string[];
+  assert.ok(paths.some((p: string) => p.includes("pre-bake the OpenClaw CLI")), "should mention pre-baked image");
+  assert.ok(paths.some((p: string) => p.includes("NPM_INSTALL_FALLBACK")), "should mention npm install fallback escape hatch");
+  assert.equal(detail.fallback, "disabled");
+});
+
+test("GitHub patch readiness OpenClaw profile failure does not include provisioning guidance when fallback is enabled", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: true },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      cliOnPath: false,
+      cliPath: undefined,
+      cliVersionOk: false,
+      cliVersion: undefined,
+    }),
+  });
+
+  assert.equal(report.status, "warn");
+  const detail = report.detail as Record<string, unknown>;
+  // When fallback is enabled, provisioningPaths should not be present
+  // because the doctor already accepts the warn-level escape hatch.
+  assert.equal(detail.provisioningPaths, undefined, "should not include provisioningPaths when fallback is enabled");
+});
+
+test("deploy marker doctor fails for mismatched revision even without upstream", async () => {
+  const { repo, head } = await makeRevisionRepo();
+  // Check against the right revision — should still pass even though there's
+  // no remote. The function compares against the marker, not upstream.
+  const report = await checkDeployMarker(head, repo);
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.localFullSha, head);
+  assert.equal(report.detail?.expectedRevision, head);
+});
+
+test("deploy marker doctor passes for commit matching dirty worktree", async () => {
+  const { repo, head } = await makeRevisionRepo();
+  // Add an uncommitted change but check against the deployed (committed) SHA
+  await writeFile(join(repo, "uncommitted.txt"), "dirty");
+
+  const report = await checkDeployMarker(head, repo);
+
+  // The SHA still matches even though the tree is dirty
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.dirty, true);
+  assert.match(String(report.detail?.summary), /^PASS /);
+});
+
+// ── GitHub patch readiness ───────────────────────────────────────────────
+
 test("deployed revision doctor warns for stale, dirty, non-main checkouts", async () => {
   const { repo, head } = await makeRevisionRepo();
   await writeFile(join(repo, "README.md"), "change on feature branch\n");
@@ -67,6 +267,60 @@ test("deployed revision doctor warns for stale, dirty, non-main checkouts", asyn
   assert.match(String(report.detail?.reason), /branch is feature\/drift/);
   assert.match(String(report.detail?.reason), /differs from upstream main/);
   assert.match(String(report.detail?.summary), /^WARN /);
+});
+
+test("deployed revision passes with only .deploy-source-sha as untracked file", async () => {
+  const { repo, head } = await makeRevisionRepo();
+  // .deploy-source-sha is an expected deployment marker — should not
+  // trigger a dirty-worktree warning.
+  await writeFile(join(repo, ".deploy-source-sha"), head + "\n");
+
+  const report = await checkDeployedRevision(repo);
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.localSha, head.slice(0, 12));
+  assert.equal(report.detail?.dirty, false);
+  assert.equal(report.detail?.deploymentMarker, true);
+  assert.match(String(report.detail?.summary), /deploy-source-sha=present/);
+  assert.match(String(report.detail?.summary), /^PASS /);
+});
+
+test("deployed revision warns for real dirty files alongside .deploy-source-sha", async () => {
+  const { repo, head } = await makeRevisionRepo();
+  await writeFile(join(repo, ".deploy-source-sha"), head + "\n");
+  // A real untracked source file should still trigger the dirty warning.
+  await writeFile(join(repo, "uncommitted-source.ts"), "// real change\n");
+
+  const report = await checkDeployedRevision(repo);
+
+  assert.equal(report.status, "warn");
+  assert.equal(report.detail?.dirty, true);
+  assert.equal(report.detail?.deploymentMarker, true);
+  assert.match(String(report.detail?.reason), /dirty worktree/);
+  assert.match(String(report.detail?.summary), /deploy-source-sha=present/);
+  assert.match(String(report.detail?.summary), /^WARN /);
+});
+
+test("deployed revision passes on clean main with .deploy-source-sha committed", async () => {
+  const { repo, head } = await makeRevisionRepo();
+  // .deploy-source-sha already committed — should not show up in porcelain.
+  await writeFile(join(repo, ".deploy-source-sha"), head + "\n");
+  runGit(repo, ["add", ".deploy-source-sha"]);
+  runGit(repo, ["commit", "-m", "record deployed sha"]);
+
+  const report = await checkDeployedRevision(repo);
+
+  // Status is warn because the local SHA now differs from the pinned
+  // upstream main ref — the committed marker is not yet pushed. This is
+  // expected: the test verifies that a committed .deploy-source-sha does
+  // not produce a dirty-worktree warning.
+  assert.equal(report.status, "warn");
+  assert.equal(report.detail?.dirty, false);
+  // deploymentMarker is undefined (absent from detail) because the
+  // committed file does not appear in git status --porcelain output.
+  assert.equal(report.detail?.deploymentMarker, undefined);
+  assert.match(String(report.detail?.reason), /differs from upstream main/);
+  assert.doesNotMatch(String(report.detail?.reason), /dirty worktree/);
 });
 
 function config(rootDir: string, githubTokenFile?: string): RunnerConfig {
@@ -94,6 +348,105 @@ test("GitHub patch readiness accepts safe commandScript", () => {
   assert.equal(report.status, "ok");
   assert.equal(report.detail?.safe, true);
   assert.equal(report.detail?.eval, false);
+});
+
+test("GitHub patch readiness probes OpenClaw profile runtime before reporting ready", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: false },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput(),
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.profile, "openclaw");
+  assert.equal(report.detail?.failureCategory, "ok");
+  assert.equal(report.detail?.fallback, "disabled");
+});
+
+test("GitHub patch readiness blocks OpenClaw profile when CLI is unavailable and fallback is disabled", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: false },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      cliOnPath: false,
+      cliPath: undefined,
+      cliVersionOk: false,
+      cliVersion: undefined,
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /OpenClaw profile runtime is not ready/);
+  assert.equal(report.detail?.failureCategory, "openclaw_cli_unavailable");
+  assert.equal(report.detail?.fallback, "disabled");
+});
+
+test("GitHub patch readiness blocks OpenClaw profile when compaction provider is missing", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: false },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      compactionModel: "zai/glm-5.1",
+      compactionProvider: "zai",
+      compactionProviderPresent: false,
+      compactionModelDefined: true,
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /OpenClaw profile runtime is not ready/);
+  assert.equal(report.detail?.failureCategory, "openclaw_compaction_provider_unavailable");
+  const checks = report.detail?.checks as Array<{ kind: string; passed: boolean }>;
+  assert.ok(checks.some((check) => check.kind === "openclaw_compaction_provider_ready" && !check.passed));
+});
+
+test("GitHub patch readiness accepts OpenClaw profile without explicit compaction model", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: false },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      compactionModel: undefined,
+      compactionProvider: undefined,
+      compactionProviderPresent: undefined,
+      compactionModelDefined: undefined,
+    }),
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.failureCategory, "ok");
+});
+
+test("GitHub patch readiness warns for OpenClaw profile npm fallback escape hatch", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "openclaw",
+    commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
+    openclawProfile: { allowNpmInstallFallback: true },
+  }, {
+    openclawProfileProbe: () => buildExampleReadinessInput({
+      cliOnPath: false,
+      cliPath: undefined,
+      cliVersionOk: false,
+      cliVersion: undefined,
+    }),
+  });
+
+  assert.equal(report.status, "warn");
+  assert.match(report.message, /npm install fallback/);
+  assert.equal(report.detail?.failureCategory, "openclaw_cli_unavailable");
+  assert.equal(report.detail?.fallback, "explicit_npm_install");
 });
 
 test("GitHub patch readiness accepts commandJson argv and rejects malformed JSON", () => {
@@ -130,6 +483,78 @@ test("GitHub patch readiness fails for legacy commandTemplate eval path", () => 
   assert.equal(report.detail?.safe, false);
   assert.equal(report.detail?.eval, true);
   assert.deepEqual(report.detail?.allowedExecutors, ["openclaw", "codex"]);
+});
+
+// ── extra mounts doctor ────────────────────────────────────────────────────
+
+test("extra mounts doctor skips when no mounts configured", async () => {
+  const report = await checkExtraMounts({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "example:latest",
+    defaultTimeoutMs: 1000,
+  });
+
+  assert.equal(report.status, "skip");
+  assert.match(report.message, /no extra mounts configured/);
+});
+
+test("extra mounts doctor passes for readable extra mount", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-extra-mount-"));
+
+  const report = await checkExtraMounts({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "example:latest",
+    defaultTimeoutMs: 1000,
+    extraMounts: [
+      { source: dir, target: "/mnt/data", readOnly: true },
+    ],
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.message, undefined);
+  const mounts = report.detail?.mounts as Array<Record<string, unknown>>;
+  assert.equal(mounts.length, 1);
+  assert.equal(mounts[0].source, dir);
+  assert.equal(mounts[0].target, "/mnt/data");
+  assert.equal(mounts[0].readOnly, true);
+  assert.equal(mounts[0].type, "directory");
+});
+
+test("extra mounts doctor passes for writable scratch mount", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-extra-mount-scratch-"));
+
+  const report = await checkExtraMounts({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "example:latest",
+    defaultTimeoutMs: 1000,
+    extraMounts: [
+      { source: dir, target: "/mnt/scratch", readOnly: false },
+    ],
+  });
+
+  assert.equal(report.status, "ok");
+  const mounts = report.detail?.mounts as Array<Record<string, unknown>>;
+  assert.equal(mounts.length, 1);
+  assert.equal(mounts[0].source, dir);
+  assert.equal(mounts[0].readOnly, false);
+});
+
+test("extra mounts doctor fails for non-existent source", async () => {
+  const report = await checkExtraMounts({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "example:latest",
+    defaultTimeoutMs: 1000,
+    extraMounts: [
+      { source: "/nonexistent-a2a-path-12345", target: "/mnt/data", readOnly: true },
+    ],
+  });
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /extra mount is not readable/);
 });
 
 test("install is idempotent and validates task root plus read-only secret mount intent", async () => {

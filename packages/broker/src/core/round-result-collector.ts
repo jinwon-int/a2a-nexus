@@ -1,0 +1,893 @@
+/**
+ * round-result-collector.ts — result collector projection (issue #929)
+ *
+ * Accepts a round manifest (lane definitions) and broker task snapshots
+ * (TaskRecord[]), classifies each lane's state, gathers evidence URLs,
+ * flags missing/stale/timeout lanes, and renders a compact closeout
+ * bundle for finalizer review.
+ *
+ * This is the "first" result collector — it operates on live broker
+ * TaskRecord snapshots directly, not terminal-outbox events. Later
+ * iterations may add richer outbox-sidecar or cross-broker integration.
+ *
+ * All decision logic is deterministic (pure reads). No comments, closes,
+ * merges, deploys, live sends, ACKs, or DB mutations are performed.
+ */
+
+import type { TaskRecord, TaskResult, TaskStatus, BrokerExitCondition } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Round Manifest (lane definitions)
+// ---------------------------------------------------------------------------
+
+export type RoundLaneExpectedOutcome = "patch" | "evidence-only" | "analysis" | "review";
+
+export interface RoundManifestLane {
+  /** Worker identifier, e.g. "sogyo", "bangtong", "nosuk". */
+  workerId: string;
+  /** Optional human-readable label for the lane. */
+  description?: string;
+  /** Expected outcome kind. Lanes whose manifest outcome does not match the
+   *  task evidence are surfaced as a risk in the closeout bundle. */
+  expectedOutcome?: RoundLaneExpectedOutcome;
+}
+
+export interface RoundManifest {
+  /** Operator label, e.g. "a2a-team1-round-coordinator-20260526T201140KST". */
+  roundLabel: string;
+  /** Parent tracker issue URL. */
+  parentIssueUrl?: string;
+  /** Lanes (expected workers) for this round. */
+  lanes: RoundManifestLane[];
+  /** Workers excluded from round closeout (optional). */
+  excludedWorkerIds?: string[];
+  /**
+   * Staleness threshold in milliseconds. A non-terminal task whose
+   * `updatedAt` is older than this threshold (relative to collection time)
+   * is classified as "stale". Default: 30 minutes.
+   */
+  staleAfterMs?: number;
+  /**
+   * Absolute deadline ISO timestamp. Lanes that are still non-terminal
+   * past this time are classified as "timeout". Optional; omitted means
+   * no timeout detection.
+   */
+  timeoutAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Lane state classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classified state of a single worker lane.
+ *
+ * Precedence:
+ *   no task records found     → pending
+ *   > timeoutAt               → timeout
+ *   non-terminal + stale      → stale
+ *   non-terminal, not stale   → running
+ *   blocked status            → blocked
+ *   failed/canceled status    → failed
+ *   succeeded status          → succeeded
+ */
+export type RoundLaneState =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "stale"
+  | "timeout"
+  | "blocked";
+
+export interface ResultLane {
+  workerId: string;
+  description?: string;
+  laneState: RoundLaneState;
+  /** Task record IDs associated with this lane. */
+  taskIds: string[];
+  latestStatus?: TaskStatus;
+  /** PR, Done, or Block evidence URLs extracted from the latest task result. */
+  evidenceUrls: string[];
+  prUrl?: string;
+  doneUrl?: string;
+  blockUrl?: string;
+  /** Short operator-facing outcome summary (e.g. test summary or result note). */
+  outcomeSummary?: string;
+  testSummary?: string;
+  errorSummary?: string;
+  /** Time the latest task was last updated, in ISO format. */
+  updatedAt?: string;
+  /** Time the latest task completed, in ISO format. */
+  completedAt?: string;
+  /** Milliseconds since the latest task was last updated (at collection time). */
+  ageMs?: number;
+  expectedOutcome?: RoundLaneExpectedOutcome;
+  /** Classified broker exit condition, if terminal and classifiable. */
+  outcomeClass?: BrokerExitCondition;
+}
+
+// ---------------------------------------------------------------------------
+// Collector output
+// ---------------------------------------------------------------------------
+
+export interface CloseoutBundle {
+  title: string;
+  body: string;
+}
+
+export interface RoundResultCollectorOutput {
+  kind: "a2a-broker.round-result-collector.projection";
+  version: 1;
+  generatedAt: string;
+  roundLabel: string;
+  parentIssueUrl?: string;
+  summary: {
+    totalLanes: number;
+    completed: number;
+    pending: number;
+    running: number;
+    stale: number;
+    timeout: number;
+    blocked: number;
+    evidenceUrls: number;
+  };
+  lanes: ResultLane[];
+  /** Required lane workerIds for which no task record was found. */
+  missingLanes: string[];
+  /** Lane workerIds classified as stale. */
+  staleLanes: string[];
+  /** Lane workerIds classified as timeout. */
+  timeoutLanes: string[];
+  /** Lane workerIds classified as blocked. */
+  blockedLanes: string[];
+  /** All unique evidence URLs across all lanes. */
+  evidenceUrls: string[];
+  /** Compact finalizer-review bundle. */
+  closeoutBundle: CloseoutBundle;
+  approvalSensitiveActionsExcluded: string[];
+}
+
+const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
+const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
+const EVIDENCE_KEY_RE = /^(prUrl|doneUrl|doneCommentUrl|blockUrl|blockCommentUrl)$/;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Project broker task snapshots against a round manifest and produce a
+ * result collector output with lane classification, evidence gathering,
+ * missing/stale/timeout detection, and a finalizer-review closeout bundle.
+ *
+ * @param manifest  Round manifest defining lanes and thresholds.
+ * @param tasks     Live broker TaskRecord[] snapshots.
+ * @param options   Collection time override (defaults to Date.now()).
+ */
+export function collectRoundResults(
+  manifest: RoundManifest,
+  tasks: TaskRecord[],
+  options: { nowMs?: number } = {},
+): RoundResultCollectorOutput {
+  const nowMs = options.nowMs ?? Date.now();
+  const staleAfterMs = Math.max(1, manifest.staleAfterMs ?? DEFAULT_STALE_AFTER_MS);
+  const excluded = new Set(manifest.excludedWorkerIds ?? []);
+  const timeoutAtMs = manifest.timeoutAt ? Date.parse(manifest.timeoutAt) : NaN;
+  const hasTimeout = !Number.isNaN(timeoutAtMs);
+
+  // Group tasks by assigned worker
+  const tasksByWorker = groupTasksByWorker(tasks);
+
+  // Classify each lane
+  const lanes: ResultLane[] = manifest.lanes
+    .filter((lane) => !excluded.has(lane.workerId))
+    .map((lane) => classifyLane(lane, tasksByWorker.get(lane.workerId) ?? [], {
+      nowMs,
+      staleAfterMs,
+      hasTimeout,
+      timeoutAtMs,
+    }));
+
+  // Build aggregated views
+  const summary = buildSummary(lanes);
+  const missingLanes = lanes
+    .filter((l) => l.laneState === "pending")
+    .map((l) => l.workerId);
+  const staleLanes = lanes
+    .filter((l) => l.laneState === "stale")
+    .map((l) => l.workerId);
+  const timeoutLanes = lanes
+    .filter((l) => l.laneState === "timeout")
+    .map((l) => l.workerId);
+  const blockedLanes = lanes
+    .filter((l) => l.laneState === "blocked")
+    .map((l) => l.workerId);
+  const evidenceUrls = extractAllEvidenceUrls(lanes);
+  const closeoutBundle = buildCloseoutBundle({
+    roundLabel: manifest.roundLabel,
+    parentIssueUrl: manifest.parentIssueUrl,
+    summary,
+    lanes,
+    missingLanes,
+    staleLanes,
+    timeoutLanes,
+    blockedLanes,
+    evidenceUrls,
+    generatedAt: new Date(nowMs).toISOString(),
+  });
+
+  return {
+    kind: "a2a-broker.round-result-collector.projection",
+    version: 1,
+    generatedAt: new Date(nowMs).toISOString(),
+    roundLabel: manifest.roundLabel,
+    parentIssueUrl: manifest.parentIssueUrl,
+    summary,
+    lanes,
+    missingLanes,
+    staleLanes,
+    timeoutLanes,
+    blockedLanes,
+    evidenceUrls,
+    closeoutBundle,
+    approvalSensitiveActionsExcluded: [
+      "GitHub PR merge, issue close, or comment post",
+      "live provider/Hermes/Telegram/OpenClaw send",
+      "terminal ACK/replay",
+      "Gateway/broker/worker/sidecar restart or deploy",
+      "broker DB mutation/prune/migration",
+      "historical outbox replay",
+      "release/tag/npm publish",
+      "secret or credential movement",
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function groupTasksByWorker(tasks: TaskRecord[]): Map<string, TaskRecord[]> {
+  const map = new Map<string, TaskRecord[]>();
+  for (const task of tasks) {
+    const workerId = task.assignedWorkerId ?? task.claimedBy ?? "unassigned";
+    let list = map.get(workerId);
+    if (!list) {
+      list = [];
+      map.set(workerId, list);
+    }
+    list.push(task);
+  }
+  return map;
+}
+
+/**
+ * Sort tasks by `createdAt` descending; latest first.
+ */
+function sortTasksDesc(tasks: TaskRecord[]): TaskRecord[] {
+  return [...tasks].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  );
+}
+
+function classifyLane(
+  laneDef: RoundManifestLane,
+  tasks: TaskRecord[],
+  options: {
+    nowMs: number;
+    staleAfterMs: number;
+    hasTimeout: boolean;
+    timeoutAtMs: number;
+  },
+): ResultLane {
+  const { nowMs, staleAfterMs, hasTimeout, timeoutAtMs } = options;
+
+  if (tasks.length === 0) {
+    return {
+      workerId: laneDef.workerId,
+      description: laneDef.description,
+      laneState: hasTimeout && nowMs >= timeoutAtMs ? "timeout" : "pending",
+      taskIds: [],
+      evidenceUrls: [],
+      expectedOutcome: laneDef.expectedOutcome,
+    };
+  }
+
+  const sorted = sortTasksDesc(tasks);
+  const taskIds = sorted.map((t) => t.id);
+  const latest = sorted[0]!;
+  const updatedAt = latest.updatedAt;
+  const completedAt = latest.completedAt;
+  const updatedAtMs = Date.parse(updatedAt);
+  const ageMs = Math.max(0, nowMs - updatedAtMs);
+  const status = latest.status;
+  const evidence = extractEvidence(latest);
+  const resultSummary = extractResultSummary(latest);
+  const outcomeClass = classifyExitCondition(status, evidence);
+
+  // 1. Timeout — non-terminal past deadline
+  if (hasTimeout && !TERMINAL_STATUSES.has(status) && nowMs >= timeoutAtMs) {
+    return buildLaneResult(laneDef, {
+      laneState: "timeout",
+      taskIds,
+      latest: latest,
+      status,
+      evidence,
+      resultSummary,
+      ageMs,
+      updatedAt,
+      completedAt,
+      outcomeClass,
+      risk: "Worker did not complete before round deadline",
+    });
+  }
+
+  // 2. Stale — non-terminal, not yet timeout, but stale
+  if (!TERMINAL_STATUSES.has(status)) {
+    if (ageMs >= staleAfterMs) {
+      return buildLaneResult(laneDef, {
+        laneState: "stale",
+        taskIds,
+        latest,
+        status,
+        evidence,
+        resultSummary,
+        ageMs,
+        updatedAt,
+        completedAt,
+        outcomeClass,
+        risk: `Non-terminal task not updated within ${Math.round(staleAfterMs / 1000)}s stale threshold`,
+      });
+    }
+    return buildLaneResult(laneDef, {
+      laneState: "running",
+      taskIds,
+      latest,
+      status,
+      evidence,
+      resultSummary,
+      ageMs,
+      updatedAt,
+      completedAt,
+      outcomeClass,
+    });
+  }
+
+  // 3. Blocked terminal status
+  if (status === "blocked") {
+    return buildLaneResult(laneDef, {
+      laneState: "blocked",
+      taskIds,
+      latest,
+      status,
+      evidence,
+      resultSummary,
+      ageMs,
+      updatedAt,
+      completedAt,
+      outcomeClass,
+      ...(!evidence.prUrl && !evidence.doneUrl && !evidence.blockUrl
+        ? { risk: "Blocked task has no Block evidence URL" }
+        : {}),
+    });
+  }
+
+  // 4. Failed/canceled
+  if (status === "failed" || status === "canceled") {
+    return buildLaneResult(laneDef, {
+      laneState: "failed",
+      taskIds,
+      latest,
+      status,
+      evidence,
+      resultSummary,
+      ageMs,
+      updatedAt,
+      completedAt,
+      outcomeClass,
+      risk: status === "canceled" ? "Task was canceled before completion" : undefined,
+    });
+  }
+
+  // 5. Succeeded
+  if (status === "succeeded") {
+    return buildLaneResult(laneDef, {
+      laneState: "succeeded",
+      taskIds,
+      latest,
+      status,
+      evidence,
+      resultSummary,
+      ageMs,
+      updatedAt,
+      completedAt,
+      outcomeClass,
+    });
+  }
+
+  // Fallback (should not happen)
+  return buildLaneResult(laneDef, {
+    laneState: "running",
+    taskIds,
+    latest,
+    status,
+    evidence,
+    resultSummary,
+    ageMs,
+    updatedAt,
+    completedAt,
+    outcomeClass,
+  });
+}
+
+function buildLaneResult(
+  laneDef: RoundManifestLane,
+  state: {
+    laneState: RoundLaneState;
+    taskIds: string[];
+    latest: TaskRecord;
+    status: TaskStatus;
+    evidence: ExtractedEvidence;
+    resultSummary: { outcomeSummary?: string; testSummary?: string; errorSummary?: string };
+    ageMs: number;
+    updatedAt: string;
+    completedAt?: string;
+    outcomeClass?: BrokerExitCondition;
+    risk?: string;
+  },
+): ResultLane {
+  const lane: ResultLane = {
+    workerId: laneDef.workerId,
+    description: laneDef.description,
+    laneState: state.laneState,
+    taskIds: state.taskIds,
+    latestStatus: state.status,
+    evidenceUrls: state.evidence.allUrls,
+    prUrl: state.evidence.prUrl,
+    doneUrl: state.evidence.doneUrl,
+    blockUrl: state.evidence.blockUrl,
+    outcomeSummary: state.resultSummary.outcomeSummary,
+    testSummary: state.resultSummary.testSummary,
+    errorSummary: state.resultSummary.errorSummary,
+    updatedAt: state.updatedAt,
+    completedAt: state.completedAt,
+    ageMs: state.ageMs,
+    expectedOutcome: laneDef.expectedOutcome,
+    outcomeClass: state.outcomeClass,
+  };
+  return lane;
+}
+
+// ---------------------------------------------------------------------------
+// Evidence extraction from TaskRecord
+// ---------------------------------------------------------------------------
+
+interface ExtractedEvidence {
+  prUrl?: string;
+  doneUrl?: string;
+  blockUrl?: string;
+  allUrls: string[];
+}
+
+/**
+ * Extract evidence URLs from a TaskRecord.
+ *
+ * Checks:
+ *   1. result.output["prUrl"], result.output["doneUrl"], result.output["blockUrl"]
+ *   2. result.output["doneCommentUrl"] as doneUrl
+ *   3. result.output["blockCommentUrl"] as blockUrl
+ *
+ * Only https:// URLs are accepted as evidence.
+ */
+function extractEvidence(task: TaskRecord): ExtractedEvidence {
+  const output = task.result?.output ?? {};
+  const allUrls: string[] = [];
+  let prUrl: string | undefined;
+  let doneUrl: string | undefined;
+  let blockUrl: string | undefined;
+
+  for (const [key, value] of Object.entries(output)) {
+    if (!EVIDENCE_KEY_RE.test(key)) continue;
+    const url = safeHttpUrl(value);
+    if (!url) continue;
+    allUrls.push(url);
+    if (key === "prUrl") prUrl = url;
+    else if (key === "doneUrl" || key === "doneCommentUrl") doneUrl = url;
+    else if (key === "blockUrl" || key === "blockCommentUrl") blockUrl = url;
+  }
+
+  return { prUrl, doneUrl, blockUrl, allUrls };
+}
+
+function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!value.startsWith("https://")) return undefined;
+  try {
+    new URL(value);
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Extract human-readable outcome/test/error summaries from a TaskRecord.
+ */
+function extractResultSummary(task: TaskRecord): {
+  outcomeSummary?: string;
+  testSummary?: string;
+  errorSummary?: string;
+} {
+  const result = task.result;
+  const error = task.error;
+  const output = result?.output ?? {};
+
+  const outcomeSummary =
+    safeString(output["summary"]) ??
+    result?.summary ??
+    result?.note;
+
+  const testSummary = safeString(output["testSummary"]) ?? safeString(output["test_summary"]);
+
+  const errorSummary = error?.message;
+  if (error?.details && typeof error.details === "object") {
+    const detailStr = safeString(error.details["summary"]);
+    if (detailStr) {
+      return {
+        outcomeSummary,
+        testSummary,
+        errorSummary: errorSummary
+          ? `${errorSummary}: ${detailStr}`
+          : detailStr,
+      };
+    }
+  }
+
+  return { outcomeSummary, testSummary, errorSummary };
+}
+
+function safeString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length > 0) return value;
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Exit condition classification
+// ---------------------------------------------------------------------------
+
+function classifyExitCondition(
+  status: TaskStatus,
+  evidence: ExtractedEvidence,
+): BrokerExitCondition | undefined {
+  if (!TERMINAL_STATUSES.has(status)) return undefined;
+
+  const hasPr = Boolean(evidence.prUrl);
+  const hasDone = Boolean(evidence.doneUrl);
+  const hasBlock = Boolean(evidence.blockUrl);
+
+  if (status === "succeeded") {
+    if (hasPr) return "pr_success";
+    if (hasDone) return "no_change_done";
+    return undefined;
+  }
+
+  // failed / canceled / blocked
+  if (hasBlock) return "no_change_block";
+  if (hasPr || hasDone) return "no_change_block";
+  return "infra_failure";
+}
+
+// ---------------------------------------------------------------------------
+// Summary aggregation
+// ---------------------------------------------------------------------------
+
+function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"] {
+  const counts = {
+    totalLanes: lanes.length,
+    completed: 0,
+    pending: 0,
+    running: 0,
+    stale: 0,
+    timeout: 0,
+    blocked: 0,
+    evidenceUrls: 0,
+  };
+
+  const seenUrls = new Set<string>();
+  for (const lane of lanes) {
+    switch (lane.laneState) {
+      case "succeeded":
+        counts.completed++;
+        break;
+      case "pending":
+        counts.pending++;
+        break;
+      case "running":
+        counts.running++;
+        break;
+      case "stale":
+        counts.stale++;
+        break;
+      case "timeout":
+        counts.timeout++;
+        break;
+      case "blocked":
+        counts.blocked++;
+        break;
+      case "failed":
+        counts.blocked++; // failed lanes are grouped under blocked for closeout
+        break;
+    }
+    for (const url of lane.evidenceUrls) seenUrls.add(url);
+  }
+  counts.evidenceUrls = seenUrls.size;
+
+  return counts;
+}
+
+function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
+  const seen = new Set<string>();
+  for (const lane of lanes) {
+    for (const url of lane.evidenceUrls) seen.add(url);
+  }
+  return [...seen];
+}
+
+// ---------------------------------------------------------------------------
+// Closeout bundle rendering
+// ---------------------------------------------------------------------------
+
+function buildCloseoutBundle(context: {
+  roundLabel: string;
+  parentIssueUrl?: string;
+  summary: RoundResultCollectorOutput["summary"];
+  lanes: ResultLane[];
+  missingLanes: string[];
+  staleLanes: string[];
+  timeoutLanes: string[];
+  blockedLanes: string[];
+  evidenceUrls: string[];
+  generatedAt: string;
+}): CloseoutBundle {
+  const title = closeoutTitle(context);
+  const body = closeoutBody(context);
+  return { title, body };
+}
+
+function closeoutTitle(context: {
+  roundLabel: string;
+  summary: RoundResultCollectorOutput["summary"];
+}): string {
+  const { summary } = context;
+  const needsReviewCount = summary.stale + summary.timeout + summary.blocked;
+  const verb = needsReviewCount > 0 ? `needs review (${needsReviewCount} lane(s) require attention)` : "ready for review";
+  return `Finalizer review: ${context.roundLabel} — ${verb}`;
+}
+
+function closeoutBody(context: {
+  roundLabel: string;
+  parentIssueUrl?: string;
+  summary: RoundResultCollectorOutput["summary"];
+  lanes: ResultLane[];
+  missingLanes: string[];
+  staleLanes: string[];
+  timeoutLanes: string[];
+  blockedLanes: string[];
+  evidenceUrls: string[];
+  generatedAt: string;
+}): string {
+  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, generatedAt, parentIssueUrl } = context;
+  const lines: string[] = [];
+
+  // Header
+  lines.push(`## Finalizer review: ${context.roundLabel}`);
+  lines.push("");
+  lines.push(`Generated: ${generatedAt}`);
+  if (parentIssueUrl) lines.push(`Parent: ${parentIssueUrl}`);
+  lines.push("");
+
+  // Summary bar
+  const total = summary.totalLanes;
+  const ok = summary.completed;
+  const ko = summary.blocked;
+  const waiting = summary.pending + summary.running;
+  const stale = summary.stale;
+  const timeout = summary.timeout;
+  lines.push(`**${ok}/${total} lanes completed.** ${ko} blocked, ${stale} stale, ${timeout} timeout, ${waiting} active.`);
+  lines.push("");
+
+  // Quick verdict
+  if (summary.blocked > 0 || summary.stale > 0 || summary.timeout > 0) {
+    lines.push("> ⚠️  Round has lanes requiring attention before final closeout.");
+    lines.push("");
+  } else if (summary.pending > 0 || summary.running > 0) {
+    lines.push("> ⏳  Round still has active lanes; complete all lanes before closeout.");
+    lines.push("");
+  } else if (summary.totalLanes > 0 && ok === total) {
+    lines.push("> ✅  All lanes completed with evidence. Ready for finalizer closeout.");
+    lines.push("");
+  }
+
+  // Lane-by-lane summary
+  lines.push("### Lane status");
+  lines.push("");
+  lines.push("| Lane | Worker | State | Evidence | Outcome |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const lane of lanes) {
+    const workerLabel = lane.description
+      ? `${lane.workerId} (${lane.description})`
+      : lane.workerId;
+    const stateLabel = stateEmoji(lane.laneState);
+    const ev = lane.evidenceUrls.length > 0
+      ? lane.evidenceUrls.slice(0, 2).map((url) => `[link](${url})`).join(" ")
+      : "—";
+    const ocs = lane.laneState === "succeeded"
+      ? (lane.outcomeClass ?? "succeeded")
+      : lane.laneState === "failed"
+        ? (lane.outcomeClass ?? "failed")
+        : lane.laneState === "blocked"
+          ? (lane.outcomeClass ?? "blocked")
+          : lane.laneState === "timeout"
+            ? "timeout"
+            : lane.laneState === "stale"
+              ? "stale"
+              : lane.laneState;
+    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs} |`);
+  }
+  lines.push("");
+
+  // Missing lanes
+  if (missingLanes.length > 0) {
+    lines.push(`### Missing lanes (${missingLanes.length})`);
+    lines.push("");
+    for (const wid of missingLanes) {
+      lines.push(`- ${wid}: No task record found. Verify assignment or dispatch.`);
+    }
+    lines.push("");
+  }
+
+  // Stale lanes
+  if (staleLanes.length > 0) {
+    lines.push(`### Stale lanes (${staleLanes.length})`);
+    lines.push("");
+    for (const wid of staleLanes) {
+      lines.push(`- ${wid}: Non-terminal task exceeded staleness threshold. Request progress or close.`);
+    }
+    lines.push("");
+  }
+
+  // Timeout lanes
+  if (timeoutLanes.length > 0) {
+    lines.push(`### Timeout lanes (${timeoutLanes.length})`);
+    lines.push("");
+    for (const wid of timeoutLanes) {
+      lines.push(`- ${wid}: Past round deadline without terminal evidence.`);
+    }
+    lines.push("");
+  }
+
+  // Blocked lanes
+  if (blockedLanes.length > 0) {
+    lines.push(`### Blocked lanes (${blockedLanes.length})`);
+    lines.push("");
+    for (const lane of lanes.filter((l) => blockedLanes.includes(l.workerId))) {
+      const detail = lane.errorSummary ?? lane.outcomeSummary ?? "No details";
+      const ev = lane.evidenceUrls.length > 0
+        ? ` Evidence: ${lane.evidenceUrls.join(", ")}.`
+        : " No evidence URL found.";
+      lines.push(`- ${lane.workerId}: ${detail}${ev}`);
+    }
+    lines.push("");
+  }
+
+  // All evidence URLs
+  if (evidenceUrls.length > 0) {
+    lines.push("### Evidence URLs");
+    lines.push("");
+    for (const url of evidenceUrls) {
+      lines.push(`- ${url}`);
+    }
+    lines.push("");
+  }
+
+  // Finalizer next actions
+  lines.push("### Finalizer next actions");
+  lines.push("");
+  const actions = buildFinalizerActions(summary, missingLanes.length, staleLanes.length, timeoutLanes.length, blockedLanes.length);
+  for (const action of actions) {
+    lines.push(`- ${action}`);
+  }
+  lines.push("");
+
+  // Safety disclaimer
+  lines.push("---");
+  lines.push("");
+  lines.push("_This is a draft-only closeout bundle. No comments, closes, merges, deploys, live sends, ACKs, or DB mutations have been executed._");
+
+  return lines.join("\n");
+}
+
+function stateEmoji(state: RoundLaneState): string {
+  switch (state) {
+    case "succeeded":
+      return "✅";
+    case "failed":
+      return "❌";
+    case "blocked":
+      return "🚫";
+    case "pending":
+      return "⏳";
+    case "running":
+      return "🔄";
+    case "stale":
+      return "⚠️";
+    case "timeout":
+      return "⏰";
+  }
+}
+
+function buildFinalizerActions(
+  summary: RoundResultCollectorOutput["summary"],
+  missingCount: number,
+  staleCount: number,
+  timeoutCount: number,
+  blockedCount: number,
+): string[] {
+  const actions: string[] = [];
+
+  const needsReview = blockedCount > 0 || staleCount > 0 || timeoutCount > 0 || missingCount > 0;
+
+  if (needsReview) {
+    if (missingCount > 0) actions.push(`Review ${missingCount} missing lane(s): dispatch or mark excluded before closeout.`);
+    if (staleCount > 0) actions.push(`Inspect ${staleCount} stale lane(s): request progress or reassign.`);
+    if (timeoutCount > 0) actions.push(`Review ${timeoutCount} timeout lane(s): decide retry, split, or defer.`);
+    if (blockedCount > 0) actions.push(`Inspect ${blockedCount} blocked lane(s): read Block evidence and decide retry/skip.`);
+    actions.push("Do not merge or close until all required lanes are resolved.");
+  } else if (summary.pending > 0 || summary.running > 0) {
+    actions.push("Wait for remaining active lanes to complete before closeout.");
+  } else {
+    actions.push("All lanes completed. Proceed with finalizer closeout review.");
+    actions.push("Post round-complete evidence and prepare next round or release.");
+  }
+
+  actions.push("No automatic close, merge, deploy, live send, ACK, or DB mutation by this projection.");
+
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Convenience: build a RoundManifest from simple arguments
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a RoundManifest from simple worker-id and options arguments.
+ * Useful for operators composing a round manifest inline.
+ */
+export function buildRoundManifest(
+  roundLabel: string,
+  workerIds: string[],
+  options: {
+    descriptions?: Record<string, string>;
+    expectedOutcomes?: Record<string, RoundLaneExpectedOutcome>;
+    parentIssueUrl?: string;
+    excludedWorkerIds?: string[];
+    staleAfterMs?: number;
+    timeoutAt?: string;
+  } = {},
+): RoundManifest {
+  const lanes: RoundManifestLane[] = workerIds.map((workerId) => ({
+    workerId,
+    description: options.descriptions?.[workerId],
+    expectedOutcome: options.expectedOutcomes?.[workerId],
+  }));
+
+  return {
+    roundLabel,
+    parentIssueUrl: options.parentIssueUrl,
+    lanes,
+    excludedWorkerIds: options.excludedWorkerIds,
+    staleAfterMs: options.staleAfterMs,
+    timeoutAt: options.timeoutAt,
+  };
+}

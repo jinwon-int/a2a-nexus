@@ -1,0 +1,116 @@
+name: release-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver version to tag (e.g. 0.1.0)"
+        required: true
+        type: string
+      dry_run:
+        description: "Run gates without creating tag"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  # Always run validation and dry-run evidence first. This job never creates
+  # tags, releases, packages, images, or live infrastructure changes.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Pre-PR bootstrap guard (fail closed)
+        run: node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .
+
+      - name: Chaos E2E gate (mock)
+        run: npm run chaos:e2e
+
+      - name: Release candidate dry-run evidence
+        run: |
+          node scripts/tag-release-candidate.mjs --version "${{ inputs.version }}" --dry-run | tee release-candidate-dry-run.json
+          {
+            echo "## Release candidate dry-run"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Version | ${{ inputs.version }} |"
+            echo "| Dry run | ${{ inputs.dry_run }} |"
+            echo "| Ref | ${{ github.ref }} |"
+            echo "| Commit | ${{ github.sha }} |"
+            echo ""
+            echo "No tag, release, package, image, deployment, database mutation, provider send, terminal ACK, credential change, or history rewrite was performed by this gate job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dry-run evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-dry-run
+          path: release-candidate-dry-run.json
+
+  # Non-dry-run tag creation is isolated in its own environment-gated job.
+  # The `release` environment must be configured with required reviewers in
+  # repository settings before this path is considered approved for operation.
+  tag:
+    if: ${{ inputs.dry_run == false && needs.gate.result == 'success' }}
+    needs: [gate]
+    environment:
+      name: release
+      url: https://github.com/jinwon-int/a2a-docker-runner/actions/workflows/release-gate.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Create release candidate tag after environment approval
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          node scripts/tag-release-candidate.mjs --version "${{ inputs.version }}" --message "CI gate capsule pass for ${{ inputs.version }}" | tee release-candidate-tag.json
+          {
+            echo "## Release candidate tag path"
+            echo ""
+            echo "The non-dry-run tag path ran only after the GitHub \\`release\\` environment gate was approved."
+            echo ""
+            echo "This workflow creates the annotated tag in the Actions checkout only. Pushing a tag, drafting or publishing a GitHub Release, publishing npm or images, deployment, provider send, terminal ACK, credential change, DB mutation, or history rewrite remains a separate explicit operator-approved action."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tag evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-tag
+          path: release-candidate-tag.json

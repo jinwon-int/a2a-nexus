@@ -6,6 +6,7 @@ export type A2ABrokerAdapterEntryConfig = {
   edgeSecret?: unknown;
   requester?: unknown;
   wakeOnTask?: unknown;
+  noDuplicateSend?: unknown;
   operatorEvents?: unknown;
 };
 
@@ -30,6 +31,9 @@ export type ResolvedA2ABrokerAdapterPluginConfig = {
   edgeSecret?: string;
   requester?: A2ABrokerPartyRef;
   wakeOnTask: {
+    enabled: boolean;
+  };
+  noDuplicateSend: {
     enabled: boolean;
   };
   operatorEventsEnabled: boolean;
@@ -59,10 +63,18 @@ export function resolveA2ABrokerAdapterPluginConfig(
     edgeSecret: readOptionalString(pluginConfig?.edgeSecret),
     requester: resolveRequester(pluginConfig?.requester),
     wakeOnTask: resolveWakeOnTask(pluginConfig?.wakeOnTask),
+    noDuplicateSend: resolveNoDuplicateSend(pluginConfig?.noDuplicateSend),
     operatorEventsEnabled: readOptionalBoolean(
       (pluginConfig?.operatorEvents as Record<string, unknown> | undefined)?.enabled,
     ),
   };
+}
+
+export function shouldEnableNoDuplicateSend(
+  config?: A2ABrokerAdapterPluginRuntimeConfig,
+): boolean {
+  const pluginConfig = resolveA2ABrokerAdapterPluginConfig(config);
+  return pluginConfig.enabled && pluginConfig.explicitlyActivated && pluginConfig.noDuplicateSend.enabled;
 }
 
 export function shouldEnableWakeOnTask(
@@ -132,6 +144,15 @@ function resolveWakeOnTask(value: unknown): { enabled: boolean } {
     return { enabled: false };
   }
   return { enabled: (value as Record<string, unknown>).enabled === true };
+}
+
+function resolveNoDuplicateSend(value: unknown): { enabled: boolean } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    // Default to enabled (hardened) when plugin is active to prevent
+    // duplicate broker task creation from replay-prone callers.
+    return { enabled: true };
+  }
+  return { enabled: (value as Record<string, unknown>).enabled !== false };
 }
 
 function readOptionalBoolean(value: unknown): boolean {

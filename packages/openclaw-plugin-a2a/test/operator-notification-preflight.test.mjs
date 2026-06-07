@@ -59,6 +59,224 @@ test("operator notification preflight confirms config and runtime adapter withou
   assert.ok(result.checks.some((check) => check.code === "runtime_adapter" && check.ok));
 });
 
+test("operator notification preflight accepts current OpenClaw delivered-text visibility predicate", async () => {
+  const sends = [];
+  const runtime = {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            shouldTreatDeliveredTextAsVisible: ({ kind }) => kind !== "final",
+            async sendText(payload) {
+              sends.push(payload);
+              return { channel: "telegram", to: "operator-chat", messageId: "47146" };
+            },
+          };
+        },
+      },
+    },
+  };
+
+  const result = await preflightA2AOperatorNotificationRuntime(activatedConfig(), runtime);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.safeToRestartGateway, true);
+  assert.equal(sends.length, 0, "preflight must not send live Telegram messages");
+  assert.ok(result.checks.some((check) => check.code === "receipt_runtime" && check.ok));
+});
+
+test("operator notification preflight blocks when terminal-outbox one-shot fuse is tripped", async () => {
+  const sends = [];
+  const runtime = {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            capabilities: { currentSessionVisibleReceipt: true },
+            async sendText(payload) {
+              sends.push(payload);
+            },
+          };
+        },
+      },
+    },
+  };
+
+  const result = await preflightA2AOperatorNotificationRuntime(
+    activatedConfig(),
+    runtime,
+    {
+      terminalOutbox: {
+        lastNotificationAttempt: {
+          receiptStatus: "pending",
+          reason: "terminal-outbox one-shot live notification fuse is tripped; manual receipt/ACK is required before any further Terminal Brief sends",
+        },
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.safeToRestartGateway, false);
+  assert.equal(sends.length, 0, "preflight must not send live Telegram messages");
+  assert.equal(result.notificationTarget.status, "blocked");
+  assert.match(result.notificationTarget.reason, /one-shot live notification fuse/);
+  assert.ok(result.checks.some((check) => check.code === "terminal_outbox_fuse" && !check.ok));
+});
+
+test("operator notification preflight blocks on broker terminal-outbox accepted history", async () => {
+  const runtime = {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            capabilities: { currentSessionVisibleReceipt: true },
+            async sendText() {
+              throw new Error("preflight must not send live messages");
+            },
+          };
+        },
+      },
+    },
+  };
+
+  const result = await preflightA2AOperatorNotificationRuntime(
+    activatedConfig(),
+    runtime,
+    {
+      terminalOutboxHistory: {
+        kind: "task.terminal.outbox",
+        count: 1,
+        cursor: "terminal:canary:succeeded:2026-05-17T02%3A00%3A00.000Z",
+        events: [{
+          id: "terminal:canary:succeeded:2026-05-17T02%3A00%3A00.000Z",
+          kind: "task.terminal",
+          taskEventId: 1,
+          payload: { taskId: "canary", status: "succeeded" },
+          createdAt: "2026-05-17T02:00:00.000Z",
+          receipt: { status: "accepted" },
+          attempts: 0,
+        }],
+      },
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.safeToRestartGateway, false);
+  assert.equal(result.notificationTarget.status, "blocked");
+  assert.match(result.notificationTarget.reason, /broker terminal-outbox history has 1 unacknowledged/);
+  assert.ok(result.checks.some((check) => check.code === "terminal_outbox_fuse" && !check.ok));
+});
+
+test("operator notification adapter treats delivered text visibility predicate as current-session receipt", async () => {
+  const sends = [];
+  const adapter = createA2AOperatorNotificationAdapter(activatedConfig(), {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            shouldTreatDeliveredTextAsVisible: ({ kind }) => kind !== "final",
+            async sendText(payload) {
+              sends.push(payload);
+              return { channel: "telegram", to: "operator-chat", messageId: "47147" };
+            },
+          };
+        },
+      },
+    },
+  }, { now: () => Date.parse("2026-05-06T04:20:00.000Z") });
+
+  assert.ok(adapter, "expected configured adapter");
+  const receipt = await adapter.notify({
+    kind: "a2a.operator.notification",
+    version: 1,
+    id: "operator-notify:delivered-visible",
+    dedupeKey: "delivered-visible",
+    type: "success",
+    severity: "info",
+    deliveryOwner: "openclaw.plugin-notifier",
+    deliveryTarget: "operator-main-session",
+    title: "A2A Terminal Brief 완료: task delivered-visible",
+    text: "A2A Terminal Brief 완료: task delivered-visible",
+    evidence: {
+      schema: "a2a.operator.notification.evidence",
+      version: 1,
+      taskId: "delivered-visible",
+    },
+    taskId: "delivered-visible",
+  });
+
+  assert.equal(sends.length, 1);
+  assert.equal(receipt.confirmationSource, "current_session_visible");
+  assert.equal(receipt.dedupeKey, "delivered-visible");
+  assert.equal(adapter.listReceipts().length, 1);
+});
+
+test("operator notification adapter suppresses concurrent sends for the same dedupe key", async () => {
+  const sends = [];
+  let releaseSend;
+  const sendBlocked = new Promise((resolve) => {
+    releaseSend = resolve;
+  });
+  const adapter = createA2AOperatorNotificationAdapter(activatedConfig(), {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            capabilities: { currentSessionVisibleReceipt: true },
+            async sendText(payload) {
+              sends.push(payload);
+              await sendBlocked;
+              return {
+                receipt: {
+                  channel: "telegram",
+                  to: "operator-chat",
+                  currentSessionVisible: true,
+                  receiptId: "telegram:operator-chat:message:concurrent",
+                },
+              };
+            },
+          };
+        },
+      },
+    },
+  }, { now: () => Date.parse("2026-05-16T16:16:11.000Z") });
+
+  assert.ok(adapter, "expected configured adapter");
+  const envelope = {
+    kind: "a2a.operator.notification",
+    version: 1,
+    id: "operator-notify:terminal:team1:sogyo:success",
+    dedupeKey: "terminal:team1:sogyo:success",
+    type: "success",
+    severity: "info",
+    deliveryOwner: "openclaw.plugin-notifier",
+    deliveryTarget: "operator-main-session",
+    title: "A2A Terminal Brief 완료: sogyo(1/2)",
+    text: "A2A Terminal Brief 완료: sogyo(1/2)",
+    evidence: {
+      schema: "a2a.operator.notification.evidence",
+      version: 1,
+      taskId: "terminal-brief-team1-2worker-canary-seoseo-20260516T161541Z-sogyo",
+    },
+    taskId: "terminal-brief-team1-2worker-canary-seoseo-20260516T161541Z-sogyo",
+  };
+
+  const first = adapter.notify(envelope);
+  const second = adapter.notify({ ...envelope, id: "operator-notify:terminal:team1:sogyo:success:duplicate" });
+  releaseSend();
+  const receipts = await Promise.all([first, second]);
+
+  assert.equal(sends.length, 1, "same dedupe key must call Telegram send once while first send is in flight");
+  assert.equal(receipts[0].dedupeKey, "terminal:team1:sogyo:success");
+  assert.equal(receipts[1].dedupeKey, "terminal:team1:sogyo:success");
+  assert.deepEqual(adapter.listReceipts().map((receipt) => receipt.dedupeKey), ["terminal:team1:sogyo:success"]);
+});
+
 test("operator notification preflight blocks Gateway restart on config/runtime drift", async () => {
   const result = await preflightA2AOperatorNotificationRuntime(
     {
@@ -228,16 +446,57 @@ test("operator notification adapter refuses live send without current-session re
   assert.equal(sends.length, 0, "runtime without receipt capability must not send a live provider message");
   assert.equal(receipt, undefined);
   assert.deepEqual(adapter.listReceipts(), []);
-  assert.deepEqual(adapter.getLastFailure("no-receipt-runtime"), {
-    dedupeKey: "no-receipt-runtime",
-    code: "receipt_runtime_unsupported",
-    reason: "receipt_runtime_unsupported: Gateway runtime telegram adapter does not advertise current-session-visible receipt support; live provider send skipped and terminal ACK remains receipt-gated",
-    outboundLifecycle: {
-      state: "not_attempted",
-      terminalAckEligible: false,
-      reason: "outbound_lifecycle: live Gateway/provider send was not attempted; terminal ACK remains receipt-gated",
+});
+
+
+test("operator notification adapter canary opt-in sends provider message without ACK", async () => {
+  const sends = [];
+  const adapter = createA2AOperatorNotificationAdapter(activatedConfig({
+    enabled: true,
+    channel: "telegram",
+    to: "operator-chat",
+    allowUnconfirmedProviderSend: true,
+  }), {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            async sendText(payload) {
+              sends.push(payload);
+              return { accepted: true, status: "sent", channel: "telegram", to: "operator-chat" };
+            },
+          };
+        },
+      },
     },
+  }, { now: () => Date.parse("2026-05-06T04:10:00.000Z") });
+
+  assert.ok(adapter, "expected configured adapter");
+  const receipt = await adapter.notify({
+    kind: "a2a.operator.notification",
+    version: 1,
+    id: "operator-notify:canary-provider-only",
+    dedupeKey: "canary-provider-only",
+    type: "success",
+    severity: "info",
+    deliveryOwner: "openclaw.plugin-notifier",
+    deliveryTarget: "operator-main-session",
+    title: "A2A Terminal Brief 완료: task canary-provider-only",
+    text: "A2A Terminal Brief 완료: task canary-provider-only",
+    evidence: {
+      schema: "a2a.operator.notification.evidence",
+      version: 1,
+      taskId: "canary-provider-only",
+    },
+    taskId: "canary-provider-only",
   });
+
+  assert.equal(sends.length, 1, "canary opt-in may send one provider message without receipt capability");
+  assert.equal(sends[0].receiptRequired, "current_session_visible");
+  assert.equal(sends[0].userVisibleReceiptRequired, true);
+  assert.equal(receipt, undefined, "provider accepted/sent is not operator-visible ACK evidence");
+  assert.deepEqual(adapter.listReceipts(), []);
 });
 
 test("operator notification adapter maps Telegram-visible operator evidence to current-session receipt", async () => {
@@ -290,6 +549,61 @@ test("operator notification adapter maps Telegram-visible operator evidence to c
   assert.equal(adapter.listReceipts().length, 1);
 });
 
+test("operator notification adapter matches Telegram prefixed target with numeric chatId receipt", async () => {
+  const adapter = createA2AOperatorNotificationAdapter(activatedConfig({
+    enabled: true,
+    channel: "telegram",
+    to: "telegram:7360371189",
+    accountId: "default",
+  }), {
+    channel: {
+      outbound: {
+        async loadAdapter(channel) {
+          assert.equal(channel, "telegram");
+          return {
+            shouldTreatDeliveredTextAsVisible: () => true,
+            async sendText() {
+              return {
+                channel: "telegram",
+                chatId: 7360371189,
+                messageId: 51949,
+                delivery: {
+                  providerAccepted: true,
+                  chatId: 7360371189,
+                  messageId: 51949,
+                },
+              };
+            },
+          };
+        },
+      },
+    },
+  }, { now: () => Date.parse("2026-05-17T03:05:00.000Z") });
+
+  assert.ok(adapter, "expected configured adapter");
+  const receipt = await adapter.notify({
+    kind: "a2a.operator.notification",
+    version: 1,
+    id: "operator-notify:telegram-prefixed-target",
+    dedupeKey: "telegram-prefixed-target",
+    type: "success",
+    severity: "info",
+    deliveryOwner: "openclaw.plugin-notifier",
+    deliveryTarget: "operator-main-session",
+    title: "A2A Terminal Brief 완료: task telegram-prefixed-target",
+    text: "A2A Terminal Brief 완료: task telegram-prefixed-target",
+    evidence: {
+      schema: "a2a.operator.notification.evidence",
+      version: 1,
+      taskId: "telegram-prefixed-target",
+    },
+    taskId: "telegram-prefixed-target",
+  });
+
+  assert.ok(receipt, "numeric Telegram chatId should match telegram:-prefixed target");
+  assert.equal(receipt.confirmationSource, "current_session_visible");
+});
+
 test("operator notification adapter treats provider send success as non-ACK", async () => {
   const sends = [];
   const adapter = createA2AOperatorNotificationAdapter(activatedConfig(), {
@@ -334,9 +648,4 @@ test("operator notification adapter treats provider send success as non-ACK", as
   assert.equal(sends[0].userVisibleReceiptRequired, true);
   assert.equal(receipt, undefined, "provider accepted/sent is not operator-visible ACK evidence");
   assert.deepEqual(adapter.listReceipts(), []);
-  assert.deepEqual(adapter.getLastFailure("provider-only")?.outboundLifecycle, {
-    state: "accepted_non_ack",
-    terminalAckEligible: false,
-    reason: "outbound_lifecycle: Gateway/provider accepted the best-effort Terminal Brief notice; this is non-ACK evidence until current-session-visible receipt proof is available",
-  });
 });

@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { createBrokerServer, type BrokerServerOptions } from "./server.js";
+import { createBrokerServer, type BrokerPersistenceQueueDiagnostics, type BrokerServerOptions } from "./server.js";
+import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
+import {
+  DECISION_DIALECTIC_KIND,
+  DECISION_DIALECTIC_VERSION,
+  type DecisionDialecticTaskInputV1,
+  type DecisionDialecticTaskV1,
+} from "./decision-dialectic/types.js";
 import {
   emptySnapshot,
   SqliteBrokerStateStore,
@@ -19,7 +26,8 @@ import {
   type TradingDialecticTaskInputV1,
   type TradingDialecticTaskV1,
 } from "./trading-dialectic/types.js";
-import type { WorkerRegistrationResponse } from "./core/types.js";
+import type { CreateTaskRequest, WorkerRegistrationResponse } from "./core/types.js";
+import { buildFinalizerApprovalEnvelopeDraft } from "./core/complexity-finalizer-approval-envelope-draft.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
   let snapshot = emptySnapshot();
@@ -31,6 +39,33 @@ function createInMemoryStateStore(): BrokerStateStore {
       snapshot = structuredClone(nextSnapshot);
     },
   };
+}
+
+function createDeferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+} {
+  let resolveDeferred: ((value: T) => void) | undefined;
+  let rejectDeferred: ((error: Error) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveDeferred = resolve;
+    rejectDeferred = reject;
+  });
+  if (!resolveDeferred || !rejectDeferred) {
+    throw new Error("deferred promise was not initialized");
+  }
+  return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 500): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("condition timed out");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 async function startTestServer(options: Partial<BrokerServerOptions> = {}) {
@@ -58,7 +93,19 @@ async function startTestServer(options: Partial<BrokerServerOptions> = {}) {
       runtime.server.close();
       runtime.server.closeAllConnections?.();
       await once(runtime.server, "close");
+      await runtime.closeWorkerPersistence();
     },
+  };
+}
+
+function createTaskRequest(id: string): CreateTaskRequest {
+  return {
+    id,
+    intent: "chat",
+    requester: { id: "test-hub", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "test task",
+    taskOrigin: "api",
   };
 }
 
@@ -126,6 +173,198 @@ async function registerTestWorker(
     );
   }
 }
+
+test("mutating task routes wait for durable persistence ACK before success", async () => {
+  const ack = createDeferred();
+  let snapshot = emptySnapshot();
+  let ackCalls = 0;
+  const stateStore: BrokerStateStore = {
+    load: () => snapshot,
+    save: (nextSnapshot) => {
+      snapshot = structuredClone(nextSnapshot);
+    },
+    awaitDurablePersistenceAck: () => {
+      ackCalls += 1;
+      return ack.promise;
+    },
+  };
+  const server = await startTestServer({ stateStore, enforceRequesterIdentity: true });
+  let responseSettled = false;
+  try {
+    server.runtime.broker.registerWorker({
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    });
+    const responsePromise = fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "test-hub",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify(createTaskRequest("task-awaits-durable-ack")),
+    }).then((response) => {
+      responseSettled = true;
+      return response;
+    });
+
+    await waitFor(() => ackCalls === 1);
+    assert.equal(responseSettled, false, "response should wait until durable ACK resolves");
+
+    ack.resolve(undefined);
+    const response = await responsePromise;
+    assert.equal(response.status, 201);
+    const task = await response.json() as { id: string };
+    assert.equal(task.id, "task-awaits-durable-ack");
+  } finally {
+    await server.close();
+  }
+});
+
+test("mutating task routes map durable persistence queue errors to retryable 503", async () => {
+  const stateStore: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: () => {},
+    awaitDurablePersistenceAck: async () => {
+      throw new Error("queue_saturated");
+    },
+  };
+  const server = await startTestServer({ stateStore, enforceRequesterIdentity: true });
+  try {
+    server.runtime.broker.registerWorker({
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    });
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "test-hub",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify(createTaskRequest("task-durable-ack-503")),
+    });
+
+    assert.equal(response.status, 503);
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "queue_saturated");
+    assert.equal(body.error.message, "queue_saturated");
+  } finally {
+    await server.close();
+  }
+});
+
+test("repeated unchanged worker registration is idempotent and heartbeat-like without durable heartbeat writes", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: true });
+  const nodeId = "worker-a";
+  const registration = {
+    nodeId,
+    role: "analyst",
+    displayName: "Worker A",
+    brokerUrl: "http://127.0.0.1:8787",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  };
+  const headers = jsonHeaders({
+    "x-a2a-requester-id": nodeId,
+    "x-a2a-requester-role": "analyst",
+  });
+
+  try {
+    const first = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(registration),
+    });
+    assert.equal(first.status, 201);
+
+    const second = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(registration),
+    });
+    assert.equal(second.status, 201);
+
+    assert.equal(
+      server.runtime.broker.listAuditEvents({ action: "worker.registered" }).length,
+      1,
+    );
+    assert.equal(
+      server.runtime.broker.listAuditEvents({ action: "worker.heartbeat" }).length,
+      0,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("worker registration still records material metadata changes", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: true });
+  const nodeId = "worker-a";
+  const registration = {
+    nodeId,
+    role: "analyst",
+    displayName: "Worker A",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  };
+  const headers = jsonHeaders({
+    "x-a2a-requester-id": nodeId,
+    "x-a2a-requester-role": "analyst",
+  });
+
+  try {
+    const first = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(registration),
+    });
+    assert.equal(first.status, 201);
+
+    const changed = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...registration, displayName: "Worker A refreshed" }),
+    });
+    assert.equal(changed.status, 201);
+
+    assert.equal(
+      server.runtime.broker.listAuditEvents({ action: "worker.registered" }).length,
+      2,
+    );
+    assert.equal(server.runtime.broker.getWorker(nodeId)?.displayName, "Worker A refreshed");
+  } finally {
+    await server.close();
+  }
+});
 
 test("server accepts a broker-agnostic Hermes-style worker poll and evidence flow", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
@@ -293,6 +532,7 @@ test("server surfaces env-injected broker version/build revision on health and d
 
       const healthRes = await fetch(`${server.baseUrl}/health`);
       assert.equal(healthRes.status, 200);
+      assert.equal(healthRes.headers.get("cache-control"), "no-store");
       const health = await healthRes.json();
       assert.equal(health.version, "0.2.3");
       assert.deepEqual(health.build, {
@@ -315,6 +555,745 @@ test("server surfaces env-injected broker version/build revision on health and d
       await server.close();
     }
   });
+});
+
+test("server exposes lightweight liveness without persistence diagnostics", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+  });
+  try {
+    const res = await fetch(`${server.baseUrl}/livez`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "a2a-broker");
+    assert.equal(typeof body.uptimeSec, "number");
+    assert.equal(body.persistence, undefined);
+    assert.equal(body.persistenceQueue, undefined);
+    assert.equal(body.auditDiagnostics, undefined);
+    assert.equal(body.terminalOutboxDiagnostics, undefined);
+
+    // Lightweight attribution diagnostics present on /livez.
+    assert.ok(body.eventLoop, "/livez should include eventLoop field");
+    assert.ok(body.eventLoop.delayMs === null || typeof body.eventLoop.delayMs === "number");
+    // gc may be undefined when the GC observer isn't available (no --experimental-perf-gc)
+    if (body.gc !== undefined) {
+      assert.equal(typeof body.gc.totalMs, "number");
+      assert.equal(typeof body.gc.count, "number");
+      assert.equal(typeof body.gc.lastMs, "number");
+    }
+    // cpu should always be computable.
+    assert.ok(body.cpu, "/livez should include cpu field");
+    assert.equal(typeof body.cpu.percentSinceLastCheck, "number");
+    assert.equal(typeof body.cpu.deltaUserMicrosec, "number");
+    assert.equal(typeof body.cpu.deltaSystemMicrosec, "number");
+    assert.equal(typeof body.cpu.deltaIntervalMs, "number");
+    // timing should have a snapshot or be null on first ever request.
+    if (body.timing !== null) {
+      assert.equal(typeof body.timing.count, "number");
+      assert.equal(typeof body.timing.maxMs, "number");
+      assert.equal(typeof body.timing.p99Ms, "number");
+    }
+    assert.equal(typeof body.diagMs, "number");
+    // activeRequests is an O(1) scheduling gauge (issue #1032)
+    assert.equal(typeof body.activeRequests, "number");
+    assert.ok(body.activeRequests >= 0);
+    // requestDurationMs should be a finite number indicating the elapsed
+    // handler processing time for this /livez request.
+    assert.equal(typeof body.requestDurationMs, "number");
+    assert.ok(body.requestDurationMs >= 0, "requestDurationMs should be >= 0");
+    assert.ok(body.probeTiming, "/livez should include probeTiming field");
+    assert.equal(typeof body.probeTiming.handlerStartUnixMs, "number");
+    assert.equal(typeof body.probeTiming.responsePreparedUnixMs, "number");
+    assert.equal(typeof body.probeTiming.responsePreparationDurationMs, "number");
+    assert.equal(typeof body.probeTiming.socketConnectedUnixMs, "number");
+    assert.equal(typeof body.probeTiming.socketAgeBeforeHandlerMs, "number");
+    assert.equal(typeof body.probeTiming.httpRequestEventUnixMs, "number");
+    assert.equal(typeof body.probeTiming.socketAcceptedToHttpRequestEventMs, "number");
+    assert.equal(typeof body.probeTiming.httpRequestEventToHandlerStartMs, "number");
+    assert.equal(typeof body.probeTiming.socketRequestIndex, "number");
+    assert.equal(typeof body.probeTiming.socketHadServedRequest, "boolean");
+    // clientProbeStartToHttpRequestEventMs distinguishes client pool artifact
+    // from server-side idle; will be null when no probe-start header is sent.
+    assert.ok("clientProbeStartToHttpRequestEventMs" in body.probeTiming);
+    // socketConnectedToFirstDataMs and firstDataToHttpRequestEventMs separate
+    // accept/scheduling wait from HTTP parser/read delay (#1107).
+    assert.ok("socketConnectedToFirstDataMs" in body.probeTiming,
+      "/livez probeTiming must include socketConnectedToFirstDataMs");
+    assert.ok("firstDataToHttpRequestEventMs" in body.probeTiming,
+      "/livez probeTiming must include firstDataToHttpRequestEventMs");
+    assert.ok(
+      body.probeTiming.responsePreparedUnixMs >= body.probeTiming.handlerStartUnixMs,
+      "responsePreparedUnixMs should be at or after handlerStartUnixMs",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("server ignores implausible probe start headers on /livez", async () => {
+  const server = await startTestServer();
+  try {
+    const future = Date.now() + 60_000;
+    const res = await fetch(`${server.baseUrl}/livez`, {
+      headers: {
+        "x-a2a-probe-start-unix-ms": String(future),
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    assert.ok(body.probeTiming, "/livez should include probeTiming field");
+    assert.equal(body.probeTiming.clientProbeStartUnixMs, null);
+    assert.equal(body.probeTiming.clientProbeStartToHandlerStartMs, null);
+    assert.equal(body.probeTiming.clientProbeStartToSocketConnectedMs, null);
+    assert.equal(body.probeTiming.clientProbeStartToHttpRequestEventMs, null);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server exposes lightweight scheduling diagnostics on /schedz", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+  });
+  try {
+    const authHeaders = { "x-a2a-edge-secret": "test-edge-secret" };
+    // First request to warm up counters.
+    await fetch(`${server.baseUrl}/livez`);
+    await fetch(`${server.baseUrl}/health`, { headers: authHeaders });
+    await registerTestWorker(server.baseUrl, "worker-schedz", "analyst", "test-edge-secret");
+    const heartbeatRes = await fetch(`${server.baseUrl}/workers/worker-schedz/heartbeat`, {
+      method: "POST",
+      headers: jsonHeaders({
+        ...authHeaders,
+        "x-a2a-requester-id": "worker-schedz",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({}),
+    });
+    assert.equal(heartbeatRes.status, 200);
+    const a2aJsonRpcRes = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({
+        ...authHeaders,
+        "x-a2a-requester-id": "schedz-route-probe",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "schedz-route-probe",
+        method: "a2a.peer.status",
+        params: { target: "worker-schedz" },
+      }),
+    });
+    assert.ok(a2aJsonRpcRes.status >= 200);
+
+    const res = await fetch(`${server.baseUrl}/schedz`, { headers: authHeaders });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "a2a-broker");
+    assert.equal(typeof body.totalAccepted, "number");
+    assert.ok(body.totalAccepted >= 1);
+    assert.equal(typeof body.activeRequests, "number");
+    assert.ok(body.activeRequests >= 0);
+
+    // host scheduling snapshot
+    assert.ok(body.host, "/schedz should include host field");
+    assert.equal(typeof body.host.loadavg1, "number");
+    assert.equal(typeof body.host.loadavg5, "number");
+    assert.equal(typeof body.host.loadavg15, "number");
+    assert.equal(typeof body.host.cpuCount, "number");
+    assert.ok(body.host.cpuCount >= 1);
+    assert.equal(typeof body.host.loadPerCpu, "number");
+    assert.equal(typeof body.host.snapshotAtMs, "number");
+
+    // scheduling timing aggregate
+    if (body.schedulingTiming !== null) {
+      assert.equal(typeof body.schedulingTiming.count, "number");
+      assert.equal(typeof body.schedulingTiming.maxMs, "number");
+      assert.equal(typeof body.schedulingTiming.p99Ms, "number");
+    }
+    assert.ok(body.endpointTiming, "/schedz should include endpointTiming field");
+    assert.ok(body.endpointActive, "/schedz should include endpointActive field");
+    const expectedEndpointGroups = ["livez", "health", "schedz", "workers.list", "workers.capacity", "workers.register", "workers.detail", "workers.heartbeat", "workers.assignment-events", "workers.subagent-orchestration.plan", "worker", "a2a", "well-known", "dashboard", "terminal-brief", "complexity", "sidecar", "other"] as const;
+    for (const group of expectedEndpointGroups) {
+      assert.ok(group in body.endpointTiming, `endpointTiming.${group} should be present`);
+      assert.equal(typeof body.endpointActive[group], "number");
+      assert.ok(body.endpointActive[group] >= 0);
+    }
+    assert.ok(body.endpointTiming.livez, "endpointTiming.livez should have a sample");
+    assert.equal(typeof body.endpointTiming.livez.count, "number");
+    assert.ok(body.endpointTiming.livez.count >= 1);
+    assert.ok(body.endpointTiming.health, "endpointTiming.health should have a sample");
+    // The in-flight /schedz request records its duration after this response
+    // finishes, so its first request may appear only in endpointActive here.
+    assert.ok(body.endpointActive.schedz >= 1);
+
+    // Per-endpoint handler body timing (#1032 thesis: separate handler body
+    // from total handler time so gates can tell which endpoint has slow body).
+    assert.ok(body.endpointHandlerBodyTiming, "/schedz should include endpointHandlerBodyTiming field");
+    for (const group of expectedEndpointGroups) {
+      assert.ok(group in body.endpointHandlerBodyTiming, `endpointHandlerBodyTiming.${group} should be present`);
+    }
+    // /livez and /health should have handler body samples from the requests above.
+    if (body.endpointHandlerBodyTiming.livez !== null) {
+      assert.equal(typeof body.endpointHandlerBodyTiming.livez.count, "number");
+      assert.ok(body.endpointHandlerBodyTiming.livez.count >= 1);
+    }
+    if (body.endpointHandlerBodyTiming.health !== null) {
+      assert.equal(typeof body.endpointHandlerBodyTiming.health.count, "number");
+      assert.ok(body.endpointHandlerBodyTiming.health.count >= 1);
+    }
+
+    // Route-level request attribution splits the broad worker endpoint into
+    // concrete routes so #1032 live gates can tell register/list/heartbeat
+    // pressure apart from /livez itself.
+    assert.ok(body.requestRoutes, "/schedz should include requestRoutes field");
+    for (const route of ["livez", "health", "workers.register", "workers.heartbeat", "workers.list", "workers.capacity", "a2a.jsonrpc", "a2a.tasks.terminal-outbox", "a2a.cross-broker.terminal-briefs", "tasks.list", "operator.task-report", "operator.cleanup.plan", "operator.alerts", "operator.control-tower", "operator.release-evidence", "exchanges.list", "proposals.list", "audit", "terminal-brief.inbox", "terminal-brief.closeout"] as const) {
+      assert.ok(route in body.requestRoutes, `requestRoutes.${route} should be present`);
+      assert.equal(typeof body.requestRoutes[route].active, "number");
+      assert.equal(typeof body.requestRoutes[route].onNewConnection, "number");
+      assert.equal(typeof body.requestRoutes[route].onReusedConnection, "number");
+    }
+    assert.ok(body.requestRoutes.livez.timing, "requestRoutes.livez should have a timing sample");
+    assert.ok(body.requestRoutes["workers.register"].timing, "requestRoutes.workers.register should have a timing sample");
+    assert.equal(typeof body.requestRoutes["workers.register"].timing.count, "number");
+    assert.ok(body.requestRoutes["workers.register"].timing.count >= 1);
+    assert.ok(body.requestRoutes["workers.heartbeat"].timing, "requestRoutes.workers.heartbeat should have a timing sample");
+    assert.equal(typeof body.requestRoutes["workers.heartbeat"].timing.count, "number");
+    assert.ok(body.requestRoutes["workers.heartbeat"].timing.count >= 1);
+    assert.ok(body.requestRoutes["a2a.jsonrpc"].timing, "requestRoutes.a2a.jsonrpc should have a timing sample");
+    assert.equal(typeof body.requestRoutes["a2a.jsonrpc"].timing.count, "number");
+    assert.ok(body.requestRoutes["a2a.jsonrpc"].timing.count >= 1);
+
+    // Per-route handler body timing (#1032 / #1179: split worker handler
+    // body time into actionable worker sub-routes).
+    assert.ok(body.routeHandlerBodyTiming, "/schedz should include routeHandlerBodyTiming field");
+    for (const route of ["livez", "health", "workers.register", "workers.heartbeat", "workers.list", "workers.capacity", "workers.assignment-events", "a2a.jsonrpc", "a2a.tasks.terminal-outbox", "a2a.cross-broker.terminal-briefs", "tasks.list", "operator.task-report", "operator.cleanup.plan", "operator.alerts", "operator.control-tower", "operator.release-evidence", "exchanges.list", "proposals.list", "audit", "terminal-brief.inbox", "terminal-brief.closeout"] as const) {
+      assert.ok(route in body.routeHandlerBodyTiming, `routeHandlerBodyTiming.${route} should be present`);
+    }
+    if (body.routeHandlerBodyTiming.livez !== null) {
+      assert.equal(typeof body.routeHandlerBodyTiming.livez.count, "number");
+      assert.ok(body.routeHandlerBodyTiming.livez.count >= 1);
+    }
+    if (body.routeHandlerBodyTiming.health !== null) {
+      assert.equal(typeof body.routeHandlerBodyTiming.health.count, "number");
+      assert.ok(body.routeHandlerBodyTiming.health.count >= 1);
+    }
+    if (body.routeHandlerBodyTiming["workers.register"] !== null) {
+      assert.equal(typeof body.routeHandlerBodyTiming["workers.register"].count, "number");
+      assert.ok(body.routeHandlerBodyTiming["workers.register"].count >= 1);
+    }
+    if (body.routeHandlerBodyTiming["workers.heartbeat"] !== null) {
+      assert.equal(typeof body.routeHandlerBodyTiming["workers.heartbeat"].count, "number");
+      assert.ok(body.routeHandlerBodyTiming["workers.heartbeat"].count >= 1);
+    }
+    if (body.routeHandlerBodyTiming["a2a.jsonrpc"] !== null) {
+      assert.equal(typeof body.routeHandlerBodyTiming["a2a.jsonrpc"].count, "number");
+      assert.ok(body.routeHandlerBodyTiming["a2a.jsonrpc"].count >= 1);
+    }
+
+    assert.ok(body.terminalOutbox, "/schedz should include terminalOutbox summary");
+    assert.equal(typeof body.terminalOutbox.retainedCount, "number");
+    assert.equal(typeof body.terminalOutbox.sampledCount, "number");
+    assert.equal(typeof body.terminalOutbox.sampleLimit, "number");
+    assert.equal(typeof body.terminalOutbox.pendingAckCount, "number");
+    assert.ok(Array.isArray(body.terminalOutbox.topWorkers));
+    assert.ok(Array.isArray(body.terminalOutbox.topPendingAckWorkers));
+    assert.ok(Array.isArray(body.terminalOutbox.topPendingAckStatuses));
+    assert.ok(Array.isArray(body.terminalOutbox.topPendingAckReceiptStatuses));
+    assert.ok(Array.isArray(body.terminalOutbox.topPendingAckBrokersOfRecord));
+    assert.ok(Array.isArray(body.terminalOutbox.topStatuses));
+    assert.ok(Array.isArray(body.terminalOutbox.topReceiptStatuses));
+    assert.deepEqual(body.persistenceQueue, {
+      kind: "broker.persistence.queue",
+      enabled: false,
+      mode: "inline",
+      state: "disabled",
+      capacity: null,
+      queued: 0,
+      active: 0,
+      inFlight: 0,
+      available: null,
+      closing: false,
+      aborted: false,
+    });
+
+    assert.ok(body.workerHeartbeatPhases, "/schedz should include workerHeartbeatPhases field");
+    for (const phase of ["readJson", "authLookup", "authAssert", "brokerHeartbeat", "toWorkerView"] as const) {
+      assert.ok(phase in body.workerHeartbeatPhases, `workerHeartbeatPhases.${phase} should be present`);
+      assert.ok(body.workerHeartbeatPhases[phase], `workerHeartbeatPhases.${phase} should have a timing sample`);
+      assert.equal(typeof body.workerHeartbeatPhases[phase].count, "number");
+      assert.ok(body.workerHeartbeatPhases[phase].count >= 1);
+    }
+
+    // Per-worker heartbeat phase timing: sogyo attribution (#1032 / Team1 first pass)
+    assert.ok(body.perWorkerHeartbeatPhases, "/schedz should include perWorkerHeartbeatPhases field");
+    assert.ok("worker-schedz" in body.perWorkerHeartbeatPhases,
+      `perWorkerHeartbeatPhases should have entry for worker-schedz`);
+    for (const phase of ["readJson", "authLookup", "authAssert", "brokerHeartbeat", "toWorkerView"] as const) {
+      assert.ok(phase in body.perWorkerHeartbeatPhases["worker-schedz"],
+        `perWorkerHeartbeatPhases.worker-schedz.${phase} should be present`);
+      assert.ok(body.perWorkerHeartbeatPhases["worker-schedz"][phase],
+        `perWorkerHeartbeatPhases.worker-schedz.${phase} should have a timing sample`);
+      assert.equal(typeof body.perWorkerHeartbeatPhases["worker-schedz"][phase].count, "number");
+      assert.ok(body.perWorkerHeartbeatPhases["worker-schedz"][phase].count >= 1);
+    }
+
+    assert.ok(body.workerRegisterPhases, "/schedz should include workerRegisterPhases field");
+    for (const phase of ["readJson", "authAssert", "brokerRegister", "toWorkerView"] as const) {
+      assert.ok(phase in body.workerRegisterPhases, `workerRegisterPhases.${phase} should be present`);
+      assert.ok(body.workerRegisterPhases[phase], `workerRegisterPhases.${phase} should have a timing sample`);
+      assert.equal(typeof body.workerRegisterPhases[phase].count, "number");
+      assert.ok(body.workerRegisterPhases[phase].count >= 1);
+    }
+
+    assert.ok(body.perWorkerRegisterPhases, "/schedz should include perWorkerRegisterPhases field");
+    assert.ok("worker-schedz" in body.perWorkerRegisterPhases,
+      "perWorkerRegisterPhases should have entry for worker-schedz");
+    for (const phase of ["authAssert", "brokerRegister", "toWorkerView"] as const) {
+      assert.ok(phase in body.perWorkerRegisterPhases["worker-schedz"],
+        `perWorkerRegisterPhases.worker-schedz.${phase} should be present`);
+      assert.ok(body.perWorkerRegisterPhases["worker-schedz"][phase],
+        `perWorkerRegisterPhases.worker-schedz.${phase} should have a timing sample`);
+      assert.equal(typeof body.perWorkerRegisterPhases["worker-schedz"][phase].count, "number");
+      assert.ok(body.perWorkerRegisterPhases["worker-schedz"][phase].count >= 1);
+    }
+
+    // Container/cgroup scheduling diagnostics (issue #1054)
+    assert.ok(body.container, "/schedz should include container field");
+    assert.ok(typeof body.container.runtime === "string" || body.container.runtime === null, "container.runtime should be a string or null");
+    // cgroup stats may be null when running outside a Linux container
+    // or when /sys/fs/cgroup is unavailable.
+    if (body.container.cgroup !== null) {
+      assert.ok(body.container.cgroup.cpu, "container.cgroup.cpu should be present");
+      assert.equal(typeof body.container.cgroup.cpu.usageUsec, "number");
+      assert.equal(typeof body.container.cgroup.cpu.nrPeriods, "number");
+      assert.equal(typeof body.container.cgroup.cpu.nrThrottled, "number");
+      assert.equal(typeof body.container.cgroup.cpu.throttledUsec, "number");
+      assert.equal(typeof body.container.cgroup.cpu.snapshotAtMs, "number");
+      // cpuLimit may be null when cpu.max is "max" (no limit)
+      if (body.container.cgroup.cpuLimit !== null) {
+        assert.equal(typeof body.container.cgroup.cpuLimit.quotaUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuLimit.periodUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuLimit.cpus, "number");
+      }
+      // Per-poll cgroup cpu.stat delta (#1102).  Null on first poll or
+      // when the previous snapshot is stale/garbage-collected.
+      assert.ok("cpuDelta" in body.container.cgroup, "container.cgroup should include cpuDelta");
+      if (body.container.cgroup.cpuDelta !== null) {
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaUsageUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaUserUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaSystemUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaNrPeriods, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaNrThrottled, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.deltaThrottledUsec, "number");
+        assert.equal(typeof body.container.cgroup.cpuDelta.wallMs, "number");
+        assert.ok(body.container.cgroup.cpuDelta.wallMs >= 1, "cpuDelta.wallMs should be >= 1");
+      }
+    }
+    // PSI may be null when /proc/pressure is unavailable.
+    if (body.container.psi !== null) {
+      for (const resource of ["cpu", "memory", "io"] as const) {
+        assert.ok(body.container.psi[resource], `psi.${resource} should be present`);
+        assert.equal(typeof body.container.psi[resource].some.avg10, "number");
+        assert.equal(typeof body.container.psi[resource].some.avg60, "number");
+        assert.equal(typeof body.container.psi[resource].some.avg300, "number");
+        assert.equal(typeof body.container.psi[resource].some.total, "number");
+        assert.equal(typeof body.container.psi[resource].full.avg10, "number");
+        assert.equal(typeof body.container.psi[resource].full.avg60, "number");
+        assert.equal(typeof body.container.psi[resource].full.avg300, "number");
+        assert.equal(typeof body.container.psi[resource].full.total, "number");
+      }
+      assert.equal(typeof body.container.psi.snapshotAtMs, "number");
+    }
+
+    // connection tracking diagnostics (#1032)
+    assert.ok(body.connections, "/schedz should include connections field");
+    assert.equal(typeof body.connections.totalConnections, "number");
+    assert.ok(body.connections.totalConnections >= 1, "at least one connection tracked");
+    assert.equal(typeof body.connections.activeConnections, "number");
+    assert.equal(typeof body.connections.peakConnections, "number");
+    assert.ok(body.connections.peakConnections >= 1);
+    assert.ok(body.connections.httpServer, "/schedz connections should include HTTP server settings");
+    assert.equal(typeof body.connections.httpServer.keepAliveTimeoutMs, "number");
+    assert.equal(typeof body.connections.httpServer.headersTimeoutMs, "number");
+    assert.equal(typeof body.connections.httpServer.requestTimeoutMs, "number");
+    assert.equal(typeof body.connections.httpServer.timeoutMs, "number");
+    assert.equal(typeof body.connections.httpServer.maxRequestsPerSocket, "number");
+    assert.ok(
+      typeof body.connections.httpServer.maxConnections === "number" || body.connections.httpServer.maxConnections === null,
+    );
+    assert.equal(typeof body.connections.httpServer.socketReusePolicy, "string");
+    assert.ok(
+      body.connections.httpServer.socketReusePolicy.startsWith("keep-alive"),
+      `socketReusePolicy should indicate keep-alive (got "${body.connections.httpServer.socketReusePolicy}")`,
+    );
+    if (body.connections.connectionDurationMs !== null) {
+      assert.equal(typeof body.connections.connectionDurationMs.count, "number");
+      assert.equal(typeof body.connections.connectionDurationMs.maxMs, "number");
+    }
+
+    // per-request connection reuse tracking
+    assert.ok(body.perRequest, "/schedz should include perRequest field");
+    assert.equal(typeof body.perRequest.onNewConnection, "number");
+    assert.equal(typeof body.perRequest.onReusedConnection, "number");
+    assert.equal(typeof body.perRequest.totalSamples, "number");
+    assert.ok(body.perRequest.totalSamples >= 1);
+    assert.ok(body.perRequest.socketAgeBeforeHandlerMs, "perRequest should include socket age timing");
+    assert.equal(typeof body.perRequest.socketAgeBeforeHandlerMs.count, "number");
+    assert.ok(body.perRequest.socketAgeBeforeHandlerMs.count >= 1);
+    assert.ok("socketIdleBeforeRequestMs" in body.perRequest);
+    assert.ok("socketAcceptedToHttpRequestEventMs" in body.perRequest);
+    assert.ok("httpRequestEventToHandlerStartMs" in body.perRequest);
+    assert.ok("socketIdleBeforeHttpRequestEventMs" in body.perRequest);
+    assert.ok("clientProbeStartToHandlerStartMs" in body.perRequest);
+    assert.ok("clientProbeStartToSocketConnectedMs" in body.perRequest);
+    assert.ok("clientProbeStartToHttpRequestEventMs" in body.perRequest);
+
+    // connection-reuse breakdown
+    assert.ok(body.perRequest.byConnectionReuse, "/schedz should include byConnectionReuse breakdown");
+    assert.ok(body.perRequest.byConnectionReuse.fresh, "byConnectionReuse should include fresh");
+    assert.ok(body.perRequest.byConnectionReuse.reused, "byConnectionReuse should include reused");
+    assert.ok("socketAgeBeforeHandlerMs" in body.perRequest.byConnectionReuse.fresh);
+    assert.ok("socketAcceptedToHttpRequestEventMs" in body.perRequest.byConnectionReuse.fresh);
+    assert.ok("socketConnectedToFirstDataMs" in body.perRequest.byConnectionReuse.fresh,
+      "fresh perRequest should include socketConnectedToFirstDataMs");
+    assert.ok("firstDataToHttpRequestEventMs" in body.perRequest.byConnectionReuse.fresh,
+      "fresh perRequest should include firstDataToHttpRequestEventMs");
+    assert.ok("httpRequestEventToHandlerStartMs" in body.perRequest.byConnectionReuse.fresh,
+      "fresh perRequest should include httpRequestEventToHandlerStartMs (#1125)");
+    assert.ok("socketAgeBeforeHandlerMs" in body.perRequest.byConnectionReuse.reused);
+    assert.ok("socketIdleBeforeHttpRequestEventMs" in body.perRequest.byConnectionReuse.reused);
+    assert.ok("httpRequestEventToHandlerStartMs" in body.perRequest.byConnectionReuse.reused,
+      "reused perRequest should include httpRequestEventToHandlerStartMs");
+
+    // new aggregate per-request fields (#1107)
+    assert.ok("socketConnectedToFirstDataMs" in body.perRequest,
+      "/schedz perRequest should include socketConnectedToFirstDataMs");
+    assert.ok("firstDataToHttpRequestEventMs" in body.perRequest,
+      "/schedz perRequest should include firstDataToHttpRequestEventMs");
+
+    // operator gate
+    assert.ok(body.operatorGate, "/schedz should include operatorGate");
+    assert.equal(typeof body.operatorGate.bucket, "string");
+    assert.ok(["no-significant-stall", "reused-socket-idle-before-request-event", "reused-socket-waiting-before-handler", "client-pool-artifact", "node-request-event-delivery", "accepted-socket-waiting-before-handler", "accepted-socket-waiting-before-request-event", "accepted-socket-waiting-for-data", "accepted-socket-data-received-blocked"].includes(body.operatorGate.bucket));
+    assert.ok(["low", "medium", "high"].includes(body.operatorGate.confidence));
+    assert.ok(Array.isArray(body.operatorGate.reasons));
+    assert.ok(body.operatorGate.reasons.length >= 1);
+    assert.ok(body.operatorGate.evidence, "operatorGate should include evidence field");
+    assert.equal(typeof body.operatorGate.evidence.reusedSocketIdleP99Ms, "number");
+    assert.ok("freshSocketAcceptToReqP99Ms" in body.operatorGate.evidence, "operatorGate evidence should include freshSocketAcceptToReqP99Ms");
+    assert.ok("reusedSocketReqToHandlerP99Ms" in body.operatorGate.evidence, "operatorGate evidence should include reusedSocketReqToHandlerP99Ms");
+    assert.ok("freshHttpReqEventToHandlerP99Ms" in body.operatorGate.evidence,
+      "operatorGate evidence should include freshHttpReqEventToHandlerP99Ms (#1125)");
+
+    // flush-finish gap diagnostics
+    assert.ok(body.flushing, "/schedz should include flushing field");
+
+    // probe bursts (array, may be empty)
+    assert.ok(Array.isArray(body.probeBursts));
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /schedz returns 401 without x-a2a-edge-secret", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-secret",
+  });
+  try {
+    // /schedz should require edge secret (it is not a public route).
+    const noSecretRes = await fetch(`${server.baseUrl}/schedz`);
+    assert.equal(noSecretRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server surfaces persistence queue diagnostics on health, schedz, and dashboard", async () => {
+  const persistenceQueue: BrokerPersistenceQueueDiagnostics = {
+    kind: "broker.persistence.queue",
+    enabled: true,
+    mode: "worker_thread",
+    state: "saturated",
+    capacity: 4,
+    queued: 3,
+    active: 1,
+    inFlight: 4,
+    available: 0,
+    closing: false,
+    aborted: false,
+    lastErrorCode: "queue_saturated",
+    lastErrorAt: "2026-06-04T00:00:00.000Z",
+    lastErrorMessage: "broker persistence queue is saturated",
+  };
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    persistenceQueueDiagnostics: () => persistenceQueue,
+  });
+  try {
+    const headers = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    const health = await (await fetch(`${server.baseUrl}/health`)).json();
+    assert.deepEqual(health.persistenceQueue, persistenceQueue);
+
+    const schedz = await (await fetch(`${server.baseUrl}/schedz`, { headers })).json();
+    assert.deepEqual(schedz.persistenceQueue, persistenceQueue);
+
+    const dashboard = await (await fetch(`${server.baseUrl}/dashboard`, { headers })).json();
+    assert.deepEqual(dashboard.persistenceQueue, persistenceQueue);
+    assert.equal(dashboard.attention.highestSeverity, "warn");
+    assert.ok(
+      dashboard.attention.items.some((item: { code: string; count: number }) =>
+        item.code === "persistence-queue-saturated" && item.count === 4),
+      "dashboard attention should flag persistence queue saturation",
+    );
+
+    const livez = await (await fetch(`${server.baseUrl}/livez`)).json();
+    assert.equal(livez.persistenceQueue, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server wires worker-thread persistence queue through HTTP ACK and diagnostics", async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "server-worker-persist-"));
+  const sqliteFile = join(tmpDir, "state.sqlite");
+  await withEnv({ BROKER_PERSISTENCE_QUEUE_WORKER_THREAD: "1" }, async () => {
+    const server = await startTestServer({
+      stateStore: undefined,
+      persistenceBackend: "sqlite",
+      sqliteFile,
+      sqliteLoadSource: "hot-tables",
+      edgeSecret: "test-edge-secret",
+      enforceRequesterIdentity: false,
+    });
+    try {
+      await registerTestWorker(server.baseUrl, "worker-thread-http", "operator", "test-edge-secret");
+
+      const health = await (await fetch(`${server.baseUrl}/health`)).json() as {
+        persistenceQueue: BrokerPersistenceQueueDiagnostics;
+      };
+      assert.equal(health.persistenceQueue.enabled, true);
+      assert.equal(health.persistenceQueue.mode, "worker_thread");
+      assert.equal(health.persistenceQueue.state, "healthy");
+      assert.equal(health.persistenceQueue.closing, false);
+
+      const reader = new SqliteBrokerStateStore(sqliteFile, { loadSource: "hot-tables" });
+      try {
+        assert.equal(reader.load().workers[0]?.nodeId, "worker-thread-http");
+      } finally {
+        reader.close();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+  rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("per-worker heartbeat phase telemetry stays bounded under worker churn", async () => {
+  const server = await startTestServer({
+    enforceRequesterIdentity: false,
+    rateLimitMaxRequests: 10_000,
+    workerRateLimitMaxRequests: 10_000,
+  });
+  try {
+    for (let i = 0; i < 501; i++) {
+      const workerId = `churn-worker-${String(i).padStart(4, "0")}`;
+      const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          nodeId: workerId,
+          role: "analyst",
+          capabilities: { canAnalyze: true },
+        }),
+      });
+      assert.equal(registerRes.status, 201);
+      const heartbeatRes = await fetch(`${server.baseUrl}/workers/${workerId}/heartbeat`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({}),
+      });
+      assert.equal(heartbeatRes.status, 200);
+    }
+
+    const res = await fetch(`${server.baseUrl}/schedz`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.perWorkerHeartbeatPhases, "/schedz should include perWorkerHeartbeatPhases");
+    assert.ok(Object.keys(body.perWorkerHeartbeatPhases).length <= 500);
+    assert.ok(body.workerHeartbeatPhases, "/schedz should retain aggregate workerHeartbeatPhases");
+  } finally {
+    await server.close();
+  }
+});
+
+test("server tracks connection reuse and flush-finish gap on /schedz", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+  });
+  try {
+    const edgeHeaders = { "x-a2a-edge-secret": "test-edge-secret" };
+
+    // Issue requests on separate connections (force new sockets).
+    const separateConnections = [
+      `${server.baseUrl}/livez`,
+      `${server.baseUrl}/livez`,
+    ];
+    for (const url of separateConnections) {
+      const res = await fetch(url);
+      assert.equal(res.status, 200);
+    }
+
+    // Reuse the same agent for a few requests to exercise keep-alive.
+    // Use node:http directly to pass a keepAlive agent (undici fetch types
+    // don't accept agent in RequestInit).
+    const http = await import("node:http");
+    const reusedAgent = new http.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 5000,
+    });
+    const baseUrlObj = new URL(server.baseUrl);
+    const reusedPort = Number(baseUrlObj.port);
+    for (let i = 0; i < 3; i++) {
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port: reusedPort,
+          path: "/livez",
+          agent: reusedAgent,
+          method: "GET",
+          headers: edgeHeaders,
+        }, (resp) => {
+          let data = "";
+          resp.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+          resp.on("end", () => { resolve(); });
+        });
+        req.on("error", reject);
+        req.end();
+      });
+    }
+    reusedAgent.destroy();
+
+    // Immediate /livez to warm up the /schedz counters before snapshot.
+    await fetch(`${server.baseUrl}/livez`);
+
+    const res = await fetch(`${server.baseUrl}/schedz`, { headers: edgeHeaders });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+
+    // Connection tracking counters should be populated.
+    assert.equal(typeof body.connections.totalConnections, "number");
+    assert.ok(body.connections.totalConnections >= 1);
+    assert.equal(typeof body.connections.activeConnections, "number");
+    assert.equal(typeof body.connections.peakConnections, "number");
+    assert.ok(body.connections.peakConnections >= 1);
+    assert.ok(body.connections.httpServer, "HTTP server connection settings should be present");
+    assert.equal(typeof body.connections.httpServer.keepAliveTimeoutMs, "number");
+    // The default keepAliveTimeout should be well above the Node default (5s) to
+    // support worker heartbeat connection reuse across the 30s heartbeat interval.
+    assert.ok(
+      body.connections.httpServer.keepAliveTimeoutMs >= 60000,
+      `keepAliveTimeout (${body.connections.httpServer.keepAliveTimeoutMs}ms) should exceed heartbeat interval`,
+    );
+
+    // Per-request: at minimum new connections tracked.
+    assert.equal(typeof body.perRequest.onNewConnection, "number");
+    assert.ok(body.perRequest.onNewConnection >= 3, "at least 3 requests on new connections");
+    // The reused-agent requests should show at least one reused connection.
+    assert.ok(body.perRequest.onReusedConnection >= 1, "at least 1 request on reused connection");
+
+    // Flush-finish gap: present in schema.
+    assert.ok(body.flushing, "flushing field present");
+
+    // First-request latency timing window should have some samples.
+    if (body.perRequest.firstRequestLatencyMs !== null) {
+      assert.equal(typeof body.perRequest.firstRequestLatencyMs.count, "number");
+      assert.ok(body.perRequest.firstRequestLatencyMs.count >= 1);
+    }
+    // handlerMs should be present (C7: handler body execution time, excludes response flushing).
+    assert.ok(body.perRequest.handlerMs, "handlerMs should be present in perRequest");
+    assert.equal(typeof body.perRequest.handlerMs.count, "number");
+    assert.ok(body.perRequest.handlerMs.count >= 1);
+    assert.ok(body.perRequest.socketAgeBeforeHandlerMs, "socket age timing should be present");
+    assert.equal(typeof body.perRequest.socketAgeBeforeHandlerMs.count, "number");
+    assert.ok(body.perRequest.socketAgeBeforeHandlerMs.count >= 1);
+    assert.ok(body.perRequest.socketIdleBeforeRequestMs, "keep-alive idle timing should be present");
+    assert.equal(typeof body.perRequest.socketIdleBeforeRequestMs.count, "number");
+
+    // Connection-reuse breakdown windows should be populated
+    assert.ok(body.perRequest.byConnectionReuse, "connection reuse breakdown should be present");
+    assert.ok(body.perRequest.byConnectionReuse.fresh.socketAgeBeforeHandlerMs, "fresh socket age window present");
+    assert.ok(body.perRequest.byConnectionReuse.reused.socketIdleBeforeHttpRequestEventMs !== undefined,
+      "reused socket idle window present");
+
+    // Operator gate should classify as no-significant-stall under light local load
+    assert.ok(body.operatorGate, "operatorGate should be present");
+    assert.match(body.operatorGate.bucket, /^no-significant-stall|accepted-socket-waiting-before-handler|accepted-socket-waiting-before-request-event|accepted-socket-waiting-for-data|accepted-socket-data-received-blocked|reused-socket-waiting-before-handler$/,
+      "light load should not trigger stall bucket");
+    assert.ok(body.operatorGate.reasons.length >= 1);
+    assert.ok(body.operatorGate.evidence.reusedSocketIdleP99Ms !== undefined);
+    assert.ok("freshSocketAcceptToReqP99Ms" in body.operatorGate.evidence);
+    assert.ok("reusedSocketReqToHandlerP99Ms" in body.operatorGate.evidence);
+    assert.ok("freshHttpReqEventToHandlerP99Ms" in body.operatorGate.evidence);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server keepAliveTimeout is configurable via options and env", async () => {
+  // Option override
+  const optServer = await startTestServer({ keepAliveTimeoutMs: 30000 });
+  try {
+    const res = await fetch(`${optServer.baseUrl}/schedz`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.connections.httpServer.keepAliveTimeoutMs, 30000);
+    assert.equal(body.connections.httpServer.socketReusePolicy, "keep-alive (reuse enabled)");
+
+    const address = optServer.runtime.server.address();
+    const port = address && typeof address === "object" ? address.port : 0;
+    // Verify keepAliveTimeout takes effect: reuse connection with keep-alive agent.
+    const http = await import("node:http");
+    const agent = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000 });
+    for (let i = 0; i < 2; i++) {
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request({
+          hostname: "127.0.0.1",
+          port,
+          path: "/livez",
+          agent,
+          method: "GET",
+        }, (resp) => {
+          let data = "";
+          resp.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+          resp.on("end", () => resolve());
+        });
+        req.on("error", reject);
+        req.end();
+      });
+    }
+    agent.destroy();
+
+    const res2 = await fetch(`${optServer.baseUrl}/schedz`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(res2.status, 200);
+    const body2 = await res2.json();
+    // The second request on the same agent connection should register as reused.
+    assert.ok(body2.perRequest.onReusedConnection >= 1);
+  } finally {
+    await optServer.close();
+  }
 });
 
 test("server exposes durable broker identity on health and worker registration", async () => {
@@ -364,6 +1343,217 @@ test("server exposes durable broker identity on health and worker registration",
       await server.close();
     }
   });
+});
+
+test("server rejects task creation when brokerOfRecord targets another broker", async () => {
+  const server = await startTestServer({ brokerId: "gwakga" });
+  try {
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "soonwook",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        nodeId: "soonwook",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: true,
+          canPromoteLive: false,
+        },
+      }),
+    });
+    assert.equal(registerRes.status, 201);
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "wrong-broker-of-record-task",
+        intent: "validate_change",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "soonwook", kind: "node", role: "analyst" },
+        assignedWorkerId: "soonwook",
+        brokerOfRecord: "seoseo",
+        teamId: "team2",
+        message: "should fail at creation before it can become queued",
+      }),
+    });
+    assert.equal(createRes.status, 403);
+    assert.deepEqual(await createRes.json(), {
+      error: {
+        code: "policy_denied",
+        message: "create cannot set brokerOfRecord seoseo on broker gwakga",
+      },
+    });
+
+    const listRes = await fetch(`${server.baseUrl}/tasks?detail=full`);
+    assert.equal(listRes.status, 200);
+    const listBody = await listRes.json() as { items: Array<{ id: string }> };
+    assert.deepEqual(listBody.items.map((task) => task.id), []);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server accepts local brokerOfRecord with parent-owned cross-broker Terminal Brief metadata", async () => {
+  const server = await startTestServer({ brokerId: "gwakga", teamId: "team2" });
+  try {
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "jingun",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        nodeId: "jingun",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: true,
+          canPromoteLive: false,
+        },
+      }),
+    });
+    assert.equal(registerRes.status, 201);
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "seoseo-led-team2-parent-owned-task",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        brokerOfRecord: "gwakga",
+        teamId: "team2",
+        message: "source-only Team2 handoff with Seoseo parent ownership",
+        payload: {
+          parentRoundId: "terminal-brief-contract-round",
+          parentRoundTotal: 7,
+          parentRoundOrder: 6,
+          parentBrokerId: "seoseo",
+          brokerOfRecordId: "seoseo",
+          crossBrokerHandoff: {
+            parentRoundId: "terminal-brief-contract-round",
+            originBrokerId: "seoseo",
+            handoffBrokerId: "gwakga",
+            childWorkerId: "jingun",
+          },
+          notificationOwnership: {
+            owner: "parent",
+            ownerBrokerId: "seoseo",
+            scope: "parent-broker-only",
+            providerSendPermittedByProjection: false,
+            terminalAckPermittedByProjection: false,
+          },
+          terminalBrief: {
+            parentOwnedTerminalBrief: true,
+            notificationOwnership: {
+              owner: "parent",
+              ownerBrokerId: "seoseo",
+              scope: "parent-broker-only",
+            },
+          },
+        },
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json() as {
+      brokerOfRecord?: string;
+      teamId?: string;
+      payload?: Record<string, unknown>;
+    };
+    assert.equal(created.brokerOfRecord, "gwakga", "top-level brokerOfRecord is the local accepting broker");
+    assert.equal(created.teamId, "team2");
+    assert.equal(created.payload?.["brokerOfRecordId"], "seoseo", "parent/finalizer owner remains payload metadata");
+    assert.deepEqual(created.payload?.["crossBrokerHandoff"], {
+      parentRoundId: "terminal-brief-contract-round",
+      originBrokerId: "seoseo",
+      handoffBrokerId: "gwakga",
+      childWorkerId: "jingun",
+    });
+    assert.deepEqual(created.payload?.["notificationOwnership"], {
+      owner: "parent",
+      ownerBrokerId: "seoseo",
+      scope: "parent-broker-only",
+      providerSendPermittedByProjection: false,
+      terminalAckPermittedByProjection: false,
+      reason: "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test("server rejects parent-owned handoff metadata for a different accepting broker", async () => {
+  const server = await startTestServer({ brokerId: "gwakga", teamId: "team2" });
+  try {
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "jingun",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        nodeId: "jingun",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: true,
+          canPromoteLive: false,
+        },
+      }),
+    });
+    assert.equal(registerRes.status, 201);
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "wrong-handoff-broker-parent-owned-task",
+        intent: "verify",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        brokerOfRecord: "gwakga",
+        teamId: "team2",
+        message: "contradictory handoff metadata should fail closed",
+        payload: {
+          parentRoundId: "terminal-brief-contract-round",
+          parentRoundTotal: 7,
+          parentRoundOrder: 6,
+          parentBrokerId: "seoseo",
+          crossBrokerHandoff: {
+            parentRoundId: "terminal-brief-contract-round",
+            originBrokerId: "seoseo",
+            handoffBrokerId: "seoseo",
+          },
+        },
+      }),
+    });
+    assert.equal(createRes.status, 400);
+    const body = await createRes.json() as { error?: { code?: string; message?: string } };
+    assert.equal(body.error?.code, "bad_request");
+    assert.match(body.error?.message ?? "", /handoffBrokerId/);
+    assert.match(body.error?.message ?? "", /accepting broker/);
+  } finally {
+    await server.close();
+  }
 });
 
 test("server uses unknown build revision fallback instead of null", async () => {
@@ -427,6 +1617,89 @@ test("server rejects invalid requester identity headers with 400", async () => {
     assert.equal(missingIdRes.status, 400);
     const missingIdBody = await missingIdRes.json();
     assert.match(missingIdBody.error.message, /x-a2a-requester-id is required/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server maps GitHub completion evidence BrokerErrors to client errors", async () => {
+  const server = await startTestServer();
+  try {
+    server.runtime.broker.registerWorker({
+      nodeId: "worker-github-http",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: true,
+        canPromoteLive: false,
+        workspaceIds: ["repo"],
+        environments: ["research"],
+      },
+    });
+    const task = server.runtime.broker.createTask({
+      id: "task-github-http-evidence-missing",
+      intent: "propose_patch",
+      requester: { id: "operator-a", kind: "user", role: "operator" },
+      target: { id: "worker-github-http", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-github-http",
+      message: "test GitHub completion evidence mapping",
+      taskOrigin: "github",
+      payload: {
+        mode: "github-propose-patch",
+        repo: "jinwon-int/a2a-broker",
+        issueNumber: 1032,
+        issueUrl: "https://github.com/jinwon-int/a2a-broker/issues/1032",
+      },
+    });
+    server.runtime.broker.claimTask(task.id, "worker-github-http");
+    server.runtime.broker.startTask(task.id, "worker-github-http");
+
+    const res = await fetch(`${server.baseUrl}/tasks/${task.id}/complete`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "worker-github-http",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        workerId: "worker-github-http",
+        result: { summary: "done without public GitHub evidence" },
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.deepEqual(body.error, {
+      code: "github_completion_evidence_missing",
+      message: "github-origin propose_patch tasks must return PR, Done-comment, or Block-comment evidence before they can succeed",
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test("server maps retryable persistence queue BrokerErrors to 503", async () => {
+  class QueueSaturatedBroker extends InMemoryA2ABroker {
+    override heartbeatWorker(): never {
+      throw new BrokerError("queue_saturated", "broker persistence queue is saturated");
+    }
+  }
+
+  const server = await startTestServer({
+    broker: new QueueSaturatedBroker(createInMemoryStateStore(), emptySnapshot()),
+    enforceRequesterIdentity: false,
+  });
+  try {
+    const res = await fetch(`${server.baseUrl}/workers/worker-queue/heartbeat`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ lastSeenAt: "2026-06-04T00:00:00.000Z" }),
+    });
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.deepEqual(body.error, {
+      code: "queue_saturated",
+      message: "broker persistence queue is saturated",
+    });
   } finally {
     await server.close();
   }
@@ -620,6 +1893,33 @@ test("server surfaces invalid worker hot row diagnostics on health and dashboard
           lastSeenAt: "2026-04-27T00:00:00.000Z",
         }),
       );
+      db.prepare(
+        `INSERT INTO broker_tasks
+          (id, status, intent, target_node_id, assigned_worker_id, task_origin, updated_at, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "task-invalid",
+        "queued",
+        "verify",
+        "dungae",
+        "dungae",
+        "operator",
+        "2026-04-27T00:00:00.000Z",
+        JSON.stringify({
+          id: "task-invalid",
+          intent: "verify",
+          requester: { id: "seoseo", kind: "node", role: "operator" },
+          target: { id: "dungae", kind: "node", role: "analyst" },
+          workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "dungae" },
+          status: "queued",
+          targetNodeId: "dungae",
+          assignedWorkerId: "dungae",
+          payload: {},
+          createdAt: "2026-04-27T00:00:00.000Z",
+          updatedAt: "2026-04-27T00:00:00.000Z",
+          taskOrigin: "operator",
+        }),
+      );
     } finally {
       db.close();
     }
@@ -631,12 +1931,20 @@ test("server surfaces invalid worker hot row diagnostics on health and dashboard
       throw new Error("failed to bind test server");
     }
 
-    const expectedInvalidRows = [{
-      table: "broker_workers",
-      primaryKey: "worker-invalid",
-      schemaError: "Invalid input: expected object, received undefined",
-      count: 1,
-    }];
+    const expectedInvalidRows = [
+      {
+        table: "broker_tasks",
+        primaryKey: "task-invalid",
+        schemaError: "Invalid input: expected string, received undefined",
+        count: 1,
+      },
+      {
+        table: "broker_workers",
+        primaryKey: "worker-invalid",
+        schemaError: "Invalid input: expected object, received undefined",
+        count: 1,
+      },
+    ];
     const health = await (await fetch(`http://127.0.0.1:${address.port}/health`)).json();
     assert.deepEqual(health.persistence.hotEntityDiagnostics.invalidRows, expectedInvalidRows);
 
@@ -696,16 +2004,117 @@ test("server reports SQLite persistence metadata when SQLite backend is enabled"
       supportedCount: 10,
       totalCount: 10,
     });
+    assert.deepEqual(health.persistence.hotTableRuntimeLoadLimits, {
+      terminalTasks: 2000,
+      auditEvents: 5000,
+      terminalOutboxEvents: 1000,
+    });
+    assert.deepEqual(health.persistence.hotTableLoadMetrics.tables["broker_tasks"].runtimeLoad, {
+      limit: 2000,
+      loadedCount: 0,
+      skippedCount: 0,
+      activeCount: 0,
+      terminalCount: 0,
+    });
     assert.deepEqual(health.auditDiagnostics, {
       total: 0,
+      heartbeat: 0,
+      heartbeatRatio: 0,
       workerHeartbeat: 0,
       workerHeartbeatRatio: 0,
+      taskHeartbeat: 0,
+      taskHeartbeatRatio: 0,
       recentWindowMs: 600_000,
       recentTotal: 0,
+      recentHeartbeat: 0,
+      recentHeartbeatRatio: 0,
       recentWorkerHeartbeat: 0,
       recentWorkerHeartbeatRatio: 0,
+      recentTaskHeartbeat: 0,
+      recentTaskHeartbeatRatio: 0,
       warnings: [],
     });
+  } finally {
+    runtime.stopStaleReaper();
+    await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health p99 stays under 500ms with SQLite cache over 50 requests", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-health-p99-"));
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    stateFile: join(dir, "state.json"),
+    sqliteFile: join(dir, "state.sqlite"),
+    persistenceBackend: "sqlite",
+    staleReaperEnabled: false,
+  });
+  try {
+    // Pre-seed a small realistic workload so COUNT / mirror status paths are exercised.
+    for (let i = 0; i < 20; i++) {
+      runtime.broker.registerWorker({
+        nodeId: `worker-p99-${i}`,
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: false,
+          canPromoteLive: false,
+          workspaceIds: [],
+          environments: [],
+        },
+      });
+      runtime.broker.createTask({
+        intent: "analyze",
+        requester: { id: `req-${i}`, kind: "node", role: "hub" },
+        target: { id: `worker-p99-${i}`, kind: "node", role: "analyst" },
+      });
+    }
+
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to bind test server");
+    }
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const latencies: number[] = [];
+    let cachedResponses = 0;
+    let uncachedResponses = 0;
+
+    for (let i = 0; i < 50; i++) {
+      const start = performance.now();
+      const res = await fetch(`${baseUrl}/health`);
+      const elapsed = performance.now() - start;
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      latencies.push(elapsed);
+      assert.equal(body.ok, true);
+      assert.notEqual(body.service, undefined);
+      if (body.timing && body.timing.fromCache) {
+        cachedResponses++;
+      } else {
+        uncachedResponses++;
+      }
+    }
+
+    latencies.sort((a, b) => a - b);
+    const p50 = latencies[Math.floor(latencies.length * 0.5)];
+    const p95 = latencies[Math.floor(latencies.length * 0.95)];
+    const p99 = latencies[Math.floor(latencies.length * 0.99)];
+
+    // The first request is always uncached (cold); verify cache kicks in.
+    assert.ok(cachedResponses > 0, `expected some cached responses, got cached=${cachedResponses} uncached=${uncachedResponses}`);
+
+    // Diagnostics cache should keep p99 comfortably under 500ms.
+    assert.ok(
+      p99 < 500,
+      `p99 latency ${p99.toFixed(1)}ms exceeds 500ms threshold (p50=${p50.toFixed(1)}ms, p95=${p95.toFixed(1)}ms)`,
+    );
   } finally {
     runtime.stopStaleReaper();
     await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
@@ -783,6 +2192,19 @@ test("server reads /tasks from SQLite hot tables for supported filters", async (
         updatedAt: "2026-04-27T00:00:00.000Z",
         taskOrigin: "api",
       },
+      {
+        id: "task-from-sqlite-2",
+        intent: "chat",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        assignedWorkerId: "worker-a",
+        payload: { source: "sqlite-hot-table" },
+        status: "queued",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-26T00:00:00.000Z",
+        taskOrigin: "api",
+      },
     ],
   };
   store.save(snapshot);
@@ -806,11 +2228,104 @@ test("server reads /tasks from SQLite hot tables for supported filters", async (
     }
 
     const res = await fetch(
-      `http://127.0.0.1:${address.port}/tasks?detail=full&status=queued&assignedWorkerId=worker-a&targetNodeId=worker-a&intent=chat&taskOrigin=api`,
+      `http://127.0.0.1:${address.port}/tasks?detail=full&status=queued&assignedWorkerId=worker-a&targetNodeId=worker-a&intent=chat&taskOrigin=api&limit=1`,
     );
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body.items, snapshot.tasks);
+    assert.equal(body.limit, 1);
+    assert.deepEqual(body.items, [snapshot.tasks[0]]);
+  } finally {
+    runtime.stopStaleReaper();
+    await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server projects default /tasks summaries from SQLite without loading full task payloads", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-task-items-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const snapshot: BrokerSnapshot = {
+    ...emptySnapshot(),
+    tasks: [
+      {
+        id: "task-summary-from-sqlite",
+        intent: "chat",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        assignedWorkerId: "worker-a",
+        payload: { rawLog: "x".repeat(20_000) },
+        result: { summary: "short summary", artifactIds: ["artifact-1"] },
+        status: "succeeded",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:02:00.000Z",
+        completedAt: "2026-04-27T00:02:00.000Z",
+        taskOrigin: "api",
+      },
+      {
+        id: "task-summary-from-sqlite-2",
+        intent: "chat",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        assignedWorkerId: "worker-a",
+        payload: { rawLog: "y".repeat(20_000) },
+        status: "succeeded",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-26T00:00:00.000Z",
+        taskOrigin: "api",
+      },
+    ],
+  };
+  store.save(snapshot);
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    stateStore: store,
+    enforceRequesterIdentity: false,
+    staleReaperEnabled: false,
+  });
+  try {
+    runtime.broker.listTasks = (() => {
+      throw new Error("/tasks summaries should use SQLite list-item projection");
+    }) as typeof runtime.broker.listTasks;
+    store.readHotTasks = (() => {
+      throw new Error("/tasks summaries should not read full SQLite task payloads");
+    }) as typeof store.readHotTasks;
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to bind test server");
+    }
+
+    const res = await fetch(
+      `http://127.0.0.1:${address.port}/tasks?status=succeeded&assignedWorkerId=worker-a&targetNodeId=worker-a&intent=chat&taskOrigin=api&limit=1`,
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.limit, 1);
+    assert.equal(body.count, 1);
+    assert.deepEqual(body.items, [{
+      id: "task-summary-from-sqlite",
+      intent: "chat",
+      status: "succeeded",
+      targetNodeId: "worker-a",
+      requester: { id: "requester", kind: "session", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      taskOrigin: "api",
+      artifactIds: ["artifact-1"],
+      resultSummary: "short summary",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:02:00.000Z",
+      completedAt: "2026-04-27T00:02:00.000Z",
+    }]);
+    assert.equal("payload" in body.items[0], false);
+    assert.equal("result" in body.items[0], false);
+    assert.ok(JSON.stringify(body).length < 2_000);
   } finally {
     runtime.stopStaleReaper();
     await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
@@ -891,6 +2406,42 @@ test("GET /tasks returns lightweight task summaries and keeps full detail opt-in
   }
 });
 
+test("GET /tasks applies explicit bounded limits", async () => {
+  const { baseUrl, close } = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    await registerTestWorker(baseUrl, "worker-a", "analyst");
+    for (let i = 0; i < 3; i += 1) {
+      const createRes = await fetch(`${baseUrl}/tasks`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          id: `task-list-bound-${i}`,
+          requester: { id: "requester", kind: "session", role: "hub" },
+          target: { id: "worker-a", kind: "node", role: "analyst" },
+          targetNodeId: "worker-a",
+          intent: "chat",
+          message: `bounded task ${i}`,
+        }),
+      });
+      assert.equal(createRes.status, 201);
+    }
+
+    const limitedBody = await (await fetch(`${baseUrl}/tasks?limit=2`)).json();
+    assert.equal(limitedBody.count, 2);
+    assert.equal(limitedBody.limit, 2);
+    assert.equal(limitedBody.items.length, 2);
+
+    const cappedBody = await (await fetch(`${baseUrl}/tasks?limit=9999`)).json();
+    assert.equal(cappedBody.count, 3);
+    assert.equal(cappedBody.limit, 500);
+
+    const badLimitRes = await fetch(`${baseUrl}/tasks?limit=1.5`);
+    assert.equal(badLimitRes.status, 400);
+  } finally {
+    await close();
+  }
+});
+
 test("server can hydrate broker runtime from SQLite hot-table load source", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-hot-load-"));
   const sqliteFile = join(dir, "state.sqlite");
@@ -930,6 +2481,43 @@ test("server can hydrate broker runtime from SQLite hot-table load source", asyn
     assert.equal(loadedTask?.payload.source, "sqlite-hot-load-source");
   } finally {
     runtime.stopStaleReaper();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server exposes broker cleanup dry-run plan for SQLite hot tables", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-cleanup-plan-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const oldTask: BrokerSnapshot["tasks"][number] = {
+    id: "cleanup-api-old-task",
+    intent: "chat",
+    requester: { id: "requester", kind: "session", role: "hub" },
+    target: { id: "worker-cleanup", kind: "node", role: "analyst" },
+    targetNodeId: "worker-cleanup",
+    assignedWorkerId: "worker-cleanup",
+    payload: {},
+    status: "failed",
+    createdAt: "2026-04-27T00:00:00.000Z",
+    updatedAt: "2026-04-27T00:00:00.000Z",
+    completedAt: "2026-04-27T00:00:00.000Z",
+    taskOrigin: "api",
+  };
+  store.save({ ...emptySnapshot(), tasks: [oldTask] });
+  const server = await startTestServer({ stateStore: store });
+  try {
+    const res = await fetch(
+      `${server.baseUrl}/operator/cleanup/plan?now_ms=${Date.parse("2026-04-27T01:00:00.000Z")}&task_retention_ms=1800000&max_terminal_tasks=0`,
+      { headers: { "x-a2a-requester-id": "operator-a", "x-a2a-requester-role": "operator" } },
+    );
+    assert.equal(res.status, 200);
+    const plan = await res.json();
+    assert.equal(plan.kind, "broker.cleanup.plan");
+    assert.equal(plan.mode, "dry-run");
+    assert.deepEqual(plan.tables.find((table: { table: string }) => table.table === "broker_tasks").pruneIds, [oldTask.id]);
+    assert.equal(store.readHotTasks().length, 1, "dry-run API must not prune rows");
+  } finally {
+    await server.close();
+    store.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -1316,7 +2904,13 @@ test("server reads /workers from SQLite hot tables when SQLite store is active",
     const res = await fetch(`http://127.0.0.1:${address.port}/workers?role=analyst&environment=research&workspaceId=test`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body.items, [{ ...snapshot.workers[0], status: "online" }]);
+    assert.deepEqual(body.items, [{
+      ...snapshot.workers[0],
+      status: "online",
+      workerPlane: "online",
+      managementPlane: "unknown",
+      updateEligible: true,
+    }]);
   } finally {
     runtime.stopStaleReaper();
     await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
@@ -1372,10 +2966,160 @@ test("server reads /workers/:id from SQLite hot tables when SQLite store is acti
     const res = await fetch(`http://127.0.0.1:${address.port}/workers/worker-detail-from-sqlite`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body, { ...snapshot.workers[0], status: "online" });
+    assert.deepEqual(body, {
+      ...snapshot.workers[0],
+      status: "online",
+      workerPlane: "online",
+      managementPlane: "unknown",
+      updateEligible: true,
+    });
   } finally {
     runtime.stopStaleReaper();
     await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("SQLite worker heartbeat defaults unchanged liveness persistence off", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-worker-heartbeat-default-off-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const server = await startTestServer({
+    stateStore: store,
+    persistenceBackend: "sqlite",
+    edgeSecret: "test-edge-secret",
+  });
+  const nodeId = "worker-heartbeat-default-off";
+
+  try {
+    assert.equal(Number.isFinite(server.runtime.config.workerHeartbeatPersistIntervalMs), false);
+    await registerTestWorker(server.baseUrl, nodeId, "analyst", "test-edge-secret");
+
+    const beforeRes = await fetch(`${server.baseUrl}/workers/${nodeId}`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(beforeRes.status, 200);
+    const before = await beforeRes.json() as WorkerRegistrationResponse;
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const heartbeatRes = await fetch(`${server.baseUrl}/workers/${nodeId}/heartbeat`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": nodeId,
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({}),
+    });
+    assert.equal(heartbeatRes.status, 200);
+    const heartbeat = await heartbeatRes.json() as WorkerRegistrationResponse;
+    assert.notEqual(heartbeat.lastSeenAt, before.lastSeenAt);
+
+    const detailRes = await fetch(`${server.baseUrl}/workers/${nodeId}`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(detailRes.status, 200);
+    const detail = await detailRes.json() as WorkerRegistrationResponse;
+    assert.equal(detail.status, "online");
+    assert.equal(
+      detail.lastSeenAt,
+      before.lastSeenAt,
+      "unchanged heartbeat should not synchronously rewrite SQLite read-path liveness by default",
+    );
+  } finally {
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("SQLite worker heartbeat can explicitly persist into worker read paths", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-worker-heartbeat-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const server = await startTestServer({
+    stateStore: store,
+    persistenceBackend: "sqlite",
+    edgeSecret: "test-edge-secret",
+    workerHeartbeatPersistIntervalMs: 0,
+  });
+  const nodeId = "worker-heartbeat-read-path";
+
+  try {
+    assert.equal(server.runtime.config.workerHeartbeatPersistIntervalMs, 0);
+    await registerTestWorker(server.baseUrl, nodeId, "analyst", "test-edge-secret");
+
+    const beforeRes = await fetch(`${server.baseUrl}/workers/${nodeId}`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(beforeRes.status, 200);
+    const before = await beforeRes.json() as WorkerRegistrationResponse;
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const heartbeatRes = await fetch(`${server.baseUrl}/workers/${nodeId}/heartbeat`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": nodeId,
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({}),
+    });
+    assert.equal(heartbeatRes.status, 200);
+    const heartbeat = await heartbeatRes.json() as WorkerRegistrationResponse;
+    assert.notEqual(heartbeat.lastSeenAt, before.lastSeenAt);
+
+    const detailRes = await fetch(`${server.baseUrl}/workers/${nodeId}`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(detailRes.status, 200);
+    const detail = await detailRes.json() as WorkerRegistrationResponse;
+    assert.equal(detail.status, "online");
+    assert.equal(detail.lastSeenAt, heartbeat.lastSeenAt);
+
+    const listRes = await fetch(`${server.baseUrl}/workers`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(listRes.status, 200);
+    const list = await listRes.json() as { items: WorkerRegistrationResponse[] };
+    const listed = list.items.find((worker) => worker.nodeId === nodeId);
+    assert.equal(listed?.status, "online");
+    assert.equal(listed?.lastSeenAt, heartbeat.lastSeenAt);
+  } finally {
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server worker heartbeat auth path uses cached workers before hot-table reads", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-worker-heartbeat-auth-cache-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const server = await startTestServer({
+    stateStore: store,
+    persistenceBackend: "sqlite",
+    edgeSecret: "test-edge-secret",
+  });
+  const nodeId = "worker-heartbeat-auth-cache";
+
+  try {
+    await registerTestWorker(server.baseUrl, nodeId, "analyst", "test-edge-secret");
+    server.runtime.broker.getWorker = (() => {
+      throw new Error("cached heartbeat auth path should not call repository-backed getWorker");
+    }) as typeof server.runtime.broker.getWorker;
+
+    const heartbeatRes = await fetch(`${server.baseUrl}/workers/${nodeId}/heartbeat`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": nodeId,
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({}),
+    });
+
+    assert.equal(heartbeatRes.status, 200);
+  } finally {
+    await server.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2242,6 +3986,9 @@ test("server requires x-a2a-edge-secret on non-health routes when configured", a
     const healthRes = await fetch(`${server.baseUrl}/health`);
     assert.equal(healthRes.status, 200);
 
+    const livezRes = await fetch(`${server.baseUrl}/livez`);
+    assert.equal(livezRes.status, 200);
+
     const agentCardRes = await fetch(`${server.baseUrl}/.well-known/agent-card.json`);
     assert.equal(agentCardRes.status, 200);
 
@@ -2755,6 +4502,19 @@ test("GET /dashboard returns aggregated summary without authentication", async (
     assert.ok(typeof dashboard.requestPressure === "object");
     assert.ok(typeof dashboard.requestPressure.general === "object");
     assert.ok(typeof dashboard.requestPressure.worker === "object");
+    assert.deepEqual(dashboard.persistenceQueue, {
+      kind: "broker.persistence.queue",
+      enabled: false,
+      mode: "inline",
+      state: "disabled",
+      capacity: null,
+      queued: 0,
+      active: 0,
+      inFlight: 0,
+      available: null,
+      closing: false,
+      aborted: false,
+    });
 
     // Empty state defaults
     assert.equal(dashboard.queue.total, 0);
@@ -3503,7 +5263,7 @@ async function readSseEventsUntil(
 }
 
 test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact records", async () => {
-  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", rateLimitMaxRequests: 20 });
   try {
     await registerTestWorker(server.baseUrl, "worker-a", "analyst", "test-edge-secret");
 
@@ -3542,7 +5302,7 @@ test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact recor
       body: JSON.stringify({
         workerId: "worker-a",
         result: {
-          summary: "Done from /work/repo/dist/server.test.js token=ghp_secretvalue",
+          summary: "Done from /work/repo/dist/server.test.js token=fake-token-placeholder",
           output: {
             doneUrl: "https://github.com/acme/example/issues/246#issuecomment-done",
             rawLog: "do-not-leak",
@@ -3594,7 +5354,7 @@ test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact recor
     });
     assert.equal(falseAckRes.status, 400);
 
-    for (const evidence of ["gateway_send_success", "provider_send_success"]) {
+    for (const evidence of ["gateway_send_success", "provider_send_success", "provider_accepted"]) {
       const sendSuccessAckRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-outbox/ack`, {
         method: "POST",
         headers: hubHeaders,
@@ -3650,6 +5410,25 @@ test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact recor
       note: "provider accepted only",
     });
 
+    const inboxRes = await fetch(`${server.baseUrl}/terminal-brief/inbox`, { headers: hubHeaders });
+    assert.equal(inboxRes.status, 200);
+    const inbox = await inboxRes.json();
+    assert.equal(inbox.kind, "a2a-broker.terminal-brief.inbox");
+    assert.equal(inbox.summary.rawUnacked, 1);
+    assert.equal(inbox.summary.actionableUnacked, 1);
+    assert.equal(inbox.summary.providerSendOnlyUnacked, 1);
+    assert.equal(inbox.query.events[0].taskId, task.id);
+    assert.equal(inbox.query.events[0].actionableUnacked, true);
+    assert.equal(inbox.query.events[0].ackIneligibleProjection, false);
+
+    const controlTowerRes = await fetch(`${server.baseUrl}/control-tower`, { headers: hubHeaders });
+    assert.equal(controlTowerRes.status, 200);
+    const controlTower = await controlTowerRes.json();
+    assert.equal(controlTower.kind, "a2a-broker.control-tower.snapshot");
+    assert.equal(controlTower.safety.readOnly, true);
+    assert.equal(controlTower.terminalBrief.actionableUnacked, 1);
+    assert.equal(controlTower.workerCapacity.items.length, 1);
+
     const acknowledgedAt = "2026-05-02T00:00:00.000Z";
     const ackRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-outbox/ack`, {
       method: "POST",
@@ -3681,11 +5460,146 @@ test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact recor
     assert.equal(ack.event.attempts, 1);
 
     const serialized = JSON.stringify({ list, ack });
-    for (const forbidden of ["do not leak", "rawPrompt", "rawLog", "do-not-leak", "ghp_secretvalue", "/work/repo"]) {
+    for (const forbidden of ["do not leak", "rawPrompt", "rawLog", "do-not-leak", "fake-token-placeholder", "/work/repo"]) {
       assert.ok(!serialized.includes(forbidden), forbidden);
     }
   } finally {
     await server.close();
+  }
+});
+
+test("terminal outbox receipt and ACK endpoints persist SQLite hot rows", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-outbox-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"), { loadSource: "hot-tables" });
+  const server = await startTestServer({ stateStore: store, edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-a", "analyst", "test-edge-secret");
+
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-a",
+      "x-a2a-requester-role": "analyst",
+    });
+
+    const createRes = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "worker-a",
+        message: "persist terminal outbox ACK",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const task = await createRes.json();
+
+    const claimRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/claim", {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-a" }),
+    });
+    assert.equal(claimRes.status, 200);
+
+    const completeRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/complete", {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-a", result: { summary: "done" } }),
+    });
+    assert.equal(completeRes.status, 200);
+
+    const [event] = store.readHotTerminalOutbox();
+    assert.ok(event, "terminal outbox event should be persisted before ACK");
+    assert.equal(event.ack, undefined);
+    let diagnostics = store.readHotTerminalOutboxDiagnostics();
+    assert.equal(diagnostics.total, 1);
+    assert.equal(diagnostics.acked, 0);
+    assert.equal(diagnostics.rawUnacked, 1);
+    assert.equal(diagnostics.unacked, 1);
+    assert.equal(diagnostics.ackEligibleUnacked, 1);
+    assert.equal(diagnostics.ackIneligibleUnacked, 0);
+    assert.equal(diagnostics.unackedRatio, 1);
+    assert.equal(diagnostics.oldestUnackedCreatedAt, event.createdAt);
+    assert.deepEqual(diagnostics.warnings, []);
+
+    const receiptAt = "2026-05-02T00:00:00.000Z";
+    const receiptRes = await fetch(server.baseUrl + "/a2a/tasks/terminal-outbox/receipt", {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        id: event.id,
+        receipt: { status: "provider_accepted", updatedAt: receiptAt, note: "provider accepted only" },
+      }),
+    });
+    assert.equal(receiptRes.status, 200);
+    let persisted = store.readHotTerminalOutbox()[0]!;
+    assert.deepEqual(persisted.receipt, {
+      status: "provider_accepted",
+      updatedAt: receiptAt,
+      note: "provider accepted only",
+    });
+    assert.equal(store.readHotTerminalOutboxDiagnostics().unacked, 1);
+
+    const acknowledgedAt = "2026-05-02T00:01:00.000Z";
+    const ackRes = await fetch(server.baseUrl + "/a2a/tasks/terminal-outbox/ack", {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        id: event.id,
+        receipt: {
+          evidence: "operator_visible",
+          acknowledgedAt,
+          receiptId: "operator-message-1",
+        },
+      }),
+    });
+    assert.equal(ackRes.status, 200);
+    persisted = store.readHotTerminalOutbox()[0]!;
+    assert.deepEqual(persisted.ack, {
+      status: "receipt_confirmed",
+      evidence: "operator_visible",
+      acknowledgedAt,
+      receiptId: "operator-message-1",
+    });
+    assert.equal(persisted.receipt.status, "operator_visible");
+    assert.equal(persisted.attempts, 1);
+    diagnostics = store.readHotTerminalOutboxDiagnostics();
+    assert.equal(diagnostics.total, 1);
+    assert.equal(diagnostics.acked, 1);
+    assert.equal(diagnostics.rawUnacked, 0);
+    assert.equal(diagnostics.unacked, 0);
+    assert.equal(diagnostics.ackEligibleUnacked, 0);
+    assert.equal(diagnostics.ackIneligibleUnacked, 0);
+    assert.equal(diagnostics.unackedRatio, 0);
+    assert.equal(diagnostics.oldestUnackedCreatedAt, null);
+    assert.equal(diagnostics.oldestUnackedAgeMs, null);
+    assert.deepEqual(diagnostics.warnings, []);
+
+    const duplicateAckRes = await fetch(server.baseUrl + "/a2a/tasks/terminal-outbox/ack", {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        id: event.id,
+        receipt: {
+          evidence: "operator_visible",
+          acknowledgedAt,
+          receiptId: "operator-message-1",
+        },
+      }),
+    });
+    assert.equal(duplicateAckRes.status, 200);
+    persisted = store.readHotTerminalOutbox()[0]!;
+    assert.equal(persisted.attempts, 1, "duplicate ACK should not create another terminal attempt");
+    assert.equal(store.readHotTerminalOutboxDiagnostics().acked, 1);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -3935,6 +5849,190 @@ test("SSE /a2a/tasks/terminal-events streams compact terminal events with replay
     });
     const replayed = await readSseEventsUntil(replayRes, (seen) => seen.some((e) => e.event === "task-terminal"));
     assert.equal(replayed.find((e) => e.event === "task-terminal")?.id, "1");
+  } finally {
+    await server.close();
+  }
+});
+
+test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing metadata", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", brokerId: "gwakga", teamId: "team2" });
+  try {
+    await registerTestWorker(server.baseUrl, "jingun", "analyst", "test-edge-secret");
+
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "seoseo",
+      "x-a2a-requester-role": "hub",
+    });
+    const taskRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        brokerOfRecord: "gwakga",
+        teamId: "team2",
+        payload: {
+          parentRoundId: "seoseo-led-round",
+          parentRoundTotal: 2,
+          parentRoundOrder: 2,
+          originBrokerId: "seoseo",
+          brokerOfRecordId: "seoseo",
+          operatorFacingOwner: "parent",
+          crossBrokerHandoff: {
+            parentRoundId: "seoseo-led-round",
+            originBrokerId: "seoseo",
+            handoffBrokerId: "gwakga",
+            originTaskId: "parent-task-1",
+            childWorkerId: "jingun",
+          },
+        },
+        message: "do not leak this prompt",
+      }),
+    });
+    assert.equal(taskRes.status, 201);
+    const task = await taskRes.json();
+
+    const sseRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-events`, {
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-role": "hub",
+        accept: "text/event-stream",
+      },
+    });
+    assert.equal(sseRes.status, 200);
+
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "jingun",
+      "x-a2a-requester-role": "analyst",
+    });
+    await fetch(`${server.baseUrl}/tasks/${task.id}/claim`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "jingun" }),
+    });
+    await fetch(`${server.baseUrl}/tasks/${task.id}/complete`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "jingun", result: { summary: "Team2 child completed" } }),
+    });
+
+    const events = await readSseEventsUntil(sseRes, (seen) => seen.some((e) => e.event === "task-terminal"));
+    const terminal = events.find((e) => e.event === "task-terminal");
+    assert.ok(terminal);
+    const payload = JSON.parse(terminal.data);
+    assert.equal(payload.taskId, task.id);
+    assert.equal(payload.parentRoundId, "seoseo-led-round");
+    assert.equal(payload.originBrokerId, "seoseo");
+    assert.equal(payload.brokerOfRecordId, "seoseo");
+    assert.equal(payload.parentRoundTotal, 2);
+    assert.equal(payload.parentRoundOrder, 2);
+    assert.equal(payload.parentRoundProgress, 2);
+    assert.deepEqual(payload.crossBrokerHandoff, {
+      parentRoundId: "seoseo-led-round",
+      originBrokerId: "seoseo",
+      handoffBrokerId: "gwakga",
+      originTaskId: "parent-task-1",
+      childWorkerId: "jingun",
+    });
+    assert.deepEqual(payload.notificationOwnership, {
+      ownerBrokerId: "seoseo",
+      scope: "parent-broker-only",
+      providerSendPermittedByProjection: false,
+      terminalAckPermittedByProjection: false,
+      reason: "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test("terminal outbox diagnostics excludes ACK-ineligible cross-broker projection rows from actionable backlog", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-outbox-projection-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"), { loadSource: "hot-tables" });
+  const server = await startTestServer({
+    stateStore: store,
+    edgeSecret: "test-edge-secret",
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "jingun", "analyst", "test-edge-secret");
+
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "seoseo",
+      "x-a2a-requester-role": "hub",
+    });
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "jingun",
+      "x-a2a-requester-role": "analyst",
+    });
+
+    const createRes = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "jingun", kind: "node", role: "analyst" },
+        assignedWorkerId: "jingun",
+        brokerOfRecord: "gwakga",
+        teamId: "team2",
+        payload: {
+          parentRoundId: "seoseo-led-round",
+          parentRoundTotal: 2,
+          parentRoundOrder: 2,
+          originBrokerId: "seoseo",
+          brokerOfRecordId: "seoseo",
+          operatorFacingOwner: "parent",
+          crossBrokerHandoff: {
+            parentRoundId: "seoseo-led-round",
+            originBrokerId: "seoseo",
+            handoffBrokerId: "gwakga",
+            originTaskId: "parent-task-1",
+            childWorkerId: "jingun",
+          },
+        },
+        message: "projection-only child complete",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const task = await createRes.json();
+
+    const claimRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/claim", {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "jingun" }),
+    });
+    assert.equal(claimRes.status, 200);
+
+    const completeRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/complete", {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "jingun", result: { summary: "Team2 child completed" } }),
+    });
+    assert.equal(completeRes.status, 200);
+
+    const [event] = store.readHotTerminalOutbox();
+    assert.ok(event);
+    assert.equal(event.payload.notificationOwnership?.terminalAckPermittedByProjection, false);
+    const diagnostics = store.readHotTerminalOutboxDiagnostics();
+    assert.equal(diagnostics.total, 1);
+    assert.equal(diagnostics.acked, 0);
+    assert.equal(diagnostics.rawUnacked, 1);
+    assert.equal(diagnostics.unacked, 0);
+    assert.equal(diagnostics.ackEligibleUnacked, 0);
+    assert.equal(diagnostics.ackIneligibleUnacked, 1);
+    assert.equal(diagnostics.unackedRatio, 0);
+    assert.equal(diagnostics.oldestUnackedCreatedAt, null);
+    assert.equal(diagnostics.oldestUnackedAgeMs, null);
+    assert.deepEqual(diagnostics.warnings, []);
   } finally {
     await server.close();
   }
@@ -4217,7 +6315,7 @@ test("SSE /a2a/operator/events streams snapshot with current worker heartbeat al
   }
 });
 
-test("SSE /a2a/operator/events replays missed alert opened and resolved events with Last-Event-ID", async () => {
+test("SSE /a2a/operator/events skips idle alert replay work and returns a fresh snapshot on subscribe", async () => {
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",
     workerOfflineAfterSec: 1,
@@ -4269,26 +6367,50 @@ test("SSE /a2a/operator/events replays missed alert opened and resolved events w
 
     const replayEvents = await readSseEventsUntil(
       replayRes,
-      (events) =>
-        events.some((event) => event.event === "operator-alert-opened") &&
-        events.some((event) => event.event === "operator-alert-resolved") &&
-        events.some((event) => event.event === "operator-snapshot"),
+      (events) => events.some((event) => event.event === "operator-snapshot"),
     );
     replayController.abort();
 
-    const opened = replayEvents.find((event) => event.event === "operator-alert-opened");
-    assert.ok(opened, "expected replayed operator-alert-opened event");
-    assert.equal(JSON.parse(opened!.data).alert.kind, "worker.heartbeat_missed");
-
-    const resolved = replayEvents.find((event) => event.event === "operator-alert-resolved");
-    assert.ok(resolved, "expected replayed operator-alert-resolved event");
-    assert.equal(JSON.parse(resolved!.data).alert.workerId, "worker-a");
-
+    assert.deepEqual(replayEvents.map((event) => event.event), ["operator-snapshot"]);
     const replaySnapshot = JSON.parse(replayEvents.find((event) => event.event === "operator-snapshot")!.data);
     assert.equal(
       replaySnapshot.alerts.alerts.some((alert: { kind: string }) => alert.kind === "worker.heartbeat_missed"),
       false,
     );
+  } finally {
+    await server.close();
+  }
+});
+
+test("SSE /a2a/operator/events does not buffer idle summary projections without subscribers", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-a", "analyst", "test-edge-secret");
+
+    const replayController = new AbortController();
+    const replayRes = await fetch(`${server.baseUrl}/a2a/operator/events`, {
+      signal: replayController.signal,
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "ops",
+        "x-a2a-requester-role": "operator",
+        accept: "text/event-stream",
+        "Last-Event-ID": "operator:0",
+      },
+    });
+    assert.equal(replayRes.status, 200);
+
+    const events = await readSseEventsUntil(
+      replayRes,
+      (seen) => seen.some((event) => event.event === "operator-snapshot"),
+    );
+    replayController.abort();
+
+    assert.deepEqual(events.map((event) => event.event), ["operator-snapshot"]);
+    const snapshot = JSON.parse(events[0]!.data);
+    assert.equal(snapshot.summary.workers.total, 1);
   } finally {
     await server.close();
   }
@@ -4600,6 +6722,470 @@ function buildTradingDialecticPayload(
     },
   };
 }
+
+function buildDecisionDialecticTaskFixture(
+  overrides: Partial<DecisionDialecticTaskV1> = {},
+): DecisionDialecticTaskV1 {
+  return {
+    kind: DECISION_DIALECTIC_KIND,
+    version: DECISION_DIALECTIC_VERSION,
+    taskId: "dd-task-01",
+    revision: 3,
+    state: "DECISION_ROUTED",
+    meta: {
+      topic: "gateway-heartbeat-polling",
+      domain: "operations",
+      urgency: "high",
+      openedAt: "2026-05-18T00:00:00.000Z",
+      snapshotAt: "2026-05-18T00:02:00.000Z",
+      expiresAt: "2026-05-18T06:00:00.000Z",
+      openedBy: "seoseo",
+      contextRefs: ["wiki:pages/a2a/dialectic-mode.md"],
+      tags: ["a2ad", "ops"],
+    },
+    roles: {
+      thesisAgent: { agentId: "sogyo", teamId: "team1", roleHint: "thesis" },
+      antithesisAgent: { agentId: "nosuk", teamId: "team1", roleHint: "antithesis" },
+      rebuttalAgent: { agentId: "bangtong", teamId: "team1", roleHint: "rebuttal" },
+      synthAgent: { agentId: "yukson", teamId: "team1", roleHint: "synthesis" },
+    },
+    context: {
+      brief: "Evaluate whether to reduce heartbeat polling pressure.",
+      objective: "Keep operator liveness without overloading broker foreground sessions.",
+      constraints: ["no production restart in this task", "no provider send"],
+      decisionCriteria: ["liveness preserved", "event loop pressure reduced"],
+      evidenceRefs: ["gh:jinwon-int/a2a-broker#489"],
+      availableTools: ["logs", "unit-tests"],
+      hardVetoPolicy: ["would require unapproved restart", "drops operator visibility"],
+      domainContext: {
+        brokerId: "seoseo",
+        team: "team1",
+      },
+    },
+    thesis: {
+      author: { agentId: "sogyo" },
+      submittedAt: "2026-05-18T00:05:00.000Z",
+      claim: "Reduce redundant idle polling.",
+      proposal: "Bound idle polling and keep explicit heartbeat updates.",
+      rationale: "The operator channel should stay responsive during closeout rounds.",
+      expectedBenefits: ["lower event-loop pressure", "clearer liveness signal"],
+      evidenceRefs: ["ev-01"],
+      assumptions: ["foreground sessions remain the report channel"],
+      risks: ["over-reducing polling may hide stalls"],
+      confidence: 0.72,
+    },
+    antithesis: {
+      author: { agentId: "nosuk" },
+      submittedAt: "2026-05-18T00:10:00.000Z",
+      counterClaim: "Too much reduction can hide worker stalls.",
+      whyThesisMayFail: "Operators rely on visible heartbeat signals.",
+      failureModes: ["stale status", "silent failure"],
+      contradictions: ["liveness and lower polling trade off"],
+      vetoFlags: [
+        {
+          code: "drops_operator_visibility",
+          reason: "A change that removes visible heartbeat evidence must block.",
+          severity: "warn",
+        },
+      ],
+      evidenceRefs: ["ev-02"],
+      confidence: 0.64,
+    },
+    rebuttal: {
+      author: { agentId: "bangtong" },
+      submittedAt: "2026-05-18T00:15:00.000Z",
+      response: "Keep heartbeat summaries while bounding duplicate scans.",
+      defendedClaims: ["operator visibility remains explicit"],
+      concededRisks: ["some polling is still needed"],
+      residualRisks: ["misconfigured interval"],
+    },
+    synthesis: {
+      author: { agentId: "yukson" },
+      submittedAt: "2026-05-18T00:20:00.000Z",
+      preserve: ["explicit heartbeat signal"],
+      discard: ["unbounded duplicate polling"],
+      decisionRule: "Proceed only as a bounded no-live implementation.",
+      verdict: "PROCEED_WITH_GUARDRAILS",
+      guardrails: ["no restart", "unit tests only"],
+      followups: ["separate live canary approval"],
+      unresolved: ["production interval tuning"],
+    },
+    decision: {
+      action: "PROCEED_WITH_GUARDRAILS",
+      routeTo: "yukson",
+      ttlSec: 1800,
+      hardVeto: false,
+      decisionPolicyRef: "decision-dialectic-no-live-v1",
+      decisionBasisRevision: 3,
+    },
+    ...overrides,
+  };
+}
+
+function buildDecisionDialecticPayload(
+  overrides: Partial<DecisionDialecticTaskV1> = {},
+  phase: DecisionDialecticTaskInputV1["contract"]["phase"] = "synthesis",
+): DecisionDialecticTaskInputV1 {
+  return {
+    contract: {
+      kind: DECISION_DIALECTIC_KIND,
+      version: DECISION_DIALECTIC_VERSION,
+      phase,
+      task: buildDecisionDialecticTaskFixture(overrides),
+    },
+  };
+}
+
+test("decision-dialectic read model returns generic stage rail and dynamic role routing", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "sogyo", "analyst", "test-edge-secret");
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        message: "evaluate generic decision dialectic",
+        payload: buildDecisionDialecticPayload(),
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const task = await createRes.json();
+
+    const readRes = await fetch(`${server.baseUrl}/tasks/${task.id}/decision-dialectic`, {
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      },
+    });
+    assert.equal(readRes.status, 200);
+    const body = await readRes.json();
+
+    assert.equal(body.kind, "decision.dialectic");
+    assert.equal(body.version, 1);
+    assert.equal(body.brokerTaskId, task.id);
+    assert.equal(body.contract.taskId, "dd-task-01");
+    assert.equal(body.contract.state, "DECISION_ROUTED");
+    assert.equal(body.contract.phase, "synthesis");
+    assert.equal(body.meta.topic, "gateway-heartbeat-polling");
+    assert.equal(body.meta.domain, "operations");
+    assert.equal(body.roles.thesisAgent.agentId, "sogyo");
+    assert.equal(body.roles.antithesisAgent.agentId, "nosuk");
+    assert.equal(body.roles.rebuttalAgent.agentId, "bangtong");
+    assert.equal(body.roles.synthAgent.agentId, "yukson");
+    assert.equal(body.context.domainContext.brokerId, "seoseo");
+
+    const stageNames = ["thesis", "antithesis", "rebuttal", "synthesis", "outcome"];
+    for (const stage of stageNames) {
+      assert.ok(body.stages[stage], `expected stage ${stage}`);
+      assert.equal(body.stages[stage].name, stage);
+    }
+    assert.equal(body.stages.thesis.author.agentId, "sogyo");
+    assert.equal(body.stages.antithesis.vetoFlags[0].code, "drops_operator_visibility");
+    assert.equal(body.stages.synthesis.verdict, "PROCEED_WITH_GUARDRAILS");
+    assert.equal(body.stages.outcome.present, false);
+
+    assert.equal(body.decisionCard.present, true);
+    assert.equal(body.decisionCard.verdict, "PROCEED_WITH_GUARDRAILS");
+    assert.equal(body.decisionCard.route, "yukson");
+    assert.equal(body.decisionCard.hardVeto, false);
+    assert.equal(body.decisionCard.decisionPolicyRef, "decision-dialectic-no-live-v1");
+    assert.equal(body.decisionCard.decisionBasisRevision, 3);
+    assert.equal(body.decisionCard.ttlSec, 1800);
+    assert.equal(body.decisionCard.decidedBy.agentId, "yukson");
+    assert.match(body.summary.decision, /PROCEED_WITH_GUARDRAILS/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("decision-dialectic execution advances phase tasks and applies ordered patches", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    teamId: "team1",
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  try {
+    for (const workerId of ["sogyo", "nosuk", "bangtong", "yukson"]) {
+      await registerTestWorker(server.baseUrl, workerId, "analyst", "test-edge-secret");
+    }
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        brokerOfRecord: "seoseo",
+        teamId: "team1",
+        message: "run generic decision dialectic",
+        payload: buildDecisionDialecticPayload(
+          {
+            revision: 0,
+            state: "OPEN",
+            thesis: undefined,
+            antithesis: undefined,
+            rebuttal: undefined,
+            synthesis: undefined,
+            decision: undefined,
+            outcome: undefined,
+          },
+          "thesis",
+        ),
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const parent = await createRes.json();
+    const fixture = buildDecisionDialecticTaskFixture();
+
+    const advanceThesisRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/advance`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({}),
+    });
+    assert.equal(advanceThesisRes.status, 201);
+    const thesisAdvance = await advanceThesisRes.json();
+    assert.equal(thesisAdvance.phase, "thesis");
+    assert.equal(thesisAdvance.parentTaskId, parent.id);
+    assert.equal(thesisAdvance.childTask.parentTaskId, parent.id);
+    assert.equal(thesisAdvance.childTask.targetNodeId, "sogyo");
+    assert.equal(thesisAdvance.childTask.assignedWorkerId, "sogyo");
+    assert.equal(thesisAdvance.childTask.payload.promptSpec.schemaName, "decisionDialectic.thesis.v1");
+    assert.equal(thesisAdvance.childTask.payload.execution.expectedRevision, 0);
+    assert.equal(thesisAdvance.childTask.brokerOfRecord, "seoseo");
+    assert.equal(thesisAdvance.childTask.teamId, "team1");
+
+    const thesisPatchRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/patch`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        op: "append.thesis",
+        patchId: "patch-thesis-1",
+        taskId: "dd-task-01",
+        expectedRevision: 0,
+        authorAgent: "sogyo",
+        at: "2026-05-18T00:05:00.000Z",
+        payload: fixture.thesis,
+      }),
+    });
+    assert.equal(thesisPatchRes.status, 200);
+    const thesisReadModel = await thesisPatchRes.json();
+    assert.equal(thesisReadModel.contract.revision, 1);
+    assert.equal(thesisReadModel.contract.state, "THESIS_SUBMITTED");
+    assert.equal(thesisReadModel.contract.phase, "antithesis");
+    assert.equal(thesisReadModel.stages.thesis.present, true);
+
+    const advanceAntithesisRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/advance`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({}),
+    });
+    assert.equal(advanceAntithesisRes.status, 201);
+    const antithesisAdvance = await advanceAntithesisRes.json();
+    assert.equal(antithesisAdvance.phase, "antithesis");
+    assert.equal(antithesisAdvance.childTask.targetNodeId, "nosuk");
+    assert.equal(antithesisAdvance.childTask.payload.execution.expectedRevision, 1);
+
+    for (const patch of [
+      {
+        op: "append.antithesis",
+        patchId: "patch-antithesis-1",
+        expectedRevision: 1,
+        authorAgent: "nosuk",
+        payload: fixture.antithesis,
+      },
+      {
+        op: "append.rebuttal",
+        patchId: "patch-rebuttal-1",
+        expectedRevision: 2,
+        authorAgent: "bangtong",
+        payload: fixture.rebuttal,
+      },
+      {
+        op: "set.synthesis_decision",
+        patchId: "patch-synthesis-1",
+        expectedRevision: 3,
+        authorAgent: "yukson",
+        payload: {
+          author: { agentId: "yukson" },
+          submittedAt: "2026-05-18T00:20:00.000Z",
+          synthesis: fixture.synthesis,
+          decision: fixture.decision,
+        },
+      },
+    ]) {
+      const patchRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/patch`, {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": patch.authorAgent,
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({
+          ...patch,
+          taskId: "dd-task-01",
+          at: "2026-05-18T00:20:00.000Z",
+        }),
+      });
+      assert.equal(patchRes.status, 200);
+    }
+
+    const readRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic`, {
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      },
+    });
+    assert.equal(readRes.status, 200);
+    const readModel = await readRes.json();
+    assert.equal(readModel.contract.revision, 4);
+    assert.equal(readModel.contract.state, "DECISION_ROUTED");
+    assert.equal(readModel.contract.phase, "outcome");
+    assert.equal(readModel.decisionCard.verdict, "PROCEED_WITH_GUARDRAILS");
+    assert.equal(readModel.decisionCard.route, "yukson");
+  } finally {
+    await server.close();
+  }
+});
+
+test("decision-dialectic execution rejects out-of-order patches", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "sogyo", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "nosuk", "analyst", "test-edge-secret");
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        message: "run generic decision dialectic",
+        payload: buildDecisionDialecticPayload(
+          {
+            revision: 0,
+            state: "OPEN",
+            thesis: undefined,
+            antithesis: undefined,
+            rebuttal: undefined,
+            synthesis: undefined,
+            decision: undefined,
+            outcome: undefined,
+          },
+          "thesis",
+        ),
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const parent = await createRes.json();
+    const fixture = buildDecisionDialecticTaskFixture();
+
+    const patchRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/patch`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "nosuk",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        op: "append.antithesis",
+        patchId: "patch-antithesis-early",
+        taskId: "dd-task-01",
+        expectedRevision: 0,
+        authorAgent: "nosuk",
+        at: "2026-05-18T00:10:00.000Z",
+        payload: fixture.antithesis,
+      }),
+    });
+    assert.equal(patchRes.status, 409);
+    const body = await patchRes.json();
+    assert.equal(body.error.code, "invalid_transition");
+    assert.match(body.error.message, /thesis is required/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("decision-dialectic route returns 404 when task is not a decision.dialectic", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "bangtong", "live-trader", "test-edge-secret");
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "bangtong", kind: "node", role: "live-trader" },
+        assignedWorkerId: "bangtong",
+        message: "trade BTCUSDT",
+        payload: buildTradingDialecticPayload(),
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const task = await createRes.json();
+
+    const readRes = await fetch(`${server.baseUrl}/tasks/${task.id}/decision-dialectic`, {
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      },
+    });
+    assert.equal(readRes.status, 404);
+    const body = await readRes.json();
+    assert.equal(body.error.code, "not_found");
+    assert.match(body.error.message, /decision\.dialectic/);
+  } finally {
+    await server.close();
+  }
+});
 
 test("trading-dialectic read model returns operator stage rail and decision card", async () => {
   const server = await startTestServer({
@@ -4914,6 +7500,3789 @@ test("server persists task wake plan and decision through HTTP", async () => {
     const replay = await replayRes.json() as Record<string, unknown>;
     assert.equal(replay.replayed, true);
     assert.equal(replay.shouldDispatch, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /release/evidence returns read-only dry-run release evidence without mutating tasks", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    server.runtime.broker.registerWorker({
+      nodeId: "dungae",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: true,
+        canPromoteLive: false,
+        workspaceIds: ["repo"],
+        environments: ["research"],
+      },
+    });
+    const created = server.runtime.broker.createTask({
+      id: "release-evidence-task-1",
+      intent: "propose_patch",
+      requester: { id: "operator-a", kind: "user", role: "operator" },
+      target: { id: "dungae", kind: "node", role: "analyst" },
+      payload: {
+        mode: "github-propose-patch",
+        issue: 479,
+        issueUrl: "https://github.com/jinwon-int/a2a-broker/issues/479",
+      },
+      taskOrigin: "github",
+    });
+    server.runtime.broker.claimTask(created.id, "dungae");
+    server.runtime.broker.startTask(created.id, "dungae");
+    server.runtime.broker.completeTask(created.id, "dungae", {
+      output: {
+        github: {
+          repo: "jinwon-int/a2a-broker",
+          issue: "#479",
+          doneCommentUrl: "https://github.com/jinwon-int/a2a-broker/issues/479#issuecomment-4415413329",
+        },
+        receipt: { status: "operator_visible", evidence: "operator_visible" },
+      },
+    });
+    const before = server.runtime.broker.getTask(created.id)?.updatedAt;
+
+    const res = await fetch(
+      `${server.baseUrl}/release/evidence?task_id=${created.id}&repo=jinwon-int/a2a-broker&issue=479&parentIssue=jinwon-int/a2a-plane%23197&runId=a2a-source-dryrun-orchestrator-20260510T133022Z`,
+      {
+        headers: {
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        },
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "broker.release-evidence.export");
+    assert.equal(body.mode, "dry-run/read-only");
+    assert.equal(body.readOnly, true);
+    assert.equal(body.gates.liveActionAllowed, false);
+    assert.equal(body.gates.mutationAllowed, false);
+    assert.equal(body.gates.ok, true);
+    assert.equal(body.taskSummary.total, 1);
+    assert.equal(body.evidenceSummary.done, 1);
+    assert.deepEqual(body.links.doneComments, [
+      "https://github.com/jinwon-int/a2a-broker/issues/479#issuecomment-4415413329",
+    ]);
+    assert.equal(server.runtime.broker.getTask(created.id)?.updatedAt, before);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/gate returns approval-gated dry-run plan", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const workflow = {
+      kind: "a2a-broker.terminal-brief-finalizer-workflow.packet",
+      version: 1,
+      generatedAt: "2026-05-18T15:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-700",
+      decision: "ready",
+      currentStep: "finalizer_review",
+      idempotencyKey: "tb-finalizer-workflow:fixture",
+      finalizer: {
+        brokerOfRecordId: "seoseo",
+        owner: "seoseo",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      source: {
+        handoffDecision: "ready",
+        handoffIdempotencyKey: "tb-finalizer-handoff:fixture",
+        evidenceUrls: 1,
+        receiptGaps: 1,
+        blockers: 0,
+      },
+      workflow: {
+        closeoutComment: {
+          mode: "draft-only",
+          title: "Draft: Terminal Brief closeout ready - round-700",
+          body: "Draft closeout body. This was not posted automatically.",
+          postPermitted: false,
+        },
+        taskflowSeed: {
+          createRecords: false,
+          currentStep: "finalizer_review",
+          stateJson: { source: "terminal-brief-finalizer-workflow" },
+          waitJson: { kind: "broker_finalizer_review" },
+        },
+      },
+      checklist: [],
+      reviewItems: ["single broker finalizer must review"],
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [
+        "GitHub PR merge, issue close, or comment post",
+        "live provider/Hermes/Telegram/OpenClaw send",
+        "terminal ACK/replay",
+      ],
+      semantics: {
+        workflowPacketIsNotFinalAction: true,
+        commentIsDraftOnly: true,
+        taskflowSeedCreatesNoRecords: true,
+        brokerFinalizerRequired: true,
+        singleFinalizerRequired: true,
+        providerOrProducedReceiptIsTerminalAck: false,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/gate?issueUrl=https://github.com/jinwon-int/a2a-broker/issues/700&prUrl=https://github.com/jinwon-int/a2a-broker/pull/701",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({ workflowPacket: workflow }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-closeout-gate.packet");
+    assert.equal(body.decision, "ready_for_approval");
+    assert.equal(body.gateState, "approval_required");
+    assert.equal(body.executePermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.semantics.performsGitHubMutation, false);
+    assert.equal(body.actions.every((action: Record<string, unknown>) => action.executePermitted === false), true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/approval-request returns draft-only approval request", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const gate = {
+      kind: "a2a-broker.terminal-brief-closeout-gate.packet",
+      version: 1,
+      generatedAt: "2026-05-18T16:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-702",
+      decision: "ready_for_approval",
+      gateState: "approval_required",
+      dryRunOnly: true,
+      executePermitted: false,
+      idempotencyKey: "tb-closeout-gate:fixture-702",
+      finalizer: {
+        brokerOfRecordId: "seoseo",
+        owner: "seoseo",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      source: {
+        workflowDecision: "ready",
+        workflowStep: "finalizer_review",
+        workflowIdempotencyKey: "tb-finalizer-workflow:fixture-702",
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/702",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/703",
+        blockers: 0,
+        reviewItems: 1,
+      },
+      draftCloseout: {
+        title: "Draft: Terminal Brief closeout ready - round-702",
+        body: "Draft closeout body. This was not posted automatically.",
+        postPermitted: false,
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/702",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/703",
+      },
+      actions: [
+        {
+          action: "post_closeout_comment",
+          status: "proposed",
+          requiresApproval: true,
+          executePermitted: false,
+          target: "https://github.com/jinwon-int/a2a-broker/issues/702",
+          reason: "draft closeout comment is ready but posting is a separate approved mutation",
+        },
+        {
+          action: "merge_pull_request",
+          status: "proposed",
+          requiresApproval: true,
+          executePermitted: false,
+          target: "https://github.com/jinwon-int/a2a-broker/pull/703",
+          reason: "merge is only a proposed follow-up after finalizer approval",
+        },
+        {
+          action: "live_provider_send",
+          status: "forbidden",
+          requiresApproval: true,
+          executePermitted: false,
+          reason: "live sends must stay outside the source-only gate",
+        },
+      ],
+      approvalChecklist: [],
+      blockers: [],
+      nextActions: [],
+      integrationContract: {
+        transport: "json",
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+      },
+      semantics: {
+        closeoutGateIsNotFinalAction: true,
+        dryRunOnly: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        singleFinalizerRequired: true,
+        approvalRequiredBeforeGitHubMutation: true,
+        approvalRequiredBeforeLiveAction: true,
+        providerOrProducedReceiptIsTerminalAck: false,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/approval-request",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({ gatePacket: gate }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-approval-request.packet");
+    assert.equal(body.decision, "request_ready");
+    assert.equal(body.requestDispatchPermitted, false);
+    assert.equal(body.approvalGrantPermitted, false);
+    assert.equal(body.executionPermitted, false);
+    assert.equal(body.request.sendPermitted, false);
+    assert.equal(body.request.presentationPlan.sendPermitted, false);
+    assert.equal(body.request.presentationPlan.buttonsEnabled, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.request.requestedActions.every((action: Record<string, unknown>) => action.executePermitted === false), true);
+    assert.equal(body.request.nonRequestableActions.find((action: Record<string, unknown>) => action.action === "live_provider_send")?.status, "forbidden");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/approval-executor returns no-live execute-blocked shell", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const approvalRequest = {
+      kind: "a2a-broker.terminal-brief-approval-request.packet",
+      version: 1,
+      generatedAt: "2026-05-18T20:20:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-704",
+      decision: "request_ready",
+      dryRunOnly: true,
+      requestDispatchPermitted: false,
+      approvalGrantPermitted: false,
+      executionPermitted: false,
+      idempotencyKey: "tb-approval-request:fixture-704",
+      finalizer: {
+        brokerOfRecordId: "seoseo",
+        owner: "seoseo",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      source: {
+        closeoutGateDecision: "ready_for_approval",
+        closeoutGateState: "approval_required",
+        closeoutGateIdempotencyKey: "tb-closeout-gate:fixture-704",
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/704",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/705",
+        proposedActions: 2,
+        blockedActions: 0,
+        forbiddenActions: 1,
+      },
+      request: {
+        mode: "draft-only",
+        title: "Draft approval request: Terminal Brief closeout - round-704",
+        body: "Draft approval request body. This was not sent automatically.",
+        sendPermitted: false,
+        requestedActions: [
+          {
+            action: "post_closeout_comment",
+            status: "requested",
+            sourceGateStatus: "proposed",
+            requiresApproval: true,
+            executePermitted: false,
+            target: "https://github.com/jinwon-int/a2a-broker/issues/704",
+            reason: "draft closeout comment is ready but posting is a separate approved mutation",
+          },
+          {
+            action: "merge_pull_request",
+            status: "requested",
+            sourceGateStatus: "proposed",
+            requiresApproval: true,
+            executePermitted: false,
+            target: "https://github.com/jinwon-int/a2a-broker/pull/705",
+            reason: "merge is only a proposed follow-up after finalizer approval",
+          },
+        ],
+        nonRequestableActions: [
+          {
+            action: "live_provider_send",
+            status: "forbidden",
+            requiresApproval: true,
+            executePermitted: false,
+            reason: "live sends must stay outside the source-only gate",
+          },
+        ],
+        presentationPlan: {
+          kind: "approval_buttons",
+          sendPermitted: false,
+          buttonsEnabled: false,
+          buttons: [],
+        },
+        cliPlan: {
+          mode: "plan-only",
+          command: "terminal_brief_approval_request --input closeout-gate.json --json",
+          executePermitted: false,
+          requiredHumanApproval: true,
+        },
+      },
+      blockers: [],
+      nextActions: [],
+      integrationContract: {
+        transport: "json",
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        sendsApprovalRequest: false,
+      },
+      semantics: {
+        approvalRequestPlannerOnly: true,
+        requestNotSent: true,
+        approvalNotGranted: true,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        singleFinalizerRequired: true,
+        idempotentRequestDraft: true,
+        replayRequiresSameIdempotencyKey: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/approval-executor",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          approvalRequest,
+          selectedAction: "merge_pull_request",
+          attemptExecute: true,
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-approval-executor.packet");
+    assert.equal(body.state, "execute_blocked");
+    assert.equal(body.dispatchPermitted, false);
+    assert.equal(body.approvalGrantPermitted, false);
+    assert.equal(body.executionPermitted, false);
+    assert.equal(body.dispatch.requestDispatched, false);
+    assert.equal(body.approval.realApprovalGranted, false);
+    assert.equal(body.approval.simulatedApprovalOnly, true);
+    assert.equal(body.execution.state, "execute_blocked");
+    assert.equal(body.execution.executed, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesAction, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/approval-dispatch returns no-live adapter transcript", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const approvalExecutor = {
+      kind: "a2a-broker.terminal-brief-approval-executor.packet",
+      version: 1,
+      generatedAt: "2026-05-18T21:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-706",
+      state: "dispatch_pending",
+      dryRunOnly: true,
+      dispatchPermitted: false,
+      approvalGrantPermitted: false,
+      executionPermitted: false,
+      idempotencyKey: "tb-approval-executor:fixture-706",
+      finalizer: {
+        brokerOfRecordId: "seoseo",
+        owner: "seoseo",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      source: {
+        approvalRequestDecision: "request_ready",
+        approvalRequestIdempotencyKey: "tb-approval-request:fixture-706",
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/706",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/707",
+        requestedActions: 2,
+        nonRequestableActions: 1,
+      },
+      dispatch: {
+        state: "dispatch_pending",
+        transport: "none",
+        requestDispatchPermitted: false,
+        requestDispatched: false,
+        requestSendPermitted: false,
+        reason: "dispatch is intentionally held",
+      },
+      approval: {
+        state: "none",
+        realApprovalGranted: false,
+        simulatedApprovalOnly: false,
+        reason: "no approval selection was supplied",
+      },
+      execution: {
+        state: "not_attempted",
+        executePermitted: false,
+        executed: false,
+        reason: "execution was not attempted and remains forbidden",
+      },
+      blockers: [],
+      nextActions: [],
+      integrationContract: {
+        transport: "json",
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        sendsApprovalRequest: false,
+        grantsApproval: false,
+        executesAction: false,
+      },
+      semantics: {
+        approvalExecutorShellOnly: true,
+        dispatchNotPerformed: true,
+        approvalNotReallyGranted: true,
+        simulatedApprovalOnly: false,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        singleFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/approval-dispatch",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          approvalExecutor,
+          adapter: "gongyung",
+          target: "hermes://gongyung/approval",
+          channel: "operator",
+          requestedBy: "seoseo",
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-approval-dispatch-adapter.packet");
+    assert.equal(body.state, "dispatch_draft_ready");
+    assert.equal(body.adapter.type, "gongyung");
+    assert.equal(body.adapter.requiresOpenClawMessageSend, false);
+    assert.equal(body.dispatchPermitted, false);
+    assert.equal(body.providerSendPermitted, false);
+    assert.equal(body.approvalGrantPermitted, false);
+    assert.equal(body.executionPermitted, false);
+    assert.equal(body.transcript.sent, false);
+    assert.equal(body.transcript.sendPermitted, false);
+    assert.equal(body.receiptDraft.providerAccepted, false);
+    assert.equal(body.receiptDraft.currentSessionVisible, false);
+    assert.equal(body.receiptDraft.terminalAck, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.hermesAdapterCompatible, true);
+    assert.equal(body.integrationContract.gongyungAdapterCompatible, true);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesAction, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/approval-receipt returns no-live receipt evidence classification", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const approvalDispatch = {
+      kind: "a2a-broker.terminal-brief-approval-dispatch-adapter.packet",
+      version: 1,
+      generatedAt: "2026-05-18T21:30:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-708",
+      state: "dispatch_draft_ready",
+      dryRunOnly: true,
+      dispatchPermitted: false,
+      providerSendPermitted: false,
+      approvalGrantPermitted: false,
+      executionPermitted: false,
+      terminalReceiptMutationPermitted: false,
+      idempotencyKey: "tb-approval-dispatch:fixture-708",
+      finalizer: {
+        brokerOfRecordId: "broker-finalizer",
+        owner: "broker-finalizer",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      adapter: {
+        id: "gongyung",
+        type: "gongyung",
+        harnessNeutral: true,
+        protocol: "json-transcript",
+        requiresOpenClawMessageSend: false,
+        supportsExternalHarnesses: true,
+        liveSendPermitted: false,
+      },
+      source: {
+        executorState: "dispatch_pending",
+        executorIdempotencyKey: "tb-approval-executor:fixture-708",
+        approvalRequestIdempotencyKey: "tb-approval-request:fixture-708",
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/708",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/710",
+        selectedAction: "post_closeout_comment",
+        selectedTarget: "https://github.com/jinwon-int/a2a-broker/issues/708",
+        requestedActions: 2,
+        nonRequestableActions: 1,
+      },
+      transcript: {
+        mode: "draft-only",
+        target: "hermes://gongyung/approval",
+        channel: "operator",
+        requestedBy: "broker-finalizer",
+        title: "Draft approval dispatch: Terminal Brief closeout - round-708",
+        body: "Terminal Brief approval adapter transcript (dry-run).",
+        sendPermitted: false,
+        sent: false,
+      },
+      receiptDraft: {
+        mode: "draft-only",
+        id: "tb-approval-dispatch-receipt:fixture-708",
+        providerAccepted: false,
+        currentSessionVisible: false,
+        terminalAck: false,
+        approvalGranted: false,
+        actionExecuted: false,
+        reason: "dispatch transcript draft only for gongyung; no provider send exists",
+      },
+      blockers: [],
+      nextActions: [],
+      integrationContract: {
+        transport: "json",
+        adapterInterfaceVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        sendsApprovalRequest: false,
+        producesLiveReceipt: false,
+        grantsApproval: false,
+        executesAction: false,
+      },
+      semantics: {
+        adapterShellOnly: true,
+        transcriptDraftOnly: true,
+        dispatchNotPerformed: true,
+        receiptIsDraftOnly: true,
+        providerAcceptedIsVisibilityProof: false,
+        approvalNotReallyGranted: true,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        singleFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/approval-receipt",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          approvalDispatch,
+          receiptEvidence: [
+            {
+              kind: "current_session_visible",
+              observedAt: new Date().toISOString(),
+              receiptId: "receipt-visible-route",
+              currentSessionId: "session-current",
+            },
+          ],
+          maxAgeMs: 300000,
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-approval-receipt-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.classification.currentSessionVisible, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.terminalAckEligible, true);
+    assert.equal(body.terminalAckPermitted, false);
+    assert.equal(body.terminalReceiptMutationPermitted, false);
+    assert.equal(body.approvalGrantPermitted, false);
+    assert.equal(body.executionPermitted, false);
+    assert.equal(body.integrationContract.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesAction, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/closeout/finalizer-approval-status returns no-live finalizer status table", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const approvalDispatch = {
+      kind: "a2a-broker.terminal-brief-approval-dispatch-adapter.packet",
+      version: 1,
+      generatedAt: "2026-05-18T22:30:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-709",
+      state: "dispatch_draft_ready",
+      idempotencyKey: "tb-approval-dispatch:fixture-709",
+      finalizer: {
+        brokerOfRecordId: "broker-finalizer",
+        owner: "broker-finalizer",
+        required: true,
+        singleFinalizerRequired: true,
+      },
+      adapter: {
+        id: "gongyung",
+        type: "gongyung",
+      },
+      source: {
+        targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/709",
+        targetPrUrl: "https://github.com/jinwon-int/a2a-broker/pull/711",
+        selectedAction: "post_closeout_comment",
+        selectedTarget: "https://github.com/jinwon-int/a2a-broker/issues/709",
+        requestedActions: 2,
+        nonRequestableActions: 1,
+      },
+      transcript: {
+        target: "hermes://gongyung/approval",
+        channel: "operator",
+      },
+      blockers: [],
+    };
+    const approvalReceipt = {
+      kind: "a2a-broker.terminal-brief-approval-receipt-ingestor.packet",
+      version: 1,
+      generatedAt: "2026-05-18T22:30:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-709",
+      state: "accepted",
+      idempotencyKey: "tb-approval-receipt:fixture-709",
+      receiptEvidenceAccepted: true,
+      classification: {
+        providerAccepted: false,
+        currentSessionVisible: true,
+        manualOperatorConfirmed: false,
+        approvalGrantAccepted: true,
+        terminalAckEligible: true,
+      },
+      blockers: [],
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/closeout/finalizer-approval-status",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          approvalDispatch,
+          approvalReceipt,
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-finalizer-approval-status.packet");
+    assert.equal(body.state, "ready_for_finalizer_review");
+    assert.equal(body.table.requiredRowsReady, 3);
+    assert.equal(body.approval.currentSessionVisible, true);
+    assert.equal(body.approval.approvalGrantAccepted, true);
+    assert.equal(body.approval.terminalAckPermitted, false);
+    assert.equal(body.approval.approvalGrantPermitted, false);
+    assert.equal(body.approval.executionPermitted, false);
+    assert.equal(body.defaultOnReadiness.sourceCriteriaMet, true);
+    assert.equal(body.defaultOnReadiness.defaultOnPermitted, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesAction, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dry-run-gate returns no-live sidecar operating gate", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const sidecarRehearsal = {
+      kind: "a2a-broker.terminal-brief-sidecar-integration-rehearsal",
+      version: 1,
+      generatedAt: "2026-05-18T23:30:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-712",
+      decision: "candidate",
+      sidecar: {
+        spoolRecords: 3,
+        finalCountSignalsFromSpool: 3,
+        receiptDecisions: 1,
+        terminalReceiptStatuses: ["produced"],
+        providerSendAttempted: false,
+        terminalAckAttempted: false,
+        dryRunOnly: true,
+        unsafeSpoolRecords: [],
+      },
+      finalCountCandidate: {
+        decision: "candidate",
+        idempotencyKey: "tb-final-count:fixture-712",
+      },
+      blockers: [],
+    };
+    const finalizerApprovalStatus = {
+      kind: "a2a-broker.terminal-brief-finalizer-approval-status.packet",
+      version: 1,
+      generatedAt: "2026-05-18T23:30:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-712",
+      state: "ready_for_finalizer_review",
+      idempotencyKey: "tb-finalizer-approval-status:fixture-712",
+      defaultOnReadiness: {
+        sourceCriteriaMet: true,
+        defaultOnPermitted: false,
+        missingEvidence: [],
+      },
+      blockers: [],
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dry-run-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          sidecarRehearsal,
+          finalizerApprovalStatus,
+          operatingEvidence: {
+            observedAt: new Date().toISOString(),
+            cursorPersisted: true,
+            boundedPolling: true,
+            pollIntervalMs: 15000,
+            maxBatch: 20,
+            gatewayReady: true,
+            eventLoopDegraded: false,
+            queueBacklog: 0,
+            dryRunOnly: true,
+            operatorEventsCrossBrokersEnabled: false,
+            supervisedSidecar: true,
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dry-run-gate.packet");
+    assert.equal(body.state, "ready_for_operator_approval");
+    assert.equal(body.table.requiredRowsReady, 5);
+    assert.equal(body.readiness.sourceCriteriaMet, true);
+    assert.equal(body.readiness.alwaysOnDryRunCandidate, true);
+    assert.equal(body.readiness.alwaysOnDryRunStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.liveActivationPermitted, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.semantics.performsRuntimeRestartOrDeploy, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/activation-approval returns no-live approval request draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const sidecarDryRunGate = {
+      kind: "a2a-broker.terminal-brief-sidecar-dry-run-gate.packet",
+      version: 1,
+      generatedAt: "2026-05-18T14:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-714",
+      state: "ready_for_operator_approval",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      idempotencyKey: "tb-sidecar-dry-run-gate:fixture-714",
+      source: {
+        sidecarDecision: "candidate",
+        sidecarSpoolRecords: 3,
+        sidecarReceiptDecisions: 1,
+        sidecarDryRunOnly: true,
+        providerSendAttempted: false,
+        terminalAckAttempted: false,
+        finalCountDecision: "candidate",
+        finalizerStatus: "ready_for_finalizer_review",
+        finalizerStatusIdempotencyKey: "tb-finalizer-approval-status:fixture-714",
+      },
+      operatingEvidence: {
+        observedAt: "2026-05-18T14:00:00.000Z",
+        stale: false,
+        cursorPersisted: true,
+        boundedPolling: true,
+        pollIntervalMs: 15000,
+        maxBatch: 20,
+        gatewayReady: true,
+        eventLoopDegraded: false,
+        queueBacklog: 0,
+        dryRunOnly: true,
+        operatorEventsCrossBrokersEnabled: false,
+        supervisedSidecar: true,
+      },
+      table: {
+        rows: [],
+        requiredRowsReady: 5,
+        requiredRows: 5,
+        readyRows: 5,
+        totalRows: 6,
+      },
+      readiness: {
+        sourceCriteriaMet: true,
+        alwaysOnDryRunCandidate: true,
+        alwaysOnDryRunStartPermitted: false,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        missingEvidence: [],
+        blockers: [],
+        nextAction: "request explicit operator approval for dry-run sidecar supervision/canary",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        gateVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        consumesSidecarIntegrationRehearsal: true,
+        consumesFinalizerApprovalStatus: true,
+        grantsApproval: false,
+        startsSidecar: false,
+        enablesDefaultOn: false,
+        executesAction: false,
+      },
+      semantics: {
+        operatingGateOnly: true,
+        sourceOnlyNoLive: true,
+        gateDoesNotMutateState: true,
+        sidecarDryRunCandidateDoesNotStartSidecar: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckEligibleDoesNotPermitAck: true,
+        approvalGrantEvidenceDoesNotGrantApproval: true,
+        defaultOnNotEnabledByThisPacket: true,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/activation-approval",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          sidecarDryRunGate,
+          activationApproval: {
+            requestedBy: "broker-finalizer",
+            operatorTarget: "operator-a",
+            approvalWindowMinutes: 30,
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-activation-approval.packet");
+    assert.equal(body.state, "approval_request_draft_ready");
+    assert.equal(body.requestDraft.status, "draft_not_sent");
+    assert.equal(body.requestDraft.dispatchPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.requestDraftIsNotSend, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/activation-receipt returns no-live activation receipt evidence", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const sidecarActivationApproval = {
+      kind: "a2a-broker.terminal-brief-sidecar-activation-approval.packet",
+      version: 1,
+      generatedAt: "2026-05-18T15:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-716",
+      state: "approval_request_draft_ready",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      idempotencyKey: "tb-sidecar-activation-approval:fixture-716",
+      source: {
+        gateState: "ready_for_operator_approval",
+        gateIdempotencyKey: "tb-sidecar-dry-run-gate:fixture-716",
+        sourceCriteriaMet: true,
+        alwaysOnDryRunCandidate: true,
+        requiredRowsReady: 5,
+        requiredRows: 5,
+        sidecarDecision: "candidate",
+        finalizerStatus: "ready_for_finalizer_review",
+      },
+      requestDraft: {
+        status: "draft_not_sent",
+        requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start",
+        requestedBy: "broker-finalizer",
+        operatorTarget: "operator-a",
+        approvalExpiresAt: "2026-05-18T15:30:00.000Z",
+        dispatchRequired: true,
+        dispatchPermitted: false,
+        transcriptDraft: "Request: approve supervised Terminal Brief sidecar dry-run start.",
+      },
+      activationPlan: {
+        supervisedDryRunOnly: true,
+        cursorPersisted: true,
+        boundedPolling: true,
+        pollIntervalMs: 15000,
+        maxBatch: 20,
+        gatewayReady: true,
+        eventLoopDegraded: false,
+        queueBacklog: 0,
+        abortQueueBacklog: 1000,
+        abortConditions: [],
+        rollbackInstructions: [],
+      },
+      readiness: {
+        approvalRequestDraftReady: true,
+        sidecarStartPermitted: false,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        approvalGrantPermitted: false,
+        providerSendPermitted: false,
+        terminalAckPermitted: false,
+        executionPermitted: false,
+        missingEvidence: [],
+        blockers: [],
+        nextAction: "dispatch this draft through the selected harness adapter and ingest explicit operator approval evidence before any sidecar start",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        approvalPacketVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        consumesSidecarDryRunGate: true,
+        producesApprovalRequestDraft: true,
+        sendsApprovalRequest: false,
+        grantsApproval: false,
+        startsSidecar: false,
+        enablesDefaultOn: false,
+        executesAction: false,
+      },
+      semantics: {
+        approvalRequestDraftOnly: true,
+        sourceOnlyNoLive: true,
+        requestDraftIsNotSend: true,
+        approvalRequestIsNotApprovalGrant: true,
+        sidecarStartRequiresSeparateApprovedExecutor: true,
+        defaultOnNotEnabledByThisPacket: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckEligibleDoesNotPermitAck: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/activation-receipt",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          sidecarActivationApproval,
+          activationReceiptEvidence: [
+            { kind: "current_session_visible", observedAt: new Date().toISOString() },
+            {
+              kind: "approval_grant",
+              observedAt: new Date().toISOString(),
+              approvedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start",
+              approvedTarget: "round-716",
+              operatorId: "operator-a",
+            },
+          ],
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-activation-receipt-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.receiptIngestorOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/start-executor-gate returns no-live start executor gate", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const sidecarActivationReceipt = {
+      kind: "a2a-broker.terminal-brief-sidecar-activation-receipt-ingestor.packet",
+      version: 1,
+      generatedAt: "2026-05-18T16:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-718",
+      state: "accepted",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      receiptEvidenceAccepted: true,
+      approvalEvidenceAccepted: true,
+      idempotencyKey: "tb-sidecar-activation-receipt:fixture-718",
+      source: {
+        activationApprovalState: "approval_request_draft_ready",
+        activationApprovalIdempotencyKey: "tb-sidecar-activation-approval:fixture-718",
+        requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start",
+        requestedBy: "broker-finalizer",
+        operatorTarget: "operator-a",
+        dispatchRequired: true,
+        dispatchPermitted: false,
+      },
+      evidence: {
+        received: 3,
+        acceptedKinds: ["current_session_visible", "approval_grant"],
+        staleKinds: [],
+        conflictingKinds: [],
+        rejectedKinds: [],
+        records: [],
+      },
+      classification: {
+        providerAccepted: true,
+        currentSessionVisible: true,
+        manualOperatorConfirmed: false,
+        approvalGrantAccepted: true,
+        receiptProofAccepted: true,
+        rejected: false,
+        expired: false,
+        stale: false,
+        terminalAckEligible: true,
+        providerAcceptedIsVisibilityProof: false,
+        reason: "visibility/manual receipt evidence and matching approval grant evidence accepted as no-live evidence only",
+      },
+      readiness: {
+        sourceCriteriaMet: true,
+        approvalEvidenceAccepted: true,
+        sidecarStartPermitted: false,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        approvalGrantPermitted: false,
+        providerSendPermitted: false,
+        terminalAckPermitted: false,
+        executionPermitted: false,
+        blockers: [],
+        nextAction: "feed accepted no-live approval evidence into the supervised dry-run start executor gate",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        evidenceSchemaVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        consumesActivationApprovalPacket: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckRequiresVisibilityProof: true,
+        grantsApproval: false,
+        startsSidecar: false,
+        enablesDefaultOn: false,
+        executesAction: false,
+      },
+      semantics: {
+        receiptIngestorOnly: true,
+        sourceOnlyNoLive: true,
+        evidenceDoesNotMutateState: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckEligibleDoesNotPermitAck: true,
+        approvalGrantEvidenceDoesNotGrantApproval: true,
+        sidecarStartRequiresSeparateApprovedExecutor: true,
+        defaultOnNotEnabledByThisPacket: true,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/start-executor-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          sidecarActivationReceipt,
+          startExecutorGate: {
+            requestedExecutor: "dry-run-executor",
+            commandName: "terminal-brief-sidecar",
+            commandArgs: ["--dry-run"],
+            envKeys: ["EDGE_SECRET"],
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-start-executor-gate.packet");
+    assert.equal(body.state, "ready_for_start_executor_review");
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.startPlan.commandShape.commandExecutionPermitted, false);
+    assert.equal(body.startPlan.commandShape.secretsIncluded, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.commandShapeIsMetadataOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/executor-invocation-rehearsal returns no-live invocation rehearsal", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const startExecutorGate = {
+      kind: "a2a-broker.terminal-brief-sidecar-start-executor-gate.packet",
+      version: 1,
+      generatedAt: "2026-05-18T18:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-720",
+      state: "ready_for_start_executor_review",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      idempotencyKey: "tb-sidecar-start-executor-gate:fixture-720",
+      source: {
+        receiptState: "accepted",
+        receiptIdempotencyKey: "tb-sidecar-activation-receipt:fixture-720",
+        receiptEvidenceAccepted: true,
+        approvalEvidenceAccepted: true,
+        terminalAckEligible: true,
+        requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start",
+        operatorTarget: "operator-a",
+      },
+      startPlan: {
+        supervisedDryRunOnly: true,
+        requestedExecutor: "gongyung-sidecar-dry-run-executor",
+        operatorApprovalReference: "operator-visible-approval-720",
+        dryRunReason: "sidecar-gongyung-spool-dry-run",
+        commandShape: {
+          kind: "metadata_only",
+          commandName: "terminal-brief-sidecar",
+          commandArgs: ["--dry-run", "--poll-ms", "15000"],
+          envKeys: ["EDGE_SECRET"],
+          commandExecutionPermitted: false,
+          secretsIncluded: false,
+        },
+        abortConditions: ["Gateway readiness is false"],
+        rollbackInstructions: ["do not start the sidecar from this gate packet"],
+      },
+      readiness: {
+        sourceCriteriaMet: true,
+        startExecutorReviewReady: true,
+        startExecutorDispatchPermitted: false,
+        sidecarStartPermitted: false,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        approvalGrantPermitted: false,
+        providerSendPermitted: false,
+        terminalAckPermitted: false,
+        executionPermitted: false,
+        missingEvidence: [],
+        blockers: [],
+        nextAction: "request explicit operator approval for a separate supervised dry-run start executor invocation",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        gateVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        consumesActivationReceiptIngestorPacket: true,
+        dispatchesStartExecutor: false,
+        grantsApproval: false,
+        startsSidecar: false,
+        enablesDefaultOn: false,
+        executesAction: false,
+      },
+      semantics: {
+        startExecutorGateOnly: true,
+        sourceOnlyNoLive: true,
+        gateDoesNotMutateState: true,
+        commandShapeIsMetadataOnly: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckEligibleDoesNotPermitAck: true,
+        approvalGrantEvidenceDoesNotGrantApproval: true,
+        sidecarStartRequiresSeparateApprovedExecutor: true,
+        defaultOnNotEnabledByThisPacket: true,
+        executionNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/executor-invocation-rehearsal",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          startExecutorGate,
+          executorInvocationRehearsal: {
+            adapterName: "gongyung",
+            executorRuntime: "metadata-only",
+            supervisor: "terminal-brief-sidecar-worker",
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-executor-invocation-rehearsal.packet");
+    assert.equal(body.state, "ready_for_executor_invocation_rehearsal");
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.invocationPlan.commandShape.commandExecutionPermitted, false);
+    assert.equal(body.invocationPlan.commandShape.processSpawnPermitted, false);
+    assert.equal(body.invocationPlan.commandShape.secretsIncluded, false);
+    assert.equal(body.invocationPlan.adapterContract.version, 1);
+    assert.equal(body.invocationPlan.adapterContract.transport, "json-stdin-stdout");
+    assert.equal(body.invocationPlan.adapterContract.input.envKeysOnly, true);
+    assert.equal(body.invocationPlan.adapterContract.output.mustReportAbortEvidence, true);
+    assert.equal(body.invocationPlan.adapterContract.output.providerAcceptedIsReceiptProof, false);
+    assert.equal(body.invocationPlan.adapterContract.output.terminalAckPermitted, false);
+    assert.equal(body.readiness.adapterContractReady, true);
+    assert.equal(body.integrationContract.adapterContractVersion, 1);
+    assert.equal(body.integrationContract.requiresAbortEvidence, true);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.spawnsProcess, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.executorInvocationRehearsalOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/runtime-preflight-approval returns source-only approval packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-runtime-preflight-approval.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/runtime-preflight-approval",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-runtime-preflight-approval.packet");
+    assert.equal(body.state, "approval_packet_ready");
+    assert.equal(body.source.adapterContractReady, true);
+    assert.equal(body.runtimePreflight.adapterContract.version, 1);
+    assert.equal(body.runtimePreflight.adapterContract.output.providerAcceptedIsReceiptProof, false);
+    assert.equal(body.runtimePreflight.adapterContract.output.terminalAckPermitted, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.spawnsProcess, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.runtimePreflightApprovalPacketOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/adapter-handoff-approval returns source-only handoff packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-adapter-handoff-approval.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/adapter-handoff-approval",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          runtimePreflightApprovalPacket: fixture,
+          adapterHandoffApproval: {
+            adapterId: "gongyung-approval-renderer",
+            deliveryTargetClass: "manual-operator-channel",
+            handoffReference: "handoff-741",
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-adapter-handoff-approval.packet");
+    assert.equal(body.state, "handoff_packet_ready");
+    assert.equal(body.source.runtimePreflightApprovalReady, true);
+    assert.equal(body.source.adapterContractReady, true);
+    assert.equal(body.adapterHandoff.draftOnly, true);
+    assert.equal(body.adapterHandoff.adapterId, "gongyung-approval-renderer");
+    assert.equal(body.adapterHandoff.dispatchPermitted, false);
+    assert.equal(body.adapterHandoff.providerSendPermitted, false);
+    assert.equal(body.adapterHandoff.approvalGrantPermitted, false);
+    assert.equal(body.adapterHandoff.terminalAckPermitted, false);
+    assert.equal(body.adapterHandoff.executionPermitted, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.rendersApprovalRequestDraft, true);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.spawnsProcess, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.adapterHandoffPacketOnly, true);
+    assert.equal(body.semantics.handoffDoesNotSendApprovalRequest, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/operator-review-table returns source-only review table", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-operator-review-table.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/operator-review-table",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          adapterHandoffApprovalPacket: fixture,
+          operatorReviewTable: {
+            reviewOwner: "seoseo",
+            reviewReference: "operator-review-743",
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-operator-review-table.packet");
+    assert.equal(body.state, "review_table_ready");
+    assert.equal(body.source.adapterHandoffReady, true);
+    assert.equal(body.operatorReview.tableOnly, true);
+    assert.equal(body.operatorReview.rows.length, 8);
+    assert.equal(body.operatorReview.readyRowCount, 8);
+    assert.equal(body.operatorReview.dispatchPermitted, false);
+    assert.equal(body.operatorReview.providerSendPermitted, false);
+    assert.equal(body.operatorReview.approvalGrantPermitted, false);
+    assert.equal(body.operatorReview.terminalAckPermitted, false);
+    assert.equal(body.operatorReview.executionPermitted, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.rendersOperatorReviewTable, true);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.spawnsProcess, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.operatorReviewTableOnly, true);
+    assert.equal(body.semantics.reviewDoesNotSendApprovalRequest, true);
+    assert.equal(body.semantics.reviewDoesNotGrantApproval, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/review-decision returns source-only decision evidence", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-review-decision-ingestor.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/review-decision",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-review-decision-ingestor.packet");
+    assert.equal(body.state, "approved_evidence");
+    assert.equal(body.decisionEvidence.acceptedApprovalEvidence, true);
+    assert.equal(body.readiness.reviewDecisionEvidenceAccepted, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.classifiesOperatorDecisionEvidence, true);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.reviewDecisionIngestorOnly, true);
+    assert.equal(body.semantics.acceptedDecisionEvidenceDoesNotGrantApproval, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/approval-grant-proposal returns source-only grant proposal", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-approval-grant-proposal.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/approval-grant-proposal",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-approval-grant-proposal.packet");
+    assert.equal(body.state, "ready_for_grant_proposal_review");
+    assert.equal(body.readiness.grantProposalReady, true);
+    assert.equal(body.grantProposal.proposalOnly, true);
+    assert.equal(body.grantProposal.grantWouldRemainSeparateAction, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.approvalGrantExecutionPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.preparesGrantProposal, true);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesApprovalGrant, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.proposalDoesNotGrantApproval, true);
+    assert.equal(body.semantics.approvalGrantRequiresSeparateOperatorAction, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/approval-grant-evidence returns source-only grant evidence", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-approval-grant-evidence-ingestor.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/approval-grant-evidence",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-approval-grant-evidence-ingestor.packet");
+    assert.equal(body.state, "grant_evidence_accepted");
+    assert.equal(body.grantEvidence.acceptedGrantEvidence, true);
+    assert.equal(body.readiness.grantEvidenceAccepted, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.approvalGrantExecutionPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.classifiesGrantEvidence, true);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesApprovalGrant, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.acceptedGrantEvidenceDoesNotExecuteGrant, true);
+    assert.equal(body.semantics.acceptedGrantEvidenceDoesNotAuthorizeRuntime, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/execution-gate-final-review returns source-only final review", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-execution-gate-final-review.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/execution-gate-final-review",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-execution-gate-final-review.packet");
+    assert.equal(body.state, "ready_for_execution_gate_final_review");
+    assert.equal(body.readiness.finalReviewReady, true);
+    assert.equal(body.finalReview.reviewOnly, true);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.rendersExecutionGateFinalReview, true);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.reviewDoesNotDispatchExecutor, true);
+    assert.equal(body.semantics.acceptedGrantEvidenceDoesNotAuthorizeRuntime, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/executor-dispatch-request-draft returns source-only dispatch draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-executor-dispatch-request-draft.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/executor-dispatch-request-draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-executor-dispatch-request-draft.packet");
+    assert.equal(body.state, "dispatch_request_draft_ready");
+    assert.equal(body.readiness.dispatchRequestDraftReady, true);
+    assert.equal(body.dispatchRequestDraft.draftOnly, true);
+    assert.equal(body.dispatchRequestDraft.commandMetadata.secretValuesIncluded, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.rendersExecutorDispatchRequestDraft, true);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.draftDoesNotDispatchExecutor, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dispatcher-preflight-seal returns source-only preflight seal", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-dispatcher-preflight-seal.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dispatcher-preflight-seal",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dispatcher-preflight-seal.packet");
+    assert.equal(body.state, "dispatcher_preflight_seal_ready");
+    assert.equal(body.readiness.dispatcherPreflightSealReady, true);
+    assert.equal(body.runtimeEvidence.suppliedOnly, true);
+    assert.equal(body.sealedEnvelope.sealOnly, true);
+    assert.equal(body.sealedEnvelope.integrityVerified, true);
+    assert.equal(body.sealedEnvelope.secretValuesIncluded, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.collectsLiveEvidence, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.semantics.sealDoesNotDispatchExecutor, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dispatcher-approval-handoff returns source-only approval handoff", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const fixture = JSON.parse(readFileSync("fixtures/terminal-brief/sidecar-dispatcher-approval-handoff.no-live.json", "utf8"));
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dispatcher-approval-handoff",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(fixture),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dispatcher-approval-handoff.packet");
+    assert.equal(body.state, "dispatcher_approval_handoff_ready");
+    assert.equal(body.readiness.dispatcherApprovalHandoffReady, true);
+    assert.equal(body.approvalHandoffDraft.draftOnly, true);
+    assert.equal(body.approvalHandoffDraft.dispatchPermitted, false);
+    assert.equal(body.approvalHandoffDraft.approvalGrantPermitted, false);
+    assert.equal(body.approvalHandoffDraft.approvalGrantExecutionPermitted, false);
+    assert.equal(body.approvalHandoffDraft.startExecutorDispatchPermitted, false);
+    assert.equal(body.approvalHandoffDraft.executorInvocationPermitted, false);
+    assert.equal(body.approvalHandoffDraft.processSpawnPermitted, false);
+    assert.equal(body.approvalHandoffDraft.sidecarStartPermitted, false);
+    assert.equal(body.approvalHandoffDraft.defaultOnPermitted, false);
+    assert.equal(body.approvalHandoffDraft.providerSendPermitted, false);
+    assert.equal(body.approvalHandoffDraft.terminalAckPermitted, false);
+    assert.equal(body.approvalHandoffDraft.executionPermitted, false);
+    assert.equal(body.approvalHandoffDraft.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.handoffDoesNotSendApprovalRequest, true);
+    assert.equal(body.semantics.handoffDoesNotDispatchExecutor, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dry-run-start-canary-plan returns draft-only no-live canary plan", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const executorInvocationRehearsal = {
+      kind: "a2a-broker.terminal-brief-sidecar-executor-invocation-rehearsal.packet",
+      version: 1,
+      generatedAt: "2026-05-18T20:00:00.000Z",
+      mode: "read-only/no-live",
+      parentRoundId: "round-724",
+      state: "ready_for_executor_invocation_rehearsal",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      idempotencyKey: "tb-sidecar-executor-invocation-rehearsal:fixture-724",
+      source: {
+        startExecutorGateState: "ready_for_start_executor_review",
+        startExecutorGateIdempotencyKey: "tb-sidecar-start-executor-gate:fixture-724",
+        startExecutorReviewReady: true,
+        requestedExecutor: "gongyung-sidecar-dry-run-executor",
+        operatorApprovalReference: "operator-visible-approval-724",
+        commandShapeKind: "metadata_only",
+      },
+      invocationPlan: {
+        rehearsalOnly: true,
+        supervisedDryRunOnly: true,
+        executorName: "gongyung-sidecar-dry-run-executor",
+        adapterName: "gongyung",
+        executorRuntime: "metadata-only",
+        supervisor: "terminal-brief-sidecar-worker",
+        commandShape: {
+          kind: "metadata_only",
+          commandName: "terminal-brief-sidecar",
+          commandArgs: ["--dry-run", "--poll-ms", "15000"],
+          envKeys: ["EDGE_SECRET"],
+          inheritedFromStartGate: true,
+          commandExecutionPermitted: false,
+          processSpawnPermitted: false,
+          secretsIncluded: false,
+        },
+        preflightChecks: ["source start executor gate is ready_for_start_executor_review"],
+        abortConditions: ["Gateway readiness is false"],
+        rollbackInstructions: ["discard this rehearsal packet if source gate evidence changes"],
+        expectedEvidence: ["operator-reviewed metadata-only invocation plan"],
+      },
+      readiness: {
+        sourceCriteriaMet: true,
+        executorInvocationRehearsalReady: true,
+        startExecutorDispatchPermitted: false,
+        executorInvocationPermitted: false,
+        processSpawnPermitted: false,
+        sidecarStartPermitted: false,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        approvalGrantPermitted: false,
+        providerSendPermitted: false,
+        terminalAckPermitted: false,
+        executionPermitted: false,
+        missingEvidence: [],
+        blockers: [],
+        nextAction: "review the metadata-only invocation rehearsal",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        rehearsalVersion: 1,
+        harnessNeutral: true,
+        openclawMessageSendRequired: false,
+        hermesAdapterCompatible: true,
+        gongyungAdapterCompatible: true,
+        consumesStartExecutorGatePacket: true,
+        dispatchesStartExecutor: false,
+        invokesExecutor: false,
+        spawnsProcess: false,
+        startsSidecar: false,
+        enablesDefaultOn: false,
+        executesAction: false,
+      },
+      semantics: {
+        executorInvocationRehearsalOnly: true,
+        sourceOnlyNoLive: true,
+        rehearsalDoesNotMutateState: true,
+        commandShapeIsMetadataOnly: true,
+        commandShapeDoesNotContainSecretValues: true,
+        startExecutorGateDoesNotPermitInvocation: true,
+        providerAcceptedIsVisibilityProof: false,
+        terminalAckEligibleDoesNotPermitAck: true,
+        sidecarStartRequiresSeparateApprovedExecutor: true,
+        defaultOnNotEnabledByThisPacket: true,
+        executionNotPermitted: true,
+        processSpawnNotPermitted: true,
+        routeIsReadOnly: true,
+        brokerFinalizerRequired: true,
+        performsGitHubMutation: false,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        createsTaskFlowRecords: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dry-run-start-canary-plan",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          executorInvocationRehearsal,
+          dryRunStartCanaryPlan: {
+            operatorTarget: "operator-a",
+            canaryWindowMinutes: 30,
+            monitorIntervalSeconds: 60,
+            maxQueueBacklog: 1000,
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dry-run-start-canary-plan.packet");
+    assert.equal(body.state, "ready_for_dry_run_start_approval_request");
+    assert.equal(body.approvalRequestDraft.dispatchPermitted, false);
+    assert.equal(body.approvalRequestDraft.sendsApprovalRequest, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.dryRunStartCanaryPlanOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-candidate-final-gate returns source-only default-on candidate review", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-candidate-final-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          observationPacket: {
+            kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+            generatedAt: "2026-05-19T03:31:05.000Z",
+            operatorInstructionReference: "telegram:7360371189:53345",
+            windowSeconds: 300,
+            state: "bounded_dry_run_observation_passed",
+            blockers: [],
+            summary: {
+              processCount: 1,
+              nRestarts: "0",
+              spoolBefore: 2,
+              spoolAfter: 2,
+              spoolDelta: 0,
+              cursorBefore: "178 1779161103",
+              cursorAfter: "178 1779161403",
+              brokerOk: true,
+              gatewayReady: true,
+              gatewayEventLoopDegraded: false,
+            },
+            safety: {
+              dryRunOnly: true,
+              spoolOnly: true,
+              liveProviderSendPermitted: false,
+              terminalAckPermitted: false,
+              dbMutationPermitted: false,
+              defaultOnPermitted: false,
+              processSpawnPerformed: false,
+              sidecarRestartPerformed: false,
+            },
+          },
+          defaultOnCandidateFinalGate: {
+            now: "2026-05-19T03:32:00.000Z",
+            reviewOwner: "broker-finalizer",
+            minObservationSeconds: 300,
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-candidate-final-gate.packet");
+    assert.equal(body.state, "ready_for_default_on_candidate_review");
+    assert.equal(body.readiness.finalGateReady, true);
+    assert.equal(body.candidateGate.defaultOnCandidate, true);
+    assert.equal(body.candidateGate.defaultOnEnabled, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.sendsProvider, false);
+    assert.equal(body.integrationContract.performsTerminalAck, false);
+    assert.equal(body.semantics.candidateDoesNotEnableDefaultOn, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-approval-request returns source-only approval request draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const finalGatePacket = {
+      kind: "a2a-broker.terminal-brief-sidecar-default-on-candidate-final-gate.packet",
+      version: 1,
+      generatedAt: "2026-05-19T03:32:00.000Z",
+      mode: "terminal-brief-default-on-candidate-source-only",
+      state: "ready_for_default_on_candidate_review",
+      dryRunOnly: true,
+      sourceOnlyNoLive: true,
+      idempotencyKey: "tb-sidecar-default-on-candidate-final-gate:fixture",
+      source: {
+        observationKind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+        observationState: "bounded_dry_run_observation_passed",
+        observationGeneratedAt: "2026-05-19T03:31:05.000Z",
+        operatorInstructionReference: "telegram:7360371189:53345",
+        windowSeconds: 300,
+        minObservationSeconds: 300,
+      },
+      candidateGate: {
+        reviewOnly: true,
+        defaultOnCandidate: true,
+        defaultOnEnabled: false,
+        reviewOwner: "broker-finalizer",
+        gateReference: "tb-sidecar-default-on-candidate:fixture",
+        checklist: [],
+        abortConditions: [],
+        rollbackChecklist: [],
+      },
+      readiness: {
+        sourceCriteriaMet: true,
+        finalGateReady: true,
+        defaultOnPermitted: false,
+        liveActivationPermitted: false,
+        providerSendPermitted: false,
+        terminalAckPermitted: false,
+        executionPermitted: false,
+        dbMutationPermitted: false,
+        processSpawnPermitted: false,
+        sidecarStartPermitted: false,
+        missingEvidence: [],
+        blockers: [],
+        nextAction: "review the default-on candidate gate",
+      },
+      blockers: [],
+      nextActions: [],
+      approvalSensitiveActionsExcluded: [],
+      integrationContract: {
+        transport: "json",
+        defaultOnCandidateFinalGateVersion: 1,
+        consumesBoundedDryRunObservationPacket: true,
+        rendersDefaultOnCandidateFinalGate: true,
+        enablesDefaultOn: false,
+        sendsProvider: false,
+        performsTerminalAck: false,
+        mutatesDb: false,
+        spawnsProcess: false,
+        restartsSidecar: false,
+        executesAction: false,
+      },
+      semantics: {
+        finalGateReviewOnly: true,
+        sourceOnlyNoLive: true,
+        candidateDoesNotEnableDefaultOn: true,
+        observationDoesNotAuthorizeLiveSend: true,
+        terminalAckEligibleDoesNotPermitAck: true,
+        providerAcceptedIsVisibilityProof: false,
+        executionNotPermitted: true,
+        processSpawnNotPermitted: true,
+        sidecarStartNotPermitted: true,
+        defaultOnNotEnabledByThisPacket: true,
+        performsProviderSend: false,
+        performsTerminalAck: false,
+        performsRuntimeRestartOrDeploy: false,
+        performsDbMutation: false,
+        performsHistoricalReplay: false,
+        performsReleaseOrPublish: false,
+        movesSecretsOrCredentials: false,
+      },
+    };
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-approval-request",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          finalGatePacket,
+          defaultOnApprovalRequest: {
+            now: "2026-05-19T03:56:00.000Z",
+            operatorTarget: "operator-a",
+            operatorChannel: "telegram:7360371189",
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-approval-request.packet");
+    assert.equal(body.state, "approval_request_draft_ready");
+    assert.equal(body.approvalRequestDraft.status, "draft_not_sent");
+    assert.equal(body.approvalRequestDraft.requiredReply, "default-on 승인");
+    assert.equal(body.readiness.approvalRequestDraftReady, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.sendsProvider, false);
+    assert.equal(body.integrationContract.mutatesDb, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/preflight-evidence-collector returns source-only supplied evidence packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-preflight-evidence-collector.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/preflight-evidence-collector",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-preflight-evidence-collector.packet");
+    assert.equal(body.state, "ready_for_supervised_dry_run_preflight_review");
+    assert.equal(body.readiness.preflightReviewReady, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.collectsLiveEvidence, false);
+    assert.equal(body.integrationContract.probesGateway, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.suppliedEvidenceOnly, true);
+    assert.equal(body.semantics.performsProviderSend, false);
+    assert.equal(body.semantics.performsTerminalAck, false);
+    assert.equal(body.semantics.performsRuntimeRestartOrDeploy, false);
+    assert.equal(body.semantics.performsDbMutation, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/preflight-chain-review returns final no-live chain packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-preflight-chain-review.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/preflight-chain-review",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-preflight-chain-review.packet");
+    assert.equal(body.state, "ready_for_supervised_dry_run_chain_review");
+    assert.equal(body.readiness.chainReviewReady, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.probesGateway, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.preflightChainReviewOnly, true);
+    assert.equal(body.semantics.dryRunStartRequiresSeparateApproval, true);
+    assert.equal(body.semantics.performsProviderSend, false);
+    assert.equal(body.semantics.performsTerminalAck, false);
+    assert.equal(body.semantics.performsRuntimeRestartOrDeploy, false);
+    assert.equal(body.semantics.performsDbMutation, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dry-run-start-approval-request returns source-only approval draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-dry-run-start-approval-request.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dry-run-start-approval-request",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dry-run-start-approval-request.packet");
+    assert.equal(body.state, "approval_request_draft_ready");
+    assert.equal(body.readiness.approvalRequestDraftReady, true);
+    assert.equal(body.approvalRequestDraft.status, "draft_not_sent");
+    assert.equal(body.approvalRequestDraft.dispatchPermitted, false);
+    assert.equal(body.approvalRequestDraft.approvalGrantPermitted, false);
+    assert.equal(body.approvalRequestDraft.executionPermitted, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.supervisedDryRunBoundary.separateOperatorApprovalRequired, true);
+    assert.equal(body.semantics.requestDraftIsNotSend, true);
+    assert.equal(body.semantics.performsProviderSend, false);
+    assert.equal(body.semantics.performsTerminalAck, false);
+    assert.equal(body.semantics.performsRuntimeRestartOrDeploy, false);
+    assert.equal(body.semantics.performsDbMutation, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/dry-run-start-approval-receipt returns source-only receipt evidence", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-dry-run-start-approval-receipt-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/dry-run-start-approval-receipt",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.classification.providerAccepted, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.terminalAckEligible, true);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.startsSidecar, false);
+    assert.equal(body.semantics.approvalGrantEvidenceDoesNotGrantApproval, true);
+    assert.equal(body.semantics.performsTerminalAck, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-approval-evidence returns source-only evidence packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-approval-evidence-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-approval-evidence",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-approval-evidence-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.classification.providerAccepted, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.terminalAckEligible, true);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.integrationContract.openclawMessageSendRequired, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.semantics.approvalGrantEvidenceDoesNotGrantApproval, true);
+    assert.equal(body.semantics.defaultOnApprovalEvidenceDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.performsTerminalAck, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-enablement-gate returns source-only gate packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-enablement-gate.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-enablement-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-enablement-gate.packet");
+    assert.equal(body.state, "ready_for_default_on_enablement_review");
+    assert.equal(body.readiness.enablementGateReady, true);
+    assert.equal(body.source.receiptEvidenceAccepted, true);
+    assert.equal(body.source.approvalEvidenceAccepted, true);
+    assert.equal(body.source.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.readiness.approvalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.approvalGrantEvidenceExecutesGrant, false);
+    assert.equal(body.semantics.gateDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.performsTerminalAck, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-runtime-mutation-plan returns source-only plan packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-runtime-mutation-plan.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-runtime-mutation-plan",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-runtime-mutation-plan.packet");
+    assert.equal(body.state, "ready_for_runtime_mutation_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.readiness.runtimeMutationPlanReady, true);
+    assert.equal(body.runtimeMutationPlan.planOnly, true);
+    assert.equal(body.runtimeMutationPlan.configChange.applied, false);
+    assert.equal(body.runtimeMutationPlan.executionEnvelope.executable, false);
+    assert.equal(body.source.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.source.approvalGrantEvidenceExecutesGrant, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.liveActivationPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.semantics.planDoesNotWriteConfig, true);
+    assert.equal(body.semantics.planDoesNotEnableDefaultOn, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-execution-rollback-envelope returns source-only envelope packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-rollback-envelope.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-rollback-envelope",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-execution-rollback-envelope.packet");
+    assert.equal(body.state, "ready_for_execution_approval_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.readiness.executionEnvelopeReady, true);
+    assert.equal(body.executionRollbackEnvelope.envelopeOnly, true);
+    assert.equal(body.source.configChangeApplied, false);
+    assert.equal(body.source.executionEnvelopeExecutable, false);
+    assert.equal(body.executionRollbackEnvelope.executionPlan.commandExecutable, false);
+    assert.equal(body.executionRollbackEnvelope.executionPlan.envValuesIncluded, false);
+    assert.equal(body.executionRollbackEnvelope.executionPlan.secretValuesIncluded, false);
+    assert.equal(body.executionRollbackEnvelope.rollbackPlan.rollbackExecutable, false);
+    assert.equal(body.readiness.executionApprovalRequestPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.semantics.envelopeDoesNotExecute, true);
+    assert.equal(body.semantics.envelopeDoesNotWriteConfig, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-execution-approval-request returns source-only draft packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-approval-request.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-approval-request",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-execution-approval-request.packet");
+    assert.equal(body.state, "execution_approval_request_draft_ready");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.readiness.executionApprovalRequestDraftReady, true);
+    assert.equal(body.approvalRequestDraft.status, "draft_not_sent");
+    assert.equal(body.approvalRequestDraft.dispatchPermitted, false);
+    assert.equal(body.approvalRequestDraft.approvalGrantPermitted, false);
+    assert.equal(body.approvalRequestDraft.configWritePermitted, false);
+    assert.equal(body.approvalRequestDraft.defaultOnPermitted, false);
+    assert.equal(body.approvalRequestDraft.sidecarRestartPermitted, false);
+    assert.equal(body.approvalRequestDraft.providerSendPermitted, false);
+    assert.equal(body.approvalRequestDraft.terminalAckPermitted, false);
+    assert.equal(body.approvalRequestDraft.dbMutationPermitted, false);
+    assert.equal(body.approvalRequestDraft.taskFlowMutationPermitted, false);
+    assert.equal(body.approvalRequestDraft.executionPermitted, false);
+    assert.equal(body.approvalRequestDraft.processSpawnPermitted, false);
+    assert.equal(body.readiness.executionApprovalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.integrationContract.sendsApprovalRequest, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.restartsSidecar, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.requestDraftIsNotSend, true);
+    assert.equal(body.semantics.requestDoesNotExecuteEnvelope, true);
+    assert.equal(body.semantics.requestDoesNotWriteConfig, true);
+    assert.equal(body.semantics.requestDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.requestDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-execution-approval-evidence returns no-live accepted evidence packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-approval-request.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const requestRes = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-approval-request",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          ...input,
+          defaultOnExecutionApprovalRequest: {
+            now: "2026-05-19T06:45:00.000Z",
+            operatorTarget: "terminal-brief-default-on",
+            operatorChannel: "telegram-direct",
+          },
+        }),
+      },
+    );
+
+    assert.equal(requestRes.status, 200);
+    const requestPacket = await requestRes.json();
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-approval-evidence",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          defaultOnExecutionApprovalRequestPacket: requestPacket,
+          evidence: [
+            {
+              kind: "manual_operator_confirmation",
+              observedAt: "2026-05-19T06:45:00.000Z",
+              target: "terminal-brief-default-on",
+              operatorId: "operator-a",
+              source: "telegram-direct",
+              note: "default-on execution 승인",
+            },
+            {
+              kind: "approval_grant",
+              observedAt: "2026-05-19T06:45:00.000Z",
+              approvedAction: "approve_terminal_brief_default_on_execution",
+              approvedTarget: "terminal-brief-default-on",
+              operatorId: "operator-a",
+              source: "telegram-direct",
+              note: "default-on execution 승인",
+            },
+          ],
+          executionApprovalEvidenceIngestor: { now: "2026-05-19T06:45:00.000Z" },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-execution-approval-evidence-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.approvalGrantEvidenceExecutesGrant, false);
+    assert.equal(body.readiness.executionApprovalRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.restartsSidecar, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.evidenceIngestorOnly, true);
+    assert.equal(body.semantics.executionApprovalEvidenceDoesNotWriteConfig, true);
+    assert.equal(body.semantics.executionApprovalEvidenceDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.executionApprovalEvidenceDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-runtime-execution-final-gate returns source-only final gate", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-runtime-execution-final-gate.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-runtime-execution-final-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-runtime-execution-final-gate.packet");
+    assert.equal(body.state, "ready_for_runtime_execution_final_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.finalGate.gateReady, true);
+    assert.equal(body.source.receiptEvidenceAccepted, true);
+    assert.equal(body.source.approvalEvidenceAccepted, true);
+    assert.equal(body.readiness.runtimeExecutionFinalGateReady, true);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.readiness.gatewayRestartPermitted, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.restartsSidecar, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.runtimeExecutionFinalGateOnly, true);
+    assert.equal(body.semantics.acceptedEvidenceDoesNotAuthorizeRuntime, true);
+    assert.equal(body.semantics.finalGateDoesNotWriteConfig, true);
+    assert.equal(body.semantics.finalGateDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.finalGateDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-runtime-execution-request-draft returns source-only request draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-runtime-execution-request-draft.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-runtime-execution-request-draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-runtime-execution-request-draft.packet");
+    assert.equal(body.state, "runtime_execution_request_draft_ready");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.source.runtimeExecutionFinalGateReady, true);
+    assert.equal(body.source.gateReady, true);
+    assert.equal(body.executionRequestDraft.status, "draft_not_sent");
+    assert.equal(body.executionRequestDraft.dispatchPermitted, false);
+    assert.equal(body.executionRequestDraft.requiredReply, "execute default-on runtime mutation 승인");
+    assert.equal(body.readiness.runtimeExecutionRequestDraftReady, true);
+    assert.equal(body.readiness.runtimeExecutionRequestDispatchPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.readiness.gatewayRestartPermitted, false);
+    assert.equal(body.integrationContract.sendsExecutionRequest, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.runtimeExecutionRequestDraftOnly, true);
+    assert.equal(body.semantics.requestDoesNotExecuteRuntimeMutation, true);
+    assert.equal(body.semantics.requestDoesNotWriteConfig, true);
+    assert.equal(body.semantics.requestDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.requestDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-runtime-execution-approval-evidence returns source-only accepted evidence", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-runtime-execution-approval-evidence-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-runtime-execution-approval-evidence",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-runtime-execution-approval-evidence-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.source.requestedAction, "execute_terminal_brief_default_on_runtime_mutation");
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.approvalGrantEvidenceExecutesGrant, false);
+    assert.equal(body.readiness.runtimeExecutionRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.approvalGrantExecutionPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.readiness.gatewayRestartPermitted, false);
+    assert.equal(body.integrationContract.sendsExecutionRequest, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesApprovalGrant, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.runtimeExecutionApprovalEvidenceIngestorOnly, true);
+    assert.equal(body.semantics.runtimeExecutionApprovalEvidenceDoesNotWriteConfig, true);
+    assert.equal(body.semantics.runtimeExecutionApprovalEvidenceDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.runtimeExecutionApprovalEvidenceDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-runtime-executor-gate returns source-only executor gate", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-runtime-executor-gate.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-runtime-executor-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-runtime-executor-gate.packet");
+    assert.equal(body.state, "ready_for_runtime_executor_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.executorGate.gateReady, true);
+    assert.equal(body.source.requestedAction, "execute_terminal_brief_default_on_runtime_mutation");
+    assert.equal(body.source.configKey, "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON");
+    assert.equal(body.readiness.runtimeExecutorGateReady, true);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.readiness.gatewayRestartPermitted, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.executorGateDoesNotWriteConfig, true);
+    assert.equal(body.semantics.executorGateDoesNotEnableDefaultOn, true);
+    assert.equal(body.semantics.executorGateDoesNotRestartSidecar, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-final-live-execution returns source-only final execution packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-final-live-execution.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-final-live-execution",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-final-live-execution.packet");
+    assert.equal(body.state, "ready_for_final_live_execution_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.finalLiveExecution.reviewOnly, true);
+    assert.equal(body.finalLiveExecution.checkpoint.required, true);
+    assert.equal(body.finalLiveExecution.checkpoint.createsCheckpointInThisPacket, false);
+    assert.equal(body.finalLiveExecution.executionPlan.executesInThisPacket, false);
+    assert.equal(body.readiness.finalLiveExecutionReviewReady, true);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.readiness.sidecarStartPermitted, false);
+    assert.equal(body.readiness.brokerRestartPermitted, false);
+    assert.equal(body.readiness.gatewayRestartPermitted, false);
+    assert.equal(body.readiness.checkpointCreationPermitted, false);
+    assert.equal(body.readiness.rollbackExecutionPermitted, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.createsCheckpoint, false);
+    assert.equal(body.integrationContract.executesRollback, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.packetDoesNotWriteConfig, true);
+    assert.equal(body.semantics.packetDoesNotCreateCheckpoint, true);
+    assert.equal(body.semantics.packetDoesNotExecuteRollback, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-execution-window-request-draft returns source-only request draft", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-window-request-draft.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-window-request-draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-execution-window-request-draft.packet");
+    assert.equal(body.state, "execution_window_request_draft_ready");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.executionWindowRequestDraft.status, "draft_not_sent");
+    assert.equal(body.executionWindowRequestDraft.requiredReply, "fresh operator execution window 승인");
+    assert.equal(body.readiness.executionWindowRequestDraftReady, true);
+    assert.equal(body.readiness.executionWindowRequestDispatchPermitted, false);
+    assert.equal(body.readiness.checkpointCreationPermitted, false);
+    assert.equal(body.readiness.rollbackExecutionPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.integrationContract.sendsExecutionWindowRequest, false);
+    assert.equal(body.integrationContract.createsCheckpoint, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.restartsSidecar, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.requestDoesNotCreateCheckpoint, true);
+    assert.equal(body.semantics.requestDoesNotWriteConfig, true);
+    assert.equal(body.semantics.requestDoesNotEnableDefaultOn, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-execution-window-approval-evidence returns source-only evidence classification", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-execution-window-approval-evidence",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-execution-window-approval-evidence-ingestor.packet");
+    assert.equal(body.state, "accepted");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.receiptEvidenceAccepted, true);
+    assert.equal(body.approvalEvidenceAccepted, true);
+    assert.equal(body.classification.providerAcceptedIsVisibilityProof, false);
+    assert.equal(body.classification.approvalGrantEvidenceExecutesGrant, false);
+    assert.equal(body.readiness.executionWindowApprovalEvidenceAccepted, true);
+    assert.equal(body.readiness.executionWindowRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.approvalGrantExecutionPermitted, false);
+    assert.equal(body.readiness.checkpointCreationPermitted, false);
+    assert.equal(body.readiness.rollbackExecutionPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.integrationContract.grantsApproval, false);
+    assert.equal(body.integrationContract.executesApprovalGrant, false);
+    assert.equal(body.integrationContract.createsCheckpoint, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.approvalEvidenceDoesNotGrantApproval, true);
+    assert.equal(body.semantics.approvalEvidenceDoesNotWriteConfig, true);
+    assert.equal(body.semantics.defaultOnNotEnabledByThisPacket, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-final-runtime-mutation-executor-gate returns source-only final gate", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-final-runtime-mutation-executor-gate",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.packet");
+    assert.equal(body.state, "ready_for_final_runtime_mutation_executor_review");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.source.receiptEvidenceAccepted, true);
+    assert.equal(body.source.approvalEvidenceAccepted, true);
+    assert.equal(body.source.executionWindowApprovalEvidenceAccepted, true);
+    assert.equal(body.finalRuntimeMutationExecutorGate.gateReady, true);
+    assert.equal(body.finalRuntimeMutationExecutorGate.reviewOnly, true);
+    assert.equal(body.readiness.finalRuntimeMutationExecutorGateReady, true);
+    assert.equal(body.readiness.executionWindowRequestDispatchPermitted, false);
+    assert.equal(body.readiness.approvalGrantPermitted, false);
+    assert.equal(body.readiness.approvalGrantExecutionPermitted, false);
+    assert.equal(body.readiness.checkpointCreationPermitted, false);
+    assert.equal(body.readiness.rollbackExecutionPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.integrationContract.createsCheckpoint, false);
+    assert.equal(body.integrationContract.executesRollback, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.gateDoesNotCreateCheckpoint, true);
+    assert.equal(body.semantics.gateDoesNotWriteConfig, true);
+    assert.equal(body.semantics.defaultOnNotEnabledByThisPacket, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /terminal-brief/sidecar/default-on-live-executor returns fail-closed live executor packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const input = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures/terminal-brief/sidecar-default-on-execution-window-approval-evidence-ingestor.no-live.json"),
+      "utf8",
+    )) as Record<string, unknown>;
+
+    const res = await fetch(
+      server.baseUrl + "/terminal-brief/sidecar/default-on-live-executor",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(input),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.terminal-brief-sidecar-default-on-live-executor.packet");
+    assert.equal(body.state, "awaiting_final_live_execution_approval");
+    assert.equal(body.sourceOnlyNoLive, true);
+    assert.equal(body.source.finalRuntimeMutationExecutorGateReady, true);
+    assert.equal(body.liveExecutor.liveExecutorAvailable, true);
+    assert.equal(body.liveExecutor.failClosed, true);
+    assert.equal(body.liveExecutor.finalLiveExecutionApprovalRequired, true);
+    assert.equal(body.liveExecutor.finalLiveExecutionApprovalAccepted, false);
+    assert.equal(body.liveExecutor.executionArmed, false);
+    assert.equal(body.liveExecutor.executionPerformed, false);
+    assert.equal(body.liveExecutor.operations.every((operation: Record<string, unknown>) => operation.permitted === false), true);
+    assert.equal(body.liveExecutor.operations.every((operation: Record<string, unknown>) => operation.performed === false), true);
+    assert.equal(body.readiness.liveExecutorReviewReady, true);
+    assert.equal(body.readiness.finalLiveExecutionApprovalAccepted, false);
+    assert.equal(body.readiness.checkpointCreationPermitted, false);
+    assert.equal(body.readiness.rollbackExecutionPermitted, false);
+    assert.equal(body.readiness.runtimeMutationPermitted, false);
+    assert.equal(body.readiness.configWritePermitted, false);
+    assert.equal(body.readiness.defaultOnPermitted, false);
+    assert.equal(body.readiness.sidecarRestartPermitted, false);
+    assert.equal(body.readiness.providerSendPermitted, false);
+    assert.equal(body.readiness.terminalAckPermitted, false);
+    assert.equal(body.readiness.dbMutationPermitted, false);
+    assert.equal(body.readiness.taskFlowMutationPermitted, false);
+    assert.equal(body.readiness.startExecutorDispatchPermitted, false);
+    assert.equal(body.readiness.executorInvocationPermitted, false);
+    assert.equal(body.readiness.executionPermitted, false);
+    assert.equal(body.readiness.processSpawnPermitted, false);
+    assert.equal(body.integrationContract.createsCheckpoint, false);
+    assert.equal(body.integrationContract.executesRollback, false);
+    assert.equal(body.integrationContract.writesConfig, false);
+    assert.equal(body.integrationContract.enablesDefaultOn, false);
+    assert.equal(body.integrationContract.dispatchesStartExecutor, false);
+    assert.equal(body.integrationContract.invokesExecutor, false);
+    assert.equal(body.integrationContract.spawnsProcess, false);
+    assert.equal(body.integrationContract.executesAction, false);
+    assert.equal(body.semantics.liveExecutorDoesNotExecuteWithoutFinalApproval, true);
+    assert.equal(body.semantics.finalApprovalStillRequired, true);
+    assert.equal(body.semantics.defaultOnNotEnabledByThisPacket, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /workers/subagent-orchestration/plan returns read-only capacity planner packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/workers/subagent-orchestration/plan",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "worker-a",
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({
+          now: "2026-05-19T01:40:00.000Z",
+          task: {
+            taskId: "task-large-independent",
+            size: "large",
+            coupling: "low",
+            hasIndependentSubtasks: true,
+            writeSets: ["src/feature.ts", "docs/feature.md", "test/feature.test.ts"],
+          },
+          host: {
+            workerId: "worker-a",
+            cpuLoadPct: 35,
+            memoryUsedPct: 45,
+            ioPressure: "low",
+            eventLoopDegraded: false,
+            gatewayPressure: "low",
+            activeSubagents: 0,
+            workerSubagentCap: 3,
+            brokerActiveSubagents: 2,
+            brokerSubagentCap: 12,
+          },
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.worker-subagent-orchestration-policy.packet");
+    assert.equal(body.generatedAt, "2026-05-19T01:40:00.000Z");
+    assert.equal(body.decision.parallelismHint, 3);
+    assert.deepEqual(body.decision.recommendedSubagents.map((agent: Record<string, unknown>) => agent.role), ["explorer", "implementer", "verifier"]);
+    assert.equal(body.decision.oneFinalizerRequired, true);
+    assert.equal(body.decision.evidenceOnlySubagents, true);
+    assert.equal(body.decision.writeSetIsolationRequired, true);
+    assert.equal(body.boundaries.runtimeBehaviorChanged, false);
+    assert.equal(body.boundaries.mandatoryProductionSpawn, false);
+    assert.equal(body.boundaries.brokerDispatchSemanticsChanged, false);
+    assert.equal(body.boundaries.taskFlowMutation, false);
+    assert.equal(body.boundaries.dbMutation, false);
+    assert.equal(body.boundaries.deployOrRestart, false);
+    assert.equal(body.boundaries.secretMovement, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-orchestration/recommendation returns classification plus no-live recommendation packet", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          intent: "propose_patch",
+          targetEnvironment: "research",
+          policyContext: { requiresApproval: true },
+          artifactCount: 2,
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.complexity-orchestration-recommendation-packet");
+    assert.equal(body.version, 1);
+    assert.ok(typeof body.generatedAt === "string");
+    assert.ok(typeof body.idempotencyKey === "string");
+    assert.ok(body.idempotencyKey.startsWith("complexity-orch-recommendation:"));
+
+    // Classification — propose_patch is base="complex" (ordinal 2), +1 approval +0 env = 3 => "critical"
+    assert.equal(body.classification.level, "critical");
+    assert.ok(typeof body.classification.reason === "string");
+    assert.equal(body.classification.origin, "offset-adjusted");
+    assert.equal(body.classification.signals.baseLevel, "complex");
+    assert.equal(body.classification.signals.totalOffset, 1);
+    assert.equal(body.classification.signals.requiresApproval, true);
+    assert.equal(body.classification.signals.intentRecognized, true);
+
+    // Recommendation — critical maps to operator_review
+    assert.equal(body.recommendation.complexity, "critical");
+    assert.equal(body.recommendation.action, "operator_review");
+    assert.equal(body.recommendation.parallelismHint, 0);
+    assert.equal(body.recommendation.confidence, "high");
+    assert.ok(typeof body.recommendation.rationale === "string");
+    assert.equal(body.recommendation.recommendedRoles.length, 0);
+    assert.ok(typeof body.recommendation.safetyGate === "string");
+
+    // No-live boundaries
+    assert.equal(body.boundaries.runtimeBehaviorChanged, false);
+    assert.equal(body.boundaries.mandatoryProductionSpawn, false);
+    assert.equal(body.boundaries.brokerDispatchSemanticsChanged, false);
+    assert.equal(body.boundaries.taskFlowMutation, false);
+    assert.equal(body.boundaries.dbMutation, false);
+    assert.equal(body.boundaries.deployOrRestart, false);
+    assert.equal(body.boundaries.secretMovement, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-orchestration/recommendation rejects missing intent as bad_request", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          targetEnvironment: "research",
+        }),
+      },
+    );
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error?.code, "bad_request");
+    assert.ok(typeof body.error?.message === "string");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-orchestration/recommendation rejects empty body as bad_request", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({}),
+      },
+    );
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error?.code, "bad_request");
+    assert.ok(typeof body.error?.message === "string");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-orchestration/recommendation accepts simple intent and returns direct_execution", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "analyst-a",
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({
+          intent: "analyze",
+          targetEnvironment: "research",
+        }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.complexity-orchestration-recommendation-packet");
+    assert.equal(body.classification.level, "simple");
+    assert.equal(body.recommendation.action, "direct_execution");
+    assert.equal(body.recommendation.parallelismHint, 0);
+    assert.equal(body.recommendation.confidence, "high");
+    assert.equal(body.boundaries.runtimeBehaviorChanged, false);
+    assert.equal(body.boundaries.taskFlowMutation, false);
+    assert.equal(body.boundaries.dbMutation, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-execution-plan/draft returns execution plan draft from supplied recommendation", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    // First, get a complexity orchestration recommendation packet.
+    const recRes = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({
+          intent: "propose_patch",
+          targetEnvironment: "research",
+          policyContext: { requiresApproval: true },
+          artifactCount: 2,
+        }),
+      },
+    );
+    assert.equal(recRes.status, 200);
+    const recommendation = await recRes.json();
+    assert.equal(recommendation.kind, "a2a-broker.complexity-orchestration-recommendation-packet");
+
+    // Now supply it to the execution-plan/draft route.
+    const res = await fetch(
+      server.baseUrl + "/complexity-execution-plan/draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify(recommendation),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.complexity-execution-plan-draft.packet");
+    assert.equal(body.version, 1);
+    assert.ok(typeof body.generatedAt === "string");
+    assert.ok(typeof body.idempotencyKey === "string");
+    assert.ok(body.idempotencyKey.startsWith("complexity-execution-plan:"));
+    assert.ok(typeof body.sourceEnvelopeIdempotencyKey === "string");
+    assert.ok(body.sourceEnvelopeIdempotencyKey.startsWith("complexity-finalizer-approval-envelope:"));
+    assert.equal(body.sourceRecommendationIdempotencyKey, recommendation.idempotencyKey);
+
+    // Critical complexity → operator_review (source action) → operator_review_required (execution blocked)
+    assert.equal(body.action, "operator_review");
+    assert.equal(body.envelopeCategory, "operator_review_required");
+    assert.equal(body.executionMode, "operator_review_gated");
+    assert.equal(body.decision, "plan_ready");
+    assert.equal(body.executionBlocked, true);
+    assert.equal(body.approvalRequired, true);
+    assert.deepEqual(body.blockers, []);
+    assert.ok(Array.isArray(body.steps));
+    assert.ok(body.steps.length > 0);
+    assert.ok(body.steps.every((step: { executionBlocked: unknown }) => step.executionBlocked === true));
+
+    // No-live boundaries
+    assert.equal(body.boundaries.runtimeBehaviorChanged, false);
+    assert.equal(body.boundaries.mandatoryProductionSpawn, false);
+    assert.equal(body.boundaries.brokerDispatchSemanticsChanged, false);
+    assert.equal(body.boundaries.taskFlowMutation, false);
+    assert.equal(body.boundaries.dbMutation, false);
+    assert.equal(body.boundaries.deployOrRestart, false);
+    assert.equal(body.boundaries.secretMovement, false);
+    assert.equal(body.boundaries.approvalGranted, false);
+    assert.equal(body.boundaries.executionDispatched, false);
+    assert.equal(body.semantics.planDraftOnly, true);
+    assert.equal(body.semantics.approvalNotGranted, true);
+    assert.equal(body.semantics.planStepsNotExecuted, true);
+    assert.equal(body.semantics.createsTaskFlowRecords, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-execution-plan/draft accepts supplied approval envelope wrapper", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const recRes = await fetch(
+      server.baseUrl + "/complexity-orchestration/recommendation",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "analyst-a",
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({
+          intent: "analyze",
+          targetEnvironment: "research",
+        }),
+      },
+    );
+    assert.equal(recRes.status, 200);
+    const recommendation = await recRes.json();
+    const envelopeDraft = buildFinalizerApprovalEnvelopeDraft(recommendation);
+
+    const res = await fetch(
+      server.baseUrl + "/complexity-execution-plan/draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "analyst-a",
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({ envelopeDraft }),
+      },
+    );
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.kind, "a2a-broker.complexity-execution-plan-draft.packet");
+    assert.equal(body.envelopeCategory, "approval_not_required");
+    assert.equal(body.executionMode, "autonomous");
+    assert.equal(body.decision, "plan_approval_not_needed");
+    assert.equal(body.executionBlocked, false);
+    assert.equal(body.approvalRequired, false);
+    assert.equal(body.boundaries.executionDispatched, false);
+    assert.equal(body.boundaries.approvalGranted, false);
+    assert.equal(body.semantics.planDraftOnly, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /complexity-execution-plan/draft rejects invalid input", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const res = await fetch(
+      server.baseUrl + "/complexity-execution-plan/draft",
+      {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "operator-a",
+          "x-a2a-requester-role": "operator",
+        }),
+        body: JSON.stringify({ kind: "wrong-kind" }),
+      },
+    );
+
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error?.code, "bad_request");
+    assert.ok(typeof body.error?.message === "string");
   } finally {
     await server.close();
   }

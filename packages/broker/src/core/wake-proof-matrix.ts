@@ -152,23 +152,23 @@ export interface WakeDispatcher {
 // ---------------------------------------------------------------------------
 
 export function defaultWakeFixtures(): WakeScenarioFixture[] {
-  const baseSessionKey = "fixture-session";
-  const baseIdempotencyKey = "fixture-idem";
+  const baseSessionKey = "session:proof-matrix-test";
+  const baseIdempotencyKey = "idem:proof-matrix-test";
 
   return [
     {
       scenarioId: "S1_cold_wake",
-      sessionKey: `${baseSessionKey}-s1`,
-      idempotencyKey: `${baseIdempotencyKey}-s1`,
+      sessionKey: `${baseSessionKey}:s1`,
+      idempotencyKey: `${baseIdempotencyKey}:s1`,
       priorWakes: [],
       peerStatus: "online",
     },
     {
       scenarioId: "S2_duplicate_suppression",
-      sessionKey: `${baseSessionKey}-s2`,
-      idempotencyKey: `${baseIdempotencyKey}-s2`,
+      sessionKey: `${baseSessionKey}:s2`,
+      idempotencyKey: `${baseIdempotencyKey}:s2`,
       priorWakes: [
-        makeAuditEvent("S2_duplicate_suppression", `${baseSessionKey}-s2`, `${baseIdempotencyKey}-s2`, {
+        makeAuditEvent("S2_duplicate_suppression", `${baseSessionKey}:s2`, `${baseIdempotencyKey}:s2`, {
           status: "dispatched",
           dispatchedAt: new Date(Date.now() - 1000).toISOString(),
           completedAt: new Date().toISOString(),
@@ -179,10 +179,10 @@ export function defaultWakeFixtures(): WakeScenarioFixture[] {
     },
     {
       scenarioId: "S3_warm_coalesced",
-      sessionKey: `${baseSessionKey}-s3`,
-      idempotencyKey: `${baseIdempotencyKey}-s3`,
+      sessionKey: `${baseSessionKey}:s3`,
+      idempotencyKey: `${baseIdempotencyKey}:s3`,
       priorWakes: [
-        makeAuditEvent("S3_warm_coalesced", `${baseSessionKey}-s3`, `${baseIdempotencyKey}-s3`, {
+        makeAuditEvent("S3_warm_coalesced", `${baseSessionKey}:s3`, `${baseIdempotencyKey}:s3`, {
           status: "dispatched",
           dispatchedAt: new Date(Date.now() - 500).toISOString(),
           summary: "In-flight wake, not yet completed",
@@ -192,8 +192,8 @@ export function defaultWakeFixtures(): WakeScenarioFixture[] {
     },
     {
       scenarioId: "S4_failure_fallback",
-      sessionKey: `${baseSessionKey}-s4`,
-      idempotencyKey: `${baseIdempotencyKey}-s4`,
+      sessionKey: `${baseSessionKey}:s4`,
+      idempotencyKey: `${baseIdempotencyKey}:s4`,
       priorWakes: [],
       peerStatus: "online",
       dispatchShouldFail: true,
@@ -201,8 +201,8 @@ export function defaultWakeFixtures(): WakeScenarioFixture[] {
     },
     {
       scenarioId: "S5_unreachable_degraded",
-      sessionKey: `${baseSessionKey}-s5`,
-      idempotencyKey: `${baseIdempotencyKey}-s5`,
+      sessionKey: `${baseSessionKey}:s5`,
+      idempotencyKey: `${baseIdempotencyKey}:s5`,
       priorWakes: [],
       peerStatus: "offline",
       dispatchShouldFail: true,

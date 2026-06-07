@@ -21,7 +21,9 @@ import {
   mapBrokerErrorToTaskError,
   mapBrokerStatusToDeliveryStatus as mapBrokerDeliveryStatusFromTypeMapping,
   mapBrokerStatusToExecutionStatus as mapBrokerExecutionStatusFromTypeMapping,
+  mapBrokerStatusToReceiptStatus,
   toEpochMs,
+  type A2AReceiptStatus,
 } from "../type-mapping.js";
 import type {
   A2ATaskApproveParams,
@@ -47,6 +49,10 @@ import {
   buildTeamAssignmentRequests as normalizeTeamAssignmentRequests,
   type TeamAssignmentBuildResult,
 } from "./team-assignment-normalizer.js";
+import {
+  extractWorkerCapacityHintFromTask,
+  formatWorkerCapacityHint,
+} from "./worker-capacity-hints.js";
 
 type RawBrokerClient = ReturnType<typeof createConfiguredA2ABrokerClient>;
 
@@ -636,6 +642,7 @@ export function buildGatewayTaskStatus(brokerTask: A2ABrokerTaskRecord): Record<
             brokerErrorCode: normalizeString(brokerTask.error?.code),
           }),
     deliveryStatus: mapBrokerDeliveryStatusFromTypeMapping(brokerTask.status),
+    receiptStatus: readBrokerTaskReceiptStatus(brokerTask.status, payload),
     ...(summary ? { summary } : {}),
     ...(output !== undefined ? { output } : {}),
     ...(error ? { error } : {}),
@@ -749,6 +756,32 @@ export function readBrokerTaskPayload(brokerTask: A2ABrokerTaskRecord): {
   };
 }
 
+/**
+ * Derive receipt status from broker task state and payload metadata.
+ *
+ * Separates provider-level success (broker status) from operator/human-visible
+ * receipt (requires explicit delivery confirmation evidence in the payload).
+ */
+function readBrokerTaskReceiptStatus(
+  brokerStatus: A2ABrokerTaskRecord["status"],
+  payload: ReturnType<typeof readBrokerTaskPayload>,
+): A2AReceiptStatus {
+  // Evidence of operator visibility comes from the payload, not broker status
+  const deliveryConfirmation =
+    payload.evidenceRefs?.some((ref) => /delivery-confirmed|operator-visible|delivered/i.test(ref)) ?? false;
+  const staleSession =
+    payload.evidenceRefs?.some((ref) => /stale-session|session-unreachable/i.test(ref)) ?? false;
+  const timedOut =
+    payload.evidenceRefs?.some((ref) => /timed-out|delivery-timeout/i.test(ref)) ?? false;
+
+  return mapBrokerStatusToReceiptStatus({
+    brokerStatus,
+    deliveryConfirmation,
+    staleSession,
+    timedOut,
+  });
+}
+
 function buildExpectedOutputPayload(
   expectedOutput: A2ATaskRequestParams["request"]["task"]["expectedOutput"],
 ): { format: "text" | "json"; schemaName?: string } | undefined {
@@ -769,6 +802,11 @@ function buildGatewayTaskMetadata(
 ): Record<string, unknown> | undefined {
   const mergeGate = buildGitHubMergeGateMetadata(payload, brokerTask);
   const compactTaskInput = buildCompactTaskInputMetadata(payload.taskInput);
+  const workerCapacity = extractWorkerCapacityHintFromTask(
+    brokerTask.payload as Record<string, unknown> | undefined,
+    payload.taskInput,
+  );
+  const workerCapacityLine = workerCapacity ? formatWorkerCapacityHint(workerCapacity) : undefined;
   const metadata: Record<string, unknown> = {
     ...(normalizeString(brokerTask.exchangeId) ? { exchangeId: normalizeString(brokerTask.exchangeId) } : {}),
     ...(normalizeString(brokerTask.proposalId) ? { proposalId: normalizeString(brokerTask.proposalId) } : {}),
@@ -779,6 +817,8 @@ function buildGatewayTaskMetadata(
     ...(payload.evidenceRefs?.length ? { evidenceRefs: payload.evidenceRefs } : {}),
     ...(payload.expectedOutput ? { expectedOutput: payload.expectedOutput } : {}),
     ...(compactTaskInput ? { taskInput: compactTaskInput } : {}),
+    ...(workerCapacity ? { workerCapacity } : {}),
+    ...(workerCapacityLine ? { workerCapacityLine } : {}),
   };
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }

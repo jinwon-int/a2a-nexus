@@ -1,0 +1,166 @@
+{
+  "operator": "seo-jin-on",
+  "requester": "gwakga",
+  "recorder": "gwakga",
+  "finalizer": "gwakga",
+  "expectedRepo": "jinwon-int/a2a-broker",
+  "expectedIssueNumber": 968,
+  "scoreInput": {
+    "runId": "oi-v2-broker-dispatch-approval-request-ready",
+    "evidence": [
+      {
+        "id": "wiki-large-refactor",
+        "baselineMetrics": {
+          "elapsed_time_minutes": 120,
+          "human_intervention_count": 5,
+          "estimated_cost_usd": 18,
+          "output_quality_score": 3,
+          "system_stability_score": 4,
+          "approval_boundary_violated": false
+        },
+        "candidateMetrics": {
+          "elapsed_time_minutes": 75,
+          "human_intervention_count": 2,
+          "estimated_cost_usd": 11,
+          "output_quality_score": 4,
+          "system_stability_score": 5,
+          "approval_boundary_violated": false
+        },
+        "evidenceUrls": ["https://github.com/jinwon-int/a2a-broker/issues/968"]
+      },
+      {
+        "id": "skill-update-sweep",
+        "baselineMetrics": {
+          "elapsed_time_minutes": 80,
+          "human_intervention_count": 4,
+          "estimated_cost_usd": 14,
+          "output_quality_score": 3,
+          "system_stability_score": 4,
+          "approval_boundary_violated": false
+        },
+        "candidateMetrics": {
+          "elapsed_time_minutes": 55,
+          "human_intervention_count": 2,
+          "estimated_cost_usd": 9,
+          "output_quality_score": 4,
+          "system_stability_score": 5,
+          "approval_boundary_violated": false
+        },
+        "evidenceUrls": ["https://github.com/jinwon-int/a2a-broker/issues/968"]
+      },
+      {
+        "id": "complex-architecture-design",
+        "baselineMetrics": {
+          "elapsed_time_minutes": 100,
+          "human_intervention_count": 5,
+          "estimated_cost_usd": 16,
+          "output_quality_score": 3,
+          "system_stability_score": 4,
+          "approval_boundary_violated": false
+        },
+        "candidateMetrics": {
+          "elapsed_time_minutes": 70,
+          "human_intervention_count": 3,
+          "estimated_cost_usd": 12,
+          "output_quality_score": 4,
+          "system_stability_score": 5,
+          "approval_boundary_violated": false
+        },
+        "evidenceUrls": ["https://github.com/jinwon-int/a2a-broker/issues/968"]
+      },
+      {
+        "id": "a2a-worker-deployment",
+        "baselineMetrics": {
+          "elapsed_time_minutes": 110,
+          "human_intervention_count": 6,
+          "estimated_cost_usd": 20,
+          "output_quality_score": 3,
+          "system_stability_score": 4,
+          "approval_boundary_violated": false
+        },
+        "candidateMetrics": {
+          "elapsed_time_minutes": 85,
+          "human_intervention_count": 4,
+          "estimated_cost_usd": 15,
+          "output_quality_score": 4,
+          "system_stability_score": 5,
+          "approval_boundary_violated": false
+        },
+        "evidenceUrls": ["https://github.com/jinwon-int/a2a-broker/issues/968"]
+      }
+    ]
+  },
+  "decisionEvidenceForSourceChain": {
+    "decision": "advance_to_next_source_step",
+    "actor": "seo-jin-on",
+    "observedAt": "2026-05-30T08:00:00.000Z",
+    "rationale": "Proceed to source-only broker dispatch approval request."
+  },
+  "runtimeEvidence": {
+    "runtimeExecutorDesignReviewed": false,
+    "explicitRuntimeApprovalPresent": true,
+    "brokerDispatchApprovalPresent": false,
+    "workerSpawnApprovalPresent": false,
+    "daegyoMobileScopeResolved": false,
+    "rollbackAbortCriteriaDocumented": false,
+    "liveBoundaryPlanDocumented": false,
+    "validationEvidenceFresh": true
+  },
+  "designEvidence": {
+    "executorContractDocumented": true,
+    "brokerDispatchBoundaryDocumented": true,
+    "workerSpawnBoundaryDocumented": true,
+    "daegyoMobileBoundaryDocumented": true,
+    "rollbackAbortCriteriaDocumented": true,
+    "liveBoundaryPlanDocumented": true,
+    "observabilityPlanDocumented": true
+  },
+  "approvalEvidence": {
+    "requiredApprovalPhrase": "APPROVE OI V2 RUNTIME APPROVAL REQUEST FOR SOURCE-ONLY EVIDENCE REVIEW",
+    "approverIdentityDocumented": true,
+    "requestScopeDocumented": true,
+    "approvalConditionsDocumented": true,
+    "riskSummaryDocumented": true,
+    "rollbackAbortCriteriaReferenced": true,
+    "liveBoundaryPlanReferenced": true,
+    "expiryOrRevocationDocumented": true
+  },
+  "decisionEvidence": {
+    "kind": "approval_grant",
+    "operator": "seo-jin-on",
+    "approvalPhrase": "APPROVE OI V2 RUNTIME APPROVAL REQUEST FOR SOURCE-ONLY EVIDENCE REVIEW",
+    "approvedAt": "2026-05-30T07:55:00.000Z",
+    "expiresAt": "2026-05-31T07:55:00.000Z",
+    "repo": "jinwon-int/a2a-broker",
+    "issueNumber": 968,
+    "scope": [
+      "record explicit operator approval evidence in a future source-only packet",
+      "keep runtime executor implementation and enablement in separate future work",
+      "keep broker dispatch, worker spawn, and Daegyo/mobile scope expansion as independent gates"
+    ],
+    "conditions": [
+      "operator identity must be recorded without secrets",
+      "approval phrase must match the requested phrase exactly or be superseded by a stricter phrase",
+      "approval must name the repository and issue context",
+      "approval must not authorize deploy, restart, DB mutation, live provider send, Terminal ACK/replay, release publish, or credential movement",
+      "approval may be revoked or expired before any later runtime enablement step"
+    ],
+    "conditionsAccepted": true,
+    "revocationOrExpiry": "expires when source packet, scope, operator identity, or runtime readiness inputs change",
+    "rationale": "Synthetic fixture upstream acceptance for broker dispatch approval request tests."
+  },
+  "dispatchEvidence": {
+    "dispatchScopeDocumented": true,
+    "targetRepoDocumented": true,
+    "targetIssueDocumented": true,
+    "workerTeamConstraintsDocumented": true,
+    "operatorIdentityRequirementDocumented": true,
+    "expiryRevocationDocumented": true,
+    "rollbackAbortRequirementsDocumented": true,
+    "requiredFutureDecisionEvidenceDocumented": true
+  },
+  "notes": [
+    "Synthetic ready fixture for source-only broker dispatch approval request tests.",
+    "The packet requests future broker dispatch approval evidence only; broker dispatch approval remains false."
+  ]
+}
