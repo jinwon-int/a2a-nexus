@@ -17,6 +17,7 @@ const steps = [
   ['current-state-no-live-smoke', 'npm', ['run', 'check:current-state-no-live-smoke']],
   ['monorepo-reentry', 'npm', ['run', 'check:monorepo-reentry']],
   ['monorepo-import-rehearsal', 'npm', ['run', 'check:monorepo-import-rehearsal']],
+  ['monorepo-ci-parity', 'npm', ['run', 'check:monorepo-ci-parity']],
 ];
 
 for (const [name, command, args] of steps) {

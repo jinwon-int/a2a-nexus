@@ -1,7 +1,7 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active coordination:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
+> **Active coordination:** [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
 > **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
@@ -14,7 +14,6 @@ The active A2A coordination work is:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Prove monorepo CI parity and package boundary matrix. |
 | [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) | `a2a-plane` | Draft monorepo docs, CODEOWNERS, and issue-routing policy. |
 | [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
 | [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
@@ -38,6 +37,7 @@ Completed current-state and monorepo groundwork:
 | [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
 | [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) | `a2a-plane` | Closed: monorepo re-entry decision, staged umbrella rehearsal first. |
 | [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
+| [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Closed: CI parity and package boundary matrix; split repo CI remains canonical. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -46,6 +46,13 @@ and validated by
 source fixtures only and must not perform live broker, provider, Gateway,
 Terminal ACK, deployment, credential, release, visibility, or destructive
 checkout actions.
+
+The `#514` CI parity and package boundary matrix is documented in
+[`docs/monorepo-ci-parity-matrix.md`](monorepo-ci-parity-matrix.md) and
+validated by `scripts/check-monorepo-ci-parity-matrix.mjs`. It records that the
+current `packages/*` mirrors are not green for canonical flip and that split
+repo CI remains canonical until a fresh import rehearsal proves
+equal-or-stricter package coverage.
 
 ## Completed Historical Gates
 
