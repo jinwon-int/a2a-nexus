@@ -7,6 +7,7 @@
 > **Phase-6 branch protection packet:** [a2a-plane#544](https://github.com/jinwon-int/a2a-plane/pull/544)
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
 > **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
+> **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
 > **Status:** disposition packet only; split repos stay canonical and canonical flip is still `NO_GO / Waiting`.
 
 ## Summary
@@ -83,6 +84,11 @@ These risks must be explicitly accepted or resolved before canonical flip:
 the next source-only gate after this disposition packet and does not approve
 release tags, GitHub Releases, npm publication, Docker/GHCR publication,
 package ownership transfer, or canonical flip.
+
+`a2a-plane#549` records the phase-9 final operator sign-off matrix. It carries
+forward split repo disposition and rollback owner fields into the final
+canonical flip GO/NO-GO packet without archiving, redirecting, or making any
+split repository read-only.
 
 ## GO / NO-GO Fields
 

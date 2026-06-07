@@ -4,6 +4,7 @@
 > **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
 > **Phase-7 disposition packet:** [a2a-plane#546](https://github.com/jinwon-int/a2a-plane/pull/546)
 > **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
+> **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
 > **Status:** approval packet and dry-run inventory only; release, tag, publish, package ownership, and canonical flip remain `NO_GO / Waiting`.
 
 ## Summary
@@ -80,6 +81,11 @@ A future execution approval must name the exact package/image/tag/release,
 version, registry, artifact provenance, rollback owner, and whether split repos
 remain canonical, mirrored, read-only, or archived. The approval must be
 separate from this source-only packet.
+
+The next source-only gate is `a2a-plane#549`, which records the final operator
+sign-off matrix across branch protection, split repo disposition,
+release/package/tag, package ownership transfer, rollback owner, and canonical
+flip GO/NO-GO fields. It does not approve release/package/tag execution.
 
 ## No-live Boundary
 

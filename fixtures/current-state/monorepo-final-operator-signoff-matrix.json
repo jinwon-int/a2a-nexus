@@ -1,0 +1,135 @@
+{
+  "schema": "a2a.monorepo-final-operator-signoff-matrix.v1",
+  "snapshotDate": "2026-06-08",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "phase9FinalSignoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/549",
+  "priorPackets": {
+    "phase4ImportPr": "https://github.com/jinwon-int/a2a-plane/pull/540",
+    "phase5ReadinessPr": "https://github.com/jinwon-int/a2a-plane/pull/542",
+    "phase6BranchProtectionPr": "https://github.com/jinwon-int/a2a-plane/pull/544",
+    "phase7DispositionPr": "https://github.com/jinwon-int/a2a-plane/pull/546",
+    "phase8ReleasePackageTagPr": "https://github.com/jinwon-int/a2a-plane/pull/548",
+    "phase4MergeCommit": "31273ce05b7e53655e3d8847a8d77ff1cd2f6d05",
+    "phase5MergeCommit": "3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d",
+    "phase6MergeCommit": "ff4390a3fbcb0f7fb85235c78eb3facc4a667495",
+    "phase7MergeCommit": "03cb496a145c130186f6d08a3fd9fd12dc04ef31",
+    "phase8MergeCommit": "7aefab9f870ccc5ed7ecfff8bcfaf6554f6b22e6"
+  },
+  "operatorFinalDecision": "NO_GO_WAITING",
+  "canonicalFlipDecision": "NO_GO_WAITING",
+  "packageOwnershipDecision": "NO_GO_WAITING",
+  "releasePackageTagDecision": "NO_GO_WAITING",
+  "branchProtectionDecision": "NO_GO_WAITING",
+  "splitRepoDispositionDecision": "NO_GO_WAITING",
+  "rollbackOwnerDecision": "NO_GO_WAITING",
+  "signoffRows": [
+    {
+      "area": "branch_protection_or_ruleset",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-branch-protection-approval-packet.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "split_repo_disposition",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-split-repo-disposition-rollback.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "release_tag_and_github_release",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "npm_publish",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "docker_ghcr_publish",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "package_ownership_transfer",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-canonical-flip-readiness.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    },
+    {
+      "area": "canonical_flip",
+      "decision": "NO_GO_WAITING",
+      "operatorOwner": "unassigned",
+      "evidence": "docs/monorepo-canonical-flip-readiness.md",
+      "rollbackOwner": "unassigned",
+      "approved": false
+    }
+  ],
+  "abortConditions": [
+    "operator_owner_unassigned",
+    "rollback_owner_unassigned",
+    "exact_target_unassigned",
+    "latest_green_ci_evidence_unassigned",
+    "branch_protection_posture_unapproved",
+    "split_repo_disposition_unapproved",
+    "package_ownership_transfer_unapproved",
+    "release_package_tag_unapproved",
+    "live_or_destructive_action_bundled_with_flip"
+  ],
+  "goNoGoFields": {
+    "priorPacketsRecorded": true,
+    "branchProtectionApprovalReady": false,
+    "splitRepoDispositionApproved": false,
+    "releasePackageTagApproved": false,
+    "packageOwnershipTransferApproved": false,
+    "rollbackOwnerAssigned": false,
+    "canonicalFlipApproved": false,
+    "operatorFinalApproval": false,
+    "decision": "NO_GO_WAITING"
+  },
+  "boundaries": {
+    "canonicalFlip": false,
+    "packageOwnershipTransfer": false,
+    "branchProtectionChange": false,
+    "rulesetChange": false,
+    "permissionChange": false,
+    "codeownersEnforcementChange": false,
+    "splitRepoArchive": false,
+    "splitRepoReadOnly": false,
+    "splitRepoRedirect": false,
+    "releaseTag": false,
+    "tagMovement": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "ghcrPublish": false,
+    "repoVisibilityChange": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "historicalReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "forcePush": false,
+    "historyRewrite": false,
+    "workerOwnedGithubMutation": false
+  }
+}
