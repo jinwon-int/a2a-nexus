@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Minimal standalone A2A broker scaffold",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/generate-build-info.mjs",
     "check": "npm test",
-    "test": "npm run build && node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js",
+    "test": "npm run build && node --check scripts/team1-dispatch-wrapper.mjs && node --check scripts/a2a-dispatch-helper.mjs && node --check scripts/cross-broker-terminal-brief-receiver.mjs && node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js",
     "reconcile_closeout": "node scripts/closeout-reconcile.mjs",
     "command_center_closeout_checklist": "node scripts/command-center-closeout-checklist.mjs",
     "test:worker": "npm run build && node --test dist/worker.test.js",

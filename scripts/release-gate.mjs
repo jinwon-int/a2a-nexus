@@ -19,6 +19,7 @@ const steps = [
   ['monorepo-import-rehearsal', 'npm', ['run', 'check:monorepo-import-rehearsal']],
   ['monorepo-ci-parity', 'npm', ['run', 'check:monorepo-ci-parity']],
   ['monorepo-phase3-package-ci-gate', 'npm', ['run', 'check:monorepo-phase3-package-ci-gate']],
+  ['monorepo-package-ci-parity-jobs', 'npm', ['run', 'check:monorepo-package-ci-parity-jobs']],
   ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
 ];

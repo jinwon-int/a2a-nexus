@@ -5,12 +5,14 @@
   "type": "module",
   "description": "A2A Plane broker adapter plugin for OpenClaw hosts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp openclaw.plugin.json dist/openclaw.plugin.json",
     "test": "npm run build && node --test test/*.test.mjs tests/*.test.ts",
     "test:gateway": "rm -rf dist && tsc -p tsconfig.gateway-verify.json && node --test test/*.test.mjs",
     "preflight:canary:receipt-gated": "scripts/canary-receipt-gated-preflight.sh",
-    "prepack": "npm run build",
-    "check": "npm test"
+    "prepack": "npm run scan:public-readiness && npm run build",
+    "check": "npm test",
+    "scan:public-readiness": "bash scripts/scan-public-readiness.sh",
+    "smoke:a2a-conformance": "bash scripts/smoke-a2a-conformance.sh"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.49",

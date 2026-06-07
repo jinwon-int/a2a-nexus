@@ -6,7 +6,8 @@
 > **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
 > **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
-> **Status:** phase 3 package CI gate blocked. Split repos remain canonical.
+> **Phase-3 CI jobs:** [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536)
+> **Status:** phase 3 package CI jobs wired; split repos remain canonical until fresh mirrored content is proven.
 
 ## Summary
 
@@ -99,6 +100,29 @@ and `check:monorepo-phase3-package-ci-gate` make the blocker release-gate
 visible. A future mirror refresh PR must either satisfy the recorded package
 jobs or cite a separate operator decision that accepts the remaining parity
 risk.
+
+## Phase-3 Package CI Jobs (#536)
+
+The package CI job implementation is source-only and no-live. The workflow now
+uses `actions/checkout@v5`, `actions/setup-node@v5`, and `npm ci --include=dev`
+for package jobs, then calls
+`scripts/run-monorepo-package-ci-parity.mjs` for each package surface:
+
+- `broker`: package check, build-info generation, dispatch helper syntax
+  checks, built JS tests, and `npm pack --dry-run`.
+- `docker-runner`: `check`, `build`, `lint`, `test`,
+  `pre-pr-bootstrap-guard`, no-live chaos evidence, no-publish
+  release-candidate dry-run evidence, package metadata checks, and
+  `npm pack --dry-run`.
+- `openclaw-plugin-a2a`: plugin-local public-readiness scan,
+  A2A conformance smoke, tests, prepack, manifest copy, OpenClaw peer-boundary
+  check, and `npm pack --dry-run`.
+
+This makes CI parity executable before mirror refresh, but it still does not
+refresh package content or approve canonical ownership. The next import
+rehearsal must run these jobs against a fresh prefix import and compare any
+remaining package metadata/bin/files drift before `packages/*` can become
+authoritative.
 
 ## Rehearsal Strategy
 

@@ -2,6 +2,7 @@
   "schema": "a2a.monorepo-phase3-package-ci-gate.v1",
   "snapshotDate": "2026-06-07",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/534",
+  "implementationIssue": "https://github.com/jinwon-int/a2a-plane/issues/536",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
   "decision": "block_package_mirror_refresh_until_package_ci_is_equal_or_stricter",
@@ -10,6 +11,8 @@
   "mirrorRefreshAllowed": false,
   "canonicalFlipApproved": false,
   "packageJobsMustBeEqualOrStricter": true,
+  "packageCiJobsWired": true,
+  "packageCiParityJobScript": "scripts/run-monorepo-package-ci-parity.mjs",
   "requiredGlobalGates": [
     "record_actions_v4_v5_policy",
     "record_npm_ci_lifecycle_policy",
@@ -25,6 +28,7 @@
       "sourceRef": "fae438a4fba301c2a9a02ca7cb11282867327920",
       "targetPath": "packages/broker",
       "gateStatus": "blocked",
+      "packageCiJobStatus": "wired",
       "mirrorRefreshAllowed": false,
       "sourceCiCommands": [
         "npm ci",
@@ -39,11 +43,15 @@
         "node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js"
       ],
       "blockingGaps": [
-        "plane_broker_job_uses_actions_v4_while_source_uses_v5",
-        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
-        "plane_mirror_build_omits_generate_build_info",
-        "plane_mirror_test_omits_script_syntax_checks",
+        "plane_mirror_content_still_requires_fresh_prefix_import_before_authoritative_use",
         "plane_mirror_test_globs_are_narrower_than_source"
+      ],
+      "packageCiEvidence": [
+        "actions/checkout@v5 and actions/setup-node@v5",
+        "npm ci --include=dev",
+        "node scripts/run-monorepo-package-ci-parity.mjs broker",
+        "npm run check -w packages/broker",
+        "npm pack --workspace packages/broker --dry-run --json"
       ]
     },
     {
@@ -52,6 +60,7 @@
       "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
       "targetPath": "packages/docker-runner",
       "gateStatus": "blocked",
+      "packageCiJobStatus": "wired",
       "mirrorRefreshAllowed": false,
       "sourceCiCommands": [
         "npm ci",
@@ -73,12 +82,20 @@
         "verify package files/license/bin metadata"
       ],
       "blockingGaps": [
-        "plane_docker_runner_job_uses_actions_v4_while_source_uses_v5",
-        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
-        "plane_job_runs_check_only",
-        "plane_job_omits_build_lint_test_pre_pr_guard",
-        "plane_job_omits_release_candidate_dry_run_and_chaos_e2e",
-        "plane_mirror_package_metadata_is_stale"
+        "plane_mirror_content_still_requires_fresh_prefix_import_before_authoritative_use"
+      ],
+      "packageCiEvidence": [
+        "actions/checkout@v5 and actions/setup-node@v5",
+        "npm ci --include=dev",
+        "node scripts/run-monorepo-package-ci-parity.mjs docker-runner",
+        "npm run check -w packages/docker-runner",
+        "npm run build -w packages/docker-runner",
+        "npm run lint -w packages/docker-runner",
+        "npm test -w packages/docker-runner",
+        "node packages/docker-runner/scripts/pre-pr-bootstrap-guard.mjs --repo-dir packages/docker-runner",
+        "npm run chaos:e2e -w packages/docker-runner",
+        "node packages/docker-runner/scripts/tag-release-candidate.mjs --version 0.1.0 --dry-run",
+        "npm pack --workspace packages/docker-runner --dry-run --json"
       ]
     },
     {
@@ -87,6 +104,7 @@
       "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
       "targetPath": "packages/openclaw-plugin-a2a",
       "gateStatus": "blocked",
+      "packageCiJobStatus": "wired",
       "mirrorRefreshAllowed": false,
       "sourceCiCommands": [
         "npm ci",
@@ -104,11 +122,18 @@
         "verify bin/files exports and openclaw peer boundary"
       ],
       "blockingGaps": [
-        "plane_plugin_job_uses_actions_v4_while_source_uses_v5",
-        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
-        "plane_job_runs_root_scan_but_not_plugin_local_scan",
-        "plane_job_omits_a2a_conformance_smoke",
-        "plane_mirror_build_prepack_and_metadata_are_stale"
+        "plane_mirror_content_still_requires_fresh_prefix_import_before_authoritative_use",
+        "plane_mirror_bin_metadata_is_still_behind_split_source"
+      ],
+      "packageCiEvidence": [
+        "actions/checkout@v5 and actions/setup-node@v5",
+        "npm ci --include=dev",
+        "node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a",
+        "npm run scan:public-readiness -w packages/openclaw-plugin-a2a",
+        "npm run smoke:a2a-conformance -w packages/openclaw-plugin-a2a",
+        "npm test -w packages/openclaw-plugin-a2a",
+        "npm run prepack -w packages/openclaw-plugin-a2a",
+        "npm pack --workspace packages/openclaw-plugin-a2a --dry-run --json"
       ]
     }
   ],
