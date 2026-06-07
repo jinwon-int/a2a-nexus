@@ -8,7 +8,7 @@ The current public source layout remains split across four repositories. Per the
 
 Start here:
 
-- [A2A current state](docs/current-state.md) - active #511 monorepo re-entry decision, completed #506 groundwork, ownership boundaries, and checkout hygiene.
+- [A2A current state](docs/current-state.md) - active #514-#517 monorepo phase 0 backlog, a2a-broker #1320/#1321 mode research, completed #506/#511/#513 groundwork, ownership boundaries, and checkout hygiene.
 - [A2A monorepo re-entry decision](docs/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
 - [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
@@ -26,20 +26,27 @@ All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visi
 
 Current active coordination:
 
-- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision after the #506 wave.
+- [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
+- [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
+- [a2a-plane#516](https://github.com/jinwon-int/a2a-plane/issues/516) — Agent Olympics redacted benchmark mirror gate.
+- [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
+- [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) — A2A hybrid worker mode research.
+- [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) — adaptive workMode selector design.
 
 Completed groundwork:
 
 - [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
 - [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
 - [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
+- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision after the #506 wave.
+- [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) — monorepo import rehearsal and mirror freshness checks.
 - [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted split-repo topology decision.
 - [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
 - [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist groundwork.
 - [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario.
 
 See [`docs/public-readiness.md`](docs/public-readiness.md) for the full readiness gate record.
-See [`docs/current-state.md`](docs/current-state.md) for the live issue index and #506 child backlog.
+See [`docs/current-state.md`](docs/current-state.md) for the live issue index and completed #506/#511/#513 groundwork.
 
 ## What A2A Plane does
 
@@ -103,13 +110,18 @@ Open project-level or ambiguous issues in `a2a-plane` first. Move or mirror impl
 
 Current public umbrella trackers:
 
-- [#511](https://github.com/jinwon-int/a2a-plane/issues/511) — active monorepo re-entry decision after the #506 wave. Decision recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md).
+- [#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
+- [#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
+- [#516](https://github.com/jinwon-int/a2a-plane/issues/516) — Agent Olympics redacted benchmark mirror gate.
+- [#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
 
 Historical completed trackers:
 
 - [#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
 - [#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
 - [#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
+- [#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision. Decision recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md).
+- [#513](https://github.com/jinwon-int/a2a-plane/issues/513) — monorepo import rehearsal and mirror freshness checks. Plan recorded in [`docs/monorepo-import-rehearsal.md`](docs/monorepo-import-rehearsal.md).
 - [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted topology decision. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
 - [#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and umbrella docs. Merged via #484.
 - [#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.

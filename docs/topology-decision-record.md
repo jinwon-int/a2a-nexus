@@ -3,7 +3,7 @@
 > **Decision date:** 2026-05-27
 > **Status:** 🟢 Adopted — hold full monorepo consolidation; keep split implementation repos with `a2a-plane` as the stronger public umbrella/start-here entrypoint.
 > **Tracking issue:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
-> **Current coordination:** [#511](https://github.com/jinwon-int/a2a-plane/issues/511), [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md), and [`docs/current-state.md`](current-state.md)
+> **Current coordination:** [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#516](https://github.com/jinwon-int/a2a-plane/issues/516), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md), and [`docs/current-state.md`](current-state.md)
 > **Revisit trigger:** See [re-entry criteria](#future-monorepo-re-entry-criteria) below.
 
 ---

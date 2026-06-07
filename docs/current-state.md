@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active umbrella:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
-> **Status:** public alpha, monorepo re-entry decision active; `#506` source/no-live validation wave completed.
+> **Active coordination:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#516](https://github.com/jinwon-int/a2a-plane/issues/516), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320), and [#1321](https://github.com/jinwon-int/a2a-broker/issues/1321)
+> **Status:** public alpha, post-`#511/#513` monorepo phase 0 backlog active; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,17 +10,24 @@ topology gates.
 
 ## Current Active Work
 
-The active A2A coordination issue is:
+The active A2A coordination work is:
 
-- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) - monorepo re-entry decision after the completed `#506` current-state/effectiveness wave.
+| Issue | Owning repo | Purpose |
+| --- | --- | --- |
+| [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) | `a2a-plane` | Prove monorepo CI parity and package boundary matrix. |
+| [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) | `a2a-plane` | Draft monorepo docs, CODEOWNERS, and issue-routing policy. |
+| [a2a-plane#516](https://github.com/jinwon-int/a2a-plane/issues/516) | `a2a-plane` | Define Agent Olympics redacted benchmark mirror gate. |
+| [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) | `a2a-plane` | Review branch protection and release/package policy before any canonical flip. |
+| [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) | `a2a-broker` | Research A2A hybrid worker mode with conditional subagent fanout. |
+| [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) | `a2a-broker` | Design adaptive workMode selector after planning and output estimation. |
 
-The current decision is recorded in
+The completed monorepo re-entry decision is recorded in
 [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md) and
 validated by `scripts/check-monorepo-reentry-decision.mjs`. The decision is to
 build a staged umbrella workspace rehearsal first, while split implementation
 repos remain canonical during phase 0/1.
 
-Completed child work from the `#506` wave:
+Completed current-state and monorepo groundwork:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
@@ -31,6 +38,8 @@ Completed child work from the `#506` wave:
 | [a2a-docker-runner#358](https://github.com/jinwon-int/a2a-docker-runner/issues/358) | `a2a-docker-runner` | Closed: read-only/no-change evidence on clean `main`. |
 | [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
 | [agent-olympics#205](https://github.com/jinwon-int/agent-olympics/issues/205) | `agent-olympics` | Closed: A2A effectiveness benchmark record format. |
+| [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) | `a2a-plane` | Closed: monorepo re-entry decision, staged umbrella rehearsal first. |
+| [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) | `a2a-plane` | Closed: import rehearsal and mirror freshness checks. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)
@@ -85,4 +94,4 @@ Run `git worktree prune` only when the dry-run output references missing tempora
 
 ## Boundaries
 
-This current-state wave is source/no-live by default. It does not authorize live A2A dispatch, production deploys, Gateway/broker/worker restarts, provider or Telegram sends, DB/queue/terminal-outbox mutation, Terminal ACK/replay, credential movement, release/tag/npm/Docker publication, repository visibility changes, or destructive local cleanup.
+This current-state and monorepo phase 0 backlog is source/no-live by default. It does not authorize live A2A dispatch, production deploys, Gateway/broker/worker restarts, provider or Telegram sends, DB/queue/terminal-outbox mutation, Terminal ACK/replay, credential movement, release/tag/npm/Docker publication, repository visibility changes, canonical monorepo flip, repository import into `main`, history rewrite, or destructive local cleanup.
