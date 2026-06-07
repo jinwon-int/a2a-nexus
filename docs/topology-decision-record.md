@@ -3,7 +3,7 @@
 > **Decision date:** 2026-05-27
 > **Status:** 🟢 Adopted — hold full monorepo consolidation; keep split implementation repos with `a2a-plane` as the stronger public umbrella/start-here entrypoint.
 > **Tracking issue:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
-> **Current coordination:** [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md)
+> **Current coordination:** [#511](https://github.com/jinwon-int/a2a-plane/issues/511), [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md), and [`docs/current-state.md`](current-state.md)
 > **Revisit trigger:** See [re-entry criteria](#future-monorepo-re-entry-criteria) below.
 
 ---
@@ -17,6 +17,13 @@ After inspecting historical closed monorepo work, current public surfaces across
 > **Hold full monorepo consolidation for now. Keep split implementation repos as independent release/CI/boundary surfaces. Strengthen `a2a-plane` as the public umbrella / start-here entrypoint before broader promotion.**
 
 This recommendation is documented here along with re-entry criteria for future reconsideration.
+
+> **2026-06-07 update:** Seo Jin On explicitly triggered operator-initiated re-entry in
+> [#511](https://github.com/jinwon-int/a2a-plane/issues/511) after the `#506`
+> current-state wave. The updated decision is not an immediate canonical flip:
+> proceed with a staged umbrella workspace rehearsal first, while split repos
+> remain canonical during phase 0/1. See
+> [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md).
 
 ---
 

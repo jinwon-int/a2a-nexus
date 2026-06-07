@@ -4,11 +4,12 @@
 
 A2A Plane is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
 
-The current public source layout remains split across four repositories. Per the [topology decision record](docs/topology-decision-record.md), the recommendation is to hold full monorepo consolidation and keep split implementation repos with `a2a-plane` as the stronger public umbrella. Until an operator-initiated re-entry triggers consolidation, each implementation repository remains canonical for its own runtime/package boundary.
+The current public source layout remains split across four repositories. Per the [topology decision record](docs/topology-decision-record.md), the recommendation was to hold full monorepo consolidation and keep split implementation repos with `a2a-plane` as the stronger public umbrella. The operator-initiated monorepo re-entry is now tracked in [#511](https://github.com/jinwon-int/a2a-plane/issues/511) and recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md). During phase 0/1, each implementation repository remains canonical for its own runtime/package boundary.
 
 Start here:
 
-- [A2A current state](docs/current-state.md) - active #506 wave, current child issues, ownership boundaries, and checkout hygiene.
+- [A2A current state](docs/current-state.md) - active #511 monorepo re-entry decision, completed #506 groundwork, ownership boundaries, and checkout hygiene.
+- [A2A monorepo re-entry decision](docs/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
 - [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
 - [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
@@ -25,12 +26,13 @@ All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visi
 
 Current active coordination:
 
-- [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
-- [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
-- [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
+- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision after the #506 wave.
 
 Completed groundwork:
 
+- [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
+- [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
+- [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
 - [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted split-repo topology decision.
 - [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
 - [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist groundwork.
@@ -101,12 +103,13 @@ Open project-level or ambiguous issues in `a2a-plane` first. Move or mirror impl
 
 Current public umbrella trackers:
 
-- [#506](https://github.com/jinwon-int/a2a-plane/issues/506) — active current-state integration and A2A effectiveness wave.
-- [#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
-- [#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
+- [#511](https://github.com/jinwon-int/a2a-plane/issues/511) — active monorepo re-entry decision after the #506 wave. Decision recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md).
 
 Historical completed trackers:
 
+- [#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
+- [#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
+- [#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
 - [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted topology decision. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
 - [#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and umbrella docs. Merged via #484.
 - [#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.

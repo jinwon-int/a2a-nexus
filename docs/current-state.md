@@ -1,8 +1,8 @@
 # A2A Current State
 
 > **Snapshot date:** 2026-06-07
-> **Active umbrella:** [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506)
-> **Status:** public alpha, source/no-live validation wave active.
+> **Active umbrella:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
+> **Status:** public alpha, monorepo re-entry decision active; `#506` source/no-live validation wave completed.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -10,20 +10,27 @@ topology gates.
 
 ## Current Active Work
 
-The only active A2A coordination wave is:
+The active A2A coordination issue is:
 
-- [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) - A2A current-state integration and effectiveness wave.
+- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) - monorepo re-entry decision after the completed `#506` current-state/effectiveness wave.
 
-Child work from that wave:
+The current decision is recorded in
+[`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md) and
+validated by `scripts/check-monorepo-reentry-decision.mjs`. The decision is to
+build a staged umbrella workspace rehearsal first, while split implementation
+repos remain canonical during phase 0/1.
+
+Completed child work from the `#506` wave:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) | `a2a-plane` | Refresh current-state docs and checkout hygiene. |
-| [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) | `a2a-plane` | Define the no-live cross-repo integration smoke. |
-| [a2a-broker#1318](https://github.com/jinwon-int/a2a-broker/issues/1318) | `a2a-broker` | Enforce work-mode decision evidence across Team1/hybrid dispatch paths. |
-| [a2a-docker-runner#358](https://github.com/jinwon-int/a2a-docker-runner/issues/358) | `a2a-docker-runner` | Re-smoke read-only/no-change evidence on clean `main`. |
-| [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Add requester-visible no-live status conformance fixture. |
-| [agent-olympics#205](https://github.com/jinwon-int/agent-olympics/issues/205) | `agent-olympics` | Add A2A effectiveness benchmark record format. |
+| [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) | `a2a-plane` | Closed parent wave: current-state integration and A2A effectiveness. |
+| [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) | `a2a-plane` | Closed: current-state docs and checkout hygiene. |
+| [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) | `a2a-plane` | Closed: no-live cross-repo integration smoke. |
+| [a2a-broker#1318](https://github.com/jinwon-int/a2a-broker/issues/1318) | `a2a-broker` | Closed: work-mode decision evidence across Team1/hybrid dispatch paths. |
+| [a2a-docker-runner#358](https://github.com/jinwon-int/a2a-docker-runner/issues/358) | `a2a-docker-runner` | Closed: read-only/no-change evidence on clean `main`. |
+| [openclaw-plugin-a2a#457](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457) | `openclaw-plugin-a2a` | Closed: requester-visible no-live status conformance fixture. |
+| [agent-olympics#205](https://github.com/jinwon-int/agent-olympics/issues/205) | `agent-olympics` | Closed: A2A effectiveness benchmark record format. |
 
 The `#508` no-live smoke is documented in
 [`docs/current-state-no-live-integration-smoke.md`](current-state-no-live-integration-smoke.md)

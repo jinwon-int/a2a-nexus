@@ -1,0 +1,160 @@
+{
+  "schema": "a2a.monorepo-reentry-decision.v1",
+  "snapshotDate": "2026-06-07",
+  "decisionIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "previousDecisionIssue": "https://github.com/jinwon-int/a2a-plane/issues/473",
+  "priorWave": "https://github.com/jinwon-int/a2a-plane/issues/506",
+  "decision": "staged_umbrella_workspace_first",
+  "canonicalDuringPhase0And1": "split_repos",
+  "operatorReentryTrigger": true,
+  "canonicalFlipApproved": false,
+  "targetLayout": [
+    "packages/broker",
+    "packages/docker-runner",
+    "packages/openclaw-plugin-a2a",
+    "evaluation/agent-olympics-redacted",
+    "contracts",
+    "fixtures",
+    "docs",
+    "scripts",
+    "scanner",
+    ".github/workflows"
+  ],
+  "repos": [
+    {
+      "repo": "jinwon-int/a2a-plane",
+      "visibility": "public",
+      "phase0Role": "umbrella_decision_hub",
+      "canonicalNow": true,
+      "monorepoPackage": "root"
+    },
+    {
+      "repo": "jinwon-int/a2a-broker",
+      "visibility": "public",
+      "phase0Role": "canonical_split_runtime",
+      "canonicalNow": true,
+      "monorepoPackage": "packages/broker"
+    },
+    {
+      "repo": "jinwon-int/a2a-docker-runner",
+      "visibility": "public",
+      "phase0Role": "canonical_split_runner",
+      "canonicalNow": true,
+      "monorepoPackage": "packages/docker-runner"
+    },
+    {
+      "repo": "jinwon-int/openclaw-plugin-a2a",
+      "visibility": "public",
+      "phase0Role": "canonical_split_plugin",
+      "canonicalNow": true,
+      "monorepoPackage": "packages/openclaw-plugin-a2a"
+    },
+    {
+      "repo": "jinwon-int/agent-olympics",
+      "visibility": "private",
+      "phase0Role": "private_benchmark_authority",
+      "canonicalNow": true,
+      "monorepoPackage": "evaluation/agent-olympics-redacted",
+      "fullImportAllowed": false
+    }
+  ],
+  "requiredGatesBeforeCanonicalFlip": [
+    "history_preserving_import_rehearsal",
+    "ci_parity",
+    "docs_migration",
+    "codeowners",
+    "a2a_plane_branch_protection_review",
+    "release_package_policy",
+    "agent_olympics_redaction_gate",
+    "operator_final_signoff"
+  ],
+  "phasePlan": [
+    {
+      "phase": "phase0_decision_and_rehearsal_plan",
+      "allowed": [
+        "docs",
+        "fixtures",
+        "validators",
+        "issue_comments",
+        "child_issue_creation"
+      ],
+      "canonicalFlip": false
+    },
+    {
+      "phase": "phase1_disposable_rehearsal",
+      "allowed": [
+        "additive_worktree",
+        "clean_upstream_refs",
+        "history_preserving_prefix_import_dry_run",
+        "ci_parity_comparison"
+      ],
+      "canonicalFlip": false
+    },
+    {
+      "phase": "phase2_workspace_pr_without_canonical_flip",
+      "allowed": [
+        "workspace_docs",
+        "layout_checks",
+        "parity_checks",
+        "codeowners_draft"
+      ],
+      "canonicalFlip": false
+    },
+    {
+      "phase": "phase3_canonical_flip_decision",
+      "allowed": [
+        "operator_final_signoff_only_after_green_gates"
+      ],
+      "canonicalFlip": "requires_explicit_approval"
+    }
+  ],
+  "agentOlympicsMirrorPolicy": {
+    "fullImportAllowed": false,
+    "historyImportAllowed": false,
+    "allowedPaths": [
+      "schemas",
+      "fixtures/a2a-effectiveness",
+      "redacted benchmark JSONL records",
+      "publication-gated public docs"
+    ],
+    "forbiddenPaths": [
+      "oracle",
+      "hidden judge notes",
+      "private answer keys",
+      "runs",
+      "raw traces",
+      "adapter logs",
+      "live baseline packets",
+      "node inventory raw output",
+      "endpoint identifiers",
+      "hostnames",
+      "IP addresses",
+      "Telegram/provider identifiers",
+      "private absolute paths",
+      "sessions",
+      "runtime/bootstrap files",
+      "credential values"
+    ],
+    "scannerGateRequired": true
+  },
+  "boundaries": {
+    "repositoryImport": false,
+    "historyRewrite": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "visibilityChange": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}
+
