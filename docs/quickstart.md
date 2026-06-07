@@ -191,7 +191,7 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 
 Before sharing evidence, confirm:
 
-- repository visibility remains private
+- repository is public as of 2026-05-27; evidence is still redacted and no new visibility, transfer, publication, or promotion action occurred
 - no production deploy, Gateway/broker/worker restart, database mutation, provider send, Telegram send, terminal-outbox ACK, secret rotation, history rewrite, or force push occurred
 - evidence is redacted and does not include raw session dumps, private paths, hostnames, tokens, provider IDs, Telegram IDs, or OpenClaw runtime/bootstrap files
 - docs and issue/PR evidence introduce the project as A2A Plane, with OpenClaw described only as the first/reference integration

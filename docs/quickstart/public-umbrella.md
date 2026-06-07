@@ -15,12 +15,13 @@ The split layout is intentional per the [topology decision record](../topology-d
 
 ## First Reader Path
 
-1. Read [`README.md`](../../README.md) for the current public source status and safety boundary.
-2. Use this page to decide which repository owns your question or change.
-3. Run the local-only [`five-minute quickstart`](../quickstart.md) when you want a disposable loopback broker plus echo worker path.
-4. Use [`docs/demo/split-repo-local-demo.md`](../demo/split-repo-local-demo.md) when you want to inspect the three-package story (broker AgentCard, plugin diagnostics, runner dry-run evidence).
-5. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) if you are integrating a non-OpenClaw harness.
-6. Check [`docs/compatibility/README.md`](../compatibility/README.md) and [`docs/release-checklist.md`](../release-checklist.md) before making compatibility or release claims.
+1. Read [`docs/current-state.md`](../current-state.md) for the active #506 wave, live child issues, and safety boundary.
+2. Read [`README.md`](../../README.md) for the public source status and repo map.
+3. Use this page to decide which repository owns your question or change.
+4. Run the local-only [`five-minute quickstart`](../quickstart.md) when you want a disposable loopback broker plus echo worker path.
+5. Use [`docs/demo/split-repo-local-demo.md`](../demo/split-repo-local-demo.md) when you want to inspect the three-package story (broker AgentCard, plugin diagnostics, runner dry-run evidence).
+6. Use [`docs/external-harness-quickstart.md`](../external-harness-quickstart.md) if you are integrating a non-OpenClaw harness.
+7. Check [`docs/compatibility/README.md`](../compatibility/README.md) and [`docs/release-checklist.md`](../release-checklist.md) before making compatibility or release claims.
 
 ## Issue Routing
 
@@ -35,10 +36,16 @@ When a change needs multiple repos, keep the coordinating issue in `a2a-plane` a
 
 ## Current Umbrella Trackers
 
-- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — topology decision tracker. Decision recorded in [`docs/topology-decision-record.md`](../topology-decision-record.md).
-- [a2a-plane#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and quickstart umbrella docs. 🟢 Merged via #484.
-- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan.
-- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — public release, version, and provenance checklist.
+- [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) — active current-state integration and A2A effectiveness wave.
+- [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
+- [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
+
+Completed historical trackers:
+
+- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted split-repo topology decision. Decision recorded in [`docs/topology-decision-record.md`](../topology-decision-record.md).
+- [a2a-plane#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and quickstart umbrella docs. Merged via #484.
+- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
+- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — public release, version, and provenance checklist groundwork.
 - [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario across broker, plugin, and runner.
 
 ## Boundaries

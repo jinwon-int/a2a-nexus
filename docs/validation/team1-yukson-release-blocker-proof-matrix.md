@@ -98,7 +98,7 @@ From [`docs/readiness/fail-closed-gates.json`](../../docs/readiness/fail-closed-
 
 | Gate | Required for GO | Status in this lane | Evidence |
 |------|-----------------|---------------------|----------|
-| `publicPrivateBoundary` | YES | **NO-GO / Waiting** — repo remains private | Repo metadata shows private. No visibility change performed. |
+| `publicPrivateBoundary` | YES | **Historical visibility gate.** Repo is public as of 2026-05-27; future promotion, publication, or visibility transfer remains approval-gated. | Repo metadata now shows public. No new visibility, publication, or promotion action is authorized by this archival lane. |
 | `terminalEvidence` | YES | **NO-GO / Waiting** — no candidate-flow terminal evidence | Start comment + this document provide requester-visible receipt, but no terminal evidence packet for a candidate flow. |
 | `replaySafety` | YES | **NO-GO / Waiting** — no runtime replay simulation | Contract fixtures validate design; runtime replay requires broker environment. |
 | `externalScannerEvidence` | YES | **NO-GO / Waiting** — no scanner binary in runner | `.gitleaks.toml` present; `gitleaks`/`trufflehog` unavailable. |
@@ -133,7 +133,7 @@ Carried forward from the release-readiness matrix. These rules apply identically
 | B3 | Terminal evidence for candidate flow | `terminalEvidence` | Link redacted terminal evidence showing requester/operator-visible receipt for a candidate flow | **NO-GO** — this lane produces only source/docs evidence | Combined from all 4 lane outputs after this pack closes |
 | B4 | Package build verification | `package-build` (subsumed into gate spec) | `tsc`-equipped environment; `npm run check:packages` passes for broker, plugin, docker-runner | **NO-GO** — `tsc` unavailable | Run in operator or build environment; or add `npx tsc` to runner |
 | B5 | Explicit operator approval | `operatorApproval` | Separate comment on #458 or #459 naming exact visibility/publication action | **NO-GO** — no approval comment | Post approval comment |
-| B6 | Public/private boundary | `publicPrivateBoundary` | Repo remains private; docs contain no private context | **NO-GO / Waiting** — no visibility change performed | Only when operator approves |
+| B6 | Public/private boundary | `publicPrivateBoundary` | Repo is public; docs contain no private context | Historical visibility gate; future promotion/publication remains approval-gated | Only when operator approves a new promotion or publication action |
 | B7 | All 8 gates GO | `goNoGoMatrix` | Every required gate GO | **NO-GO** — 5/8 gates are NO-GO/Waiting | Resolve each gate |
 
 ---
@@ -262,7 +262,7 @@ Start comment URL: https://github.com/jinwon-int/a2a-plane/issues/459#issuecomme
 
 | Blocker | Gate | Severity | Operator action |
 |---------|------|----------|-----------------|
-| No external scanner output | `externalScannerEvidence` | BLOCKING | Install `gitleaks`/`trufflehog` and run `npm run scan:external-secrets` before public visibility claim |
+| No external scanner output | `externalScannerEvidence` | BLOCKING | Install `gitleaks`/`trufflehog` and run `npm run scan:external-secrets` before promotion/stable-release claim |
 | No runtime replay-safe simulation | `replaySafety` | BLOCKING | Deploy no-live broker simulation or separately approved one-event canary (expected from lane 3) |
 | No candidate-flow terminal evidence | `terminalEvidence` | BLOCKING | Link redacted terminal evidence showing requester/operator-visible receipt for candidate flow |
 | Package TypeScript compilation unverified | `package-build` | BLOCKING (for build-completeness) | Run `npm run check:packages` in `tsc`-equipped environment |
