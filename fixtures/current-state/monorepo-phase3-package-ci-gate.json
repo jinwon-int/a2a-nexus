@@ -1,0 +1,137 @@
+{
+  "schema": "a2a.monorepo-phase3-package-ci-gate.v1",
+  "snapshotDate": "2026-06-07",
+  "issue": "https://github.com/jinwon-int/a2a-plane/issues/534",
+  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
+  "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
+  "decision": "block_package_mirror_refresh_until_package_ci_is_equal_or_stricter",
+  "gateStatus": "blocked",
+  "canonicalUntilGateGreen": "split_repos",
+  "mirrorRefreshAllowed": false,
+  "canonicalFlipApproved": false,
+  "packageJobsMustBeEqualOrStricter": true,
+  "requiredGlobalGates": [
+    "record_actions_v4_v5_policy",
+    "record_npm_ci_lifecycle_policy",
+    "preserve_package_local_scanners",
+    "preserve_release_dry_run_without_publish",
+    "preserve_package_metadata_and_bin_exports",
+    "prove_package_jobs_before_mirror_refresh"
+  ],
+  "surfaces": [
+    {
+      "surface": "broker",
+      "sourceRepo": "jinwon-int/a2a-broker",
+      "sourceRef": "fae438a4fba301c2a9a02ca7cb11282867327920",
+      "targetPath": "packages/broker",
+      "gateStatus": "blocked",
+      "mirrorRefreshAllowed": false,
+      "sourceCiCommands": [
+        "npm ci",
+        "npm test"
+      ],
+      "requiredPackageJobBeforeMirrorRefresh": [
+        "npm ci or documented lifecycle-equivalent install",
+        "npm run build with scripts/generate-build-info.mjs preserved",
+        "node --check scripts/team1-dispatch-wrapper.mjs",
+        "node --check scripts/a2a-dispatch-helper.mjs",
+        "node --check scripts/cross-broker-terminal-brief-receiver.mjs",
+        "node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js"
+      ],
+      "blockingGaps": [
+        "plane_broker_job_uses_actions_v4_while_source_uses_v5",
+        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
+        "plane_mirror_build_omits_generate_build_info",
+        "plane_mirror_test_omits_script_syntax_checks",
+        "plane_mirror_test_globs_are_narrower_than_source"
+      ]
+    },
+    {
+      "surface": "docker-runner",
+      "sourceRepo": "jinwon-int/a2a-docker-runner",
+      "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+      "targetPath": "packages/docker-runner",
+      "gateStatus": "blocked",
+      "mirrorRefreshAllowed": false,
+      "sourceCiCommands": [
+        "npm ci",
+        "npm run check",
+        "npm run build",
+        "npm run lint",
+        "npm test",
+        "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir ."
+      ],
+      "requiredPackageJobBeforeMirrorRefresh": [
+        "npm ci or documented lifecycle-equivalent install",
+        "npm run check",
+        "npm run build",
+        "npm run lint",
+        "npm test",
+        "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .",
+        "npm run chaos:e2e or documented no-live equivalent",
+        "node scripts/tag-release-candidate.mjs --dry-run or documented no-publish equivalent",
+        "verify package files/license/bin metadata"
+      ],
+      "blockingGaps": [
+        "plane_docker_runner_job_uses_actions_v4_while_source_uses_v5",
+        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
+        "plane_job_runs_check_only",
+        "plane_job_omits_build_lint_test_pre_pr_guard",
+        "plane_job_omits_release_candidate_dry_run_and_chaos_e2e",
+        "plane_mirror_package_metadata_is_stale"
+      ]
+    },
+    {
+      "surface": "openclaw-plugin-a2a",
+      "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+      "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+      "targetPath": "packages/openclaw-plugin-a2a",
+      "gateStatus": "blocked",
+      "mirrorRefreshAllowed": false,
+      "sourceCiCommands": [
+        "npm ci",
+        "npm run scan:public-readiness",
+        "npm run smoke:a2a-conformance",
+        "npm test"
+      ],
+      "requiredPackageJobBeforeMirrorRefresh": [
+        "npm ci or documented lifecycle-equivalent install",
+        "npm run scan:public-readiness from the package",
+        "npm run smoke:a2a-conformance",
+        "npm test",
+        "npm run build with openclaw.plugin.json copied to dist",
+        "npm run prepack or documented scan-plus-build equivalent",
+        "verify bin/files exports and openclaw peer boundary"
+      ],
+      "blockingGaps": [
+        "plane_plugin_job_uses_actions_v4_while_source_uses_v5",
+        "plane_install_uses_ignore_scripts_without_lifecycle_equivalence_decision",
+        "plane_job_runs_root_scan_but_not_plugin_local_scan",
+        "plane_job_omits_a2a_conformance_smoke",
+        "plane_mirror_build_prepack_and_metadata_are_stale"
+      ]
+    }
+  ],
+  "boundaries": {
+    "repositoryImportToMain": false,
+    "packageMirrorRefresh": false,
+    "historyRewrite": false,
+    "canonicalFlip": false,
+    "branchProtectionChange": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "visibilityChange": false,
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerWorkerRestart": false,
+    "dbMutation": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "credentialMovement": false,
+    "destructiveCleanup": false,
+    "workerOwnedGithubMutation": false
+  }
+}

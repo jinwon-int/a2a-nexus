@@ -5,7 +5,8 @@
 > **Child:** [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514)
 > **Phase-1 refresh:** [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528)
 > **Phase-2 rehearsal:** [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530)
-> **Status:** phase 2 parity gate recorded. Split repo CI remains canonical.
+> **Phase-3 gate:** [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534)
+> **Status:** phase 3 package CI gate blocked. Split repo CI remains canonical.
 
 ## Summary
 
@@ -96,6 +97,35 @@ state, or move credentials.
 Phase-3 should remain blocked until the package jobs either match or exceed the
 split repo gates above, or the remaining gaps are explicitly approved as
 accepted risk in a separate operator decision.
+
+## Phase-3 Package CI Gate (#534)
+
+The phase-3 package CI gate turns the phase-2 blocker into an explicit release
+gate before any package mirror refresh. It is still source-only: it records the
+minimum equal-or-stricter package jobs required for broker, Docker runner, and
+OpenClaw plugin mirrors, then keeps mirror refresh blocked until those jobs are
+present or an operator records an accepted-risk exception.
+
+The gate requires every package mirror refresh candidate to prove:
+
+- GitHub Actions checkout/setup-node policy is aligned with split repo CI or
+  the version drift is explicitly accepted.
+- `npm ci` lifecycle behavior is preserved, or `--ignore-scripts` has a
+  package-local lifecycle-equivalent proof.
+- Split-repo package scanners and smoke tests remain package-local where the
+  source repo owns them.
+- Release/tag/package/image evidence is modeled as dry-run or no-publish
+  validation only; no tag, release, npm publish, Docker publish, deploy, or
+  restart is authorized.
+- Package metadata, `bin` exports, `files`, manifests, and build side effects
+  are verified before the mirror becomes authoritative.
+
+The validated fixture is
+[`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](../fixtures/current-state/monorepo-phase3-package-ci-gate.json)
+and the release-gate check is
+`check:monorepo-phase3-package-ci-gate`. Until this check is green with the
+package jobs in place, split repos remain canonical and `packages/*` must not be
+refreshed as implementation truth.
 
 ## Canonical Flip Gate
 

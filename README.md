@@ -8,7 +8,7 @@ The current public source layout remains split across four repositories. Per the
 
 Start here:
 
-- [A2A current state](docs/current-state.md) - active #517 monorepo phase 0 backlog, a2a-broker #1320/#1321 mode research, completed #506/#511/#513/#514/#515 groundwork, ownership boundaries, and checkout hygiene.
+- [A2A current state](docs/current-state.md) - active #534 monorepo phase-3 package CI gate, completed #506/#511/#513/#514/#515/#517/#528/#530 groundwork, ownership boundaries, and checkout hygiene.
 - [A2A monorepo re-entry decision](docs/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
 - [A2A monorepo migration guide](docs/migration.md) - phase 0 migration states, no-live boundaries, provenance, and backlink policy.
 - [A2A operator guide](docs/operators.md) - operator approval points and finalizer boundaries.
@@ -30,9 +30,7 @@ All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visi
 
 Current active coordination:
 
-- [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
-- [a2a-broker#1320](https://github.com/jinwon-int/a2a-broker/issues/1320) — A2A hybrid worker mode research.
-- [a2a-broker#1321](https://github.com/jinwon-int/a2a-broker/issues/1321) — adaptive workMode selector design.
+- [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534) — monorepo phase-3 package CI gate before any package mirror refresh.
 
 Completed groundwork:
 
@@ -43,6 +41,9 @@ Completed groundwork:
 - [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) — monorepo import rehearsal and mirror freshness checks.
 - [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
 - [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
+- [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
+- [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528) — phase-1 import rehearsal gate refresh after the all-repo audit.
+- [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) — phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence.
 - [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted split-repo topology decision.
 - [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
 - [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist groundwork.
