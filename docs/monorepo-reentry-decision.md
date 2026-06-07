@@ -1,7 +1,7 @@
 # A2A Monorepo Re-entry Decision
 
 > **Decision date:** 2026-06-07
-> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#517](https://github.com/jinwon-int/a2a-plane/issues/517)
+> **Status:** Re-entry decision recorded by [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511); active follow-up is tracked by [#517](https://github.com/jinwon-int/a2a-plane/issues/517) and phase-2 rehearsal evidence by [#530](https://github.com/jinwon-int/a2a-plane/issues/530)
 > **Decision:** proceed with a staged umbrella workspace rehearsal, not an immediate canonical monorepo flip.
 
 ## Summary
@@ -85,8 +85,8 @@ a2a-plane/
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | Operator re-entry | Explicit operator request to revisit monorepo after `#506`. | Green |
-| Import rehearsal | Disposable history-preserving import from clean upstream refs into prefixed paths. | Not started |
-| CI parity | Monorepo package jobs match or exceed split repo build/test/scanner coverage. | Matrix recorded by `#514`; Not green |
+| Import rehearsal | Disposable history-preserving import from clean upstream refs into prefixed paths. | Phase-2 source-only rehearsal recorded by `#530`; package mirror refresh still blocked |
+| CI parity | Monorepo package jobs match or exceed split repo build/test/scanner coverage. | Matrix recorded by `#514` and phase-2 gate updated by `#530`; Not green |
 | Docs migration | README, current-state, developer, operator, migration, and backlink docs explain canonical state. | Draft recorded by `#515`; Not final cutover |
 | CODEOWNERS | Package-level ownership and review routes are defined. | Draft recorded by `#515`; Not final cutover |
 | Branch protection | `a2a-plane/main` protection is reviewed before any canonical flip. | Not started |

@@ -21,17 +21,94 @@
       "splitTrackedFiles": 857,
       "planeTrackedFiles": 236,
       "freshness": "stale",
-      "canonicalNow": "split_repo"
+      "canonicalNow": "split_repo",
+      "phase2Rehearsal": {
+        "importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+        "sourceRef": "fae438a4fba301c2a9a02ca7cb11282867327920",
+        "statusCounts": {
+          "addedOrUntracked": 633,
+          "removed": 12,
+          "changed": 86,
+          "renamed": 0
+        },
+        "manifestScriptDifferences": {
+          "sourceOnlyScriptCount": 119,
+          "planeOnlyScriptCount": 4,
+          "changedScripts": [
+            "build",
+            "test"
+          ],
+          "sourceOnlyScriptSamples": [
+            "refresh:drift-refs",
+            "team1_dispatch_wrapper",
+            "team2_dispatch_helper",
+            "terminal_brief_closeout_gate",
+            "terminal_outbox_cleanup_dryrun",
+            "test:drift-watch"
+          ],
+          "planeOnlyScripts": [
+            "canary_preflight_health",
+            "check",
+            "start:local",
+            "worker:echo"
+          ],
+          "dependencyKeyDifferences": [],
+          "lockfileExpectation": "source_has_package_lock; plane_has_root_and_package_lock"
+        },
+        "generatedBuildArtifactExclusions": {
+          "importedFromTrackedOnly": true,
+          "trackedGeneratedLikeCount": 0,
+          "nodeModulesImported": false
+        },
+        "conclusion": "stale_mirror_after_fresh_prefix_rehearsal"
+      }
     },
     {
       "surface": "docker-runner",
       "sourceRepo": "jinwon-int/a2a-docker-runner",
-      "sourceMain": "0aafede5e9869ea78da2707fe5e334d9530cba96",
+      "sourceMain": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
       "targetPath": "packages/docker-runner",
-      "splitTrackedFiles": 137,
+      "splitTrackedFiles": 138,
       "planeTrackedFiles": 59,
       "freshness": "stale",
-      "canonicalNow": "split_repo"
+      "canonicalNow": "split_repo",
+      "phase2Rehearsal": {
+        "importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+        "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+        "statusCounts": {
+          "addedOrUntracked": 79,
+          "removed": 0,
+          "changed": 31,
+          "renamed": 0
+        },
+        "manifestScriptDifferences": {
+          "sourceOnlyScriptCount": 5,
+          "planeOnlyScriptCount": 0,
+          "changedScripts": [
+            "check",
+            "lint"
+          ],
+          "sourceOnlyScriptSamples": [
+            "audit:release-candidate",
+            "smoke:conformance",
+            "smoke:runner-canary-parity",
+            "smoke:runner-canary-recovery-audit",
+            "verify:package"
+          ],
+          "planeOnlyScripts": [],
+          "dependencyKeyDifferences": [
+            "files",
+            "license"
+          ],
+          "lockfileExpectation": "source_has_package_lock; plane_has_root_and_package_lock"
+        },
+        "generatedBuildArtifactExclusions": {
+          "importedFromTrackedOnly": true,
+          "trackedGeneratedLikeCount": 0,
+          "nodeModulesImported": false
+        },
+        "conclusion": "stale_mirror_after_fresh_prefix_rehearsal"
+      }
     },
     {
       "surface": "openclaw-plugin-a2a",
@@ -41,7 +118,44 @@
       "splitTrackedFiles": 179,
       "planeTrackedFiles": 116,
       "freshness": "stale",
-      "canonicalNow": "split_repo"
+      "canonicalNow": "split_repo",
+      "phase2Rehearsal": {
+        "importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+        "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+        "statusCounts": {
+          "addedOrUntracked": 67,
+          "removed": 4,
+          "changed": 53,
+          "renamed": 0
+        },
+        "manifestScriptDifferences": {
+          "sourceOnlyScriptCount": 2,
+          "planeOnlyScriptCount": 1,
+          "changedScripts": [
+            "build",
+            "prepack",
+            "test:gateway"
+          ],
+          "sourceOnlyScriptSamples": [
+            "scan:public-readiness",
+            "smoke:a2a-conformance"
+          ],
+          "planeOnlyScripts": [
+            "check"
+          ],
+          "dependencyKeyDifferences": [
+            "bin",
+            "files"
+          ],
+          "lockfileExpectation": "source_has_package_lock; plane_has_root_and_package_lock"
+        },
+        "generatedBuildArtifactExclusions": {
+          "importedFromTrackedOnly": true,
+          "trackedGeneratedLikeCount": 0,
+          "nodeModulesImported": false
+        },
+        "conclusion": "stale_mirror_after_fresh_prefix_rehearsal"
+      }
     }
   ],
   "importStrategy": {
@@ -95,5 +209,26 @@
     "credentialMovement": false,
     "destructiveCleanup": false,
     "workerOwnedGithubMutation": false
+  },
+  "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
+  "phase2PriorPr": "https://github.com/jinwon-int/a2a-plane/pull/529",
+  "phase2PriorEvidenceCommit": "e2ed672ac7a082e39a20ffd43d64d516413c153d",
+  "phase2Rehearsal": {
+    "status": "completed_source_only",
+    "performedOn": "2026-06-07",
+    "baseCommit": "e2ed672ac7a082e39a20ffd43d64d516413c153d",
+    "method": "disposable_detached_worktree_git_archive_prefix_copy",
+    "sourceSelection": "fresh_default_branch_heads",
+    "targetBehavior": "overwrite_package_paths_in_throwaway_worktree_only",
+    "importedTrackedFilesOnly": true,
+    "importToMain": false,
+    "canonicalFlip": false,
+    "phase3Recommendation": "block_package_mirror_refresh_until_equal_or_stricter_package_ci_gaps_are_closed",
+    "blockers": [
+      "broker_rehearsal_would_add_or_change_hundreds_of_files_and_source_only_scripts",
+      "docker_runner_rehearsal_uses_new_split_head_after_phase1_and_plane_job_is_narrower_than_split_ci",
+      "openclaw_plugin_rehearsal_lacks_plugin_local_scan_a2a_conformance_and_packaging_parity",
+      "plane_package_jobs_still_use_ignore_scripts_install_while_split_repos_use_npm_ci_lifecycle_behavior"
+    ]
   }
 }

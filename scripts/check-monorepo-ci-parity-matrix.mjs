@@ -62,13 +62,16 @@ if (fixture) {
   expect(fixture.schema === 'a2a.monorepo-ci-parity-matrix.v1', 'fixture: unexpected schema');
   expect(fixture.parentIssue === 'https://github.com/jinwon-int/a2a-plane/issues/511', 'fixture: parentIssue must be #511');
   expect(fixture.childIssue === 'https://github.com/jinwon-int/a2a-plane/issues/514', 'fixture: childIssue must be #514');
+  expect(fixture.refreshIssue === 'https://github.com/jinwon-int/a2a-plane/issues/528', 'fixture: refreshIssue must be #528');
+  expect(fixture.phase2Issue === 'https://github.com/jinwon-int/a2a-plane/issues/530', 'fixture: phase2Issue must be #530');
+  expect(fixture.phase2Decision === 'package_ci_parity_not_equal_or_stricter_yet', 'fixture: phase2 decision must keep parity blocked');
   expect(fixture.decision === 'record_ci_parity_matrix_without_canonical_flip', 'fixture: decision must be matrix-only');
   expect(fixture.canonicalUntilParityGreen === 'split_repos', 'fixture: split repos must remain canonical');
   expect(fixture.canonicalFlipApproved === false, 'fixture: canonical flip must not be approved');
 
   const expected = new Map([
     ['broker', ['jinwon-int/a2a-broker', 'packages/broker', 'fae438a4fba301c2a9a02ca7cb11282867327920']],
-    ['docker-runner', ['jinwon-int/a2a-docker-runner', 'packages/docker-runner', '0aafede5e9869ea78da2707fe5e334d9530cba96']],
+    ['docker-runner', ['jinwon-int/a2a-docker-runner', 'packages/docker-runner', '269a0ef90737158b41f8da26241b9f7f4b14af5e']],
     ['openclaw-plugin-a2a', ['jinwon-int/openclaw-plugin-a2a', 'packages/openclaw-plugin-a2a', 'a2e521271483ef0b6a29907c8228f0a442dd2db9']],
   ]);
   const repos = new Map((fixture.sourceRepos || []).map((repo) => [repo.surface, repo]));
@@ -90,6 +93,21 @@ if (fixture) {
     expect((repo.planeJob?.commands || []).some((command) => /--ignore-scripts/.test(command)), `fixture: ${surface} plane job must record ignore-scripts install`);
     expect((repo.requiredBeforeAuthoritative || []).length >= 5, `fixture: ${surface} needs required-before-authoritative items`);
     expect((repo.knownDifferences || []).length >= 5, `fixture: ${surface} needs known differences`);
+    expect(repo.phase2PackageParity?.equalOrStricter === false, `fixture: ${surface} phase2 parity must not be equal-or-stricter yet`);
+    expect(repo.phase2PackageParity?.freshPrefixRehearsal?.sourceRef === sourceMain, `fixture: ${surface} phase2 source ref mismatch`);
+    expect(
+      Number.isInteger(repo.phase2PackageParity?.freshPrefixRehearsal?.statusCounts?.changed) &&
+        Number.isInteger(repo.phase2PackageParity?.freshPrefixRehearsal?.statusCounts?.addedOrUntracked),
+      `fixture: ${surface} must record phase2 rehearsal status counts`
+    );
+    expect(
+      (repo.phase2PackageParity?.blockingGaps || []).length >= 5,
+      `fixture: ${surface} must list blocking package CI gaps`
+    );
+    expect(
+      (repo.phase2PackageParity?.requiredBeforeMirrorRefresh || []).length >= 5,
+      `fixture: ${surface} must list required gates before mirror refresh`
+    );
   }
 
   expect(!Array.from(repos.values()).some((repo) => /agent-olympics/i.test(repo.sourceRepo || '')), 'fixture: agent-olympics must not be a source repo');
@@ -120,11 +138,14 @@ if (doc) {
     'Agent Olympics is out of scope',
     'canonical flip gate remains closed',
     'No-live Boundary',
+    'Phase-2 Parity Gate',
+    'a2a-plane#530',
   ]) {
     expect(doc.toLowerCase().includes(phrase.toLowerCase()), `doc: missing phrase "${phrase}"`);
   }
   expect(/a2a-plane#511/.test(doc), 'doc: must reference #511');
   expect(/a2a-plane#514/.test(doc), 'doc: must reference #514');
+  expect(/a2a-plane#528/.test(doc), 'doc: must reference #528');
 }
 
 if (reentryDoc) {
@@ -134,8 +155,9 @@ if (reentryDoc) {
 
 if (currentStateDoc) {
   expect(/a2a-plane#514/.test(currentStateDoc), 'current-state doc: must reference completed #514');
-  expect(/a2a-plane#515/.test(currentStateDoc), 'current-state doc: must keep #515 active');
+  expect(/a2a-plane#515/.test(currentStateDoc), 'current-state doc: must reference completed #515');
   expect(/a2a-plane#517/.test(currentStateDoc), 'current-state doc: must keep #517 active');
+  expect(/a2a-plane#530/.test(currentStateDoc), 'current-state doc: must keep #530 active');
 }
 
 if (pkg) {
