@@ -1,0 +1,68 @@
+name: auto-merge
+
+on:
+  workflow_run:
+    workflows:
+      - ci
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  merge-successful-ci-pr:
+    name: merge successful CI PR
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Merge open PRs matching successful CI head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          gh pr list \
+            --repo "$REPO" \
+            --state open \
+            --base main \
+            --json number,isDraft,headRefOid,mergeStateStatus,title,url \
+            > /tmp/open-prs.json
+
+          python3 - <<'PY' > /tmp/auto-merge-prs.txt
+          import json
+          import os
+
+          head_sha = os.environ["HEAD_SHA"]
+          with open("/tmp/open-prs.json", encoding="utf-8") as f:
+              prs = json.load(f)
+
+          for pr in prs:
+              if pr.get("isDraft"):
+                  continue
+              if pr.get("headRefOid") != head_sha:
+                  continue
+              number = pr.get("number")
+              if number is not None:
+                  print(number)
+          PY
+
+          if [ ! -s /tmp/auto-merge-prs.txt ]; then
+            echo "No open non-draft main PR matched successful CI head ${HEAD_SHA}."
+            exit 0
+          fi
+
+          while read -r pr; do
+            [ -n "$pr" ] || continue
+            echo "Merging PR #${pr} after successful ci workflow_run for ${HEAD_SHA}."
+            gh pr merge "$pr" --repo "$REPO" --merge
+          done < /tmp/auto-merge-prs.txt
