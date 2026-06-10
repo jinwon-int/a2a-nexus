@@ -88,5 +88,8 @@
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
     "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.13.1"
+  }
 }
