@@ -161,6 +161,44 @@ test("read-only/evidence lanes carry allowNoChanges and readOnlyValidation with 
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.readOnlyValidation, "true");
 });
 
+test("Team2 execute-mode requires Gwakga broker-of-record handoff evidence", () => {
+  const plan = buildA2ADispatchPlan(
+    {
+      ...BASE_SPEC,
+      brokerOfRecordId: "seoseo",
+      originBrokerId: "seoseo",
+    },
+    { dryRun: false, execute: true },
+  );
+
+  assert.equal(plan.decision.value, "blocked");
+  assert.ok(plan.decision.blockers.some((blocker) => blocker.includes("team2_broker_of_record_handoff")));
+  assert.ok(plan.dispatchActions.some((action) => action.includes("createTask: blocked")));
+  assert.equal(plan.taskPayload, null);
+});
+
+test("Team2 execute-mode allows explicit Gwakga cross-broker handoff", () => {
+  const plan = buildA2ADispatchPlan(
+    {
+      ...BASE_SPEC,
+      brokerOfRecordId: "gwakga",
+      originBrokerId: "seoseo",
+      operatorFacingOwner: "parent",
+      crossBrokerHandoff: {
+        handoffBrokerId: "gwakga",
+        originBrokerId: "seoseo",
+        originTaskId: "seoseo-parent-task-1",
+        childWorkerId: "dungae",
+      },
+    },
+    { dryRun: false, execute: true },
+  );
+
+  assert.equal(plan.decision.value, "warn_go");
+  assert.equal(plan.taskPayload?.brokerOfRecordId, "gwakga");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "gwakga");
+});
+
 test("Team1/common execute-mode requires work-mode decision evidence", () => {
   const plan = buildA2ADispatchPlan(
     {
