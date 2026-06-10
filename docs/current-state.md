@@ -180,6 +180,21 @@ settings mutation, package ownership transfer, release/publish/deploy, DB,
 secret, provider send, Terminal ACK/replay, force-push, and history rewrite
 remain separate HOLD surfaces.
 
+
+
+The active `a2a-nexus#553` active provenance mirror execution result is
+documented in
+[`docs/monorepo-active-provenance-mirror-execution-result.md`](monorepo-active-provenance-mirror-execution-result.md)
+and validated by `scripts/check-monorepo-active-provenance-mirror-execution-result.mjs`.
+It records that `jinwon-int/a2a-broker`, `jinwon-int/a2a-docker-runner`, and
+`jinwon-int/plugin-a2a` have received README/MIRROR_NOTICE source-routing
+notices and are now `ACTIVE_PROVENANCE_MIRROR` repositories for history,
+issue/PR/tag provenance, and emergency reference. They remain active/public and
+were not archived, made read-only, redirected, renamed, hidden, or mutated
+through settings. Package ownership transfer, release/publish/deploy, DB,
+secret, provider send, Terminal ACK/replay, force-push, and history rewrite
+remain separate HOLD surfaces.
+
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)
 and validated by `scripts/check-monorepo-operator-approval-handoff.mjs`. It
