@@ -1,6 +1,6 @@
-# Alpha boundaries for openclaw-plugin-a2a
+# Alpha boundaries for plugin-a2a
 
-This document defines what "alpha" means for `openclaw-plugin-a2a` and sets the boundary conditions that must be met before the plugin can leave alpha status.
+This document defines what "alpha" means for `plugin-a2a` and sets the boundary conditions that must be met before the plugin can leave alpha status.
 
 ## Current alpha status
 
@@ -36,7 +36,7 @@ Any combination outside this matrix is untested and may fail silently.
 The plugin is not published to npm. Installation requires cloning the repository and building from source:
 
 ```bash
-git clone <this-repo> && cd openclaw-plugin-a2a && npm ci && npm run build
+git clone <this-repo> && cd plugin-a2a && npm ci && npm run build
 ```
 
 A public `npm install` path does not exist and must not be documented until the plugin leaves alpha.

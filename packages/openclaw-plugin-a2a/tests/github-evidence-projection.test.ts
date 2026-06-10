@@ -12,11 +12,11 @@ const RUN = "a2a-terminal-brief-github-evidence-20260511T000448Z";
 function baseInput(overrides = {}) {
   return {
     runId: RUN,
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    repo: "jinwon-int/plugin-a2a",
     issueNumber: 259,
     taskId: "5c64a53e-2a1e-4475-a6e5-9f718124384b",
     worker: "sogyo",
-    commentUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/259#issuecomment-1",
+    commentUrl: "https://github.com/jinwon-int/plugin-a2a/issues/259#issuecomment-1",
     summary: "[a2a:Done] rendered GitHub evidence for Terminal Brief",
     ...overrides,
   };
@@ -44,14 +44,14 @@ describe("projectGitHubEvidenceForTerminalBrief", () => {
   it("prefers PR marker when a PR URL is present", () => {
     const projection = projectGitHubEvidenceForTerminalBrief(
       baseInput({
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/260",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/260",
         summary: "implementation opened",
       }),
     );
 
     assert.equal(projection.marker, "PR");
     assert.equal(projection.status, "pr_opened");
-    assert.equal(projection.evidenceUrls.pullRequest, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/260");
+    assert.equal(projection.evidenceUrls.pullRequest, "https://github.com/jinwon-int/plugin-a2a/pull/260");
   });
 
   it("redacts token-shaped strings and private/context paths", () => {
@@ -115,7 +115,7 @@ describe("projectGitHubEvidenceLedgerForTerminalBrief", () => {
   it("aggregates PR/Done/Block/Start counts for one run", () => {
     const ledger = projectGitHubEvidenceLedgerForTerminalBrief([
       baseInput({ marker: "Start", summary: "Start" }),
-      baseInput({ marker: "PR", prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/260" }),
+      baseInput({ marker: "PR", prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/260" }),
       baseInput({ marker: "Block", summary: "Block: no live send" }),
       baseInput({ marker: "Done", summary: "Done" }),
     ]);

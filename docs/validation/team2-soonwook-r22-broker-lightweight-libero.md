@@ -88,7 +88,7 @@ Transition to `GO` (source-only) requires:
 - `terminal-brief-routing-contract.ts` guard is unchanged or any changes are revalidated for receipt-level separation (provider-accepted ≠ terminal ACK).
 - `broker-handoff-protocol.md` handoff envelope and `crossBrokerHandoff` metadata invariants are unchanged or revalidated.
 - This lane's validation test passes and the final diff remains docs/tests only.
-- `npm run check:message-id-ack-boundary` remains green for A2A Plane receipt/ACK wording.
+- `npm run check:message-id-ack-boundary` remains green for A2A Nexus receipt/ACK wording.
 - `npm run check:team2-final-go-no-go-semantics-libero` passes and the final GO/NO-GO semantics doc covers R22 lane boundaries.
 - No production deploy/restart/reload, live provider/Telegram send, DB mutation/prune/migration, Terminal Brief ACK/replay, historical outbox replay, release/tag, secret movement/disclosure, force-push/history rewrite, or visibility change occurred in this validation lane.
 - Branch diff, PR body, issue comments, and artifact evidence exclude OpenClaw runtime/bootstrap context files. Before PR creation, fail closed and report exact repo-relative or artifact-relative offending paths for any `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**`, `BOOTSTRAP.md`, `MEMORY.md`, or `memory/**` file.

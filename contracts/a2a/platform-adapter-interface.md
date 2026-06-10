@@ -2,7 +2,7 @@
 
 > **v0 Draft (2026-05-28):** This contract defines the abstract, platform-independent A2A Adapter
 > Interface that any agent platform (OpenClaw, Hermes, Claude Code, Codex, standalone HTTP client)
-> can implement to participate in the A2A Plane. It is a companion to the
+> can implement to participate in the A2A Nexus. It is a companion to the
 > [task lifecycle](./task-lifecycle.md), [terminal semantics](./terminal-semantics.md),
 > and [adapter receipt capability](./adapter-receipt-capability.md) contracts.
 >
@@ -469,7 +469,7 @@ node test/conformance/check-platform-adapter-interface.mjs
 | [A2A Task Lifecycle](./task-lifecycle.md) | Defines task states and transitions |
 | [Terminal Result Semantics](./terminal-semantics.md) | Defines receipt levels and ACK boundary |
 | [OpenClaw-Core Extraction Plan](../../packages/openclaw-plugin-a2a/docs/migration-plan.md) | Defines the OpenClaw plugin extraction path |
-| [A2A Constitution](../../docs/a2a-constitution.md) | Defines A2A Plane principles |
+| [A2A Constitution](../../docs/a2a-constitution.md) | Defines A2A Nexus principles |
 
 ---
 
@@ -496,8 +496,8 @@ OpenClaw-only to platform-independent adapter support.
 
 | Item | Decision | Rationale |
 |---|---|---|
-| gRPC transport | Deferred. No existing A2A Plane use case requires gRPC. Revisit if a broker-side gRPC endpoint is added. | No implementation demand; adds complexity without current benefit. |
+| gRPC transport | Deferred. No existing A2A Nexus use case requires gRPC. Revisit if a broker-side gRPC endpoint is added. | No implementation demand; adds complexity without current benefit. |
 | WebSocket transport | Deferred. SSE covers the push use case for v0. WebSocket would add bidirectional state management complexity. | SSE is simpler and sufficient for task event streams. |
 | Adapter federation (cross-broker adapter registration) | Deferred. Cross-broker coordination is handled by `broker-handoff-protocol.md`, not the adapter interface itself. | Adapter interface is per-broker; handoff is a separate concern. |
 | Live adapter deployment | Rejected for v0. This is an interface contract only. Live adapter rollout is Phase 2+ per the migration path. | Safety gate: no production deploy. |
-| Non-HTTP transports (e.g., file-based, message queue) | Deferred. File-based or MQ transports can be added as new transport kinds in a future version. | No current A2A Plane requirement. |
+| Non-HTTP transports (e.g., file-based, message queue) | Deferred. File-based or MQ transports can be added as new transport kinds in a future version. | No current A2A Nexus requirement. |

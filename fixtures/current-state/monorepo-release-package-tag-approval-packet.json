@@ -43,7 +43,7 @@
     {
       "surface": "openclaw-plugin-a2a",
       "path": "packages/openclaw-plugin-a2a",
-      "packageName": "openclaw-plugin-a2a",
+      "packageName": "plugin-a2a",
       "version": "0.1.0",
       "private": true,
       "binNames": [

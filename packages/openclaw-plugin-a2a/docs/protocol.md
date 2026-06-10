@@ -1,7 +1,7 @@
 # Plugin durable-runtime boundary
 
 This document defines the A2A behavior currently owned by
-`openclaw-plugin-a2a` and the line where ownership must stop until the
+`plugin-a2a` and the line where ownership must stop until the
 remaining OpenClaw-core seams are opened.
 
 It exists to keep three things explicit:

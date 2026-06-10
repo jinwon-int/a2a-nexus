@@ -1,6 +1,6 @@
 # Sessions-send hook contract for delegated A2A dispatch
 
-Closes the planning half of openclaw-plugin-a2a#7.
+Closes the planning half of plugin-a2a#7.
 
 This doc narrows the plugin-owned side of the `sessions_send` interception flow so the eventual core seam can land as a small, reviewable change instead of another round of design work.
 
@@ -203,7 +203,7 @@ Pass:
 
 ## Remote node-id resolution contract
 
-Tracks `openclaw-plugin-a2a#80`.
+Tracks `plugin-a2a#80`.
 
 When a `sessions_send` invocation targets a *remote* A2A node-id (e.g. `node-remote`) rather than a locally-visible session key, the plugin must be able to:
 

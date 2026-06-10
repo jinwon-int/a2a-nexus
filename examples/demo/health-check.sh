@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# health-check.sh — Verify A2A Plane broker health endpoints.
+# health-check.sh — Verify A2A Nexus broker health endpoints.
 # Usage: ./health-check.sh [base-url]
 #   base-url defaults to http://127.0.0.1:8787
 #
@@ -28,7 +28,7 @@ check() {
   fi
 }
 
-echo "=== A2A Plane Health Check ==="
+echo "=== A2A Nexus Health Check ==="
 echo "Broker URL: ${BASE}"
 echo ""
 

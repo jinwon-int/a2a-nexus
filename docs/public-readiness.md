@@ -188,7 +188,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
 
 1. **G1 evidence (terminal evidence / replay-safe gate):**
    - [ ] Confirm `openclaw/openclaw#78261` is recorded as closed/superseded, not a merge gate.
-   - [ ] Link to A2A Plane contract/test evidence that provider message id/send success is provider accepted-send evidence only.
+   - [ ] Link to A2A Nexus contract/test evidence that provider message id/send success is provider accepted-send evidence only.
    - [ ] Link to a replay-safe one-event canary or no-live proof showing no duplicate/stale Terminal Brief replay.
    - [ ] Link to a follow-up proof (issue/PR comment or CI log) showing manual operator receipt or explicit ACK-safe receipt before terminal ACK. Provider acceptance or `messageId` alone is insufficient.
 
@@ -228,7 +228,7 @@ This packet is the Team1 next-round operator decision surface for `bangtong`. It
 
 | Gate | Current State | Required for GO | NO-GO Trigger |
 |---|---|---|---|
-| **G1: Terminal evidence / replay-safe canary proof** | **NO-GO / Waiting.** PR [#78261](https://github.com/openclaw/openclaw/pull/78261) is closed/superseded; `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` remain non-ACK evidence. | A2A Plane contract/tests show provider message id/send success is accepted-send evidence only, and a replay-safe proof shows manual/proven ACK-safe receipt before terminal ACK. | Claiming GO because #78261 closed. Treating `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` as terminal ACK evidence. |
+| **G1: Terminal evidence / replay-safe canary proof** | **NO-GO / Waiting.** PR [#78261](https://github.com/openclaw/openclaw/pull/78261) is closed/superseded; `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` remain non-ACK evidence. | A2A Nexus contract/tests show provider message id/send success is accepted-send evidence only, and a replay-safe proof shows manual/proven ACK-safe receipt before terminal ACK. | Claiming GO because #78261 closed. Treating `providerAccepted`, `accepted`, `sent`, or Telegram `messageId` as terminal ACK evidence. |
 | **G2: Final external scanner evidence** | **NO-GO / Blocked.** `npm run scan:external-secrets` exits non-zero because neither `gitleaks` nor `trufflehog` is installed in the runner environment. See `docs/security/r4-external-scan-and-freeze.md`. | `npm run scan:external-secrets` exits zero with clean findings (or findings dispositioned by operator with redacted evidence). At least one supported scanner (`gitleaks` or `trufflehog`) produces a clean report. | Claiming GO without scanner output. Running a local-only substitute (`npm run scan:public-readiness`, `node scripts/redacted-readiness-inventory.mjs`) and treating it as external scanner evidence. |
 | **G3: Explicit operator approval for repository visibility/publication** | **Historical state.** At the time of this R8 packet, repository visibility was still private and no operator approval had been issued. The repository is now public as of 2026-05-27. | Future visibility transfers, publication, or promotion still require explicit operator approval in a linked issue/PR comment. Approval is separate from any execution step. | Claiming GO because "docs are ready" or "all checks passed." Executing a new visibility, publication, or promotion action without explicit operator approval. |
 
@@ -242,7 +242,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
 
 1. **G1 evidence:**
    - [ ] Link to `openclaw/openclaw#78261` close/superseded decision.
-   - [ ] Link to A2A Plane contract/test evidence that provider message id/send success is accepted-send evidence only.
+   - [ ] Link to A2A Nexus contract/test evidence that provider message id/send success is accepted-send evidence only.
    - [ ] Link to a follow-up proof (issue/PR comment or CI log) showing manual operator receipt or explicit ACK-safe receipt before terminal ACK. Provider acceptance or `messageId` alone is insufficient.
 
 2. **G2 evidence:**

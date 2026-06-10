@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.adapter-receipt-capability.v0",
+  "fixtureId": "a2a-nexus.adapter-receipt-capability.v0",
   "contract": "contracts/a2a/adapter-receipt-capability.md",
   "description": "Receipt capability contract fixture for non-OpenClaw/Hermes/spool Terminal Brief adapters. Defines six capability levels (C1–C6) mapped to the four frozen receipt levels. Each scenario demonstrates an adapter state transition and validates that produced/spooled/provider-only states are not mistaken for operator-visible ACK.",
   "v0Freeze": {

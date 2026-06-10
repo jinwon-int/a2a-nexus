@@ -3,7 +3,7 @@
 ## Problem
 
 Design reviews, incident analyses, policy decisions, and high-risk refactors benefit from structured
-adversarial examination — thesis, challenge, defense, and synthesis — but A2A Plane today dispatches
+adversarial examination — thesis, challenge, defense, and synthesis — but A2A Nexus today dispatches
 only single-worker tasks or parent-round aggregates. There is no native work mode where multiple
 workers examine the same problem from assigned roles and the broker synthesizes a final decision
 packet.

@@ -1,5 +1,5 @@
 {
-  "exampleId": "a2a-plane.compatibility.cross-team-conformance.v1",
+  "exampleId": "a2a-nexus.compatibility.cross-team-conformance.v1",
   "description": "Compatibility example binding Team2/Gwakga second-worker handoff fixtures to public-safe contract checks.",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/146",
   "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/152",

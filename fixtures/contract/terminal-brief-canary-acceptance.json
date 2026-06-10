@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.terminal-brief-canary-acceptance.v1",
+  "fixtureId": "a2a-nexus.contract.terminal-brief-canary-acceptance.v1",
   "contract": "docs/specs/a2a-terminal-brief-canary/spec.md",
   "description": "Acceptance contract for A2A Terminal Brief live-canary hardening. Defines frozen assertions for the five hardening gaps (backlog false suppression, sessionKey requirement, config shape flexibility, cursor selection safety, operatorEvents restore) discovered during the Seoseo fleet canary. Redacted, no-live, fixture-only conformance evidence.",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/364",

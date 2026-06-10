@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.action-reconciliation.v0",
+  "fixtureId": "a2a-nexus.contract.action-reconciliation.v0",
   "contract": "contracts/a2a/action-reconciliation.md",
   "schema": "docs/specs/a2a-action-reconciliation/schema.json",
   "description": "Synthetic fixture for approval-gated auto-closeout action reconciliation canary. Covers GO/NO_GO/BLOCKED matrix decisions, operator approval gating, idempotency replay suppression, conflict detection, GitHub 403 blocking, and broker of record mismatch. All scenarios are purely deterministic and require no provider API calls, production DB state, or live action execution.",

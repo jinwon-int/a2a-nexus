@@ -270,25 +270,23 @@ test("redacts gh auth login --with-token commands", () => {
 });
 
 test("redacts xai API key patterns", () => {
-  const key = ["xai", "Qi2qGiM318OjhTm3lJmK0fBPlaQs8Sygz4hxmWZYA9oog32BLsRvK2SDplxzfPuivoZ88QRrwBMnyFE2"].join("-");
-  const raw = `XAI_API_KEY=${key}`;
+  const raw = "XAI_API_KEY=xai-Qi2qGiM318OjhTm3lJmK0fBPlaQs8Sygz4hxmWZYA9oog32BLsRvK2SDplxzfPuivoZ88QRrwBMnyFE2";
   const redacted = redactSecrets(raw);
   assert.doesNotMatch(redacted, /xai-[A-Za-z0-9_]+/);
   assert.match(redacted, /<redacted-api-key>/);
 });
 
 test("redacts supermemory API key patterns", () => {
-  const key = ["sm", "n8ahWEKy9qpUHCJuytAe9q_QTpBKiBZFVPDPeBqjrYIPpUrxLATdmUmsHLSaAWnSSKALdMAPJJyWBFHgpgaDxcR"].join("_");
-  const raw = `SUPERMEMORY_KEY=${key}`;
+  const raw = "SUPERMEMORY_KEY=sm_n8ahWEKy9qpUHCJuytAe9q_QTpBKiBZFVPDPeBqjrYIPpUrxLATdmUmsHLSaAWnSSKALdMAPJJyWBFHgpgaDxcR";
   const redacted = redactSecrets(raw);
   assert.doesNotMatch(redacted, /sm_n8ah/);
   assert.match(redacted, /<redacted-api-key>/);
 });
 
 test("redacts OpenAI API key patterns", () => {
-  const raw = "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF";
+  const raw = "OPENAI_API_KEY=" + "sk-" + "proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789CDEF";
   const redacted = redactSecrets(raw);
-  assert.doesNotMatch(redacted, /sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF/);
+  assert.doesNotMatch(redacted, new RegExp("sk-" + "proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789CDEF"));
   assert.match(redacted, /<redacted-api-key>/);
 });
 

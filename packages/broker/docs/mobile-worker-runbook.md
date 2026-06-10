@@ -11,7 +11,16 @@ Mobile workers are typically registered with:
 
 - `runtimeFlavor: "termux-hermes"`
 - `workerMode: "mobile"`
-- Reduced capabilities (no `canPatchWorkspace`, no `canPromoteLive`)
+- `canAnalyze: true`
+- `canPromoteLive: false`
+- no Docker runner requirement
+
+Treat Gongyung and Daegyo as **non-docker Hermes research workers**, not as
+reference-only special cases. They can receive ordinary no-live/read-only
+`analyze` or `verify` tasks, including A2A/A2AD round tasks, when task policy is
+research-only and the payload is explicitly no-live. They must still reject
+Docker-runner, live-impact, provider-send, and generic GitHub-write executor
+payloads unless a separate approved proof-marker path is used.
 
 ## Health States (broker-facing status)
 
@@ -58,12 +67,12 @@ graph LR
 - **Dashboard**: `src/core/broker.ts` — `getDashboard()` (workers section)
 - **Capacity**: `src/core/broker.ts` — `getWorkerCapacitySummary()` (per-item loop)
 
-## Known Mobile Workers (Team1)
+## Known Mobile Workers
 
-| Node ID | Device | Notes |
-|---|---|---|
-| `gongyung` | Termux (Android) | Primary mobile worker for bottleneck ops |
-| `daegyo` | Termux (Android) | Secondary mobile worker for bottleneck ops |
+| Node ID | Team | Device | Notes |
+|---|---|---|---|
+| `gongyung` | Team1 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
+| `daegyo` | Team2 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
 
 ## operatorEvents Payload Constraint
 

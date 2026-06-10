@@ -420,13 +420,8 @@ test("bridge packet idempotency key changes when v1 key or state changes", () =>
 
   // Different v1 packet (different idempotencyKey) produces different key
   const v1b = readyV1AuthorizationRequest();
-  const keyField = "idempotency" + "Key";
-  const v1bWithDifferentKey = {
-    ...v1b,
-    [keyField]: [v1b[keyField as "idempotencyKey"], "v2"].join("-"),
-  } as typeof v1b;
   const bridge4 = buildOIWorkerSubagentSpawnAuthorizationBridgePacket(
-    v1bWithDifferentKey,
+    { ...v1b, idempotencyKey: v1b.idempotencyKey + "-v2" } as typeof v1b,
     {
       now: NOW,
       workerSpawnApprovalDecisionEvidence: acceptedWorkerSpawnApprovalDecisionEvidence(),

@@ -44,7 +44,7 @@ if (quickstart) {
   // Structural markers
   expect(/Five-minute local quickstart/i.test(quickstart), 'quickstart: missing title');
   expect(/Prerequisites/i.test(quickstart), 'quickstart: missing Prerequisites section');
-  expect(/Run the local A2A Plane broker/i.test(quickstart), 'quickstart: missing broker section');
+  expect(/Run the local A2A Nexus broker/i.test(quickstart), 'quickstart: missing broker section');
   expect(/Start a dummy or echo worker/i.test(quickstart), 'quickstart: missing worker section');
   expect(/Connect the reference OpenClaw plugin locally/i.test(quickstart), 'quickstart: missing plugin section');
   expect(/Submit a no-live test task/i.test(quickstart), 'quickstart: missing test task section');

@@ -2,7 +2,7 @@
  * No-live canary harness for the plugin/broker public A2A seam (#247).
  *
  * Parent: jinwon-int/a2a-plane#174
- * Issue:  jinwon-int/openclaw-plugin-a2a#247
+ * Issue:  jinwon-int/plugin-a2a#247
  * Run:    a2a-live-canary-readiness-20260509T173917Z
  *
  * Exercises the receipt-runtime boundary that separates:
@@ -44,7 +44,7 @@ function buildTerminalEventPayload(overrides: Record<string, unknown>) {
         type: "success",
         taskId: "task-canary-1",
         worker: "sogyo",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 247,
         runId: "a2a-live-canary-readiness-20260509T173917Z",
         receiptProjection: "current_session_visible",
@@ -71,7 +71,7 @@ function buildProviderAcceptedOnlyEvent() {
         type: "success",
         taskId: "task-provider-accepted-1",
         worker: "sogyo",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 247,
         runId: "a2a-live-canary-readiness-20260509T173917Z",
         summary: "provider accepted but no operator receipt",
@@ -88,7 +88,7 @@ function buildProviderAcceptedOnlyOutbox() {
       type: "success",
       taskId: "task-provider-outbox-1",
       worker: "sogyo",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 249,
       completedAt: "2026-05-10T03:00:00Z",
       summary: "outbox record with no receipt projection",
@@ -457,7 +457,7 @@ describe("no-live canary harness (#247)", () => {
           type: "success",
           taskId: "task-outbox-visible",
           worker: "sogyo",
-          repo: "jinwon-int/openclaw-plugin-a2a",
+          repo: "jinwon-int/plugin-a2a",
           issue: 249,
           completedAt: "2026-05-10T03:00:00Z",
           receiptProjection: "current_session_visible",

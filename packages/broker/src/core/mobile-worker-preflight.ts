@@ -128,9 +128,106 @@ export interface MobileWorkerPreflightDryRunResult {
   boundaries: MobileWorkerPreflightPacket["boundaries"];
 }
 
+export interface MobileWorkerTaskAcceptanceInput {
+  worker: {
+    nodeId: string;
+    workerMode?: string;
+    capabilities?: {
+      canAnalyze?: boolean;
+      canPatchWorkspace?: boolean;
+      canPromoteLive?: boolean;
+      environments?: string[];
+    };
+  };
+  task: {
+    intent?: string;
+    policyContext?: {
+      requiresApproval?: boolean;
+      liveImpact?: boolean;
+      targetEnvironment?: string;
+    };
+    payload?: Record<string, unknown>;
+  };
+}
+
+export interface MobileWorkerTaskAcceptanceDecision {
+  accept: boolean;
+  profile: "non_docker_research" | "blocked";
+  reason: string;
+  allowedModes: string[];
+  blockedExecutors: string[];
+}
+
 const DEFAULT_STALE_AFTER_SEC = 30;
 const DEFAULT_DISCONNECTED_AFTER_SEC = 90;
 const DEFAULT_FORMAT: MobileWorkerPreflightFormat = "markdown";
+const NON_DOCKER_RESEARCH_ALLOWED_MODES = [
+  "analysis-only",
+  "readonly-analysis",
+  "a2ad-analysis",
+  "local-hermes-smoke",
+  "hermes-reference-dry-run",
+] as const;
+const MOBILE_BLOCKED_EXECUTORS = ["docker", "live", "github-write"] as const;
+
+export function evaluateMobileWorkerTaskAcceptance(
+  input: MobileWorkerTaskAcceptanceInput,
+): MobileWorkerTaskAcceptanceDecision {
+  const allowedModes = [...NON_DOCKER_RESEARCH_ALLOWED_MODES];
+  const blockedExecutors = [...MOBILE_BLOCKED_EXECUTORS];
+  const payload = input.task.payload ?? {};
+  const mode = stringValue(payload.mode);
+  const intent = input.task.intent ?? "";
+  const workerMode = input.worker.workerMode ?? "unknown";
+  const targetEnvironment = input.task.policyContext?.targetEnvironment ?? "research";
+
+  const blocked = (reason: string): MobileWorkerTaskAcceptanceDecision => ({
+    accept: false,
+    profile: "blocked",
+    reason,
+    allowedModes,
+    blockedExecutors,
+  });
+
+  if (!isMobileWorkerMode(workerMode)) {
+    return blocked(`workerMode=${workerMode} is not a mobile/non-docker Hermes worker profile`);
+  }
+  if (input.worker.capabilities?.canAnalyze === false) {
+    return blocked("worker capability canAnalyze=false blocks research analysis tasks");
+  }
+  if (intent !== "analyze" && intent !== "verify") {
+    return blocked(`intent=${intent || "unknown"} is not a no-live research analysis intent`);
+  }
+  if (input.task.policyContext?.liveImpact === true || targetEnvironment === "live") {
+    return blocked("live-impact or live target environment is blocked for mobile/non-docker workers");
+  }
+  if (payload.noLive !== true) {
+    return blocked("payload.noLive=true is required for mobile/non-docker worker acceptance");
+  }
+  if (!allowedModes.includes(mode as typeof NON_DOCKER_RESEARCH_ALLOWED_MODES[number])) {
+    return blocked(`payload.mode=${mode || "unknown"} is not an allowed non-docker research mode`);
+  }
+  if (mode.includes("docker") || hasAnyKey(payload, ["dockerRunner", "docker", "container", "A2A_DOCKER_RUNNER_BIN"])) {
+    return blocked("docker executor payloads are blocked for mobile/non-docker workers");
+  }
+  if (mode.includes("github") || hasAnyKey(payload, ["githubMutation", "mobileGitHubExecutorApproved", "prUrl", "proofPath"])) {
+    return blocked("GitHub write/proof-marker payloads are not accepted by the generic non-docker research policy");
+  }
+  if (payload.noOutboundSideEffects === false) {
+    return blocked("payload explicitly permits outbound side effects");
+  }
+  if (input.worker.capabilities?.canPromoteLive === true) {
+    return blocked("mobile/non-docker research profile must not advertise canPromoteLive=true");
+  }
+
+  return {
+    accept: true,
+    profile: "non_docker_research",
+    reason: "safe no-live research task accepted for mobile/non-docker Hermes worker",
+    allowedModes,
+    blockedExecutors,
+  };
+}
 
 export function normalizeMobileWorkerPreflightInput(
   value: unknown,
@@ -808,6 +905,14 @@ function requirePositiveNumber(value: unknown, key: string): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function hasAnyKey(record: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
 }
 
 function stableStringify(value: unknown): string {

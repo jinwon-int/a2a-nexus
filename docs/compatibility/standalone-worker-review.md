@@ -1,6 +1,6 @@
 # Standalone worker compatibility review
 
-This review records a second, non-OpenClaw worker lane for A2A Plane. It is documentation evidence only: it does not register a worker, start a broker, send provider messages, or mutate terminal ACK state.
+This review records a second, non-OpenClaw worker lane for A2A Nexus. It is documentation evidence only: it does not register a worker, start a broker, send provider messages, or mutate terminal ACK state.
 
 ## Scope reviewed
 
@@ -15,7 +15,7 @@ Production broker, plugin, runner, database, provider, terminal-outbox, and visi
 
 ## Compatibility finding
 
-A2A Plane is compatible with a standalone worker that only implements the broker worker contract. OpenClaw is the first/reference operator integration, but the worker side does not require an OpenClaw runtime when these conditions hold:
+A2A Nexus is compatible with a standalone worker that only implements the broker worker contract. OpenClaw is the first/reference operator integration, but the worker side does not require an OpenClaw runtime when these conditions hold:
 
 1. The worker has a stable public-safe `workerName`, coarse `capabilities`, and a `policyVersion` as described by the worker registration contract.
 2. The worker can claim a queued task, mark it running, and finish with exactly one terminal result: `done`, `pr`, or `blocked`.

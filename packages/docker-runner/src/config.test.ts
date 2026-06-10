@@ -63,6 +63,86 @@ test("mergeRunnerEnvFile lets direct doctor inherit worker service GitHub patch 
   }
 });
 
+test("mergeRunnerEnvFile supports Hermes patch profile", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
+  try {
+    const file = join(dir, "worker.env");
+    writeFileSync(file, [
+      "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes",
+      "A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR=/srv/hermes-profile",
+      "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:latest",
+    ].join("\n"));
+
+    const env = mergeRunnerEnvFile({
+      ...baseEnv,
+      A2A_HERMES_MODEL: "deepseek/deepseek-v4-pro",
+    }, file);
+    const config = await loadConfig(env);
+
+    assert.equal(config.commandProfile, "hermes");
+    assert.equal(config.image, "a2a-docker-runner-hermes:latest");
+    assert.equal(config.network, "host");
+    assert.match(config.commandScript ?? "", /hermes chat/);
+    assert.match(config.commandScript ?? "", /deepseek\/deepseek-v4-pro/);
+    assert.deepEqual(config.hermesProfile, { configDir: "/srv/hermes-profile" });
+    assert.deepEqual(config.extraMounts, [
+      { source: "/srv/hermes-profile", target: "/run/secrets/hermes-dir", readOnly: true },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadConfig enforces expected patch command profile", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:d9d7d64",
+  });
+
+  assert.equal(config.commandProfile, "hermes");
+  assert.equal(config.image, "a2a-docker-runner-hermes:d9d7d64");
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-openclaw:latest",
+    }),
+    /EXPECTED_PATCH_COMMAND_PROFILE=hermes requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "openclaw",
+    }),
+    /EXPECTED_PATCH_COMMAND_PROFILE=openclaw requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw; got unset/,
+  );
+});
+
+test("loadConfig rejects known runner image/profile family mismatches", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-openclaw:269a0ef",
+    }),
+    /image\/profile mismatch.*openclaw runner image.*PROFILE=hermes/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:d9d7d64",
+    }),
+    /image\/profile mismatch.*hermes runner image.*PROFILE=openclaw/,
+  );
+});
+
 test("loadConfig reads bounded safe runner build metadata", async () => {
   const config = await loadConfig({
     ...baseEnv,
@@ -138,7 +218,7 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.match(config.commandScript ?? "", /A2A_SANITIZE_OPENCLAW_CONFIG/);
   assert.match(config.commandScript ?? "", /A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW/);
   assert.match(config.commandScript ?? "", /config\.skills\.entries\["gh-issues"\]\.apiKey = token/);
-  assert.match(config.commandScript ?? "", /env GITHUB_TOKEN/);
+  assert.match(config.commandScript ?? "", /export GITHUB_TOKEN/);
   assert.ok((config.commandScript ?? "").includes('JSON.stringify(config, null, 2) + "\\n");'));
   assert.equal((config.commandScript ?? "").includes('JSON.stringify(config, null, 2) + "\n");'), false);
   assert.match(config.commandScript ?? "", /delete config\.plugins/);
@@ -187,10 +267,149 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.doesNotMatch(config.commandScript ?? "", /cp -a \/run\/secrets\/openclaw-dir \/root\/\.openclaw/);
   assert.equal(config.commandProfile, "openclaw");
   assert.deepEqual(config.openclawProfile, { allowNpmInstallFallback: false });
+  assert.deepEqual(config.containedSubagents, {
+    enabled: false,
+    maxCount: 0,
+    outputBytes: 12000,
+    reasons: ["context_heavy", "broad_source_inspection", "validation_split"],
+    roles: ["explorer", "implementer", "verifier"],
+  });
+  assert.match(config.commandScript ?? "", /contained_subagents=disabled/);
+  assert.match(config.commandScript ?? "", /Do not spawn OpenClaw subagents/);
   assert.equal(config.commandJson, undefined);
   assert.deepEqual(config.extraMounts, [
     { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
   ]);
+});
+
+test("loadConfig enables bounded contained OpenClaw subagents only by explicit opt-in", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "3",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES: "20000",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "context_heavy,validation_split",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES: "explorer,verifier",
+  });
+
+  assert.deepEqual(config.containedSubagents, {
+    enabled: true,
+    maxCount: 3,
+    outputBytes: 20000,
+    reasons: ["context_heavy", "validation_split"],
+    roles: ["explorer", "verifier"],
+  });
+  assert.match(config.commandScript ?? "", /contained_subagents=enabled/);
+  assert.match(config.commandScript ?? "", /contained_subagents_max=3/);
+  assert.match(config.commandScript ?? "", /spawn up to 3 OpenClaw subagent/);
+  assert.match(config.commandScript ?? "", /Bound each helper evidence summary to 20000 bytes/);
+  assert.match(config.commandScript ?? "", /Subagents are evidence helpers only/);
+});
+
+test("loadConfig builds first-class Hermes patch profile", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_HERMES_MODEL: "deepseek/deepseek-v4-flash",
+    A2A_HERMES_TIMEOUT_SEC: "3600",
+  });
+
+  assert.equal(config.commandProfile, "hermes");
+  assert.equal(config.network, "host");
+  assert.match(config.commandScript ?? "", /command -v hermes/);
+  assert.match(config.commandScript ?? "", /hermes --version/);
+  assert.match(config.commandScript ?? "", /export HERMES_HOME=\/root\/\.hermes/);
+  assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/config\.yaml/);
+  assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/\.env/);
+  assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/hermes-dir\/auth\.json/);
+  assert.match(config.commandScript ?? "", /copy_dir_if_exists \/run\/secrets\/hermes-dir\/skills/);
+  assert.match(config.commandScript ?? "", /--model "\$A2A_HERMES_MODEL"/);
+  assert.match(config.commandScript ?? "", /--quiet/);
+  assert.match(config.commandScript ?? "", /--yolo/);
+  assert.match(config.commandScript ?? "", /hermes_no_changes=allowed/);
+  assert.match(config.commandScript ?? "", /BOOTSTRAP_BANNED_DIRS="\.openclaw \.hermes memory"/);
+  assert.match(config.commandScript ?? "", /error=hermes_completed_without_changes/);
+  assert.deepEqual(config.containedSubagents, {
+    enabled: false,
+    maxCount: 0,
+    outputBytes: 12000,
+    reasons: ["context_heavy", "broad_source_inspection", "validation_split"],
+    roles: ["explorer", "verifier"],
+  });
+  assert.match(config.commandScript ?? "", /contained_subagents=disabled/);
+  assert.match(config.commandScript ?? "", /Do not spawn Hermes subagents/);
+  assert.deepEqual(config.hermesProfile, { configDir: "/root/.hermes" });
+  assert.deepEqual(config.extraMounts, [
+    { source: "/root/.hermes", target: "/run/secrets/hermes-dir", readOnly: true },
+  ]);
+});
+
+test("loadConfig enables bounded contained Hermes subagents with safe enum inputs", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "true",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "broad_source_inspection,context_overflow_retry",
+  });
+
+  assert.deepEqual(config.containedSubagents, {
+    enabled: true,
+    maxCount: 2,
+    outputBytes: 12000,
+    reasons: ["broad_source_inspection", "context_overflow_retry"],
+    roles: ["explorer", "verifier"],
+  });
+  assert.match(config.commandScript ?? "", /contained_subagents=enabled/);
+  assert.match(config.commandScript ?? "", /spawn up to 2 Hermes subagent/);
+  assert.match(config.commandScript ?? "", /broad_source_inspection, context_overflow_retry/);
+});
+
+test("loadConfig rejects contained subagent opt-in without OpenClaw or Hermes profile", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\ncodex exec hi\n",
+    }),
+    /contained subagents require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw or hermes/,
+  );
+});
+
+test("loadConfig rejects unsupported contained subagent values before prompt generation", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "9",
+    }),
+    /A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX must be an integer between 1 and 3/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
+      A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "raw_transcript_dump",
+    }),
+    /A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS contains unsupported values/,
+  );
+});
+
+test("loadConfig Hermes patch profile honors custom config dir", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR: "/srv/hermes-profile",
+  });
+
+  assert.deepEqual(config.extraMounts, [
+    { source: "/srv/hermes-profile", target: "/run/secrets/hermes-dir", readOnly: true },
+  ]);
+  assert.deepEqual(config.hermesProfile, { configDir: "/srv/hermes-profile" });
 });
 
 test("OpenClaw patch profile defaults command timeout to 60 minutes", async () => {
@@ -341,7 +560,20 @@ test("loadConfig rejects conflicting openclaw profile mount source", async () =>
         { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
       ]),
     }),
-    /source conflicts with A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR/,
+    /source conflicts with the configured OpenClaw profile directory/,
+  );
+});
+
+test("loadConfig rejects hermes profile extra mounts without the profile mount", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/var/tmp/a2a", target: "/scratch", readOnly: false },
+      ]),
+    }),
+    /hermes patch profile requires a \/run\/secrets\/hermes-dir mount/,
   );
 });
 
@@ -372,7 +604,7 @@ test("loadConfig rejects malformed extra runner mounts", async () => {
   );
 });
 
-test("loadConfig rejects writable OpenClaw runtime/session mounts", async () => {
+test("loadConfig rejects writable agent runtime/session mounts", async () => {
   await assert.rejects(
     () => loadConfig({
       ...baseEnv,
@@ -380,7 +612,7 @@ test("loadConfig rejects writable OpenClaw runtime/session mounts", async () => 
         { source: "/root/.openclaw/workspace/sessions", target: "/host-sessions", readOnly: false },
       ]),
     }),
-    /writable OpenClaw runtime\/session paths are forbidden/,
+    /writable agent runtime\/session paths are forbidden/,
   );
 
   await assert.rejects(
@@ -390,7 +622,17 @@ test("loadConfig rejects writable OpenClaw runtime/session mounts", async () => 
         { source: "/var/tmp/a2a", target: "/run/secrets/openclaw-dir/agents/main/agent", readOnly: false },
       ]),
     }),
-    /writable OpenClaw runtime\/session paths are forbidden/,
+    /writable agent runtime\/session paths are forbidden/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/root/.hermes/sessions", target: "/host-hermes-sessions", readOnly: false },
+      ]),
+    }),
+    /writable agent runtime\/session paths are forbidden/,
   );
 });
 
@@ -439,26 +681,32 @@ test("loadConfig rejects Claude-in-Docker even with the legacy opt-in flag", asy
       A2A_ALLOW_CLAUDE_IN_DOCKER: "1",
       A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["claude", "--print", "hello"] }),
     }),
-    /not an allowed Docker patch executor|OpenClaw or Codex/,
+    /not an allowed Docker patch executor|OpenClaw, Hermes, or Codex/,
   );
 });
 
-test("loadConfig rejects patch commands without OpenClaw or Codex", async () => {
+test("loadConfig rejects patch commands without an allowed agent executor", async () => {
   await assert.rejects(
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\ngit status",
     }),
-    /allowed Docker patch executor: OpenClaw or Codex/,
+    /allowed Docker patch executor: OpenClaw, Hermes, or Codex/,
   );
 });
 
-test("loadConfig allows OpenClaw and Codex Docker patch executors", async () => {
+test("loadConfig allows OpenClaw, Hermes, and Codex Docker patch executors", async () => {
   const openclawConfig = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\nnpm install -g openclaw\nopenclaw agent --local --message hi",
   });
   assert.match(openclawConfig.commandScript ?? "", /openclaw agent/);
+
+  const hermesConfig = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\nhermes chat --query hi --quiet",
+  });
+  assert.match(hermesConfig.commandScript ?? "", /hermes chat/);
 
   const codexConfig = await loadConfig({
     ...baseEnv,

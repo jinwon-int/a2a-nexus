@@ -1,6 +1,6 @@
 # Compatibility matrix draft
 
-Drafted for `jinwon-int/openclaw-plugin-a2a#9`.
+Drafted for `jinwon-int/plugin-a2a#9`.
 
 ## Why this doc exists
 

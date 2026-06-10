@@ -2,7 +2,7 @@
  * Cleanup-candidate summary contract — operator-facing read-only summary
  * of cleanup discovery, dry-run plan, outbox backlog, and worker hygiene.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#401
+ * Issue:  jinwon-int/plugin-a2a#401
  * Parent: jinwon-int/a2a-broker#898
  *
  * This module defines an operator-facing summary contract that assembles

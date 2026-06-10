@@ -1,7 +1,7 @@
 /**
  * Dry-run approval packet projection — evidence ≠ approval, no live send.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#256
+ * Issue:  jinwon-int/plugin-a2a#256
  * Parent: jinwon-int/a2a-plane#197
  * Run:    a2a-source-dryrun-orchestrator-20260510T133022Z
  *

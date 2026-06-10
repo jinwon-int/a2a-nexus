@@ -2,7 +2,7 @@
 
 Tracks the work still needed to complete the extraction of the A2A
 broker adapter out of OpenClaw core and into this repo. Closes out the
-inventory half of openclaw-plugin-a2a#1 — follow-up implementation
+inventory half of plugin-a2a#1 — follow-up implementation
 issues should be opened per section below.
 
 This repo already owns:

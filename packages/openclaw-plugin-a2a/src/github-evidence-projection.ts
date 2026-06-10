@@ -1,7 +1,7 @@
 /**
  * Terminal Brief GitHub evidence projection helpers.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#259
+ * Issue:  jinwon-int/plugin-a2a#259
  * Parent: jinwon-int/a2a-plane#204
  * Run:    a2a-terminal-brief-github-evidence-20260511T000448Z
  *

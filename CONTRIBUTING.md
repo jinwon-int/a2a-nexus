@@ -1,6 +1,6 @@
 # Contributing
 
-A2A Plane is GitHub-public as of 2026-05-27. The project is alpha — feedback and contributions are welcome. The public contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
+A2A Nexus is GitHub-public as of 2026-05-27. The project is alpha — feedback and contributions are welcome. The public contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
 
 ## Code of Conduct
 

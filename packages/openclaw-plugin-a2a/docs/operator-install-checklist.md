@@ -1,6 +1,6 @@
 # Operator Install and Configuration Checklist
 
-Plugin: `a2a-broker-adapter` (openclaw-plugin-a2a)
+Plugin: `a2a-broker-adapter` (plugin-a2a)
 Release-readiness lane: Team1/2
 Parent: [jinwon-int/a2a-plane#453](https://github.com/jinwon-int/a2a-plane/issues/453)
 
@@ -31,12 +31,12 @@ Before installing the plugin, verify:
 ## 2. Plugin Installation
 
 The plugin is **unpublished** (`"private": true` in `package.json`). There is
-no `npm install openclaw-plugin-a2a` path. Install from source:
+no `npm install plugin-a2a` path. Install from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/jinwon-int/openclaw-plugin-a2a.git
-cd openclaw-plugin-a2a
+git clone https://github.com/jinwon-int/plugin-a2a.git
+cd plugin-a2a
 
 # Install dependencies
 npm ci

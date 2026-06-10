@@ -177,6 +177,13 @@ test("GitHub patch readiness OpenClaw profile failure detail includes provisioni
     commandProfile: "openclaw",
     commandScript: "#!/usr/bin/env bash\nopenclaw agent --help\n",
     openclawProfile: { allowNpmInstallFallback: false },
+    containedSubagents: {
+      enabled: true,
+      maxCount: 2,
+      outputBytes: 12000,
+      reasons: ["context_heavy"],
+      roles: ["explorer", "verifier"],
+    },
   }, {
     openclawProfileProbe: () => buildExampleReadinessInput({
       cliOnPath: false,
@@ -193,6 +200,14 @@ test("GitHub patch readiness OpenClaw profile failure detail includes provisioni
   assert.ok(paths.some((p: string) => p.includes("pre-bake the OpenClaw CLI")), "should mention pre-baked image");
   assert.ok(paths.some((p: string) => p.includes("NPM_INSTALL_FALLBACK")), "should mention npm install fallback escape hatch");
   assert.equal(detail.fallback, "disabled");
+  assert.deepEqual(detail.containedSubagents, {
+    enabled: true,
+    maxCount: 2,
+    outputBytes: 12000,
+    reasons: ["context_heavy"],
+    roles: ["explorer", "verifier"],
+    boundary: "same Docker task workspace; helper evidence only; one final worker answer",
+  });
 });
 
 test("GitHub patch readiness OpenClaw profile failure does not include provisioning guidance when fallback is enabled", () => {
@@ -218,6 +233,47 @@ test("GitHub patch readiness OpenClaw profile failure does not include provision
   // When fallback is enabled, provisioningPaths should not be present
   // because the doctor already accepts the warn-level escape hatch.
   assert.equal(detail.provisioningPaths, undefined, "should not include provisioningPaths when fallback is enabled");
+});
+
+test("GitHub patch readiness Hermes profile reports contained subagent policy", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "a2a-docker-runner-hermes:latest",
+    defaultTimeoutMs: 1000,
+    commandProfile: "hermes",
+    commandScript: "#!/usr/bin/env bash\nhermes --version\n",
+    hermesProfile: { configDir: "/srv/hermes-profile" },
+    containedSubagents: {
+      enabled: true,
+      maxCount: 1,
+      outputBytes: 8000,
+      reasons: ["validation_split"],
+      roles: ["verifier"],
+    },
+  }, {
+    hermesProfileProbe: () => ({
+      cliOnPath: true,
+      cliPath: "/usr/local/bin/hermes",
+      cliVersionOk: true,
+      cliVersion: "hermes 1.0.0",
+      profileMountExists: true,
+      expectedMountPath: "/run/secrets/hermes-dir",
+      configFiles: ["config.yaml", "auth.json"],
+      errors: [],
+    }),
+  });
+
+  assert.equal(report.status, "ok");
+  const detail = report.detail as Record<string, unknown>;
+  assert.deepEqual(detail.containedSubagents, {
+    enabled: true,
+    maxCount: 1,
+    outputBytes: 8000,
+    reasons: ["validation_split"],
+    roles: ["verifier"],
+    boundary: "same Docker task workspace; helper evidence only; one final worker answer",
+  });
 });
 
 test("deploy marker doctor fails for mismatched revision even without upstream", async () => {
@@ -366,6 +422,54 @@ test("GitHub patch readiness probes OpenClaw profile runtime before reporting re
   assert.equal(report.detail?.fallback, "disabled");
 });
 
+test("GitHub patch readiness probes Hermes profile runtime before reporting ready", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "hermes",
+    commandScript: "#!/usr/bin/env bash\nhermes chat --help\n",
+    hermesProfile: { configDir: "/root/.hermes" },
+  }, {
+    hermesProfileProbe: () => ({
+      cliOnPath: true,
+      cliPath: "/usr/local/bin/hermes",
+      cliVersionOk: true,
+      cliVersion: "Hermes Agent v0.16.0",
+      profileMountExists: true,
+      expectedMountPath: "/run/secrets/hermes-dir",
+      configFiles: ["config.yaml", "auth.json"],
+      errors: [],
+    }),
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.detail?.profile, "hermes");
+  assert.equal(report.detail?.failureCategory, "ok");
+  assert.match(String(report.detail?.summary), /Hermes Agent v0\.16\.0/);
+});
+
+test("GitHub patch readiness blocks Hermes profile when CLI is unavailable", () => {
+  const report = checkGitHubPatchReadiness({
+    ...config("/tmp/a2a-test"),
+    commandProfile: "hermes",
+    commandScript: "#!/usr/bin/env bash\nhermes chat --help\n",
+    hermesProfile: { configDir: "/root/.hermes" },
+  }, {
+    hermesProfileProbe: () => ({
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: true,
+      expectedMountPath: "/run/secrets/hermes-dir",
+      configFiles: ["config.yaml"],
+      errors: [],
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  assert.match(report.message, /Hermes profile runtime is not ready/);
+  assert.equal(report.detail?.failureCategory, "hermes_cli_unavailable");
+  assert.ok(Array.isArray(report.detail?.provisioningPaths));
+});
+
 test("GitHub patch readiness blocks OpenClaw profile when CLI is unavailable and fallback is disabled", () => {
   const report = checkGitHubPatchReadiness({
     ...config("/tmp/a2a-test"),
@@ -482,7 +586,7 @@ test("GitHub patch readiness fails for legacy commandTemplate eval path", () => 
   assert.match(report.message, /blocks legacy commandTemplate/);
   assert.equal(report.detail?.safe, false);
   assert.equal(report.detail?.eval, true);
-  assert.deepEqual(report.detail?.allowedExecutors, ["openclaw", "codex"]);
+  assert.deepEqual(report.detail?.allowedExecutors, ["openclaw", "hermes", "codex"]);
 });
 
 // ── extra mounts doctor ────────────────────────────────────────────────────

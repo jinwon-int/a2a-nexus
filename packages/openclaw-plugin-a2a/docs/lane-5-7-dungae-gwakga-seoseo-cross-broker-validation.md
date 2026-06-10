@@ -3,7 +3,7 @@
 - **Run:** `a2a-terminal-brief-completion-20260523T015723Z`
 - **Lane:** 5/7
 - **Worker:** dungae (Team2)
-- **Lane issue:** https://github.com/jinwon-int/openclaw-plugin-a2a/issues/441
+- **Lane issue:** https://github.com/jinwon-int/plugin-a2a/issues/441
 - **Parent tracker:** https://github.com/jinwon-int/a2a-plane/issues/427
 
 ## Goal

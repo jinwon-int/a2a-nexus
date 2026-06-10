@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jinwon-int/a2a-docker-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-docker-runner/actions/workflows/ci.yml)
 
-Docker/Podman task runner for OpenClaw A2A workers.
+Docker/Podman task runner for A2A workers.
 
 ## Repository role in the A2A layout
 
@@ -16,7 +16,7 @@ It owns:
 - artifact manifests plus PR/Block/Done evidence used by the broker contract
 - read-only secret/config mounts for coding-agent credentials and GitHub auth
 
-It does **not** own task routing, worker lifecycle, stale recovery, or OpenClaw gateway methods. Those live in [`jinwon-int/a2a-broker`](https://github.com/jinwon-int/a2a-broker) and [`jinwon-int/openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a).
+It does **not** own task routing, worker lifecycle, stale recovery, or agent gateway methods. Those live in [`jinwon-int/a2a-broker`](https://github.com/jinwon-int/a2a-broker) and [`jinwon-int/plugin-a2a`](https://github.com/jinwon-int/plugin-a2a).
 
 Current production baseline as of 2026-04-30:
 
@@ -33,7 +33,7 @@ A2A Broker → Host A2A Worker → A2A Docker Runner → one task container
 
 The broker stays unchanged. The host worker still claims tasks and reports results over the existing HTTP broker endpoint and edge-secret contract. The broker may be hosted by Docker Compose, systemd, or another supervisor; this runner does not require or manage the broker process. The runner is only the execution engine used by the worker for file-heavy jobs.
 
-## OpenClaw session-store guard
+## Agent profile guards
 
 When `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` is used, the runner mounts the host OpenClaw config directory read-only and copies only the minimal auth/model files into the container. It also refuses dangerous session-store states before starting embedded OpenClaw:
 
@@ -48,6 +48,47 @@ Tunables:
 - `A2A_OPENCLAW_SESSION_BACKUP_WARN_BYTES` (default `134217728`, 128 MiB)
 
 The runner intentionally does **not** repair host sessions itself. A damaged session registry should be recovered by the operator/OpenClaw host guard first, then the A2A task can be retried.
+
+When `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` is used, the runner mounts
+the host Hermes profile read-only and copies only the minimal files needed by the
+disposable container (`config.yaml`, `.env`, `auth.json`, `honcho.json`, and
+`skills/`). It does not copy Hermes sessions, logs, caches, or state databases.
+The generated script runs `hermes chat --query ... --quiet --yolo` and blocks
+runtime context leaks such as `.openclaw/`, `.hermes/`, `memory/`, or workspace
+bootstrap files from entering PR branches or evidence.
+
+### Contained subagent opt-in
+
+Docker-contained OpenClaw/Hermes patch profiles default to **no subagent
+fanout**. This keeps the normal worker path single-owner and avoids surprising
+context, output, or credential spread. For broad or context-heavy A2A work, a
+trusted worker host may opt in to bounded helper use inside the same task
+container:
+
+```bash
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES=12000
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS=context_heavy,broad_source_inspection,validation_split
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES=explorer,implementer,verifier
+```
+
+Rules for this mode:
+
+- only `openclaw` and `hermes` patch profiles can enable contained subagents;
+- helper work must stay inside the checked-out repo and disposable container
+  workspace;
+- helper output is evidence only, bounded by
+  `A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES`, and must be redacted;
+- one final worker answer still owns the PR/Done/Block evidence, while broker
+  merge/closeout/runtime decisions stay with the finalizer;
+- if the task needs more fanout than the cap or must cross the Docker boundary,
+  produce Block evidence instead of unbounded subagent spawning.
+
+Use contained subagents for broad source inspection, context-overflow retry, or
+validation split work. Use model escalation instead when the work is still one
+coherent lane and only needs stronger reasoning. The two mechanisms should not
+be combined casually; explicit task metadata should justify the extra fanout.
 
 ## MVP Scope
 
@@ -83,7 +124,7 @@ Public/demo setups should start from the least-privilege path:
 
 - Use a GitHub token limited to the target repository and required PR/comment scopes; do not reuse an operator's broad personal token.
 - Keep tokens and agent auth in environment variables or read-only secret mounts. Do not put token values in task payloads, examples, prompts, artifacts, or GitHub comments.
-- Treat `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw`, host OpenClaw config mounts, and any host-network Docker/Podman mode as operator-only trusted-worker features, not casual public defaults.
+- Treat `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` or `hermes`, host agent config mounts, and any host-network Docker/Podman mode as operator-only trusted-worker features, not casual public defaults.
 - Use neutral placeholder paths in docs and fixtures, for example `/secure/operator/openclaw-config`, instead of real workstation or server home directories.
 
 ## Canonical A2A Task Format
@@ -534,7 +575,7 @@ For `github-propose-patch` / `propose_patch` mode tasks **without** explicit
    opens a PR via `gh pr create`.
 
 Step 2 can be configured from host environment. Prefer the safe host-side
-OpenClaw/Codex paths for new rollouts. The legacy template eval path is blocked
+Hermes/OpenClaw/Codex paths for new rollouts. The legacy template eval path is blocked
 for GitHub patch execution, and Claude-in-Docker references are rejected even if
 an old opt-in variable is present. This keeps plugin preset patch tasks from
 falling back to a blocked Claude-in-Docker command and falsely succeeding.
@@ -545,7 +586,8 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 |---|---|---|---|
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT` | `commandScript` | `/work/patch-command.sh` | Recommended. Script content is written to a file and executed without `eval`. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Defaults to `A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. Do not present this profile or host-network mode as a public sandbox default. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Defaults to `A2A_HERMES_MODEL` or the old `A2A_OPENCLAW_MODEL` value when present. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Defaults to `A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | blocked | Legacy eval path; rejected for GitHub patch execution. |
 
 For the OpenClaw profile, prefer a runner image that already contains the
@@ -560,6 +602,36 @@ probing the configured container image/mount. A temporary compatibility escape h
 `npm install -g openclaw` attempt and records `error=openclaw_install_failed`
 if that explicit fallback fails; this escape hatch reports `githubPatch.status: "warn"`
 until the CLI is provisioned in the image or mount.
+
+For the Hermes profile, use a runner image that contains Hermes Agent and `gh`.
+This repository provides a Dockerfile for the operator-built image:
+
+```bash
+docker build -f docker/hermes-runner.Dockerfile \
+  -t a2a-docker-runner-hermes:<runner-sha> .
+```
+
+Then point worker env at the Hermes profile:
+
+```bash
+export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes
+export A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE=hermes
+export A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR=/root/.hermes
+export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:<runner-sha>
+export A2A_HERMES_MODEL=deepseek/deepseek-v4-flash
+export A2A_HERMES_TIMEOUT_SEC=3600
+# Optional: enable bounded same-container helper fanout for broad A2A tasks.
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
+```
+
+For fixed-role workers, set `A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE`
+with the node's intended harness. For example, Hermes nodes should set it to
+`hermes`; if the service env later drifts back to `openclaw` or unset, runner
+config validation fails before task execution. Known runner image families are
+also checked against the selected profile, so `a2a-docker-runner-hermes:*` cannot
+be paired with the `openclaw` profile and `a2a-docker-runner-openclaw:*` cannot
+be paired with the `hermes` profile.
 
 Examples:
 
@@ -576,6 +648,9 @@ export A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/secure/operator/openclaw-config
 export A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5
 export A2A_OPENCLAW_THINKING=medium
 export A2A_OPENCLAW_TIMEOUT_SEC=3600
+# Optional: enable bounded same-container helper fanout for broad A2A tasks.
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
+export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
 
 # Legacy Claude-in-Docker commands are intentionally rejected for GitHub patch tasks.
 # Use host-side OpenClaw/Codex commandScript or commandJson instead.

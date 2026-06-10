@@ -1,6 +1,6 @@
-# A2A Plane v0.1.0 Release Checklist
+# A2A Nexus v0.1.0 Release Checklist
 
-This checklist prepares evidence for an initial `v0.1.0-alpha` or `v0.1.0` operator decision for **A2A Plane**. It is safe documentation only. Do not create a tag, publish a release, change repository visibility, deploy, restart services, mutate production state, send provider messages, rotate secrets, rewrite history, force-push, or ACK terminal outbox records while completing this checklist.
+This checklist prepares evidence for an initial `v0.1.0-alpha` or `v0.1.0` operator decision for **A2A Nexus**. It is safe documentation only. Do not create a tag, publish a release, change repository visibility, deploy, restart services, mutate production state, send provider messages, rotate secrets, rewrite history, force-push, or ACK terminal outbox records while completing this checklist.
 
 ## Candidate commit
 
@@ -31,7 +31,7 @@ Before merging a round with more than one PR, build the exact intended merge tra
 - [ ] Clone the candidate into a fresh directory without copying private runtime config, local runtime files, or secrets.
 - [ ] Run `npm ci --ignore-scripts --include=dev` and `npm run check` from that fresh checkout.
 - [ ] Follow `docs/quickstart.md` only with local placeholder values and no production broker, Gateway, worker, provider, or Telegram integration.
-- [ ] Confirm README links, package metadata, examples, and docs render under the A2A Plane public name without private-source references.
+- [ ] Confirm README links, package metadata, examples, and docs render under the A2A Nexus public name without private-source references.
 
 ## Docs and release notes
 

@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.terminal-brief-parent-origin-routing.v1",
+  "fixtureId": "a2a-nexus.contract.terminal-brief-parent-origin-routing.v1",
   "contract": "contracts/a2a/parent-terminal-brief-aggregation.md",
   "issue": "https://github.com/jinwon-int/a2a-broker/issues/634",
   "description": "Four-case parent-origin Terminal Brief routing matrix. The initiating broker owns the parent/origin round and is the only operator-facing Terminal Brief sender; cross-team work is represented only as child/handoff projections relayed back to the initiating parent broker.",

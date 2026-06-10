@@ -8,8 +8,8 @@ const childTasks = [
     brokerTaskId: 'broker-task-1',
     status: 'completed',
     summary: 'Implementation PR opened',
-    githubIssueUrl: 'https://github.com/jinwon-int/openclaw-plugin-a2a/issues/194',
-    githubPrUrl: 'https://github.com/jinwon-int/openclaw-plugin-a2a/pull/200',
+    githubIssueUrl: 'https://github.com/jinwon-int/plugin-a2a/issues/194',
+    githubPrUrl: 'https://github.com/jinwon-int/plugin-a2a/pull/200',
     artifactUrl: 'https://ci.example/artifacts/200',
     evidenceUrl: 'https://ci.example/runs/200',
   },
@@ -35,8 +35,8 @@ test('active goal summary is concise and does not infer goal achievement from ch
   assert.equal(summary.taskProgress.total, 1);
   assert.match(summary.taskProgress.note, /child tasks are evidence, not final achievement/);
   assert.equal(summary.childTaskLinks[0].brokerTaskId, 'broker-task-1');
-  assert.equal(summary.childTaskLinks[0].githubIssueUrl, 'https://github.com/jinwon-int/openclaw-plugin-a2a/issues/194');
-  assert.equal(summary.childTaskLinks[0].githubPrUrl, 'https://github.com/jinwon-int/openclaw-plugin-a2a/pull/200');
+  assert.equal(summary.childTaskLinks[0].githubIssueUrl, 'https://github.com/jinwon-int/plugin-a2a/issues/194');
+  assert.equal(summary.childTaskLinks[0].githubPrUrl, 'https://github.com/jinwon-int/plugin-a2a/pull/200');
   assert.equal(summary.childTaskLinks[0].artifactUrl, 'https://ci.example/artifacts/200');
   assert.equal(summary.childTaskLinks[0].evidenceUrl, 'https://ci.example/runs/200');
 });

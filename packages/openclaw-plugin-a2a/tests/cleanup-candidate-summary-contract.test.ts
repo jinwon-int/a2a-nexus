@@ -1,7 +1,7 @@
 /**
  * Tests for cleanup-candidate-summary-contract.ts
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#401
+ * Issue:  jinwon-int/plugin-a2a#401
  * Parent: jinwon-int/a2a-broker#898
  *
  * Exercises the operator-facing cleanup-candidate summary contract.

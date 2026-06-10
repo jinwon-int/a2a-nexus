@@ -9,7 +9,7 @@ set -euo pipefail
 # terminal-outbox ACK, no production deploy.
 #
 # Parent: a2a-plane#232
-# Ref:    jinwon-int/openclaw-plugin-a2a#234
+# Ref:    jinwon-int/plugin-a2a#234
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

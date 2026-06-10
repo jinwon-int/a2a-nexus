@@ -5473,6 +5473,35 @@ test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile w
   assert.equal(mobileItem.mobileHealth, "health_ok");
 });
 
+test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for poll-only workers", () => {
+  const broker = new InMemoryA2ABroker();
+
+  broker.registerWorker({
+    nodeId: "sogyo-poll-only",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["team1"],
+      environments: ["research"],
+      runtimeFlavor: "openclaw-poll-handler",
+      gatewayRequired: false,
+    },
+    metadata: {
+      workerProfile: "openclaw-poll-only",
+      executionPlane: "broker-poll-http-handler",
+    },
+  });
+
+  const summary = broker.getWorkerCapacitySummary();
+  const item = summary.items.find((i) => i.nodeId === "sogyo-poll-only");
+  assert.ok(item);
+  assert.equal(item.runtimeFlavor, "openclaw-poll-handler");
+  assert.equal(item.gatewayRequired, false);
+});
+
 test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile threshold", () => {
   const broker = new InMemoryA2ABroker();
 

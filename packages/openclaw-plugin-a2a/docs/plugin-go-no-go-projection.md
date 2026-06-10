@@ -1,7 +1,7 @@
 # Plugin Final Go/No-Go Status Projection
 
-Issue: [jinwon-int/openclaw-plugin-a2a#265](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/265)
-Parent: [jinwon-int/openclaw-plugin-a2a#263](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263)
+Issue: [jinwon-int/plugin-a2a#265](https://github.com/jinwon-int/plugin-a2a/issues/265)
+Parent: [jinwon-int/plugin-a2a#263](https://github.com/jinwon-int/plugin-a2a/issues/263)
 Run: `a2a-plugin-final-go-no-go-projection-20260511T053000Z`
 
 ## Purpose
@@ -259,7 +259,7 @@ Safety confirmation:
 
 ```bash
 $ npm run scan:public-readiness
-=== openclaw-plugin-a2a public-readiness scan ===
+=== plugin-a2a public-readiness scan ===
 [1/6] raw API-key / token patterns …
   → 0 potential token/API-key findings
 [2/6] non-example / private broker URLs …

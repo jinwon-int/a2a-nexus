@@ -167,7 +167,7 @@ if (doc) {
   ]) {
     expect(doc.toLowerCase().includes(phrase.toLowerCase()), `doc: missing phrase "${phrase}"`);
   }
-  for (const packageName of ['a2a-broker', '@openclaw/a2a-docker-runner', 'openclaw-plugin-a2a']) {
+  for (const packageName of ['a2a-broker', '@openclaw/a2a-docker-runner', 'plugin-a2a']) {
     expect(doc.includes(packageName), `doc: missing package ${packageName}`);
   }
 }

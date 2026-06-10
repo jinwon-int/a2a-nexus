@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2A Plane source-public execution orchestrator.
+ * A2A Nexus source-public execution orchestrator.
  *
  * Read-only by design: consumes an approved approval rehearsal evidence packet
  * and produces a deterministic, explicitly operator-gated execution plan with
@@ -583,7 +583,7 @@ export function renderExecutionOrchestratorMarkdown(report) {
   const label = decisionLabel[report.decision] || `Decision: ${report.decision}`;
 
   const lines = [
-    `# A2A Plane source-public execution orchestrator report`,
+    `# A2A Nexus source-public execution orchestrator report`,
     '',
     `**${label}**`,
     '',

@@ -68,10 +68,10 @@ If unsafe content, wrong visibility scope, or unexpected live side effects are d
 
 ## 6. Community announcement prep
 
-Prepare, but do not publish, A2A Plane announcement copy that includes:
+Prepare, but do not publish, A2A Nexus announcement copy that includes:
 
 - [ ] Public repository link.
-- [ ] What is included: sanitized A2A Plane monorepo candidate, broker/plugin/runner docs, contracts, examples, and local/offline validation path.
+- [ ] What is included: sanitized A2A Nexus monorepo candidate, broker/plugin/runner docs, contracts, examples, and local/offline validation path.
 - [ ] What is not included: source repository histories, production deploy state, secrets, provider IDs, Telegram IDs, live outbox ACK state, or private runtime/bootstrap context.
 - [ ] Security contact and issue-reporting guidance.
 - [ ] A note that npm/Docker artifacts and public releases remain separate approval-gated actions.

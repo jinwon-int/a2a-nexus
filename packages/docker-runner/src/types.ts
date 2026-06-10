@@ -93,7 +93,7 @@ export interface ExecutionProof {
   manifestPath: string;
 }
 
-export type RunnerCommandProfile = "openclaw";
+export type RunnerCommandProfile = "openclaw" | "hermes";
 
 export interface RunnerOpenClawProfileConfig {
   /*
@@ -101,6 +101,31 @@ export interface RunnerOpenClawProfileConfig {
    * runner image/mount to provide openclaw before task start.
    */
   allowNpmInstallFallback: boolean;
+}
+
+export interface RunnerHermesProfileConfig {
+  configDir: string;
+}
+
+export type RunnerContainedSubagentReason =
+  | "context_heavy"
+  | "broad_source_inspection"
+  | "context_overflow_retry"
+  | "validation_split";
+
+export type RunnerContainedSubagentRole = "explorer" | "implementer" | "verifier";
+
+export interface RunnerContainedSubagentsConfig {
+  /** Opt-in only: default runner behavior forbids subagent fanout. */
+  enabled: boolean;
+  /** Hard cap advertised to the in-container OpenClaw/Hermes harness. */
+  maxCount: number;
+  /** Max bytes each helper evidence summary may contribute to artifacts/output. */
+  outputBytes: number;
+  /** Dispatch reasons that justify contained subagent use for this worker. */
+  reasons: RunnerContainedSubagentReason[];
+  /** Helper roles the contained harness may use. */
+  roles: RunnerContainedSubagentRole[];
 }
 
 export interface RunnerConfig {
@@ -121,6 +146,10 @@ export interface RunnerConfig {
   commandProfile?: RunnerCommandProfile;
   /** OpenClaw patch profile readiness metadata. */
   openclawProfile?: RunnerOpenClawProfileConfig;
+  /** Hermes patch profile readiness metadata. */
+  hermesProfile?: RunnerHermesProfileConfig;
+  /** Guarded OpenClaw/Hermes subagent policy for Docker-contained task work. */
+  containedSubagents?: RunnerContainedSubagentsConfig;
   /**
    * Escape hatch for github-propose-patch/propose_patch mode.
    * When set, injected as A2A_PATCH_COMMAND env var into containers.

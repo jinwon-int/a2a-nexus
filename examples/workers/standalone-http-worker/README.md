@@ -1,6 +1,6 @@
 # Standalone HTTP worker reference card
 
-This directory is a public-safe reference worker lane for A2A Plane that is not tied to OpenClaw. It is intentionally a fixture, not a production worker and not a live registration script.
+This directory is a public-safe reference worker lane for A2A Nexus that is not tied to OpenClaw. It is intentionally a fixture, not a production worker and not a live registration script.
 
 Use it to review the minimum worker-facing contract:
 

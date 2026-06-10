@@ -2,12 +2,22 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { spawnSync } from "node:child_process";
-import type { RunnerBuildMetadata, RunnerConfig, RunnerEngine, RunnerExtraMount } from "./types.js";
+import type {
+  RunnerBuildMetadata,
+  RunnerCommandProfile,
+  RunnerConfig,
+  RunnerContainedSubagentReason,
+  RunnerContainedSubagentRole,
+  RunnerContainedSubagentsConfig,
+  RunnerEngine,
+  RunnerExtraMount,
+} from "./types.js";
 
 const DEFAULT_ROOT = "/var/lib/openclaw-a2a/tasks";
 const DEFAULT_IMAGE = "node:22-bookworm-slim";
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
+const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 
 export function loadEnvFile(path: string): Record<string, string> {
@@ -69,6 +79,8 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
 
   const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
   const image = env.A2A_DOCKER_RUNNER_IMAGE || DEFAULT_IMAGE;
+  const expectedProfile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE);
+  validatePatchCommandProfileSelection({ profile, expectedProfile, image });
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT,
@@ -79,8 +91,9 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" ? "host" : "bridge"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" || profile === "hermes" ? "host" : "bridge"),
     extraMounts,
+    containedSubagents: loadContainedSubagentsConfig(env, profile),
     ...patchCommand,
   };
 
@@ -121,6 +134,18 @@ export function validateRunnerConfig(config: RunnerConfig): void {
 
   if (!Number.isFinite(config.defaultTimeoutMs) || config.defaultTimeoutMs <= 0) {
     errors.push(`invalid defaultTimeoutMs: ${config.defaultTimeoutMs} (expected positive number)`);
+  }
+
+  if (config.containedSubagents) {
+    if (!Number.isInteger(config.containedSubagents.maxCount) || config.containedSubagents.maxCount < 0 || config.containedSubagents.maxCount > 3) {
+      errors.push(`invalid containedSubagents.maxCount: ${config.containedSubagents.maxCount} (expected integer 0..3)`);
+    }
+    if (!Number.isInteger(config.containedSubagents.outputBytes) || config.containedSubagents.outputBytes < 1024 || config.containedSubagents.outputBytes > 60000) {
+      errors.push(`invalid containedSubagents.outputBytes: ${config.containedSubagents.outputBytes} (expected integer 1024..60000)`);
+    }
+    if (config.containedSubagents.enabled && !config.commandProfile) {
+      errors.push("contained subagents require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw or hermes");
+    }
   }
 
   if (errors.length > 0) {
@@ -168,6 +193,13 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
         readOnly: true,
       }];
     }
+    if (profile === "hermes") {
+      return [{
+        source: env.A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR || "/root/.hermes",
+        target: "/run/secrets/hermes-dir",
+        readOnly: true,
+      }];
+    }
     return undefined;
   }
 
@@ -206,24 +238,48 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
     return mount;
   });
 
-  validateOpenClawProfileMountSelection(mounts, env);
+  validateProfileMountSelection(mounts, env);
   return mounts;
 }
 
-function validateOpenClawProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): void {
+function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.ProcessEnv): void {
   const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
-  if (profile !== "openclaw") return;
+  if (profile === "openclaw") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/openclaw-dir",
+      env.A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR,
+      "openclaw",
+      "OpenClaw",
+    );
+    return;
+  }
+  if (profile === "hermes") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/hermes-dir",
+      env.A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR,
+      "hermes",
+      "Hermes",
+    );
+  }
+}
 
-  const target = "/run/secrets/openclaw-dir";
+function validateNamedProfileMountSelection(
+  mounts: RunnerExtraMount[],
+  target: string,
+  expectedSource: string | undefined,
+  profile: string,
+  label: string,
+): void {
   const profileMounts = mounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.target) === target);
   if (profileMounts.length === 0) {
     throw new Error(
-      `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: openclaw patch profile requires a ${target} mount; ` +
-      "omit A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON or include the OpenClaw config mount explicitly",
+      `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${profile} patch profile requires a ${target} mount; ` +
+      `omit A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON or include the ${label} config mount explicitly`,
     );
   }
 
-  const expectedSource = env.A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR;
   if (!expectedSource) return;
 
   const normalizedExpected = normalizeAbsolutePathForPolicy(expectedSource);
@@ -232,7 +288,7 @@ function validateOpenClawProfileMountSelection(mounts: RunnerExtraMount[], env: 
 
   throw new Error(
     `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${target} source conflicts with ` +
-    "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR; mount the configured OpenClaw profile directory or omit the duplicate mount",
+    `the configured ${label} profile directory; mount the configured ${label} profile directory or omit the duplicate mount`,
   );
 }
 
@@ -242,11 +298,13 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const writable = mount.readOnly === false;
   const protectedSource = isProtectedOpenClawRuntimePath(source);
   const protectedTarget = isProtectedOpenClawRuntimePath(target);
+  const protectedHermesSource = isProtectedHermesRuntimePath(source);
+  const protectedHermesTarget = isProtectedHermesRuntimePath(target);
 
-  if (writable && (protectedSource || protectedTarget)) {
+  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget)) {
     throw new Error(
-      `invalid extra mount at index ${index}: writable OpenClaw runtime/session paths are forbidden; ` +
-      "mount only scratch paths read-write and keep host ~/.openclaw sessions read-only",
+      `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
+      "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes sessions read-only",
     );
   }
 }
@@ -268,9 +326,18 @@ function isProtectedOpenClawRuntimePath(value: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function isProtectedHermesRuntimePath(value: string): boolean {
+  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+  return [
+    /^\/root\/\.hermes(?:\/|$)/,
+    /^\/home\/[^/]+\/\.hermes(?:\/|$)/,
+    /^\/run\/secrets\/hermes-dir(?:\/|$)/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function loadPatchCommandConfig(
   env: NodeJS.ProcessEnv,
-): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile"> {
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -287,15 +354,305 @@ function loadPatchCommandConfig(
       },
     };
   }
+  if (profile === "hermes") {
+    return {
+      commandProfile: "hermes",
+      commandScript: buildHermesPatchCommandScript(env),
+      hermesProfile: {
+        configDir: env.A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR || "/root/.hermes",
+      },
+    };
+  }
 
   return { commandTemplate: env.A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE || undefined };
 }
 
-function normalizePatchCommandProfile(value?: string): "openclaw" | undefined {
+function loadContainedSubagentsConfig(
+  env: NodeJS.ProcessEnv,
+  profile: RunnerCommandProfile | undefined,
+): RunnerContainedSubagentsConfig {
+  const enabled = isTruthy(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED);
+  const maxCount = enabled
+    ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 2, 1, 3, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
+    : 0;
+  const outputBytes = parseBoundedInteger(
+    env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES,
+    12000,
+    1024,
+    60000,
+    "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES",
+  );
+  const reasons = parseEnumList<RunnerContainedSubagentReason>(
+    env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS,
+    ["context_heavy", "broad_source_inspection", "context_overflow_retry", "validation_split"],
+    ["context_heavy", "broad_source_inspection", "validation_split"],
+    "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS",
+  );
+  const roles = parseEnumList<RunnerContainedSubagentRole>(
+    env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES,
+    ["explorer", "implementer", "verifier"],
+    profile === "hermes" ? ["explorer", "verifier"] : ["explorer", "implementer", "verifier"],
+    "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES",
+  );
+
+  return { enabled, maxCount, outputBytes, reasons, roles };
+}
+
+function isTruthy(value?: string): boolean {
+  if (!value) return false;
+  return /^(1|true|yes|on)$/i.test(value.trim());
+}
+
+function parseBoundedInteger(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): number {
+  if (!value) return fallback;
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`${label} must be an integer between ${min} and ${max}`);
+  }
+  const parsed = Number(value);
+  if (parsed < min || parsed > max) {
+    throw new Error(`${label} must be an integer between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function parseEnumList<T extends string>(
+  value: string | undefined,
+  allowed: readonly T[],
+  fallback: readonly T[],
+  label: string,
+): T[] {
+  if (!value) return [...fallback];
+  const allowedSet = new Set<string>(allowed);
+  const parsed = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (parsed.length === 0) return [...fallback];
+  const invalid = parsed.filter((entry) => !allowedSet.has(entry));
+  if (invalid.length > 0) {
+    throw new Error(`${label} contains unsupported values: ${invalid.join(", ")}`);
+  }
+  return Array.from(new Set(parsed)) as T[];
+}
+
+function normalizePatchCommandProfile(value?: string): "openclaw" | "hermes" | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase().replace(/_/g, "-");
   if (normalized === "openclaw") return "openclaw";
+  if (normalized === "hermes") return "hermes";
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
+}
+
+function validatePatchCommandProfileSelection(options: {
+  profile: RunnerCommandProfile | undefined;
+  expectedProfile: RunnerCommandProfile | undefined;
+  image: string;
+}): void {
+  const { profile, expectedProfile, image } = options;
+  if (expectedProfile && profile !== expectedProfile) {
+    throw new Error(
+      `runner patch profile mismatch: A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE=${expectedProfile} ` +
+      `requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=${expectedProfile}; got ${profile ?? "unset"}`,
+    );
+  }
+
+  const imageFamily = inferRunnerImageProfileFamily(image);
+  if (!imageFamily || !profile || imageFamily === profile) return;
+
+  throw new Error(
+    `runner image/profile mismatch: A2A_DOCKER_RUNNER_IMAGE=${image} looks like a ${imageFamily} runner image, ` +
+    `but A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=${profile}`,
+  );
+}
+
+function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | undefined {
+  const normalized = image.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (/(^|[/:])a2a-docker-runner-hermes(?=[:@/]|$)/.test(normalized)) return "hermes";
+  if (/(^|[/:])a2a-docker-runner-openclaw(?=[:@/]|$)/.test(normalized)) return "openclaw";
+  return undefined;
+}
+
+function buildHermesPatchCommandScript(env: NodeJS.ProcessEnv): string {
+  const defaultModel = shellSingleQuote(env.A2A_HERMES_MODEL || env.A2A_OPENCLAW_MODEL || "deepseek/deepseek-v4-flash");
+  const defaultTimeout = shellSingleQuote(env.A2A_HERMES_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_HERMES_TIMEOUT_SEC);
+  const subagents = loadContainedSubagentsConfig(env, "hermes");
+  const subagentInstruction = buildContainedSubagentPrompt("Hermes", subagents);
+  const subagentSummary = buildContainedSubagentSummaryShell(subagents);
+  return `#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+if [ -z "\${A2A_HERMES_MODEL:-}" ]; then
+  export A2A_HERMES_MODEL=${defaultModel}
+else
+  export A2A_HERMES_MODEL
+fi
+if [ -z "\${A2A_HERMES_TIMEOUT_SEC:-}" ]; then
+  export A2A_HERMES_TIMEOUT_SEC=${defaultTimeout}
+else
+  export A2A_HERMES_TIMEOUT_SEC
+fi
+
+if [ ! -d /run/secrets/hermes-dir ]; then
+  printf 'error=hermes_config_mount_missing\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Set A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes and mount a Hermes config dir via A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR or A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON.\\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+
+if ! command -v hermes >/dev/null 2>&1; then
+  printf 'error=hermes_cli_missing\\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=hermes_cli_unavailable\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Embedded Hermes CLI is missing from the runner image. Use a runner image with Hermes Agent preinstalled.\\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+printf 'hermes_cli=%s\\n' "$(hermes --version | head -n 1)" | tee -a /work/artifacts/summary.txt
+
+rm -rf /root/.hermes
+mkdir -p /root/.hermes
+
+copy_file_if_exists() {
+  src="$1"
+  dst="$2"
+  if [ -f "$src" ]; then
+    mkdir -p "$(dirname "$dst")"
+    cp -p "$src" "$dst"
+  fi
+}
+
+copy_dir_if_exists() {
+  src="$1"
+  dst="$2"
+  if [ -d "$src" ]; then
+    mkdir -p "$(dirname "$dst")"
+    cp -a "$src" "$dst"
+  fi
+}
+
+# Copy only the files Hermes needs for this disposable container. Avoid broad
+# session/log/cache copies and keep the mounted host profile read-only.
+copy_file_if_exists /run/secrets/hermes-dir/config.yaml /root/.hermes/config.yaml
+copy_file_if_exists /run/secrets/hermes-dir/.env /root/.hermes/.env
+copy_file_if_exists /run/secrets/hermes-dir/auth.json /root/.hermes/auth.json
+copy_file_if_exists /run/secrets/hermes-dir/honcho.json /root/.hermes/honcho.json
+copy_dir_if_exists /run/secrets/hermes-dir/skills /root/.hermes/skills
+
+chmod -R u+rwX /root/.hermes
+export HERMES_HOME=/root/.hermes
+export HERMES_ACCEPT_HOOKS=1
+export HERMES_SOURCE=a2a-docker-runner
+export HERMES_WORKSPACE_DIR=/tmp/hermes-agent-workspace
+mkdir -p "$HERMES_WORKSPACE_DIR"
+printf 'hermes_config_bytes=%s\n' "$(du -sb /root/.hermes | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
+printf 'hermes_workspace=%s\n' "$HERMES_WORKSPACE_DIR" | tee -a /work/artifacts/summary.txt
+${subagentSummary}
+
+cat > /work/artifacts/hermes-prompt.md <<'A2A_HERMES_PROMPT_EOF'
+You are running inside the A2A Docker Runner on a checked-out GitHub repository.
+
+The repository is checked out at /work/repo (or /work/<repo-name> for named checkouts).
+Make all code changes in the repository checkout.
+
+Use /work/artifacts/prompt.md as the assignment. Complete a minimal, safe patch in the repository only.
+
+Rules:
+- Use Hermes tools available inside this container.
+- Do not run git commit, git push, or gh pr create; the runner will do that after you exit.
+- Do not write secrets, host-specific private paths, raw session dumps, or Hermes runtime files into the repository.
+- Prefer small focused changes and tests.
+- If the assignment is unsafe or impossible, explain why and exit non-zero without changing files.
+- If no safe code/doc change is needed, exit non-zero so the runner posts Block evidence instead of a false Done.
+${subagentInstruction}
+A2A_HERMES_PROMPT_EOF
+
+printf '\\n--- A2A assignment ---\\n' >> /work/artifacts/hermes-prompt.md
+cat /work/artifacts/prompt.md >> /work/artifacts/hermes-prompt.md
+
+HERMES_ASSIGNMENT_PROMPT="$(cat /work/artifacts/hermes-prompt.md)"
+set +e
+timeout "$A2A_HERMES_TIMEOUT_SEC" hermes chat \\
+  --query "$HERMES_ASSIGNMENT_PROMPT" \\
+  --model "$A2A_HERMES_MODEL" \\
+  --quiet \\
+  --yolo \\
+  --source a2a-docker-runner \\
+  2>&1 | tee /work/artifacts/hermes-output.txt
+HERMES_EXIT="\${PIPESTATUS[0]}"
+set -e
+printf 'hermes_exit_code=%s\n' "$HERMES_EXIT" | tee -a /work/artifacts/summary.txt
+if [ "$HERMES_EXIT" -ne 0 ]; then
+  if { [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; } \\
+    && grep -Eiq '(^|[[:space:]*_#-])(Done evidence|Done comment|Done[[:space:]]*[^[:alnum:]]|##[[:space:]]*Done|Block evidence|Block comment|Block[[:space:]]*[^[:alnum:]]|##[[:space:]]*Block)' /work/artifacts/hermes-output.txt; then
+    printf 'notice=hermes_nonzero_allowed_for_evidence_only_lane exit=%s\n' "$HERMES_EXIT" | tee -a /work/artifacts/summary.txt
+  else
+    printf 'error=hermes_agent_failed\n' | tee -a /work/artifacts/summary.txt
+    exit "$HERMES_EXIT"
+  fi
+fi
+
+BOOTSTRAP_BANNED="AGENTS.md BOOTSTRAP.md HEARTBEAT.md IDENTITY.md MEMORY.md SOUL.md TOOLS.md USER.md"
+BOOTSTRAP_BANNED_DIRS=".openclaw .hermes memory"
+find_bootstrap_leaks() {
+  repo_dir="$1"
+  (
+    cd "$repo_dir"
+    for name in $BOOTSTRAP_BANNED; do
+      if [ -e "$name" ]; then
+        printf '%s\n' "$name"
+      fi
+    done
+    for name in $BOOTSTRAP_BANNED_DIRS; do
+      if [ -d "$name" ]; then
+        found=0
+        while IFS= read -r path; do
+          found=1
+          printf '%s\n' "\${path#./}"
+        done < <(find "$name" -mindepth 1 -print | sort)
+        if [ "$found" -eq 0 ]; then
+          printf '%s\n' "$name"
+        fi
+      fi
+    done
+  )
+}
+bootstrap_leaks="$(find_bootstrap_leaks . 2>/dev/null || true)"
+if [ -n "$bootstrap_leaks" ]; then
+  unsafe_bootstrap_leaks=""
+  while IFS= read -r leak; do
+    [ -n "$leak" ] || continue
+    if [ -e "$leak" ] && [ -z "$(git ls-files -- "$leak")" ] && git check-ignore -q -- "$leak"; then
+      rm -rf -- "$leak"
+      printf 'notice=scrubbed_ignored_agent_bootstrap %s\n' "$leak" | tee -a /work/artifacts/summary.txt
+    else
+      unsafe_bootstrap_leaks="\${unsafe_bootstrap_leaks}\${leak}
+"
+    fi
+  done <<A2A_BOOTSTRAP_LEAKS
+$bootstrap_leaks
+A2A_BOOTSTRAP_LEAKS
+  if [ -n "$unsafe_bootstrap_leaks" ]; then
+    printf 'error=agent_workspace_bootstrap_leak\n' | tee -a /work/artifacts/summary.txt
+    printf 'Agent workspace bootstrap artifacts appeared in the checkout and were not safe to scrub; refusing to produce a PR with runtime context files.\n' | tee /work/artifacts/patch-command.log
+    printf 'Files detected (repo-relative):\n' | tee -a /work/artifacts/patch-command.log
+    printf '%s\n' "$unsafe_bootstrap_leaks" | tee -a /work/artifacts/patch-command.log
+    printf '%s\n' "$unsafe_bootstrap_leaks" | sed '/^$/d; s#^#bootstrap_leak=#' >> /work/artifacts/summary.txt
+    exit 4
+  fi
+fi
+
+if [ -z "$(git status --porcelain)" ]; then
+  if [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; then
+    printf 'hermes_no_changes=allowed\\n' | tee -a /work/artifacts/summary.txt
+    printf 'Hermes produced no repository changes; task-level evidence-only/no-change mode allows runner closeout.\\n' | tee -a /work/artifacts/patch-command.log
+    exit 0
+  fi
+  printf 'error=hermes_completed_without_changes\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Hermes produced no repository changes; refusing false Done.\\n' | tee -a /work/artifacts/patch-command.log
+  exit 2
+fi
+`;
 }
 
 function buildOpenClawPatchCommandScript(env: NodeJS.ProcessEnv): string {
@@ -305,6 +662,9 @@ function buildOpenClawPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const defaultTimeout = shellSingleQuote(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC);
   const disableBundledPlugins = shellSingleQuote(env.A2A_OPENCLAW_DISABLE_BUNDLED_PLUGINS || "0");
   const allowNpmInstallFallback = shellSingleQuote(env.A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK || "0");
+  const subagents = loadContainedSubagentsConfig(env, "openclaw");
+  const subagentInstruction = buildContainedSubagentPrompt("OpenClaw", subagents);
+  const subagentSummary = buildContainedSubagentSummaryShell(subagents);
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -471,7 +831,8 @@ fi
 # copied in-container config. This copy lives only inside the disposable runner
 # container and is never written to artifacts.
 if [ -n "\${GH_TOKEN:-}" ] && [ -f /root/.openclaw/openclaw.json ]; then
-  env GITHUB_TOKEN="\${GITHUB_TOKEN:-$GH_TOKEN}" node <<'A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW'
+  export GITHUB_TOKEN="\${GITHUB_TOKEN:-$GH_TOKEN}"
+  node <<'A2A_INJECT_GITHUB_TOKEN_FOR_OPENCLAW'
 const fs = require("node:fs");
 const path = "/root/.openclaw/openclaw.json";
 const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
@@ -587,6 +948,7 @@ fi
 
 printf 'openclaw_config_bytes=%s\n' "$(du -sb /root/.openclaw | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
 printf 'openclaw_workspace=%s\n' "$OPENCLAW_WORKSPACE_DIR" | tee -a /work/artifacts/summary.txt
+${subagentSummary}
 
 cat > /work/artifacts/openclaw-prompt.md <<'A2A_OPENCLAW_PROMPT_EOF'
 You are running inside the A2A Docker Runner on a checked-out GitHub repository.
@@ -604,6 +966,7 @@ Rules:
 - Prefer small focused changes and tests.
 - If the assignment is unsafe or impossible, explain why and exit non-zero without changing files.
 - If no safe code/doc change is needed, exit non-zero so the runner posts Block evidence instead of a false Done.
+${subagentInstruction}
 A2A_OPENCLAW_PROMPT_EOF
 
 printf '\\n--- A2A assignment ---\\n' >> /work/artifacts/openclaw-prompt.md
@@ -705,6 +1068,39 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
+function buildContainedSubagentPrompt(label: "OpenClaw" | "Hermes", config: RunnerContainedSubagentsConfig): string {
+  if (!config.enabled) {
+    return [
+      "",
+      "Contained subagents:",
+      `- Do not spawn ${label} subagents for this task. This runner keeps subagent fanout disabled unless the host explicitly opts in.`,
+      "- If the assignment appears too broad for one contained agent turn, produce Block evidence explaining the split you need.",
+    ].join("\n");
+  }
+
+  return [
+    "",
+    "Contained subagents:",
+    `- You may spawn up to ${config.maxCount} ${label} subagent(s) inside this same Docker task boundary when the assignment matches these reasons: ${config.reasons.join(", ")}.`,
+    `- Allowed helper roles: ${config.roles.join(", ")}.`,
+    "- Keep all helper work inside the checked-out repository and the disposable in-container workspace; do not access or mutate host profile mounts.",
+    "- Subagents are evidence helpers only. Return one final worker answer and let the runner/broker/finalizer own PR, Done, Block, merge, closeout, and runtime decisions.",
+    `- Bound each helper evidence summary to ${config.outputBytes} bytes or less, redact secrets/private paths/session data, and do not include raw transcripts in repository files or comments.`,
+    "- If a needed split would exceed the cap or cross the Docker boundary, stop and produce Block evidence instead of unbounded fanout.",
+  ].join("\n");
+}
+
+function buildContainedSubagentSummaryShell(config: RunnerContainedSubagentsConfig): string {
+  const enabled = config.enabled ? "enabled" : "disabled";
+  return [
+    `printf 'contained_subagents=${enabled}\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'contained_subagents_max=${config.maxCount}\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'contained_subagents_output_bytes=${config.outputBytes}\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'contained_subagents_reasons=${config.reasons.join(",")}\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'contained_subagents_roles=${config.roles.join(",")}\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+}
+
 function validatePatchExecutorPolicy(
   patchCommand: Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate">,
   extraMounts?: RunnerExtraMount[],
@@ -712,7 +1108,7 @@ function validatePatchExecutorPolicy(
   if (patchCommand.commandTemplate) {
     throw new Error(
       "A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE is disabled for GitHub patch execution; " +
-      "use commandScript or commandJson with an OpenClaw or Codex executor",
+      "use commandScript or commandJson with an OpenClaw, Hermes, or Codex executor",
     );
   }
 
@@ -727,12 +1123,12 @@ function validatePatchExecutorPolicy(
     if (referencesClaudeExecutor(value)) {
       throw new Error(
         `${key} references Claude-in-Docker, which is not an allowed Docker patch executor; ` +
-        "use OpenClaw or Codex via commandScript or commandJson",
+        "use OpenClaw, Hermes, or Codex via commandScript or commandJson",
       );
     }
     if (!referencesAllowedPatchExecutor(value)) {
       throw new Error(
-        `${key} must invoke an allowed Docker patch executor: OpenClaw or Codex`,
+        `${key} must invoke an allowed Docker patch executor: OpenClaw, Hermes, or Codex`,
       );
     }
   }
@@ -762,7 +1158,7 @@ function referencesClaudeMount(value: string): boolean {
 }
 
 function referencesAllowedPatchExecutor(value: string): boolean {
-  return referencesOpenClawExecutor(value) || referencesCodexExecutor(value);
+  return referencesOpenClawExecutor(value) || referencesHermesExecutor(value) || referencesCodexExecutor(value);
 }
 
 function referencesOpenClawExecutor(value: string): boolean {
@@ -770,6 +1166,14 @@ function referencesOpenClawExecutor(value: string): boolean {
     /(^|[\s;|&"'`/])openclaw([\s;|&"'`-]|$)/i,
     /node_modules\/openclaw\//i,
     /npm\s+(?:install|i)\s+(?:-g\s+)?openclaw/i,
+  ].some((pattern) => pattern.test(value));
+}
+
+function referencesHermesExecutor(value: string): boolean {
+  return [
+    /(^|[\s;|&"'`/])hermes([\s;|&"'`-]|$)/i,
+    /hermes-agent/i,
+    /NousResearch\/hermes-agent/i,
   ].some((pattern) => pattern.test(value));
 }
 

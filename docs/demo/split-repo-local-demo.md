@@ -1,6 +1,6 @@
 # Split-Repo Local Demo Quickstart
 
-A no-live public local demo showing the three-package A2A Plane story: broker AgentCard/profile, plugin diagnostics/profile visibility, and docker-runner dry-run evidence. Intended for first-time evaluators who want to see each split-repo component's role without live brokers, providers, or deployments.
+A no-live public local demo showing the three-package A2A Nexus story: broker AgentCard/profile, plugin diagnostics/profile visibility, and docker-runner dry-run evidence. Intended for first-time evaluators who want to see each split-repo component's role without live brokers, providers, or deployments.
 
 **Parent:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
 **Tracking:** [#480](https://github.com/jinwon-int/a2a-plane/issues/480)

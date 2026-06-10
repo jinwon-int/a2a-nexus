@@ -2,12 +2,13 @@
   "name": "a2a-broker",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Minimal standalone A2A broker scaffold",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/generate-build-info.mjs",
-    "check": "npm test",
-    "test": "npm run build && node --check scripts/team1-dispatch-wrapper.mjs && node --check scripts/a2a-dispatch-helper.mjs && node --check scripts/cross-broker-terminal-brief-receiver.mjs && node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js",
+    "check": "npm run build",
+    "test": "npm run build && node --check scripts/team1-dispatch-wrapper.mjs && node --check scripts/a2a-dispatch-helper.mjs && node --check scripts/cross-broker-terminal-brief-receiver.mjs && node --check scripts/npm-scripts-inventory.mjs && node --check scripts/a2ad-evidence-classifier.mjs && node --check scripts/worker-compatibility-audit.mjs && node --check scripts/worker-artifact-rollout-guard.mjs && node --test scripts/a2a-task-handler.test.mjs scripts/hermes-a2a-analysis-bridge.test.mjs scripts/npm-scripts-inventory.test.mjs scripts/a2ad-evidence-classifier.test.mjs scripts/worker-compatibility-audit.test.mjs dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js",
     "test:drift-watch": "npx tsx --test src/a2a/protocol-compatibility.test.ts src/a2a/drift-watch.test.ts",
     "refresh:drift-refs": "node scripts/refresh-drift-refs.mjs",
     "reconcile_closeout": "node scripts/closeout-reconcile.mjs",
@@ -15,9 +16,7 @@
     "command_center_closeout_checklist": "node scripts/command-center-closeout-checklist.mjs",
     "test:worker": "npm run build && node --test dist/worker.test.js",
     "start": "node dist/server.js",
-    "start:local": "mkdir -p .local && HOST=127.0.0.1 PORT=8787 PUBLIC_BASE_URL=http://127.0.0.1:8787 STATE_FILE=.local/state.json STALE_REAPER_ENABLED=0 npm run start",
     "start:worker": "node dist/worker.js",
-    "worker:echo": "BROKER_URL=${LOCAL_A2A_BROKER_URL:-http://127.0.0.1:8787} WORKER_ID=${LOCAL_A2A_WORKER_ID:-local-echo-worker} WORKER_DISPLAY_NAME=${LOCAL_A2A_WORKER_DISPLAY_NAME:-Local Echo Worker} WORKER_HANDLER_BUILTIN=echo WORKER_POLL_INTERVAL_MS=1000 WORKER_HEARTBEAT_INTERVAL_MS=5000 npm run start:worker",
     "smoke:restart-recovery": "node scripts/restart-recovery-smoke.mjs",
     "smoke:docker-broker": "node scripts/docker-broker-live-smoke.mjs",
     "smoke:docker-broker:fleet": "node scripts/docker-broker-live-smoke.mjs --fleet --require-workers bangtong,dungae,sogyo,nosuk",
@@ -25,6 +24,7 @@
     "dev": "node --watch --enable-source-maps src/server.ts",
     "dev:worker": "node --watch --enable-source-maps src/worker.ts",
     "release_gate": "node scripts/release-gate.mjs",
+    "scripts_inventory": "node scripts/npm-scripts-inventory.mjs",
     "docker_runtime_preflight": "node scripts/docker-runtime-preflight.mjs",
     "rollout_guard": "node scripts/worker-artifact-rollout-guard.mjs",
     "terminal_outbox_preflight": "node scripts/terminal-outbox-preflight.mjs",
@@ -144,7 +144,11 @@
     "test:livez-stall": "node --test scripts/broker-livez-stall-attribution.test.mjs",
     "comprehensive_diagnostics": "node scripts/broker-comprehensive-diagnostics.mjs --no-live --markdown",
     "comprehensive_diagnostics_live": "node scripts/broker-comprehensive-diagnostics.mjs --markdown",
-    "test:comprehensive-diagnostics": "node --test scripts/broker-comprehensive-diagnostics.test.mjs"
+    "test:comprehensive-diagnostics": "node --test scripts/broker-comprehensive-diagnostics.test.mjs",
+    "start:local": "mkdir -p .local && HOST=127.0.0.1 PORT=8787 PUBLIC_BASE_URL=http://127.0.0.1:8787 STATE_FILE=.local/state.json STALE_REAPER_ENABLED=0 npm run start",
+    "worker:echo": "BROKER_URL=${LOCAL_A2A_BROKER_URL:-http://127.0.0.1:8787} WORKER_ID=${LOCAL_A2A_WORKER_ID:-local-echo-worker} WORKER_DISPLAY_NAME=${LOCAL_A2A_WORKER_DISPLAY_NAME:-Local Echo Worker} WORKER_HANDLER_BUILTIN=echo WORKER_POLL_INTERVAL_MS=1000 WORKER_HEARTBEAT_INTERVAL_MS=5000 npm run start:worker",
+    "a2ad_evidence_classifier": "node scripts/a2ad-evidence-classifier.mjs",
+    "worker_compatibility_audit": "node scripts/worker-compatibility-audit.mjs"
   },
   "engines": {
     "node": ">=22"

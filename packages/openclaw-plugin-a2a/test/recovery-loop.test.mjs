@@ -1,7 +1,7 @@
 /**
  * Recovery loop E2E regression tests.
  *
- * Closes jinwon-int/openclaw-plugin-a2a#76.
+ * Closes jinwon-int/plugin-a2a#76.
  *
  * Covers:
  *  R2. Stale queued handoff — requeued task gets new wake

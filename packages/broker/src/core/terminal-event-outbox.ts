@@ -297,21 +297,26 @@ export class TerminalTaskEventOutbox {
 
   enqueueCrossBrokerProjection(projection: CrossBrokerTerminalBriefProjection): TerminalTaskOutboxEvent | null {
     // Stable notification idempotency key:
-    //   parentRoundId + canonicalChildTaskId + terminal status + notification owner
+    //   parentRoundId + originBrokerId + projection child key + terminal status
+    //   + notification owner
     //
-    // The canonical child task id is, in order of preference:
+    // Match CrossBrokerTerminalBriefProjectionStore's recordKey() shape so
+    // outbox dedupe cannot suppress distinct projection rows. The projection
+    // child key is, in order of preference:
     //   1. projection.childTaskId  (explicit child broker task id)
     //   2. worker:<childWorkerId>   (discriminates multiple workers from same origin broker)
-    //   3. broker:<originBrokerId>  (fallback — origin broker id alone)
+    //   3. order:<parentRoundOrder> (distinguishes ordered lanes when no child id is present)
+    //   4. broker                  (fallback — origin broker id is already in the stable key)
     //
     // completedAt is intentionally EXCLUDED from this key so that replay/retry
     // with slightly different timestamps (clock skew, retransmission) does not
     // create duplicate operator-facing Terminal Brief events.
-    const canonicalChildTaskId = projection.childTaskId
+    const projectionChildKey = projection.childTaskId
       ?? (projection.childWorkerId ? `worker:${projection.childWorkerId}` : undefined)
-      ?? `broker:${projection.originBrokerId}`;
+      ?? (projection.parentRoundOrder ? `order:${projection.parentRoundOrder}` : undefined)
+      ?? "broker";
     const notificationOwner = projection.brokerOfRecordId ?? "unknown-parent-broker";
-    const stableId = `cross-broker:${projection.parentRoundId}:${canonicalChildTaskId}:${projection.status}:${notificationOwner}`;
+    const stableId = `cross-broker:${projection.parentRoundId}:${projection.originBrokerId}:${projectionChildKey}:${projection.status}:${notificationOwner}`;
     const id = `terminal:${encodeURIComponent(stableId)}`;
 
     const existing = this.events.find((event) => event.id === id);

@@ -1,7 +1,7 @@
 /**
  * Broker pressure and queue hygiene operator status projections.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#318
+ * Issue:  jinwon-int/plugin-a2a#318
  * Parent: jinwon-int/a2a-broker#636
  * Worker: sogyo
  *

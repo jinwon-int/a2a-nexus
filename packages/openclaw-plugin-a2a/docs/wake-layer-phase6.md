@@ -66,5 +66,5 @@ session identifiers differ.
 
 This pass deliberately keeps the actual runtime launch behind the injected
 `dispatchWake` port. It pins the interface, guard contract, rate-limit shape,
-and failure visibility for `openclaw-plugin-a2a#38`; `openclaw-plugin-a2a#39`
+and failure visibility for `plugin-a2a#38`; `plugin-a2a#39`
 can wire the scheduled plan into the runtime-specific adapter.

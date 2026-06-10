@@ -1,7 +1,7 @@
 /**
  * Operator terminal notifier tests — concise parent-round Terminal Brief titles (#290).
  *
- * Parent: jinwon-int/openclaw-plugin-a2a#290
+ * Parent: jinwon-int/plugin-a2a#290
  * Origin: jinwon-int/a2a-broker#544
  *
  * Verifies the concise title format: "A2A Terminal Brief 완료: dungae(1/7)"
@@ -30,7 +30,7 @@ function roundProgressPayload(
     taskId: "sogyo-290",
     status: "succeeded",
     worker: "sogyo",
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    repo: "jinwon-int/plugin-a2a",
     issue: 290,
     testSummary: "concise Terminal Brief title proof",
     ...overrides,
@@ -937,10 +937,10 @@ describe("concise titles — evidence preserved in body", () => {
         taskId: "sogyo-290",
         status: "succeeded",
         worker: "sogyo",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 290,
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/291",
-        doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/291#issuecomment-1",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/291",
+        doneUrl: "https://github.com/jinwon-int/plugin-a2a/pull/291#issuecomment-1",
         roundNum: 1,
         roundTotal: 7,
         testSummary: "concise Terminal Brief title proof",
@@ -954,12 +954,12 @@ describe("concise titles — evidence preserved in body", () => {
     // Detailed evidence remains in body
     assert.ok(envelope!.text.includes("concise Terminal Brief title proof"));
     assert.ok(envelope!.text.includes("Worker: sogyo"));
-    assert.ok(envelope!.text.includes("Repo: jinwon-int/openclaw-plugin-a2a"));
-    assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/290"));
-    assert.ok(envelope!.text.includes("PR: https://github.com/jinwon-int/openclaw-plugin-a2a/pull/291"));
+    assert.ok(envelope!.text.includes("Repo: jinwon-int/plugin-a2a"));
+    assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/plugin-a2a/issues/290"));
+    assert.ok(envelope!.text.includes("PR: https://github.com/jinwon-int/plugin-a2a/pull/291"));
     // Evidence object preserves details
     assert.equal(envelope!.evidence.worker, "sogyo");
-    assert.equal(envelope!.evidence.repo, "jinwon-int/openclaw-plugin-a2a");
+    assert.equal(envelope!.evidence.repo, "jinwon-int/plugin-a2a");
   });
 });
 
@@ -985,14 +985,14 @@ describe("A2A R13 — real-round guard and aggregation", () => {
         taskId: "sogyo-r13-2",
         status: "succeeded",
         worker: "sogyo",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 307,
         roundNum: 2,
         roundTotal: 7,
         parentRoundId: PARENT_ROUND_ID,
         originBrokerId: ORIGIN_BROKER_ID,
         testSummary: "A2A R13 compact Terminal Brief real-round guard and aggregation verification",
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/307",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/307",
         completedAt: "2026-05-14T01:35:56.000Z",
       },
     };
@@ -1007,11 +1007,11 @@ describe("A2A R13 — real-round guard and aggregation", () => {
     // Body preserves detailed evidence
     assert.ok(envelope!.text.includes("A2A R13 compact Terminal Brief real-round guard and aggregation verification"));
     assert.ok(envelope!.text.includes("Worker: sogyo"));
-    assert.ok(envelope!.text.includes("Repo: jinwon-int/openclaw-plugin-a2a"));
-    assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/307"));
+    assert.ok(envelope!.text.includes("Repo: jinwon-int/plugin-a2a"));
+    assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/plugin-a2a/issues/307"));
     // Evidence object preserves details
     assert.equal(envelope!.evidence.worker, "sogyo");
-    assert.equal(envelope!.evidence.repo, "jinwon-int/openclaw-plugin-a2a");
+    assert.equal(envelope!.evidence.repo, "jinwon-int/plugin-a2a");
     assert.ok(
       envelope!.evidence.issueUrl?.includes("issues/307"),
       "evidence issueUrl must reference issue 307",
@@ -1034,7 +1034,7 @@ describe("A2A R13 — real-round guard and aggregation", () => {
         taskId: "sogyo-r13-handoff",
         status: "succeeded",
         worker: "sogyo",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 307,
         roundNum: 2,
         roundTotal: 7,
@@ -1065,7 +1065,7 @@ describe("A2A R13 — real-round guard and aggregation", () => {
           type: "succeeded",
           taskId: "sogyo-r13-live",
           worker: "sogyo",
-          repo: "jinwon-int/openclaw-plugin-a2a",
+          repo: "jinwon-int/plugin-a2a",
           issue: 307,
           summary: "parent-only Terminal Brief ownership — seoseo origin broker",
           roundNum: 2,
@@ -1498,11 +1498,11 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       makeTestEnvelope({
         type: "pr",
         title: "A2A Terminal Brief PR",
-        repo: "jinwon-int/openclaw-plugin-a2a",
-        issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/320",
+        repo: "jinwon-int/plugin-a2a",
+        issueUrl: "https://github.com/jinwon-int/plugin-a2a/issues/320",
       }),
     );
-    assert.equal(result, "jinwon-int/openclaw-plugin-a2a #320: A2A Terminal Brief PR");
+    assert.equal(result, "jinwon-int/plugin-a2a #320: A2A Terminal Brief PR");
   });
 
   it("renders prUrl and derived PR number", () => {
@@ -1511,10 +1511,10 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       makeTestEnvelope({
         type: "pr",
         title: "A2A Terminal Brief PR",
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/321",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/321",
       }),
     );
-    assert.equal(result, "PR #321: https://github.com/jinwon-int/openclaw-plugin-a2a/pull/321");
+    assert.equal(result, "PR #321: https://github.com/jinwon-int/plugin-a2a/pull/321");
   });
 
   it("renders evidence fields (summary, taskDescription, taskSummary, taskBrief)", () => {
@@ -1546,8 +1546,8 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       makeTestEnvelope({
         type: "success",
         title: "A2A Terminal Brief 완료: sogyo",
-        doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/actions/runs/1",
-        blockUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/2",
+        doneUrl: "https://github.com/jinwon-int/plugin-a2a/actions/runs/1",
+        blockUrl: "https://github.com/jinwon-int/plugin-a2a/issues/2",
         runId: "run-123",
         traceId: "trace-abc",
         status: "completed",
@@ -1597,8 +1597,8 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       title: "A2A Terminal Brief 완료: sogyo",
       text: "",
       worker: "sogyo",
-      repo: "jinwon-int/openclaw-plugin-a2a",
-      issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/320",
+      repo: "jinwon-int/plugin-a2a",
+      issueUrl: "https://github.com/jinwon-int/plugin-a2a/issues/320",
       terminalBriefTemplate: "{repo} #{issue}: {worker} — {title}",
       evidence: {
         schema: "a2a.operator.notification.evidence",
@@ -1608,7 +1608,7 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
     });
     assert.equal(
       text,
-      "jinwon-int/openclaw-plugin-a2a #320: sogyo — A2A Terminal Brief 완료: sogyo",
+      "jinwon-int/plugin-a2a #320: sogyo — A2A Terminal Brief 완료: sogyo",
     );
   });
 
@@ -1769,7 +1769,7 @@ describe("R25 — missing metadata states", () => {
       },
       payload: {
         status: "succeeded",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 324,
         testSummary: "no worker and no taskId proof",
       },
@@ -1951,7 +1951,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         taskId: "task-r25-rc-ack",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 324,
         testSummary: "accepted receipt but no operator ACK",
         // No receiptProjection — outbox builder gates on this
@@ -1979,7 +1979,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         taskId: "task-r25-ack-pending",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 324,
         testSummary: "receipt projection present but ACK still pending",
         receiptProjection: "current_session_visible",
@@ -2014,7 +2014,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
         taskId: "task-team2-r25",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 324,
         runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
         testSummary: "Team2 runId preserved",
@@ -2123,9 +2123,9 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
         taskId: "task-team2-snake",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         runId: "a2a-r25-team2-terminal-brief-snake-20260515",
-        parent_issue_url: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/324",
+        parent_issue_url: "https://github.com/jinwon-int/plugin-a2a/issues/324",
         testSummary: "Team2 snake_case parent_issue_url",
         completedAt: "2026-05-15T07:18:00.000Z",
       },
@@ -2135,7 +2135,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
     assert.ok(envelope, "must produce envelope with parent_issue_url");
     assert.equal(
       envelope!.issueUrl,
-      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/324",
+      "https://github.com/jinwon-int/plugin-a2a/issues/324",
     );
     // runId also preserved
     assert.equal(

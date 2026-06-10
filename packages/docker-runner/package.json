@@ -4,7 +4,7 @@
   "private": false,
   "license": "MIT",
   "type": "module",
-  "description": "Docker/Podman task runner for OpenClaw A2A workers",
+  "description": "Docker/Podman task runner for A2A workers",
   "files": [
     "dist",
     "scripts",

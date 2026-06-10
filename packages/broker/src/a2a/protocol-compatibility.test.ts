@@ -145,9 +145,11 @@ test("AgentCard trust model: broker card is intentionally unsigned (signing defe
     supportsPushNotifications: false,
   });
 
-  // The current implementation does not sign agent cards.
-  assert.equal(card.signature, undefined, "AgentCard.signature must be undefined while signing is deferred");
-  assert.equal(card.signedExtensions, undefined, "AgentCard.signedExtensions must be undefined while signing is deferred");
+  // The current implementation does not sign agent cards and no longer exposes
+  // placeholder signature fields in the public AgentCard TypeScript shape.
+  const cardRecord = card as unknown as Record<string, unknown>;
+  assert.equal("signature" in cardRecord, false, "AgentCard must not expose a placeholder signature key");
+  assert.equal("signedExtensions" in cardRecord, false, "AgentCard must not expose placeholder signedExtensions");
 
   // The trust model fixture records the intentional unsigned state.
   assert.equal(A2A_AGENT_CARD_TRUST_GOLDEN.signatureRequired, false);

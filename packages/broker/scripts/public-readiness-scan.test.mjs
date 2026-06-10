@@ -202,8 +202,7 @@ describe('camelCase secret detection', () => {
   });
 
   it('flags AccessToken value', async () => {
-    const token = ['ghp', 'fake1234567890abcdef'].join('_');
-    const { data } = await scanJson({ 'docs/test.md': `accessToken = ${token}\n` });
+    const { data } = await scanJson({ 'docs/test.md': 'accessToken = ghp_fake1234567890abcdef\n' });
     const fails = data.findings.filter((f) => f.kind === 'secret-value');
     assert.equal(fails.length, 1);
   });
@@ -240,6 +239,12 @@ describe('camelCase secret detection', () => {
 
   it('skips camelCase with example/masked', async () => {
     const { data } = await scanJson({ 'docs/test.md': 'apiToken: example-token-value\n' });
+    const fails = data.findings.filter((f) => f.kind === 'secret-value');
+    assert.equal(fails.length, 0);
+  });
+
+  it('skips redacted x-a2a-edge-secret header examples', async () => {
+    const { data } = await scanJson({ 'docs/test.md': "curl -H 'x-a2a-edge-secret: <redacted>' https://broker.example.com/tasks/xyz\n" });
     const fails = data.findings.filter((f) => f.kind === 'secret-value');
     assert.equal(fails.length, 0);
   });
@@ -311,6 +316,37 @@ describe('YAML-style UPPER_CASE keys', () => {
     const fails = data.findings.filter((f) => f.kind === 'secret-value');
     assert.equal(fails.length, 1,
       'UPPER_CASE keys with YAML : are now caught by the camelCase detection path');
+  });
+});
+
+describe('license readiness gate', () => {
+  it('flags public/stable readiness repos without root LICENSE', async () => {
+    const { status, data } = await scanJson({
+      'README.md': 'See docs/public-stable-readiness.md for public/stable release gates.\n',
+      'docs/public-stable-readiness.md': '# Public/Stable Readiness Checklist\n',
+      'package.json': '{"name":"a2a-broker","license":"MIT"}\n',
+    });
+    assert.equal(status, 1);
+    assert.equal(data.findings.filter((f) => f.kind === 'license-gate').length, 1);
+  });
+
+  it('passes the license gate when MIT LICENSE and package metadata are present', async () => {
+    const { status, data } = await scanJson({
+      'README.md': 'See docs/public-stable-readiness.md for public/stable release gates.\n',
+      'docs/public-stable-readiness.md': '# Public/Stable Readiness Checklist\n',
+      'package.json': '{"name":"a2a-broker","license":"MIT"}\n',
+      'LICENSE': [
+        'MIT License',
+        '',
+        'Copyright (c) 2026 jinwon-int contributors',
+        '',
+        'Permission is hereby granted, free of charge, to any person obtaining a copy',
+        'of this software and associated documentation files (the "Software"), to deal',
+      ].join('\n') + '\n',
+    });
+    const licenseFindings = data.findings.filter((f) => f.kind === 'license-gate');
+    assert.equal(licenseFindings.length, 0);
+    assert.equal(status, 0);
   });
 });
 

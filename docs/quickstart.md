@@ -1,6 +1,6 @@
 # Five-minute local quickstart
 
-This guide is the external-reader path for a disposable local A2A Plane broker plus a dummy/echo worker. A2A Plane is the independent broker/worker project; OpenClaw is used here as the first/reference integration only. Do not point this path at production brokers, production databases, live provider transports, Telegram accounts, or terminal outboxes.
+This guide is the external-reader path for a disposable local A2A Nexus broker plus a dummy/echo worker. A2A Nexus is the independent broker/worker project; OpenClaw is used here as the first/reference integration only. Do not point this path at production brokers, production databases, live provider transports, Telegram accounts, or terminal outboxes.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ npm run check:external-harness-conformance
 
 The public-safe guide is docs/external-harness-quickstart.md; it keeps OpenClaw as a reference integration only and validates the no-live fixture in fixtures/external-harness/no-live-conformance.json.
 
-## 1. Run the local A2A Plane broker
+## 1. Run the local A2A Nexus broker
 
 From the broker workspace, use the package's documented local start command:
 
@@ -81,7 +81,7 @@ bash examples/demo/health-check.sh
 
 ## 3. Connect the reference OpenClaw plugin locally
 
-Use placeholder-only configuration for local development. This verifies the reference integration path; it does not make OpenClaw a required runtime for A2A Plane itself:
+Use placeholder-only configuration for local development. This verifies the reference integration path; it does not make OpenClaw a required runtime for A2A Nexus itself:
 
 ```json
 {
@@ -194,6 +194,6 @@ Before sharing evidence, confirm:
 - repository is public as of 2026-05-27; evidence is still redacted and no new visibility, transfer, publication, or promotion action occurred
 - no production deploy, Gateway/broker/worker restart, database mutation, provider send, Telegram send, terminal-outbox ACK, secret rotation, history rewrite, or force push occurred
 - evidence is redacted and does not include raw session dumps, private paths, hostnames, tokens, provider IDs, Telegram IDs, or OpenClaw runtime/bootstrap files
-- docs and issue/PR evidence introduce the project as A2A Plane, with OpenClaw described only as the first/reference integration
+- docs and issue/PR evidence introduce the project as A2A Nexus, with OpenClaw described only as the first/reference integration
 - provider message id / send success is accepted-send evidence only — it is not requester-visible receipt, operator-visible receipt, human-seen proof, or terminal ACK
 - task submissions are replay-safe: a duplicate task id must produce the same terminal result without re-execution; workers must treat replayed task ids as idempotent

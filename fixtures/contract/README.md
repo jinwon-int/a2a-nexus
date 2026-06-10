@@ -1,6 +1,6 @@
 # Contract conformance fixtures
 
-These public-safe fixtures exercise the A2A Plane contracts without depending on a live broker, worker, provider, database, or terminal outbox. They are intended for cross-team compatibility tests and should remain independent from `examples/local/**` quickstart implementations.
+These public-safe fixtures exercise the A2A Nexus contracts without depending on a live broker, worker, provider, database, or terminal outbox. They are intended for cross-team compatibility tests and should remain independent from `examples/local/**` quickstart implementations.
 
 Fixture set:
 

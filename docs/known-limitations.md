@@ -1,6 +1,6 @@
 # Known Limitations
 
-A2A Plane is an alpha integration candidate, not a production-ready public service.
+A2A Nexus is an alpha integration candidate, not a production-ready public service.
 
 ## Current limits
 

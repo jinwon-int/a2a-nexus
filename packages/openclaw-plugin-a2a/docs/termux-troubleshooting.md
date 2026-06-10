@@ -1,6 +1,6 @@
 # Termux Troubleshooting Guide
 
-Common issues when building and testing `openclaw-plugin-a2a` on Android Termux.
+Common issues when building and testing `plugin-a2a` on Android Termux.
 
 ## Build Issues
 

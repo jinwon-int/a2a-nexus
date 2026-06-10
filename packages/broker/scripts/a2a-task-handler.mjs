@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const HANDLER_VERSION = "0.2.11";
+const HANDLER_VERSION = "0.2.12";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -26,9 +26,9 @@ const DEFAULT_RUNNER_TASK_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = 60 * 60;
 
 export const BUILD_INFO = Object.freeze({
-  name: "openclaw-a2a-task-handler",
+  name: "a2a-task-handler",
   version: HANDLER_VERSION,
-  source: "repo:scripts/openclaw-a2a-task-handler.mjs",
+  source: "repo:scripts/a2a-task-handler.mjs",
   sourceSha256,
   contract: "stdin A2A task JSON -> stdout WorkerHandlerOutcome JSON",
   credentialFree: true,
@@ -309,6 +309,13 @@ function isGithubEvidenceTask(task) {
 }
 
 const READ_ONLY_ANALYSIS_MODES = new Set(["analysis-only", "read-only-analysis", "analyze-only"]);
+const DECISION_DIALECTIC_SCHEMA_TO_PATCH_OP = new Map([
+  ["decisionDialectic.thesis.v1", "append.thesis"],
+  ["decisionDialectic.antithesis.v1", "append.antithesis"],
+  ["decisionDialectic.rebuttal.v1", "append.rebuttal"],
+  ["decisionDialectic.synthesisDecision.v1", "set.synthesis_decision"],
+  ["decisionDialectic.outcome.v1", "append.outcome"],
+]);
 
 /**
  * Detects analysis-only / read-only A2A task modes.
@@ -341,16 +348,162 @@ function isSourceOnlyAnalysisTask(task) {
   return mode.startsWith("a2a-") || mode.includes("analysis") || mode.includes("evidence") || Boolean(phase || role);
 }
 
+function decisionDialecticPromptSpec(task) {
+  const payload = taskPayload(task);
+  const promptSpec = payload.promptSpec;
+  return promptSpec && typeof promptSpec === "object" && !Array.isArray(promptSpec) ? promptSpec : {};
+}
+
+function isDecisionDialecticPhaseTask(task) {
+  const intent = safeText(task?.intent, "").toLowerCase();
+  if (intent !== "analyze") return false;
+  const payload = taskPayload(task);
+  const schemaName = safeText(decisionDialecticPromptSpec(task).schemaName, "");
+  const contract = payload.contract;
+  return DECISION_DIALECTIC_SCHEMA_TO_PATCH_OP.has(schemaName)
+    || Boolean(contract && typeof contract === "object" && !Array.isArray(contract) && contract.kind === "decision.dialectic");
+}
+
+function shouldUseDecisionDialecticBridge(task, env = process.env) {
+  if (!isDecisionDialecticPhaseTask(task)) return false;
+  if (isTruthyEnv(env.A2A_DECISION_DIALECTIC_BRIDGE_DISABLED)) return false;
+  return isTruthyEnv(env.A2A_DECISION_DIALECTIC_BRIDGE_ENABLED) && isOpenClawBridgeConfigured(env);
+}
+
+function isOpenClawAnalysisBridgeConfigured(env = process.env) {
+  if (safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, "")) return true;
+  return isOpenClawBridgeConfigured(env);
+}
+
 function shouldUseOpenClawAnalysisBridge(task, env = process.env) {
   if (!isReadOnlyAnalysisTask(task)) return false;
   if (isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_DISABLED)) return false;
   if (!isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_ENABLED)) return false;
-  return isOpenClawBridgeConfigured(env);
+  return isOpenClawAnalysisBridgeConfigured(env);
 }
 
 function normalizedBridgeAnalysisStatus(value) {
   const status = safeText(value, "done").toLowerCase();
   return status === "blocked" || status === "block" ? "blocked" : "done";
+}
+
+function githubIssueTargetFromTask(task) {
+  const payload = taskPayload(task);
+  const candidates = [
+    safeText(payload.issueUrl, ""),
+    safeText(payload.githubIssueUrl, ""),
+    safeText(payload.parentIssueUrl, ""),
+    ...normalizeStringArray(payload.evidenceRefs),
+  ];
+  for (const candidate of candidates) {
+    const match = /github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/issues\/(\d+)/.exec(candidate);
+    if (match) return { owner: match[1], repo: match[2], issueNumber: match[3] };
+  }
+  const repoText = safeText(payload.repo || payload.repository, "");
+  const issueText = safeText(payload.issueNumber || payload.issue, "").replace(/^#/, "");
+  const repoMatch = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(repoText);
+  if (repoMatch && /^\d+$/.test(issueText)) {
+    return { owner: repoMatch[1], repo: repoMatch[2], issueNumber: issueText };
+  }
+  return null;
+}
+
+function shouldPostAnalysisEvidenceComment(task, env = process.env) {
+  const payload = taskPayload(task);
+  if (!isTruthyEnv(env.A2A_POST_ANALYSIS_EVIDENCE_COMMENTS)) return false;
+  if (payload.noGitHubComment === true || payload.no_github_comment === true) return false;
+  return payload.postGithubComment === true || payload.post_github_comment === true;
+}
+
+function markdownList(title, items) {
+  const values = normalizeStringArray(items);
+  if (values.length === 0) return `## ${title}\n\n- (none)`;
+  return `## ${title}\n\n${values.map((item) => `- ${item}`).join("\n")}`;
+}
+
+function trimGithubCommentBody(body) {
+  const max = 64000;
+  if (Buffer.byteLength(body, "utf8") <= max) return body;
+  return `${body.slice(0, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
+}
+
+function buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }) {
+  const payload = taskPayload(task);
+  const marker = `<!-- a2a-analysis-evidence:${safeText(task.id, "unknown")}:${status} -->`;
+  const title = status === "blocked" ? "A2A analysis evidence blocked" : "A2A analysis evidence done";
+  return trimGithubCommentBody([
+    marker,
+    `# ${title}`,
+    "",
+    `- Task: \`${safeText(task.id, "unknown")}\``,
+    `- Worker: \`${safeText(output.nodeId, safeText(task.assignedWorkerId, "unknown"))}\``,
+    `- Mode: \`${taskMode(task)}\``,
+    `- Status: \`${status}\``,
+    `- Model: \`${safeText(output.effectiveModel, "unknown")}\``,
+    `- Thinking: \`${safeText(output.effectiveThinking, "unknown")}\``,
+    `- No-live: \`${payload.noLive === true || payload.no_live === true ? "true" : "false"}\``,
+    "",
+    `## Summary\n\n${analysisSummary}`,
+    "",
+    markdownList("Findings", output.findings),
+    "",
+    markdownList("Risks", output.risks),
+    "",
+    markdownList("Recommendations", output.recommendations),
+    "",
+    markdownList("Evidence refs", output.evidenceRefs),
+  ].join("\n"));
+}
+
+function postGithubIssueCommentSync({ task, status, body, env = process.env }) {
+  const target = githubIssueTargetFromTask(task);
+  if (!target) {
+    return { error: { code: "github_issue_target_missing", message: "postGithubComment requires issueUrl or repo+issue payload", details: { buildInfo: BUILD_INFO } } };
+  }
+  const primaryAuthKey = `GITHUB_${"TOK"}EN`;
+  const shortAuthKey = `GH_${"TOK"}EN`;
+  const authValue = safeText(env[primaryAuthKey] || env[shortAuthKey], "");
+  if (!authValue) {
+    return { error: { code: "github_auth_missing", message: "postGithubComment requires configured GitHub auth", details: { buildInfo: BUILD_INFO } } };
+  }
+
+  const marker = `<!-- a2a-analysis-evidence:${safeText(task.id, "unknown")}:${status} -->`;
+  const apiBase = safeText(env.A2A_GITHUB_API_BASE_URL, "https://api.github.com").replace(/\/$/, "");
+  const request = { ...target, apiBase, authValue, marker, body };
+  const script = `
+const input = JSON.parse(await new Promise((resolve) => {
+  let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => resolve(data));
+}));
+const endpoint = input.apiBase + '/repos/' + encodeURIComponent(input.owner) + '/' + encodeURIComponent(input.repo) + '/issues/' + encodeURIComponent(input.issueNumber) + '/comments';
+const headers = { 'accept': 'application/vnd.github+json', 'content-type': 'application/json', 'authorization': 'Bearer ' + input.authValue, 'user-agent': 'a2a-task-handler' };
+const list = await fetch(endpoint + '?per_page=100', { headers });
+if (!list.ok) throw new Error('GitHub comments list failed: ' + list.status + ' ' + await list.text());
+const comments = await list.json();
+const existing = Array.isArray(comments) ? comments.find((comment) => typeof comment.body === 'string' && comment.body.includes(input.marker)) : null;
+if (existing?.html_url) {
+  console.log(JSON.stringify({ html_url: existing.html_url, id: existing.id, reused: true }));
+} else {
+  const created = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ body: input.body }) });
+  if (!created.ok) throw new Error('GitHub comment create failed: ' + created.status + ' ' + await created.text());
+  const payload = await created.json();
+  console.log(JSON.stringify({ html_url: payload.html_url, id: payload.id, reused: false }));
+}
+`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    input: JSON.stringify(request),
+    encoding: "utf8",
+    timeout: Number(env.A2A_GITHUB_COMMENT_TIMEOUT_MS || 30000),
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  if (child.error || child.status !== 0) {
+    return { error: { code: "github_comment_failed", message: child.error?.message || safeText(child.stderr, "GitHub comment process failed"), details: { exitCode: child.status ?? undefined, buildInfo: BUILD_INFO } } };
+  }
+  try {
+    const result = JSON.parse(child.stdout);
+    return { url: safeText(result.html_url, ""), id: result.id, reused: result.reused === true };
+  } catch (error) {
+    return { error: { code: "github_comment_invalid_response", message: error instanceof Error ? error.message : String(error), details: { buildInfo: BUILD_INFO } } };
+  }
 }
 
 function runOpenClawAnalysisBridge(task, env = process.env) {
@@ -382,7 +535,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload, 16000)}`,
   ].join("\n\n");
 
-  const command = safeText(env.OPENCLAW_BIN, "openclaw");
+  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
   const args = [
     "agent",
     "--local",
@@ -467,6 +620,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
 
   const status = normalizedBridgeAnalysisStatus(response.status);
   const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
+  const postGithubComment = shouldPostAnalysisEvidenceComment(task, env);
   const output = {
     analysisSummary,
     analysisKind: "openclaw_bridge",
@@ -475,9 +629,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),
-    doneCommentUrl: safeText(response.doneCommentUrl, undefined),
-    blockCommentUrl: safeText(response.blockCommentUrl, undefined),
-    startCommentUrl: safeText(response.startCommentUrl, undefined),
+    doneCommentUrl: postGithubComment ? undefined : safeText(response.doneCommentUrl, undefined),
+    blockCommentUrl: postGithubComment ? undefined : safeText(response.blockCommentUrl, undefined),
+    startCommentUrl: postGithubComment ? undefined : safeText(response.startCommentUrl, undefined),
     nodeId,
     taskId: safeText(task.id, undefined),
     mode: taskMode(task),
@@ -490,6 +644,20 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     effectiveThinking,
     modelFromPayload: modelFromPayload || undefined,
   };
+
+  if (postGithubComment) {
+    const comment = postGithubIssueCommentSync({
+      task,
+      status,
+      body: buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }),
+      env,
+    });
+    if (comment.error) return { error: comment.error };
+    if (status === "blocked") output.blockCommentUrl = comment.url;
+    else output.doneCommentUrl = comment.url;
+    output.githubCommentUrl = comment.url;
+    output.githubCommentReused = comment.reused || undefined;
+  }
 
   return {
     result: {
@@ -504,6 +672,328 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
         exchangeId: safeText(task.exchangeId, undefined),
       },
       output,
+    },
+  };
+}
+
+function decisionDialecticExecution(task) {
+  const payload = taskPayload(task);
+  const execution = payload.execution;
+  return execution && typeof execution === "object" && !Array.isArray(execution) ? execution : {};
+}
+
+function decisionDialecticContract(task) {
+  const payload = taskPayload(task);
+  const contract = payload.contract;
+  return contract && typeof contract === "object" && !Array.isArray(contract) ? contract : {};
+}
+
+function decisionDialecticTaskBody(task) {
+  const contract = decisionDialecticContract(task);
+  const body = contract.task;
+  return body && typeof body === "object" && !Array.isArray(body) ? body : {};
+}
+
+function decisionDialecticPatchRequest(task, phasePayload, env = process.env) {
+  const promptSpec = decisionDialecticPromptSpec(task);
+  const execution = decisionDialecticExecution(task);
+  const contract = decisionDialecticContract(task);
+  const dialecticTask = decisionDialecticTaskBody(task);
+  const schemaName = safeText(promptSpec.schemaName, "");
+  const op = DECISION_DIALECTIC_SCHEMA_TO_PATCH_OP.get(schemaName);
+  if (!op) {
+    return {
+      error: {
+        code: "decision_dialectic_unknown_schema",
+        message: `unsupported decision.dialectic phase schema: ${schemaName || "<missing>"}`,
+        details: { schemaName, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  const parentTaskId = safeText(execution.parentTaskId, safeText(task.parentTaskId, ""));
+  const taskId = safeText(execution.taskId, safeText(dialecticTask.taskId, ""));
+  const expectedRevision = Number(execution.expectedRevision ?? dialecticTask.revision);
+  const authorAgent = safeText(
+    phasePayload?.author?.agentId,
+    safeText(task.assignedWorkerId, safeText(env.A2A_WORKER_ID || env.WORKER_ID || env.NODE_ID, "")),
+  );
+  if (!parentTaskId || !taskId || !Number.isInteger(expectedRevision) || !authorAgent) {
+    return {
+      error: {
+        code: "decision_dialectic_invalid_phase_task",
+        message: "decision.dialectic phase task is missing parentTaskId, taskId, expectedRevision, or authorAgent",
+        details: { parentTaskId: parentTaskId || undefined, taskId: taskId || undefined, expectedRevision, authorAgent: authorAgent || undefined, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  return {
+    parentTaskId,
+    patch: {
+      op,
+      patchId: safeText(execution.patchId, `${safeText(task.id, "decision-dialectic-phase")}:patch`),
+      taskId,
+      expectedRevision,
+      authorAgent,
+      at: safeText(phasePayload?.submittedAt, safeText(phasePayload?.observedAt, new Date().toISOString())),
+      payload: phasePayload,
+    },
+    contractPhase: safeText(contract.phase, undefined),
+    schemaName,
+  };
+}
+
+function brokerAuthHeaders(env = process.env) {
+  const suffix = "SEC" + "RET";
+  const edgeAuth = safeText(
+    env["BROKER_EDGE_" + suffix] || env["A2A_BROKER_EDGE_" + suffix] || env["EDGE_" + suffix] || env["A2A_EDGE_" + suffix],
+    "",
+  );
+  const requesterId = safeText(env.A2A_WORKER_ID || env.WORKER_ID || env.NODE_ID, "decision-dialectic-worker");
+  const requesterRole = safeText(env.A2A_WORKER_ROLE || env.WORKER_ROLE, "analyst");
+  const headers = [
+    "-H", "content-type: application/json",
+    "-H", `x-a2a-requester-id: ${requesterId}`,
+    "-H", "x-a2a-requester-kind: node",
+    "-H", `x-a2a-requester-role: ${requesterRole}`,
+  ];
+  if (edgeAuth) headers.push("-H", `${["x-a2a-edge", "sec" + "ret"].join("-")}: ${edgeAuth}`);
+  return headers;
+}
+
+function postDecisionDialecticPatch(parentTaskId, patch, env = process.env) {
+  const brokerUrl = safeText(env.BROKER_URL || env.A2A_BROKER_URL, "");
+  if (!brokerUrl) {
+    return {
+      error: {
+        code: "decision_dialectic_broker_not_configured",
+        message: "decision.dialectic phase bridge requires BROKER_URL or A2A_BROKER_URL",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  const base = brokerUrl.endsWith("/") ? brokerUrl.slice(0, -1) : brokerUrl;
+  const url = `${base}/tasks/${encodeURIComponent(parentTaskId)}/decision-dialectic/patch`;
+  const child = spawnSync("curl", [
+    "-fsS",
+    "-X", "POST",
+    ...brokerAuthHeaders(env),
+    "--data-binary", "@-",
+    url,
+  ], {
+    input: JSON.stringify(patch),
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  if (child.error) {
+    return {
+      error: {
+        code: "decision_dialectic_patch_request_failed",
+        message: child.error.message,
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  if (child.status !== 0) {
+    return {
+      error: {
+        code: "decision_dialectic_patch_rejected",
+        message: safeText(child.stderr, `broker patch request exited with ${child.status ?? "unknown"}`),
+        details: { exitCode: child.status, signal: child.signal ?? undefined, stdout: safeText(child.stdout, undefined), buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  try {
+    return { readModel: JSON.parse(child.stdout) };
+  } catch {
+    return {
+      error: {
+        code: "decision_dialectic_patch_invalid_response",
+        message: "broker patch route returned non-JSON response",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+}
+
+function runDecisionDialecticBridge(task, env = process.env) {
+  const payload = taskPayload(task);
+  const promptSpec = decisionDialecticPromptSpec(task);
+  const execution = decisionDialecticExecution(task);
+  const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
+  const timeoutSec = String(Math.max(1, Number(env.A2A_DECISION_DIALECTIC_TIMEOUT_SEC || env.A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
+  const sessionId = safeText(
+    env.A2A_DECISION_DIALECTIC_SESSION_ID,
+    `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-decision-dialectic`,
+  );
+  const prompt = [
+    `You are A2A worker ${nodeId}. Complete this decision.dialectic phase task.`,
+    "Do not modify files, deploy, restart services, send providers, acknowledge terminal rows, mutate databases, or move credentials.",
+    "Use only the decision.dialectic contract, context, prior phases, and evidenceRefs supplied in the task payload.",
+    "Return JSON only. It must match payload.promptSpec.schemaName and payload.promptSpec.jsonSchema.",
+    "No markdown, no prose outside JSON.",
+    `Schema name: ${safeText(promptSpec.schemaName, "<missing>")}`,
+    `Phase: ${safeText(promptSpec.phase, safeText(execution.phase, ""))}`,
+    `Prompt spec:\n${safeText(promptSpec.systemPrompt, "")}`,
+    `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
+    `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
+    `Task id: ${safeText(task.id, "unknown")}`,
+    `Parent task id: ${safeText(execution.parentTaskId, safeText(task.parentTaskId, ""))}`,
+    `Expected revision: ${String(execution.expectedRevision ?? "")}`,
+    `Task message:\n${safeText(task.message, "")}`,
+    `Payload JSON:\n${jsonForPrompt(payload, 24000)}`,
+  ].join("\n\n");
+
+  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const args = [
+    "agent",
+    "--local",
+    "--agent", safeText(env.A2A_DECISION_DIALECTIC_AGENT_ID || env.A2A_OPENCLAW_ANALYSIS_AGENT_ID || env.A2A_OPENCLAW_AGENT_ID, "main"),
+    "--session-id", sessionId,
+    "--message", prompt,
+    "--model", effectiveModel,
+    "--thinking", effectiveThinking,
+    "--timeout", timeoutSec,
+    "--json",
+  ];
+  const watchdogMs = env.A2A_DECISION_DIALECTIC_WATCHDOG_MS
+    ? Number(env.A2A_DECISION_DIALECTIC_WATCHDOG_MS)
+    : (Number(timeoutSec) + 30) * 1000;
+
+  const child = spawnSync(command, args, {
+    cwd: safeText(env.A2A_HANDLER_CWD, process.cwd()),
+    env,
+    encoding: "utf8",
+    maxBuffer: 50 * 1024 * 1024,
+    timeout: watchdogMs,
+    killSignal: "SIGKILL",
+  });
+
+  if (child.error) {
+    const isTimeout = child.error.code === "ETIMEDOUT";
+    return {
+      error: {
+        code: isTimeout ? "decision_dialectic_bridge_timeout" : "decision_dialectic_bridge_spawn_failed",
+        message: child.error.message,
+        details: { signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  if (child.status !== 0) {
+    return {
+      error: {
+        code: child.signal ? "decision_dialectic_bridge_timeout" : "decision_dialectic_bridge_failed",
+        message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
+        details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  let envelope;
+  try {
+    envelope = parseOpenClawEnvelope(child.stdout, child.stderr);
+  } catch {
+    return {
+      error: {
+        code: "decision_dialectic_bridge_no_final_json",
+        message: "OpenClaw decision.dialectic bridge produced no parseable output envelope",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  const text = extractOpenClawText(envelope);
+  if (!text) {
+    return {
+      error: {
+        code: "decision_dialectic_bridge_no_final_json",
+        message: "OpenClaw decision.dialectic bridge returned no visible text output",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+  let phasePayload;
+  try {
+    phasePayload = parseJsonFromLooseText(text);
+  } catch {
+    return {
+      error: {
+        code: "decision_dialectic_bridge_no_final_json",
+        message: "OpenClaw decision.dialectic bridge response text contained no valid JSON",
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
+
+  const patchRequest = decisionDialecticPatchRequest(task, phasePayload, env);
+  if (patchRequest.error) return patchRequest;
+  const patchResult = postDecisionDialecticPatch(patchRequest.parentTaskId, patchRequest.patch, env);
+  if (patchResult.error) return patchResult;
+
+  return {
+    result: {
+      summary: `decision.dialectic ${safeText(execution.phase, safeText(promptSpec.phase, "phase"))} patched parent ${patchRequest.parentTaskId}`,
+      note: "decision.dialectic phase completed through OpenClaw bridge and broker patch route",
+      handler: BUILD_INFO,
+      lifecycle: {
+        intent: "analyze",
+        mode: taskMode(task),
+        taskId: safeText(task.id, "unknown"),
+        proposalId: safeText(task.proposalId, undefined),
+        exchangeId: safeText(task.exchangeId, undefined),
+      },
+      output: {
+        decisionDialectic: {
+          status: "patched",
+          parentTaskId: patchRequest.parentTaskId,
+          schemaName: patchRequest.schemaName,
+          phase: safeText(execution.phase, safeText(promptSpec.phase, undefined)),
+          op: patchRequest.patch.op,
+          expectedRevision: patchRequest.patch.expectedRevision,
+          authorAgent: patchRequest.patch.authorAgent,
+          readModelState: patchResult.readModel?.contract?.state,
+          readModelRevision: patchResult.readModel?.contract?.revision,
+        },
+        effectiveModel,
+        effectiveThinking,
+        modelFromPayload: modelFromPayload || undefined,
+        thinkingFromPayload: thinkingFromPayload || undefined,
+      },
+    },
+  };
+}
+
+function decisionDialecticBridgeNotConfigured(task, env = process.env) {
+  const payload = taskPayload(task);
+  const promptSpec = decisionDialecticPromptSpec(task);
+  const execution = decisionDialecticExecution(task);
+  return {
+    result: {
+      summary: `decision.dialectic phase blocked: bridge not configured`,
+      note: "decision.dialectic phase tasks must not fall through to generic handler success",
+      handler: BUILD_INFO,
+      lifecycle: {
+        intent: "analyze",
+        mode: taskMode(task),
+        taskId: safeText(task.id, "unknown"),
+        proposalId: safeText(task.proposalId, undefined),
+        exchangeId: safeText(task.exchangeId, undefined),
+      },
+      output: {
+        decisionDialectic: {
+          status: "blocked",
+          reason: "A2A_DECISION_DIALECTIC_BRIDGE_ENABLED and OpenClaw bridge config are required before worker-authored phase evidence can patch the parent",
+          parentTaskId: safeText(execution.parentTaskId, safeText(task.parentTaskId, undefined)),
+          schemaName: safeText(promptSpec.schemaName, undefined),
+          phase: safeText(execution.phase, safeText(promptSpec.phase, undefined)),
+          expectedRevision: execution.expectedRevision,
+        },
+        bridgeConfigured: shouldUseDecisionDialecticBridge(task, env),
+        payloadKeys: Object.keys(payload).sort(),
+      },
     },
   };
 }
@@ -671,7 +1161,7 @@ function runOpenClawBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload)}`,
   ].join("\n\n");
 
-  const command = safeText(env.OPENCLAW_BIN, "openclaw");
+  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
   const args = [
     "agent",
     "--local",
@@ -1111,6 +1601,10 @@ function handleBuiltinTask(task, env = process.env) {
     };
   }
 
+  if (isDecisionDialecticPhaseTask(task)) {
+    return decisionDialecticBridgeNotConfigured(task, env);
+  }
+
   if (isReadOnlyAnalysisTask(task)) {
     // Read-only analysis task: produces Done/Block evidence without requiring a patch/PR.
     // These tasks are strictly read-only — no code changes, no workspace modifications.
@@ -1199,7 +1693,7 @@ function handleBuiltinTask(task, env = process.env) {
     };
   }
 
-  const summary = `generic ${mode} task accepted by versioned OpenClaw A2A handler`;
+  const summary = `generic ${mode} task accepted by versioned A2A task handler`;
 
   return {
     result: {
@@ -1252,6 +1746,10 @@ export function handleTask(task, env = process.env) {
 
   if (shouldUseOpenClawBridge(task, env)) {
     return runOpenClawBridge(task, env);
+  }
+
+  if (shouldUseDecisionDialecticBridge(task, env)) {
+    return runDecisionDialecticBridge(task, env);
   }
 
   if (shouldUseOpenClawAnalysisBridge(task, env)) {

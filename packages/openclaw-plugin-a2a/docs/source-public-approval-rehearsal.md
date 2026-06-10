@@ -1,6 +1,6 @@
 # Source-Public Approval Rehearsal
 
-**Issue:** jinwon-int/openclaw-plugin-a2a#261
+**Issue:** jinwon-int/plugin-a2a#261
 **Parent:** jinwon-int/a2a-plane#211
 **Run:** a2a-source-public-approval-rehearsal-20260511T014240Z
 
@@ -53,19 +53,19 @@ The rehearsal produces one of three decisions:
 ## Usage
 
 ```typescript
-import { rehearseSourcePublicApproval } from "openclaw-plugin-a2a/src/source-public-approval-rehearsal";
+import { rehearseSourcePublicApproval } from "plugin-a2a/src/source-public-approval-rehearsal";
 
 const report = rehearseSourcePublicApproval(
   {
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    repo: "jinwon-int/plugin-a2a",
     currentVisibility: "private",
     ciPassing: true,
     operatorReviewed: true,
     operatorAcknowledged: true,
     issueNumber: 261,
     evidenceUrls: {
-      issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
-      startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-1",
+      issue: "https://github.com/jinwon-int/plugin-a2a/issues/261",
+      startComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-1",
     },
   },
   pluginConfig,

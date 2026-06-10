@@ -12,7 +12,7 @@ This note is a validation artifact only. It does not implement sibling lanes, me
 
 ## Round validation matrix
 
-At this snapshot, the sibling lanes have Start evidence but no linked PR, Done, or Block closeout evidence observed from the public issue surfaces reviewed for this lane. The integration decision is therefore **NO-GO / Waiting** until each lane posts terminal evidence and Seoseo runs the merge-preflight gate for the exact A2A Plane merge train.
+At this snapshot, the sibling lanes have Start evidence but no linked PR, Done, or Block closeout evidence observed from the public issue surfaces reviewed for this lane. The integration decision is therefore **NO-GO / Waiting** until each lane posts terminal evidence and Seoseo runs the merge-preflight gate for the exact A2A Nexus merge train.
 
 | Lane | Issue | Required proof before it can count for this round | Snapshot evidence | Integration decision |
 | --- | --- | --- | --- | --- |
@@ -25,16 +25,16 @@ At this snapshot, the sibling lanes have Start evidence but no linked PR, Done, 
 
 ## Merge-order recommendation
 
-1. Land A2A Plane contract/fixture changes for checkpoint, interrupt, terminal-state, and accepted-send vocabulary first, starting with #164 if it changes shared terms.
+1. Land A2A Nexus contract/fixture changes for checkpoint, interrupt, terminal-state, and accepted-send vocabulary first, starting with #164 if it changes shared terms.
 2. Refresh or land the cross-repo plugin/broker receipt lanes (#245 and #457) against those terms before citing them as receipt-closeout evidence.
-3. Land Team2 compatibility/policy proof (#166) after the shared A2A Plane terms are stable, so it validates the same public contract rather than an older draft.
+3. Land Team2 compatibility/policy proof (#166) after the shared A2A Nexus terms are stable, so it validates the same public contract rather than an older draft.
 4. Land replay/no-duplicate and trace proof (#168) after provider-accepted/non-ACK wording is stable across plugin and broker surfaces.
 5. Land scanner/readiness governance (#167) after the final wording and evidence surfaces settle, so the scanner/readiness gate validates the candidate tree that Seoseo will review.
 6. Refresh this libero lane (#165) last, or explicitly keep it Block/Waiting, so the final closeout matrix reflects the actual PR/Done/Block outputs instead of Start-only evidence.
 
 ## Required round merge preflight
 
-Before Seoseo merges more than one A2A Plane PR from this round, the exact intended merge order must be tested locally with the integrated gate before the first merge:
+Before Seoseo merges more than one A2A Nexus PR from this round, the exact intended merge order must be tested locally with the integrated gate before the first merge:
 
 ```bash
 npm run round:merge-preflight -- <a2a-plane-pr> [<a2a-plane-pr> ...]
@@ -46,7 +46,7 @@ If the round changes release-gate tests or public-readiness gates, use the stron
 npm run round:merge-preflight -- --run "npm run check && npm run test:release-gate" <a2a-plane-pr> [<a2a-plane-pr> ...]
 ```
 
-Record the PR order, command, and successful output on #163 before merging the first PR. If any cross-repo lane (#245 or #457) is a prerequisite, cite its final PR/Done/Block evidence and re-run the A2A Plane gate after rebasing/importing the dependent A2A Plane PRs. A failed preflight stops the merge train; fix the integration gap in a PR before merging any round PR.
+Record the PR order, command, and successful output on #163 before merging the first PR. If any cross-repo lane (#245 or #457) is a prerequisite, cite its final PR/Done/Block evidence and re-run the A2A Nexus gate after rebasing/importing the dependent A2A Nexus PRs. A failed preflight stops the merge train; fix the integration gap in a PR before merging any round PR.
 
 ## Public-readiness wording check
 

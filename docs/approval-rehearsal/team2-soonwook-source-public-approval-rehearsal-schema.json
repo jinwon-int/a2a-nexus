@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane source-public approval rehearsal schema. Deterministic, no-live approval packet evaluation before any source-public execution. The rehearsal may produce GO_CANDIDATE, NO_GO, or NEEDS_OPERATOR_APPROVAL, but it never performs approval, release, visibility, provider-send, deploy, restart, terminal ACK, or database mutation actions.",
+  "description": "A2A Nexus source-public approval rehearsal schema. Deterministic, no-live approval packet evaluation before any source-public execution. The rehearsal may produce GO_CANDIDATE, NO_GO, or NEEDS_OPERATOR_APPROVAL, but it never performs approval, release, visibility, provider-send, deploy, restart, terminal ACK, or database mutation actions.",
   "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/211",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/214",

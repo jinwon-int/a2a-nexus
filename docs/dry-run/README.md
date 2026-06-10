@@ -1,4 +1,4 @@
-# A2A Plane Source-Public Dry-Run Tooling
+# A2A Nexus Source-Public Dry-Run Tooling
 
 Team1/bangtong lane: implements the source-public dry-run schema and aggregator/report command for deterministic GO/NO-GO evaluation.
 

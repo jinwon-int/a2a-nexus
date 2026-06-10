@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.task-lifecycle.v1",
+  "fixtureId": "a2a-nexus.contract.task-lifecycle.v1",
   "contract": "contracts/a2a/task-lifecycle.md",
   "description": "Public-safe task lifecycle conformance fixture for a PR-producing task, including cancellation paths. Frozen at Contract v0 (2026-05-09).",
   "v0Freeze": {

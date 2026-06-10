@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.worker-capability-profile.v1",
+  "fixtureId": "a2a-nexus.contract.worker-capability-profile.v1",
   "contract": "contracts/a2a/worker-capability-profile.md",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/382",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/380",

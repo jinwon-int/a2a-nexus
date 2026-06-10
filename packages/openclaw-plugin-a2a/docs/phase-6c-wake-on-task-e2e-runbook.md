@@ -3,7 +3,7 @@
 > Status: draft
 > Coordinator: node-remote
 > Implementation owner: node-hub
-> Tracks: jinwon-int/openclaw-plugin-a2a#40
+> Tracks: jinwon-int/plugin-a2a#40
 > Epic: jinwon-int/a2a-broker#39
 > Author date: 2026-04-25
 > Prereq: Phase 1–5 baseline green · Wake-on-Task feature flag available (default off)
@@ -182,7 +182,7 @@ Rollback takes priority over diagnosis. Collect logs after rollback, not during.
 
 ## 10. Acceptance mapping
 
-From `jinwon-int/openclaw-plugin-a2a#40`:
+From `jinwon-int/plugin-a2a#40`:
 
 - [x] E2E test or reproducible runbook exists → this document
 - [ ] Healthy host-class nodes demonstrate sub-minute wake → executes in §7, records in results companion

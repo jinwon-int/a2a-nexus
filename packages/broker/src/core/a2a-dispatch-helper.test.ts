@@ -85,6 +85,26 @@ test("buildA2ADispatchPlan supports explicit cross-team totals such as 8 lanes",
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.parentRoundOrder, "6");
 });
 
+test("buildA2ADispatchPlan derives round total and order from actual dispatch workers", () => {
+  const plan = buildA2ADispatchPlan({
+    ...BASE_SPEC,
+    lane: 5,
+    worker: "yukson",
+    parentRoundTotal: 9,
+    parentRoundOrder: 9,
+    dispatchWorkers: ["sogyo", "nosuk", "bangtong", "yukson"],
+  });
+
+  assert.equal(plan.decision.value, "go");
+  assert.equal(plan.metadata.parentRoundTotal, 4);
+  assert.equal(plan.metadata.parentRoundOrder, 4);
+  assert.equal(plan.metadata.parentRoundTotalSource, "dispatch-workers");
+  assert.equal(plan.metadata.parentRoundOrderSource, "dispatch-workers");
+  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["sogyo", "nosuk", "bangtong", "yukson"]);
+  assert.equal(plan.taskPayload?.parentRoundTotal, 4);
+  assert.equal(plan.taskPayload?.parentRoundOrder, 4);
+});
+
 test("buildA2ADispatchPlan blocks invalid parentRoundOrder before createTask", () => {
   const plan = buildA2ADispatchPlan(
     {

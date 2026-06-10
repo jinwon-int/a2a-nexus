@@ -910,7 +910,7 @@ confirmation string, and backup evidence.
 ```json
 {
   "planId": "a1b2c3d4e5f6g7h8",
-  "approvalToken": "<approval-token-bound-to-planId>",
+  "approvalToken": "a1b2c3d4e5f6g7h8",
   "confirmation": "APPLY_BROKER_CLEANUP_PLAN",
   "backupProof": "s3://backups/broker-20260520T120000Z.sqlite sha256=abc123",
   "allowWorkerPrune": false,

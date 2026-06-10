@@ -1,6 +1,6 @@
 # Runtime Wake Adapter Contract
 
-Issue: `jinwon-int/openclaw-plugin-a2a#39`
+Issue: `jinwon-int/plugin-a2a#39`
 
 The Wake Layer must stay **default-off / opt-in**. This contract only defines the
 adapter boundary used after an explicit Wake-on-Task feature gate decides a wake

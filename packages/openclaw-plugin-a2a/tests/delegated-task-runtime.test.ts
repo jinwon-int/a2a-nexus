@@ -410,7 +410,7 @@ describe("createDelegatedTaskRuntime", () => {
                   },
                   metadata: {
                     worker: "worker-session",
-                    repo: "jinwon-int/openclaw-plugin-a2a",
+                    repo: "jinwon-int/plugin-a2a",
                     issue: 132,
                     doneUrl: "https://broker.example/done/task-push",
                     testSummary: "npm test: pass",
@@ -509,9 +509,9 @@ describe("createDelegatedTaskRuntime", () => {
                     timestamp: "2026-04-19T00:00:02Z",
                   },
                   metadata: {
-                    repo: "jinwon-int/openclaw-plugin-a2a",
+                    repo: "jinwon-int/plugin-a2a",
                     issue: 191,
-                    prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/190",
+                    prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/190",
                     terminalAckProjection: "current_session_visible",
                   },
                   artifacts: [],
@@ -541,7 +541,7 @@ describe("createDelegatedTaskRuntime", () => {
     assert.equal(result.mode, "direct");
     assert.equal(result.result.status, "ok");
     assert.match(String(result.result.reply), /no result\/report body was provided/);
-    assert.match(String(result.result.reply), /PR: https:\/\/github\.com\/jinwon-int\/openclaw-plugin-a2a\/pull\/190/);
+    assert.match(String(result.result.reply), /PR: https:\/\/github\.com\/jinwon-int\/plugin-a2a\/pull\/190/);
     await delegatedRuntime.waitForIdle();
   });
 

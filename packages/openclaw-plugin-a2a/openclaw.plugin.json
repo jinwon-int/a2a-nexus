@@ -76,10 +76,6 @@
       "label": "Allow unconfirmed provider send",
       "help": "Canary-only: send one provider message even when current-session-visible receipt capability is unavailable; never counts as Terminal ACK."
     },
-    "operatorEvents.crossBrokers": {
-      "label": "Cross-broker Projections",
-      "help": "Bounded remote broker projections for Terminal Brief handoff monitoring; does not execute provider sends or Terminal ACKs."
-    },
     "operatorEvents.crossBrokerTerminalRelay.enabled": {
       "label": "Cross-broker Terminal Relay",
       "help": "Relays fresh post-cursor terminal outbox projections with cross-broker handoff metadata to the configured origin broker."
@@ -96,6 +92,10 @@
     "operatorEvents.crossBrokerTerminalRelay.handoffBrokerId": {
       "label": "Handoff Broker ID",
       "help": "Stable id for this handoff broker included in terminal projections."
+    },
+    "operatorEvents.crossBrokers": {
+      "label": "Cross-broker Projections",
+      "help": "Bounded remote broker projections for Terminal Brief handoff monitoring; does not execute provider sends or Terminal ACKs."
     }
   },
   "configSchema": {

@@ -2,7 +2,7 @@
  * Gateway config bridge — safe operatorEvents/notification config injection
  * for the a2a-broker-adapter plugin.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#269
+ * Issue:  jinwon-int/plugin-a2a#269
  * Parent: jinwon-int/a2a-plane#241
  * Run:    terminal-brief-activation-20260511T080211Z
  *

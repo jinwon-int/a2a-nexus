@@ -239,7 +239,7 @@ test("buildRunnerEvidenceHints recovers Block URL from non-zero GitHub evidence 
     workDir: "/tmp/private-task",
     exitCode: 2,
     signal: null,
-    stdout: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
+    stdout: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz1234567890",
     stderr: "secret=synthetic-value",
     artifacts: [],
     github: {

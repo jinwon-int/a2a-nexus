@@ -1,6 +1,6 @@
 # Source-Public Execution Orchestrator
 
-**Issue:** [#263](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263)
+**Issue:** [#263](https://github.com/jinwon-int/plugin-a2a/issues/263)
 **Parent:** [a2a-plane#218](https://github.com/jinwon-int/a2a-plane/issues/218)
 **Run:** `a2a-source-public-execution-orchestrator-20260511T023207Z`
 
@@ -48,7 +48,7 @@ import {
   simulateSourcePublicExecution,
   validateExecutionPlan,
   projectExecutionStatus,
-} from "openclaw-plugin-a2a";
+} from "plugin-a2a";
 
 // Build a plan from an approval packet
 const plan = buildSourcePublicExecutionPlan(

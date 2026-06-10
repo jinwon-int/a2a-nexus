@@ -206,7 +206,7 @@ ${manifest()}`;
     registerWorker(broker, "bangtong");
     const receiver = new GwakgaSeoseoHandoffReceiver({ broker });
     const secret = "super-secret-edge-value";
-    const token = ["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_");
+    const token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
     const body = `/a2a assign bangtong --intent propose_patch -- closeout edgeSecret=${secret}\n${manifest(`  - https://example.invalid/receipt?token=${token}\n`)}`;
 
     const result = receiver.receiveIssueComment(comment(body), ctx("d1"));

@@ -22,9 +22,12 @@ DB, or ACK terminal outbox rows.
   visibility, publish packages/images, deploy production, restart Gateway, send
   live Telegram traffic, mutate DB rows, or ACK terminal outbox entries unless a
   separate operator approval names that exact action.
-- [ ] **License decision:** a root `LICENSE` file is present and matches the
-  approved release intent, or the release is blocked with an explicit owner/date
-  for the license decision. `package.json.private=true` is not itself a license.
+- [x] **License decision:** a root `LICENSE` file is present and matches the
+  approved release intent. Seo Jin On approved MIT for this repository on
+  2026-06-10 KST, this PR adds the root MIT `LICENSE`, and `package.json`
+  declares `"license": "MIT"`. `package.json.private=true` is not itself a
+  license and still keeps npm publishing disabled until a separate release action
+  is approved.
 - [ ] **Secret/history scan:** run a fresh scan of committed history and the
   working tree. Findings must be redacted (`<redacted>`/placeholders only) and
   either remediated or accepted by seoseo before visibility changes.

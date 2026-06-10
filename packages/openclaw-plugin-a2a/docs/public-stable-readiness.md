@@ -64,7 +64,7 @@ for full request/response patterns and verification runbook.
 
 ## Provider-accepted evidence: permanent fail-closed policy (#229)
 
-As of `jinwon-int/openclaw-plugin-a2a#229` (direction reset post-#78261-close),
+As of `jinwon-int/plugin-a2a#229` (direction reset post-#78261-close),
 provider-accepted delivery is **permanently insufficient for terminal-outbox ACK
 evidence**. The upstream `openclaw/openclaw#78261` was closed by a maintainer
 without merge; the plugin's fail-closed stance is now an intentional permanent
@@ -100,7 +100,7 @@ evidence only.
 
 ## Compatibility boundary
 
-Until those boundaries are validated together, `openclaw-plugin-a2a` remains a
+Until those boundaries are validated together, `plugin-a2a` remains a
 private/unpublished plugin package. The repository's temporary `openclaw` peer
 range is not a public wildcard compatibility claim.
 

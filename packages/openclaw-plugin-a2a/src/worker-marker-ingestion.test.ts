@@ -23,7 +23,7 @@ function makeIssueCommentPayload(overrides: Record<string, unknown> = {}): Recor
       body: "**Start** — beginning work",
       user: { login: "worker-bot" },
     },
-    repository: { full_name: "jinwon-int/openclaw-plugin-a2a" },
+    repository: { full_name: "jinwon-int/plugin-a2a" },
     sender: { login: "worker-bot" },
     ...overrides,
   };
@@ -35,10 +35,10 @@ function makePRCommentPayload(overrides: Record<string, unknown> = {}): Record<s
     pull_request: { number: 86, title: "Test PR" },
     comment: {
       id: 67890,
-      body: "**PR** — https://github.com/jinwon-int/openclaw-plugin-a2a/pull/86",
+      body: "**PR** — https://github.com/jinwon-int/plugin-a2a/pull/86",
       user: { login: "worker-bot" },
     },
-    repository: { full_name: "jinwon-int/openclaw-plugin-a2a" },
+    repository: { full_name: "jinwon-int/plugin-a2a" },
     sender: { login: "worker-bot" },
     ...overrides,
   };
@@ -51,7 +51,7 @@ describe("extractGitHubCommentSource", () => {
     const source = extractGitHubCommentSource(makeIssueCommentPayload());
     expect(source).toEqual({
       deliveryId: undefined,
-      repository: "jinwon-int/openclaw-plugin-a2a",
+      repository: "jinwon-int/plugin-a2a",
       issueNumber: 88,
       commentId: 12345,
       authorLogin: "worker-bot",
@@ -99,7 +99,7 @@ describe("extractGitHubCommentSource", () => {
 describe("deriveEventId", () => {
   it("produces stable event ID", () => {
     const source = {
-      repository: "jinwon-int/openclaw-plugin-a2a",
+      repository: "jinwon-int/plugin-a2a",
       issueNumber: 88,
       commentId: 12345,
       authorLogin: "worker-bot",
@@ -107,7 +107,7 @@ describe("deriveEventId", () => {
     const id1 = deriveEventId(source);
     const id2 = deriveEventId(source);
     expect(id1).toBe(id2);
-    expect(id1).toBe("gh:jinwon-int/openclaw-plugin-a2a:88#12345");
+    expect(id1).toBe("gh:jinwon-int/plugin-a2a:88#12345");
   });
 
   it("produces different IDs for different comments", () => {
@@ -179,7 +179,7 @@ describe("ingestGitHubComment", () => {
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.eventId).toBe("gh:jinwon-int/openclaw-plugin-a2a:88#12345");
+    expect(result.eventId).toBe("gh:jinwon-int/plugin-a2a:88#12345");
     expect(result.brokerEvent.marker).toBe("Start");
     expect(result.brokerEvent.workerId).toBe("worker-bot");
   });
@@ -276,7 +276,7 @@ describe("ingestGitHubComment", () => {
     }
     expect(result.brokerEvent.marker).toBe("PR");
     expect(result.brokerEvent.workerId).toBe("worker-bot");
-    expect(result.brokerEvent.taskId).toBe("jinwon-int/openclaw-plugin-a2a#86");
+    expect(result.brokerEvent.taskId).toBe("jinwon-int/plugin-a2a#86");
   });
 
   it("ingests Block marker", () => {
@@ -377,12 +377,12 @@ describe("ingestGitHubComment", () => {
 describe("buildGitHubCommentUrl", () => {
   it("builds correct GitHub comment URL", () => {
     const url = buildGitHubCommentUrl({
-      repository: "jinwon-int/openclaw-plugin-a2a",
+      repository: "jinwon-int/plugin-a2a",
       issueNumber: 88,
       commentId: 12345,
       authorLogin: "worker-bot",
     });
-    expect(url).toBe("https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-12345");
+    expect(url).toBe("https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-12345");
   });
 
   it("includes deliveryId when present", () => {
@@ -421,7 +421,7 @@ describe("evidence URL enrichment", () => {
     expect(result.workerEvent.marker).toBe("Done");
     expect(result.workerEvent.payload.outcome).toBe("done_evidence_only");
     expect(result.workerEvent.payload.doneUrl).toBe(
-      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100001",
+      "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100001",
     );
   });
 
@@ -444,7 +444,7 @@ describe("evidence URL enrichment", () => {
     }
     expect(result.workerEvent.marker).toBe("Done");
     expect(result.workerEvent.payload.doneUrl).toBe(
-      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100002",
+      "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100002",
     );
   });
 
@@ -467,7 +467,7 @@ describe("evidence URL enrichment", () => {
     }
     expect(result.workerEvent.marker).toBe("Block");
     expect(result.workerEvent.payload.blockUrl).toBe(
-      "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/88#issuecomment-100003",
+      "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100003",
     );
   });
 

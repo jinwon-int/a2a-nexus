@@ -1,4 +1,4 @@
-# Contributing to openclaw-plugin-a2a
+# Contributing to plugin-a2a
 
 This repository is the extracted plugin home for the A2A broker adapter. Contributions must respect the plugin's safety boundaries and public-readiness requirements.
 
@@ -16,7 +16,7 @@ All changes must pass these gates:
 
 ```bash
 git clone <this-repo>
-cd openclaw-plugin-a2a
+cd plugin-a2a
 npm ci
 npm run build
 ```

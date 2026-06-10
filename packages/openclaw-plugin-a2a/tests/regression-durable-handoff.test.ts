@@ -1,7 +1,7 @@
 /**
  * Second-wave regression tests for the durable-runtime handoff.
  *
- * Issue: jinwon-int/openclaw-plugin-a2a#35
+ * Issue: jinwon-int/plugin-a2a#35
  *
  * Covers scenarios from the regression matrix and durable-runtime
  * requirements that do NOT depend on the canonical core seam

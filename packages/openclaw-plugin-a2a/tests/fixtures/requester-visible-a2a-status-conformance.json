@@ -1,6 +1,6 @@
 {
-  "kind": "openclaw-plugin-a2a.requester-visible-status-conformance.v1",
-  "issue": "jinwon-int/openclaw-plugin-a2a#457",
+  "kind": "plugin-a2a.requester-visible-status-conformance.v1",
+  "issue": "jinwon-int/plugin-a2a#457",
   "health": {
     "ok": true,
     "service": "a2a-broker",
@@ -89,7 +89,7 @@
           "kind": "Done",
           "status": "accepted",
           "taskId": "task-provider-accepted",
-          "url": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/457#issuecomment-fixture"
+          "url": "https://github.com/jinwon-int/plugin-a2a/issues/457#issuecomment-fixture"
         }
       ],
       "queueSignals": {

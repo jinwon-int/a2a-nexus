@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.canonical-progress-validation-matrix.v1",
+  "fixtureId": "a2a-nexus.contract.canonical-progress-validation-matrix.v1",
   "contract": "contracts/a2a/canonical-progress-validation-matrix.md",
   "description": "Validation matrix for canonical n/N progress semantics in A2A Terminal Brief aggregation. Ensures completed/total counts reflect canonical task outcomes, not lane order, event sequence, origin-local projection count, retries, duplicates, out-of-order delivery, or transient state.",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/370",

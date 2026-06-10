@@ -1,10 +1,10 @@
-# A2A Plane Security and Ops Hardening
+# A2A Nexus Security and Ops Hardening
 
 > **Status:** Private/alpha. Part of the A2A security hardening roadmap (a2a-plane#440).
 > **Parent tracker:** https://github.com/jinwon-int/a2a-plane/issues/443
 > **Team1 productization lane 4/4 — yukson.**
 
-This document covers the first security/ops hardening source slice for the A2A Plane broker and worker surface. It defines the read-only audit surface, exposure/auth expectations, worker credential mount validation, stale worker identity lifecycle, and readiness dimensions.
+This document covers the first security/ops hardening source slice for the A2A Nexus broker and worker surface. It defines the read-only audit surface, exposure/auth expectations, worker credential mount validation, stale worker identity lifecycle, and readiness dimensions.
 
 ## Safety boundary
 
@@ -217,7 +217,7 @@ The broker's retention policy (`BROKER_INACTIVE_WORKER_RETENTION_MS`) governs wh
 
 ## 5. Readiness Dimensions
 
-Readiness is not a single boolean. The A2A Plane broker separates five distinct dimensions:
+Readiness is not a single boolean. The A2A Nexus broker separates five distinct dimensions:
 
 ### Dimension matrix
 

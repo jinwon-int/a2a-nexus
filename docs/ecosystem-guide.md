@@ -54,7 +54,7 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 
 ## 모노레포 후보와 4개 저장소 이름의 관계
 
-이 repository는 공개 전 검증을 쉽게 하기 위해 broker, runner, OpenClaw plugin, contracts, examples를 한 체크아웃에 모은 **A2A Plane consolidation workspace**입니다. 따라서 외부 사용자는 다음처럼 읽으면 됩니다.
+이 repository는 공개 전 검증을 쉽게 하기 위해 broker, runner, OpenClaw plugin, contracts, examples를 한 체크아웃에 모은 **A2A Nexus consolidation workspace**입니다. 따라서 외부 사용자는 다음처럼 읽으면 됩니다.
 
 - GitHub/이슈/로드맵에서 말하는 4개 이름은 **역할 경계**입니다.
 - 이 체크아웃 안에서는 그 역할이 `packages/*`, `contracts/`, `docs/` 경로로 매핑됩니다.

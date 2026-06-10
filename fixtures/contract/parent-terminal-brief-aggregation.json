@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.parent-terminal-brief-aggregation.v1",
+  "fixtureId": "a2a-nexus.contract.parent-terminal-brief-aggregation.v1",
   "contract": "contracts/a2a/parent-terminal-brief-aggregation.md",
   "description": "Synthetic Gwakga-origin plus Seoseo-handoff and Seoseo-origin plus Gwakga-parent-symmetric canary for parent broker Terminal Brief aggregation, with broker-neutral concise title examples for Gwakga-origin, Seoseo-origin, and symmetric Seoseo-origin/Gwakga-parent parent rounds.",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/269",

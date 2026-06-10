@@ -28,7 +28,7 @@
     "schemaVersion": "a2a.goal-mode.v1",
     "objective": {
       "name": "Add public quickstart guide",
-      "description": "Create and validate a public quickstart guide for a2a-plane.",
+      "description": "Create and validate a public quickstart guide for a2a-nexus.",
       "scope": {
         "repos": ["jinwon-int/a2a-plane"],
         "allowedWorkAreas": ["source-patch", "validation-run", "evidence-only"],

@@ -6,7 +6,7 @@ Upstream context: [`openclaw/openclaw#78261`](https://github.com/openclaw/opencl
 
 ## Decision
 
-**Done synthesis / activation remains blocked.** It is safe for A2A Plane to prepare Terminal Brief notice plumbing around OpenClaw CLI/Gateway/outbound lifecycle abstractions, but unsafe to use that plumbing as a terminal ACK path from provider accepted-send evidence or provider message ids alone. `openclaw/openclaw#78261` is no longer a merge/runtime gate after maintainer close.
+**Done synthesis / activation remains blocked.** It is safe for A2A Nexus to prepare Terminal Brief notice plumbing around OpenClaw CLI/Gateway/outbound lifecycle abstractions, but unsafe to use that plumbing as a terminal ACK path from provider accepted-send evidence or provider message ids alone. `openclaw/openclaw#78261` is no longer a merge/runtime gate after maintainer close.
 
 `providerAccepted`, provider send success, Telegram message ids, or Gateway outbound success are **provider accepted-send / notice transport evidence only**. They must remain non-ACK and must not close Terminal Brief receipt gaps.
 
@@ -37,7 +37,7 @@ Do not merge or run changes that do any of the following:
 
 Proceed only after all gates are satisfied and linked from the parent issue:
 
-1. A2A Plane contract/tests map provider message id and send success as provider accepted-send evidence only, not ACK.
+1. A2A Nexus contract/tests map provider message id and send success as provider accepted-send evidence only, not ACK.
 2. A follow-up proof shows manual operator receipt or an explicit ACK-safe receipt path for the Terminal Brief route. Provider acceptance/message id alone is insufficient.
 3. R6 sibling lanes finish with PR/Done/Block evidence:
    - broker contract rejects direct Telegram/curl Terminal Brief paths;

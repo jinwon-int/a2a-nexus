@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2A Plane final go/no-go gate aggregator.
+ * A2A Nexus final go/no-go gate aggregator.
  *
  * Consumes the execution orchestrator's deterministic dry-run plan and aggregates
  * all gate evidence into a presentable final operator approval packet. Produces a
@@ -409,7 +409,7 @@ export function renderFinalGoNoGoMarkdown(report) {
   const label = decisionLabel[report.decision] || `Decision: ${report.decision}`;
 
   const lines = [
-    `# A2A Plane final go/no-go gate report`,
+    `# A2A Nexus final go/no-go gate report`,
     '',
     `**${label}**`,
     '',

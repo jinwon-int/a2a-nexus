@@ -1,7 +1,7 @@
 /**
  * Tests for cleanup-dry-run-projection.ts
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#278
+ * Issue:  jinwon-int/plugin-a2a#278
  * Parent: jinwon-int/a2a-broker#519
  *
  * Exercises the cleanup dry-run projection with canary/receipt gates.

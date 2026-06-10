@@ -1,7 +1,7 @@
 /**
  * Cross-broker terminal relay tests (#284).
  *
- * Parent: jinwon-int/openclaw-plugin-a2a#284
+ * Parent: jinwon-int/plugin-a2a#284
  *
  * Exercises the cross-broker terminal projection builder and receipt gap
  * projection, verifying that provider send success is always separate from
@@ -38,7 +38,7 @@ function buildCrossBrokerTerminalEvent(
       taskId: "task-canary-284-001",
       status: "succeeded",
       worker: "sogyo",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 284,
       completedAt: "2026-05-13T04:01:00Z",
       summary: "cross-broker terminal relay canary smoke",
@@ -238,9 +238,8 @@ describe("cross-broker terminal relay (#284)", () => {
     });
 
     it("redacts secrets in summary", () => {
-      const token = ["abcdef", "123456"].join("");
       const event = buildCrossBrokerTerminalEvent({
-        summary: `task completed with token=${token} in output`,
+        summary: "task completed with token=abcdef123456 in output",
       });
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
@@ -326,19 +325,19 @@ describe("cross-broker terminal relay (#284)", () => {
 
     it("includes evidence URLs in projection", () => {
       const event = buildCrossBrokerTerminalEvent({
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/284",
-        doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/284#issuecomment-1",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/284",
+        doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/284#issuecomment-1",
       });
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
 
       assert.equal(
         projection!.evidence.prUrl,
-        "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/284",
+        "https://github.com/jinwon-int/plugin-a2a/pull/284",
       );
       assert.equal(
         projection!.evidence.doneUrl,
-        "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/284#issuecomment-1",
+        "https://github.com/jinwon-int/plugin-a2a/issues/284#issuecomment-1",
       );
     });
 
@@ -624,8 +623,8 @@ describe("cross-broker terminal relay (#284)", () => {
         roundNum: 2,
         roundTotal: 7,
         issue: 307,
-        repo: "jinwon-int/openclaw-plugin-a2a",
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/307",
+        repo: "jinwon-int/plugin-a2a",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/307",
         summary: "A2A R13 evidence preservation",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
@@ -637,9 +636,9 @@ describe("cross-broker terminal relay (#284)", () => {
 
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
-      assert.equal(projection!.evidence.repo, "jinwon-int/openclaw-plugin-a2a");
+      assert.equal(projection!.evidence.repo, "jinwon-int/plugin-a2a");
       assert.equal(projection!.evidence.issue, 307);
-      assert.equal(projection!.evidence.prUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/307");
+      assert.equal(projection!.evidence.prUrl, "https://github.com/jinwon-int/plugin-a2a/pull/307");
     });
 
     it("receipt block declares provider send is not ACK evidence for real-round", () => {

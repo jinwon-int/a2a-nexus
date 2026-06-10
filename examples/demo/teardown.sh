@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# teardown.sh — Stop A2A Plane demo processes and clean up state.
+# teardown.sh — Stop A2A Nexus demo processes and clean up state.
 # Usage: ./teardown.sh
 #
 # Safe to run multiple times. Stops both Docker Compose stacks and local
@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-echo "=== A2A Plane Teardown ==="
+echo "=== A2A Nexus Teardown ==="
 
 # Docker Compose: trading-partners (two-broker)
 COMPOSE_FILE="packages/broker/examples/docker-compose.trading-partners.yml"

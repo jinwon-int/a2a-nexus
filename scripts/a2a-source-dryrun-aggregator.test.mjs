@@ -281,7 +281,7 @@ test('markdown format produces deterministic report for NO-GO', () => {
   const result = runMarkdown(input);
   // NO-GO with blockers goes to stdout because NO-GO is a valid ok outcome
   const out = result.stdout || result.stderr;
-  assert.ok(out.includes('Block: A2A Plane source-public dry-run report'));
+  assert.ok(out.includes('Block: A2A Nexus source-public dry-run report'));
   assert.ok(out.includes('## Gate status'));
   assert.ok(out.includes('Source-public execution remains **NO-GO**'));
 });
@@ -295,7 +295,7 @@ test('markdown output for all-GO shows Done', () => {
   });
   const result = runMarkdown(input);
   assert.equal(result.status, 0);
-  assert.ok(result.stdout.includes('Done: A2A Plane source-public dry-run report'));
+  assert.ok(result.stdout.includes('Done: A2A Nexus source-public dry-run report'));
   assert.ok(result.stdout.includes('Decision: GO'));
   assert.ok(result.stdout.includes('Source-public execution: GO'));
 });

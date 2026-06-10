@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane source-public dry-run schema. Deterministic GO/NO-GO evidence packet for broker, plugin, and runner metadata. Source-public execution remains NO-GO without explicit operator approval.",
+  "description": "A2A Nexus source-public dry-run schema. Deterministic GO/NO-GO evidence packet for broker, plugin, and runner metadata. Source-public execution remains NO-GO without explicit operator approval.",
   "run": "a2a-source-dryrun-orchestrator-20260510T133022Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/197",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/198",
@@ -68,7 +68,7 @@
       "evidence": [
         "GitHub metadata shows repository is still private before approval.",
         "Docs and examples contain no private endpoints, provider identifiers, raw session dumps, host-specific private paths, or runtime/bootstrap context files.",
-        "Public-facing wording describes A2A Plane as alpha/feedback-welcome, not production-ready."
+        "Public-facing wording describes A2A Nexus as alpha/feedback-welcome, not production-ready."
       ]
     },
     {

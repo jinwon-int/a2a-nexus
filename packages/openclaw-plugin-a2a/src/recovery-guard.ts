@@ -4,7 +4,7 @@
  * Adds guardrails for retry storms, duplicate wakeups, long-running recovery
  * actions, and network reconnects on low-resource nodes.
  *
- * Closes jinwon-int/openclaw-plugin-a2a#77.
+ * Closes jinwon-int/plugin-a2a#77.
  */
 
 // ── Types ─────────────────────────────────────────────────────

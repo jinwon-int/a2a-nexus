@@ -1,4 +1,4 @@
-# Local A2A Plane echo quickstart
+# Local A2A Nexus echo quickstart
 
 This directory contains a no-live local task fixture for the five-minute quickstart in `docs/quickstart.md`.
 

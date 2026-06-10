@@ -2,7 +2,7 @@
  * Source-public approval rehearsal — deterministic rehearsal of repository
  * source-public (visibility) operations before any real execution.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#261
+ * Issue:  jinwon-int/plugin-a2a#261
  * Parent: jinwon-int/a2a-plane#211
  * Run:    a2a-source-public-approval-rehearsal-20260511T014240Z
  *
@@ -163,7 +163,7 @@ export type SourcePublicApprovalRehearsalReport = {
 
 /** Input for a source-public approval rehearsal. */
 export type SourcePublicApprovalRehearsalInput = {
-  /** Repository owner/name (e.g. "jinwon-int/openclaw-plugin-a2a"). */
+  /** Repository owner/name (e.g. "jinwon-int/plugin-a2a"). */
   repo: string;
   /** Current visibility (as observed, not changed). */
   currentVisibility?: "private" | "internal" | "public" | "unknown";

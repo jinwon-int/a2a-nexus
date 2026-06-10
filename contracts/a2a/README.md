@@ -2,7 +2,7 @@
 
 Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 
-> **v0 Freeze (2026-05-09):** These contracts are frozen as the Contract v0 baseline for A2A Plane cross-broker compatibility.
+> **v0 Freeze (2026-05-09):** These contracts are frozen as the Contract v0 baseline for A2A Nexus cross-broker compatibility.
 > The v0 surface includes task lifecycle states/transitions, worker registration read-model assumptions,
 > cancellation & idempotency semantics, terminal evidence result types, and the accepted-send non-ACK boundary.
 > No new states, result types, or receipt levels may be added without a v0→v1 compatibility plan.

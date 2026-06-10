@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane source-public execution orchestrator schema. Converts an approved evidence packet into a deterministic, explicitly operator-gated execution plan with dry-run/simulate mode, scanner/history binding, rollback/abort runbook, idempotency/replay protection, and preflight failure semantics. This round never executes approval, release, or visibility changes.",
+  "description": "A2A Nexus source-public execution orchestrator schema. Converts an approved evidence packet into a deterministic, explicitly operator-gated execution plan with dry-run/simulate mode, scanner/history binding, rollback/abort runbook, idempotency/replay protection, and preflight failure semantics. This round never executes approval, release, or visibility changes.",
   "run": "a2a-source-public-execution-orchestrator-20260511T023207Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/218",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/219",

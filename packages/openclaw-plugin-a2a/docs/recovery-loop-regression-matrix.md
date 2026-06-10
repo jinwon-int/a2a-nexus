@@ -1,6 +1,6 @@
 # Recovery Loop E2E Regression Matrix
 
-Closes jinwon-int/openclaw-plugin-a2a#76.
+Closes jinwon-int/plugin-a2a#76.
 
 This document defines the regression surface for the **recovery loop**:
 inspect → decide → recover → verify. The broker owns recovery primitives

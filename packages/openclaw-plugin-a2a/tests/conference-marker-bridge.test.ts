@@ -11,7 +11,7 @@ import {
 import { InMemoryDeduplicationStore } from "../dist/src/worker-marker-ingestion.js";
 import { parseWorkerStatusMarker } from "../dist/src/worker-status-marker.js";
 
-function parseEvent(marker, body, workerId = "worker-alpha", taskId = "jinwon-int/openclaw-plugin-a2a#91") {
+function parseEvent(marker, body, workerId = "worker-alpha", taskId = "jinwon-int/plugin-a2a#91") {
   const result = parseWorkerStatusMarker(`**${marker}** ${body}`, workerId, taskId);
   if ("ok" in result && result.ok === false) {
     throw new Error(`parse failed: ${result.error}`);
@@ -34,7 +34,7 @@ function makeGitHubPayload(overrides = {}) {
       body: "**Start** — beginning marker bridge",
       user: { login: "worker-bot" },
     },
-    repository: { full_name: "jinwon-int/openclaw-plugin-a2a" },
+    repository: { full_name: "jinwon-int/plugin-a2a" },
     sender: { login: "worker-bot" },
     ...overrides,
   };
@@ -78,7 +78,7 @@ test("one-line PR marker keeps its URL through the full pipeline", () => {
     makeGitHubPayload({
       comment: {
         id: 22222,
-        body: "**PR** — https://github.com/jinwon-int/openclaw-plugin-a2a/pull/90",
+        body: "**PR** — https://github.com/jinwon-int/plugin-a2a/pull/90",
         user: { login: "worker-bot" },
       },
     }),
@@ -88,7 +88,7 @@ test("one-line PR marker keeps its URL through the full pipeline", () => {
 
   const event = assertBridgeSuccess(result);
   assert.equal(event.action, "pr");
-  assert.equal(event.artifactUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/90");
+  assert.equal(event.artifactUrl, "https://github.com/jinwon-int/plugin-a2a/pull/90");
 });
 
 test("conference summaries redact raw prompt/session/private text", () => {
@@ -149,7 +149,7 @@ test("full pipeline handles skips, invalid payloads, worker mapping, and batches
     ),
   );
   assert.equal(mapped.participantId, "worker-alpha");
-  assert.equal(mapped.conferenceId, "conference:jinwon-int/openclaw-plugin-a2a:91");
+  assert.equal(mapped.conferenceId, "conference:jinwon-int/plugin-a2a:91");
 
   const skipped = ingestAndBridgeComment(
     makeGitHubPayload({ comment: { id: 33333, body: "Just a regular comment", user: { login: "worker-bot" } } }),

@@ -1,6 +1,6 @@
 # Legacy delete-gate audit
 
-Closes the analysis half of openclaw-plugin-a2a#12 and feeds parent #6.
+Closes the analysis half of plugin-a2a#12 and feeds parent #6.
 
 ## Scope
 
@@ -15,7 +15,7 @@ The archived repo itself is not currently available from the active remotes used
 
 - the explicit delete criteria in parent #6
 - the active `a2a-broker` codebase
-- the active `openclaw-plugin-a2a` codebase
+- the active `plugin-a2a` codebase
 - the migration and regression docs already written in this repo
 
 That means this document is reliable for **active-owner mapping and remaining delete blockers**, but not yet a line-by-line code tombstone for the archived tree.
@@ -43,7 +43,7 @@ Evidence:
 
 ### 2. Legacy OpenClaw integration ownership
 
-Now owned by `openclaw-plugin-a2a`:
+Now owned by `plugin-a2a`:
 
 - broker client configuration and activation gate
 - gateway `a2a.task.request | update | cancel | status`
@@ -53,11 +53,11 @@ Now owned by `openclaw-plugin-a2a`:
 
 Evidence:
 
-- `openclaw-plugin-a2a/config.ts`
-- `openclaw-plugin-a2a/standalone-broker-client.ts`
-- `openclaw-plugin-a2a/src/gateway-handlers.ts`
-- `openclaw-plugin-a2a/src/gateway-schema.ts`
-- `openclaw-plugin-a2a/type-mapping.ts`
+- `plugin-a2a/config.ts`
+- `plugin-a2a/standalone-broker-client.ts`
+- `plugin-a2a/src/gateway-handlers.ts`
+- `plugin-a2a/src/gateway-schema.ts`
+- `plugin-a2a/type-mapping.ts`
 
 ### 3. Legacy semantics that still depend on OpenClaw core
 
@@ -71,8 +71,8 @@ Still not fully extracted:
 
 Evidence:
 
-- `openclaw-plugin-a2a/docs/migration-plan.md` §1, §2, §3
-- `openclaw-plugin-a2a/docs/regression-matrix.md`
+- `plugin-a2a/docs/migration-plan.md` §1, §2, §3
+- `plugin-a2a/docs/regression-matrix.md`
 
 ## Concrete delete blockers for parent #6
 
@@ -143,6 +143,6 @@ The legacy repo should **not** be deleted yet.
 
 The active-owner split is mostly clear:
 - broker domain logic → `a2a-broker`
-- OpenClaw adapter/plugin logic → `openclaw-plugin-a2a`
+- OpenClaw adapter/plugin logic → `plugin-a2a`
 
 But parent #6 remains blocked by the still-core-owned delegated-send runtime and by the lack of a final archived-source tombstone artifact.

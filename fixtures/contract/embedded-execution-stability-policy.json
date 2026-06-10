@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.embedded-execution-stability-policy.v0",
+  "fixtureId": "a2a-nexus.contract.embedded-execution-stability-policy.v0",
   "contract": "contracts/a2a/embedded-execution-stability-policy.md",
   "description": "Machine-readable fixture for the embedded execution stability policy: container isolation (E1), config domain sanitization (E2), workspace hygiene (E3), session store guard (E4), and post-completion fail-closed checks (E5).",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/838",

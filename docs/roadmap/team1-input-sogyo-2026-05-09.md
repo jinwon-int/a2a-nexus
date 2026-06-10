@@ -4,11 +4,11 @@
 > Parent: [#105](https://github.com/jinwon-int/a2a-plane/issues/105) | Child: [#107](https://github.com/jinwon-int/a2a-plane/issues/107)
 > Date: 2026-05-09
 
-## North-Star: What A2A Plane Should Be Responsible For
+## North-Star: What A2A Nexus Should Be Responsible For
 
-A2A Plane owns the **shared contract vocabulary** that makes broker → worker → runner task handoff durable across integrations. Its responsibility is not to be the broker, the runner, or any particular integration — it is to define and maintain the **protocol surface** that lets those components interoperate without coupling to each other's internals.
+A2A Nexus owns the **shared contract vocabulary** that makes broker → worker → runner task handoff durable across integrations. Its responsibility is not to be the broker, the runner, or any particular integration — it is to define and maintain the **protocol surface** that lets those components interoperate without coupling to each other's internals.
 
-Concretely, A2A Plane should be the single source of truth for:
+Concretely, A2A Nexus should be the single source of truth for:
 
 1. **Task lifecycle semantics** — the state machine (`queued → claimed → running → done|pr|blocked`) and the evidence requirements at each terminal state.
 2. **Worker registration and capability schema** — the stable fields (`workerName`, `capabilities`, `policyVersion`, `lastSeenAt`, `currentTaskId`) that read models and routing decisions depend on.
@@ -16,11 +16,11 @@ Concretely, A2A Plane should be the single source of truth for:
 4. **Compatibility matrix** — exact source baselines for every imported component (broker, plugin, runner, contracts) with required evidence before any public claim.
 5. **Public/private boundary definitions** — what fields and identifiers belong in shared contracts vs. what must stay in private operator configuration (endpoints, secrets, topology names, provider IDs).
 
-Everything else — broker HTTP routing, Docker runner exec details, OpenClaw plugin internals — is an implementation concern. A2A Plane's value is the **contract**, not the implementation.
+Everything else — broker HTTP routing, Docker runner exec details, OpenClaw plugin internals — is an implementation concern. A2A Nexus's value is the **contract**, not the implementation.
 
 ## Non-Goals: What Must Stay in Private/Source Repos or Operator-Only Flow
 
-The following are explicitly **not** in A2A Plane's contract scope and must remain operator-private or scoped within source repositories:
+The following are explicitly **not** in A2A Nexus's contract scope and must remain operator-private or scoped within source repositories:
 
 | Concern | Why It Stays Out | Where It Lives |
 |---|---|---|
@@ -51,7 +51,7 @@ These boundaries must be enforced by the **public-readiness scan** (`npm run sca
   - **Level 0 (Reference):** OpenClaw plugin — full lifecycle, all evidence types, ACK boundary enforced.
   - **Level 1 (Compatible):** A non-OpenClaw integration that implements task claim/run/terminal and respects the ACK boundary.
   - **Level 2 (Minimal):** A read-only consumer that observes task state and terminal evidence without mutating anything.
-- [ ] Produce an integration guide (`docs/integration-guide.md`) that walks through implementing a Level 1 worker against the A2A Plane contracts using only public-safe interfaces.
+- [ ] Produce an integration guide (`docs/integration-guide.md`) that walks through implementing a Level 1 worker against the A2A Nexus contracts using only public-safe interfaces.
 - [ ] Run a dry-run "break the contract" exercise: intentionally change a terminal evidence field, observe what breaks, and document the blast radius in the compatibility matrix.
 - [ ] Resolve all `absolute-private-path` and `private-topology-term` finding classes from the redacted readiness inventory with operator-reviewed disposition.
 
@@ -71,7 +71,7 @@ These boundaries must be enforced by the **public-readiness scan** (`npm run sca
 | 1 | **Upstream `openclaw/openclaw#78261` unmerged (CONFLICTING/DIRTY).** Terminal Brief route cannot prove current-session-visible receipt until the upstream PR is resolved, merged, released, and receipt-proofed. Contract claims about the ACK boundary are untestable in production conditions until this lands. | Critical | G1: upstream merge + rollout + receipt proof |
 | 2 | **External secret scanner unavailable.** `npm run scan:external-secrets` fails closed because neither `gitleaks` nor `trufflehog` is installed in the operator environment. Contract files cannot be declared public-safe without external scanner evidence. | Critical | G2: external scanner clean output |
 | 3 | **Contract drift across repos.** Broker (`jinwon-int/a2a-broker`), plugin (`jinwon-int/openclaw-plugin-a2a`), and runner (`jinwon-int/a2a-docker-runner`) each evolve independently. A contract change merged in the monorepo may be out of sync with source repo implementations. | High | Conformance test suite (30-day goal) + compatibility matrix refresh on every import |
-| 4 | **Implicit OpenClaw coupling in contracts.** Current contract language occasionally assumes plugin-shaped consumers (e.g., "OpenClaw operator" in canonical demo). This weakens the public claim that A2A Plane is integration-neutral. | Medium | Contract language audit (30-day goal) + integration-neutral conformance levels (90-day goal) |
+| 4 | **Implicit OpenClaw coupling in contracts.** Current contract language occasionally assumes plugin-shaped consumers (e.g., "OpenClaw operator" in canonical demo). This weakens the public claim that A2A Nexus is integration-neutral. | Medium | Contract language audit (30-day goal) + integration-neutral conformance levels (90-day goal) |
 | 5 | **No contract governance model.** Without a documented process for proposing, reviewing, and approving contract changes, breaking changes can land without notice. The compatibility matrix has no enforcement mechanism. | Medium | Contract governance doc + DEPRECATION policy (180-day goal) |
 
 ## Suggested Next GitHub Epics/Issues

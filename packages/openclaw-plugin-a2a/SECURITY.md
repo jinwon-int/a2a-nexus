@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-`openclaw-plugin-a2a` is an **alpha** plugin package (unpublished, `"private": true`). Only the latest commit on `main` is supported for security reports.
+`plugin-a2a` is an **alpha** plugin package (unpublished, `"private": true`). Only the latest commit on `main` is supported for security reports.
 
 | Release line | Status |
 | --- | --- |
@@ -25,7 +25,7 @@ The maintainers will acknowledge within 5 business days and provide a timeline f
 ## Scope
 
 This policy covers:
-- `openclaw-plugin-a2a` plugin code (TypeScript source, config schema, exports)
+- `plugin-a2a` plugin code (TypeScript source, config schema, exports)
 - The plugin's broker-client HTTP surface
 - The operator-notification receipt-runtime boundary
 - The public-stable readiness defaults (no-live-send, no-terminal-ACK)

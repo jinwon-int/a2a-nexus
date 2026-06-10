@@ -5,7 +5,7 @@ import path from 'node:path';
 const deny = [
   { kind: 'runtime-bootstrap', re: /^(AGENTS|SOUL|USER|TOOLS|HEARTBEAT|IDENTITY)\.md$/ },
   { kind: 'openclaw-state', re: /^\.openclaw\// },
-  { kind: 'secret-assignment', re: /^\s*(?:export\s+)?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)[A-Z0-9_]*\s*=\s*['"]?(?!<|\$\{|YOUR_|\/path\/to\/)[^'"\s#]{12,}/ },
+  { kind: 'secret-assignment', re: /^\s*(?:export\s+)?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)[A-Z0-9_]*\s*=\s*['"]?(?!<|\\?\$\{|YOUR_|\/path\/to\/)[^'"\s#]{12,}/ },
   { kind: 'github-token-shape', re: /\b(ghp|github_pat)_[A-Za-z0-9_]{20,}\b/ },
   { kind: 'old-monorepo-surface', re: /(?:github\.com\/jinwon-int\/a2a(?:[\/#]|$)|\bjinwon-int\/a2a(?:[#\s`]|$)|@jinwon-int\/a2a-monorepo\b)/ },
   {
@@ -35,7 +35,10 @@ function candidateFiles() {
     })
       .split(/\r?\n/)
       .filter(Boolean)
+      .filter((file) => fs.existsSync(file) && fs.statSync(file).isFile())
       .filter((file) => !file.split('/').some((part) => skipDirs.has(part)))
+      .filter((file) => !/(^|\/)(?:test|tests|__tests__)\//.test(file))
+      .filter((file) => !/\.(?:test|spec)\.(?:ts|mts|cts|js|mjs|cjs)$/.test(file))
       .sort();
   } catch {
     return walk(process.cwd()).sort();

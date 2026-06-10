@@ -29,7 +29,7 @@
  * All of the above have unit-testable mapping arms covered HERE.
  * The e2e arms will flip to automated when their respective seams land.
  *
- * Closes: openclaw-plugin-a2a#23
+ * Closes: plugin-a2a#23
  */
 
 import { describe, it } from "node:test";

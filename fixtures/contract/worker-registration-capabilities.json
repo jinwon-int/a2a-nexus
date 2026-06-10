@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.worker-registration-capabilities.v1",
+  "fixtureId": "a2a-nexus.contract.worker-registration-capabilities.v1",
   "contract": "contracts/a2a/worker-registration.md",
   "description": "Public-safe worker registration and capability fixture for read-model conformance. Frozen at Contract v0 (2026-05-09).",
   "v0Freeze": {
@@ -11,28 +11,28 @@
     {
       "workerName": "worker-conformance-fixtures",
       "capabilities": ["contracts", "fixtures", "repo-inspection", "tests"],
-      "policyVersion": "a2a-plane-safety-v1",
+      "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-09T13:10:00Z",
       "currentTaskId": "task-conformance-lifecycle-001"
     },
     {
       "workerName": "worker-terminal-evidence-review",
       "capabilities": ["terminal-evidence", "redaction-review"],
-      "policyVersion": "a2a-plane-safety-v1",
+      "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-09T13:10:00Z",
       "currentTaskId": null
     },
     {
       "workerName": "worker-jingun-second-worker",
       "capabilities": ["contracts", "compatibility-proof", "repo-inspection", "tests"],
-      "policyVersion": "a2a-plane-safety-v1",
+      "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-10T00:00:00Z",
       "currentTaskId": "task-second-worker-compatibility-152"
     },
     {
       "workerName": "worker-soonwook-second-reference",
       "capabilities": ["replay-safety", "no-duplicate-proof", "trace-redaction", "fixtures"],
-      "policyVersion": "a2a-plane-safety-v1",
+      "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-09T16:51:08Z",
       "currentTaskId": "task-second-worker-replay-public-168"
     }

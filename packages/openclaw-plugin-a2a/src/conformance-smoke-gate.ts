@@ -280,8 +280,8 @@ function runSchemaConformance(): ConformanceSmokeGateReport["schemaConformance"]
     }
   }
 
-  // ── SessionKey error message safety (R29, openclaw-plugin-a2a#338) ──
-  // R28 HOLD (openclaw-plugin-a2a#337): raw sessionKey must not appear in
+  // ── SessionKey error message safety (R29, plugin-a2a#338) ──
+  // R28 HOLD (plugin-a2a#337): raw sessionKey must not appear in
   // validation error messages. AJV does not embed values by default, but
   // we verify explicitly so future changes don't regress this safety.
   // Use inline test cases rather than a typed array to avoid

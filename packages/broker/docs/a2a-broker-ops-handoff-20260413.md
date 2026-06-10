@@ -186,7 +186,7 @@ caddy reload --config /etc/caddy/Caddyfile
 
 Verify with the broker stopped:
 ```bash
-curl -v -H 'X-A2A-Edge-Secret: test-secret-abc123' https://broker.example.com/tasks/xyz
+curl -v -H 'X-A2A-Edge-Secret: <edge-secret-placeholder>' https://broker.example.com/tasks/xyz
 tail -1 /var/log/caddy/broker-access.log | jq .
 # Must show status 502; X-A2A-Edge-Secret must be absent or REDACTED.
 ```

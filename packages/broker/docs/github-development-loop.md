@@ -26,7 +26,7 @@ support origin filtering. Use `taskOrigin: "github"` only when GitHub completion
 evidence should be enforced; use `payload.mode: "github-propose-patch"` when the
 task should still route through the GitHub patch runner.
 
-The versioned handler artifact in `scripts/openclaw-a2a-task-handler.mjs` exposes
+The versioned handler artifact in `scripts/a2a-task-handler.mjs` exposes
 `BUILD_INFO` with version, source path, runtime checksum, and a credential-free /
 host-neutral contract. Installers should deploy this artifact from the repo (or a
 release bundle) instead of copying ad-hoc files from live nodes.

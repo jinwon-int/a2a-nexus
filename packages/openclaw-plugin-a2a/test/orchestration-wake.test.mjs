@@ -2,7 +2,7 @@
  * Orchestration E2E regression tests — wake layer behavior for
  * multi-task patterns (fanout, split, review, swarm).
  *
- * Closes jinwon-int/openclaw-plugin-a2a#71.
+ * Closes jinwon-int/plugin-a2a#71.
  *
  * These tests verify the plugin's wake layer correctly handles:
  *  O1. Fanout — distinct wake routing to different sessions

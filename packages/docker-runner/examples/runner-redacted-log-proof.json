@@ -195,7 +195,7 @@
       " 6 files changed, 248 insertions(+)",
       "",
       "$ echo 'Token: <REDACTED>'",
-      "Token: <REDACTED_GITHUB_TOKEN_PLACEHOLDER>",
+      "Token: github_pat_[REDACTED] <REDACTED>",
       "",
       "$ echo 'API-Key: <REDACTED>'",
       "API-Key: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx <REDACTED>",

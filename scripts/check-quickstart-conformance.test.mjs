@@ -50,7 +50,7 @@ test('quickstart contains required sections', async () => {
   assert.match(content, /Five-minute local quickstart/i);
   assert.match(content, /Prerequisites/i);
   assert.match(content, /Node\.js 22/);
-  assert.match(content, /Run the local A2A Plane broker/i);
+  assert.match(content, /Run the local A2A Nexus broker/i);
   assert.match(content, /Start a dummy or echo worker/i);
   assert.match(content, /Connect the reference OpenClaw plugin locally/i);
   assert.match(content, /Submit a no-live test task/i);

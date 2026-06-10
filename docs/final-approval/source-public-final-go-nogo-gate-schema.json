@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane final go/no-go gate schema. Aggregates the execution orchestrator dry-run plan into a presentable final approval packet. Produces deterministic GO/NO-GO per-repo matrix, release candidate tagging readiness, and CI gate capsule. Never executes approval, release, visibility changes, or live sends.",
+  "description": "A2A Nexus final go/no-go gate schema. Aggregates the execution orchestrator dry-run plan into a presentable final approval packet. Produces deterministic GO/NO-GO per-repo matrix, release candidate tagging readiness, and CI gate capsule. Never executes approval, release, visibility changes, or live sends.",
   "run": "a2a-source-public-go-nogo-gate-20260511T052500Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/225",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/226",

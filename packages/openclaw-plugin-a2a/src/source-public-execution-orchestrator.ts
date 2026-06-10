@@ -2,7 +2,7 @@
  * Source-public execution orchestrator — converts approved evidence packets into
  * deterministic, explicitly operator-gated execution plans.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#263
+ * Issue:  jinwon-int/plugin-a2a#263
  * Parent: jinwon-int/a2a-plane#218
  * Run:    a2a-source-public-execution-orchestrator-20260511T023207Z
  *

@@ -1,6 +1,6 @@
 # Standalone worker terminal evidence validation
 
-This note validates the second reference worker shape for A2A Plane terminal evidence. It is documentation-only evidence: it does not register a worker, contact a broker, send provider messages, or mutate terminal-outbox ACK state.
+This note validates the second reference worker shape for A2A Nexus terminal evidence. It is documentation-only evidence: it does not register a worker, contact a broker, send provider messages, or mutate terminal-outbox ACK state.
 
 ## Reference worker shape
 

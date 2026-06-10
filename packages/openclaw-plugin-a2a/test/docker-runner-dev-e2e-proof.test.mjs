@@ -5,7 +5,7 @@ import test from 'node:test';
 const proof = await readFile(new URL('../docs/docker-runner-dev-e2e-proof.md', import.meta.url), 'utf8');
 
 test('docker-runner dev E2E proof pins runner preset and clean commands', () => {
-  assert.match(proof, /openclaw-plugin-a2a-dev/);
+  assert.match(proof, /plugin-a2a-dev/);
   assert.match(proof, /clean per-task checkout|Checkout: clean/i);
   assert.match(proof, /npm ci/);
   assert.match(proof, /npm test/);

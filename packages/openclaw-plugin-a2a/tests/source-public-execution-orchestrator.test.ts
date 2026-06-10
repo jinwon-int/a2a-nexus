@@ -67,8 +67,8 @@ function configDisabled(): A2ABrokerAdapterPluginRuntimeConfig {
 function goCandidatePacket(overrides?: Partial<SourcePublicApprovalPacket>): SourcePublicApprovalPacket {
   return {
     schema: "a2a.source-public.approval-packet.rehearsal.v1",
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:test-run:GO_CANDIDATE:1700000000",
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:test-run:GO_CANDIDATE:1700000000",
+    repo: "jinwon-int/plugin-a2a",
     runId: "test-run-go-candidate",
     producedAt: 1700000000,
     currentVisibility: "private",
@@ -101,8 +101,8 @@ function goCandidatePacket(overrides?: Partial<SourcePublicApprovalPacket>): Sou
 function needsApprovalPacket(): SourcePublicApprovalPacket {
   return {
     schema: "a2a.source-public.approval-packet.rehearsal.v1",
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:test-run:NEEDS_OPERATOR_APPROVAL:1700000001",
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:test-run:NEEDS_OPERATOR_APPROVAL:1700000001",
+    repo: "jinwon-int/plugin-a2a",
     runId: "test-run-needs-approval",
     producedAt: 1700000001,
     currentVisibility: "private",
@@ -133,8 +133,8 @@ function needsApprovalPacket(): SourcePublicApprovalPacket {
 function noGoPacket(): SourcePublicApprovalPacket {
   return {
     schema: "a2a.source-public.approval-packet.rehearsal.v1",
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:test-run:NO_GO:1700000002",
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:test-run:NO_GO:1700000002",
+    repo: "jinwon-int/plugin-a2a",
     runId: "test-run-no-go",
     producedAt: 1700000002,
     currentVisibility: "private",
@@ -183,8 +183,8 @@ function rehearsalReport(packet: SourcePublicApprovalPacket): SourcePublicApprov
       runId: packet.runId,
       approvalPacket: packet,
       evidenceUrls: {
-        issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263",
-        startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263#issuecomment-1",
+        issue: "https://github.com/jinwon-int/plugin-a2a/issues/263",
+        startComment: "https://github.com/jinwon-int/plugin-a2a/issues/263#issuecomment-1",
       },
       gates: [],
       decision: packet.approvalPayload.failedGates.length === 0 ? "GO_CANDIDATE" : "NEEDS_OPERATOR_APPROVAL",
@@ -349,11 +349,11 @@ describe("source-public execution orchestrator (#263)", () => {
       const packet = goCandidatePacket();
       const config = configActive();
       const evidenceUrls = {
-        issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263",
-        pullRequest: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/264",
-        startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263#issuecomment-1",
-        doneComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263#issuecomment-done",
-        blockComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263#issuecomment-block",
+        issue: "https://github.com/jinwon-int/plugin-a2a/issues/263",
+        pullRequest: "https://github.com/jinwon-int/plugin-a2a/pull/264",
+        startComment: "https://github.com/jinwon-int/plugin-a2a/issues/263#issuecomment-1",
+        doneComment: "https://github.com/jinwon-int/plugin-a2a/issues/263#issuecomment-done",
+        blockComment: "https://github.com/jinwon-int/plugin-a2a/issues/263#issuecomment-block",
       };
 
       const plan = buildSourcePublicExecutionPlan(
@@ -494,8 +494,8 @@ describe("source-public execution orchestrator (#263)", () => {
       const packet = goCandidatePacket();
       const config = configActive();
       const evidenceUrls = {
-        issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263",
-        startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/263#issuecomment-1",
+        issue: "https://github.com/jinwon-int/plugin-a2a/issues/263",
+        startComment: "https://github.com/jinwon-int/plugin-a2a/issues/263#issuecomment-1",
       };
 
       const plan = buildSourcePublicExecutionPlan(

@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.gwakga-cross-broker-handoff.v1",
+  "fixtureId": "a2a-nexus.contract.gwakga-cross-broker-handoff.v1",
   "contract": "contracts/a2a/broker-handoff-protocol.md",
   "description": "Public-safe cross-broker proof fixture showing Seoseo can request a Team2 handoff while Gwakga remains broker of record and owns worker assignment.",
   "round": "a2a-vnext-contract-smoke-crossbroker-20260510",

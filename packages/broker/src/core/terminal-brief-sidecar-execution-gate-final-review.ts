@@ -298,10 +298,9 @@ function buildChecklist(
   state: TerminalBriefSidecarExecutionGateFinalReviewState,
 ): TerminalBriefSidecarExecutionGateFinalReviewPacket["finalReview"]["checklist"] {
   const ready = state === "ready_for_execution_gate_final_review";
-  const grantEvidenceKey = grantEvidence["idempotency" + "Key" as "idempotencyKey"];
   const row = (id: string, label: string, evidence: string[]) => ({ id, label, status: ready ? "ready" as const : "blocked" as const, evidence, permitted: false as const });
   return [
-    row("grant_evidence", "Accepted grant evidence", [grantEvidenceKey, `grant evidence accepted=${grantEvidence.readiness.grantEvidenceAccepted}`]),
+    row("grant_evidence", "Accepted grant evidence", [grantEvidence.idempotencyKey, "grantEvidenceAccepted=" + grantEvidence.readiness.grantEvidenceAccepted]),
     row("runtime_preflight", "Runtime preflight evidence required before any later executor path", ["gateway readiness", "event loop", "queue backlog", "dry-run-only"]),
     row("executor_boundary", "Executor dispatch boundary", ["startExecutorDispatchPermitted=false", "executorInvocationPermitted=false", "processSpawnPermitted=false"]),
     row("sidecar_boundary", "Sidecar and default-on boundary", ["sidecarStartPermitted=false", "defaultOnPermitted=false"]),

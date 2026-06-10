@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const root = process.cwd();
@@ -84,6 +84,8 @@ function inspectUrl(file, lineNumber, line) {
  * documentation does not weaken detection.
  */
 function inspectSecretAssignment(file, lineNumber, line) {
+  if (/x-a2a-edge-secret\s*:\s*<[^>]+>/i.test(line)) return;
+
   // ---- 1) UPPER_CASE with =  (existing behaviour from #438) ----
   const upperAssignment = line.match(
     /\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_KEY)[A-Z0-9_]*)\s*=\s*([^\s#]+)/i,
@@ -147,10 +149,44 @@ function inspectLine(file, lineNumber, line) {
   inspectUrl(file, lineNumber, line);
 }
 
+function readJsonFile(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function inspectLicenseGate() {
+  const readinessPath = join(root, "docs", "public-stable-readiness.md");
+  const readmePath = join(root, "README.md");
+  const shouldEnforce = existsSync(readinessPath)
+    || (existsSync(readmePath) && /public-stable-readiness\.md|public\/stable/i.test(readFileSync(readmePath, "utf8")));
+  if (!shouldEnforce) return;
+
+  const licensePath = join(root, "LICENSE");
+  if (!existsSync(licensePath)) {
+    addFinding(licensePath, 1, "fail", "license-gate", "Root LICENSE is missing for public/stable readiness.", "LICENSE=<missing>");
+    return;
+  }
+
+  const licenseText = readFileSync(licensePath, "utf8");
+  if (!/^MIT License\s*$/m.test(licenseText) || !/Permission is hereby granted, free of charge/.test(licenseText)) {
+    addFinding(licensePath, 1, "fail", "license-gate", "Root LICENSE does not look like the approved MIT license text.", licenseText.split(/\r?\n/, 1)[0] ?? "LICENSE=<empty>");
+  }
+
+  const packageJson = readJsonFile(join(root, "package.json"));
+  if (!packageJson || packageJson.license !== "MIT") {
+    addFinding(join(root, "package.json"), 1, "fail", "license-gate", "package.json must declare license=MIT for the approved readiness gate.", `license=${packageJson?.license ?? "<missing>"}`);
+  }
+}
+
 for (const file of scanRoots.flatMap((path) => walk(path))) {
   const text = readFileSync(file, "utf8");
   text.split(/\r?\n/).forEach((line, index) => inspectLine(file, index + 1, line));
 }
+
+inspectLicenseGate();
 
 const summary = findings.reduce(
   (acc, finding) => {

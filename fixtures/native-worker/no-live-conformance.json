@@ -1,7 +1,7 @@
 {
   "schema": "a2a.hermesNativeWorker.noLiveConformance.v1",
   "mode": "no-live",
-  "fixtureId": "a2a-plane.fixture.hermes-native-worker-no-live-conformance.v1",
+  "fixtureId": "a2a-nexus.fixture.hermes-native-worker-no-live-conformance.v1",
   "description": "Hermes/Android native A2A worker no-live conformance fixture for Gongyung/Daegyo-style Termux nodes. Covers registration, heartbeat/reconnect, bounded task execution, local redacted evidence manifest, and broker-visible result evidence without contacting any live provider, production broker, or private network.",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/465",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/464",

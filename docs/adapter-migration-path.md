@@ -259,4 +259,4 @@ Phases 2 and 3 can proceed in parallel after Phase 1 completes.
 - [OpenClaw-Core Extraction Plan](../packages/openclaw-plugin-a2a/docs/migration-plan.md) — OpenClaw plugin extraction from core
 - [Hermes Worker Integration Spec](specs/hermes-worker-integration/spec.md) — existing Hermes HTTP-poll worker contract
 - [Broker Handoff Protocol Contract](../contracts/a2a/broker-handoff-protocol.md) — broker-to-broker task handoff
-- [A2A Ecosystem Guide](ecosystem-guide.md) — A2A Plane ecosystem documentation
+- [A2A Ecosystem Guide](ecosystem-guide.md) — A2A Nexus ecosystem documentation

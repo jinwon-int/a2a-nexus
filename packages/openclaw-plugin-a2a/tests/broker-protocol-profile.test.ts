@@ -1,7 +1,7 @@
 /**
  * Broker-advertised A2A protocol profile diagnostics extraction.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#454
+ * Issue:  jinwon-int/plugin-a2a#454
  * Parent: jinwon-int/a2a-plane#492
  * Worker: sogyo
  *

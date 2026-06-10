@@ -1,4 +1,4 @@
-# A2A Plane monorepo CI
+# A2A Nexus monorepo CI
 #
 # Path-filtered jobs ensure each package and docs-only changes are validated
 # independently, while the full check job runs the complete release gate on

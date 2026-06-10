@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.github-evidence-projection.v1",
+  "fixtureId": "a2a-nexus.contract.github-evidence-projection.v1",
   "contract": "contracts/a2a/github-evidence-projection.md",
   "description": "GitHub issue/PR comment evidence projection as a first-class Terminal Brief extension. Covers manifest-bound comment evidence, idempotency keys, replay/no-duplicate rules, redaction, and explicit non-ACK/non-approval boundary. Frozen at Contract v0 (2026-05-11).",
   "v0Freeze": {

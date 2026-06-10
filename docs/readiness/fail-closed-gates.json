@@ -24,7 +24,7 @@
       "evidence": [
         "GitHub metadata shows repository is still private before approval.",
         "Docs and examples contain no private endpoints, provider identifiers, raw session dumps, host-specific private paths, or runtime/bootstrap context files.",
-        "Public-facing wording describes A2A Plane as alpha/feedback-welcome, not production-ready."
+        "Public-facing wording describes A2A Nexus as alpha/feedback-welcome, not production-ready."
       ]
     },
     {

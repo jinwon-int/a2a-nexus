@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __test, handleTask } from "./openclaw-a2a-task-handler.mjs";
+import { __test, handleTask } from "./a2a-task-handler.mjs";
 
 function task(overrides = {}) {
   return {
