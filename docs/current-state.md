@@ -111,6 +111,14 @@ It keeps the split implementation repos canonical while recording active,
 mirrored, read-only, and archive/redirect options plus rollback owner fields
 for before-flip and after-flip scenarios.
 
+The active `a2a-nexus#553` split-repo disposition refresh updates the same
+packet for the `a2a-nexus` target after #563/#564. It records Team1+Team2
+source-only A2A evidence and keeps `a2a-broker`, `a2a-docker-runner`, and
+`plugin-a2a` at `active_canonical`. `active_mirrored` is candidate-only;
+read-only/archive/redirect, package ownership transfer, release/package/tag,
+deploy, DB, secret, provider send, and Terminal ACK/replay remain separate
+`NO_GO / Waiting` actions.
+
 The `#547` phase-8 release/package/tag approval packet is documented in
 [`docs/monorepo-release-package-tag-approval-packet.md`](monorepo-release-package-tag-approval-packet.md)
 and validated by
