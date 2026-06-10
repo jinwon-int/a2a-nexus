@@ -1,132 +1,195 @@
-# A2A Monorepo Branch Protection Approval Packet
+# A2A Nexus Branch Protection / Ruleset Execution Packet
 
-> **Snapshot date:** 2026-06-08
-> **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
-> **Phase-5 readiness gate:** [a2a-plane#541](https://github.com/jinwon-int/a2a-plane/issues/541)
-> **Phase-5 PR:** [a2a-plane#542](https://github.com/jinwon-int/a2a-plane/pull/542)
-> **Phase-6 approval packet:** [a2a-plane#543](https://github.com/jinwon-int/a2a-plane/issues/543)
-> **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
-> **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
-> **Status:** approval packet only; GitHub settings changes are still `NO_GO / Waiting`.
+> **Snapshot date:** 2026-06-10
+> **Parent:** [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553)
+> **Operator approval record:** [a2a-nexus#563](https://github.com/jinwon-int/a2a-nexus/pull/563), merge `910a796b9540cb839a8fa4a1148aa38a90694eea`
+> **A2A review round:** `a2a-branchpacket-20260610T093001Z`
+> **Status:** execution packet only; GitHub settings changes are still `NO_GO / Waiting for scoped approval`.
 
 ## Summary
 
-The imported `packages/*` candidate is package-CI green, and the phase-5
-canonical-flip readiness packet is merged. The next canonical-flip blocker is
-not source code: it is the operator decision for `a2a-plane/main` branch
-protection or ruleset coverage.
+The active monorepo target is now `jinwon-int/a2a-nexus`. PR #563 recorded the
+operator approval as `GO_CANDIDATE / PR-first`, but execution-sensitive actions
+remain separated. This packet replaces the stale `a2a-plane` branch-protection
+packet with an `a2a-nexus`-specific branch protection / ruleset execution packet.
 
 Current decision:
 
 ```text
-branchProtectionDecision = NO_GO / Waiting
+branchProtectionDecision = PACKET_READY / Waiting scoped approval
 settingsChanged = false
-canonicalFlipDecision = NO_GO / Waiting
+canonicalFlipDecision = GO_CANDIDATE / PR-first; execution separated
 ```
 
-This packet records the exact read-only state and the required-check proposal a
-future operator approval can act on. It does not apply branch protection,
-rulesets, permissions, CODEOWNERS enforcement, canonical ownership transfer, or
-any release action.
+This packet does **not** apply branch protection, create rulesets, enforce
+CODEOWNERS, change permissions, archive/read-only/redirect split repos, publish
+releases/packages/images, deploy, restart, mutate DB/Terminal rows, move
+credentials, force-push, or rewrite history.
 
 ## Live Read-only Posture
 
-Evidence was collected on 2026-06-08 KST with read-only GitHub CLI/API calls.
+Evidence was collected with read-only GitHub CLI/API calls.
 
-| Surface | Current evidence | Meaning |
-| --- | --- | --- |
-| `jinwon-int/a2a-plane/main` branch protection | `GET /branches/main/protection` returned `404 Branch not protected` | No protected `main` baseline is currently active. |
-| `jinwon-int/a2a-plane` rulesets | `GET /repos/jinwon-int/a2a-plane/rulesets` returned `[]` | No repository ruleset is currently active. |
-| Latest green monorepo CI | PR `#542`, run `27099569029`, head `71fb92a4bede59f76c4599867f19843ced162b6e` | Root and package gates are green after the phase-5 readiness packet. |
+- Repository: `jinwon-int/a2a-nexus`
+- Branch: `main`
+- Current main: `910a796b9540cb839a8fa4a1148aa38a90694eea`
+- Open PRs: `0`
+- Branch protection API: `404 Branch not protected`
+- Repository rulesets API: `[]`
+- Latest approval PR CI: [run 27264318468](https://github.com/jinwon-int/a2a-nexus/actions/runs/27264318468), PR #563 head `784c2a7f88d55a568e14424a1798dded2963bd21`, green.
+
+## A2A Review Evidence
+
+Parent round: `a2a-branchpacket-20260610T093001Z`.
+
+Team1:
+
+- `sogyo`: blocked the stale packet because it still cited `a2a-plane`; required an `a2a-nexus`-specific packet and CI/job inventory.
+- `nosuk`: confirmed the packet should remain no-live, but requested explicit rollback owner/path and `a2a-nexus` CI mapping.
+- `bangtong`: confirmed `a2a-nexus/main` is unprotected and needs a packet; settings stay HOLD until scoped approval.
+
+Team2:
+
+- `dungae`: confirmed import-needed for an `a2a-nexus`-specific packet; stale `a2a-plane` refs must be replaced.
+- `jingun`: confirmed split repo disposition, release, publish, and deploy remain HOLD and must not be changed by this packet.
+- `soonwook`: validated GO/NO-GO and rollback fields; emphasized no settings mutation and fresh scoped approval before enforcement.
+
+## CI Job Inventory
+
+The `a2a-nexus` workflow `.github/workflows/ci.yml` defines these jobs:
+
+- `paths-filter`
+- `setup`
+- `layout`
+- `broker`
+- `docker-runner`
+- `plugin`
+- `contracts`
+- `docs`
+- `check`
+
+Path filters:
+
+- `broker`: `packages/broker/**`
+- `docker-runner`: `packages/docker-runner/**`
+- `plugin`: `packages/openclaw-plugin-a2a/**`
+- `contracts`: `contracts/**`, `fixtures/**`
+- `docs`: `docs/**`
+- `scripts`: `scripts/**`, `scanner/**`
+- `root`: `package.json`, `package-lock.json`, `.github/workflows/**`, `.gitleaks.toml`
 
 ## Required-check Candidate
 
-A future branch protection/ruleset approval should name the exact checks and
-how skipped path-aware jobs are handled. The minimum candidate is:
+A future scoped approval should name the exact checks and how path-aware skipped
+jobs are handled.
 
-| Check | Requirement |
-| --- | --- |
-| `paths-filter` | Required for all PRs so package/doc/root path decisions are visible. |
-| `setup` | Required for all PRs. |
-| `layout` | Required for repo layout and package map changes. |
-| `contracts` | Required for contract and conformance-relevant changes. |
-| `check` | Required for root release gate, scanner, conformance, and monorepo packet validators. |
-| `broker` | Required when `packages/broker/**`, broker-owned package metadata, or broker package parity scripts are touched. |
-| `docker-runner` | Required when `packages/docker-runner/**`, runner-owned package metadata, or runner package parity scripts are touched. |
-| `plugin` | Required when `packages/openclaw-plugin-a2a/**`, plugin-owned metadata, or plugin package parity scripts are touched. |
+Always required:
 
-The `docs` job may remain path-filtered and skipped when no docs-only check is
-needed. Skipped package jobs must not be treated as proof that an untouched
-package stayed fresh; `paths-filter` must make the skip reason explicit.
+- `paths-filter`
+- `setup`
+- `layout`
+- `contracts`
+- `check`
 
-## Review And Ruleset Decisions Still Needed
+Path-aware package checks:
 
-These fields are not approved by this packet:
+- `broker`: required when `packages/broker/**`, `contracts/**`, root files, or broker parity scripts are touched.
+- `docker-runner`: required when `packages/docker-runner/**`, root files, or docker-runner parity scripts are touched.
+- `plugin`: required when `packages/openclaw-plugin-a2a/**`, `contracts/**`, root files, plugin manifests, or plugin package metadata are touched.
 
-| Field | Proposed default | Current status |
-| --- | --- | --- |
-| Protected `main` | Require PRs for source changes, no direct canonical changes to `main`. | Not applied. |
-| Required PR review | At least one approving review before merge. | Not applied. |
-| CODEOWNERS review | Enforce after package ownership is explicitly accepted, not before. | Not applied. |
-| Up-to-date branch or merge queue | Require up-to-date branches or an equivalent merge queue/ruleset. | Not applied. |
-| Stale review dismissal | Dismiss stale approvals after new commits. | Not applied. |
-| Admin coverage | Operator must decide explicitly; safer canonical-flip default is to include admins. | Not applied. |
-| Critical path rulesets | Protect `.github/workflows/**`, `scripts/**`, `packages/**`, `contracts/**`, `fixtures/**`, and `scanner/**`. | Not applied. |
+The `docs` job may remain path-filtered for docs-only changes. Skipped package
+jobs must not be treated as proof that an untouched package stayed fresh;
+`paths-filter` must make the skip reason explicit.
 
-## Approval Text Shape
+## Split-repo Disposition Boundary
 
-A valid future approval must be explicit and separate from canonical flip,
-release, deploy, provider send, or credential work. It should name:
+This branch protection packet does not settle split-repo disposition. The prior
+split-repo disposition and rollback-owner packet remains referenced at
+`a2a-plane#545`, and the current `a2a-nexus` decision keeps that surface on
+HOLD. No split repo is archived, made read-only, redirected, renamed, or treated
+as non-canonical by this packet.
 
-- repository: `jinwon-int/a2a-plane`;
-- branch or ruleset target: `main` and any critical-path patterns;
-- required checks and package path behavior;
-- PR review count and whether CODEOWNERS is enforced;
-- stale-review, up-to-date branch, merge queue, and admin coverage choices;
-- rollback/no-op path if the settings change is declined or misapplied.
+## Final Sign-off Boundary
 
-Generic phrases such as "continue", "looks good", or green CI are not branch
-protection approval.
+The prior final operator sign-off matrix remains referenced at `a2a-plane#549`.
+This `a2a-nexus` branch protection packet only prepares the branch
+protection/ruleset execution evidence; it does not grant final canonical flip,
+release, package ownership transfer, split-repo disposition, or live execution
+approval.
 
-Follow-up `a2a-plane#545` records the split-repo disposition and rollback owner
-packet required before a canonical flip. This branch protection packet does not
-settle split-repo disposition.
+## Proposed Settings Shape For Later Approval
 
-Follow-up `a2a-plane#549` records the final operator sign-off matrix. It
-includes branch protection or ruleset fields as one row in the final GO/NO-GO
-matrix without applying GitHub settings or approving canonical flip.
+Recommended ruleset name: `a2a-nexus-main-required-checks`.
+
+Recommended values for a later settings-only execution:
+
+- target repository: `jinwon-int/a2a-nexus`
+- target branch: `main`
+- require PR before merge
+- require at least one approving review
+- dismiss stale approvals after new commits
+- require up-to-date branch or merge queue if it does not break auto-merge
+- include administrators unless the operator explicitly exempts them
+- defer CODEOWNERS review until package ownership transfer is explicitly accepted
+- protect critical paths: `.github/workflows/**`, `scripts/**`, `packages/**`, `contracts/**`, `fixtures/**`, `scanner/**`
+
+## Evaluation / Enforcement Phases
+
+1. **Packet PR phase** — this PR only records the plan, checks, rollback path,
+   and abort conditions.
+2. **Scoped approval phase** — operator must approve the settings mutation in a
+   separate message or PR/issue comment that names the repo, branch, required
+   checks, review/admin policy, and rollback owner.
+3. **Evaluate-only phase** — prepare JSON/API payload and read back current state;
+   do not enforce if any required check name is absent or path-aware behavior is
+   ambiguous.
+4. **Enforce phase** — apply settings only after the scoped approval and dry-run
+   readback are clean.
+5. **Readback phase** — verify the ruleset/protection exists and that a normal PR
+   remains mergeable when checks are green.
 
 ## Rollback / No-op Path
 
-If the operator declines settings changes, no source rollback is required.
-Split repos remain canonical implementation/provenance sources, and
-`a2a-plane/packages/*` stays a CI-green candidate only.
+Rollback owner: `seoseo finalizer` performs settings-only rollback after Seo Jin
+On approval; Seo Jin On retains operator decision authority.
 
-If a future approved settings change is misapplied, the rollback must be a
-settings-only change scoped to the approved repository and branch/ruleset. It
-must not include source history rewrite, force-push, package publication,
-split-repo archival, or canonical ownership transfer.
+Allowed rollback: delete or disable only the created `a2a-nexus/main` ruleset or
+branch protection.
+
+Rollback must not include source history rewrite, force-push, package
+publication, split repo archive/read-only/redirect, canonical ownership transfer,
+release/tag creation, deploy/restart, DB/Terminal ACK, provider send, credential
+movement, or destructive cleanup.
+
+## Abort Conditions
+
+Abort before settings mutation if any of these are true:
+
+- target branch is no longer `910a796b9540cb839a8fa4a1148aa38a90694eea` or is not explicitly re-approved;
+- a required check name is absent from GitHub status-check rollups;
+- a dry-run would block clean docs-only or package-scoped PRs unexpectedly;
+- rollback owner is unavailable;
+- approval is ambiguous or bundled with release, deploy, DB, credential, provider send, Terminal ACK, force-push, or split repo disposition work.
 
 ## GO / NO-GO Fields
 
-| Field | Value |
-| --- | --- |
-| `latestMonorepoCiGreen` | `true` |
-| `branchProtectionCurrentlyAbsent` | `true` |
-| `rulesetsCurrentlyAbsent` | `true` |
-| `requiredCheckCandidateRecorded` | `true` |
-| `operatorBranchProtectionApproval` | `false` |
-| `settingsChanged` | `false` |
-| `canonicalFlipApproved` | `false` |
-| `decision` | `NO_GO / Waiting` |
+- `latestMonorepoCiGreen`: `true`
+- `branchProtectionCurrentlyAbsent`: `true`
+- `rulesetsCurrentlyAbsent`: `true`
+- `requiredCheckCandidateRecorded`: `true`
+- `executionPacketRecorded`: `true`
+- `operatorBranchProtectionApproval`: `false`
+- `settingsChanged`: `false`
+- `canonicalFlipApproved`: `false`
+- `decision`: `PACKET_READY / Waiting scoped approval`
 
 ## No-live Boundary
 
 This packet does not authorize branch protection application, ruleset
-application, permission changes, CODEOWNERS enforcement changes, canonical
-flip, package ownership transfer, release tags, GitHub Releases, npm or Docker
-publication, repository visibility changes, split repo archival, production
-deploys, Gateway/broker/worker restarts, database mutation, provider or
-Telegram sends, Terminal ACK/replay, historical replay, credential movement,
+application, permission changes, CODEOWNERS enforcement changes, canonical flip,
+package ownership transfer, release tags, GitHub Releases, npm or Docker/GHCR
+publication, repository visibility changes, split repo archive/read-only/redirect,
+production deploys, Gateway/broker/worker restarts, database mutation, provider
+or Telegram sends, Terminal ACK/replay, historical replay, credential movement,
 destructive cleanup, force-push, history rewrite, or worker-owned GitHub
 mutation.

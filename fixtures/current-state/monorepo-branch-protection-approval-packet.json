@@ -1,44 +1,86 @@
 {
   "schema": "a2a.monorepo-branch-protection-approval-packet.v1",
-  "snapshotDate": "2026-06-08",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "phase5ReadinessIssue": "https://github.com/jinwon-int/a2a-plane/issues/541",
-  "phase5ReadinessPr": "https://github.com/jinwon-int/a2a-plane/pull/542",
-  "phase6ApprovalPacketIssue": "https://github.com/jinwon-int/a2a-plane/issues/543",
-  "phase5MergeCommit": "3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d",
-  "phase5HeadCommit": "71fb92a4bede59f76c4599867f19843ced162b6e",
-  "branchProtectionDecision": "NO_GO_WAITING",
-  "canonicalFlipDecision": "NO_GO_WAITING",
+  "snapshotDate": "2026-06-10",
+  "parentIssue": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+  "operatorApprovalPr": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+  "operatorApprovalMergeCommit": "910a796b9540cb839a8fa4a1148aa38a90694eea",
+  "a2aDecisionRound": "a2a-branchpacket-20260610T093001Z",
+  "branchProtectionDecision": "PACKET_READY_WAITING_SCOPED_APPROVAL",
+  "canonicalFlipDecision": "GO_CANDIDATE_PR_FIRST_EXECUTION_SEPARATED",
   "settingsChanged": false,
   "canonicalFlipApproved": false,
   "packageOwnershipTransferred": false,
   "liveReadOnlyPosture": {
-    "repository": "jinwon-int/a2a-plane",
+    "repository": "jinwon-int/a2a-nexus",
     "branch": "main",
+    "observedAt": "2026-06-10T09:30:00Z",
     "branchProtectionApi": "404_branch_not_protected",
     "rulesetsApi": "empty_array",
     "branchProtectionCurrentlyAbsent": true,
     "rulesetsCurrentlyAbsent": true
   },
   "latestMonorepoCiEvidence": {
-    "pr": "https://github.com/jinwon-int/a2a-plane/pull/542",
-    "runId": "27099569029",
-    "runUrl": "https://github.com/jinwon-int/a2a-plane/actions/runs/27099569029",
-    "headCommit": "71fb92a4bede59f76c4599867f19843ced162b6e",
-    "mergeCommit": "3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d",
+    "pr": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+    "runId": "27264318468",
+    "runUrl": "https://github.com/jinwon-int/a2a-nexus/actions/runs/27264318468",
+    "headCommit": "784c2a7f88d55a568e14424a1798dded2963bd21",
+    "mergeCommit": "910a796b9540cb839a8fa4a1148aa38a90694eea",
     "passedJobs": [
       "paths-filter",
       "setup",
-      "contracts",
       "layout",
       "broker",
       "plugin",
-      "docker-runner",
+      "contracts",
       "check"
     ],
     "skippedJobs": [
+      "docker-runner",
       "docs"
-    ]
+    ],
+    "localFullReleaseGate": "npm run check passed before PR #563"
+  },
+  "workflowJobInventory": {
+    "workflow": ".github/workflows/ci.yml",
+    "jobs": [
+      "paths-filter",
+      "setup",
+      "layout",
+      "broker",
+      "docker-runner",
+      "plugin",
+      "contracts",
+      "docs",
+      "check"
+    ],
+    "pathFilters": {
+      "broker": [
+        "packages/broker/**"
+      ],
+      "docker-runner": [
+        "packages/docker-runner/**"
+      ],
+      "plugin": [
+        "packages/openclaw-plugin-a2a/**"
+      ],
+      "contracts": [
+        "contracts/**",
+        "fixtures/**"
+      ],
+      "docs": [
+        "docs/**"
+      ],
+      "scripts": [
+        "scripts/**",
+        "scanner/**"
+      ],
+      "root": [
+        "package.json",
+        "package-lock.json",
+        ".github/workflows/**",
+        ".gitleaks.toml"
+      ]
+    }
   },
   "requiredCheckCandidate": {
     "alwaysRequired": [
@@ -51,30 +93,38 @@
     "pathAwarePackageChecks": {
       "broker": [
         "packages/broker/**",
-        "scripts/run-monorepo-package-ci-parity.mjs",
-        "package metadata owned by broker parity"
+        "contracts/**",
+        "root changes that affect broker parity",
+        "scripts/run-monorepo-package-ci-parity.mjs"
       ],
       "docker-runner": [
         "packages/docker-runner/**",
-        "scripts/run-monorepo-package-ci-parity.mjs",
-        "package metadata owned by docker-runner parity"
+        "root changes that affect docker-runner parity",
+        "scripts/run-monorepo-package-ci-parity.mjs"
       ],
       "plugin": [
         "packages/openclaw-plugin-a2a/**",
-        "scripts/run-monorepo-package-ci-parity.mjs",
+        "contracts/**",
+        "root changes that affect plugin parity",
         "plugin manifest and package metadata"
       ]
     },
     "docsJobPathFiltered": true,
-    "skippedPackageJobsAreNotFreshnessProof": true
+    "skippedPackageJobsAreNotFreshnessProof": true,
+    "missingRequiredCheckWouldBlockAllMerges": true
   },
-  "reviewAndRulesetDecisions": {
-    "protectedMain": "not_applied",
-    "requiredPrReview": "not_applied",
-    "codeownersReview": "not_applied_until_package_ownership_accepted",
-    "upToDateBranchOrMergeQueue": "not_applied",
-    "staleReviewDismissal": "not_applied",
-    "adminCoverage": "operator_must_decide_explicitly",
+  "executionPacket": {
+    "targetRepository": "jinwon-int/a2a-nexus",
+    "targetBranch": "main",
+    "settingsMutationNow": false,
+    "evaluateOnlyPhase": "evaluate-only: prepare JSON/API payload and dry-run readback only; do not create branch protection or rulesets in this PR",
+    "enforcePhase": "requires a later scoped approval after this packet is green and merged",
+    "recommendedRulesetName": "a2a-nexus-main-required-checks",
+    "recommendedRequiredReviewCount": 1,
+    "codeownersReview": "defer_until_package_ownership_transfer_is_explicitly_accepted",
+    "staleReviewDismissal": "recommended_when_enforced",
+    "upToDateBranchOrMergeQueue": "recommended_if_it_does_not_break_auto_merge",
+    "adminCoverage": "include_admins_unless_operator_explicitly_exempts",
     "criticalPathRulesets": [
       ".github/workflows/**",
       "scripts/**",
@@ -82,6 +132,15 @@
       "contracts/**",
       "fixtures/**",
       "scanner/**"
+    ],
+    "rollbackOwner": "seoseo finalizer executes settings-only rollback after Seo Jin On approval; Seo Jin On retains operator authority",
+    "rollbackPath": "delete or disable the created ruleset/branch protection only; no source rewrite, force-push, split repo disposition, release, publish, deploy, DB/Terminal ACK, or credential action",
+    "abortConditions": [
+      "target branch is no longer 910a796b9540cb839a8fa4a1148aa38a90694eea or explicitly re-approved",
+      "required check name is absent from GitHub status check rollup",
+      "ruleset dry-run would block a clean docs-only or package-scoped PR unexpectedly",
+      "rollback owner is unavailable",
+      "operator approval is ambiguous or bundled with release/deploy/DB/secret work"
     ]
   },
   "approvalRequirements": [
@@ -90,11 +149,12 @@
     "pr_review_count_and_codeowners_choice",
     "stale_review_up_to_date_merge_queue_admin_coverage_choices",
     "settings_only_rollback_or_noop_path",
-    "separate_from_canonical_flip_release_deploy_send_or_credentials"
+    "separate_from_canonical_flip_release_deploy_send_or_credentials",
+    "fresh_scoped_operator_approval_before_settings_mutation"
   ],
   "rollbackPolicy": {
-    "declinedApproval": "no_source_rollback_required_keep_split_repos_canonical",
-    "misappliedSettings": "settings_only_revert_scoped_to_approved_repository_and_branch_or_ruleset",
+    "declinedApproval": "no_source_rollback_required_keep_current_no_protection_state",
+    "misappliedSettings": "settings_only_revert_scoped_to_a2a_nexus_main_ruleset_or_branch_protection",
     "sourceHistoryRewriteAllowed": false,
     "forcePushAllowed": false,
     "packagePublishAllowed": false,
@@ -106,10 +166,11 @@
     "branchProtectionCurrentlyAbsent": true,
     "rulesetsCurrentlyAbsent": true,
     "requiredCheckCandidateRecorded": true,
+    "executionPacketRecorded": true,
     "operatorBranchProtectionApproval": false,
     "settingsChanged": false,
     "canonicalFlipApproved": false,
-    "decision": "NO_GO_WAITING"
+    "decision": "PACKET_READY_WAITING_SCOPED_APPROVAL"
   },
   "boundaries": {
     "branchProtectionChange": false,
@@ -124,6 +185,8 @@
     "dockerPublish": false,
     "repoVisibilityChange": false,
     "splitRepoArchive": false,
+    "splitRepoReadOnly": false,
+    "splitRepoRedirect": false,
     "deploy": false,
     "restart": false,
     "dbMutation": false,
