@@ -139,6 +139,16 @@ execution, package ownership transfer, release/package/tag, split-repo
 archive/read-only/redirect, deploy, DB, secret, provider send, and Terminal
 ACK/replay remain separate `NO_GO / Waiting` actions.
 
+
+The active `a2a-nexus#553` canonical source flip execution handoff packet is
+documented in
+[`docs/monorepo-canonical-source-flip-execution-handoff.md`](monorepo-canonical-source-flip-execution-handoff.md)
+and validated by
+`scripts/check-monorepo-canonical-source-flip-execution-handoff.mjs`. It records
+`GO_PR_FIRST_SOURCE_ONLY` for the handoff PR while actual canonical flip execution remains separate `NO_GO / Waiting`. Sogyo's dissent is recorded as a
+safety guardrail: if the packet is interpreted as actual execution, it is
+blocked; only the source-only handoff may advance.
+
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)
 and validated by `scripts/check-monorepo-operator-approval-handoff.mjs`. It
