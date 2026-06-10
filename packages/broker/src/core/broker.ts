@@ -392,6 +392,8 @@ export interface BrokerCompactDiagnostics {
   };
 }
 
+const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
+
 export class InMemoryA2ABroker {
   private readonly exchanges = new Map<string, A2AExchangeState>();
   private readonly exchangeMessages = new Map<string, A2AExchangeMessageRecord>();
@@ -1392,6 +1394,7 @@ export class InMemoryA2ABroker {
     if (normalizedRequest.assignedWorkerId) {
       this.requireWorker(normalizedRequest.assignedWorkerId);
     }
+    this.assertA2ARoundWorkerAvailability(normalizedRequest);
     this.assertTaskProposalLink(normalizedRequest);
 
     const now = isoNow();
@@ -4058,6 +4061,27 @@ export class InMemoryA2ABroker {
       .map((issue) => `${issue.path}: ${issue.message}`)
       .join("; ");
     throw new BrokerError("bad_request", `A2A round task policy validation failed: ${errors}`);
+  }
+
+  private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {
+    if (!request.payload || request.payload["parentRoundResolution"] === undefined) {
+      return;
+    }
+    const workerIds = [request.target?.id, request.assignedWorkerId].filter(
+      (value, index, values): value is string => typeof value === "string" && value.trim().length > 0 && values.indexOf(value) === index,
+    );
+    for (const workerId of workerIds) {
+      const view = this.getWorkerView(workerId, DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS);
+      if (!view) {
+        throw new BrokerError("not_found", "worker not found");
+      }
+      if (view.status === "stale") {
+        throw new BrokerError(
+          "bad_request",
+          `A2A round worker availability validation failed: stale worker ${workerId}`,
+        );
+      }
+    }
   }
 
   /**
