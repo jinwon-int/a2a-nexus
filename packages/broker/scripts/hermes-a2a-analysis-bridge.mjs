@@ -267,6 +267,35 @@ function defaultAnalysisPaths(payload) {
   return [...new Set(paths)];
 }
 
+function collectEmbeddedSourceEvidence(payload) {
+  const candidates = [];
+  for (const item of toArray(payload.embeddedSourceEvidence)) candidates.push(item);
+  const sourceBundle = payload.sourceBundle;
+  if (sourceBundle && typeof sourceBundle === "object" && !Array.isArray(sourceBundle)) {
+    for (const item of toArray(sourceBundle.files)) candidates.push(item);
+  }
+  for (const item of toArray(payload.sourceEvidence)) candidates.push(item);
+  return candidates;
+}
+
+function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remainingBytes) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return { warning: "skipped malformed embedded source evidence" };
+  const repo = safeText(item.repo || item.repository || fallbackRepo || "embedded", "embedded");
+  const path = safeText(item.path || item.file || item.name, "");
+  if (!isSafeRelativePath(path)) return { warning: `skipped unsafe embedded source path: ${path || "<empty>"}` };
+  const rawContent = typeof item.content === "string"
+    ? item.content
+    : typeof item.text === "string"
+      ? item.text
+      : "";
+  if (!rawContent) return { warning: `skipped empty embedded source file: ${repo}:${path}` };
+  const maxBytes = Math.max(0, Math.min(maxFileBytes, remainingBytes));
+  const buffer = Buffer.from(rawContent, "utf8");
+  const truncated = buffer.length > maxBytes;
+  const content = buffer.subarray(0, maxBytes).toString("utf8");
+  return { file: { repo, path, content, truncated, bytes: buffer.length } };
+}
+
 function collectSourceBundle(payload, env) {
   const repoMap = parseRepoMap(env);
   const repos = collectRepos(payload);
@@ -280,6 +309,21 @@ function collectSourceBundle(payload, env) {
   const files = [];
   const warnings = [];
   let totalBytes = 0;
+
+  const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
+  for (const embedded of collectEmbeddedSourceEvidence(payload)) {
+    if (files.length >= maxFiles || totalBytes >= maxTotalBytes) break;
+    const remaining = Math.max(0, maxTotalBytes - totalBytes);
+    const normalized = normalizeEmbeddedSourceFile(embedded, fallbackRepo, maxFileBytes, remaining);
+    if (normalized.warning) {
+      warnings.push(normalized.warning);
+      continue;
+    }
+    if (normalized.file) {
+      files.push(normalized.file);
+      totalBytes += Math.min(normalized.file.bytes, maxFileBytes, remaining);
+    }
+  }
 
   for (const repo of repos) {
     const root = resolveRepoRoot(repo.name, repoMap);

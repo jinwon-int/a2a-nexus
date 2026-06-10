@@ -348,6 +348,70 @@ test("Hermes A2A analysis bridge includes issue-specific default source files fo
   }
 });
 
+test("Hermes A2A analysis bridge accepts embedded source evidence without repo-map access", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-embedded-source-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('packages/broker/src/core/a2a-round-policy.ts')) throw new Error('embedded source path missing');",
+      "if (!prompt.includes('embedded source marker for PR2')) throw new Error('embedded source content missing');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'embedded source evidence reached Hermes without repo map',",
+      "  findings: ['embeddedSourceEvidence was included in the read-only source bundle'],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/core/a2a-round-policy.ts']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2AD source-only task with embedded source evidence.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        embeddedSourceEvidence: [
+          {
+            repo: "jinwon-int/a2a-nexus",
+            path: "packages/broker/src/core/a2a-round-policy.ts",
+            content: "export const embedded = 'embedded source marker for PR2';\n",
+          },
+        ],
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: "{}",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.match(prompt, /Read-only source bundle \([1-9]\d* files\)/);
+    assert.match(prompt, /packages\/broker\/src\/core\/a2a-round-policy\.ts/);
+    assert.match(prompt, /embedded source marker for PR2/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+
 test("Hermes A2A analysis bridge fails closed when Hermes returns non-JSON", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-bad-json-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
