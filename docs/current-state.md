@@ -126,13 +126,18 @@ and validated by
 candidate package metadata, release/tag/npm/Docker approval fields, and dry-run
 commands while keeping every execution field at `NO_GO / Waiting`.
 
-The `#549` phase-9 final operator sign-off matrix is documented in
+The active `a2a-nexus#553` final operator sign-off / canonical source packet is
+documented in
 [`docs/monorepo-final-operator-signoff-matrix.md`](monorepo-final-operator-signoff-matrix.md)
 and validated by
-`scripts/check-monorepo-final-operator-signoff-matrix.mjs`. It consolidates
-branch protection, split repo disposition, release/package/tag, package
-ownership transfer, rollback owner, and canonical flip GO/NO-GO fields while
-keeping every execution field at `NO_GO / Waiting`.
+`scripts/check-monorepo-final-operator-signoff-matrix.mjs`. It supersedes the
+historical `a2a-plane#549` matrix for active `a2a-nexus` routing, records
+Team1+Team2 source-only A2A evidence, and marks canonical source declaration as
+`GO_CANDIDATE / PR-first / source-only` for `packages/broker`,
+`packages/docker-runner`, and `packages/openclaw-plugin-a2a`. Canonical flip
+execution, package ownership transfer, release/package/tag, split-repo
+archive/read-only/redirect, deploy, DB, secret, provider send, and Terminal
+ACK/replay remain separate `NO_GO / Waiting` actions.
 
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)
