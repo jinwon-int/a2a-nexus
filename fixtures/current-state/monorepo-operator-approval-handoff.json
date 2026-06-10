@@ -1,20 +1,23 @@
 {
   "schema": "a2a.monorepo-operator-approval-handoff.v1",
-  "snapshotDate": "2026-06-08",
+  "snapshotDate": "2026-06-10",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
   "phase9FinalSignoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/549",
   "phase9FinalSignoffPr": "https://github.com/jinwon-int/a2a-plane/pull/550",
   "phase9MergeCommit": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
   "phase10OperatorHandoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/551",
   "latestGreenCiRun": "https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372",
-  "operatorHandoffDecision": "NO_GO_WAITING",
+  "operatorHandoffDecision": "GO_CANDIDATE_PR_FIRST",
   "operatorResponse": {
-    "status": "UNANSWERED",
-    "humanOperatorOwner": "unassigned",
-    "rollbackOwner": "unassigned",
-    "targetCommit": "unassigned",
-    "acceptedRiskRegister": "unanswered",
-    "approvalSeparatedFromExecution": false
+    "status": "APPROVED",
+    "receivedAt": "2026-06-10T08:33:39Z",
+    "source": "Telegram DM from Seo Jin On / 서진원: \"승인\"",
+    "humanOperatorOwner": "Seo Jin On / 서진원",
+    "rollbackOwner": "seoseo finalizer via PR revert; Seo Jin On retains operator decision authority",
+    "targetCommit": "9669f9098459c9f17bdea0193bc428593b0ef2d5",
+    "latestGreenCiRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/27262174982",
+    "acceptedRiskRegister": "Accepted for PR-first planning only: #562 CI green on PR head, target merge commit recorded, post-#562 A2A safe2 round found no import-needed code PR; split repo disposition, branch protection/ruleset changes, release/tag/npm/GHCR publish, package ownership transfer, deploy/restart, DB/Terminal ACK/replay, credential movement, and history rewrite remain execution-separated and must be performed only by subsequent PR/validated action in scope.",
+    "approvalSeparatedFromExecution": true
   },
   "questions": [
     {
@@ -25,7 +28,7 @@
     {
       "area": "split_repo_disposition",
       "sourceEvidence": "docs/monorepo-split-repo-disposition-rollback.md",
-      "defaultDecision": "HOLD"
+      "defaultDecision": "HOLD_EXECUTION_SEPARATE"
     },
     {
       "area": "release_tag_and_github_release",
@@ -45,12 +48,12 @@
     {
       "area": "package_ownership_transfer",
       "sourceEvidence": "docs/monorepo-canonical-flip-readiness.md",
-      "defaultDecision": "HOLD"
+      "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
     },
     {
       "area": "canonical_flip",
       "sourceEvidence": "docs/monorepo-final-operator-signoff-matrix.md",
-      "defaultDecision": "HOLD"
+      "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
     }
   ],
   "approvalPreconditions": [
@@ -94,5 +97,12 @@
     "forcePush": false,
     "historyRewrite": false,
     "workerOwnedGithubMutation": false
-  }
+  },
+  "activeImplementationRepo": "https://github.com/jinwon-int/a2a-nexus",
+  "phase11OperatorApprovalIssue": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+  "phase11PostApprovalEvidenceComment": "https://github.com/jinwon-int/a2a-nexus/issues/553#issuecomment-4668145072",
+  "latestMonorepoTargetCommit": "9669f9098459c9f17bdea0193bc428593b0ef2d5",
+  "latestMonorepoPr": "https://github.com/jinwon-int/a2a-nexus/pull/562",
+  "latestMonorepoPrCi": "https://github.com/jinwon-int/a2a-nexus/actions/runs/27262174982",
+  "latestMonorepoPrMergeCommit": "9669f9098459c9f17bdea0193bc428593b0ef2d5"
 }

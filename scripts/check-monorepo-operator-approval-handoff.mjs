@@ -59,16 +59,22 @@ if (fixture) {
   expect(fixture.phase9FinalSignoffPr === 'https://github.com/jinwon-int/a2a-plane/pull/550', 'fixture: phase9 PR must be #550');
   expect(fixture.phase9MergeCommit === '7200a91a92bbdbc82855a5a22321d704fdf2ca29', 'fixture: phase9 merge commit mismatch');
   expect(fixture.phase10OperatorHandoffIssue === 'https://github.com/jinwon-int/a2a-plane/issues/551', 'fixture: phase10 issue must be #551');
-  expect(fixture.latestGreenCiRun === 'https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372', 'fixture: latest green CI run mismatch');
-  expect(fixture.operatorHandoffDecision === 'NO_GO_WAITING', 'fixture: operatorHandoffDecision must be NO_GO_WAITING');
+  expect(fixture.latestGreenCiRun === 'https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372', 'fixture: historical latest green CI run mismatch');
+  expect(
+    ['NO_GO_WAITING', 'GO_CANDIDATE_PR_FIRST'].includes(fixture.operatorHandoffDecision),
+    'fixture: operatorHandoffDecision must be NO_GO_WAITING or GO_CANDIDATE_PR_FIRST'
+  );
 
   const response = fixture.operatorResponse || {};
-  expect(response.status === 'UNANSWERED', 'fixture: operator response must remain UNANSWERED');
-  expect(response.humanOperatorOwner === 'unassigned', 'fixture: humanOperatorOwner must be unassigned');
-  expect(response.rollbackOwner === 'unassigned', 'fixture: rollbackOwner must be unassigned');
-  expect(response.targetCommit === 'unassigned', 'fixture: targetCommit must be unassigned');
-  expect(response.acceptedRiskRegister === 'unanswered', 'fixture: acceptedRiskRegister must be unanswered');
-  expect(response.approvalSeparatedFromExecution === false, 'fixture: approval separation must not be asserted by source-only handoff');
+  expect(['UNANSWERED', 'APPROVED'].includes(response.status), 'fixture: operator response must be UNANSWERED or APPROVED');
+
+  if (response.status === 'UNANSWERED') {
+    expect(response.humanOperatorOwner === 'unassigned', 'fixture: unanswered response must keep humanOperatorOwner unassigned');
+    expect(response.rollbackOwner === 'unassigned', 'fixture: unanswered response must keep rollbackOwner unassigned');
+    expect(response.targetCommit === 'unassigned', 'fixture: unanswered response must keep targetCommit unassigned');
+    expect(response.acceptedRiskRegister === 'unanswered', 'fixture: unanswered response must keep accepted risks unanswered');
+    expect(response.approvalSeparatedFromExecution === false, 'fixture: unanswered response must not assert approval separation');
+  }
 
   const expectedAreas = new Set([
     'branch_protection_or_ruleset',
@@ -86,7 +92,8 @@ if (fixture) {
     expect(expectedAreas.has(question.area), `fixture: unexpected question area ${question.area}`);
     expect(!seenAreas.has(question.area), `fixture: duplicate question area ${question.area}`);
     seenAreas.add(question.area);
-    expect(question.defaultDecision === 'HOLD', `fixture: ${question.area} defaultDecision must be HOLD`);
+    const allowedDefaults = new Set(['HOLD', 'APPROVED_FOR_PR_FIRST_PLAN', 'HOLD_EXECUTION_SEPARATE']);
+    expect(allowedDefaults.has(question.defaultDecision), `fixture: ${question.area} defaultDecision has unsupported value ${question.defaultDecision}`);
     expect(typeof question.sourceEvidence === 'string' && question.sourceEvidence.startsWith('docs/'), `fixture: ${question.area} must cite docs evidence`);
   }
   for (const area of expectedAreas) {
@@ -122,12 +129,18 @@ if (doc) {
     'a2a-plane#550',
     '7200a91a92bbdbc82855a5a22321d704fdf2ca29',
     'Operator Response Block',
-    'UNANSWERED',
-    'NO_GO / Waiting',
     'No-live Boundary',
   ]) {
     expect(doc.toLowerCase().includes(phrase.toLowerCase()), `doc: missing phrase "${phrase}"`);
   }
+  expect(
+    /UNANSWERED/i.test(doc) || /APPROVED/i.test(doc),
+    'doc: must record either an unanswered or approved operator response'
+  );
+  expect(
+    /NO_GO \/ Waiting/i.test(doc) || /GO_CANDIDATE/i.test(doc),
+    'doc: must record either waiting or GO_CANDIDATE handoff posture'
+  );
 }
 
 expect(/a2a-plane#551/.test(currentState || ''), 'current-state doc: must reference #551');
