@@ -45,7 +45,7 @@ const DOCKER_CHECK = process.argv.includes('--docker-check');
 const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.includes('--runtime');
 
 const CANONICAL_HANDLER_FILENAME = 'a2a-task-handler.mjs';
-const LEGACY_HANDLER_FILENAME = 'openclaw-a2a-task-handler.mjs';
+const LEGACY_HANDLER_FILENAME = '';
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
 const handlersRoot = resolve(
@@ -122,7 +122,7 @@ function readFileSafe(filePath) {
 }
 
 function findReadableHandler(root) {
-  for (const filename of [CANONICAL_HANDLER_FILENAME, LEGACY_HANDLER_FILENAME]) {
+  for (const filename of [CANONICAL_HANDLER_FILENAME, LEGACY_HANDLER_FILENAME].filter(Boolean)) {
     const path = join(root, filename);
     const content = readFileSafe(path);
     if (content !== undefined) return { filename, path, content };
@@ -598,7 +598,7 @@ async function runGuards() {
             action: 'fix_issues_and_re_run',
             hint: 'address failures above, re-run guard until all pass',
             emergencyFallback:
-              'if handler compat path is broken: cp scripts/a2a-task-handler.mjs handlers/a2a-task-handler.mjs, or use the legacy openclaw-a2a-task-handler.mjs path during rollback',
+              'if handler path is broken: cp scripts/a2a-task-handler.mjs handlers/a2a-task-handler.mjs from the merged release artifact during rollback',
           }
         : undefined,
   };

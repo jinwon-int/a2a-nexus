@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.live-canary-replay-approval-boundary.v1",
+  "fixtureId": "a2a-nexus.contract.live-canary-replay-approval-boundary.v1",
   "contracts": [
     "contracts/a2a/cancellation-idempotency.md",
     "contracts/a2a/terminal-semantics.md",

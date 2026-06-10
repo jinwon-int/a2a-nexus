@@ -20,9 +20,7 @@ A2A Broker → Host A2A Worker (systemd) → Handler MJS → a2a-docker-runner C
 ```
 
 각 A2A task 는 호스트 워커가 broker 로부터 claim 한 후 handler MJS
-(`scripts/a2a-task-handler.mjs`, legacy runtime 에서는
-`scripts/openclaw-a2a-task-handler.mjs` compatibility wrapper 또는
-`handlers/openclaw-a2a-task-handler.mjs`) 를 거친다. handler 는
+(`scripts/a2a-task-handler.mjs`, legacy runtime 에서도 canonical `scripts/a2a-task-handler.mjs` 또는 배포된 `handlers/a2a-task-handler.mjs`) 를 거친다. handler 는
 `shouldUseDockerRunner()` 로 docker-runner 라우팅 여부를 결정한 뒤,
 runner 가 Docker container 를 띄워 격리된 `/work` 아래서 repo clone →
 `npm ci` → `npm test` → command 실행을 수행하고 결과를 반환한다.
@@ -378,8 +376,8 @@ curl -sf https://broker.example.com/tasks/$TASK_ID \
    `openclaw-a2a-worker.service`) 가 설치되어 있고
    `scripts/a2a-task-handler.mjs` (version >= 0.2.11) 배포 완료
 6. **Runtime handler compat path** 가 동기화되어 있음:
-   `/opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs` 와
-   `/opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs` 의 SHA-256 이 일치
+   `/opt/openclaw-a2a-worker/scripts/a2a-task-handler.mjs` 와
+   `/opt/openclaw-a2a-worker/handlers/a2a-task-handler.mjs` 의 SHA-256 이 일치
 
 ### 5.1.1 Runtime Handler Copy Gate
 
@@ -397,8 +395,8 @@ A2A_WORKER_ROOT=/opt/openclaw-a2a-worker \
 guard script 를 worker 에서 바로 사용할 수 없을 때는 아래 최소 gate 를 사용한다:
 
 ```bash
-src=/opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs
-dst=/opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs
+src=/opt/openclaw-a2a-worker/scripts/a2a-task-handler.mjs
+dst=/opt/openclaw-a2a-worker/handlers/a2a-task-handler.mjs
 
 test -s "$src"
 test -s "$dst"
@@ -410,8 +408,8 @@ grep -q 'runnerTask.readOnlyValidation = true' "$dst"
 
 ```bash
 install -D -m 0644 \
-  /opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs \
-  /opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs
+  /opt/openclaw-a2a-worker/scripts/a2a-task-handler.mjs \
+  /opt/openclaw-a2a-worker/handlers/a2a-task-handler.mjs
 ```
 
 ### 5.2 Enable Docker Runner (plugin-only scope)
@@ -502,7 +500,7 @@ grep -E 'A2A_DOCKER_RUNNER_SCOPE|A2A_EXECUTOR_MODE|A2A_DOCKER_RUNNER_BIN' \
   /etc/default/openclaw-a2a-worker
 
 # 2. non-plugin repo 대상 dry-run smoke (broker 없이 handler 직접 호출)
-node scripts/openclaw-a2a-task-handler.mjs <<'EOF'
+node scripts/a2a-task-handler.mjs <<'EOF'
 {"id":"dryrun-1","intent":"propose_patch","message":"all-github scope dry-run","payload":{"mode":"github-propose-patch","repo":"jinwon-int/a2a-broker","issue":"#189"}}
 EOF
 # 기대: error.code === "docker_runner_not_configured"  (BIN 미설정 시)
@@ -733,7 +731,7 @@ Yukson worker 가 broker 에 등록된 경우 `GET /workers/yukson` 으로
 - `docs/wake-on-task-live-canary-runbook.md` — 유사 rollout runbook 패턴
   참고
 - `docs/smoke-compose.md` — compose smoke reference
-- `scripts/openclaw-a2a-task-handler.mjs` — versioned handler artifact (>= 0.2.0)
+- `scripts/a2a-task-handler.mjs` — versioned handler artifact (>= 0.2.0)
 - `a2a-docker-runner` README — runner CLI 및 preset 상세
 
 ## 10. Quick Reference Card

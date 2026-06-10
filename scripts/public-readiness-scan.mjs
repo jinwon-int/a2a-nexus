@@ -35,6 +35,7 @@ function candidateFiles() {
     })
       .split(/\r?\n/)
       .filter(Boolean)
+      .filter((file) => fs.existsSync(file) && fs.statSync(file).isFile())
       .filter((file) => !file.split('/').some((part) => skipDirs.has(part)))
       .filter((file) => !/(^|\/)(?:test|tests|__tests__)\//.test(file))
       .filter((file) => !/\.(?:test|spec)\.(?:ts|mts|cts|js|mjs|cjs)$/.test(file))

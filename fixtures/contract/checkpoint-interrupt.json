@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "fixtures/contract/checkpoint-interrupt.json",
-  "fixtureId": "a2a-plane.contract.checkpoint-interrupt.v1",
+  "fixtureId": "a2a-nexus.contract.checkpoint-interrupt.v1",
   "contract": "contracts/a2a/checkpoint-interrupt.md",
   "description": "Public-safe durable checkpoint and human-interrupt conformance fixture. Defines checkpoint states, interrupt scenarios, pause/resume transitions, replay safety assertions, audit trace export schema, and artifact version lineage. Frozen at Contract v0 (2026-05-09). No production DB mutation implied.",
   "v0Freeze": {

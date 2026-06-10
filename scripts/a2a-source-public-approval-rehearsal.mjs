@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2A Plane source-public approval rehearsal aggregator.
+ * A2A Nexus source-public approval rehearsal aggregator.
  *
  * Read-only by design: consumes evidence packet metadata for broker, plugin,
  * and runner, produces deterministic GO_CANDIDATE / NO_GO / NEEDS_OPERATOR_APPROVAL
@@ -406,7 +406,7 @@ export function renderApprovalRehearsalMarkdown(report) {
   const label = decisionLabel[report.decision] || `Decision: ${report.decision}`;
 
   const lines = [
-    `# A2A Plane source-public approval rehearsal report`,
+    `# A2A Nexus source-public approval rehearsal report`,
     '',
     `**${label}**`,
     '',

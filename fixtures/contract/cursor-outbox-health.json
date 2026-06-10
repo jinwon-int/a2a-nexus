@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.cursor-outbox-health.v0",
+  "fixtureId": "a2a-nexus.contract.cursor-outbox-health.v0",
   "description": "Synthetic fixture for cursor and outbox health acceptance criteria. Covers inbox visibility, cursor state, projection classification, duplicate prevention, per-broker health summary, and explicit non-actions.",
   "contract": "docs/validation/cursor-outbox-health-acceptance-criteria.md",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/433",

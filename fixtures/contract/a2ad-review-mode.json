@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.a2ad-review-mode.v1",
+  "fixtureId": "a2a-nexus.contract.a2ad-review-mode.v1",
   "contract": "docs/specs/a2a-dialectic-review-mode/spec.md",
   "description": "A2AD dialectic review mode evidence examples covering full review, minimal review, cancellation, synthesis with dissenting notes, and fact/assumption/recommendation separation.",
   "v0Freeze": null,

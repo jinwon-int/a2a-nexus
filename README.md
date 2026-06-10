@@ -1,8 +1,8 @@
-# A2A Plane
+# A2A Nexus
 
 [![ci](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml)
 
-A2A Plane is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
+A2A Nexus is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
 
 The current public source layout remains split across four repositories. Per the [topology decision record](docs/topology-decision-record.md), the recommendation was to hold full monorepo consolidation and keep split implementation repos with `a2a-plane` as the stronger public umbrella. The operator-initiated monorepo re-entry is now tracked in [#511](https://github.com/jinwon-int/a2a-plane/issues/511) and recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md). During phase 0/1, each implementation repository remains canonical for its own runtime/package boundary.
 
@@ -53,17 +53,17 @@ Completed groundwork:
 See [`docs/public-readiness.md`](docs/public-readiness.md) for the full readiness gate record.
 See [`docs/current-state.md`](docs/current-state.md) for the live issue index and completed #506/#511/#513/#514/#515 groundwork.
 
-## What A2A Plane does
+## What A2A Nexus does
 
-A2A Plane lets an operator-facing integration hand a task to a broker, route it to a worker, and collect terminal evidence such as `Done`, `Block`, or a pull request link. The stack is intentionally split so each component has a narrow safety boundary:
+A2A Nexus lets an operator-facing integration hand a task to a broker, route it to a worker, and collect terminal evidence such as `Done`, `Block`, or a pull request link. The stack is intentionally split so each component has a narrow safety boundary:
 
-- A2A Plane is the independent broker/worker plane and contract set.
+- A2A Nexus is the independent broker/worker plane and contract set.
 - OpenClaw is the first/reference integration, not the project name or a required runtime for every future integration.
-- The A2A Plane broker owns task lifecycle, worker registration, status, and terminal evidence.
+- The A2A Nexus broker owns task lifecycle, worker registration, status, and terminal evidence.
 - Workers execute assigned tasks and report evidence back through the broker.
 - The Docker runner provides isolated GitHub patch execution for repository work.
 
-This repository is the public A2A Plane umbrella and coordination workspace for those components. It is not a production deployment target.
+This repository is the public A2A Nexus umbrella and coordination workspace for those components. It is not a production deployment target.
 
 ## Repository Map
 
@@ -79,10 +79,10 @@ The package paths below mirror those implementation areas in this checkout for i
 ## Package Map
 
 ```text
-packages/broker/                 # A2A Plane broker HTTP/JSON-RPC APIs, worker registry, task lifecycle
+packages/broker/                 # A2A Nexus broker HTTP/JSON-RPC APIs, worker registry, task lifecycle
 packages/openclaw-plugin-a2a/    # first/reference OpenClaw integration for broker-backed task request/status/cancel
 packages/docker-runner/          # isolated GitHub patch runner for worker tasks
-contracts/a2a/                   # shared A2A Plane task lifecycle and terminal semantics contracts
+contracts/a2a/                   # shared A2A Nexus task lifecycle and terminal semantics contracts
 contracts/compatibility/         # compatibility matrix and supported baselines
 examples/                        # public-safe demos and fixtures only
 docs/                            # public-readiness gates, quickstart, release notes, migration notes
@@ -140,11 +140,11 @@ Start with the local-only quickstart:
 - [`docs/quickstart/public-umbrella.md`](docs/quickstart/public-umbrella.md)
 - [`docs/quickstart.md`](docs/quickstart.md)
 
-The quickstart is designed as the external-reader path for a disposable local A2A Plane broker and dummy/echo worker. If your checkout does not yet include the runnable broker or worker scripts described there, treat that as a documented blocker rather than substituting production services.
+The quickstart is designed as the external-reader path for a disposable local A2A Nexus broker and dummy/echo worker. If your checkout does not yet include the runnable broker or worker scripts described there, treat that as a documented blocker rather than substituting production services.
 
 ## Promotion and release prep
 
-Draft A2A Plane announcement text and repository metadata recommendations live in [`docs/promotion-announcement.md`](docs/promotion-announcement.md). Keep that copy alpha/feedback-welcome and do not post it until public-readiness gates are closed and an operator explicitly approves repository visibility.
+Draft A2A Nexus announcement text and repository metadata recommendations live in [`docs/promotion-announcement.md`](docs/promotion-announcement.md). Keep that copy alpha/feedback-welcome and do not post it until public-readiness gates are closed and an operator explicitly approves repository visibility.
 
 Release decision prep:
 
@@ -212,6 +212,6 @@ The check script validates layout, package metadata, and public-readiness scan r
 
 ## Spec-first A2A changes
 
-A2A Plane uses a lightweight spec-first protocol for medium and large development/operations changes. Start with `docs/a2a-constitution.md`, then use the templates in `docs/spec-templates/` for feature specs, implementation plans, and task/evidence checklists.
+A2A Nexus uses a lightweight spec-first protocol for medium and large development/operations changes. Start with `docs/a2a-constitution.md`, then use the templates in `docs/spec-templates/` for feature specs, implementation plans, and task/evidence checklists.
 
 This process is documentation-only in its initial adoption phase and does not change runtime behavior or authorize deploy/restart/canary/DB/replay/release actions.

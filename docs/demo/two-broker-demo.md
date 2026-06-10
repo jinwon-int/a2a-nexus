@@ -1,6 +1,6 @@
 # Two-Broker Demo
 
-This guide walks through a local two-broker A2A Plane demo using Docker Compose. The topology demonstrates cross-broker worker registration, broker identity, and task handoff between two brokers — without deploying to production or using live provider transports.
+This guide walks through a local two-broker A2A Nexus demo using Docker Compose. The topology demonstrates cross-broker worker registration, broker identity, and task handoff between two brokers — without deploying to production or using live provider transports.
 
 > **Safety:** This demo uses only loopback Docker networking and placeholder credentials. Do not substitute production brokers, databases, provider transports, Telegram accounts, or terminal outboxes.
 

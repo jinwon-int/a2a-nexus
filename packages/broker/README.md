@@ -14,9 +14,7 @@ It owns:
 - the deployable worker handler artifact at `scripts/a2a-task-handler.mjs`
 
 The deployable handler artifact is `scripts/a2a-task-handler.mjs`. The legacy
-`scripts/openclaw-a2a-task-handler.mjs` path remains as a compatibility wrapper
-for already deployed workers during the harness-neutral naming migration; do not
-point new workers at it.
+The former `scripts/a2a-task-handler.mjs` compatibility wrapper was removed after whole-fleet audits reported `legacyBlocked=0` and `removalSafe=true`. Point workers at `scripts/a2a-task-handler.mjs`.
 - OpenClaw bridge failure semantics for host fallback paths, including watchdog/final-evidence safeguards
 
 It does **not** own isolated task execution. Generic GitHub patch execution runs through [`jinwon-int/a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner). OpenClaw-facing task request/status/cancel mapping lives in [`jinwon-int/openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a).

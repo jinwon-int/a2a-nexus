@@ -439,7 +439,7 @@ test('markdown format produces deterministic report for NO_GO', () => {
   };
   const result = runMarkdown(input);
   const out = result.stdout || result.stderr;
-  assert.ok(out.includes('A2A Plane source-public approval rehearsal report'));
+  assert.ok(out.includes('A2A Nexus source-public approval rehearsal report'));
   assert.ok(out.includes('NO_GO'));
   assert.ok(out.includes('## Gate status'));
   assert.ok(out.includes('Source-public execution'));

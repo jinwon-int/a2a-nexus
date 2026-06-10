@@ -6,7 +6,7 @@
 > without a v0→v1 compatibility plan.
 
 This contract defines the public-safe contract for durable checkpoint, human interrupt, pause/resume,
-safe replay, audit trace export, and artifact version lineage in A2A Plane operations. It builds on
+safe replay, audit trace export, and artifact version lineage in A2A Nexus operations. It builds on
 the existing [task lifecycle](./task-lifecycle.md), [cancellation & idempotency](./cancellation-idempotency.md),
 and [terminal result semantics](./terminal-semantics.md) contracts.
 
@@ -308,8 +308,8 @@ evaluation of durable checkpoint, human interrupt, and trace policy.
 
 | Item | Decision | Rationale |
 |---|---|---|
-| LangGraph-style durable execution engine | Rejected for A2A Plane. Not needed at the contract level; the broker already has cancel/reconcile/heartbeat patterns. | Added complexity without clear A2A Plane benefit. The contract-level checkpoint/interrupt semantics here are sufficient. |
-| Microsoft Agent Framework-style workflow orchestration | Rejected for A2A Plane. Overlaps with broker task routing and worker capability gating. | A2A Plane tasks are bounded units of work, not long-running DAG workflows. |
+| LangGraph-style durable execution engine | Rejected for A2A Nexus. Not needed at the contract level; the broker already has cancel/reconcile/heartbeat patterns. | Added complexity without clear A2A Nexus benefit. The contract-level checkpoint/interrupt semantics here are sufficient. |
+| Microsoft Agent Framework-style workflow orchestration | Rejected for A2A Nexus. Overlaps with broker task routing and worker capability gating. | A2A Nexus tasks are bounded units of work, not long-running DAG workflows. |
 | Production persistence rollout | Deferred to implementation phase per [durable-persistence-path.md](../../packages/broker/docs/durable-persistence-path.md). | This contract defines policy; SQLite-backed persistence is a separate implementation phase. |
 | Cross-broker checkpoint relay | Deferred. | Checkpoints are per-broker. Cross-broker state relay is a handoff concern, handled by [broker-handoff-protocol.md](./broker-handoff-protocol.md). |
 | Live audit dashboards | Rejected for v0. | Audit trace export is file-based only. Live dashboards require operator infrastructure not in scope. |

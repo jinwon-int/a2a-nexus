@@ -1,7 +1,7 @@
 {
-  "fixtureId": "a2a-plane.contract.public-compatibility-policy.v1",
+  "fixtureId": "a2a-nexus.contract.public-compatibility-policy.v1",
   "contract": "contracts/compatibility/README.md",
-  "description": "Public-safe policy proof for issue #94 follow-ups: compatibility claims are backed by A2A Plane contracts and fixtures, not private Seoseo-only runtime assumptions.",
+  "description": "Public-safe policy proof for issue #94 follow-ups: compatibility claims are backed by A2A Nexus contracts and fixtures, not private Seoseo-only runtime assumptions.",
   "sourceIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/94",
   "reviewIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/166",
   "round": "a2a-public-readiness-next-20260509T165108Z",

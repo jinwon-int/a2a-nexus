@@ -1,13 +1,13 @@
 # Public/Private Boundary Governance Gates
 
-This governance note defines who may turn public-readiness evidence into a visibility action for A2A Plane. It is a control surface, not approval to act.
+This governance note defines who may turn public-readiness evidence into a visibility action for A2A Nexus. It is a control surface, not approval to act.
 
 ## Boundary principles
 
 - **Private by default (historical):** the repository was private until operator approval was granted. Public since 2026-05-27. The governance principles for evidence handling, operator approval, and fail-closed checks remain valid for future promotion steps.
 - **Evidence is not approval:** passing tests, clean scanners, merged PRs, or green CI may support review, but none of them authorizes a visibility change.
 - **No bundled live actions:** visibility approval must not bundle deploys, service restarts, production database mutations, live provider sends, terminal-outbox ACKs, edge-secret rotation, secret disclosure, history rewrite, or force-push.
-- **OpenClaw/A2A receipt boundary remains blocking:** do not claim public-readiness is unblocked by provider message ids or send-result evidence. `openclaw/openclaw#78261` is closed/superseded; A2A Plane must prove terminal evidence, replay safety, scanner readiness, and explicit operator approval instead.
+- **OpenClaw/A2A receipt boundary remains blocking:** do not claim public-readiness is unblocked by provider message ids or send-result evidence. `openclaw/openclaw#78261` is closed/superseded; A2A Nexus must prove terminal evidence, replay safety, scanner readiness, and explicit operator approval instead.
 
 ## Gate owners and outcomes
 

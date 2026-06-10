@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane source-public final approval packet and execution-orchestrator schema. It converts reviewed evidence into a deterministic, dry-run/simulate execution plan only. GO_CANDIDATE means approval-ready; it never performs approval, repository visibility, release, provider-send, deploy/restart, terminal ACK, database mutation, or community-post actions.",
+  "description": "A2A Nexus source-public final approval packet and execution-orchestrator schema. It converts reviewed evidence into a deterministic, dry-run/simulate execution plan only. GO_CANDIDATE means approval-ready; it never performs approval, repository visibility, release, provider-send, deploy/restart, terminal ACK, database mutation, or community-post actions.",
   "run": "a2a-source-public-execution-orchestrator-20260511T023207Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/218",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/221",

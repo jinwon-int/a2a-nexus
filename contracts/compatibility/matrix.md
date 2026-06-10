@@ -1,9 +1,9 @@
-# A2A Plane Compatibility Matrix
+# A2A Nexus Compatibility Matrix
 
-This matrix records A2A Plane public split-repo baselines and the older
+This matrix records A2A Nexus public split-repo baselines and the older
 monorepo/umbrella import baselines. Public-facing compatibility claims must not
 exceed the evidence here. OpenClaw entries describe the first/reference
-integration only; they are not a claim that A2A Plane is an OpenClaw-only
+integration only; they are not a claim that A2A Nexus is an OpenClaw-only
 project.
 
 ## Public split-repo promotion snapshot
@@ -32,10 +32,10 @@ They do not supersede the split-repo `main` baselines above.
 
 | Component | Source | Candidate path | Current baseline | Required evidence before public release | Notes |
 |---|---|---|---|---|---|
-| Broker | `jinwon-int/a2a-broker` | `packages/broker` | `a6096882a781fb13c68ec526fee897a00724f9a0` | package build/test, public-readiness scan, contract docs review | A2A Plane broker service imported by sanitized/squash copy; no private git history preserved. |
+| Broker | `jinwon-int/a2a-broker` | `packages/broker` | `a6096882a781fb13c68ec526fee897a00724f9a0` | package build/test, public-readiness scan, contract docs review | A2A Nexus broker service imported by sanitized/squash copy; no private git history preserved. |
 | OpenClaw plugin | `jinwon-int/openclaw-plugin-a2a` | `packages/openclaw-plugin-a2a` | `3c12b937f727a874174b172cf34de65d771177f2` | package build/test, OpenClaw plugin compatibility smoke | First/reference integration imported by sanitized/squash copy for R3 #14. Peer range remains private-candidate only until an exact OpenClaw release/commit is named. |
 | Docker runner | `jinwon-int/a2a-docker-runner` | `packages/docker-runner` | `d223612cb027bf493b6b74e60a7bc04db1b9b6ae` | package check/test, public demo safety smoke | Sanitized/squash import for R3 #15. Document Docker/Podman execution, GitHub auth mounts, and network modes as trusted-operator modes. |
-| Shared contracts | monorepo | `contracts/a2a` | `r2-initial-contracts` | contract review against broker/plugin/runner behavior | A2A Plane terminal Done/Block/PR semantics and ACK boundaries are public contract candidates. |
+| Shared contracts | monorepo | `contracts/a2a` | `r2-initial-contracts` | contract review against broker/plugin/runner behavior | A2A Nexus terminal Done/Block/PR semantics and ACK boundaries are public contract candidates. |
 | OpenClaw core | upstream fixture | `packages/openclaw-plugin-a2a/test/fixtures/openclaw` | `0.0.0-test-peer` | plugin SDK seam fixture evidence plus explicit release/commit update before any stable public claim | Public docs must distinguish fixture-backed private integration experiments from stable OpenClaw core support. |
 
 ## Versioning strategy
@@ -56,4 +56,4 @@ and linked here.
 
 ## Release rule
 
-A public release candidate must update this table with exact source commits/tags for every imported package and link the CI run that validated the candidate commit. Release notes and external docs must introduce the project as A2A Plane and keep OpenClaw framed as the reference integration unless broader integrations have their own evidence rows.
+A public release candidate must update this table with exact source commits/tags for every imported package and link the CI run that validated the candidate commit. Release notes and external docs must introduce the project as A2A Nexus and keep OpenClaw framed as the reference integration unless broader integrations have their own evidence rows.

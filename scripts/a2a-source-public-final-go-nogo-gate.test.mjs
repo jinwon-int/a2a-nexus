@@ -390,7 +390,7 @@ test('markdown format produces final gate report for GO', () => {
   const result = runMarkdown(input, orchestratorReport);
   assert.equal(result.status, 0);
   const out = result.stdout;
-  assert.ok(out.includes('A2A Plane final go/no-go gate report'));
+  assert.ok(out.includes('A2A Nexus final go/no-go gate report'));
   assert.ok(out.includes('GO'));
   assert.ok(out.includes('Final Operator Approval Packet'));
   assert.ok(out.includes('Per-Repo GO/NO-GO Matrix'));

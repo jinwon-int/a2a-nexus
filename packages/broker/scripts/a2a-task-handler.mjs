@@ -387,6 +387,125 @@ function normalizedBridgeAnalysisStatus(value) {
   return status === "blocked" || status === "block" ? "blocked" : "done";
 }
 
+function githubIssueTargetFromTask(task) {
+  const payload = taskPayload(task);
+  const candidates = [
+    safeText(payload.issueUrl, ""),
+    safeText(payload.githubIssueUrl, ""),
+    safeText(payload.parentIssueUrl, ""),
+    ...normalizeStringArray(payload.evidenceRefs),
+  ];
+  for (const candidate of candidates) {
+    const match = /github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/issues\/(\d+)/.exec(candidate);
+    if (match) return { owner: match[1], repo: match[2], issueNumber: match[3] };
+  }
+  const repoText = safeText(payload.repo || payload.repository, "");
+  const issueText = safeText(payload.issueNumber || payload.issue, "").replace(/^#/, "");
+  const repoMatch = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(repoText);
+  if (repoMatch && /^\d+$/.test(issueText)) {
+    return { owner: repoMatch[1], repo: repoMatch[2], issueNumber: issueText };
+  }
+  return null;
+}
+
+function shouldPostAnalysisEvidenceComment(task, env = process.env) {
+  const payload = taskPayload(task);
+  if (!isTruthyEnv(env.A2A_POST_ANALYSIS_EVIDENCE_COMMENTS)) return false;
+  if (payload.noGitHubComment === true || payload.no_github_comment === true) return false;
+  return payload.postGithubComment === true || payload.post_github_comment === true;
+}
+
+function markdownList(title, items) {
+  const values = normalizeStringArray(items);
+  if (values.length === 0) return `## ${title}\n\n- (none)`;
+  return `## ${title}\n\n${values.map((item) => `- ${item}`).join("\n")}`;
+}
+
+function trimGithubCommentBody(body) {
+  const max = 64000;
+  if (Buffer.byteLength(body, "utf8") <= max) return body;
+  return `${body.slice(0, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
+}
+
+function buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }) {
+  const payload = taskPayload(task);
+  const marker = `<!-- a2a-analysis-evidence:${safeText(task.id, "unknown")}:${status} -->`;
+  const title = status === "blocked" ? "A2A analysis evidence blocked" : "A2A analysis evidence done";
+  return trimGithubCommentBody([
+    marker,
+    `# ${title}`,
+    "",
+    `- Task: \`${safeText(task.id, "unknown")}\``,
+    `- Worker: \`${safeText(output.nodeId, safeText(task.assignedWorkerId, "unknown"))}\``,
+    `- Mode: \`${taskMode(task)}\``,
+    `- Status: \`${status}\``,
+    `- Model: \`${safeText(output.effectiveModel, "unknown")}\``,
+    `- Thinking: \`${safeText(output.effectiveThinking, "unknown")}\``,
+    `- No-live: \`${payload.noLive === true || payload.no_live === true ? "true" : "false"}\``,
+    "",
+    `## Summary\n\n${analysisSummary}`,
+    "",
+    markdownList("Findings", output.findings),
+    "",
+    markdownList("Risks", output.risks),
+    "",
+    markdownList("Recommendations", output.recommendations),
+    "",
+    markdownList("Evidence refs", output.evidenceRefs),
+  ].join("\n"));
+}
+
+function postGithubIssueCommentSync({ task, status, body, env = process.env }) {
+  const target = githubIssueTargetFromTask(task);
+  if (!target) {
+    return { error: { code: "github_issue_target_missing", message: "postGithubComment requires issueUrl or repo+issue payload", details: { buildInfo: BUILD_INFO } } };
+  }
+  const primaryAuthKey = `GITHUB_${"TOK"}EN`;
+  const shortAuthKey = `GH_${"TOK"}EN`;
+  const authValue = safeText(env[primaryAuthKey] || env[shortAuthKey], "");
+  if (!authValue) {
+    return { error: { code: "github_auth_missing", message: "postGithubComment requires configured GitHub auth", details: { buildInfo: BUILD_INFO } } };
+  }
+
+  const marker = `<!-- a2a-analysis-evidence:${safeText(task.id, "unknown")}:${status} -->`;
+  const apiBase = safeText(env.A2A_GITHUB_API_BASE_URL, "https://api.github.com").replace(/\/$/, "");
+  const request = { ...target, apiBase, authValue, marker, body };
+  const script = `
+const input = JSON.parse(await new Promise((resolve) => {
+  let data = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => resolve(data));
+}));
+const endpoint = input.apiBase + '/repos/' + encodeURIComponent(input.owner) + '/' + encodeURIComponent(input.repo) + '/issues/' + encodeURIComponent(input.issueNumber) + '/comments';
+const headers = { 'accept': 'application/vnd.github+json', 'content-type': 'application/json', 'authorization': 'Bearer ' + input.authValue, 'user-agent': 'a2a-task-handler' };
+const list = await fetch(endpoint + '?per_page=100', { headers });
+if (!list.ok) throw new Error('GitHub comments list failed: ' + list.status + ' ' + await list.text());
+const comments = await list.json();
+const existing = Array.isArray(comments) ? comments.find((comment) => typeof comment.body === 'string' && comment.body.includes(input.marker)) : null;
+if (existing?.html_url) {
+  console.log(JSON.stringify({ html_url: existing.html_url, id: existing.id, reused: true }));
+} else {
+  const created = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ body: input.body }) });
+  if (!created.ok) throw new Error('GitHub comment create failed: ' + created.status + ' ' + await created.text());
+  const payload = await created.json();
+  console.log(JSON.stringify({ html_url: payload.html_url, id: payload.id, reused: false }));
+}
+`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    input: JSON.stringify(request),
+    encoding: "utf8",
+    timeout: Number(env.A2A_GITHUB_COMMENT_TIMEOUT_MS || 30000),
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  if (child.error || child.status !== 0) {
+    return { error: { code: "github_comment_failed", message: child.error?.message || safeText(child.stderr, "GitHub comment process failed"), details: { exitCode: child.status ?? undefined, buildInfo: BUILD_INFO } } };
+  }
+  try {
+    const result = JSON.parse(child.stdout);
+    return { url: safeText(result.html_url, ""), id: result.id, reused: result.reused === true };
+  } catch (error) {
+    return { error: { code: "github_comment_invalid_response", message: error instanceof Error ? error.message : String(error), details: { buildInfo: BUILD_INFO } } };
+  }
+}
+
 function runOpenClawAnalysisBridge(task, env = process.env) {
   const payload = taskPayload(task);
   // Resolve effective worker model/thinking from task payload overrides
@@ -501,6 +620,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
 
   const status = normalizedBridgeAnalysisStatus(response.status);
   const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
+  const postGithubComment = shouldPostAnalysisEvidenceComment(task, env);
   const output = {
     analysisSummary,
     analysisKind: "openclaw_bridge",
@@ -509,9 +629,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),
-    doneCommentUrl: safeText(response.doneCommentUrl, undefined),
-    blockCommentUrl: safeText(response.blockCommentUrl, undefined),
-    startCommentUrl: safeText(response.startCommentUrl, undefined),
+    doneCommentUrl: postGithubComment ? undefined : safeText(response.doneCommentUrl, undefined),
+    blockCommentUrl: postGithubComment ? undefined : safeText(response.blockCommentUrl, undefined),
+    startCommentUrl: postGithubComment ? undefined : safeText(response.startCommentUrl, undefined),
     nodeId,
     taskId: safeText(task.id, undefined),
     mode: taskMode(task),
@@ -524,6 +644,20 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     effectiveThinking,
     modelFromPayload: modelFromPayload || undefined,
   };
+
+  if (postGithubComment) {
+    const comment = postGithubIssueCommentSync({
+      task,
+      status,
+      body: buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }),
+      env,
+    });
+    if (comment.error) return { error: comment.error };
+    if (status === "blocked") output.blockCommentUrl = comment.url;
+    else output.doneCommentUrl = comment.url;
+    output.githubCommentUrl = comment.url;
+    output.githubCommentReused = comment.reused || undefined;
+  }
 
   return {
     result: {

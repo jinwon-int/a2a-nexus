@@ -1,7 +1,7 @@
 {
   "schema": "a2a.hermesNativeWorker.enrollmentEvidence.v1",
   "mode": "enrollment-dry-run",
-  "fixtureId": "a2a-plane.fixture.hermes-native-worker-enrollment-evidence.v1",
+  "fixtureId": "a2a-nexus.fixture.hermes-native-worker-enrollment-evidence.v1",
   "description": "Hermes/Android native A2A worker enrollment evidence fixture for Gongyung/Daegyo-style Termux nodes. Documents the pre-enrollment state snapshot, GO/NO-GO decision packet, post-enrollment evidence, and rollback evidence schemas. All values are redacted, loopback-only example fixtures — no production broker URL, secret, or device identifier is present.",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/504",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/503",

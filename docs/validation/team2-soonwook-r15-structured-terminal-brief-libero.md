@@ -69,7 +69,7 @@ Start, queued, running, provider accepted-send, GitHub comment creation, and PR 
 ## Required checks before any R15 merge
 
 - Relevant repo CI/build/test suite is green on the final branch.
-- `npm run check:message-id-ack-boundary` remains green for A2A Plane contract wording.
+- `npm run check:message-id-ack-boundary` remains green for A2A Nexus contract wording.
 - New or changed tests cover both success and fail-closed cases for the lane.
 - PR body and issue closeout state whether provider accepted-send/message IDs are non-ACK evidence only.
 - No production deploy/restart/reload, live provider/Telegram send, DB mutation/prune/migration, Terminal Brief ACK/replay, historical outbox replay, release/tag, secret movement/disclosure, force-push/history rewrite, or visibility change occurred.
@@ -79,5 +79,5 @@ Start, queued, running, provider accepted-send, GitHub comment creation, and PR 
 
 - Inspected parent [a2a-broker#623](https://github.com/jinwon-int/a2a-broker/issues/623), child [a2a-plane#312](https://github.com/jinwon-int/a2a-plane/issues/312), and sibling R15 lane issues.
 - Inspected open R14 PR status across broker, plugin, runner, and plane repositories.
-- Ran local A2A Plane validation checks listed in the PR evidence.
+- Ran local A2A Nexus validation checks listed in the PR evidence.
 - Confirmed this patch adds documentation/test evidence only and does not create runtime/bootstrap files in the repository.

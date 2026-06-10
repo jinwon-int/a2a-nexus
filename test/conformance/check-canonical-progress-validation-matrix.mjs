@@ -457,7 +457,7 @@ function validateFixtureStructure(fixture) {
     description: "fixtureId is present and valid",
     ...check(() => {
       assert.strictEqual(typeof fixture.fixtureId, "string");
-      assert.ok(fixture.fixtureId.startsWith("a2a-plane.contract."));
+      assert.ok(fixture.fixtureId.startsWith("a2a-nexus.contract."));
     }, "fixtureId check"),
   });
 

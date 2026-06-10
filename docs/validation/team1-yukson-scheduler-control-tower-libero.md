@@ -10,7 +10,7 @@ Reviewed at: `2026-05-25T22:55:00Z`
 
 This is a validation artifact only. It validates the scheduler/control-tower policy spec
 against existing contracts, the three-broker lane topology, and the source-only activation
-boundaries defined in the A2A Plane public-private boundary gates.
+boundaries defined in the A2A Nexus public-private boundary gates.
 
 This validation does not change repository visibility, import private source history, deploy,
 restart Gateway/broker/worker services, mutate production databases, send provider or Telegram

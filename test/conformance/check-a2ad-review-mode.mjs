@@ -40,7 +40,7 @@ const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 const fixtureText = fs.readFileSync(fixturePath, 'utf8');
 
 // ---- Fixture structure checks ----
-assert.equal(fixture.fixtureId, 'a2a-plane.contract.a2ad-review-mode.v1');
+assert.equal(fixture.fixtureId, 'a2a-nexus.contract.a2ad-review-mode.v1');
 assert.ok(Array.isArray(fixture.evidence), 'fixture must have evidence array');
 assert.ok(fixture.evidence.length >= 2, 'fixture must have at least 2 evidence entries');
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "A2A Plane source-public approval rehearsal packet schema. Deterministic GO_CANDIDATE / NO_GO / NEEDS_OPERATOR_APPROVAL decision output for the source-public approval rehearsal round. Produces operator-facing approval packets with integrated evidence bundles, rollback/abort paths, and explicit non-approval/non-execution semantics. This round never executes approval, release, or visibility changes.",
+  "description": "A2A Nexus source-public approval rehearsal packet schema. Deterministic GO_CANDIDATE / NO_GO / NEEDS_OPERATOR_APPROVAL decision output for the source-public approval rehearsal round. Produces operator-facing approval packets with integrated evidence bundles, rollback/abort paths, and explicit non-approval/non-execution semantics. This round never executes approval, release, or visibility changes.",
   "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/211",
   "issue": "https://github.com/jinwon-int/a2a-plane/issues/212",
@@ -72,7 +72,7 @@
       "evidence": [
         "GitHub metadata shows repository is still private before approval.",
         "Docs and examples contain no private endpoints, provider identifiers, raw session dumps, host-specific private paths, or runtime/bootstrap context files.",
-        "Public-facing wording describes A2A Plane as alpha/feedback-welcome, not production-ready."
+        "Public-facing wording describes A2A Nexus as alpha/feedback-welcome, not production-ready."
       ]
     },
     {

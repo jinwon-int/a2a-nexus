@@ -1,6 +1,6 @@
 # A2A Constitution
 
-This constitution is the lightweight safety and operating baseline for A2A Plane development. It is intentionally a thin governance layer: it does not replace the broker/worker runtime, but it must shape specs, plans, tasks, reviews, and closeout evidence for medium and large A2A changes.
+This constitution is the lightweight safety and operating baseline for A2A Nexus development. It is intentionally a thin governance layer: it does not replace the broker/worker runtime, but it must shape specs, plans, tasks, reviews, and closeout evidence for medium and large A2A changes.
 
 ## Principles
 

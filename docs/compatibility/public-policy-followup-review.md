@@ -8,7 +8,7 @@ This review is documentation and fixture evidence only. It does not deploy or re
 
 ## Finding
 
-The public compatibility policy can be reviewed from public-safe A2A Plane files without relying on private Seoseo-only assumptions. Seoseo may appear as a source-broker example in a cross-broker fixture, but it is not required as broker of record, worker dispatcher, terminal-evidence authority, or visibility approver.
+The public compatibility policy can be reviewed from public-safe A2A Nexus files without relying on private Seoseo-only assumptions. Seoseo may appear as a source-broker example in a cross-broker fixture, but it is not required as broker of record, worker dispatcher, terminal-evidence authority, or visibility approver.
 
 ## Reproducible evidence
 

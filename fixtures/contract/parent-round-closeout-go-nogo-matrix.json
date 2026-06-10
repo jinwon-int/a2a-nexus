@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.parent-round-closeout-go-nogo-matrix.v0",
+  "fixtureId": "a2a-nexus.contract.parent-round-closeout-go-nogo-matrix.v0",
   "contract": "contracts/a2a/parent-round-closeout-go-nogo-matrix.md",
   "schema": "docs/specs/a2a-parent-round-closeout-go-nogo/schema.json",
   "description": "Synthetic fixture for parent-round closeout go/no-go matrix validation. Covers Go, No-Go, and Blocked scenarios including idempotency replay, GitHub 403, metadata violations, and runtime bootstrap hygiene failure.",

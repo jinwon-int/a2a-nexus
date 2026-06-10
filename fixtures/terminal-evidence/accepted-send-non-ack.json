@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.terminal-evidence.accepted-send-non-ack.v1",
+  "fixtureId": "a2a-nexus.terminal-evidence.accepted-send-non-ack.v1",
   "contract": "contracts/compatibility/terminal-evidence-ack-boundary.md",
   "description": "Independent compatibility fixture proving accepted-send and provider message-id evidence are non-ACK, while terminal ACK eligibility requires manual or proven user-visible receipt evidence. Frozen at Contract v0 (2026-05-09).",
   "v0Freeze": {

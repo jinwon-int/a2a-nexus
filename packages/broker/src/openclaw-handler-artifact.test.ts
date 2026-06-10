@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +9,6 @@ import { validateTaskCompletionEvidence } from "./worker.js";
 import type { TaskRecord } from "./core/types.js";
 
 const handlerPath = "scripts/a2a-task-handler.mjs";
-const legacyHandlerPath = "scripts/openclaw-a2a-task-handler.mjs";
 const hermesAnalysisBridgePath = "scripts/hermes-a2a-analysis-bridge.mjs";
 
 interface GithubTaskFixture {
@@ -76,18 +75,6 @@ test("versioned A2A task handler source does not embed credentials or host paths
   assert.doesNotMatch(source, /bangtong|dungae|sogyo|yukson/i);
 });
 
-test("legacy OpenClaw-named handler path remains a compatibility wrapper", () => {
-  const result = spawnSync(process.execPath, [legacyHandlerPath], {
-    input: JSON.stringify(githubTask({ intent: "analyze", payload: { mode: "analysis" } })),
-    encoding: "utf8",
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const payload = JSON.parse(result.stdout);
-  assert.equal(payload.result.handler.name, "a2a-task-handler");
-  assert.equal(payload.result.handler.source, "repo:scripts/a2a-task-handler.mjs");
-  assert.equal(payload.result.lifecycle.mode, "analysis");
-});
 
 test("explicit all-github flag routes GitHub propose_patch tasks through docker runner", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "handler-runner-test-"));
@@ -1511,7 +1498,7 @@ console.log(JSON.stringify({
   prUrl: "https://github.com/owner/repo/pull/196",
   branch: "fix/issue-196",
   tests: ["npm test -- --testNamePattern handler -> pass"],
-  filesChanged: ["scripts/openclaw-a2a-task-handler.mjs"],
+  filesChanged: ["scripts/a2a-task-handler.mjs"],
   risks: ["minor: version bump required"]
 }));
 `);
@@ -1545,7 +1532,7 @@ console.log(JSON.stringify({
     assert.equal(payload.result.output.taskId, "task-fixture-1", "taskId must be in output");
     assert.equal(payload.result.output.branch, "fix/issue-196", "branch must be projected from runner response");
     assert.deepEqual(payload.result.output.tests, ["npm test -- --testNamePattern handler -> pass"], "tests must be projected");
-    assert.deepEqual(payload.result.output.filesChanged, ["scripts/openclaw-a2a-task-handler.mjs"], "filesChanged must be projected");
+    assert.deepEqual(payload.result.output.filesChanged, ["scripts/a2a-task-handler.mjs"], "filesChanged must be projected");
     assert.deepEqual(payload.result.output.risks, ["minor: version bump required"], "risks must be projected");
     assert.equal(payload.result.output.prUrl, "https://github.com/owner/repo/pull/196");
   } finally {
@@ -1983,6 +1970,115 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
     const sessionId = args[args.indexOf("--session-id") + 1];
     assert.match(sessionId, /^a2a-worker-a-task-fixture-1-analysis$/);
   } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("analysis-only bridge posts GitHub evidence comment when explicitly enabled", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-analysis-comment-test-"));
+  const fakeOpenClawPath = join(tempDir, "fake-openclaw-analysis.mjs");
+  const fakeGithubServerPath = join(tempDir, "fake-github-server.mjs");
+  const commentLogPath = join(tempDir, "comments.log");
+  let server: ReturnType<typeof spawn> | undefined;
+  try {
+    writeFileSync(fakeOpenClawPath, [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({",
+      "  payloads: [{",
+      "    text: JSON.stringify({",
+      "      status: \"done\",",
+      "      summary: \"evidence comment analysis complete\",",
+      "      findings: [\"source bundle contained the bridge\"],",
+      "      risks: [\"comment posting must be explicit\"],",
+      "      recommendations: [\"post durable GitHub evidence\"],",
+      "      evidenceRefs: [\"jinwon-int/a2a-broker:scripts/a2a-task-handler.mjs\"]",
+      "    })",
+      "  }]",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeOpenClawPath, 0o755);
+
+    writeFileSync(fakeGithubServerPath, [
+      "#!/usr/bin/env node",
+      "import { createServer } from 'node:http';",
+      "import { appendFileSync } from 'node:fs';",
+      "const comments = [];",
+      "const server = createServer((req, res) => {",
+      "  if (req.headers.authorization !== 'Bearer test-token') { res.writeHead(401); res.end('bad auth'); return; }",
+      "  if (req.url === '/repos/owner/repo/issues/1341/comments?per_page=100' && req.method === 'GET') {",
+      "    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(comments)); return;",
+      "  }",
+      "  if (req.url === '/repos/owner/repo/issues/1341/comments' && req.method === 'POST') {",
+      "    let body = ''; req.setEncoding('utf8');",
+      "    req.on('data', chunk => body += chunk);",
+      "    req.on('end', () => {",
+      "      const parsed = JSON.parse(body);",
+      "      const comment = { id: 1341001, html_url: `http://127.0.0.1:${server.address().port}/owner/repo/issues/1341#issuecomment-1341001`, body: parsed.body };",
+      "      comments.push(comment); appendFileSync(process.env.COMMENT_LOG_PATH, JSON.stringify(comment) + '\\n');",
+      "      res.writeHead(201, { 'content-type': 'application/json' }); res.end(JSON.stringify(comment));",
+      "    }); return;",
+      "  }",
+      "  res.writeHead(404); res.end('not found: ' + req.method + ' ' + req.url);",
+      "});",
+      "server.listen(0, '127.0.0.1', () => console.log('READY ' + server.address().port));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeGithubServerPath, 0o755);
+
+    server = spawn(process.execPath, [fakeGithubServerPath], {
+      env: { ...process.env, COMMENT_LOG_PATH: commentLogPath },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const port = await new Promise<string>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => reject(new Error(`fake github server did not start: ${stderr}`)), 5000);
+      server?.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+        const match = /READY (\d+)/.exec(stdout);
+        if (match) { clearTimeout(timer); resolve(match[1]); }
+      });
+      server?.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+      server?.on("exit", (code) => reject(new Error(`fake github server exited early: ${code} ${stderr}`)));
+    });
+
+    const task = githubTask();
+    task.id = "analysis-comment-task";
+    task.intent = "analyze";
+    task.payload = {
+      mode: "analysis-only",
+      sourceOnly: true,
+      issueUrl: "https://github.com/owner/repo/issues/1341",
+      postGithubComment: true,
+    };
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(task),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_EXECUTOR_MODE: "builtin",
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        OPENCLAW_BIN: fakeOpenClawPath,
+        A2A_NODE_ID: "worker-commenter",
+        A2A_POST_ANALYSIS_EVIDENCE_COMMENTS: "1",
+        A2A_GITHUB_API_BASE_URL: `http://127.0.0.1:${port}`,
+        GITHUB_TOKEN: "test-token",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.result.output.analysisStatus, "done");
+    assert.match(payload.result.output.doneCommentUrl, /issuecomment-1341001$/);
+    assert.equal(payload.result.output.githubCommentUrl, payload.result.output.doneCommentUrl);
+    const [logged] = readFileSync(commentLogPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.match(logged.body, /<!-- a2a-analysis-evidence:analysis-comment-task:done -->/);
+    assert.match(logged.body, /source bundle contained the bridge/);
+    assert.match(logged.body, /post durable GitHub evidence/);
+  } finally {
+    server?.kill("SIGTERM");
     rmSync(tempDir, { recursive: true, force: true });
   }
 });

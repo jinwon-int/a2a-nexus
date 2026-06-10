@@ -11,7 +11,7 @@
 > **금지 범위**: 이 문서는 계획/검토용입니다. 런타임, 배포 설정, 시크릿, 운영 상태를 변경하지 않습니다.
 >
 > **Cutover proof status**: This document serves as the canonical architecture and
-> migration proof for the A2A Plane monorepo. Each section below carries a maturity
+> migration proof for the A2A Nexus monorepo. Each section below carries a maturity
 > indicator: `🟢 Final`, `🟡 Draft`, or `🔴 Missing`. All sections must reach `🟢 Final`
 > before declaring the monorepo cutover complete.
 >

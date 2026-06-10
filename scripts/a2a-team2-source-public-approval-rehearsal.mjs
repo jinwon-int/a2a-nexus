@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2A Plane source-public approval rehearsal evaluator.
+ * A2A Nexus source-public approval rehearsal evaluator.
  *
  * Read-only by design. It consumes redacted rehearsal evidence and emits one of:
  * GO_CANDIDATE, NO_GO, or NEEDS_OPERATOR_APPROVAL. It never performs approval,
@@ -290,7 +290,7 @@ export function buildApprovalRehearsalReport(spec, input) {
 export function renderApprovalRehearsalMarkdown(report) {
   const title = report.decision === 'NO_GO' ? 'Block' : 'Done';
   const lines = [
-    `${title}: A2A Plane source-public approval rehearsal`,
+    `${title}: A2A Nexus source-public approval rehearsal`,
     '',
     `Run: ${report.run}`,
     `Lane: ${report.lane}`,

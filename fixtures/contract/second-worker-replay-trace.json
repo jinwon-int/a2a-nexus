@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.second-worker-replay-trace.v1",
+  "fixtureId": "a2a-nexus.contract.second-worker-replay-trace.v1",
   "contracts": [
     "contracts/a2a/cancellation-idempotency.md",
     "contracts/a2a/terminal-semantics.md",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2A Plane source-public dry-run aggregator and report command.
+ * A2A Nexus source-public dry-run aggregator and report command.
  *
  * Read-only by design: consumes evidence packet metadata for broker, plugin,
  * and runner, produces deterministic GO/NO-GO JSON/Markdown output, and keeps
@@ -339,7 +339,7 @@ export function buildDryRunReport(spec, input) {
 export function renderDryRunMarkdown(report) {
   const title = report.decision === 'GO' ? 'Done' : 'Block';
   const lines = [
-    `${title}: A2A Plane source-public dry-run report`,
+    `${title}: A2A Nexus source-public dry-run report`,
     '',
     `Run: ${report.run}`,
     `Lane: ${report.lane}`,

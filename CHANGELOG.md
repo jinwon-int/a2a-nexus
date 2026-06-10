@@ -1,6 +1,6 @@
 # Changelog
 
-All notable public-safe changes for **A2A Plane** are collected here. This file is release-preparation documentation only: it does not publish packages, create tags, change repository visibility, deploy services, restart services, mutate production state, send provider messages, rotate secrets, or ACK terminal outbox records.
+All notable public-safe changes for **A2A Nexus** are collected here. This file is release-preparation documentation only: it does not publish packages, create tags, change repository visibility, deploy services, restart services, mutate production state, send provider messages, rotate secrets, or ACK terminal outbox records.
 
 ## v0.1.0-alpha — operator decision candidate
 
@@ -8,7 +8,7 @@ Status: **draft / unreleased**. Use this entry as the operator decision surface 
 
 ### Included scope
 
-- Sanitized A2A Plane workspace layout for broker, adapter plugin, Docker runner, shared contracts, examples, and public-safe documentation.
+- Sanitized A2A Nexus workspace layout for broker, adapter plugin, Docker runner, shared contracts, examples, and public-safe documentation.
 - Integrated local/CI release gate through `npm run check`, including layout checks, package-local checks, public-readiness scan, and compatibility-baseline validation.
 - Public-safe quickstart, canonical demo, known limitations, security policy, issue templates, and release-gate documentation.
 - Compatibility contracts for task lifecycle, terminal semantics, worker registration/read-model assumptions, and broker-to-broker handoff boundaries.

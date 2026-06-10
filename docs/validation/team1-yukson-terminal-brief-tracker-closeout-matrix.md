@@ -34,7 +34,7 @@ operator receipt, approval, or terminal-outbox ACK.
 
 ## Tracker closeout matrix
 
-### A2A Plane issues
+### A2A Nexus issues
 
 | # | Title | Current state | Recommended disposition | Evidence |
 | --- | --- | --- | --- | --- |

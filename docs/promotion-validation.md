@@ -1,4 +1,4 @@
-# A2A Plane Promotion Validation
+# A2A Nexus Promotion Validation
 
 Last updated: `2026-05-08T01:03:27Z`.
 
@@ -6,7 +6,7 @@ This report records redacted validation evidence for `jinwon-int/a2a-plane#66` o
 
 ## Decision
 
-**GO for A2A Plane closeout evidence.** Required local gates passed, and the external secret/history scan completed with a temporary runner-local scanner and no leaks found. Operational promotion actions remain separately approval-gated.
+**GO for A2A Nexus closeout evidence.** Required local gates passed, and the external secret/history scan completed with a temporary runner-local scanner and no leaks found. Operational promotion actions remain separately approval-gated.
 
 Repository metadata observed during this run: `jinwon-int/a2a-plane` visibility is `PUBLIC`. This runner did not change repository visibility.
 
@@ -24,5 +24,5 @@ Repository metadata observed during this run: `jinwon-int/a2a-plane` visibility 
 
 ## Go/no-go boundary
 
-- **GO:** Close out the A2A Plane validation task with the redacted evidence above.
+- **GO:** Close out the A2A Nexus validation task with the redacted evidence above.
 - **NO-GO without separate approval:** publishing packages/images, creating releases/tags, deploying, restarting production services, mutating production data, sending provider or Telegram messages, ACKing terminal outbox records, rotating/disclosing secrets, rewriting history, force-pushing, or changing repository visibility.

@@ -153,7 +153,7 @@ for (const worker of workers.workers) {
   for (const capability of worker.capabilities) {
     assert.match(capability, /^[a-z0-9][a-z0-9-]{1,40}$/);
   }
-  assert.equal(worker.policyVersion, 'a2a-plane-safety-v1');
+  assert.equal(worker.policyVersion, 'a2a-nexus-safety-v1');
   for (const forbiddenField of workers.forbiddenFields) {
     assert.ok(!(forbiddenField in worker), `worker must not include ${forbiddenField}`);
   }
@@ -1217,7 +1217,7 @@ assert.equal(stabilityGate.redacted, true);
 // --- Embedded Execution Stability Policy fixture validation ---
 
 assert.ok(embeddedExecutionStability.fixtureId, 'embeddedExecutionStability fixture must carry fixtureId');
-assert.match(embeddedExecutionStability.fixtureId, /^a2a-plane\.contract\.embedded-execution-stability-policy\.v0$/, 'fixtureId must match a2a-plane.contract.embedded-execution-stability-policy.v0');
+assert.match(embeddedExecutionStability.fixtureId, /^a2a-nexus\.contract\.embedded-execution-stability-policy\.v0$/, 'fixtureId must match a2a-nexus.contract.embedded-execution-stability-policy.v0');
 assert.equal(embeddedExecutionStability.contract, 'contracts/a2a/embedded-execution-stability-policy.md');
 assert.equal(embeddedExecutionStability.parentIssue, 'https://github.com/jinwon-int/a2a-broker/issues/838');
 assert.equal(embeddedExecutionStability.originWorker, 'Team1/nosuk');
@@ -1458,7 +1458,7 @@ assert.equal(
   'contracts/a2a/adapter-receipt-capability.md',
   'adapterReceiptCapability must reference adapter-receipt-capability.md',
 );
-assert.equal(adapterReceiptCapability.fixtureId, 'a2a-plane.adapter-receipt-capability.v0');
+assert.equal(adapterReceiptCapability.fixtureId, 'a2a-nexus.adapter-receipt-capability.v0');
 assert.ok(adapterReceiptCapability.v0Freeze, 'must carry v0Freeze marker');
 assert.equal(adapterReceiptCapability.v0Freeze.lane, '6/7');
 assert.equal(adapterReceiptCapability.v0Freeze.run, 'a2a-terminal-brief-productization-20260522T225813Z');

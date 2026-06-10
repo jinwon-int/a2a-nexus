@@ -1,5 +1,5 @@
 {
-  "fixtureId": "a2a-plane.contract.terminal-evidence.v1",
+  "fixtureId": "a2a-nexus.contract.terminal-evidence.v1",
   "contract": "contracts/a2a/terminal-semantics.md",
   "description": "Redacted terminal evidence examples for PR, Done, and Block results. Frozen at Contract v0 (2026-05-09).",
   "v0Freeze": {
