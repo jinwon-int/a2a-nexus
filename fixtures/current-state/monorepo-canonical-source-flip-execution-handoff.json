@@ -1,0 +1,209 @@
+{
+  "schema": "a2a.monorepo-canonical-source-flip-execution-handoff.v1",
+  "snapshotDate": "2026-06-10",
+  "tracker": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+  "repo": "jinwon-int/a2a-nexus",
+  "sourceCommit": "b8e863d5a251a6603f3caf9329d1bb0dfb5c6fe0",
+  "priorPackets": {
+    "branchProtectionRulesetPacket": "https://github.com/jinwon-int/a2a-nexus/pull/564",
+    "splitRepoDispositionRollbackPacket": "https://github.com/jinwon-int/a2a-nexus/pull/566",
+    "finalOperatorSignoffCanonicalSourcePacket": "https://github.com/jinwon-int/a2a-nexus/pull/567"
+  },
+  "activeRuleset": {
+    "id": 17499616,
+    "name": "a2a-nexus-main-required-checks",
+    "enforcement": "active",
+    "target": "main",
+    "requiredApprovingReviews": 1,
+    "requiredStatusChecks": [
+      "paths-filter",
+      "setup",
+      "layout",
+      "contracts",
+      "check"
+    ],
+    "strictRequiredStatusChecksPolicy": true,
+    "bypassActors": []
+  },
+  "handoffDecision": "GO_PR_FIRST_SOURCE_ONLY",
+  "actualCanonicalFlipExecution": "NO_GO_WAITING_SEPARATE_APPROVAL_REQUIRED",
+  "canonicalSourceDeclaration": "GO_CANDIDATE_PR_FIRST_SOURCE_ONLY",
+  "canonicalSourceCandidates": [
+    "packages/broker",
+    "packages/docker-runner",
+    "packages/openclaw-plugin-a2a"
+  ],
+  "executionHandoffPurpose": [
+    "record exact preconditions for actual canonical flip execution",
+    "bind the #567 technical GO_CANDIDATE declaration to active ruleset/review/CI gates",
+    "make actual execution approval a separate explicit operator decision",
+    "preserve rollback and abort owners before any state mutation"
+  ],
+  "a2aEvidence": {
+    "primaryRound": "a2a-canonicalflip-20260610T131555Z",
+    "primaryEvidencePath": "/tmp/a2a-canonicalflip-20260610T131555Z-evidence.json",
+    "supplementalRounds": [
+      "a2a-canonicalflip-retry-20260610T132021Z",
+      "a2a-canonicalflip-sogyo-retry-20260610T132313Z"
+    ],
+    "supplementalEvidencePaths": [
+      "/tmp/a2a-canonicalflip-retry-20260610T132021Z-evidence.json",
+      "/tmp/a2a-canonicalflip-sogyo-retry-20260610T132313Z-evidence.json"
+    ],
+    "workers": [
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "sogyo",
+        "taskId": "df0c2e71-8b78-41b0-bc0f-c2519067add9",
+        "status": "succeeded",
+        "analysisStatus": "blocked",
+        "summary": "analysis bridge blocked: PR #567(최종 운영자 서명/표준 소스 패킷)이 병합 완료(APPROVED+MERGED)되었으나, 실행 핸드오프 패킷이 진전될 수 있는지 판단하려면 `docs/monorepo-canonical-flip-readiness.md`, `docs/monorepo-final-operator-signoff-matrix.md`, `fixtures/current-state/monorepo-canonical-flip-readiness.json`, `scripts/check-monorepo-canonical-flip-readiness.mjs`의 실제 내용이 필요합니다. 제공된 소스 번들에는 이 파일들의 내용이 포함되지 않았습니다."
+      },
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "nosuk",
+        "taskId": "b997a57c-b0b6-4c6d-b445-6fe4af0af558",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: 소스 전용 분석 완료. a2a-nexus 패키지를 정식 소스 후보(canonical source candidate)로 선언하기 위한 롤백/중단 소유자 요구사항은 문서화되어 있으며, 스크립트 검증도 통과함. 단, 최종 운영자 서명 매트릭스는 모든 실행 필드(archive, publish, deploy 등)를 NO_GO/Waiting으로 유지하고 있어 실제 정식 전환은 보류 상태다."
+      },
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "bangtong",
+        "taskId": "c439b2b1-91fc-45bf-aa31-4124dd48fe20",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: PR #567은 최종 운영자 승인 행렬(source-only)을 병합한 것입니다. 모든 실행 경계(noSettingsMutation, noDeployRestart 등)가 명시적으로 활성화되어 있으며, 소스 번들과 문서는 실행 작업 없이 읽기 전용 분석만 수행하고 있음을 입증합니다."
+      },
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "dungae",
+        "taskId": "26394e42-b149-42a1-84c7-29b986f2e934",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: PR #567은 canonical source flip execution handoff PR-first 접근법에 따라 병합 완료. 오퍼레이터가 승인한 옵션 1(PR-first, 실행 작업은 별도 승인)에 부합. 모든 CI 체크 통과, ruleset 17499616 활성. 그러나 실제 canonical flip 실행(소유권 이전, 릴리스, 배포 등)은 phase-9 최종 시그노프 매트릭스에서 전 필드가 NO_GO/Waiting 상태이며, 오퍼레이터가 명시적으로 'execution-sensitive live actions excluded unless separately approved'로 제한. 따라서 핸드오프 PR 진전과 실제 canonical flip 실행은 반드시 분리되어야 함."
+      },
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "jingun",
+        "taskId": "4244fa19-e5cd-4afe-b277-d7409632e5a8",
+        "status": "succeeded",
+        "analysisStatus": "blocked",
+        "summary": "analysis bridge blocked: 소스 번들에 실제 파일 콘텐츠가 제공되지 않아 Team2 관점의 패키지/소스오브트루스(source-of-truth) 분석 및 canonical source flip 실행 핸드오프를 위한 fixture/check 필드 추천을 수행할 수 없습니다. 페이로드는 프로세스 메타데이터와 요약 텍스트만 포함하며, 분석에 필요한 핵심 문서·fixture·체커 스크립트의 실질적 콘텐츠가 누락되었습니다."
+      },
+      {
+        "round": "a2a-canonicalflip-20260610T131555Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "soonwook",
+        "taskId": "a9dd22d7-ed78-43fb-8832-27b50bc67dae",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: PR #567(b8e863d)는 기술적 GO_CANDIDATE 선언 패킷으로 병합되었으나, 실제 실행 권한(execution authorization)은 별도 운영자 승인이 필요한 별개 차원이다. 운영자 Telegram 승인 문구('execution-sensitive live actions excluded unless separately approved')와 source bundle boundaries(noReleaseTag, noNpmPublish, noDockerPublish, noDeployRestart, noDbMutation, noSecretMovement, noProviderSend, noTerminalAckReplay)는 GO_CANDIDATE가 실행 승인을 내포하지 않음을 명시적으로 확인한다. PR #567 merge 이후에도 최소 8개 실행 레인 항목과 6개 운영자 결정 대기 항목이 HOLD로 잔류한다."
+      },
+      {
+        "round": "a2a-canonicalflip-retry-20260610T132021Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "sogyo",
+        "taskId": "9e3a4b93-62bf-40d6-bf34-98cb6c687f14",
+        "status": "succeeded",
+        "analysisStatus": "blocked",
+        "summary": "analysis bridge blocked: 태스크 페이로드에는 files 배열과 path/content가 정의되어 있으나, 실제 소스 번들(worker에게 제공된 증거)이 비어 있습니다(0개 파일). docs/current-state.md 등 다수 분석 대상 파일의 내용이 누락되어 canonical source flip execution handoff PR-first 진행 여부를 판단할 수 없습니다. 전체 source bundle 내용이 첨부된 재시도가 필요합니다.",
+        "supplemental": true
+      },
+      {
+        "round": "a2a-canonicalflip-retry-20260610T132021Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "jingun",
+        "taskId": "ca63c06d-2ebc-4d66-8361-7f40c83bf72a",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: docs/current-state.md 단일 파일에 대한 {path, content} 형태의 소스 번들을 분석함. 해당 파일은 a2a-plane phase 0~9까지의 모노레포 정규 플립(canonical flip) 준비 과정을 추적하는 현재 소스-오브-트루스 인덱스임. PR #567 머지(b8e863d5)로 옵션 1(PR-first execution handoff)에 대한 운영자 승인이 확보되었으며, 모든 필수 CI 체크가 통과됨. 실행 민감 작업(배포, 릴리스, DB, 시크릿, 프로바이더 전송, 터미널 ACK)은 별도 NO_GO/Waiting으로 분리되어 있음. {path, content} 형태는 분석 브리지 호환성을 위해 의도된 것으로, 경로 기반 패키지 식별과 콘텐츠 기반 검증을 동시에 가능하게 함.",
+        "supplemental": true
+      },
+      {
+        "round": "a2a-canonicalflip-sogyo-retry-20260610T132313Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "sogyo",
+        "taskId": "930f0f6f-e467-46fd-bea0-8bdb7114b991",
+        "status": "succeeded",
+        "analysisStatus": "blocked",
+        "summary": "analysis bridge blocked: PR #567 병합으로 표준 소스 선언(패키지 broker, docker-runner, openclaw-plugin-a2a)이 GO_CANDIDATE로 승격되었으나, 실행 핸드오프 패킷에 포함된 정식 전환 실행, 브랜치 보호 적용, 분할 저장소 처분(archive/read-only/redirect), 릴리스/패키지/태그, 배포, DB/시크릿/제공자 전송, Terminal ACK/재생 등은 모두 NO_GO/Waiting 상태를 유지. 따라서 실행 핸드오프 패킷은 아직 진행할 수 없음.",
+        "supplemental": true,
+        "dissent": true
+      }
+    ],
+    "usableAnalysisCount": 5,
+    "dissentRecorded": true,
+    "finalizerSynthesis": "Advance only a PR-first execution handoff packet. Do not perform actual execution-sensitive action. Record Sogyo dissent as a guard that execution-sensitive actions remain HOLD until a separate approval."
+  },
+  "goNoGoFields": {
+    "finalOperatorSignoffPacketMerged": true,
+    "a2aNexusRulesetActive": true,
+    "requiredReviewEnforced": true,
+    "requiredChecksNamed": true,
+    "canonicalSourceCandidatesNamed": true,
+    "rollbackAbortOwnerRecorded": true,
+    "sourceOnlyA2aEvidenceRecorded": true,
+    "handoffPrAllowed": true,
+    "actualCanonicalFlipApproved": false,
+    "packageOwnershipTransferred": false,
+    "splitRepoDispositionExecuted": false,
+    "releasePublishDeployApproved": false,
+    "settingsMutationApproved": false,
+    "decision": "GO_PR_FIRST_SOURCE_ONLY__EXECUTION_NO_GO_WAITING"
+  },
+  "remainingSeparateApprovals": [
+    "actual_canonical_flip_execution",
+    "split_repo_archive_readonly_redirect",
+    "package_ownership_transfer",
+    "release_tag_github_release",
+    "npm_publish",
+    "docker_ghcr_publish",
+    "deploy_restart",
+    "db_mutation_or_replay",
+    "secret_or_credential_movement",
+    "provider_or_telegram_send",
+    "terminal_ack_or_replay",
+    "github_settings_change_beyond_existing_ruleset"
+  ],
+  "rollbackPolicy": {
+    "beforeActualExecution": "normal PR revert of this handoff packet or follow-up PR restoring prior docs/fixtures/checker state",
+    "afterActualExecution": "not_defined_here; must be approved in the separate execution packet before any state mutation",
+    "rollbackOwner": "operator/finalizer until separate execution owner is explicitly assigned",
+    "destructiveCleanupAllowed": false
+  },
+  "boundaries": {
+    "sourceOnly": true,
+    "githubSettingsMutation": false,
+    "canonicalFlipStateMutation": false,
+    "packageOwnershipTransfer": false,
+    "splitRepoArchiveReadonlyRedirect": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "secretMovement": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "forcePush": false,
+    "historyRewrite": false
+  }
+}
