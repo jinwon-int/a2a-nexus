@@ -1,6 +1,6 @@
 # A2A Monorepo Canonical Flip Readiness Packet
 
-> **Snapshot date:** 2026-06-08
+> **Snapshot date:** 2026-06-10
 > **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
 > **Phase-4 import candidate:** [a2a-plane#538](https://github.com/jinwon-int/a2a-plane/issues/538)
 > **Phase-4 PR:** [a2a-plane#540](https://github.com/jinwon-int/a2a-plane/pull/540)
@@ -9,7 +9,7 @@
 > **Phase-7 disposition packet:** [a2a-plane#545](https://github.com/jinwon-int/a2a-plane/issues/545)
 > **Phase-8 release/package/tag packet:** [a2a-plane#547](https://github.com/jinwon-int/a2a-plane/issues/547)
 > **Phase-9 final sign-off matrix:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
-> **Status:** readiness packet only; canonical flip is still `NO_GO / Waiting`.
+> **Status:** operator approval received for PR-first canonical planning; execution-sensitive actions remain separated.
 
 ## Summary
 
@@ -21,9 +21,10 @@ authoritative implementation source.
 Current decision:
 
 ```text
-canonicalFlipDecision = NO_GO / Waiting
-canonicalImplementationSource = split_repos
-readinessPacket = recorded
+canonicalFlipDecision = GO_CANDIDATE / PR-first
+canonicalImplementationSource = a2a-nexus monorepo candidate at 9669f9098459c9f17bdea0193bc428593b0ef2d5
+historicalPreApprovalSource = split_repos
+readinessPacket = approval recorded; execution still separated
 ```
 
 ## Imported Package Candidate
@@ -105,7 +106,7 @@ accepted as risk in a separate operator approval:
 | Branch protection/ruleset change | Not approved, not performed |
 | Release/package/tag policy execution | Not approved, not performed |
 | Split repo archival or read-only disposition | Not approved, not performed |
-| Operator canonical-flip approval | Missing |
+| Operator canonical-flip approval | Received via Telegram `승인` on 2026-06-10; PR-first execution planning only |
 
 Follow-up `a2a-plane#543` records the branch protection approval packet and
 required-checks dry-run. It does not apply branch protection or rulesets; it
@@ -137,8 +138,8 @@ without approving any execution-sensitive action.
 | `branchProtectionReady` | `false` |
 | `releasePackagePolicyReady` | `false` |
 | `splitRepoDispositionApproved` | `false` |
-| `operatorCanonicalFlipApproval` | `false` |
-| `decision` | `NO_GO / Waiting` |
+| `operatorCanonicalFlipApproval` | `true` |
+| `decision` | `GO_CANDIDATE / PR-first; execution separated` |
 
 ## No-live Boundary
 
@@ -149,3 +150,26 @@ production deploys, Gateway/broker/worker restarts, database mutation,
 provider or Telegram sends, Terminal ACK/replay, historical replay, credential
 movement, destructive cleanup, force-push, history rewrite, or worker-owned
 GitHub mutation.
+
+
+## 2026-06-10 Approval Update
+
+The active `a2a-nexus#553` lane supersedes the stale phase-4 import snapshot for
+current target selection. After PR #562 merged embedded source evidence support,
+A2A parent round `a2a-monorepo-safe2-20260610T082010Z` classified the remaining
+split-vs-monorepo drift as local/generated/docs-only or monorepo-newer safety
+changes. No import-needed code PR remains before PR-first canonical planning.
+
+Accepted target commit:
+
+```text
+9669f9098459c9f17bdea0193bc428593b0ef2d5
+```
+
+Approval source: Telegram DM from Seo Jin On / 서진원, `승인`, received at
+`2026-06-10T08:33:39Z`.
+
+Execution remains separated: this update does not archive split repos, change
+branch protection/rulesets, publish releases/packages/images, deploy/restart,
+mutate databases, ACK/replay terminal rows, move credentials, force-push, or
+rewrite history.
