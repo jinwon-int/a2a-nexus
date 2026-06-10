@@ -103,11 +103,13 @@ jobs must not be treated as proof that an untouched package stayed fresh;
 
 ## Split-repo Disposition Boundary
 
-This branch protection packet does not settle split-repo disposition. The prior
-split-repo disposition and rollback-owner packet remains referenced at
-`a2a-plane#545`, and the current `a2a-nexus` decision keeps that surface on
-HOLD. No split repo is archived, made read-only, redirected, renamed, or treated
-as non-canonical by this packet.
+This branch protection packet does not settle split-repo disposition. The
+historical split-repo disposition and rollback-owner packet remains referenced
+at `a2a-plane#545`, and the active `a2a-nexus#553` lane carries the current
+`a2a-nexus` refresh through
+[`docs/monorepo-split-repo-disposition-rollback.md`](monorepo-split-repo-disposition-rollback.md).
+No split repo is archived, made read-only, redirected, renamed, or treated as
+non-canonical by this packet.
 
 ## Final Sign-off Boundary
 

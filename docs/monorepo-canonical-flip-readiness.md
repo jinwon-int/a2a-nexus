@@ -117,6 +117,14 @@ packet. It does not archive, redirect, or make any split repository read-only;
 split repos remain canonical while rollback owner and accepted-risk fields are
 still undecided.
 
+The active `a2a-nexus#553` lane refreshes that disposition/rollback-owner
+packet for the `a2a-nexus` target after the #563 operator approval record and
+#564 branch-protection/ruleset packet. Team1+Team2 source-only A2A evidence
+keeps the split implementation repositories at `active_canonical`; any
+`active_mirrored`, read-only, archive, redirect, package ownership transfer, or
+post-flip rollback-owner change remains unapproved and must receive a separate
+scoped execution approval.
+
 Follow-up `a2a-plane#547` records the release/package/tag approval packet and
 dry-run inventory. It does not create release tags, GitHub Releases, npm
 packages, Docker/GHCR images, or package ownership changes; release/package/tag
