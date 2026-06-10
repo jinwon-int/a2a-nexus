@@ -23,6 +23,7 @@ const steps = [
   ['monorepo-canonical-flip-readiness', 'npm', ['run', 'check:monorepo-canonical-flip-readiness']],
   ['monorepo-branch-protection-approval-packet', 'npm', ['run', 'check:monorepo-branch-protection-approval-packet']],
   ['monorepo-split-repo-disposition-rollback', 'npm', ['run', 'check:monorepo-split-repo-disposition-rollback']],
+  ['monorepo-split-repo-disposition-preflight', 'npm', ['run', 'check:monorepo-split-repo-disposition-preflight']],
   ['monorepo-release-package-tag-approval', 'npm', ['run', 'check:monorepo-release-package-tag-approval']],
   ['monorepo-final-operator-signoff', 'npm', ['run', 'check:monorepo-final-operator-signoff']],
   ['monorepo-canonical-source-flip-execution-handoff', 'npm', ['run', 'check:monorepo-canonical-source-flip-execution-handoff']],

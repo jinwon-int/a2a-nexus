@@ -34,6 +34,7 @@
     "check:monorepo-canonical-flip-readiness": "node scripts/check-monorepo-canonical-flip-readiness.mjs",
     "check:monorepo-branch-protection-approval-packet": "node scripts/check-monorepo-branch-protection-approval-packet.mjs",
     "check:monorepo-split-repo-disposition-rollback": "node scripts/check-monorepo-split-repo-disposition-rollback.mjs",
+    "check:monorepo-split-repo-disposition-preflight": "node scripts/check-monorepo-split-repo-disposition-preflight.mjs",
     "check:monorepo-release-package-tag-approval": "node scripts/check-monorepo-release-package-tag-approval-packet.mjs",
     "check:monorepo-final-operator-signoff": "node scripts/check-monorepo-final-operator-signoff-matrix.mjs",
     "check:monorepo-canonical-source-flip-execution-handoff": "node scripts/check-monorepo-canonical-source-flip-execution-handoff.mjs",

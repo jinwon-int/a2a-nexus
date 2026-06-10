@@ -169,6 +169,17 @@ and validated by
 `scripts/check-monorepo-actual-canonical-flip-execution-result.mjs`. It records
 `MONOREPO_PACKAGES_CANONICAL` and confirms that source-state-only actual canonical flip execution has been performed for `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a`; split-repo archive/read-only/redirect, package ownership transfer, release/publish/deploy, DB, secret, provider send, Terminal ACK/replay, GitHub settings changes beyond the existing ruleset, force-push, and history rewrite remain separate HOLD surfaces.
 
+
+
+The active `a2a-nexus#553` split-repo disposition preflight is documented in
+[`docs/monorepo-split-repo-disposition-preflight.md`](monorepo-split-repo-disposition-preflight.md)
+and validated by `scripts/check-monorepo-split-repo-disposition-preflight.mjs`.
+It records `ACTIVE_PROVENANCE_MIRROR` as the future candidate disposition after
+`MONOREPO_PACKAGES_CANONICAL`, while actual archive/read-only/redirect, repo
+settings mutation, package ownership transfer, release/publish/deploy, DB,
+secret, provider send, Terminal ACK/replay, force-push, and history rewrite
+remain separate HOLD surfaces.
+
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)
 and validated by `scripts/check-monorepo-operator-approval-handoff.mjs`. It
