@@ -38,6 +38,13 @@ export interface A2AParentRoundResolution {
   };
 }
 
+export interface A2ASourceEvidenceResolution {
+  kind: "a2a.source-evidence-resolution.v1";
+  required: boolean;
+  status: "not-required" | "embedded" | "missing";
+  sources: string[];
+}
+
 export function normalizeA2ARoundTaskRequest(
   request: CreateTaskRequest,
   receiverBrokerId?: string,
@@ -119,6 +126,11 @@ export function normalizeA2ARoundTaskRequest(
     },
   } satisfies A2AParentRoundResolution;
 
+  const sourceEvidenceResolution = resolveSourceEvidence(payload);
+  if (sourceEvidenceResolution.status !== "not-required") {
+    payload["sourceEvidenceResolution"] = sourceEvidenceResolution;
+  }
+
   return {
     ...request,
     ...(parentRoundId ? { parentRoundId } : {}),
@@ -173,6 +185,14 @@ export function validateA2ARoundTaskPolicy(
     issues.push({
       path: `payload.${issue.path}`,
       message: issue.message,
+    });
+  }
+
+  const sourceEvidenceResolution = resolveSourceEvidence(payload);
+  if (sourceEvidenceResolution.status === "missing") {
+    issues.push({
+      path: "payload.sourceEvidence",
+      message: "source-only A2A analysis with source hints must attach source evidence via embeddedSourceEvidence, sourceBundle.files, or sourceEvidence",
     });
   }
 
@@ -240,6 +260,50 @@ function firstTokenSource(payload: Record<string, unknown>, keys: string[]): { k
     if (value) return { key, value };
   }
   return undefined;
+}
+
+function resolveSourceEvidence(payload: Record<string, unknown>): A2ASourceEvidenceResolution {
+  const sourceOnly = payload["sourceOnly"] === true || payload["readOnlyValidation"] === true;
+  const hintSources = sourceHintSources(payload);
+  if (!sourceOnly || hintSources.length === 0) {
+    return {
+      kind: "a2a.source-evidence-resolution.v1",
+      required: false,
+      status: "not-required",
+      sources: hintSources,
+    };
+  }
+
+  const evidenceSources = sourceEvidenceSources(payload);
+  return {
+    kind: "a2a.source-evidence-resolution.v1",
+    required: true,
+    status: evidenceSources.length > 0 ? "embedded" : "missing",
+    sources: evidenceSources.length > 0 ? evidenceSources : hintSources,
+  };
+}
+
+function sourceHintSources(payload: Record<string, unknown>): string[] {
+  const sources: string[] = [];
+  for (const key of ["sourceHints", "sourcePaths", "evidencePaths", "evidenceRefs"]) {
+    if (Array.isArray(payload[key]) && payload[key].length > 0) sources.push(`payload.${key}`);
+  }
+  return sources;
+}
+
+function sourceEvidenceSources(payload: Record<string, unknown>): string[] {
+  const sources: string[] = [];
+  if (nonEmptyArray(payload["embeddedSourceEvidence"])) sources.push("payload.embeddedSourceEvidence");
+  if (nonEmptyArray(payload["sourceEvidence"])) sources.push("payload.sourceEvidence");
+  const sourceBundle = payload["sourceBundle"];
+  if (sourceBundle && typeof sourceBundle === "object" && !Array.isArray(sourceBundle)) {
+    if (nonEmptyArray((sourceBundle as Record<string, unknown>)["files"])) sources.push("payload.sourceBundle.files");
+  }
+  return sources;
+}
+
+function nonEmptyArray(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length > 0;
 }
 
 function resolveParentRoundTotal(

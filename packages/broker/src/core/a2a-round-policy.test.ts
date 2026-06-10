@@ -237,3 +237,83 @@ test("operator Team1 decision-dialectic parent tasks are not treated as A2A roun
   assert.equal(task.payload.parentRoundId, undefined);
   assert.equal(task.payload.teamScope, undefined);
 });
+
+test("source-only A2A analysis with sourceHints fails closed when no source evidence is attached", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "sogyo");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "team1-source-hints-without-bundle",
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        message: "source-only A2A task with source hints but no source bundle",
+        payload: {
+          mode: "analysis-only",
+          noLive: true,
+          sourceOnly: true,
+          readOnlyValidation: true,
+          discussionRunId: "team1-source-map-canary",
+          participantWorkers: ["sogyo"],
+          sourceHints: [
+            { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
+          ],
+          workModeDecision: workModeDecision(),
+        },
+        taskOrigin: "operator",
+        teamId: "team1",
+        brokerOfRecord: "seoseo",
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /source evidence/i,
+    },
+  );
+});
+
+test("source-only A2A analysis accepts embedded source evidence instead of harness-specific repo access", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "sogyo");
+
+  const task = broker.createTask({
+    id: "team1-embedded-source-evidence",
+    intent: "analyze",
+    requester: { id: "seoseo", kind: "node", role: "hub" },
+    target: { id: "sogyo", kind: "node", role: "analyst" },
+    assignedWorkerId: "sogyo",
+    message: "source-only A2A task with embedded source evidence",
+    payload: {
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      readOnlyValidation: true,
+      discussionRunId: "team1-embedded-source-canary",
+      participantWorkers: ["sogyo"],
+      sourceHints: [
+        { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
+      ],
+      embeddedSourceEvidence: [
+        { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts", content: "export const marker = true;" },
+      ],
+      workModeDecision: workModeDecision(),
+    },
+    taskOrigin: "operator",
+    teamId: "team1",
+    brokerOfRecord: "seoseo",
+  });
+
+  const sourceEvidenceResolution = task.payload.sourceEvidenceResolution as Record<string, unknown>;
+  assert.equal(task.payload.parentRoundId, "team1-embedded-source-canary");
+  assert.equal(sourceEvidenceResolution.kind, "a2a.source-evidence-resolution.v1");
+  assert.equal(sourceEvidenceResolution.status, "embedded");
+});
