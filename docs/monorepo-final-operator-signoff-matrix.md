@@ -1,106 +1,153 @@
-# A2A Monorepo Final Operator Sign-off Matrix
+# A2A Nexus Final Operator Sign-off / Canonical Source Packet
 
-> **Snapshot date:** 2026-06-08
-> **Parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
-> **Phase-6 branch protection packet:** [a2a-plane#544](https://github.com/jinwon-int/a2a-plane/pull/544)
-> **Phase-7 split-repo disposition packet:** [a2a-plane#546](https://github.com/jinwon-int/a2a-plane/pull/546)
-> **Phase-8 release/package/tag packet:** [a2a-plane#548](https://github.com/jinwon-int/a2a-plane/pull/548)
-> **Phase-9 final sign-off issue:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
-> **Phase-10 operator handoff issue:** [a2a-plane#551](https://github.com/jinwon-int/a2a-plane/issues/551)
-> **Status:** final operator matrix only; canonical flip, package ownership transfer, release, tag, publish, settings changes, and split-repo disposition execution remain `NO_GO / Waiting`.
+> **Snapshot date:** 2026-06-10
+> **Active parent:** [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553)
+> **Historical parent:** [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)
+> **Historical final sign-off issue:** [a2a-plane#549](https://github.com/jinwon-int/a2a-plane/issues/549)
+> **Historical operator handoff issue:** [a2a-plane#551](https://github.com/jinwon-int/a2a-plane/issues/551)
+> **Latest active packet:** [a2a-nexus#566](https://github.com/jinwon-int/a2a-nexus/pull/566), merge `bf36a68ab8a38c0fbea0710d979c165d4f9b07f9`
+> **Status:** final source-only packet; canonical source declaration is `GO_CANDIDATE / PR-first`, while canonical flip execution, package ownership transfer, release, publish, deploy, DB, credential, Terminal ACK/replay, and split-repo archive/read-only/redirect actions remain `NO_GO / Execution separate`.
 
 ## Summary
 
-The monorepo now has tracked-tree package candidates, package CI parity jobs,
-branch protection approval fields, split-repo disposition options, rollback
-owner fields, and release/package/tag approval fields. This matrix consolidates
-those packets into the final operator sign-off checklist that must be answered
-before any canonical flip or execution-sensitive action.
+`a2a-nexus` has now accumulated the source-only evidence needed to prepare a
+final operator sign-off / canonical source declaration packet:
+
+- current-state drift closeout and selective PR lane completed;
+- branch protection/ruleset packet merged and the `a2a-nexus-main-required-checks`
+  ruleset is active on `main`;
+- split-repo disposition / rollback-owner packet merged, keeping split repos at
+  `active_canonical` and treating `active_mirrored` as candidate-only;
+- release/package/tag packet remains separate and unexecuted;
+- the latest main commit is `bf36a68ab8a38c0fbea0710d979c165d4f9b07f9`.
 
 Current decision:
 
 ```text
-operatorFinalDecision = NO_GO / Waiting
-canonicalFlipDecision = NO_GO / Waiting
-packageOwnershipDecision = NO_GO / Waiting
+operatorFinalDecision = GO_CANDIDATE / PR-first / source-only
+canonicalSourceDecision = GO_CANDIDATE / PR-first source declaration
+canonicalFlipExecution = NO_GO / Execution separate
+packageOwnershipTransfer = NO_GO / Execution separate
 releasePackageTagDecision = NO_GO / Waiting
-branchProtectionDecision = NO_GO / Waiting
-splitRepoDispositionDecision = NO_GO / Waiting
-rollbackOwnerDecision = NO_GO / Waiting
+splitRepoDispositionExecution = NO_GO / active_canonical remains
 ```
 
-## Prior Packet Evidence
+This packet is deliberately not a live execution packet. It records that the next
+safe monorepo step is to declare `a2a-nexus/packages/*` as the PR-first canonical
+source candidate while preserving every irreversible or runtime-sensitive action
+as a separate approval surface.
+
+## Active Packet Evidence
+
+### Source-only A2A Round
+
+The finalizer used a Team1+Team2 source-only A2A round for this packet. Workers
+were instructed not to modify files, deploy, restart services, mutate databases,
+move credentials, send providers/Telegram, ACK/replay Terminal rows, publish, or
+change split-repo settings.
+
+| Team | Broker | Worker | Task | Status |
+| --- | --- | --- | --- | --- |
+| Team1 | `seoseo` | `sogyo` | `83607748-813f-47c9-a9de-edab7e44cad2` | `done` |
+| Team1 | `seoseo` | `nosuk` | `04f8b5b0-bf19-471b-9794-e87647f83ca9` | `done` |
+| Team1 | `seoseo` | `bangtong` | `5fc18add-d580-4bec-940b-42c924148011` | `done` |
+| Team2 | `gwakga` | `dungae` | `506d9d8a-d652-495c-bc7c-75da1aba6425` | `done` |
+| Team2 | `gwakga` | `jingun` | `8abf24cb-4a91-4126-8b86-98e5a252a26f` | `done` via supplemental source-bundle retry |
+| Team2 | `gwakga` | `soonwook` | `0c5e41be-fe6d-4d78-aaf8-a903f9ad1d9b` | `done` |
+
+- Primary round: `a2a-finalpacket-retry-20260610T123212Z`.
+- Supplemental Jingun retry: `a2a-finalpacket-jingun-retry-20260610T123834Z`.
+- Local evidence files: `/tmp/a2a-finalpacket-retry-20260610T123212Z-evidence.json`
+  and `/tmp/a2a-finalpacket-jingun-retry-20260610T123834Z-evidence.json`.
+- Worker GitHub comments were disabled; this packet records the finalizer-owned
+  synthesis instead.
+
+### Prior Packet / Repository Evidence
 
 | Gate | Evidence | Current posture |
 | --- | --- | --- |
-| Package candidate import | `a2a-plane#540` merged `31273ce05b7e53655e3d8847a8d77ff1cd2f6d05`. | Package CI green; not canonical. |
-| Canonical flip readiness | `a2a-plane#542` merged `3a0f1abc6da4a16b3b6ea5a0a56e19d541082e4d`. | Readiness packet recorded; operator approval missing. |
-| Branch protection approval | `a2a-plane#544` merged `ff4390a3fbcb0f7fb85235c78eb3facc4a667495`. | Settings not applied; approval fields pending. |
-| Split-repo disposition and rollback | `a2a-plane#546` merged `03cb496a145c130186f6d08a3fd9fd12dc04ef31`. | Split repos remain canonical; post-flip rollback owner missing. |
-| Release/package/tag approval | `a2a-plane#548` merged `7aefab9f870ccc5ed7ecfff8bcfaf6554f6b22e6`. | Release, tag, npm, Docker/GHCR, and package ownership execution all blocked. |
+| Active drift closeout | `a2a-nexus#562`, merge `9669f9098459c9f17bdea0193bc428593b0ef2d5` | Current-state lane recorded; no import-needed code PR remained after post-#562 A2A review. |
+| Operator handoff | `a2a-nexus#563`, merge `910a796b9540cb839a8fa4a1148aa38a90694eea` | Operator owner and PR-first approval record captured; execution stayed separate. |
+| Branch protection/ruleset | `a2a-nexus#564`, merge `33de5b493e4f4d156a5900ad4d924a138147329c`; ruleset `17499616` | `main` ruleset active with required review/check gates. No further settings change in this packet. |
+| Split-repo disposition / rollback | `a2a-nexus#566`, merge `bf36a68ab8a38c0fbea0710d979c165d4f9b07f9` | Split repos remain `active_canonical`; archive/read-only/redirect remains blocked. |
+| Historical final sign-off | `a2a-plane#550`, merge `7200a91a92bbdbc82855a5a22321d704fdf2ca29`; issue `a2a-plane#549` | Historical matrix retained for lineage only; superseded for active `a2a-nexus#553` packet routing. |
+
+## Canonical Source Candidates
+
+The following paths are canonical source candidates for the next PR-first
+monorepo declaration. This does not transfer package ownership or archive split
+repos.
+
+| Surface | `a2a-nexus` path | Split repo / provenance store | Packet decision |
+| --- | --- | --- | --- |
+| Broker | `packages/broker` | `jinwon-int/a2a-broker` | `canonical_source_candidate`; execution not approved |
+| Docker runner | `packages/docker-runner` | `jinwon-int/a2a-docker-runner` | `canonical_source_candidate`; execution not approved |
+| OpenClaw A2A plugin | `packages/openclaw-plugin-a2a` | `jinwon-int/plugin-a2a` (`openclaw-plugin-a2a` legacy alias) | `canonical_source_candidate`; execution not approved |
 
 ## Final Sign-off Matrix
 
-No row is approved by this matrix.
+Rows marked `GO_CANDIDATE / PR-first` approve only this source packet and a future
+PR-first declaration. They do not approve live execution.
 
-| Area | Required owner/evidence before GO | Current status |
+| Area | Required owner/evidence before execution GO | Current status |
 | --- | --- | --- |
-| Branch protection or ruleset | Operator owner, exact repository/branch/ruleset target, required checks, review count, CODEOWNERS choice, admin coverage, settings rollback owner. | `NO_GO / Waiting` |
-| Split repo disposition | Operator owner, repo-by-repo option, communication plan, undo owner for read-only/archive/redirect settings. | `NO_GO / Waiting` |
-| Release tag and GitHub Release | Operator owner, tag name, target commit, signing policy, release repository, release mode, artifact list, rollback/yank policy. | `NO_GO / Waiting` |
-| npm publish | Operator owner, package names, versions, registry, access, dist-tag, provenance flag, registry account custodian, and package withdrawal or deprecation rollback plan. | `NO_GO / Waiting` |
-| Docker/GHCR publish | Operator owner, image names, registries, tags, build contexts, provenance/SBOM policy, rollback tag policy. | `NO_GO / Waiting` |
-| Package ownership transfer | Operator owner, canonical implementation source, package owner, split repo conflict policy, issue/PR provenance policy. | `NO_GO / Waiting` |
-| Canonical flip | Operator owner, accepted-risk register, final green CI evidence, branch protection posture, rollback owner, abort conditions. | `NO_GO / Waiting` |
-
-## Abort Conditions
-
-Any of these conditions keeps the final matrix at `NO_GO / Waiting`:
-
-- no named operator owner for the action;
-- no rollback owner for the action;
-- missing exact target repository, branch, package, image, tag, or release;
-- missing latest CI evidence for the tree being accepted;
-- branch protection or ruleset posture not explicitly accepted;
-- split repo disposition not explicitly accepted;
-- package ownership transfer not explicitly accepted;
-- release/package/tag approval not explicitly accepted;
-- any live deploy, restart, DB mutation, provider send, Terminal ACK/replay,
-  credential movement, visibility change, force-push, or history rewrite is
-  bundled with the canonical flip approval.
+| Branch protection or ruleset | Exact ruleset target, required checks, rollback owner, and accepted settings posture. | `RECORDED / Active`; no further settings mutation in this packet. |
+| Split repo disposition | Repo-by-repo posture, communication plan, undo owner for read-only/archive/redirect settings. | `RECORDED / active_canonical remains`; archive/read-only/redirect `NO_GO`. |
+| Release tag and GitHub Release | Operator owner, tag name, target commit, signing policy, artifact list, yank/rollback policy. | `NO_GO / Waiting`. |
+| npm publish | Package names, versions, registry, access, dist-tag, provenance, registry owner, rollback policy. | `NO_GO / Waiting`. |
+| Docker/GHCR publish | Image names, registries, tags, build contexts, provenance/SBOM, rollback tags. | `NO_GO / Waiting`. |
+| Package ownership transfer | Source-of-truth policy, package owner, split-repo conflict handling, issue/PR provenance policy. | `GO_CANDIDATE / PR-first source declaration`; transfer execution `NO_GO`. |
+| Canonical flip | Exact commit, latest green CI, accepted-risk register, rollback owner, abort conditions. | `GO_CANDIDATE / PR-first source declaration`; execution `NO_GO`. |
 
 ## GO / NO-GO Fields
 
 | Field | Value |
 | --- | --- |
 | `priorPacketsRecorded` | `true` |
-| `branchProtectionApprovalReady` | `false` |
-| `splitRepoDispositionApproved` | `false` |
+| `branchProtectionRulesetActive` | `true` |
+| `splitRepoDispositionPacketRecorded` | `true` |
+| `canonicalSourceDeclarationPrFirstApproved` | `true` |
 | `releasePackageTagApproved` | `false` |
 | `packageOwnershipTransferApproved` | `false` |
-| `rollbackOwnerAssigned` | `false` |
-| `canonicalFlipApproved` | `false` |
-| `operatorFinalApproval` | `false` |
-| `decision` | `NO_GO / Waiting` |
+| `canonicalFlipExecutionApproved` | `false` |
+| `operatorFinalExecutionApproval` | `false` |
+| `decision` | `GO_CANDIDATE / PR-first / source-only` |
+
+## Abort Conditions
+
+Any of these conditions returns the packet to hold:
+
+- latest CI for the accepted tree is missing, red, or stale;
+- ruleset `17499616` is disabled or required checks are removed;
+- split-repo archive/read-only/redirect is bundled with this source packet;
+- release/tag/npm/Docker/GHCR publish is bundled with this source packet;
+- deploy/restart/DB mutation/credential movement/provider send/Telegram send or
+  Terminal ACK/replay is bundled with this source packet;
+- registry or package owner transfer is bundled with this source packet;
+- force-push, history rewrite, destructive cleanup, or worker-owned GitHub
+  mutation is bundled with this source packet.
 
 ## Required Follow-up Before Execution
 
-A future execution packet must name the human operator owner, exact execution
-surface, target SHA/tag/package/image/release, latest green CI run, rollback
-owner, abort conditions, and accepted risks. It must be separate from this
-source-only matrix.
+A future execution packet must be separate and must name:
 
-Follow-up `a2a-plane#551` records the operator approval handoff packet. It is
-still source-only and leaves the operator response `UNANSWERED` with every
-execution-sensitive action at `NO_GO / Waiting`.
+- exact target commit, branch, package, image, tag, release, or repo setting;
+- human operator owner and rollback owner;
+- latest green CI run for the accepted tree;
+- split-repo conflict and provenance policy;
+- registry/package owner custody and rollback policy if publishing or ownership
+  transfer is requested;
+- explicit abort conditions;
+- explicit statement that release/deploy/DB/secret/provider/Terminal ACK/replay
+  remain excluded unless individually approved.
 
 ## No-live Boundary
 
-This matrix does not authorize canonical flip, package ownership transfer,
-branch protection or ruleset changes, permission changes, CODEOWNERS
-enforcement changes, split repo archive/read-only/redirect changes, release
-tag creation or movement, GitHub Release creation, npm publication, Docker or
-GHCR publication, repository visibility changes, production deploys,
+This matrix does not authorize canonical flip execution, package ownership
+transfer, branch protection or ruleset changes, permission changes, CODEOWNERS
+enforcement changes, split repo archive/read-only/redirect changes, release tag
+creation or movement, GitHub Release creation, npm publication, Docker or GHCR
+publication, repository visibility changes, production deploys,
 Gateway/broker/worker restarts, database mutation, provider or Telegram sends,
-Terminal ACK/replay, historical replay, credential movement, destructive
-cleanup, force-push, history rewrite, or worker-owned GitHub mutation.
+Terminal ACK/replay, historical replay, credential movement, destructive cleanup,
+force-push, history rewrite, or worker-owned GitHub mutation.
