@@ -149,6 +149,17 @@ and validated by
 safety guardrail: if the packet is interpreted as actual execution, it is
 blocked; only the source-only handoff may advance.
 
+
+
+The active `a2a-nexus#553` actual canonical flip execution preflight packet is
+documented in
+[`docs/monorepo-actual-canonical-flip-execution-preflight.md`](monorepo-actual-canonical-flip-execution-preflight.md)
+and validated by
+`scripts/check-monorepo-actual-canonical-flip-execution-preflight.mjs`. It records
+`GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT` and the final approval phrase required for a
+future execution run, while actual canonical flip execution remains separate
+`NO_GO / Waiting` with no state mutation performed.
+
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)
 and validated by `scripts/check-monorepo-operator-approval-handoff.mjs`. It
