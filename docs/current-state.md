@@ -2,7 +2,7 @@
 
 > **Snapshot date:** 2026-06-10
 > **Active coordination:** [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553)
-> **Status:** public alpha, operator approval received for PR-first monorepo canonical planning at `9669f9098459c9f17bdea0193bc428593b0ef2d5`; execution-sensitive actions remain separated.
+> **Status:** public alpha, actual source-state canonical flip executed for `a2a-nexus` packages at source level; external/live execution-sensitive actions remain separated.
 
 This page is the current public source-of-truth index for the A2A split-repo
 surface. It separates current work from historical public-readiness and
@@ -15,7 +15,7 @@ planning lane after operator approval:
 
 | Issue | Owning repo | Purpose |
 | --- | --- | --- |
-| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Operator approval received for PR-first canonical planning; #562 merged and post-#562 A2A safe2 round found no import-needed code PR. Execution-sensitive actions remain separated. |
+| [a2a-nexus#553](https://github.com/jinwon-int/a2a-nexus/issues/553) | `a2a-nexus` | Actual source-state canonical flip executed: `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a` are `MONOREPO_PACKAGES_CANONICAL`. External/live execution-sensitive actions remain separated. |
 
 Recently completed broker-mode work is recorded for continuity only:
 `a2a-broker#1320` and `a2a-broker#1321` are not the active `a2a-plane`
@@ -159,6 +159,15 @@ and validated by
 `GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT` and the final approval phrase required for a
 future execution run, while actual canonical flip execution remains separate
 `NO_GO / Waiting` with no state mutation performed.
+
+
+
+The active `a2a-nexus#553` actual canonical flip execution result is
+documented in
+[`docs/monorepo-actual-canonical-flip-execution-result.md`](monorepo-actual-canonical-flip-execution-result.md)
+and validated by
+`scripts/check-monorepo-actual-canonical-flip-execution-result.mjs`. It records
+`MONOREPO_PACKAGES_CANONICAL` and confirms that source-state-only actual canonical flip execution has been performed for `packages/broker`, `packages/docker-runner`, and `packages/openclaw-plugin-a2a`; split-repo archive/read-only/redirect, package ownership transfer, release/publish/deploy, DB, secret, provider send, Terminal ACK/replay, GitHub settings changes beyond the existing ruleset, force-push, and history rewrite remain separate HOLD surfaces.
 
 The active operator approval handoff packet is documented in
 [`docs/monorepo-operator-approval-handoff.md`](monorepo-operator-approval-handoff.md)

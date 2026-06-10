@@ -1,0 +1,223 @@
+{
+  "schema": "a2a.monorepo-actual-canonical-flip-execution-result.v1",
+  "snapshotDate": "2026-06-10",
+  "tracker": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+  "repo": "jinwon-int/a2a-nexus",
+  "preExecutionCommit": "02ae4fe97af0cd1e044cd202497a4693686cb11a",
+  "operatorApproval": "승인: actual canonical flip execution 진행",
+  "interpretedScope": "source-state-only canonical flip in a2a-nexus: packages/broker, packages/docker-runner, and packages/openclaw-plugin-a2a become the canonical A2A implementation source of truth in this repository state",
+  "executionOwner": "seoseo finalizer/operator",
+  "rollbackOwner": "seoseo finalizer/operator via PR revert of this execution-result packet",
+  "actualCanonicalFlipExecution": "EXECUTED_SOURCE_STATE_ONLY",
+  "canonicalSourceState": "MONOREPO_PACKAGES_CANONICAL",
+  "previousCanonicalSourceState": "SPLIT_REPOS_ACTIVE_CANONICAL_WITH_MONOREPO_GO_CANDIDATE",
+  "canonicalSources": [
+    {
+      "surface": "broker",
+      "canonicalPath": "packages/broker",
+      "previousSplitRepo": "jinwon-int/a2a-broker",
+      "state": "canonical_source",
+      "externalRepoDisposition": "unchanged_active_not_archived_not_readonly_not_redirected",
+      "packageOwnershipTransferred": false
+    },
+    {
+      "surface": "docker_runner",
+      "canonicalPath": "packages/docker-runner",
+      "previousSplitRepo": "jinwon-int/a2a-docker-runner",
+      "state": "canonical_source",
+      "externalRepoDisposition": "unchanged_active_not_archived_not_readonly_not_redirected",
+      "packageOwnershipTransferred": false
+    },
+    {
+      "surface": "openclaw_plugin_a2a",
+      "canonicalPath": "packages/openclaw-plugin-a2a",
+      "previousSplitRepo": "jinwon-int/plugin-a2a",
+      "legacyAlias": "jinwon-int/openclaw-plugin-a2a",
+      "state": "canonical_source",
+      "externalRepoDisposition": "unchanged_active_not_archived_not_readonly_not_redirected",
+      "packageOwnershipTransferred": false
+    }
+  ],
+  "priorPackets": {
+    "finalOperatorSignoff": "https://github.com/jinwon-int/a2a-nexus/pull/567",
+    "executionHandoff": "https://github.com/jinwon-int/a2a-nexus/pull/568",
+    "executionPreflight": "https://github.com/jinwon-int/a2a-nexus/pull/569"
+  },
+  "a2adEvidence": {
+    "primaryRound": "a2ad-actualflip-exec-retry-20260610T143021Z",
+    "primaryEvidencePath": "/tmp/a2ad-actualflip-exec-retry-20260610T143021Z-evidence.json",
+    "supplementalSogyoRound": "a2ad-actualflip-sogyo-retry-20260610T143538Z",
+    "supplementalSogyoEvidencePath": "/tmp/a2ad-actualflip-sogyo-retry-20260610T143538Z-evidence.json",
+    "workers": [
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "sogyo",
+        "taskId": "4436e96d-d316-45a3-94b9-f116ecc1873c",
+        "status": "succeeded",
+        "analysisStatus": "blocked",
+        "summary": "analysis bridge blocked: 실행 전제조건 증거 불충분. 페이로드에 포함된 sourceBundle.files 중 핵심 문서 docs/monorepo-actual-canonical-flip-execution-preflight.md가 887,150자에서 절단되어 전문을 검증할 수 없음. 또한 검증 스크립트 scripts/check-monorepo-actual-canonical-flip-execution-preflight.mjs 실행 결과도 제공되지 않음."
+      },
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "nosuk",
+        "taskId": "9f6fd21e-f759-40ac-a826-9f8f9aa46368",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: A2AD rollback review 완료. executionOwner(seoseo finalizer/operator)와 rollbackOwner(동일)가 명시적으로 지정되어 있고, PR-revert 기반 롤백 경로가 명확히 정의되어 있다. 모든 위험 경계(boundaries)가 false로 설정되어 소스 전용 변경만 허용된다. 다만 execution/rollback owner 단일화, Sogyo의 dissent 기록, preflight NO_GO→actual GO 전환의 명시적 문서화 필요성 등 3가지 위험이 식별되었다."
+      },
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "bangtong",
+        "taskId": "166530c2-7f81-479f-9235-d52564e17b5d",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: A2AD no-live 경계 검증 완료. payload.sourceBundle.boundaries는 actualCanonicalFlipSourceStateExecution만 true이고 나머지 13개 외부 변이 범주는 모두 false로 설정되어 있다. 내장된 docs/current-state.md는 1~9단계 게이트가 모두 완료되었고, PR #569가 preflight 패킷을 머지했으며(commit 02ae4fe), 실제 canonical flip 실행은 여전히 NO_GO/Waiting 상태임을 확인한다. operatorApproval의 '실행 진행' 문구는 interpretedScope에 의해 'a2a-nexus 소스 상태 내에서 packages/broker, packages/docker-runner, packages/openclaw-plugin-a2a를 canonical source로 표시하는 것'으로 제한된다. 소교의 반대 의견이 안전 가드레일로 명시되어 있어, 외부 실행으로 해석될 경우 차단된다. GitHub 레포가 비공개 상태임(모든 URL 404)은 githubSettingsMutation이 발생하지 않았음을 독립적으로 입증한다."
+      },
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "dungae",
+        "taskId": "7a8f642b-7b94-43e9-89b0-3316ddffad37",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: 운영자 승인 구문 '승인: actual canonical flip execution 진행'은 PR #569 병합(2026-06-10T14:23:02Z, APPROVED), 해석된 범위(actualCanonicalFlipSourceStateExecution만 true, 외부 뮤테이션 전면 금지), 사전비행 패킷(GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT)의 3중 증거 하에서 source-state actual canonical flip 실행에 충분하다고 판단된다. 다만 승인 구문의 'actual canonical flip execution'이라는 표현과 'source-only' 범위 제약 간 용어 긴장이 존재하며, 소교의 반대의견(safety guardrail)이 기록된 handoff/execution 경계를 넘나드는 해석은 차단되어야 한다."
+      },
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "jingun",
+        "taskId": "bf1b46a3-8377-453b-bb5b-8a5780a1c2ef",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: PR #569(merged, 02ae4fe)의 preflight packet이 GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT를 기록했고, 최종 operator sign-off matrix가 packages/broker·packages/docker-runner·packages/openclaw-plugin-a2a에 대해 canonical source declaration을 GO_CANDIDATE/PR-first/source-only로 표시한 상태에서, actual canonical flip execution을 source-only로 수행하기 위해 필요한 docs·fixtures·checker의 정밀 필드 명세를 도출함. split-repo disposition(archive/read-only/redirect)과 package ownership transfer는 명시적 exclusion 필드로 차단하고, rollback 경로를 문서화하며, checker는 fail-closed 원칙으로 설계해야 함."
+      },
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "broker": "gwakga",
+        "team": "Team2",
+        "worker": "soonwook",
+        "taskId": "9b4fecae-e144-415b-bf8f-390166c220e4",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: PR #569(merge commit 02ae4fe97af0cd1e044cd202497a4693686cb11a, 2026-06-10T14:23:02Z)가 APPROVED 리뷰 결정으로 main에 병합 완료. 운영자 승인(operatorApproval: '승인: actual canonical flip execution 진행')이 확보되었고, 해석된 범위(interpretedScope)는 a2a-nexus 소스-오브-트루스 상태 내에서 packages/broker, packages/docker-runner, packages/openclaw-plugin-a2a를 A2A 구현의 표준 소스(canonical source)로 표시하는 것으로 한정됨. 경계(boundaries)는 actualCanonicalFlipSourceStateExecution만 true이고 나머지 모든 실행 민감 작업(GitHub 설정 변이, 분할 저장소 아카이브/읽기전용/리디렉션, 패키지 소유권 이전, 릴리스/태그/npm/Docker 배포, DB/시크릿/제공자/터미널 ACK, 강제 푸시 등)은 false로 차단됨. 실제 표준 전환 소스-상태 실행(actual canonical source-state flip execution)과 릴리스/배포/라이브 실행(release/publish/deploy/live execution) 간의 A2AD 변증법적 구분이 명확히 유지되므로 GO 판정."
+      },
+      {
+        "round": "a2ad-actualflip-sogyo-retry-20260610T143538Z",
+        "broker": "seoseo",
+        "team": "Team1",
+        "worker": "sogyo",
+        "taskId": "7ac86688-c101-43ab-ba8d-6f18b3ee6993",
+        "status": "succeeded",
+        "analysisStatus": "done",
+        "summary": "analysis bridge done: 실제 canonical flip 실행(source-state only) GO 판정. 운영자 승인('승인: actual canonical flip execution 진행')이 preflight 문서가 요구한 정확한 문구와 일치하며, 실행 소유자(seoseo)와 롤백 소유자(seoseo, PR revert)가 명시됨. 외부 변이는 모두 경계(boundaries)에서 false로 차단됨. 다만 source bundle이 206465자에서 절단되어 fixture JSON 전체와 임베디드 체크 출력 일부를 확인할 수 없으며, 현재 HEAD(02ae4fe)의 CI 상태를 직접 검증할 증거는 제공되지 않음.",
+        "supplemental": true
+      }
+    ],
+    "usableAnalysisCount": 6,
+    "team1UsableWorkers": [
+      "sogyo",
+      "nosuk",
+      "bangtong"
+    ],
+    "team2UsableWorkers": [
+      "dungae",
+      "jingun",
+      "soonwook"
+    ],
+    "blockedSupersededTasks": [
+      {
+        "round": "a2ad-actualflip-exec-retry-20260610T143021Z",
+        "worker": "sogyo",
+        "taskId": "4436e96d-d316-45a3-94b9-f116ecc1873c",
+        "reason": "requested full preflight docs/check outputs; superseded by focused retry"
+      }
+    ],
+    "finalizerSynthesis": "GO for source-state-only actual canonical flip execution. Treat packages/* as canonical source in a2a-nexus. Preserve HOLD for every external/live/release/disposition/ownership surface."
+  },
+  "activeRuleset": {
+    "id": 17499616,
+    "name": "a2a-nexus-main-required-checks",
+    "enforcement": "active",
+    "target": "main",
+    "requiredApprovingReviews": 1,
+    "requiredStatusChecks": [
+      "paths-filter",
+      "setup",
+      "layout",
+      "contracts",
+      "check"
+    ],
+    "strictRequiredStatusChecksPolicy": true,
+    "bypassActors": []
+  },
+  "executionGates": {
+    "operatorApprovalPhraseMatched": true,
+    "scopeBoundToSourceStateOnly": true,
+    "executionOwnerAssigned": true,
+    "rollbackOwnerAssigned": true,
+    "a2adEvidenceRecorded": true,
+    "preflightPacketMerged": true,
+    "requiredReviewStillRequired": true,
+    "requiredChecksStillRequired": true,
+    "actualCanonicalFlipSourceStateExecuted": true,
+    "externalMutationPerformed": false
+  },
+  "boundaries": {
+    "sourceStateCanonicalFlip": true,
+    "githubSettingsMutation": false,
+    "splitRepoArchiveReadonlyRedirect": false,
+    "packageOwnershipTransfer": false,
+    "releaseTag": false,
+    "githubRelease": false,
+    "npmPublish": false,
+    "dockerPublish": false,
+    "deploy": false,
+    "restart": false,
+    "dbMutation": false,
+    "secretMovement": false,
+    "providerSend": false,
+    "telegramSend": false,
+    "terminalAckReplay": false,
+    "forcePush": false,
+    "historyRewrite": false
+  },
+  "rollbackPolicy": {
+    "rollbackPath": "revert this PR or follow-up PR restoring prior current-state/docs/fixture/checker source-state declarations",
+    "rollbackOwner": "seoseo finalizer/operator",
+    "externalRollbackRequired": false,
+    "reason": "no external/live mutation is performed by this execution packet"
+  },
+  "remainingSeparateApprovals": [
+    "split_repo_archive_readonly_redirect",
+    "package_ownership_transfer",
+    "release_tag_github_release",
+    "npm_publish",
+    "docker_ghcr_publish",
+    "deploy_restart",
+    "db_mutation_or_replay",
+    "secret_or_credential_movement",
+    "provider_or_telegram_send",
+    "terminal_ack_or_replay",
+    "github_settings_change_beyond_existing_ruleset",
+    "force_push_or_history_rewrite"
+  ],
+  "goNoGoFields": {
+    "actualCanonicalFlipExecutionApproved": true,
+    "actualCanonicalFlipSourceStateExecuted": true,
+    "monorepoPackagesCanonicalSource": true,
+    "splitRepoDispositionExecuted": false,
+    "packageOwnershipTransferred": false,
+    "releasePublishDeployApproved": false,
+    "settingsMutationApproved": false,
+    "externalLiveMutationPerformed": false,
+    "decision": "GO_EXECUTED_SOURCE_STATE_ONLY__EXTERNAL_SURFACES_HOLD"
+  }
+}

@@ -27,6 +27,7 @@ const steps = [
   ['monorepo-final-operator-signoff', 'npm', ['run', 'check:monorepo-final-operator-signoff']],
   ['monorepo-canonical-source-flip-execution-handoff', 'npm', ['run', 'check:monorepo-canonical-source-flip-execution-handoff']],
   ['monorepo-actual-canonical-flip-execution-preflight', 'npm', ['run', 'check:monorepo-actual-canonical-flip-execution-preflight']],
+  ['monorepo-actual-canonical-flip-execution-result', 'npm', ['run', 'check:monorepo-actual-canonical-flip-execution-result']],
   ['monorepo-operator-approval-handoff', 'npm', ['run', 'check:monorepo-operator-approval-handoff']],
   ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
