@@ -278,6 +278,52 @@ test("source-only A2A analysis with sourceHints fails closed when no source evid
   );
 });
 
+test("source-only A2A analysis fails closed when the assigned worker is stale", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "sogyo");
+  const worker = broker.getWorker("sogyo");
+  assert.ok(worker !== null);
+  worker.lastSeenAt = new Date(Date.now() - 3600_000).toISOString();
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "team1-stale-worker-source-evidence",
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        assignedWorkerId: "sogyo",
+        message: "source-only A2A task must not be queued to stale worker",
+        payload: {
+          mode: "analysis-only",
+          noLive: true,
+          sourceOnly: true,
+          readOnlyValidation: true,
+          discussionRunId: "team1-stale-worker-canary",
+          participantWorkers: ["sogyo"],
+          sourceHints: [
+            { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
+          ],
+          embeddedSourceEvidence: [
+            { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts", content: "export const marker = true;" },
+          ],
+          workModeDecision: workModeDecision(),
+        },
+        taskOrigin: "operator",
+        teamId: "team1",
+        brokerOfRecord: "seoseo",
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /stale worker/i,
+    },
+  );
+});
+
 test("source-only A2A analysis accepts embedded source evidence instead of harness-specific repo access", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
     brokerId: "seoseo",
