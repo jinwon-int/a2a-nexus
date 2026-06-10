@@ -76,6 +76,29 @@ run long tasks. Mobile worker preflight instead evaluates supplied mobile
 signals for Android/Termux workers where the risk is foreground/background
 sleep, slow polling, missing tmux supervisor, or missing local-forward listener.
 
+## Non-docker research task policy
+
+Gongyung and Daegyo should be treated as **non-docker Hermes research workers**.
+They are not Docker runner nodes, but they are ordinary A2A workers for safe
+research work. A mobile/non-docker worker may accept a task when all of the
+following are true:
+
+- `intent` is `analyze` or `verify`;
+- `policyContext.liveImpact !== true`;
+- `policyContext.targetEnvironment` is absent or `research`;
+- `payload.noLive === true`;
+- `payload.mode` is one of `analysis-only`, `readonly-analysis`,
+  `a2ad-analysis`, `local-hermes-smoke`, or `hermes-reference-dry-run`;
+- the payload does not request Docker execution, live mutation, provider send,
+  or generic GitHub write/proof-marker execution.
+
+This lets Team1/Team2 A2A and A2AD no-live rounds dispatch ordinary
+analysis-only children to Gongyung and Daegyo while still blocking
+Docker-dependent and live-impact lanes. Keep `parentRoundId`,
+`parentRoundTotal`, and `parentRoundOrder` on the task record for ordinary A2A
+round grouping; do not duplicate `parentRoundId` inside `payload` unless the
+payload intentionally carries Terminal Brief dispatch metadata.
+
 Use the output as an operator review packet. If it recommends wake-lock, lower
 poll interval, worker restart, tunnel repair, or mobile workspace
 creation/configuration, perform those as separate live operations with explicit

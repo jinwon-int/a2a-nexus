@@ -29,6 +29,12 @@ function numberOption(argv, name) {
   return value === undefined ? undefined : Number(value);
 }
 
+function listOption(argv, name) {
+  const value = readOption(argv, name);
+  if (value === undefined) return undefined;
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
 function parseArgs(argv) {
   const hasDryRun = argv.includes("--dry-run");
   const hasExecute = argv.includes("--execute");
@@ -48,6 +54,7 @@ function parseArgs(argv) {
       parentRoundTotal: numberOption(argv, "--parent-round-total"),
       parentRoundOrder: numberOption(argv, "--parent-round-order"),
       assignmentCount: numberOption(argv, "--assignment-count"),
+      dispatchWorkers: listOption(argv, "--dispatch-workers"),
       brokerOfRecordId: readOption(argv, "--broker-of-record-id") || undefined,
       originBrokerId: readOption(argv, "--origin-broker-id") || undefined,
       operatorFacingOwner: readOption(argv, "--operator-facing-owner") || undefined,
@@ -88,6 +95,7 @@ function usage() {
     "  --parent-round-total <n>     Required for common unless --assignment-count is present",
     "  --parent-round-order <n>     Defaults to --lane",
     "  --assignment-count <n>       Derive parentRoundTotal for common/ad-hoc dispatch",
+    "  --dispatch-workers <csv>     Actual task recipients; overrides manual totals/order",
     "",
     "Cross-broker routing:",
     "  --broker-of-record-id <id>",

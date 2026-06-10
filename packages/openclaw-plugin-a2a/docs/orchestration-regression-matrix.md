@@ -1,6 +1,6 @@
 # Orchestration E2E Regression Matrix
 
-Closes jinwon-int/openclaw-plugin-a2a#71.
+Closes jinwon-int/plugin-a2a#71.
 
 This document defines the regression surface for **multi-task orchestration
 patterns** as seen from the plugin's gateway and wake layers. The broker

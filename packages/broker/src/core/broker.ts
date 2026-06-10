@@ -36,7 +36,7 @@ import {
   hasTerminalBriefMetadata,
   validateTerminalBriefMetadata,
 } from "./terminal-brief-metadata.js";
-import { validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
+import { normalizeA2ARoundTaskRequest, validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
@@ -1367,10 +1367,11 @@ export class InMemoryA2ABroker {
   createTask(request: CreateTaskRequest): TaskRecord {
     const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request);
     const brokerOfRecord = normalizeOwnershipString(normalizedGitHubRequest.brokerOfRecord) ?? this.brokerId;
+    const roundNormalizedRequest = normalizeA2ARoundTaskRequest(normalizedGitHubRequest, brokerOfRecord);
     const normalizedRequest = {
-      ...normalizedGitHubRequest,
-      payload: normalizeTaskPayload(normalizedGitHubRequest.payload, {
-        assignedWorkerId: normalizedGitHubRequest.assignedWorkerId ?? normalizedGitHubRequest.target.id,
+      ...roundNormalizedRequest,
+      payload: normalizeTaskPayload(roundNormalizedRequest.payload, {
+        assignedWorkerId: roundNormalizedRequest.assignedWorkerId ?? roundNormalizedRequest.target.id,
         localBrokerId: brokerOfRecord,
       }),
     };
@@ -1412,6 +1413,9 @@ export class InMemoryA2ABroker {
       assignedWorkerId: normalizedRequest.assignedWorkerId ?? normalizedRequest.target.id,
       workspace: normalizedRequest.workspace,
       message: normalizedRequest.message,
+      ...(normalizedRequest.parentRoundId ? { parentRoundId: normalizedRequest.parentRoundId } : {}),
+      ...(normalizedRequest.parentRoundTotal ? { parentRoundTotal: normalizedRequest.parentRoundTotal } : {}),
+      ...(normalizedRequest.parentRoundOrder ? { parentRoundOrder: normalizedRequest.parentRoundOrder } : {}),
       proposalId: normalizedRequest.proposalId,
       artifactIds: uniqueIds(normalizedRequest.artifactIds ?? []),
       via: normalizedRequest.via,
@@ -2226,6 +2230,8 @@ export class InMemoryA2ABroker {
         counts,
         latestTaskUpdatedAt,
         workerMode: worker.workerMode,
+        runtimeFlavor: worker.capabilities.runtimeFlavor,
+        gatewayRequired: worker.capabilities.gatewayRequired,
         mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
       };
     });
@@ -4793,8 +4799,14 @@ function materialWorkerMetadata(metadata?: Record<string, string>): Record<strin
 
 function normalizeWorkerRuntimeFlavor(value: unknown): WorkerCapabilities["runtimeFlavor"] | undefined {
   if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "gateway" || normalized === "termux-hermes") return normalized;
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  if (normalized === "gateway" || normalized === "termux-hermes" || normalized === "openclaw-poll-handler") {
+    return normalized;
+  }
+  if (normalized === "hermes") return "termux-hermes";
+  if (normalized === "openclaw-poll-only" || normalized === "broker-poll-handler" || normalized === "poll-only") {
+    return "openclaw-poll-handler";
+  }
   if (normalized.length > 0) return "unknown";
   return undefined;
 }

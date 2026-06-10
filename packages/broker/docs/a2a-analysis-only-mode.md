@@ -31,6 +31,21 @@ from pretending that analysis occurred.
 | `doneCommentUrl`     | Optional  | URL pointing to a Done comment (e.g., GitHub issue)        |
 | `blockCommentUrl`    | Optional  | URL pointing to a Block comment                            |
 | `startCommentUrl`    | Optional  | URL pointing to a Start marker comment                     |
+
+Analysis bridge model output is not trusted to invent comment URLs. When durable
+GitHub evidence comments are required, the handler posts them itself only when
+all of the following are true:
+
+- `A2A_POST_ANALYSIS_EVIDENCE_COMMENTS=1` is set in the handler environment.
+- The task payload explicitly sets `postGithubComment: true`.
+- The task payload carries a GitHub issue target via `issueUrl`, `githubIssueUrl`,
+  `parentIssueUrl`, an issue URL in `evidenceRefs`, or `repo` + `issue`.
+- GitHub auth is available in the process environment.
+- The task does not set `noGitHubComment: true`.
+
+The handler adds an idempotency marker of the form
+`<!-- a2a-analysis-evidence:<taskId>:done|blocked -->`; retries reuse an existing
+matching comment instead of creating duplicates.
 | `findings`           | Optional  | Array of analysis findings                                 |
 | `risks`              | Optional  | Array of identified risks                                  |
 | `recommendations`    | Optional  | Array of recommended next steps                            |
@@ -41,18 +56,78 @@ from pretending that analysis occurred.
 When `blockCommentUrl` is present, the task outcome is reported as **Blocked**
 rather than **Done**.
 
-### Optional OpenClaw Analysis Bridge
+### Optional OpenClaw / Hermes Analysis Bridge
 
 By default, analysis tasks use the builtin structured handler and only transform
-task payload data into evidence output. Operators can explicitly opt in to a
-task-scoped OpenClaw bridge by setting `A2A_OPENCLAW_ANALYSIS_ENABLED=1` and
-configuring `OPENCLAW_BIN` or the normal OpenClaw bridge environment.
+task payload data into evidence output. That default path is intentionally
+credential-free and deterministic, but it cannot inspect a repository or produce
+new model-backed design judgment by itself.
+
+Operators can explicitly opt in to a task-scoped model bridge by setting
+`A2A_OPENCLAW_ANALYSIS_ENABLED=1` and configuring `A2A_OPENCLAW_ANALYSIS_BIN`, `OPENCLAW_BIN`, or the normal
+OpenClaw bridge environment. On Hermes workers that do not have the OpenClaw CLI,
+use the bundled OpenClaw-compatible Hermes bridge:
+
+```bash
+A2A_OPENCLAW_ANALYSIS_ENABLED=1
+A2A_OPENCLAW_BRIDGE_ENABLED=1
+A2A_OPENCLAW_ANALYSIS_BIN=/opt/a2a-broker-worker/current/scripts/hermes-a2a-analysis-bridge.mjs
+# Keep OPENCLAW_BIN on its existing patch/A2AD runtime if already configured.
+HERMES_BIN=hermes
+A2A_HERMES_ANALYSIS_TOOLSETS=safe
+A2A_ANALYSIS_REPO_MAP_JSON='{"jinwon-int/a2a-broker":"/opt/a2a-broker","jinwon-int/seo-web-bridge":"/root/work/github/seo-web-bridge"}'
+# Keep the final `hermes chat -q` prompt below OS per-argv limits (Linux
+# MAX_ARG_STRLEN is 128 KiB). The bridge defaults to 96 KiB and truncates with a
+# prompt-budget warning rather than failing with E2BIG.
+A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES=98304
+```
+
+The Hermes bridge accepts the existing `OPENCLAW_BIN agent --message ... --json`
+contract, extracts `Payload JSON`, reads only allowlisted repo-relative paths from
+`A2A_ANALYSIS_REPO_MAP_JSON`, calls `hermes chat -q`, validates that Hermes returns
+JSON, and then wraps that JSON as an OpenClaw-style envelope:
+
+```json
+{"payloads":[{"text":"{\"status\":\"done\",\"summary\":\"...\",\"findings\":[\"...\"]}"}]}
+```
+
+Task payloads should include source hints when model-backed analysis is expected:
+
+```json
+{
+  "mode": "analysis-only",
+  "noLive": true,
+  "sourceOnly": true,
+  "repo": "jinwon-int/seo-web-bridge",
+  "path": "runtime/app-src/app_chat.py"
+}
+```
+
+Supported path hint fields include `path`, `paths`, `file`, `files`,
+`sourcePath`, `sourcePaths`, `analysisPath`, `analysisPaths`, `targetPath`,
+`targetPaths`, `targetFile`, `targetFiles`, `evidencePath`, and `evidencePaths`.
+Paths must be repo-relative; absolute paths and `..` traversal are rejected.
 
 The bridge is still read-only: it receives a JSON-only analysis prompt and is
 told not to modify files, deploy, restart services, send live provider messages,
-acknowledge terminals, mutate databases, or move credentials. If the bridge
-times out, fails, or does not return parseable JSON, the task fails closed
-instead of returning generic acceptance.
+acknowledge terminals, mutate databases, move credentials, commit, or open PRs.
+If the bridge times out, fails, or does not return parseable JSON, the task fails
+closed instead of returning generic acceptance.
+
+### Finalizer Evidence Classification
+
+Before a broker finalizer counts A2A/A2AD child output as worker reasoning, run the
+structural classifier:
+
+```bash
+npm run a2ad_evidence_classifier -- --input /path/to/round-results.json --require-substantive --min-substantive 1
+```
+
+The classifier marks `analysis bridge blocked`, missing repo-root/source-map
+failures, and wrapper/dry-run outputs as reportable plumbing evidence, not
+substantive worker opinions. Finalizers must either fix the source mapping or run
+a supplemental no-live/sourceOnly evidence packet before treating the round as a
+substantive A2AD judgment.
 
 ### Safety Properties
 
@@ -145,6 +220,8 @@ Tests cover:
 | Alias modes (`read-only-analysis`) work | `src/openclaw-handler-artifact.test.ts` |
 | No-live/source-only A2A evidence tasks avoid generic acceptance-only output | `src/openclaw-handler-artifact.test.ts` |
 | Optional OpenClaw analysis bridge returns structured analysis evidence | `src/openclaw-handler-artifact.test.ts` |
+| Hermes-backed OpenClaw-compatible bridge reads source and returns envelope | `scripts/hermes-a2a-analysis-bridge.test.mjs`, `src/openclaw-handler-artifact.test.ts` |
+| A2AD evidence classifier blocks source-map failures and wrapper-only outputs from being counted as worker opinions | `scripts/a2ad-evidence-classifier.test.mjs` |
 | Unknown mode falls through to generic | `src/openclaw-handler-artifact.test.ts` |
 | Propose_patch evidence is preserved | `src/openclaw-handler-artifact.test.ts` |
 | `validateTaskCompletionEvidence` skips analysis-only | `src/openclaw-handler-artifact.test.ts` |
@@ -154,6 +231,8 @@ Tests cover:
 
 ## Related
 
-- `scripts/openclaw-a2a-task-handler.mjs` — Handler implementation
+- `scripts/a2a-task-handler.mjs` — Canonical worker handler implementation
+- `scripts/a2a-task-handler.mjs` — Legacy compatibility wrapper
+- `scripts/hermes-a2a-analysis-bridge.mjs` — Hermes-backed OpenClaw-compatible analysis bridge
 - `src/core/github-task-completion.ts` — Completion evidence validation
 - `docs/a2a-protocol.md` — A2A protocol reference

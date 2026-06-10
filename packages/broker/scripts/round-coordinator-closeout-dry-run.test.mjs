@@ -255,10 +255,9 @@ describe("validateSafety", () => {
 
 describe("redactSensitive", () => {
   it("redacts GitHub tokens", () => {
-    const token = ['ghp', 'abc123DEF456ghi789jkl'].join('_');
-    const result = redactSensitiveStrings(`token ${token}`);
+    const result = redactSensitiveStrings("token ghp_abc123DEF456ghi789jkl");
     ok(result.includes("[redacted-token]"));
-    ok(!result.includes(token));
+    ok(!result.includes("ghp_abc123DEF456ghi789jkl"));
   });
 
   it("redacts TOKEN environment assignments", () => {
@@ -268,10 +267,9 @@ describe("redactSensitive", () => {
   });
 
   it("redacts nested objects recursively", () => {
-    const token = ['ghp', 'abc123def456'].join('_');
     const obj = {
       level1: {
-        secret: token,
+        secret: "ghp_abc123def456",
         normal: "hello",
       },
     };
@@ -281,8 +279,7 @@ describe("redactSensitive", () => {
   });
 
   it("handles arrays", () => {
-    const token = ['ghp', 'abc123def456'].join('_');
-    const arr = [token, "normal"];
+    const arr = ["ghp_abc123def456", "normal"];
     const cleaned = redactSensitive(arr);
     ok(cleaned[0].includes("[redacted-token]"));
     equal(cleaned[1], "normal");

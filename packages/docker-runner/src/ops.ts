@@ -56,6 +56,18 @@ export interface CleanupReport {
 export interface GitHubPatchReadinessOptions {
   engine?: RunnerEngine;
   openclawProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => OpenClawProfileReadinessInput;
+  hermesProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => HermesProfileReadinessInput;
+}
+
+interface HermesProfileReadinessInput {
+  cliOnPath: boolean;
+  cliPath?: string;
+  cliVersionOk: boolean;
+  cliVersion?: string;
+  profileMountExists: boolean;
+  expectedMountPath: string;
+  configFiles: string[];
+  errors: string[];
 }
 
 /**
@@ -476,6 +488,9 @@ export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubP
   if (config.commandProfile === "openclaw") {
     return checkOpenClawProfilePatchReadiness(config, options);
   }
+  if (config.commandProfile === "hermes") {
+    return checkHermesProfilePatchReadiness(config, options);
+  }
 
   if (config.commandScript) {
     return {
@@ -512,8 +527,8 @@ export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubP
   if (config.commandTemplate) {
     return {
       status: "fail",
-      message: "GitHub patch execution blocks legacy commandTemplate eval path; use OpenClaw or Codex via commandScript or commandJson",
-      detail: { env: "A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE", safe: false, eval: true, allowedExecutors: ["openclaw", "codex"] },
+      message: "GitHub patch execution blocks legacy commandTemplate eval path; use OpenClaw, Hermes, or Codex via commandScript or commandJson",
+      detail: { env: "A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE", safe: false, eval: true, allowedExecutors: ["openclaw", "hermes", "codex"] },
     };
   }
 
@@ -524,6 +539,57 @@ export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubP
       missing: ["A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT", "A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON"],
       fallback: "missing command yields Block evidence; it must not be reported as Done",
     },
+  };
+}
+
+function checkHermesProfilePatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions): OpsCheck {
+  if (!config.commandScript) {
+    return {
+      status: "fail",
+      message: "GitHub patch execution is blocked: Hermes profile selected without a generated commandScript",
+      detail: { profile: "hermes", safe: false, eval: false },
+    };
+  }
+
+  const engine = options.engine ?? config.engine ?? "docker";
+  const probeInput = options.hermesProfileProbe
+    ? options.hermesProfileProbe(config, engine)
+    : probeHermesProfileInContainer(config, engine);
+  const checks = [
+    { kind: "hermes_cli_resolved", passed: probeInput.cliOnPath && Boolean(probeInput.cliPath) },
+    { kind: "hermes_cli_version_ok", passed: probeInput.cliVersionOk && Boolean(probeInput.cliVersion) },
+    { kind: "hermes_profile_mount_present", passed: probeInput.profileMountExists },
+  ];
+  const failureCategory = classifyHermesProfileFailure(probeInput);
+  const detail: Record<string, unknown> = {
+    path: "/work/patch-command.sh",
+    profile: "hermes",
+    safe: true,
+    eval: false,
+    containedSubagents: describeContainedSubagents(config),
+    failureCategory,
+    summary: buildHermesProfileSummary(probeInput, failureCategory),
+    checks,
+    configFiles: probeInput.configFiles,
+  };
+
+  if (failureCategory === "ok") {
+    return {
+      status: "ok",
+      message: "GitHub patch execution is ready via Hermes profile",
+      detail,
+    };
+  }
+
+  detail.provisioningPaths = [
+    "preferred: pre-bake Hermes Agent into the runner base image (docker/hermes-runner.Dockerfile)",
+    "set A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR and mount a host dir containing Hermes config/auth files",
+    "use A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:<runner-sha>",
+  ];
+  return {
+    status: "fail",
+    message: "GitHub patch execution is blocked: Hermes profile runtime is not ready",
+    detail,
   };
 }
 
@@ -547,6 +613,7 @@ function checkOpenClawProfilePatchReadiness(config: RunnerConfig, options: GitHu
     profile: "openclaw",
     safe: true,
     eval: false,
+    containedSubagents: describeContainedSubagents(config),
     fallback: fallback ? "explicit_npm_install" : "disabled",
     failureCategory: outcome.failureCategory,
     summary: outcome.summary,
@@ -581,6 +648,96 @@ function checkOpenClawProfilePatchReadiness(config: RunnerConfig, options: GitHu
     message: "GitHub patch execution is blocked: OpenClaw profile runtime is not ready",
     detail,
   };
+}
+
+function describeContainedSubagents(config: RunnerConfig): Record<string, unknown> {
+  const policy = config.containedSubagents ?? {
+    enabled: false,
+    maxCount: 0,
+    outputBytes: 12000,
+    reasons: [],
+    roles: [],
+  };
+  return {
+    enabled: policy.enabled,
+    maxCount: policy.maxCount,
+    outputBytes: policy.outputBytes,
+    reasons: policy.reasons,
+    roles: policy.roles,
+    boundary: "same Docker task workspace; helper evidence only; one final worker answer",
+  };
+}
+
+function probeHermesProfileInContainer(config: RunnerConfig, engine: RunnerEngine): HermesProfileReadinessInput {
+  const args = [
+    "run",
+    "--rm",
+    "--network",
+    config.network ?? "bridge",
+    "--entrypoint",
+    "sh",
+  ];
+
+  for (const mount of config.extraMounts ?? []) {
+    const mode = mount.readOnly === false ? "rw" : "ro";
+    args.push("-v", mount.source + ":" + mount.target + ":" + mode);
+  }
+
+  args.push(config.image, "-lc", HERMES_PROFILE_PROBE_SCRIPT);
+
+  const result = spawnSync(engine, args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+  });
+
+  if (result.status !== 0) {
+    return {
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: false,
+      expectedMountPath: HERMES_PROFILE_MOUNT_PATH,
+      configFiles: [],
+      errors: [boundedProbeError(result.status, result.error)],
+    };
+  }
+
+  const values = parseProbeKeyValues(result.stdout ?? "");
+  const cliPath = boundedProbeValue(values.get("cli_path"), 200);
+  const cliVersion = boundedProbeValue(values.get("cli_version"), 100);
+  const configFiles = (boundedProbeValue(values.get("config_files"), 300) ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    cliOnPath: Boolean(cliPath),
+    cliPath,
+    cliVersionOk: values.get("cli_version_ok") === "1" && Boolean(cliVersion),
+    cliVersion,
+    profileMountExists: values.get("profile_mount_exists") === "1",
+    expectedMountPath: HERMES_PROFILE_MOUNT_PATH,
+    configFiles,
+    errors: [],
+  };
+}
+
+function classifyHermesProfileFailure(input: HermesProfileReadinessInput): string {
+  if (!input.cliOnPath) return "hermes_cli_unavailable";
+  if (!input.cliVersionOk) return "hermes_version_failed";
+  if (!input.profileMountExists) return "hermes_profile_unavailable";
+  return "ok";
+}
+
+function buildHermesProfileSummary(input: HermesProfileReadinessInput, failureCategory: string): string {
+  const parts = [
+    "failureCategory=" + failureCategory,
+    "cli=" + (input.cliPath ?? "missing"),
+    "version=" + (input.cliVersion ?? "missing"),
+    "mount=" + (input.profileMountExists ? input.expectedMountPath : "missing"),
+  ];
+  if (input.configFiles.length) parts.push("files=" + input.configFiles.join(","));
+  if (input.errors.length) parts.push("errors=" + input.errors.slice(0, 3).join("; "));
+  return parts.join(" ");
 }
 
 function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEngine): OpenClawProfileReadinessInput {
@@ -635,6 +792,36 @@ function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEng
     errors: [],
   };
 }
+
+const HERMES_PROFILE_MOUNT_PATH = "/run/secrets/hermes-dir";
+
+const HERMES_PROFILE_PROBE_SCRIPT = [
+  "set -u",
+  "cli_path=\"$(command -v hermes 2>/dev/null || true)\"",
+  "cli_version=\"\"",
+  "cli_version_ok=0",
+  "if [ -n \"$cli_path\" ]; then",
+  "  cli_version=\"$(hermes --version 2>/dev/null | head -n 1 || true)\"",
+  "  if [ -n \"$cli_version\" ]; then",
+  "    cli_version_ok=1",
+  "  fi",
+  "fi",
+  "profile_mount_exists=0",
+  "config_files=\"\"",
+  "if [ -d " + HERMES_PROFILE_MOUNT_PATH + " ]; then",
+  "  profile_mount_exists=1",
+  "  for file in config.yaml .env auth.json honcho.json; do",
+  "    if [ -f " + HERMES_PROFILE_MOUNT_PATH + "/$file ]; then",
+  "      config_files=\"${config_files}${config_files:+,}$file\"",
+  "    fi",
+  "  done",
+  "fi",
+  "printf 'cli_path=%s\\n' \"$cli_path\"",
+  "printf 'cli_version_ok=%s\\n' \"$cli_version_ok\"",
+  "printf 'cli_version=%s\\n' \"$cli_version\"",
+  "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
+  "printf 'config_files=%s\\n' \"$config_files\"",
+].join("\n");
 
 const OPENCLAW_PROFILE_PROBE_SCRIPT = [
   "set -u",

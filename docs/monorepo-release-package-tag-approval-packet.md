@@ -35,7 +35,7 @@ the monorepo candidate tree; it does not create release artifacts or publish.
 | --- | --- | --- | --- | --- | --- |
 | Broker | `a2a-broker` | `0.1.0` | `true` | No npm publish while private; Docker candidate only via separate approval. | `npm --workspace packages/broker run build` |
 | Docker runner | `@openclaw/a2a-docker-runner` | `0.1.0` | `false` | npm package with `a2a-docker-runner` bin; no publish approved. | `npm --workspace packages/docker-runner run verify:package` |
-| OpenClaw plugin | `openclaw-plugin-a2a` | `0.1.0` | `true` | Plugin package metadata only; no npm publish approved while private. | `npm --workspace packages/openclaw-plugin-a2a run prepack` |
+| OpenClaw plugin | `plugin-a2a` | `0.1.0` | `true` | Plugin package metadata only; no npm publish approved while private. | `npm --workspace packages/openclaw-plugin-a2a run prepack` |
 
 Docker/GHCR publication remains blocked. The monorepo contains
 `packages/broker/Dockerfile` and `packages/broker/docker-compose.yml`; those

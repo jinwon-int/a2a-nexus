@@ -1,7 +1,7 @@
 /**
  * Tests for auto-closeout action status projection (#406).
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#406
+ * Issue:  jinwon-int/plugin-a2a#406
  * Parent: jinwon-int/a2a-broker#844
  * Run:    a2a-team1-auto-closeout-action-reconcile-20260520T180955Z
  * Round:  3/4

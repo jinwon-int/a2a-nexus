@@ -1,8 +1,8 @@
-# openclaw-plugin-a2a
+# plugin-a2a
 
-[![ci](https://github.com/jinwon-int/openclaw-plugin-a2a/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/openclaw-plugin-a2a/actions/workflows/ci.yml)
+[![ci](https://github.com/jinwon-int/plugin-a2a/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/plugin-a2a/actions/workflows/ci.yml)
 
-Standalone OpenClaw plugin repo for the A2A broker adapter.
+Standalone A2A broker adapter plugin repo.
 
 > Public-readiness note: this package is intentionally marked `private` and
 > should be treated as an unpublished/private-candidate plugin until the exact
@@ -12,7 +12,7 @@ Standalone OpenClaw plugin repo for the A2A broker adapter.
 
 ## Repository role in the A2A layout
 
-`openclaw-plugin-a2a` is the OpenClaw-facing adapter for the A2A stack.
+`plugin-a2a` is the OpenClaw-facing adapter for the A2A stack.
 
 It owns:
 
@@ -52,7 +52,7 @@ Current ownership:
 The long-term split is:
 
 - `openclaw/openclaw`: generic seams only
-- `openclaw-plugin-a2a`: OpenClaw adapter and orchestration ownership
+- `plugin-a2a`: OpenClaw adapter and orchestration ownership
 - `a2a-broker`: standalone broker domain logic
 
 That keeps the A2A workstream parallelizable without leaving permanent A2A-specific behavior in OpenClaw core.
@@ -132,7 +132,7 @@ Validated on Android Termux with:
 
 ```bash
 git clone <plugin-repo-url>
-cd openclaw-plugin-a2a
+cd plugin-a2a
 npm install --legacy-peer-deps
 ln -sfn "$(npm root -g)/openclaw" node_modules/openclaw
 npm run build

@@ -26,27 +26,6 @@ export interface AgentSkill {
  * be merged into a single shape; they serve different consumers (public A2A
  * clients vs. internal broker scheduler).
  */
-/**
- * Trust-signature envelope for a signed AgentCard (JWS or similar).
- *
- * **Current status: deferred.** The broker does not yet sign or verify
- * AgentCards. This field is a type-level placeholder for future
- * implementation (see docs/agent-card-trust-model.md). When populated,
- * consumers SHOULD verify the signature before trusting card content.
- */
-export interface AgentCardSignature {
-  /** JWS compact serialization or equivalent signature payload. */
-  payload: string;
-  /** Key identifier used for signing (kid claim or equivalent). */
-  keyId?: string;
-  /** Signature algorithm (e.g. ES256, EdDSA). */
-  algorithm?: string;
-  /** Unix timestamp when the signature was created. */
-  createdAt?: number;
-  /** Unix timestamp when the signature expires. */
-  expiresAt?: number;
-}
-
 export interface AgentCard {
   name: string;
   description: string;
@@ -60,20 +39,6 @@ export interface AgentCard {
   defaultInputModes: string[];
   defaultOutputModes: string[];
   skills: AgentSkill[];
-  /**
-   * Optional trust signature over the card content.
-   *
-   * Deferred: not yet populated by the broker. See
-   * docs/agent-card-trust-model.md for the trust model and signing roadmap.
-   */
-  signature?: AgentCardSignature;
-  /**
-   * A2A extension URIs that this card's signature covers, in addition to
-   * the core card fields. An empty array means the signature covers only
-   * the core AgentCard shape. When absent (`undefined`), the card is
-   * unsigned.
-   */
-  signedExtensions?: string[];
 }
 
 export interface CreateBrokerAgentCardOptions {

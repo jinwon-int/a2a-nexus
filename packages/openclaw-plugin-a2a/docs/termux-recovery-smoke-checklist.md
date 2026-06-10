@@ -1,7 +1,7 @@
 # Termux / Mobile Recovery Smoke Checklist
 
-> **Issue:** jinwon-int/openclaw-plugin-a2a#77  
-> **Node:** gongyung (Android Termux)  
+> **Issue:** jinwon-int/plugin-a2a#77
+> **Node:** gongyung (Android Termux)
 > **Purpose:** Validate that recovery loop hardening works correctly on low-resource mobile nodes.
 
 ---
@@ -9,13 +9,13 @@
 ## Prerequisites
 
 - [ ] OpenClaw gateway running on Termux
-- [ ] `openclaw-plugin-a2a` built (`npx tsc`)
+- [ ] `plugin-a2a` built (`npx tsc`)
 - [ ] Broker reachable from Termux (Tailscale or direct)
 
 ## Build & Install
 
 ```bash
-cd openclaw-plugin-a2a
+cd plugin-a2a
 npx tsc
 # Verify dist/src/recovery-guard.js exists
 ls -la dist/src/recovery-guard.js
@@ -110,7 +110,7 @@ node --test test/recovery-loop.test.mjs
 ## T10. Broker Command Center Status
 
 1. Run recovery actions
-2. Call `guard.status()` 
+2. Call `guard.status()`
 3. Verify all fields are populated correctly:
    - `activeCount`, `pendingCount`, `totalAttempted`
    - `totalDeduplicated`, `totalRateLimited`, `totalTimedOut`

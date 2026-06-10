@@ -227,10 +227,8 @@ test("scanHistory handles malformed run.json gracefully", async () => {
 test("scanHistory redacts secrets in taskId and summary", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-scanner-redact-"));
   try {
-    const taskToken = ["ghp", "1234567890abcdef1234567890_leak"].join("_");
-    const summaryToken = ["ghp", "abcdef1234567890abcdef1234567890"].join("_");
-    createMinimalRun(rootDir, taskToken, "run1", {
-      summary: `token=${summaryToken} secret leaked in summary`,
+    createMinimalRun(rootDir, "ghp_" + "1234567890abcdef1234567890_leak", "run1", {
+      summary: "token=ghp_abcdef1234567890abcdef1234567890 secret leaked in summary",
     });
 
     const profile = await scanHistory({ rootDir });
@@ -301,14 +299,12 @@ test("createArtifactBundle copies and redacts artifact files", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-bundle-src-"));
   const outputDir = mkdtempSync(join(tmpdir(), "a2a-bundle-out-"));
   try {
-    const summaryToken = ["ghp", "1234567890abcdef1234567890abcdef"].join("_");
-    const logToken = ["ghp", "abcdef1234567890abcdef1234567890"].join("_");
     const runDir = createMinimalRun(rootDir, "bundle-task", "run1", {
-      summary: `Build output: secret=${summaryToken}`,
+      summary: "Build output: secret=ghp_1234567890abcdef1234567890abcdef",
     });
 
     // Add a second artifact with token in it.
-    writeFileSync(join(runDir, "artifacts", "command-0.log"), `Started with GH_TOKEN=${logToken}\nok`);
+    writeFileSync(join(runDir, "artifacts", "command-0.log"), "Started with GH_TOKEN=ghp_abcdef1234567890abcdef1234567890\nok");
 
     const manifest = await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
 
@@ -491,9 +487,8 @@ test("fail-closed: bundle redacts x-access-token in URLs", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-bundle-xaccess-"));
   const outputDir = mkdtempSync(join(tmpdir(), "a2a-bundle-xaccess-out-"));
   try {
-    const token = ["ghp", "1234567890abcdef1234567890"].join("_");
     const runDir = createMinimalRun(rootDir, "xaccess-task", "run1", {
-      summary: `Using x-access-token:${token}@github.com as remote`,
+      summary: "Using x-access-token:ghp_1234567890abcdef1234567890@github.com as remote",
     });
 
     await createArtifactBundle({ workDir: runDir, outputPath: outputDir });
@@ -631,7 +626,7 @@ test("artifact bundle sanitizes GitHub projection and evidence hints before pres
       schemaVersion: "a2a.runner.evidence-hints.v1",
       issueUrl: "https://github.com/jinwon-int/test/issues/6",
       doneUrl: "https://github.com/jinwon-int/test/issues/6#issuecomment-456",
-      branch: `feature-${["ghp", "1234567890abcdef1234567890_leak"].join("_")}`,
+      branch: "feature-" + "ghp_" + "1234567890abcdef1234567890_leak",
     };
     manifest.githubCommentProjection = {
       schemaVersion: "a2a.runner.github-comment-projection.v1",
@@ -639,7 +634,7 @@ test("artifact bundle sanitizes GitHub projection and evidence hints before pres
       url: "https://github.com/jinwon-int/test/issues/6#issuecomment-456",
       issueUrl: "https://github.com/jinwon-int/test/issues/6",
       manifestPath: "/tmp/private/artifacts/manifest.json",
-      dedupeKey: `a2a:${["ghp", "1234567890abcdef1234567890_leak"].join("_")}:projection`,
+      dedupeKey: "a2a:" + "ghp_" + "1234567890abcdef1234567890_leak:projection",
       commentIsTerminalAck: false,
       commentIsVisibilityReceipt: false,
       commentIsOperatorApproval: false,
@@ -1397,12 +1392,11 @@ test("readinessScan report does not leak secrets", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-readiness-noleak-"));
   try {
     const safeTaskId = "secret-task";
-    const token = ["ghp", "1234567890abcdef1234567890abcdef"].join("_");
     const runDir = join(rootDir, safeTaskId, "secret-run");
     mkdirSync(runDir, { recursive: true });
 
     writeFileSync(join(runDir, "run.json"), JSON.stringify({
-      taskId: token,
+      taskId: "ghp_1234567890abcdef1234567890abcdef",
       safeTaskId,
       runToken: "secret-run",
       createdAt: "2026-05-12T00:00:00.000Z",
@@ -1413,7 +1407,7 @@ test("readinessScan report does not leak secrets", async () => {
       schemaVersion: 1,
       manifestPath: "artifacts/manifest.json",
       generatedAt: "1970-01-01T00:00:00.000Z",
-      taskId: token,
+      taskId: "ghp_1234567890abcdef1234567890abcdef",
       status: "done",
       summary: "ok",
       evidence: [],

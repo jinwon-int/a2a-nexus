@@ -63,8 +63,9 @@ Reasoning:
 - Add JWS signing via a broker-managed key pair.
 - Expose a `/.well-known/agent-card.jws` endpoint alongside the existing JSON
   card (preserving backward compatibility).
-- Add the `signature` field to the `AgentCard` type (placeholder exists as of
-  this doc — see `src/a2a/agent-card.ts`).
+- Add the `signature` field to the `AgentCard` type in the same PR that
+  implements signing. The current public TypeScript shape intentionally omits
+  `signature`/`signedExtensions` placeholders while signing is deferred.
 - Add key rotation and revocation infrastructure.
 
 ## Decision 2: Can worker capability cards carry a public-safe signature envelope?

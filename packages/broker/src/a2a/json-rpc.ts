@@ -1,6 +1,6 @@
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
-import type { RequesterIdentity } from "../core/request-security.js";
-import type { A2AExchangeVia, TaskListFilters } from "../core/types.js";
+import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
+import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import { projectBrokerTask, projectBrokerTaskForList } from "./task-projection.js";
@@ -67,16 +67,28 @@ export function executeA2AJsonRpc(
 
       case "GetTask": {
         const taskId = requireString(params, "taskId");
+        if (options.enforceRequesterIdentity) {
+          requireRequesterIdentityForTaskRead(options, "GetTask");
+        }
         const task = options.broker.getTask(taskId);
         if (!task) {
           throw new BrokerError("not_found", "task not found");
+        }
+        if (options.enforceRequesterIdentity) {
+          assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
         return success(id, { task: projectBrokerTask(task) });
       }
 
       case "ListTasks": {
         const filters = parseListTaskFilters(params);
-        const tasks = options.broker.listTasks(filters).map(projectBrokerTaskForList);
+        if (options.enforceRequesterIdentity) {
+          requireTaskListRequester(options);
+        }
+        const tasks = options.broker
+          .listTasks(filters)
+          .filter((task) => canReadTaskSnapshot(options, task))
+          .map(projectBrokerTaskForList);
         return success(id, { tasks });
       }
 
@@ -93,9 +105,15 @@ export function executeA2AJsonRpc(
         // live updates. Actual streaming happens over HTTP SSE at `/a2a/tasks/:id/events`
         // because JSON-RPC over a single POST cannot carry a multi-event stream.
         const taskId = requireString(params, "taskId");
+        if (options.enforceRequesterIdentity) {
+          requireRequesterIdentityForTaskRead(options, "SubscribeToTask");
+        }
         const task = options.broker.getTask(taskId);
         if (!task) {
           throw new BrokerError("not_found", "task not found");
+        }
+        if (options.enforceRequesterIdentity) {
+          assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
         const subscribeUrl = buildSubscribeUrl(options.publicBaseUrl, taskId);
         return success(id, {
@@ -113,6 +131,8 @@ export function executeA2AJsonRpc(
       }
 
       case "a2a.peer.status":
+      // Deprecated compatibility alias retained for existing callers. New
+      // clients and docs must use the canonical broker extension name above.
       case "PeerStatus": {
         if (!options.peerStatusService) {
           return failure(id, -32601, `method not found: ${method}`);
@@ -245,6 +265,32 @@ function parseListTaskFilters(params: unknown): TaskListFilters {
   };
 }
 
+function canReadTaskSnapshot(options: ExecuteJsonRpcOptions, task: TaskRecord): boolean {
+  if (!options.enforceRequesterIdentity) {
+    return true;
+  }
+  requireTaskListRequester(options);
+  try {
+    assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
+    return true;
+  } catch (error) {
+    if (error instanceof BrokerError && error.code === "unauthorized") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function requireTaskListRequester(options: ExecuteJsonRpcOptions): void {
+  requireRequesterIdentityForTaskRead(options, "ListTasks");
+}
+
+function requireRequesterIdentityForTaskRead(options: ExecuteJsonRpcOptions, method: string): void {
+  if (!options.requesterIdentity?.id) {
+    throw new BrokerError("unauthorized", `x-a2a-requester-id is required for ${method}`);
+  }
+}
+
 function executeSendMessage(
   params: unknown,
   options: ExecuteJsonRpcOptions,
@@ -274,8 +320,14 @@ function executeSendMessage(
     "rollback_live",
   ]) ?? "chat";
   const via = parseVia(metadata);
+  assertConsistentAssignmentMetadata(metadata);
 
   if (exchangeId) {
+    const existingExchange = options.broker.getExchange(exchangeId);
+    if (!existingExchange) {
+      throw new BrokerError("not_found", "exchange not found");
+    }
+    assertConsistentExistingContextAssignmentMetadata(metadata, existingExchange.target.id);
     const message = options.broker.addExchangeMessage(exchangeId, {
       actor,
       message: text,
@@ -304,6 +356,9 @@ function executeSendMessage(
   }
 
   const assignedWorkerId = optionalString(metadata.assignedWorkerId) ?? targetWorker.nodeId;
+  if (assignedWorkerId !== targetWorker.nodeId) {
+    throw new Error("metadata.assignedWorkerId must match targetNodeId when starting a new context");
+  }
   const assignedWorker = options.broker.getWorker(assignedWorkerId);
   if (!assignedWorker) {
     throw new BrokerError("not_found", "assigned worker not found");
@@ -339,6 +394,28 @@ function executeSendMessage(
     messageId: exchange.rootMessageId,
     task: projectBrokerTask(task),
   };
+}
+
+function assertConsistentAssignmentMetadata(metadata: Record<string, unknown>): void {
+  const targetNodeId = optionalString(metadata.targetNodeId);
+  const assignedWorkerId = optionalString(metadata.assignedWorkerId);
+  if (targetNodeId && assignedWorkerId && assignedWorkerId !== targetNodeId) {
+    throw new Error("metadata.assignedWorkerId must match targetNodeId when provided");
+  }
+}
+
+function assertConsistentExistingContextAssignmentMetadata(
+  metadata: Record<string, unknown>,
+  exchangeTargetNodeId: string,
+): void {
+  const targetNodeId = optionalString(metadata.targetNodeId);
+  if (targetNodeId && targetNodeId !== exchangeTargetNodeId) {
+    throw new Error("metadata.targetNodeId must match the exchange targetNodeId on existing contexts");
+  }
+  const assignedWorkerId = optionalString(metadata.assignedWorkerId);
+  if (assignedWorkerId && assignedWorkerId !== exchangeTargetNodeId) {
+    throw new Error("metadata.assignedWorkerId must match the exchange targetNodeId on existing contexts");
+  }
 }
 
 function deriveActor(

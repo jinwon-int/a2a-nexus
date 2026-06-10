@@ -1,14 +1,14 @@
 # Receipt-gated notifier canary runtime preflight
 
 This is the plugin-side preflight for `jinwon-int/a2a-broker#241` and
-`jinwon-int/openclaw-plugin-a2a#177`. It prepares the canary update for the
+`jinwon-int/plugin-a2a#177`. It prepares the canary update for the
 terminal-outbox notifier without performing any live operation.
 
 ## Canary update target
 
 Deploy the plugin canary at the corrective receipt-gated monitor projection commit:
 
-- Issue: <https://github.com/jinwon-int/openclaw-plugin-a2a/issues/177>
+- Issue: <https://github.com/jinwon-int/plugin-a2a/issues/177>
 - Target commit: `4f30c03aaea2df99b5a5e81670f50cf585a16480`
 - Scope: monitor-status deploy preflight projection for terminal-outbox cursor, backlog, notification attempt, and receipt-gated ACK evidence.
 

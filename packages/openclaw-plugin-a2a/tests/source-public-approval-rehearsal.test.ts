@@ -72,15 +72,15 @@ function configNoActivation(): A2ABrokerAdapterPluginRuntimeConfig {
 
 function baseInput(overrides?: Partial<Parameters<typeof rehearseSourcePublicApproval>[0]>): Parameters<typeof rehearseSourcePublicApproval>[0] {
   return {
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    repo: "jinwon-int/plugin-a2a",
     currentVisibility: "private",
     ciPassing: true,
     operatorReviewed: true,
     operatorAcknowledged: true,
     issueNumber: 261,
     evidenceUrls: {
-      issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
-      startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-1",
+      issue: "https://github.com/jinwon-int/plugin-a2a/issues/261",
+      startComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-1",
     },
     ...overrides,
   };
@@ -118,10 +118,10 @@ describe("source-public approval rehearsal (#261)", () => {
       const report = rehearseSourcePublicApproval(
         baseInput({
           evidenceUrls: {
-            issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
-            pullRequest: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/100",
-            startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-1",
-            doneComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-2",
+            issue: "https://github.com/jinwon-int/plugin-a2a/issues/261",
+            pullRequest: "https://github.com/jinwon-int/plugin-a2a/pull/100",
+            startComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-1",
+            doneComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-2",
           },
         }),
         configActive(),
@@ -130,11 +130,11 @@ describe("source-public approval rehearsal (#261)", () => {
 
       assert.equal(
         report.evidenceBundle.evidenceUrls.issue,
-        "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
+        "https://github.com/jinwon-int/plugin-a2a/issues/261",
       );
       assert.equal(
         report.evidenceBundle.evidenceUrls.pullRequest,
-        "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/100",
+        "https://github.com/jinwon-int/plugin-a2a/pull/100",
       );
       assert.ok(report.evidenceBundle.evidenceUrls.startComment);
       assert.ok(report.evidenceBundle.evidenceUrls.doneComment);
@@ -440,7 +440,7 @@ describe("source-public approval rehearsal (#261)", () => {
       const report = rehearseSourcePublicApproval(baseInput(), configActive());
 
       assert.ok(report.terminalBrief.line.includes("GO_CANDIDATE"));
-      assert.ok(report.terminalBrief.line.includes("jinwon-int/openclaw-plugin-a2a"));
+      assert.ok(report.terminalBrief.line.includes("jinwon-int/plugin-a2a"));
       assert.ok(report.terminalBrief.line.includes("rehearsal-only"));
       assert.ok(report.terminalBrief.line.includes("non-ACK"));
     });
@@ -448,8 +448,8 @@ describe("source-public approval rehearsal (#261)", () => {
     it("terminal brief line includes evidence URLs", () => {
       const input = baseInput({
         evidenceUrls: {
-          issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
-          pullRequest: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/100",
+          issue: "https://github.com/jinwon-int/plugin-a2a/issues/261",
+          pullRequest: "https://github.com/jinwon-int/plugin-a2a/pull/100",
         },
       });
       const report = rehearseSourcePublicApproval(input, configActive());
@@ -663,11 +663,11 @@ describe("source-public approval rehearsal (#261)", () => {
       const report = rehearseSourcePublicApproval(
         baseInput({
           evidenceUrls: {
-            issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261",
-            pullRequest: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/262",
-            startComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-1",
-            doneComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-2",
-            blockComment: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261#issuecomment-3",
+            issue: "https://github.com/jinwon-int/plugin-a2a/issues/261",
+            pullRequest: "https://github.com/jinwon-int/plugin-a2a/pull/262",
+            startComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-1",
+            doneComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-2",
+            blockComment: "https://github.com/jinwon-int/plugin-a2a/issues/261#issuecomment-3",
           },
         }),
         configActive(),

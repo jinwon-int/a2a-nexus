@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# smoke-termux.sh — Repeatable Termux smoke test for openclaw-plugin-a2a
+# smoke-termux.sh — Repeatable Termux smoke test for plugin-a2a
 #
 # Prerequisites:
 #   - Android Termux with Node.js v24+
@@ -14,7 +14,7 @@
 #   0 — all checks passed
 #   1 — build or validation failure
 #
-# Issue: jinwon-int/openclaw-plugin-a2a#10
+# Issue: jinwon-int/plugin-a2a#10
 
 set -euo pipefail
 

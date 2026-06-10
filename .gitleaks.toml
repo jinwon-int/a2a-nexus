@@ -1,12 +1,17 @@
-title = "a2a-plane gitleaks configuration"
-
 [extend]
 useDefault = true
 
 [[allowlists]]
-targetRules = ["generic-api-key"]
-description = "wake proof matrix failCell scenario codes are not credentials"
-condition = "AND"
-regexTarget = "line"
-paths = ['''^packages/broker/src/core/wake-proof-matrix\.ts$''']
-regexes = ['''failCell\(fixture, wakeKey, "S[1-5]_[A-Z_]+",''']
+description = "Allow exact redaction placeholder secret values"
+regexTarget = "secret"
+regexes = [
+  '''^REDACTED$'''
+]
+
+[[allowlists]]
+description = "Allow synthetic test/build fixture paths"
+paths = [
+  '''(^|/)dist/''',
+  '''\.test\.(ts|js|mjs)$''',
+  '''(^|/)tests/'''
+]

@@ -220,7 +220,12 @@ export type ManagementPlaneStatus = "online" | "disconnected" | "unknown";
  * | `"unsupported_capability"` | Worker registered but declared capabilities cannot fulfil the lane's task type |
  */
 export type WorkerMobileHealth = "health_ok" | "stale" | "disconnected" | "unsupported_capability";
-export type WorkerRuntimeFlavor = "gateway" | "termux-hermes" | "unknown";
+export type WorkerRuntimeFlavor =
+  | "gateway"
+  | "termux-hermes"
+  | "broker-poll-http-handler"
+  | "openclaw-poll-handler"
+  | "unknown";
 
 /**
  * Declared operating mode of a worker node.
@@ -346,6 +351,12 @@ export interface CreateTaskRequest extends Omit<A2ATaskRequest, "id" | "createdA
   id?: string;
   createdAt?: string;
   payload?: Record<string, unknown>;
+  /** Canonical parent round identifier for A2A discussion/round child tasks. */
+  parentRoundId?: string;
+  /** Total expected child tasks/workers in the parent round. */
+  parentRoundTotal?: number;
+  /** 1-based order of this child task within the parent round. */
+  parentRoundOrder?: number;
   taskOrigin?: TaskOrigin;
   /**
    * Local broker instance that accepts and owns lifecycle mutation authority
@@ -482,6 +493,12 @@ export interface TaskRecord extends A2ATaskRequest {
   status: TaskStatus;
   targetNodeId: string;
   payload: Record<string, unknown>;
+  /** Canonical parent round identifier for A2A discussion/round child tasks. */
+  parentRoundId?: string;
+  /** Total expected child tasks/workers in the parent round. */
+  parentRoundTotal?: number;
+  /** 1-based order of this child task within the parent round. */
+  parentRoundOrder?: number;
   updatedAt: string;
   claimedAt?: string;
   completedAt?: string;
@@ -694,7 +711,10 @@ export interface WorkerCapabilities {
   environments: A2AWorkerEnvironment[];
   /**
    * Runtime flavor reported by native/external workers; absent keeps legacy
-   * gateway semantics. Canonical Hermes value: "termux-hermes".
+   * gateway semantics. Canonical Hermes value: "termux-hermes"; canonical
+   * broker poll/HTTP handler value: "broker-poll-http-handler". Legacy
+   * OpenClaw poll-only deployments may still report "openclaw-poll-handler"
+   * during the compatibility window.
    * @see docs/hermes-native-worker-contract.md
    */
   runtimeFlavor?: WorkerRuntimeFlavor;
@@ -1069,6 +1089,10 @@ export interface WorkerCapacitySummaryItem {
   latestTaskUpdatedAt?: string;
   /** Declared operating mode; absent defaults to "persistent". */
   workerMode?: WorkerMode;
+  /** Runtime flavor declared in capabilities for dispatch/ops visibility. */
+  runtimeFlavor?: WorkerRuntimeFlavor;
+  /** False when this worker does not require Gateway/plugin internals to execute tasks. */
+  gatewayRequired?: boolean;
   /**
    * Enriched health for mobile workers. Present when `workerMode === "mobile"`
    * and the broker has enough registry data to classify the state.

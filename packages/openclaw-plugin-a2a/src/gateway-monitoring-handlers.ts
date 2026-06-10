@@ -441,7 +441,7 @@ export function createA2AMonitoringHandlers(
       crossBrokerTerminalRelayClient = createStandaloneBrokerClient({
         baseUrl: crossBrokerTerminalRelayConfig.baseUrl,
         ...(crossBrokerTerminalRelayConfig.edgeSecret ? { edgeSecret: crossBrokerTerminalRelayConfig.edgeSecret } : {}),
-        requester: { id: "openclaw-plugin-a2a", kind: "service", role: "hub" },
+        requester: { id: "plugin-a2a", kind: "service", role: "hub" },
       }) as unknown as CrossBrokerTerminalRelayClient;
     }
     return crossBrokerTerminalRelayClient;

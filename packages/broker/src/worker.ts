@@ -30,6 +30,7 @@ const DEFAULT_USER_AGENT = "a2a-broker-worker/0.1";
 
 export type FetchLike = typeof fetch;
 export type BuiltinWorkerHandlerKind = "noop" | "echo";
+type WorkerRuntimeProfile = "broker-poll-only" | "openclaw-poll-only";
 
 export interface WorkerHandlerOutcome {
   result?: TaskResult;
@@ -661,6 +662,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
   const workerId = requiredEnv(env, ["WORKER_ID", "A2A_WORKER_ID", "NODE_ID"]);
   const role = parsePartyRole(env.WORKER_ROLE ?? env.A2A_WORKER_ROLE ?? "analyst");
   const requesterKind = parsePartyKind(env.WORKER_REQUESTER_KIND ?? env.A2A_WORKER_REQUESTER_KIND ?? "node");
+  const runtimeProfile = parseWorkerRuntimeProfile(env.WORKER_PROFILE ?? env.A2A_WORKER_PROFILE);
   const handlerTimeoutMs = parsePositiveInt(
     env.WORKER_HANDLER_TIMEOUT_MS ?? env.A2A_WORKER_HANDLER_TIMEOUT_MS,
     DEFAULT_HANDLER_TIMEOUT_MS,
@@ -672,9 +674,9 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     role,
     displayName: optionalTrimmed(env.WORKER_DISPLAY_NAME ?? env.A2A_WORKER_DISPLAY_NAME),
     brokerUrl: optionalTrimmed(env.WORKER_PUBLIC_URL ?? env.A2A_WORKER_PUBLIC_URL),
-    capabilities: parseWorkerCapabilities(env, role),
+    capabilities: applyWorkerRuntimeProfile(parseWorkerCapabilities(env, role), runtimeProfile),
     workerMode: parseWorkerMode(env.WORKER_MODE ?? env.A2A_WORKER_MODE),
-    metadata: parseMetadataEnv(env.WORKER_METADATA_JSON ?? env.A2A_WORKER_METADATA_JSON),
+    metadata: buildWorkerMetadata(env, runtimeProfile),
   };
 
   return {
@@ -698,7 +700,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     ),
     handlerTimeoutMs,
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
-    handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs),
+    handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
   };
 }
 
@@ -722,6 +724,7 @@ export async function startWorkerFromEnv(env: NodeJS.ProcessEnv = process.env): 
 function createWorkerHandlerFromEnv(
   env: NodeJS.ProcessEnv,
   handlerTimeoutMs: number,
+  runtimeProfile?: WorkerRuntimeProfile,
 ): WorkerTaskHandler {
   const command = optionalTrimmed(env.WORKER_HANDLER_COMMAND ?? env.A2A_WORKER_HANDLER_COMMAND);
   if (command) {
@@ -729,7 +732,7 @@ function createWorkerHandlerFromEnv(
       command,
       args: parseStringArrayEnv(env.WORKER_HANDLER_ARGS_JSON ?? env.A2A_WORKER_HANDLER_ARGS_JSON),
       cwd: optionalTrimmed(env.WORKER_HANDLER_CWD ?? env.A2A_WORKER_HANDLER_CWD),
-      env,
+      env: buildWorkerHandlerEnv(env, runtimeProfile),
       timeoutMs: handlerTimeoutMs,
     });
   }
@@ -1034,6 +1037,50 @@ function parseMetadataEnv(value: string | undefined): Record<string, string> | u
   return Object.fromEntries(entries);
 }
 
+function buildWorkerMetadata(
+  env: NodeJS.ProcessEnv,
+  runtimeProfile?: WorkerRuntimeProfile,
+): Record<string, string> | undefined {
+  const metadata = parseMetadataEnv(env.WORKER_METADATA_JSON ?? env.A2A_WORKER_METADATA_JSON) ?? {};
+  if (runtimeProfile) {
+    const legacyOpenClawProfile = runtimeProfile === "openclaw-poll-only";
+    return {
+      ...metadata,
+      workerProfile: runtimeProfile,
+      runtimeFlavor: legacyOpenClawProfile ? "openclaw-poll-handler" : "broker-poll-http-handler",
+      executionPlane: "broker-poll-http-handler",
+      handlerContract: "stdin-stdout",
+      gatewayHookRequired: "false",
+      ...(legacyOpenClawProfile ? { openclawBridge: "disabled" } : {}),
+    };
+  }
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
+function buildWorkerHandlerEnv(
+  env: NodeJS.ProcessEnv,
+  runtimeProfile?: WorkerRuntimeProfile,
+): NodeJS.ProcessEnv {
+  if (!runtimeProfile) {
+    return env;
+  }
+  return {
+    ...env,
+    ...(runtimeProfile === "openclaw-poll-only" ? { A2A_OPENCLAW_BRIDGE_DISABLED: "1" } : {}),
+  };
+}
+
+function parseWorkerRuntimeProfile(value: unknown): WorkerRuntimeProfile | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  if (!normalized) return undefined;
+  if (normalized === "broker-poll-only" || normalized === "broker-poll-http-handler" || normalized === "poll-only") {
+    return "broker-poll-only";
+  }
+  if (normalized === "openclaw-poll-only") return "openclaw-poll-only";
+  throw new Error(`invalid worker profile: ${value}`);
+}
+
 function parsePartyRole(value: string): A2APartyRole {
   if (
     value === "hub" ||
@@ -1114,14 +1161,51 @@ function parseWorkerCapabilities(
   };
 }
 
+function applyWorkerRuntimeProfile(
+  capabilities: RegisterWorkerRequest["capabilities"],
+  runtimeProfile?: WorkerRuntimeProfile,
+): RegisterWorkerRequest["capabilities"] {
+  if (!runtimeProfile) {
+    return capabilities;
+  }
+  const requiredRuntimeFlavor = runtimeProfile === "openclaw-poll-only"
+    ? "openclaw-poll-handler"
+    : "broker-poll-http-handler";
+  if (capabilities.runtimeFlavor && capabilities.runtimeFlavor !== requiredRuntimeFlavor) {
+    throw new Error(
+      `A2A_WORKER_PROFILE=${runtimeProfile} requires runtimeFlavor=${requiredRuntimeFlavor}, got ${capabilities.runtimeFlavor}`,
+    );
+  }
+  if (capabilities.gatewayRequired === true) {
+    throw new Error(`A2A_WORKER_PROFILE=${runtimeProfile} requires gatewayRequired=false`);
+  }
+  return {
+    ...capabilities,
+    runtimeFlavor: requiredRuntimeFlavor,
+    gatewayRequired: false,
+  };
+}
+
 function isWorkerEnvironment(value: string): value is RegisterWorkerRequest["capabilities"]["environments"][number] {
   return value === "research" || value === "staging" || value === "live";
 }
 
 function parseWorkerRuntimeFlavor(value: unknown): RegisterWorkerRequest["capabilities"]["runtimeFlavor"] | undefined {
   if (typeof value !== "string") return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "gateway" || normalized === "termux-hermes") return normalized;
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  if (
+    normalized === "gateway" ||
+    normalized === "termux-hermes" ||
+    normalized === "broker-poll-http-handler" ||
+    normalized === "openclaw-poll-handler"
+  ) return normalized;
+  if (normalized === "hermes") return "termux-hermes";
+  if (normalized === "broker-poll-only" || normalized === "broker-poll-handler" || normalized === "poll-only") {
+    return "broker-poll-http-handler";
+  }
+  if (normalized === "openclaw-poll-only") {
+    return "openclaw-poll-handler";
+  }
   if (normalized.length > 0) return "unknown";
   return undefined;
 }

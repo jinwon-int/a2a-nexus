@@ -44,7 +44,8 @@ const VERBOSE = process.argv.includes('--verbose');
 const DOCKER_CHECK = process.argv.includes('--docker-check');
 const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.includes('--runtime');
 
-const HANDLER_FILENAME = 'openclaw-a2a-task-handler.mjs';
+const CANONICAL_HANDLER_FILENAME = 'a2a-task-handler.mjs';
+const LEGACY_HANDLER_FILENAME = 'openclaw-a2a-task-handler.mjs';
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
 const handlersRoot = resolve(
@@ -120,6 +121,15 @@ function readFileSafe(filePath) {
   }
 }
 
+function findReadableHandler(root) {
+  for (const filename of [CANONICAL_HANDLER_FILENAME, LEGACY_HANDLER_FILENAME]) {
+    const path = join(root, filename);
+    const content = readFileSafe(path);
+    if (content !== undefined) return { filename, path, content };
+  }
+  return undefined;
+}
+
 function tryRequire(path) {
   // Dynamic import for ESM modules
   return undefined; // we use regex-based parsing instead
@@ -148,7 +158,7 @@ function parseBuildInfo(source) {
   }
 
   const sourceMatch = source.match(
-    /source:\s*["'](repo:scripts\/openclaw-a2a-task-handler\.mjs)["']/,
+    /source:\s*["'](repo:scripts\/(?:a2a-task-handler|openclaw-a2a-task-handler)\.mjs)["']/,
   );
 
   // sourceSha256 may be a local variable reference too
@@ -206,38 +216,32 @@ function parseBuildInfo(source) {
 
 // Guard 1: Source handler exists and is readable
 guard('source-handler', () => {
-  const sourcePath = join(scriptsRoot, HANDLER_FILENAME);
-  if (!existsSync(sourcePath)) {
-    return fail('source-handler', `source handler not found: ${sourcePath}`);
+  const handler = findReadableHandler(scriptsRoot);
+  if (!handler) {
+    return fail('source-handler', `source handler not found in ${scriptsRoot}`);
   }
-  const content = readFileSafe(sourcePath);
-  if (content === undefined) {
-    return fail('source-handler', `source handler unreadable: ${sourcePath}`);
-  }
-  const size = Buffer.byteLength(content, 'utf8');
+  const size = Buffer.byteLength(handler.content, 'utf8');
   if (VERBOSE) {
-    console.error(`[guard:source] ${sourcePath} — ${size} bytes`);
+    console.error(`[guard:source] ${handler.path} — ${size} bytes`);
   }
-  return ok('source-handler', { path: sourcePath, size });
+  return ok('source-handler', { path: handler.path, filename: handler.filename, size });
 });
 
 // Guard 2: Handlers compat path exists and matches source
 guard('handlers-compat-path', () => {
-  const sourcePath = join(scriptsRoot, HANDLER_FILENAME);
-  const handlersPath = join(handlersRoot, HANDLER_FILENAME);
-
-  const sourceContent = readFileSafe(sourcePath);
-  if (sourceContent === undefined) {
-    return fail('handlers-compat-path', `cannot read source handler: ${sourcePath}`);
+  const source = findReadableHandler(scriptsRoot);
+  if (!source) {
+    return fail('handlers-compat-path', `cannot read source handler in ${scriptsRoot}`);
   }
-  const sourceHash = sha256(sourceContent);
+  const handlersPath = join(handlersRoot, source.filename);
+  const sourceHash = sha256(source.content);
 
   if (!existsSync(handlersPath)) {
     if (!DEPLOYED_CHECK) {
       return ok('handlers-compat-path', {
         checked: false,
         reason: 'handlers compat path is generated during worker artifact deploy; use --deployed to require it',
-        sourcePath,
+        sourcePath: source.path,
         handlersPath,
         sourceHash,
       });
@@ -250,7 +254,7 @@ guard('handlers-compat-path', () => {
         sourcePath,
         sourceHash,
         hint:
-          'copy scripts/openclaw-a2a-task-handler.mjs → handlers/openclaw-a2a-task-handler.mjs before restarting the worker',
+          `copy scripts/${source.filename} → handlers/${source.filename} before restarting the worker`,
         runtimeCheck:
           'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
         fix: DRY_RUN
@@ -274,7 +278,7 @@ guard('handlers-compat-path', () => {
       'handlers-compat-path',
       `handlers compat path content differs from source`,
       {
-        sourcePath,
+        sourcePath: source.path,
         handlersPath,
         sourceHash,
         handlersHash,
@@ -286,7 +290,7 @@ guard('handlers-compat-path', () => {
   }
 
   return ok('handlers-compat-path', {
-    sourcePath,
+    sourcePath: source.path,
     handlersPath,
     matched: true,
     sourceHash,
@@ -295,13 +299,12 @@ guard('handlers-compat-path', () => {
 
 // Guard 3: Upstream bridge marker present in handler
 guard('bridge-marker', () => {
-  const sourcePath = join(scriptsRoot, HANDLER_FILENAME);
-  const sourceContent = readFileSafe(sourcePath);
-  if (sourceContent === undefined) {
-    return fail('bridge-marker', `cannot read source handler: ${sourcePath}`);
+  const source = findReadableHandler(scriptsRoot);
+  if (!source) {
+    return fail('bridge-marker', `cannot read source handler in ${scriptsRoot}`);
   }
 
-  const info = parseBuildInfo(sourceContent);
+  const info = parseBuildInfo(source.content);
 
   if (!info.markerFound) {
     return fail(
@@ -373,6 +376,9 @@ guard('executor-policy', () => {
     A2A_DOCKER_RUNNER_SCOPE: envPresence('A2A_DOCKER_RUNNER_SCOPE'),
     A2A_DOCKER_RUNNER_ENABLED: envPresence('A2A_DOCKER_RUNNER_ENABLED'),
     A2A_DOCKER_RUNNER_ALL_GITHUB: envPresence('A2A_DOCKER_RUNNER_ALL_GITHUB'),
+    A2A_WORKER_PROFILE: envPresence('A2A_WORKER_PROFILE'),
+    A2A_WORKER_RUNTIME_FLAVOR: envPresence('A2A_WORKER_RUNTIME_FLAVOR'),
+    A2A_WORKER_GATEWAY_REQUIRED: envPresence('A2A_WORKER_GATEWAY_REQUIRED'),
   };
 
   const bridgePolicies = {
@@ -414,9 +420,23 @@ guard('executor-policy', () => {
   // Check for clear misconfiguration
   const warnings = [];
   const executorMode = process.env.A2A_EXECUTOR_MODE?.trim().toLowerCase();
+  const workerProfile = process.env.A2A_WORKER_PROFILE?.trim().toLowerCase().replace(/_/g, '-');
+  const workerRuntimeFlavor = process.env.A2A_WORKER_RUNTIME_FLAVOR?.trim().toLowerCase().replace(/_/g, '-');
 
   if (executorMode && !['auto', 'docker', 'builtin'].includes(executorMode)) {
     warnings.push(`A2A_EXECUTOR_MODE="${process.env.A2A_EXECUTOR_MODE}" is invalid (expected: auto|docker|builtin)`);
+  }
+
+  if (workerProfile && workerProfile !== 'openclaw-poll-only') {
+    warnings.push(`A2A_WORKER_PROFILE="${process.env.A2A_WORKER_PROFILE}" is invalid (expected: openclaw-poll-only)`);
+  }
+
+  if (workerProfile === 'openclaw-poll-only' && !bridgePolicies.A2A_OPENCLAW_BRIDGE_DISABLED.configured) {
+    warnings.push('A2A_WORKER_PROFILE=openclaw-poll-only should set A2A_OPENCLAW_BRIDGE_DISABLED=1 in deployed env; start:worker injects it for external handlers');
+  }
+
+  if (workerProfile === 'openclaw-poll-only' && (workerRuntimeFlavor === 'termux-hermes' || workerRuntimeFlavor === 'hermes')) {
+    warnings.push('Hermes workers must not use A2A_WORKER_PROFILE=openclaw-poll-only; use A2A_WORKER_RUNTIME_FLAVOR=termux-hermes with a Hermes harness');
   }
 
   if (policies.A2A_DOCKER_RUNNER_ENABLED.configured && !runtimePolicies.A2A_DOCKER_RUNNER_BIN.configured) {
@@ -446,16 +466,16 @@ guard('docker-handler-inclusion', () => {
     return fail('docker-handler-inclusion', `Dockerfile not found: ${dockerfilePath}`);
   }
 
-  const hasHandlerCopy = /COPY\s+scripts\/openclaw-a2a-task-handler\.mjs/.test(dockerfileContent);
+  const hasHandlerCopy = /COPY\s+scripts\/(?:a2a-task-handler|openclaw-a2a-task-handler)\.mjs/.test(dockerfileContent);
   const hasHandlersDir = /handlers\//.test(dockerfileContent) || /mkdir.*handlers/i.test(dockerfileContent);
 
   if (!hasHandlerCopy && !hasHandlersDir) {
     return fail(
       'docker-handler-inclusion',
       'Dockerfile does not copy handler scripts into the image; ' +
-        'deployed container will lack scripts/openclaw-a2a-task-handler.mjs and handlers/ compat path',
+        'deployed container will lack scripts/a2a-task-handler.mjs and handlers/ compat path',
       {
-        fix: 'add COPY scripts/openclaw-a2a-task-handler.mjs ./scripts/ and COPY scripts/openclaw-a2a-task-handler.mjs ./handlers/ to Dockerfile',
+        fix: 'add COPY scripts/a2a-task-handler.mjs ./scripts/ and populate handlers/a2a-task-handler.mjs in Dockerfile',
         dryRun: DRY_RUN,
       },
     );
@@ -481,9 +501,9 @@ guard('docker-compat-path', () => {
 
   // Count handler copies via COPY or RUN cp to both scripts/ and handlers/ paths
   const copyMatches = dockerfileContent.match(
-    /COPY\s+scripts\/openclaw-a2a-task-handler\.mjs/g,
+    /COPY\s+scripts\/(?:a2a-task-handler|openclaw-a2a-task-handler)\.mjs/g,
   ) || [];
-  const hasRunCopy = /RUN.*cp\s+.*openclaw-a2a-task-handler\.mjs.*handlers\//.test(dockerfileContent);
+  const hasRunCopy = /RUN[\s\S]*cp\s+scripts\/(?:a2a-task-handler|openclaw-a2a-task-handler)\.mjs\s+\.\/handlers\//.test(dockerfileContent);
   const hasHandlersMkdir = /mkdir.*handlers/i.test(dockerfileContent);
 
   const scriptsCopyCount = copyMatches.length;
@@ -493,7 +513,7 @@ guard('docker-compat-path', () => {
     return fail(
       'docker-compat-path',
       'Dockerfile does not copy handler to scripts/ path',
-      { hint: 'add COPY scripts/openclaw-a2a-task-handler.mjs ./scripts/', dryRun: DRY_RUN },
+      { hint: 'add COPY scripts/a2a-task-handler.mjs ./scripts/', dryRun: DRY_RUN },
     );
   }
 
@@ -502,7 +522,7 @@ guard('docker-compat-path', () => {
       'docker-compat-path',
       'Dockerfile does not populate handlers/ compat path',
       {
-        hint: 'add RUN mkdir -p ./handlers && cp scripts/openclaw-a2a-task-handler.mjs ./handlers/',
+        hint: 'add RUN mkdir -p ./handlers && cp scripts/a2a-task-handler.mjs ./handlers/',
         dryRun: DRY_RUN,
       },
     );
@@ -561,7 +581,8 @@ async function runGuards() {
     brokerRoot,
     handlersRoot,
     scriptsRoot,
-    handlerFilename: HANDLER_FILENAME,
+    handlerFilename: CANONICAL_HANDLER_FILENAME,
+    legacyHandlerFilename: LEGACY_HANDLER_FILENAME,
     summary: {
       passed,
       failed,
@@ -577,7 +598,7 @@ async function runGuards() {
             action: 'fix_issues_and_re_run',
             hint: 'address failures above, re-run guard until all pass',
             emergencyFallback:
-              'if handler compat path is broken: cp scripts/openclaw-a2a-task-handler.mjs handlers/openclaw-a2a-task-handler.mjs',
+              'if handler compat path is broken: cp scripts/a2a-task-handler.mjs handlers/a2a-task-handler.mjs, or use the legacy openclaw-a2a-task-handler.mjs path during rollback',
           }
         : undefined,
   };

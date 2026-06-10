@@ -11,7 +11,7 @@
  * Source-only contract: closeout is never auto-enabled.
  * No live provider send, no terminal ACK.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#404
+ * Issue:  jinwon-int/plugin-a2a#404
  * Parent: jinwon-int/a2a-broker#841
  */
 import type { A2AOperatorTerminalNotificationEnvelope } from "./operator-terminal-notifier.js";

@@ -3932,6 +3932,8 @@ test("server exposes JSON-RPC SendMessage and task methods behind the A2A facade
       method: "POST",
       headers: jsonHeaders({
         "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
       }),
       body: JSON.stringify({
         jsonrpc: "2.0",

@@ -1,7 +1,7 @@
 /**
  * Terminal Brief receipt/activation gate plugin no-live proof.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#303
+ * Issue:  jinwon-int/plugin-a2a#303
  * Run:    a2a-r11-stability-activation-gates-20260513T231046Z
  * Worker: sogyo
  *
@@ -35,7 +35,7 @@ import type { A2ABrokerAdapterPluginRuntimeConfig } from "../dist/config.js";
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const TEST_REPO = "jinwon-int/openclaw-plugin-a2a";
+const TEST_REPO = "jinwon-int/plugin-a2a";
 const TEST_RUN = "terminal-brief-receipt-gate-no-live-proof-20260513T231046Z";
 
 // ── Config fixtures ─────────────────────────────────────────────────
@@ -206,7 +206,7 @@ describe("Terminal Brief receipt/activation gate plugin no-live proof", () => {
           repo: TEST_REPO,
           currentVisibility: "private",
           evidenceUrls: {
-            issue: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/303",
+            issue: "https://github.com/jinwon-int/plugin-a2a/issues/303",
           },
         },
         configActive(),

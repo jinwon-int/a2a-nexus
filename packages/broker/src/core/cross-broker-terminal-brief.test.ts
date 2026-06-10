@@ -843,6 +843,86 @@ test("cross-broker Terminal Brief dedup key distinguishes multiple workers from 
   assert.deepEqual(records.map(r => r.childWorkerId).sort(), ["dungae", "jingun"]);
 });
 
+test("cross-broker Terminal Brief dedup key distinguishes same child task from different origin brokers", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  createParentRound(broker);
+
+  const gwakga = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    parentRoundId: "round-parent",
+    originBrokerId: "gwakga",
+    brokerOfRecordId: "seoseo",
+    childTaskId: "shared-child-task",
+    childWorkerId: undefined,
+    parentRoundTotal: "4",
+    parentRoundOrder: "2",
+    status: "succeeded",
+    completedAt: "2026-05-14T10:00:00.000Z",
+    emittedAt: "2026-05-14T10:00:01.000Z",
+  }));
+  assert.equal(gwakga.accepted, true);
+
+  const otherBroker = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    parentRoundId: "round-parent",
+    originBrokerId: "other-child-broker",
+    brokerOfRecordId: "seoseo",
+    childTaskId: "shared-child-task",
+    childWorkerId: undefined,
+    parentRoundTotal: "4",
+    parentRoundOrder: "3",
+    status: "succeeded",
+    completedAt: "2026-05-14T10:05:00.000Z",
+    emittedAt: "2026-05-14T10:05:01.000Z",
+  }));
+  assert.equal(otherBroker.accepted, true);
+
+  const allTerminalEvents = broker.getTerminalTaskEventOutbox().subscribe();
+  assert.equal(allTerminalEvents.length, 4, "same child task id from different origin brokers must not collide");
+  const terminalEvents = projectionRows(allTerminalEvents);
+  assert.equal(terminalEvents.length, 2);
+  assert.equal(operatorRows(allTerminalEvents).length, 2);
+  assert.deepEqual(terminalEvents.map((e) => e.payload.originBrokerId).sort(), ["gwakga", "other-child-broker"]);
+});
+
+test("cross-broker Terminal Brief dedup key distinguishes ordered lanes when child id is absent", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  createParentRound(broker);
+
+  const laneTwo = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    parentRoundId: "round-parent",
+    originBrokerId: "gwakga",
+    brokerOfRecordId: "seoseo",
+    childTaskId: undefined,
+    childWorkerId: undefined,
+    parentRoundTotal: "4",
+    parentRoundOrder: "2",
+    status: "succeeded",
+    completedAt: "2026-05-14T10:00:00.000Z",
+    emittedAt: "2026-05-14T10:00:01.000Z",
+  }));
+  assert.equal(laneTwo.accepted, true);
+
+  const laneThree = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+    parentRoundId: "round-parent",
+    originBrokerId: "gwakga",
+    brokerOfRecordId: "seoseo",
+    childTaskId: undefined,
+    childWorkerId: undefined,
+    parentRoundTotal: "4",
+    parentRoundOrder: "3",
+    status: "succeeded",
+    completedAt: "2026-05-14T10:05:00.000Z",
+    emittedAt: "2026-05-14T10:05:01.000Z",
+  }));
+  assert.equal(laneThree.accepted, true);
+
+  const allTerminalEvents = broker.getTerminalTaskEventOutbox().subscribe();
+  assert.equal(allTerminalEvents.length, 4, "ordered lanes without child ids must not collide");
+  const terminalEvents = projectionRows(allTerminalEvents);
+  assert.equal(terminalEvents.length, 2);
+  assert.equal(operatorRows(allTerminalEvents).length, 2);
+  assert.deepEqual(terminalEvents.map((e) => e.payload.parentRoundOrder).sort(), [2, 3]);
+});
+
 test("cross-broker Terminal Brief dedup key includes brokerOfRecordId in notification identity", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "shared-parent" });
   createParentRound(broker);

@@ -345,7 +345,7 @@ test("block comment includes artifact manifest, command logs, reason and next ac
     exitCode: 1,
     signal: null,
     stdout: "notice=no_patch_command_configured\nusing /root/.config/gh/hosts.yml",
-    stderr: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
+    stderr: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz1234567890",
     artifacts: ["/tmp/a2a/private/run.log"],
     artifactManifest: {
       artifactVersion: 1,
@@ -362,7 +362,7 @@ test("block comment includes artifact manifest, command logs, reason and next ac
       signal: null,
       timedOut: false,
       stdout: "notice=no_patch_command_configured\nusing /root/.config/gh/hosts.yml",
-      stderr: `Authorization: Bearer ${["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_")}`,
+      stderr: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz1234567890",
       stdoutTruncated: false,
       stderrTruncated: false,
       artifactCount: 1,
@@ -804,7 +804,7 @@ test("Start comment body never contains secret/credential patterns", () => {
   // Redaction: the body must not leak secrets.
   const task = {
     ...baseTask,
-    env: { GH_TOKEN: ["ghp", "secret12345678901234567890"].join("_"), SECRET: "shhh" },
+    env: { GH_TOKEN: "ghp_secret12345678901234567890", SECRET: "shhh" },
   };
   const body = buildStartCommentBody(task);
 

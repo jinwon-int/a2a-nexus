@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -8,7 +8,9 @@ import { test } from "node:test";
 import { validateTaskCompletionEvidence } from "./worker.js";
 import type { TaskRecord } from "./core/types.js";
 
-const handlerPath = "scripts/openclaw-a2a-task-handler.mjs";
+const handlerPath = "scripts/a2a-task-handler.mjs";
+const legacyHandlerPath = "scripts/openclaw-a2a-task-handler.mjs";
+const hermesAnalysisBridgePath = "scripts/hermes-a2a-analysis-bridge.mjs";
 
 interface GithubTaskFixture {
   id: string;
@@ -50,7 +52,7 @@ function makeTaskRecord(task: GithubTaskFixture): TaskRecord {
   };
 }
 
-test("versioned OpenClaw handler exposes credential-free build metadata", () => {
+test("versioned A2A task handler exposes credential-free build metadata", () => {
   const result = spawnSync(process.execPath, [handlerPath], {
     input: JSON.stringify(githubTask({ intent: "analyze", payload: { mode: "analysis" } })),
     encoding: "utf8",
@@ -58,19 +60,33 @@ test("versioned OpenClaw handler exposes credential-free build metadata", () => 
 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.result.handler.name, "openclaw-a2a-task-handler");
-  assert.equal(payload.result.handler.version, "0.2.11");
+  assert.equal(payload.result.handler.name, "a2a-task-handler");
+  assert.equal(payload.result.handler.version, "0.2.12");
+  assert.equal(payload.result.handler.source, "repo:scripts/a2a-task-handler.mjs");
   assert.match(payload.result.handler.sourceSha256, /^[a-f0-9]{64}$/);
   assert.equal(payload.result.handler.credentialFree, true);
   assert.equal(payload.result.handler.hostNeutral, true);
   assert.equal(payload.result.lifecycle.mode, "analysis");
 });
 
-test("versioned OpenClaw handler source does not embed credentials or host paths", () => {
+test("versioned A2A task handler source does not embed credentials or host paths", () => {
   const source = readFileSync(handlerPath, "utf8");
   assert.doesNotMatch(source, /(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|refresh_token)/i);
   assert.doesNotMatch(source, /\/root\//);
   assert.doesNotMatch(source, /bangtong|dungae|sogyo|yukson/i);
+});
+
+test("legacy OpenClaw-named handler path remains a compatibility wrapper", () => {
+  const result = spawnSync(process.execPath, [legacyHandlerPath], {
+    input: JSON.stringify(githubTask({ intent: "analyze", payload: { mode: "analysis" } })),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.result.handler.name, "a2a-task-handler");
+  assert.equal(payload.result.handler.source, "repo:scripts/a2a-task-handler.mjs");
+  assert.equal(payload.result.lifecycle.mode, "analysis");
 });
 
 test("explicit all-github flag routes GitHub propose_patch tasks through docker runner", () => {
@@ -1014,7 +1030,7 @@ test("docker broker noop smoke has dedicated non-generic handler evidence", () =
   assert.equal(payload.result.lifecycle.mode, "docker-broker-noop-smoke");
   assert.equal(payload.result.output.smoke.ok, true);
   assert.equal(payload.result.output.smoke.runId, "smoke-run-1");
-  assert.doesNotMatch(payload.result.summary, /generic .* accepted by versioned OpenClaw A2A handler/);
+  assert.doesNotMatch(payload.result.summary, /generic .* accepted by versioned A2A task handler/);
 });
 
 test("evidence-missing check skips non-github tasks on built-in handler path (contract #169)", () => {
@@ -1038,7 +1054,7 @@ test("evidence-missing check skips non-github tasks on built-in handler path (co
   const payload = JSON.parse(result.stdout);
   assert.ok(payload.result, "non-github tasks should succeed via built-in handler");
   // built-in handler summary confirms no runner was invoked (and no evidence check)
-  assert.match(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.match(payload.result.summary, /accepted by versioned A2A task handler/);
 });
 
 test("docker runner prUrl output passes validateTaskCompletionEvidence (contract #169 regression)", () => {
@@ -1191,7 +1207,7 @@ test("docker runner evidence-missing fails validateTaskCompletionEvidence (contr
   const task = githubTask();
   const emptyResult = {
     summary: "completed with no evidence",
-    handler: { name: "openclaw-a2a-task-handler", version: "0.2.2" },
+    handler: { name: "a2a-task-handler", version: "0.2.2" },
     lifecycle: {
       intent: task.intent,
       mode: task.payload.mode,
@@ -1855,7 +1871,7 @@ test("no-live source-only A2A evidence task produces structured analysis output"
 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.doesNotMatch(payload.result.summary, /accepted by versioned A2A task handler/);
   assert.match(payload.result.summary, /analysis-only completed/);
   assert.equal(payload.result.output.analysisKind, "builtin_structured");
   assert.equal(payload.result.output.analysisSummary, "worker should return useful evidence");
@@ -1893,7 +1909,7 @@ test("source-only A2A evidence task without noLive still produces structured ana
 
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.doesNotMatch(payload.result.summary, /accepted by versioned A2A task handler/);
   assert.match(payload.result.summary, /analysis-only completed/);
   assert.equal(payload.result.output.analysisKind, "builtin_structured");
   assert.equal(payload.result.output.analysisSummary, "worker should return useful source-only evidence");
@@ -1971,6 +1987,87 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
   }
 });
 
+test("analysis-only task can use Hermes-backed OpenClaw-compatible analysis bridge", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-hermes-analysis-bridge-test-"));
+  const repoDir = join(tempDir, "seo-web-bridge");
+  const sourceDir = join(repoDir, "runtime", "app-src");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "hermes-prompt.txt");
+  try {
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, "app_chat.py"), [
+      "def render_conversation():",
+      "    st.columns([7, 3])",
+      "    render_files_panel()",
+      "",
+    ].join("\n"));
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from \"node:fs\";",
+      "const args = process.argv.slice(2);",
+      "const qIndex = args.indexOf(\"-q\");",
+      "if (qIndex < 0) throw new Error(\"expected hermes chat -q\");",
+      "const prompt = args[qIndex + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes(\"runtime/app-src/app_chat.py\")) throw new Error(\"missing source path\");",
+      "if (!prompt.includes(\"st.columns([7, 3])\")) throw new Error(\"missing source content\");",
+      "console.log(JSON.stringify({",
+      "  status: \"done\",",
+      "  summary: \"Hermes가 실제 소스 근거를 읽고 레이아웃 판단을 완료했다\",",
+      "  findings: [\"runtime/app-src/app_chat.py의 st.columns([7, 3])가 파일 패널을 채팅 레이아웃에 묶는다\"],",
+      "  risks: [\"wrapper-only success로 closeout하면 설계 근거가 비게 된다\"],",
+      "  recommendations: [\"OPENCLAW_BIN을 hermes-a2a-analysis-bridge.mjs로 설정하고 A2A_OPENCLAW_ANALYSIS_ENABLED=1을 켠다\"],",
+      "  evidenceRefs: [\"jinwon-int/seo-web-bridge:runtime/app-src/app_chat.py\"]",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    chmodSync(hermesAnalysisBridgePath, 0o755);
+
+    const task = githubTask();
+    task.intent = "analyze";
+    task.message = "seo-web-bridge 우측 파일 패널 고정 rail 설계를 판단해줘";
+    task.payload = {
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      repo: "jinwon-int/seo-web-bridge",
+      path: "runtime/app-src/app_chat.py",
+    };
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(task),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_EXECUTOR_MODE: "builtin",
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        A2A_OPENCLAW_ANALYSIS_BIN: hermesAnalysisBridgePath,
+        OPENCLAW_BIN: "/path/that/must/not-run-for-analysis",
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/seo-web-bridge": repoDir }),
+        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+        A2A_NODE_ID: "worker-hermes-analysis",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.match(payload.result.summary, /analysis bridge done/);
+    assert.equal(payload.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(payload.result.output.analysisSummary, "Hermes가 실제 소스 근거를 읽고 레이아웃 판단을 완료했다");
+    assert.deepEqual(payload.result.output.findings, ["runtime/app-src/app_chat.py의 st.columns([7, 3])가 파일 패널을 채팅 레이아웃에 묶는다"]);
+    assert.deepEqual(payload.result.output.evidenceRefs, ["jinwon-int/seo-web-bridge:runtime/app-src/app_chat.py"]);
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.match(prompt, /Read-only source bundle/);
+    assert.match(prompt, /st\.columns\(\[7, 3\]\)/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("GitHub propose_patch evidence requirements are preserved when intent is not analyze", () => {
   // propose_patch with github taskOrigin still fails without executor config
   const task = githubTask();
@@ -2009,8 +2106,163 @@ test("analyze intent with unknown mode falls through to generic handler, not ana
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   // Falls through to generic handler — not analysis-only
-  assert.match(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.match(payload.result.summary, /accepted by versioned A2A task handler/);
   assert.doesNotMatch(payload.result.summary, /analysis-only/);
+});
+
+function decisionDialecticPhaseTask(): GithubTaskFixture {
+  return githubTask({
+    id: "a2ad-parent:thesis:0",
+    intent: "analyze",
+    message: "decision.dialectic thesis phase for runtime bridge",
+    payload: {
+      mode: "analysis-only",
+      contract: {
+        kind: "decision.dialectic",
+        version: 1,
+        phase: "thesis",
+        task: {
+          kind: "decision.dialectic",
+          version: 1,
+          taskId: "a2ad-parent",
+          revision: 0,
+          state: "OPEN",
+          meta: {
+            topic: "A2AD bridge test",
+            domain: "ops",
+            urgency: "normal",
+            openedAt: "2026-06-08T08:00:00.000Z",
+            snapshotAt: "2026-06-08T08:00:00.000Z",
+            expiresAt: "2026-06-08T09:00:00.000Z",
+            openedBy: "hub-a",
+          },
+          roles: {
+            thesisAgent: { agentId: "sogyo" },
+            antithesisAgent: { agentId: "nosuk" },
+            synthAgent: { agentId: "yukson" },
+          },
+          context: {
+            brief: "Test brief",
+            objective: "Patch parent with worker-authored thesis",
+          },
+        },
+      },
+      promptSpec: {
+        phase: "thesis",
+        schemaName: "decisionDialectic.thesis.v1",
+        systemPrompt: "Return thesis JSON only.",
+        jsonSchema: { type: "object" },
+      },
+      execution: {
+        parentTaskId: "a2ad-parent:with-colon",
+        taskId: "a2ad-parent",
+        expectedRevision: 0,
+        phase: "thesis",
+      },
+    },
+  });
+}
+
+test("decision.dialectic phase task blocks instead of generic success when bridge is disabled", () => {
+  const result = spawnSync(process.execPath, [handlerPath], {
+    input: JSON.stringify(decisionDialecticPhaseTask()),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_DECISION_DIALECTIC_BRIDGE_ENABLED: "",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.match(payload.result.summary, /decision\.dialectic phase blocked/);
+  assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+  assert.equal(payload.result.output.decisionDialectic.status, "blocked");
+  assert.equal(payload.result.output.decisionDialectic.parentTaskId, "a2ad-parent:with-colon");
+  assert.equal(payload.result.output.decisionDialectic.schemaName, "decisionDialectic.thesis.v1");
+});
+
+test("decision.dialectic bridge patches parent with worker-authored phase payload", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "handler-decision-dialectic-"));
+  const fakeOpenClawPath = join(tempDir, "fake-openclaw-decision.mjs");
+  const fakeCurlPath = join(tempDir, "curl");
+  const curlArgsPath = join(tempDir, "curl-args.json");
+  const curlBodyPath = join(tempDir, "curl-body.json");
+  const phasePayload = {
+    author: { agentId: "sogyo" },
+    submittedAt: "2026-06-08T08:15:00.000Z",
+    claim: "The bridge should patch the parent task.",
+    proposal: "Use decision.dialectic patch route after phase execution.",
+    rationale: "Worker-authored evidence must advance the parent read model.",
+    expectedBenefits: ["no generic false success"],
+    evidenceRefs: ["gh:jinwon-int/a2a-broker#1325"],
+    assumptions: ["broker patch route is reachable"],
+    risks: ["bridge must fail closed"],
+    confidence: 0.82,
+  };
+  try {
+    writeFileSync(fakeOpenClawPath, [
+      "#!/usr/bin/env node",
+      "if (!process.argv.includes(\"agent\")) throw new Error(\"expected agent subcommand\");",
+      "if (!process.argv.includes(\"--json\")) throw new Error(\"expected json flag\");",
+      `console.log(${JSON.stringify(JSON.stringify({ payloads: [{ text: JSON.stringify(phasePayload) }] }))});`,
+      "",
+    ].join("\n"));
+    chmodSync(fakeOpenClawPath, 0o755);
+    writeFileSync(fakeCurlPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from \"node:fs\";",
+      "writeFileSync(process.env.CAPTURE_CURL_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "let body = \"\";",
+      "process.stdin.setEncoding(\"utf8\");",
+      "process.stdin.on(\"data\", (chunk) => { body += chunk; });",
+      "process.stdin.on(\"end\", () => {",
+      "  writeFileSync(process.env.CAPTURE_CURL_BODY_PATH, body);",
+      "  console.log(JSON.stringify({ contract: { state: \"THESIS_SUBMITTED\", revision: 1 } }));",
+      "});",
+      "",
+    ].join("\n"));
+    chmodSync(fakeCurlPath, 0o755);
+
+    const result = spawnSync(process.execPath, [handlerPath], {
+      input: JSON.stringify(decisionDialecticPhaseTask()),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+        A2A_EXECUTOR_MODE: "builtin",
+        A2A_DECISION_DIALECTIC_BRIDGE_ENABLED: "1",
+        A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+        OPENCLAW_BIN: fakeOpenClawPath,
+        A2A_WORKER_ID: "sogyo",
+        A2A_WORKER_ROLE: "analyst",
+        A2A_BROKER_URL: "http://127.0.0.1:8787",
+        A2A_BROKER_EDGE_SECRET: "test-edge-secret",
+        CAPTURE_CURL_ARGS_PATH: curlArgsPath,
+        CAPTURE_CURL_BODY_PATH: curlBodyPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const curlArgs = JSON.parse(readFileSync(curlArgsPath, "utf8"));
+    assert.equal(curlArgs.at(-1), "http://127.0.0.1:8787/tasks/a2ad-parent%3Awith-colon/decision-dialectic/patch");
+    assert.ok(curlArgs.includes("x-a2a-edge-secret: test-edge-secret"));
+    const receivedBody = JSON.parse(readFileSync(curlBodyPath, "utf8"));
+    assert.equal(receivedBody.op, "append.thesis");
+    assert.equal(receivedBody.taskId, "a2ad-parent");
+    assert.equal(receivedBody.expectedRevision, 0);
+    assert.equal(receivedBody.authorAgent, "sogyo");
+    assert.equal(receivedBody.payload.claim, "The bridge should patch the parent task.");
+    const payload = JSON.parse(result.stdout);
+    assert.match(payload.result.summary, /decision\.dialectic thesis patched parent/);
+    assert.doesNotMatch(payload.result.summary, /accepted by versioned OpenClaw A2A handler/);
+    assert.equal(payload.result.output.decisionDialectic.status, "patched");
+    assert.equal(payload.result.output.decisionDialectic.readModelState, "THESIS_SUBMITTED");
+    assert.equal(payload.result.output.decisionDialectic.readModelRevision, 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("analysis-only mode passes validateTaskCompletionEvidence without PR evidence", () => {

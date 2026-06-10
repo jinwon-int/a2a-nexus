@@ -30,7 +30,7 @@ import {
 export interface GitHubCommentSource {
   /** GitHub delivery GUID (from X-GitHub-Delivery header). */
   deliveryId?: string;
-  /** Repository full name (e.g., "jinwon-int/openclaw-plugin-a2a"). */
+  /** Repository full name (e.g., "jinwon-int/plugin-a2a"). */
   repository: string;
   /** Issue or PR number. */
   issueNumber: number;

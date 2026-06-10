@@ -20,7 +20,7 @@ SCAN_CONFIGS="$(git ls-files -- '*.json' '*.yml' '*.yaml' ':!:package-lock.json'
 
 declare -a FINDINGS=()
 
-echo "=== openclaw-plugin-a2a public-readiness scan ==="
+echo "=== plugin-a2a public-readiness scan ==="
 echo ""
 
 # ── Rule 1: raw API-key-like strings ──────────────────────────────────

@@ -1,8 +1,8 @@
 /**
  * Plugin final go/no-go operator-facing status projection.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#265
- * Parent: jinwon-int/openclaw-plugin-a2a#263
+ * Issue:  jinwon-int/plugin-a2a#265
+ * Parent: jinwon-int/plugin-a2a#263
  * Run:    a2a-plugin-final-go-no-go-projection-20260511T053000Z
  *
  * Takes an execution plan (or status projection) together with plugin config

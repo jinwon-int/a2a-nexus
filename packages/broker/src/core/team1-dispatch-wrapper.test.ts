@@ -325,6 +325,29 @@ test("buildTeam1DispatchPlan accepts explicit multi-lane parent round total and 
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.parentRoundOrder, "6");
 });
 
+test("buildTeam1DispatchPlan uses actual dispatch workers before manual totals", () => {
+  const plan = buildTeam1DispatchPlan(
+    {
+      ...BASE_ROUND_SPEC,
+      worker: "yukson",
+      lane: 4,
+      parentRoundTotal: 5,
+      parentRoundOrder: 5,
+      dispatchWorkers: ["sogyo", "nosuk", "bangtong", "yukson"],
+    },
+    undefined,
+    true,
+  );
+
+  assert.equal(plan.metadata.parentRoundTotal, 4);
+  assert.equal(plan.metadata.parentRoundOrder, 4);
+  assert.equal(plan.runRecord.metadata.parentRoundTotalSource, "dispatch-workers");
+  assert.equal(plan.runRecord.metadata.parentRoundOrderSource, "dispatch-workers");
+  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["sogyo", "nosuk", "bangtong", "yukson"]);
+  assert.equal(plan.taskPayload?.parentRoundTotal, 4);
+  assert.equal(plan.taskPayload?.parentRoundOrder, 4);
+});
+
 test("buildTeam1DispatchPlan blocks invalid parent round metadata before createTask", () => {
   const plan = buildTeam1DispatchPlan(
     { ...BASE_ROUND_SPEC, parentRoundTotal: 2, parentRoundOrder: 3 },

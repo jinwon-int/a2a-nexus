@@ -2,10 +2,10 @@
 
 > Refs: plugin-a2a#16, parent #6
 >
-> Scope: a2a-broker + openclaw-plugin-a2a only (no archived legacy repo access).
+> Scope: a2a-broker + plugin-a2a only (no archived repo access).
 
 This document captures which lifecycle/status behaviors from the original
-A2A system must be preserved before the archived legacy repository can be
+A2A system must be preserved before the archived predecessor repo can be
 safely deleted. It is derived by cross-referencing the broker's current
 state machine, the plugin's type mappings, and the regression matrix
 (`docs/regression-matrix.md`).

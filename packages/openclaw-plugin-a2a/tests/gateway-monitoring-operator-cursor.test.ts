@@ -344,4 +344,145 @@ describe("gateway monitoring operator event cursor", () => {
       handlers.shutdownOperatorEventBridge();
     }
   });
+
+  it("routes terminal monitoring for Team1-only, Team2-only, Team1+Team2, and invalid cross-broker configs", () => {
+    const makeHandlers = (operatorEvents: Record<string, unknown>) => {
+      const bridgeParams: Array<{
+        handoffBrokerId?: string;
+        notifyOperator?: boolean;
+        relayTerminalProjection?: (projection: Record<string, unknown>) => Promise<unknown> | unknown;
+        terminalOutboxCursor?: string;
+      }> = [];
+      const localBroker = {
+        async *streamOperatorEvents() {
+          // no-op
+        },
+        async listTerminalOutbox() {
+          return { kind: "task.terminal.outbox", events: [], cursor: "terminal:local-latest" };
+        },
+        async relayTerminalProjection() {
+          return { accepted: true };
+        },
+      };
+      const remoteBroker = {
+        async *streamOperatorEvents() {
+          // no-op
+        },
+        async listTerminalOutbox() {
+          return { kind: "task.terminal.outbox", events: [], cursor: "terminal:remote-latest" };
+        },
+      };
+      const handlers = createA2AMonitoringHandlers(
+        {
+          plugins: {
+            entries: {
+              "a2a-broker-adapter": {
+                enabled: true,
+                config: {
+                  baseUrl: "http://127.0.0.1:8787",
+                  edgeSecret: "test-secret",
+                  requester: { id: "seoseo", kind: "node", role: "operator" },
+                  operatorEvents: {
+                    enabled: true,
+                    localBrokerId: "seoseo",
+                    terminalOutboxCursor: "terminal:local-latest",
+                    terminalOutboxReconcileUnackedOnStart: false,
+                    ...operatorEvents,
+                  },
+                },
+              },
+            },
+          },
+        },
+        {
+          createClient: () => localBroker as never,
+          createStandaloneBrokerClient: () => remoteBroker as never,
+          createOperatorEventBridge: (params) => {
+            bridgeParams.push(params);
+            return {
+              getState: () => ({ ok: true }),
+              shutdown: () => undefined,
+              waitForIdle: async () => undefined,
+            } as never;
+          },
+          now: () => Date.parse("2026-06-08T09:00:00.000Z"),
+        },
+      );
+      return { handlers, bridgeParams };
+    };
+
+    const team1Only = makeHandlers({
+      terminalOutboxAllowedIds: ["terminal:team1-only"],
+      crossBrokers: [],
+    });
+    try {
+      team1Only.handlers.startOperatorEventBridge();
+      assert.equal(team1Only.bridgeParams.length, 1);
+      assert.equal(team1Only.bridgeParams[0]?.handoffBrokerId, "seoseo");
+      assert.equal(team1Only.bridgeParams[0]?.notifyOperator, undefined);
+      assert.equal(team1Only.bridgeParams[0]?.relayTerminalProjection, undefined);
+    } finally {
+      team1Only.handlers.shutdownOperatorEventBridge();
+    }
+
+    const team2Only = makeHandlers({
+      notification: { enabled: false },
+      crossBrokers: [
+        {
+          label: "gwakga",
+          baseUrl: "https://team2-broker.example.test",
+          handoffBrokerId: "gwakga",
+          terminalOutboxCursor: "terminal:team2-cursor",
+          terminalOutboxReconcileUnackedOnStart: false,
+        },
+      ],
+    });
+    try {
+      team2Only.handlers.startOperatorEventBridge();
+      assert.equal(team2Only.bridgeParams.length, 2);
+      assert.equal(team2Only.bridgeParams[1]?.handoffBrokerId, "gwakga");
+      assert.equal(team2Only.bridgeParams[1]?.notifyOperator, false);
+      assert.equal(typeof team2Only.bridgeParams[1]?.relayTerminalProjection, "function");
+    } finally {
+      team2Only.handlers.shutdownOperatorEventBridge();
+    }
+
+    const team1AndTeam2 = makeHandlers({
+      terminalOutboxAllowedIds: ["terminal:team1"],
+      crossBrokers: [
+        {
+          label: "gwakga",
+          baseUrl: "https://team2-broker.example.test",
+          handoffBrokerId: "gwakga",
+          terminalOutboxCursor: "terminal:team2-cursor",
+          terminalOutboxReconcileUnackedOnStart: false,
+        },
+      ],
+    });
+    try {
+      team1AndTeam2.handlers.startOperatorEventBridge();
+      assert.equal(team1AndTeam2.bridgeParams.length, 2);
+      assert.equal(team1AndTeam2.bridgeParams[0]?.handoffBrokerId, "seoseo");
+      assert.equal(team1AndTeam2.bridgeParams[1]?.handoffBrokerId, "gwakga");
+      assert.equal(team1AndTeam2.bridgeParams[1]?.notifyOperator, false);
+    } finally {
+      team1AndTeam2.handlers.shutdownOperatorEventBridge();
+    }
+
+    const invalidRoute = makeHandlers({
+      crossBrokers: [
+        {
+          label: "missing-base-url",
+          handoffBrokerId: "gwakga",
+        },
+      ],
+    });
+    try {
+      invalidRoute.handlers.startOperatorEventBridge();
+      assert.equal(invalidRoute.bridgeParams.length, 1);
+      assert.equal(invalidRoute.bridgeParams[0]?.handoffBrokerId, "seoseo");
+    } finally {
+      invalidRoute.handlers.shutdownOperatorEventBridge();
+    }
+  });
 });

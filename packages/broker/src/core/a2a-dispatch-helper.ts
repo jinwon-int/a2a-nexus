@@ -24,6 +24,8 @@ export interface A2ADispatchSpec {
   parentRoundTotal?: number;
   parentRoundOrder?: number;
   assignmentCount?: number;
+  /** Actual workers that will receive tasks in this dispatch round. */
+  dispatchWorkers?: string[];
   brokerOfRecordId?: string;
   originBrokerId?: string;
   operatorFacingOwner?: "parent" | "child" | "local";
@@ -50,8 +52,8 @@ export interface A2AParentRoundDispatchMetadata {
   parentRoundId: string;
   parentRoundTotal: number;
   parentRoundOrder: number;
-  parentRoundTotalSource: "explicit" | "assignment-count" | "team-default";
-  parentRoundOrderSource: "explicit" | "lane";
+  parentRoundTotalSource: "explicit" | "assignment-count" | "team-default" | "dispatch-workers";
+  parentRoundOrderSource: "explicit" | "lane" | "dispatch-workers";
 }
 
 export interface A2ADispatchTaskPayload {
@@ -63,6 +65,7 @@ export interface A2ADispatchTaskPayload {
   parentRoundId: string;
   parentRoundTotal: number;
   parentRoundOrder: number;
+  dispatchedWorkers?: string[];
   parentIssueUrl: string;
   childIssueUrl: string;
   childIssue?: string;
@@ -164,9 +167,15 @@ export function resolveA2AParentRoundMetadata(roundSpec: A2ADispatchSpec): {
 } {
   const issues: string[] = [];
   const parentRoundId = (roundSpec.parentRoundId ?? roundSpec.runId).trim();
+  const dispatchWorkers = normalizeWorkerList(roundSpec.dispatchWorkers);
   const teamDefault = DEFAULT_TEAM_TOTALS[roundSpec.teamId];
-  const parentRoundTotal = roundSpec.parentRoundTotal ?? roundSpec.assignmentCount ?? teamDefault;
-  const parentRoundOrder = roundSpec.parentRoundOrder ?? roundSpec.lane;
+  const dispatchOrder = dispatchWorkers.indexOf(roundSpec.worker) + 1;
+  const parentRoundTotal = dispatchWorkers.length > 0
+    ? dispatchWorkers.length
+    : roundSpec.parentRoundTotal ?? roundSpec.assignmentCount ?? teamDefault;
+  const parentRoundOrder = dispatchOrder > 0
+    ? dispatchOrder
+    : roundSpec.parentRoundOrder ?? roundSpec.lane;
 
   if (parentRoundId.length === 0) {
     issues.push("parentRoundId is required; provide --run-id or --parent-round-id");
@@ -184,6 +193,9 @@ export function resolveA2AParentRoundMetadata(roundSpec: A2ADispatchSpec): {
   if (isPositiveInteger(parentRoundTotal) && isPositiveInteger(parentRoundOrder) && parentRoundOrder > parentRoundTotal) {
     issues.push(`parentRoundOrder must be <= parentRoundTotal, got ${parentRoundOrder}/${parentRoundTotal}`);
   }
+  if (dispatchWorkers.length > 0 && dispatchOrder <= 0) {
+    issues.push(`worker must be present in dispatchWorkers, got worker=${roundSpec.worker}`);
+  }
 
   if (issues.length > 0) return { issues };
   if (!isPositiveInteger(parentRoundTotal) || !isPositiveInteger(parentRoundOrder)) return { issues };
@@ -193,15 +205,31 @@ export function resolveA2AParentRoundMetadata(roundSpec: A2ADispatchSpec): {
       parentRoundId,
       parentRoundTotal,
       parentRoundOrder,
-      parentRoundTotalSource: roundSpec.parentRoundTotal !== undefined
-        ? "explicit"
-        : roundSpec.assignmentCount !== undefined
-          ? "assignment-count"
-          : "team-default",
-      parentRoundOrderSource: roundSpec.parentRoundOrder === undefined ? "lane" : "explicit",
+      parentRoundTotalSource: dispatchWorkers.length > 0
+        ? "dispatch-workers"
+        : roundSpec.parentRoundTotal !== undefined
+          ? "explicit"
+          : roundSpec.assignmentCount !== undefined
+            ? "assignment-count"
+            : "team-default",
+      parentRoundOrderSource: dispatchWorkers.length > 0
+        ? "dispatch-workers"
+        : roundSpec.parentRoundOrder === undefined ? "lane" : "explicit",
     },
     issues,
   };
+}
+
+function normalizeWorkerList(workers: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const worker of workers ?? []) {
+    const value = worker.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
 }
 
 export function buildA2ADispatchTaskId(roundSpec: A2ADispatchSpec, config: A2ADispatchConfig) {
@@ -215,6 +243,7 @@ export function buildA2ADispatchTaskId(roundSpec: A2ADispatchSpec, config: A2ADi
     `parentRoundId=${parentRound?.parentRoundId ?? roundSpec.parentRoundId ?? roundSpec.runId}`,
     `parentRoundTotal=${String(parentRound?.parentRoundTotal ?? roundSpec.parentRoundTotal ?? roundSpec.assignmentCount ?? "")}`,
     `parentRoundOrder=${String(parentRound?.parentRoundOrder ?? roundSpec.parentRoundOrder ?? roundSpec.lane)}`,
+    `dispatchWorkers=${normalizeWorkerList(roundSpec.dispatchWorkers).join(",")}`,
     `parentIssue=${roundSpec.parentIssueUrl}`,
     `childIssue=${roundSpec.childIssueUrl}`,
     `dryRun=${String(config.dryRun)}`,
@@ -376,6 +405,9 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
         parentRoundId: parentRound.metadata.parentRoundId,
         parentRoundTotal: parentRound.metadata.parentRoundTotal,
         parentRoundOrder: parentRound.metadata.parentRoundOrder,
+        ...(roundSpec.dispatchWorkers && roundSpec.dispatchWorkers.length > 0
+          ? { dispatchedWorkers: normalizeWorkerList(roundSpec.dispatchWorkers) }
+          : {}),
         parentIssueUrl: sanitizeText(roundSpec.parentIssueUrl),
         childIssueUrl: sanitizeText(roundSpec.childIssueUrl),
         childIssue: roundSpec.childIssue,

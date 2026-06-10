@@ -25,7 +25,7 @@ Example plugin config:
             "allowedTargets": ["node-alpha", "node-beta", "node-gamma", "node-delta"],
             "deniedTargets": ["node-quarantine"],
             "allowedTaskKinds": ["chat", "propose_patch", "validate_change"],
-            "allowedWorkspaces": ["openclaw-plugin-a2a"],
+            "allowedWorkspaces": ["plugin-a2a"],
             "approvalRequiredTaskKinds": ["apply_local_change", "promote_to_live", "rollback_live"],
             "requireApprovalForLiveImpact": true
           }

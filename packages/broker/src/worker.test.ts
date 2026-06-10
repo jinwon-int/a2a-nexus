@@ -331,6 +331,136 @@ test("worker env config reads A2A home broker id and lease file", () => {
   assert.equal(config.homeBrokerLeaseFile, "/tmp/a2a-home-broker-lease.json");
 });
 
+test("openclaw-poll-only profile declares broker poll handler metadata and disables bridge for external handlers", async () => {
+  const server = await startTestServer();
+  const tempDir = await mkdtemp(join(tmpdir(), "a2a-openclaw-poll-only-worker-"));
+  const handlerPath = join(tempDir, "handler.mjs");
+  await writeFile(handlerPath, `
+const chunks = [];
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => chunks.push(chunk));
+process.stdin.on("end", () => {
+  const task = JSON.parse(chunks.join(""));
+  console.log(JSON.stringify({
+    result: {
+      summary: "poll-only handler completed " + task.id,
+      output: {
+        bridgeDisabled: process.env.A2A_OPENCLAW_BRIDGE_DISABLED,
+        openClawBin: process.env.OPENCLAW_BIN || "",
+      },
+    },
+  }));
+});
+`, "utf8");
+
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: server.baseUrl,
+    WORKER_ID: "worker-a",
+    WORKER_ROLE: "analyst",
+    WORKER_PROFILE: "openclaw-poll-only",
+    WORKER_HANDLER_COMMAND: process.execPath,
+    WORKER_HANDLER_ARGS_JSON: JSON.stringify([handlerPath]),
+    OPENCLAW_BIN: "/path/that/must/not/run",
+  });
+  const worker = new A2ABrokerWorker(config);
+
+  try {
+    assert.equal(config.worker.capabilities.runtimeFlavor, "openclaw-poll-handler");
+    assert.equal(config.worker.capabilities.gatewayRequired, false);
+    assert.deepEqual(config.worker.metadata, {
+      workerProfile: "openclaw-poll-only",
+      runtimeFlavor: "openclaw-poll-handler",
+      executionPlane: "broker-poll-http-handler",
+      handlerContract: "stdin-stdout",
+      gatewayHookRequired: "false",
+      openclawBridge: "disabled",
+    });
+
+    await worker.register();
+    const workerViewResponse = await fetch(`${server.baseUrl}/workers/worker-a`);
+    assert.equal(workerViewResponse.status, 200);
+    const workerView = await workerViewResponse.json();
+    assert.equal(workerView.capabilities.runtimeFlavor, "openclaw-poll-handler");
+    assert.equal(workerView.capabilities.gatewayRequired, false);
+    assert.equal(workerView.metadata.executionPlane, "broker-poll-http-handler");
+
+    const task = await createTask(server.baseUrl, {
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run poll-only handler",
+      payload: {},
+    });
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const completedTask = await taskResponse.json();
+    assert.equal(completedTask.status, "succeeded");
+    assert.equal(completedTask.result.output.bridgeDisabled, "1");
+    assert.equal(completedTask.result.output.openClawBin, "/path/that/must/not/run");
+  } finally {
+    await worker.stop();
+    await server.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("broker-poll-only profile declares neutral broker poll handler metadata without OpenClaw bridge env", () => {
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: "http://127.0.0.1:8787",
+    WORKER_ID: "worker-neutral",
+    WORKER_ROLE: "analyst",
+    WORKER_PROFILE: "broker-poll-only",
+    WORKER_HANDLER_COMMAND: process.execPath,
+    WORKER_HANDLER_ARGS_JSON: JSON.stringify(["/tmp/handler.mjs"]),
+    OPENCLAW_BIN: "/path/that/must/not-run",
+  });
+
+  assert.equal(config.worker.capabilities.runtimeFlavor, "broker-poll-http-handler");
+  assert.equal(config.worker.capabilities.gatewayRequired, false);
+  assert.deepEqual(config.worker.metadata, {
+    workerProfile: "broker-poll-only",
+    runtimeFlavor: "broker-poll-http-handler",
+    executionPlane: "broker-poll-http-handler",
+    handlerContract: "stdin-stdout",
+    gatewayHookRequired: "false",
+  });
+});
+
+test("legacy openclaw-poll-only profile remains a compatibility alias", () => {
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: "http://127.0.0.1:8787",
+    WORKER_ID: "worker-legacy",
+    WORKER_ROLE: "analyst",
+    WORKER_PROFILE: "openclaw-poll-only",
+    WORKER_HANDLER_COMMAND: process.execPath,
+    WORKER_HANDLER_ARGS_JSON: JSON.stringify(["/tmp/handler.mjs"]),
+  });
+
+  assert.equal(config.worker.capabilities.runtimeFlavor, "openclaw-poll-handler");
+  assert.equal(config.worker.capabilities.gatewayRequired, false);
+  assert.equal(config.worker.metadata?.workerProfile, "openclaw-poll-only");
+  assert.equal(config.worker.metadata?.openclawBridge, "disabled");
+});
+
+test("broker poll aliases normalize to the neutral broker-poll-only profile", () => {
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: "http://127.0.0.1:8787",
+    WORKER_ID: "worker-poll-alias",
+    WORKER_ROLE: "analyst",
+    WORKER_PROFILE: "poll-only",
+    WORKER_HANDLER_COMMAND: process.execPath,
+    WORKER_HANDLER_ARGS_JSON: JSON.stringify(["/tmp/handler.mjs"]),
+  });
+
+  assert.equal(config.worker.capabilities.runtimeFlavor, "broker-poll-http-handler");
+  assert.equal(config.worker.metadata?.workerProfile, "broker-poll-only");
+});
+
 test("worker validates matching A2A_HOME_BROKER_ID and writes local lease before registering", async () => {
   const server = await startTestServer({ brokerId: "team2-broker" });
   const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-lease-test-"));

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildMobileWorkerPreflight,
+  evaluateMobileWorkerTaskAcceptance,
   normalizeMobileWorkerPreflightInput,
   renderMobileWorkerPreflightMarkdown,
   type MobileWorkerPreflightDryRunResult,
@@ -160,6 +161,77 @@ describe("mobile worker preflight fixtures", () => {
     assert.equal(result.packet.mobileHealth.workspaceIsolation, "forbidden_path");
     assert.ok(result.packet.signals.some((s) => s.code === "workspace_isolation_forbidden_path"));
     assert.ok(result.packet.recommendedActions.some((a) => /credential|provider/i.test(a)));
+  });
+});
+
+describe("mobile worker non-docker task acceptance", () => {
+  for (const nodeId of ["daegyo", "gongyung"]) {
+    it(`accepts ${nodeId}-style no-live analysis-only A2AD tasks as non-docker research work`, () => {
+      const decision = evaluateMobileWorkerTaskAcceptance({
+        worker: {
+          nodeId,
+          workerMode: "mobile",
+          capabilities: {
+            canAnalyze: true,
+            canPatchWorkspace: false,
+            canPromoteLive: false,
+            environments: ["research"],
+          },
+        },
+        task: {
+          intent: "analyze",
+          policyContext: { liveImpact: false, targetEnvironment: "research" },
+          payload: {
+            mode: "analysis-only",
+            noLive: true,
+            sourceOnly: true,
+            readOnly: true,
+            a2ad: true,
+            dialecticPhase: "ordinary",
+          },
+        },
+      });
+
+      assert.equal(decision.accept, true);
+      assert.equal(decision.profile, "non_docker_research");
+      assert.ok(decision.allowedModes.includes("analysis-only"));
+      assert.deepEqual(decision.blockedExecutors, ["docker", "live", "github-write"]);
+    });
+  }
+
+  it("keeps Docker runner and live-impact payloads blocked for mobile workers", () => {
+    const baseWorker = {
+      nodeId: "gongyung",
+      workerMode: "mobile",
+      capabilities: {
+        canAnalyze: true,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        environments: ["research"],
+      },
+    };
+
+    const dockerDecision = evaluateMobileWorkerTaskAcceptance({
+      worker: baseWorker,
+      task: {
+        intent: "analyze",
+        policyContext: { liveImpact: false, targetEnvironment: "research" },
+        payload: { mode: "docker-broker-noop-smoke", noLive: true, sourceOnly: true },
+      },
+    });
+    assert.equal(dockerDecision.accept, false);
+    assert.match(dockerDecision.reason, /docker/i);
+
+    const liveDecision = evaluateMobileWorkerTaskAcceptance({
+      worker: baseWorker,
+      task: {
+        intent: "analyze",
+        policyContext: { liveImpact: true, targetEnvironment: "live" },
+        payload: { mode: "analysis-only", noLive: true, sourceOnly: true },
+      },
+    });
+    assert.equal(liveDecision.accept, false);
+    assert.match(liveDecision.reason, /live/i);
   });
 });
 

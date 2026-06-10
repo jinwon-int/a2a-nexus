@@ -97,7 +97,7 @@ caddy reload --config /etc/caddy/Caddyfile
 
 # 4. Verify redaction is active by triggering a 502 and checking logs.
 #    With the broker stopped, send a request with edge secret:
-curl -v -H 'X-A2A-Edge-Secret: test-secret-abc123' https://broker.example.com/tasks/xyz
+curl -v -H 'X-A2A-Edge-Secret: <edge-secret-placeholder>' https://broker.example.com/tasks/xyz
 
 # 5. Check Caddy access log — edge secret must NOT appear:
 tail -1 /var/log/caddy/broker-access.log | jq .

@@ -40,6 +40,10 @@ function parseArgs(argv) {
 
   const workerModel = readOption("--worker-model");
   const workerThinking = readOption("--worker-thinking");
+  const listOption = (name) => {
+    const value = readOption(name);
+    return value === undefined ? undefined : value.split(",").map((item) => item.trim()).filter(Boolean);
+  };
 
   // --dry-run default: unless --execute is explicitly present, default to dry-run
   const execute = hasExecute && !hasDryRun;
@@ -57,6 +61,7 @@ function parseArgs(argv) {
     parentRoundOrder: readOption("--parent-round-order") === undefined
       ? undefined
       : Number(readOption("--parent-round-order")),
+    dispatchWorkers: listOption("--dispatch-workers"),
     parentIssueUrl: readOption("--parent-issue") ?? "",
     childIssueUrl: readOption("--child-issue") ?? "",
     childIssue: readOption("--issue") ?? "",
@@ -131,6 +136,8 @@ function main() {
       "                          Total lane/task count for the parent round",
       "  --parent-round-order <n>",
       "                          1-based lane/task order inside the parent round",
+      "  --dispatch-workers <csv>",
+      "                          Actual task recipients; overrides manual totals/order",
       "  --dry-run              Force dry-run mode (default unless --execute)",
       "  --execute              Opt-in to write operations (requires preflight pass)",
       "  --no-preflight         Skip worker preflight checks",
@@ -189,6 +196,7 @@ function main() {
     parentRoundId: options.parentRoundId || undefined,
     parentRoundTotal: options.parentRoundTotal,
     parentRoundOrder: options.parentRoundOrder,
+    dispatchWorkers: options.dispatchWorkers,
     parentIssueUrl: options.parentIssueUrl,
     childIssueUrl: options.childIssueUrl,
     childIssue: options.childIssue || undefined,

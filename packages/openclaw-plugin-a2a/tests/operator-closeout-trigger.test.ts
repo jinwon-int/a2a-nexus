@@ -8,7 +8,7 @@
  * no Gateway restart, no read/visibility/terminal ACK semantics.
  * Provider accepted/message-id evidence is accepted-send only.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#404
+ * Issue:  jinwon-int/plugin-a2a#404
  * Parent: jinwon-int/a2a-broker#841
  */
 import assert from "node:assert/strict";

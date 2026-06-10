@@ -1,6 +1,6 @@
 # E2E Wake-on-Task Proof Runbook
 
-**Issue**: jinwon-int/openclaw-plugin-a2a#40
+**Issue**: jinwon-int/plugin-a2a#40
 **Direction**: Node Hub (sender/driver) → Node Remote (receiver/audit)
 **Nodes**: node-hub (host-hub) → node-remote (host-remote)
 
@@ -109,7 +109,7 @@ After S1–S4 pass:
 ## Wake Layer Safety
 
 > ⚠️ Wake-on-Task remains **default-off / opt-in** until canary proof complete.
-> 
+>
 > Only enable via explicit config: `plugins.entries.a2a-broker-adapter.config.wake.enabled = true`
-> 
+>
 > No other code path should enable wake automatically.

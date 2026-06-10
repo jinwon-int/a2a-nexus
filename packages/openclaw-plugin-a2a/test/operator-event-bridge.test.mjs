@@ -127,17 +127,17 @@ test("operator event bridge projects GitHub evidence gaps with grace warning", a
               githubTaskEvidence: [
                 {
                   taskId: "a2a-failclosed-worker-182",
-                  repo: "jinwon-int/openclaw-plugin-a2a",
+                  repo: "jinwon-int/plugin-a2a",
                   issue: 182,
                   dispatchedAt: "2026-05-03T07:10:00.000Z",
                   lastCheckedAt: "2026-05-03T07:29:00.000Z",
                 },
                 {
                   taskId: "a2a-failclosed-worker-183",
-                  repo: "jinwon-int/openclaw-plugin-a2a",
+                  repo: "jinwon-int/plugin-a2a",
                   issueNumber: "183",
-                  startCommentUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/183#issuecomment-start",
-                  prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/200",
+                  startCommentUrl: "https://github.com/jinwon-int/plugin-a2a/issues/183#issuecomment-start",
+                  prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/200",
                   lastCheckedAt: "2026-05-03T07:29:30.000Z",
                   prompt: "do not project this issue body",
                 },
@@ -173,7 +173,7 @@ test("operator event bridge projects GitHub evidence gaps with grace warning", a
       doneSeen: false,
       blockSeen: false,
       evidenceMissing: true,
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 182,
       lastCheckedAt: Date.parse("2026-05-03T07:29:00.000Z"),
       warning: "GitHub task evidence missing after grace period",
@@ -873,7 +873,7 @@ test("monitor status wires terminal notifications to the configured Telegram ada
           taskId: "task-telegram",
           createdAt: "2026-05-02T00:00:00.000Z",
           summary: "PR ready for review",
-          prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/146",
+          prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/146",
         };
         yield { name: "operator-summary-update", id: "terminal:telegram:1", data: { terminalEvent } };
         yield { name: "operator-summary-update", id: "terminal:telegram:1", data: { terminalEvent } };
@@ -1566,7 +1566,7 @@ test("operator terminal notification renderer covers success block and PR events
         receiptProjection: "current_session_visible",
         type: "pr_opened",
         taskId: "pr-1",
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/138",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/138",
       },
     },
   });
@@ -1582,7 +1582,7 @@ test("operator terminal notification renderer covers success block and PR events
   assert.equal(blocked.evidence.receiptProjection, "manual_operator_receipt");
   assert.match(blocked.title, /Terminal Brief 차단/);
   assert.equal(pr.type, "pr");
-  assert.equal(pr.prUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/138");
+  assert.equal(pr.prUrl, "https://github.com/jinwon-int/plugin-a2a/pull/138");
   assert.equal(pr.deliveryOwner, "openclaw.plugin-notifier");
 
   const providerSendOnly = buildA2AOperatorTerminalNotificationEnvelope({
@@ -1607,9 +1607,9 @@ test("operator terminal notification carries compact evidence and Telegram adapt
         taskId: "task-146",
         workerId: "sogyo",
         status: "succeeded",
-        repo: "jinwon-int/openclaw-plugin-a2a",
-        issueUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/146",
-        doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/147",
+        repo: "jinwon-int/plugin-a2a",
+        issueUrl: "https://github.com/jinwon-int/plugin-a2a/issues/146",
+        doneUrl: "https://github.com/jinwon-int/plugin-a2a/pull/147",
         summary: "Done URL ready; secret=hide-me /root/private/raw.log",
         originalMessage: "Fix Terminal Brief notifications for worker completions",
         createdAt: "2026-05-02T00:00:00.000Z",
@@ -1619,17 +1619,17 @@ test("operator terminal notification carries compact evidence and Telegram adapt
 
   assert.equal(envelope.worker, "sogyo");
   assert.equal(envelope.status, "succeeded");
-  assert.equal(envelope.repo, "jinwon-int/openclaw-plugin-a2a");
-  assert.equal(envelope.issueUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/146");
-  assert.equal(envelope.doneUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/147");
+  assert.equal(envelope.repo, "jinwon-int/plugin-a2a");
+  assert.equal(envelope.issueUrl, "https://github.com/jinwon-int/plugin-a2a/issues/146");
+  assert.equal(envelope.doneUrl, "https://github.com/jinwon-int/plugin-a2a/pull/147");
   assert.equal(envelope.evidence.worker, "sogyo");
-  assert.equal(envelope.evidence.repo, "jinwon-int/openclaw-plugin-a2a");
-  assert.equal(envelope.evidence.doneUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/147");
+  assert.equal(envelope.evidence.repo, "jinwon-int/plugin-a2a");
+  assert.equal(envelope.evidence.doneUrl, "https://github.com/jinwon-int/plugin-a2a/pull/147");
   assert.equal(envelope.evidence.taskDescription, "Fix Terminal Brief notifications for worker completions");
   assert.doesNotMatch(envelope.evidence.summary, /hide-me|\/root\/private/);
   assert.match(envelope.text, /Worker sogyo completed task: task-146 — Fix Terminal Brief notifications for worker completions/);
   assert.match(envelope.text, /Worker: sogyo/);
-  assert.match(envelope.text, /Done: https:\/\/github.com\/jinwon-int\/openclaw-plugin-a2a\/pull\/147/);
+  assert.match(envelope.text, /Done: https:\/\/github.com\/jinwon-int\/plugin-a2a\/pull\/147/);
 
   const telegram = buildA2AOpenClawTelegramOperatorNotification(envelope);
   assert.equal(telegram.kind, "openclaw.operator.telegram_notification");
@@ -1655,7 +1655,7 @@ test("telegram-safe dry-run harness projects bounded Telegram payloads without s
           taskId: "task-148",
           workerId: "dungae",
           summary: "dry-run ready token=hide-me /root/private/telegram.log",
-          doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/148",
+          doneUrl: "https://github.com/jinwon-int/plugin-a2a/pull/148",
         },
       },
     },
@@ -1728,7 +1728,7 @@ test("operator release drift renderer summarizes broker and worker current stale
         receiptProjection: "current_session_visible",
         type: "pr_created",
         taskId: "task-139",
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/139",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/139",
         releaseDrift: {
           broker: { revision: "78b2b42fca6e", expectedRevision: "78b2b42fca6e" },
           workers: { dungae: { runnerRevision: "160bd95af6b4", expectedRevision: "ff4c244a38a7" } },
@@ -2057,15 +2057,15 @@ test("operator notification renderer does not duplicate title or PR lines", () =
     text: [
       "A2A 완료: task task-1",
       "tests passed",
-      "PR: https://github.com/jinwon-int/openclaw-plugin-a2a/pull/167",
+      "PR: https://github.com/jinwon-int/plugin-a2a/pull/167",
     ].join("\n"),
     taskId: "task-1",
-    prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/167",
+    prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/167",
     evidence: { schema: "a2a.operator.notification.evidence", version: 1, taskId: "task-1" },
   });
 
   assert.equal(text, "A2A Terminal Brief 완료: A2A(1/1)");
-  assert.doesNotMatch(text, /PR: https:\/\/github.com\/jinwon-int\/openclaw-plugin-a2a\/pull\/167/);
+  assert.doesNotMatch(text, /PR: https:\/\/github.com\/jinwon-int\/plugin-a2a\/pull\/167/);
   assert.doesNotMatch(text, /업무:/);
   assert.doesNotMatch(text, /Task: task-1/);
   assert.doesNotMatch(text, /Dedupe: terminal:task-1:succeeded/);
@@ -2082,9 +2082,9 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
       taskId: "task-outbox",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 165,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/165#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/165#issuecomment-done",
       receiptProjection: "current_session_visible",
       testSummary: "provider send success is not enough",
       originalMessage: "Verify terminal outbox ACK safety gate",
@@ -2315,9 +2315,9 @@ test("monitor status live wiring polls terminal outbox and ACKs OpenClaw receipt
       taskId: "task-live-wiring",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 165,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/165#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/165#issuecomment-done",
       testSummary: "live Gateway path must wait for user-visible receipt",
       receiptProjection: "current_session_visible",
       completedAt: "2026-05-02T06:30:00.000Z",
@@ -2491,9 +2491,9 @@ test("operator terminal outbox duplicate replay is bounded until receipt confirm
       taskId: "a2a-plugin-terminal-outbox-rerun-dungae-165-1777703237007-2cbef34e",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 168,
-      prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/167",
+      prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/167",
       testSummary: "provider send success alone must not flood Telegram",
       receiptProjection: "current_session_visible",
       completedAt: "2026-05-02T06:42:23.031Z",
@@ -2952,9 +2952,9 @@ test("release dry-run no-live operator completion notification waits for visible
         status: "succeeded",
         taskId: "a2a-release-dryrun-20260504022511",
         worker: "dungae",
-        repo: "jinwon-int/openclaw-plugin-a2a",
+        repo: "jinwon-int/plugin-a2a",
         issue: 201,
-        prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/201",
+        prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/201",
         title: "plugin operator notification no-live proof",
         summary: "릴리스 드라이런 완료 — operator receipt 확인 전 ACK 금지",
         runId: "a2a-release-dryrun-20260504022511",
@@ -2974,9 +2974,9 @@ test("release dry-run no-live operator completion notification waits for visible
       taskId: "a2a-release-dryrun-20260504022511",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 201,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/201#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/201#issuecomment-done",
       originalMessage: "plugin operator notification no-live proof",
       receiptProjection: "current_session_visible",
       testSummary: "릴리스 드라이런 완료 — operator receipt 확인 전 ACK 금지",
@@ -3023,7 +3023,7 @@ test("release dry-run no-live operator completion notification waits for visible
     assert.match(outboxEnvelope.title, /^A2A Terminal Brief 완료:/, "title should stay Terminal Brief and Korean-friendly for operator scan");
     assert.match(outboxEnvelope.text, /릴리스 드라이런 완료/);
     assert.match(outboxEnvelope.text, /Worker dungae completed task: a2a-release-dryrun-20260504022511/);
-    assert.match(outboxEnvelope.text, /Issue: https:\/\/github\.com\/jinwon-int\/openclaw-plugin-a2a\/issues\/201/);
+    assert.match(outboxEnvelope.text, /Issue: https:\/\/github\.com\/jinwon-int\/plugin-a2a\/issues\/201/);
     assert.match(outboxEnvelope.text, /Run: a2a-release-dryrun-20260504022511/);
     assert.match(outboxEnvelope.text, /Trace: trace-dryrun-201/);
     assert.ok(outboxEnvelope.text.length < 700, "operator notification should remain concise");
@@ -3249,7 +3249,7 @@ test("monitor status projects live-readiness evidence acceptance without treatin
               { code: "worker_matrix", status: "pass", message: "workers fresh" },
             ],
             evidenceAcceptance: [
-              { kind: "PR", status: "accepted", taskId: "task-pr", url: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/208" },
+              { kind: "PR", status: "accepted", taskId: "task-pr", url: "https://github.com/jinwon-int/plugin-a2a/pull/208" },
               { kind: "Done", status: "accepted", taskId: "task-done", url: "https://github.com/jinwon-int/a2a-broker/issues/336#issuecomment-1" },
               { kind: "Block", status: "accepted", taskId: "task-block", url: "https://github.com/jinwon-int/a2a-broker/issues/335#issuecomment-2" },
             ],
@@ -3596,10 +3596,10 @@ test("cross-broker terminal projection is bounded, redacted, and fail-closed for
       taskId: "child-1",
       status: "succeeded",
       worker: "jingun",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 281,
-      prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/999?token=secret-value",
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/281#issuecomment-done",
+      prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/999?token=secret-value",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/281#issuecomment-done",
       testSummary: "done with token=super-secret and /home/operator/private/path plus ```raw log```",
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
@@ -3676,9 +3676,9 @@ test("operator bridge relays only fresh post-cursor cross-broker terminal outbox
       taskId: "fresh-child",
       status: "succeeded",
       worker: "jingun",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 281,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/281#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/281#issuecomment-done",
       testSummary: "fresh terminal projection",
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
@@ -4349,9 +4349,9 @@ test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent r
       taskId: "child-1-of-1",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 437,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 child 1/1 completion",
       parentRoundId: "parent-seoseo-round-1-of-1",
       parentRoundOrder: 1,
@@ -4441,9 +4441,9 @@ test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent r
       taskId: "child-1-of-2",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 437,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 child 1/2 completion",
       parentRoundId: "parent-seoseo-round-1-of-2",
       parentRoundOrder: 1,
@@ -4533,9 +4533,9 @@ test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sen
       taskId: "dedupe-child-task",
       status: "succeeded",
       worker: "dungae",
-      repo: "jinwon-int/openclaw-plugin-a2a",
+      repo: "jinwon-int/plugin-a2a",
       issue: 437,
-      doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/437#issuecomment-done",
+      doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 dedupe test",
       parentRoundId: "parent-seoseo-round-dedupe",
       parentRoundOrder: 1,

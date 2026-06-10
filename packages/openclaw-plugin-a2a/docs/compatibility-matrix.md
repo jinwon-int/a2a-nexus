@@ -1,8 +1,8 @@
-# Compatibility matrix for `openclaw-plugin-a2a`
+# Compatibility matrix for `plugin-a2a`
 
 This document defines what "compatible" means between:
 
-- `openclaw-plugin-a2a`
+- `plugin-a2a`
 - OpenClaw core / plugin SDK
 - `a2a-broker`
 

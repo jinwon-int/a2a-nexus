@@ -64,7 +64,7 @@ function peerStatusRpc(
     {
       jsonrpc: "2.0",
       id: 1,
-      method: "PeerStatus",
+      method: "a2a.peer.status",
       params: { target, maxCacheAgeMs },
     },
     options,
@@ -100,6 +100,28 @@ test("PeerStatus returns ok for a registered worker", () => {
   assert.equal(data.worker.registered, true);
 });
 
+test("legacy PeerStatus alias remains available only as a deprecated compatibility path", () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  const options = createJsonRpcOptions(broker);
+
+  const result = executeA2AJsonRpc(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "PeerStatus",
+      params: { target: "worker-a" },
+    },
+    options,
+  );
+
+  assert.ok("result" in result, "legacy alias should still work during deprecation window");
+  if (!("result" in result)) return;
+  const data = result.result as PeerStatusResponse;
+  assert.equal(data.target, "worker-a");
+  assert.equal(data.health, "ok");
+});
+
 test("PeerStatus returns target_unknown for unregistered worker", () => {
   const broker = createBroker();
   const options = createJsonRpcOptions(broker);
@@ -133,7 +155,7 @@ test("PeerStatus denies verbose queries without explicit scope", () => {
     {
       jsonrpc: "2.0",
       id: 1,
-      method: "PeerStatus",
+      method: "a2a.peer.status",
       params: { target: "worker-a", verbose: true },
     },
     options,
@@ -162,7 +184,7 @@ test("PeerStatus accepts verbose queries with explicit scope", () => {
     {
       jsonrpc: "2.0",
       id: 1,
-      method: "PeerStatus",
+      method: "a2a.peer.status",
       params: { target: "worker-a", verbose: true },
     },
     options,
@@ -673,7 +695,7 @@ test("PeerStatus via JSON-RPC with missing target returns error", () => {
   const options = createJsonRpcOptions(broker);
 
   const result = executeA2AJsonRpc(
-    { jsonrpc: "2.0", id: 1, method: "PeerStatus", params: {} },
+    { jsonrpc: "2.0", id: 1, method: "a2a.peer.status", params: {} },
     options,
   );
   assert.ok("error" in result);

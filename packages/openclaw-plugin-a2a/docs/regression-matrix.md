@@ -1,6 +1,6 @@
 # Plugin ↔ broker regression matrix
 
-Closes out openclaw-plugin-a2a#3. This is the scope-of-coverage doc
+Closes out plugin-a2a#3. This is the scope-of-coverage doc
 for plugin-to-broker task lifecycle behavior. It defines the
 scenarios, what "pass" looks like for each, whether the scenario
 should be an automated test or a scripted smoke check, and the

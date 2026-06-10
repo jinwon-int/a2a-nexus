@@ -2,7 +2,7 @@
 
 _No-live validation harness for the route: Gwakga origin row → Seoseo projection → Seoseo synthetic Terminal Brief → Seoseo operator-facing ACK, with no Gwakga local operator brief._
 
-- Lane: `jinwon-int/openclaw-plugin-a2a#429`
+- Lane: `jinwon-int/plugin-a2a#429`
 - Run: `a2a-allhands-dev-20260522T064600Z`
 - Parent: `jinwon-int/a2a-plane#416`
 - Worker: soonwook (team2)

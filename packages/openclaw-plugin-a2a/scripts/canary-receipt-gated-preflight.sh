@@ -4,7 +4,7 @@ set -euo pipefail
 # Canary preflight for the Gateway config bridge + receipt-gated
 # terminal-outbox notifier.
 #
-# Issue:  jinwon-int/openclaw-plugin-a2a#269
+# Issue:  jinwon-int/plugin-a2a#269
 # Parent: jinwon-int/a2a-plane#241
 # Run:    terminal-brief-activation-20260511T080211Z
 #

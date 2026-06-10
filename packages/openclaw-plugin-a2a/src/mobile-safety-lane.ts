@@ -7,7 +7,7 @@
  * signal is emitted when resources are insufficient, and GitHub write
  * operations are routed through a handoff target (e.g. node-hub/CI).
  *
- * Closes jinwon-int/openclaw-plugin-a2a#85.
+ * Closes jinwon-int/plugin-a2a#85.
  */
 
 // ── Types ─────────────────────────────────────────────────────

@@ -224,7 +224,7 @@ test("audit projection redacts target refs", () => {
       // R29: targetRef must not contain raw or partial sessionKey values
       assert.ok(!e.targetRef.includes("session:worker-alpha:main"), `Full session key leaked: ${e.targetRef}`);
       // Also verify it's a hex digest format (nodeId/16-hex-chars)
-      // openclaw-plugin-a2a#338
+      // plugin-a2a#338
       assert.match(e.targetRef, /^[a-zA-Z0-9_-]+\/[0-9a-f]{16}$/, `targetRef must be nodeId/hexdigest, got: ${e.targetRef}`);
     }
   }

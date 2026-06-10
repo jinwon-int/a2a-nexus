@@ -11,7 +11,12 @@ It owns:
 
 - broker HTTP/JSON-RPC APIs, task lifecycle, status/read models, SSE streams, cancel/reconcile, stale reaper, and persistence
 - worker registration, heartbeat, queue polling, and task evidence validation
-- the deployable worker handler artifact at `scripts/openclaw-a2a-task-handler.mjs`
+- the deployable worker handler artifact at `scripts/a2a-task-handler.mjs`
+
+The deployable handler artifact is `scripts/a2a-task-handler.mjs`. The legacy
+`scripts/openclaw-a2a-task-handler.mjs` path remains as a compatibility wrapper
+for already deployed workers during the harness-neutral naming migration; do not
+point new workers at it.
 - OpenClaw bridge failure semantics for host fallback paths, including watchdog/final-evidence safeguards
 
 It does **not** own isolated task execution. Generic GitHub patch execution runs through [`jinwon-int/a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner). OpenClaw-facing task request/status/cancel mapping lives in [`jinwon-int/openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a).
@@ -37,6 +42,8 @@ map.
 - `docs/a2a-dialectic-lite.md` for the ordinary A2A team-round convention that uses light dialectic review by default, while reserving explicit strong `a2ad 로 진행` / `a2ad 라운드로 진행` rounds for heavier thesis / antithesis / synthesis work without changing approval boundaries
 - `docs/protocol-compatibility.md` for the public A2A compatibility matrix, current supported profile, non-goals, and conformance/golden gate
 - `docs/public-stable-readiness.md` for the public/stable release decision checklist, license/secret/history gates, and broker/plugin/runner responsibility boundaries
+- `docs/worker-poll-profile-migration.md` for the neutral `broker-poll-only` worker profile and OpenClaw-era compatibility migration guardrails
+- `docs/npm-scripts-inventory.md` for auditing and consolidating the large npm script surface without bypassing operator gates
 - `docs/source-public-risk-audit-20260510.md` for the Team2 independent broker source-public risk audit and parity evidence for the 2026-05-10 gate
 - `SECURITY.md` and `CONTRIBUTING.md` for vulnerability-reporting, contribution, and release-safety boundaries
 - `docs/v1-acceptance-handoff.md` for the v1 acceptance gate, the plugin-facing contract, and the cross-repo handoff bar for `openclaw-plugin-a2a`
@@ -195,7 +202,7 @@ providers, or ACK/replay Terminal Brief rows.
 
 ## What is included
 
-Release note: this repository currently has no root `LICENSE` file. Treat public/stable release or visibility changes as blocked until the license decision is approved and recorded in `docs/public-stable-readiness.md`.
+Release note: this repository now carries a root `LICENSE` file using the MIT License. Public/stable release or visibility changes remain blocked until the rest of `docs/public-stable-readiness.md` is reviewed and separately approved.
 
 - Node 22 + TypeScript service
 - JSON file backed persistence for exchanges, workers, proposals, validations, artifacts, and audit events
@@ -431,6 +438,47 @@ npm run start:worker
 ```
 
 The external handler receives the task JSON on stdin and must write a JSON object to stdout. It may return either a task result object directly, or an envelope like `{ "result": { ... } }` or `{ "error": { "message": "..." } }`.
+
+### Broker poll/HTTP external-handler workers
+
+External-handler workers do not need Gateway plugin hooks or Gateway-internal
+session methods to execute broker tasks. Use the neutral broker poll-only profile
+for workers that register with the broker, heartbeat, poll/claim/start/complete/fail
+over HTTP, and hand each task to a stdin/stdout handler.
+
+```bash
+BROKER_URL=http://127.0.0.1:8787 \
+WORKER_ID=yukson \
+WORKER_ROLE=analyst \
+A2A_WORKER_PROFILE=broker-poll-only \
+A2A_EXECUTOR_MODE=auto \
+A2A_DOCKER_RUNNER_SCOPE=all-github \
+WORKER_HANDLER_COMMAND=node \
+WORKER_HANDLER_ARGS_JSON='["/opt/a2a/scripts/a2a-task-handler.mjs"]' \
+npm run start:worker
+```
+
+`A2A_WORKER_PROFILE=broker-poll-only` declares
+`runtimeFlavor=broker-poll-http-handler`, `gatewayRequired=false`,
+`executionPlane=broker-poll-http-handler`, and `handlerContract=stdin-stdout` in
+worker registration metadata.
+
+The legacy `A2A_WORKER_PROFILE=openclaw-poll-only` still exists as a compatibility
+alias for already deployed workers. It reports `runtimeFlavor=openclaw-poll-handler`
+and forces `A2A_OPENCLAW_BRIDGE_DISABLED=1` for the external handler process so an
+accidental `OPENCLAW_BIN` value cannot turn the worker back into a
+Gateway/session bridge executor. New worker docs and deployments should use
+`broker-poll-only`; see `docs/worker-poll-profile-migration.md` before removing
+legacy names or wrapper files.
+
+For Hermes nodes, leave `A2A_WORKER_PROFILE` unset and use
+`A2A_WORKER_RUNTIME_FLAVOR=termux-hermes` with `A2A_WORKER_GATEWAY_REQUIRED=false`
+instead. If the task is delegated into a container, the container harness should
+be Hermes-specific rather than OpenClaw-specific.
+
+Keep `plugin-a2a` as an optional operator/Gateway presentation plane for
+status cards, outbox notifications, and Terminal Brief visibility. Worker task
+execution should stay valid without that plugin being loaded.
 
 Create exchange:
 

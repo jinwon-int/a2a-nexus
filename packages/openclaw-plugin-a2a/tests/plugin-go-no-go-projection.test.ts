@@ -1,7 +1,7 @@
 /**
  * Plugin final go/no-go projection tests (#265).
  *
- * Parent: jinwon-int/openclaw-plugin-a2a#263
+ * Parent: jinwon-int/plugin-a2a#263
  * Run:    a2a-plugin-final-go-no-go-projection-20260511T053000Z
  *
  * Exercises the plugin go/no-go projection across all plugin health states
@@ -123,8 +123,8 @@ function configNoOperatorEvents(): A2ABrokerAdapterPluginRuntimeConfig {
 function goCandidatePacket(): SourcePublicApprovalPacket {
   return {
     schema: "a2a.source-public.approval-packet.rehearsal.v1",
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:go-candidate:1710000000",
-    repo: "jinwon-int/openclaw-plugin-a2a",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:go-candidate:1710000000",
+    repo: "jinwon-int/plugin-a2a",
     runId: "test-run-go-candidate",
     producedAt: 1710000000,
     currentVisibility: "private",
@@ -156,7 +156,7 @@ function goCandidatePacket(): SourcePublicApprovalPacket {
 function noGoPacket(): SourcePublicApprovalPacket {
   return {
     ...goCandidatePacket(),
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:no-go:1710000001",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:no-go:1710000001",
     runId: "test-run-no-go",
     producedAt: 1710000001,
     approvalPayload: {
@@ -177,7 +177,7 @@ function noGoPacket(): SourcePublicApprovalPacket {
 function needsApprovalPacket(): SourcePublicApprovalPacket {
   return {
     ...goCandidatePacket(),
-    dedupeKey: "source-public-approval-packet:jinwon-int/openclaw-plugin-a2a:needs-approval:1710000002",
+    dedupeKey: "source-public-approval-packet:jinwon-int/plugin-a2a:needs-approval:1710000002",
     runId: "test-run-needs-approval",
     producedAt: 1710000002,
     approvalPayload: {
@@ -506,7 +506,7 @@ describe("projectPluginGoNoGo", () => {
         { runId: "test-title" },
       );
 
-      assert.ok(result.title.includes("jinwon-int/openclaw-plugin-a2a"));
+      assert.ok(result.title.includes("jinwon-int/plugin-a2a"));
     });
 
     it("includes step counts in GO summary", () => {

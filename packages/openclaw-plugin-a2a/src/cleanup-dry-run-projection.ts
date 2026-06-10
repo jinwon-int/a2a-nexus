@@ -2,7 +2,7 @@
  * Cleanup dry-run projection — operator-facing status for broker DB
  * lifecycle cleanup / safe-prune lane.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#278
+ * Issue:  jinwon-int/plugin-a2a#278
  * Parent: jinwon-int/a2a-broker#519
  *
  * This module provides read-only projection of cleanup candidates,

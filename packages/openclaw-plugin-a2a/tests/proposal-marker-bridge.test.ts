@@ -36,7 +36,7 @@ function makeCommentPayload(overrides = {}) {
       body: "**Start** Working on #94",
       user: { login: "worker-alpha-bot" },
     },
-    repository: { full_name: "jinwon-int/openclaw-plugin-a2a" },
+    repository: { full_name: "jinwon-int/plugin-a2a" },
     issue: { number: 94 },
     sender: { login: "worker-alpha-bot" },
     ...overrides,
@@ -94,7 +94,7 @@ test("deriveProposalId different inputs produce different IDs", () => {
 
 test("Start marker maps to proposed state", () => {
   const store = new ProposalDeduplicationStore();
-  const confId = "conf:jinwon-int/openclaw-plugin-a2a:94";
+  const confId = "conf:jinwon-int/plugin-a2a:94";
   const result = bridgeWorkerEventToProposal(
     makeWorkerEvent("Start"),
     confId,
@@ -127,8 +127,8 @@ test("PR marker maps to applying state", () => {
   const store = new ProposalDeduplicationStore();
   const confId = "conf:repo:94";
   const result = bridgeWorkerEventToProposal(
-    makeWorkerEvent("PR", "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/96", "worker-alpha", "task-42", {
-      payload: { prUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/96", branch: "worker-alpha/r19" },
+    makeWorkerEvent("PR", "https://github.com/jinwon-int/plugin-a2a/pull/96", "worker-alpha", "task-42", {
+      payload: { prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/96", branch: "worker-alpha/r19" },
     }),
     confId,
     store,
@@ -136,7 +136,7 @@ test("PR marker maps to applying state", () => {
   assert.equal(result.ok, true);
   assert.ok("event" in result);
   assert.equal(result.event.state, ProposalState.APPLYING);
-  assert.equal(result.event.artifactUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/96");
+  assert.equal(result.event.artifactUrl, "https://github.com/jinwon-int/plugin-a2a/pull/96");
 });
 
 test("Done marker maps to applied state", () => {
@@ -216,10 +216,10 @@ test("includes source metadata when provided", () => {
     makeWorkerEvent("Start"),
     "conf:repo:94",
     store,
-    { repository: "jinwon-int/openclaw-plugin-a2a", issueNumber: 94, commentId: 555 },
+    { repository: "jinwon-int/plugin-a2a", issueNumber: 94, commentId: 555 },
   );
   assert.ok("event" in result);
-  assert.equal(result.event.source.repository, "jinwon-int/openclaw-plugin-a2a");
+  assert.equal(result.event.source.repository, "jinwon-int/plugin-a2a");
   assert.equal(result.event.source.issueNumber, 94);
   assert.equal(result.event.source.commentId, 555);
 });
@@ -228,11 +228,10 @@ test("includes source metadata when provided", () => {
 
 test("redacts secret values in summaries", () => {
   const store = new ProposalDeduplicationStore();
-  const apiKey = ["sk", "1234567890abcdef"].join("-");
-  const event = makeWorkerEvent("Block", `api_key: ${apiKey} blocked`);
+  const event = makeWorkerEvent("Block", "api_key: sk-1234567890abcdef blocked");
   const result = bridgeWorkerEventToProposal(event, "conf:repo:94", store);
   assert.ok("event" in result);
-  assert.ok(!result.event.summary?.includes(apiKey));
+  assert.ok(!result.event.summary?.includes("sk-1234567890abcdef"));
 });
 
 test("redacts code blocks in summaries", () => {
@@ -300,7 +299,7 @@ test("full pipeline bridges PR comment to applying", () => {
     makeCommentPayload({
       comment: {
         id: 1003,
-        body: "**PR** https://github.com/jinwon-int/openclaw-plugin-a2a/pull/96",
+        body: "**PR** https://github.com/jinwon-int/plugin-a2a/pull/96",
         user: { login: "worker-alpha-bot" },
       },
     }),
@@ -311,7 +310,7 @@ test("full pipeline bridges PR comment to applying", () => {
   assert.equal(result.ok, true);
   assert.ok("event" in result);
   assert.equal(result.event.state, ProposalState.APPLYING);
-  assert.equal(result.event.artifactUrl, "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/96");
+  assert.equal(result.event.artifactUrl, "https://github.com/jinwon-int/plugin-a2a/pull/96");
 });
 
 test("full pipeline bridges Done comment to applied", () => {
@@ -436,7 +435,7 @@ test("deterministic eventId on replay with same source", () => {
 
 test("Block marker with 'No commits between main and' + branch URL is mapped to BLOCKED, not applied/success", () => {
   const store = new ProposalDeduplicationStore();
-  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  const confId = "conf:jinwon-int/plugin-a2a:242";
   const markerText = "**Block** No commits between main and worker-alpha/issue-242 branch: worker-alpha/issue-242 status: no-diff";
   const event = makeWorkerEvent("Block", "No commits between main and worker-alpha/issue-242 branch: worker-alpha/issue-242 status: no-diff");
   event.rawText = markerText;
@@ -454,11 +453,11 @@ test("Block marker with 'No commits between main and' + branch URL is mapped to 
 
 test("Block marker branch mismatch evidence is preserved in reason text", () => {
   const store = new ProposalDeduplicationStore();
-  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  const confId = "conf:jinwon-int/plugin-a2a:242";
   const markerText = [
     "**Block** No commits between main and worker-alpha/issue-242",
     "branch: worker-alpha/issue-242",
-    "https://github.com/jinwon-int/openclaw-plugin-a2a/tree/worker-alpha/issue-242",
+    "https://github.com/jinwon-int/plugin-a2a/tree/worker-alpha/issue-242",
     "status: no-diff",
   ].join("\n");
   const event = makeWorkerEvent("Block", markerText.replace("**Block** ", ""));
@@ -473,7 +472,7 @@ test("Block marker branch mismatch evidence is preserved in reason text", () => 
 
 test("Done marker with 'No commits between' failure indicator is classified as non-success (branchguard hardening)", () => {
   const store = new ProposalDeduplicationStore();
-  const confId = "conf:jinwon-int/openclaw-plugin-a2a:242";
+  const confId = "conf:jinwon-int/plugin-a2a:242";
   // If a Done marker incorrectly contains branch mismatch evidence, detect it as non-success
   const markerText = "**Done** No commits between main and worker-alpha/issue-242";
   const event = makeWorkerEvent("Done", "No commits between main and worker-alpha/issue-242");

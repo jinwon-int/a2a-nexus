@@ -1,7 +1,7 @@
 /**
  * Termux/mobile-safe recovery loop tests.
  *
- * Closes jinwon-int/openclaw-plugin-a2a#77.
+ * Closes jinwon-int/plugin-a2a#77.
  */
 
 import assert from "node:assert/strict";

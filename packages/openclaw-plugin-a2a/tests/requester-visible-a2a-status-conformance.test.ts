@@ -1,7 +1,7 @@
 /**
  * Requester-visible no-live A2A status conformance fixture.
  *
- * Issue:  jinwon-int/openclaw-plugin-a2a#457
+ * Issue:  jinwon-int/plugin-a2a#457
  * Parent: jinwon-int/a2a-plane#506
  *
  * This ties together the requester-visible surfaces that were previously

@@ -1,7 +1,7 @@
 # Concise Terminal Brief renderer — runtime readiness check
 
 Plugin-side runtime readiness for compact parent-round Terminal Brief titles.
-Covers `jinwon-int/openclaw-plugin-a2a#299` and `jinwon-int/a2a-broker#560`.
+Covers `jinwon-int/plugin-a2a#299` and `jinwon-int/a2a-broker#560`.
 Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`
 
 ## Purpose
@@ -129,7 +129,7 @@ all others are local/code-only.
 
 - [OPERATOR] Review this readiness document.
 - [OPERATOR] Confirm the current checkout contains the concise renderer from
-  `openclaw-plugin-a2a#291` / `1122bb4` (or later main).
+  `plugin-a2a#291` / `1122bb4` (or later main).
 - [OPERATOR] Verify the branch does not contain OpenClaw runtime/bootstrap
   context files (`AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`,
   `IDENTITY.md`, `.openclaw/**`).

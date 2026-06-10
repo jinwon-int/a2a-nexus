@@ -20,16 +20,18 @@ A2A Broker → Host A2A Worker (systemd) → Handler MJS → a2a-docker-runner C
 ```
 
 각 A2A task 는 호스트 워커가 broker 로부터 claim 한 후 handler MJS
-(`scripts/openclaw-a2a-task-handler.mjs`, legacy runtime 에서는
+(`scripts/a2a-task-handler.mjs`, legacy runtime 에서는
+`scripts/openclaw-a2a-task-handler.mjs` compatibility wrapper 또는
 `handlers/openclaw-a2a-task-handler.mjs`) 를 거친다. handler 는
 `shouldUseDockerRunner()` 로 docker-runner 라우팅 여부를 결정한 뒤,
 runner 가 Docker container 를 띄워 격리된 `/work` 아래서 repo clone →
 `npm ci` → `npm test` → command 실행을 수행하고 결과를 반환한다.
 
 운영 원칙은 **워커 분리 금지, executor backend 선택**이다. 즉
-`openclaw-a2a-worker` 는 하나의 worker identity/service 로 유지하고,
+`a2a-worker` 는 harness-neutral worker identity/service 의 목표 이름이다.
+마이그레이션 동안 legacy `openclaw-a2a-worker` 는 compatibility 이름으로 유지하고,
 task 별 실행 backend 만 `builtin` 또는 `docker` 로 선택한다. 별도의
-`openclaw-a2a-worker-docker` / `openclaw-a2a-worker-legacy` 서비스를 만들면
+`a2a-worker-docker` / `a2a-worker-legacy` 서비스를 만들면
 broker claim 경쟁, worker status 중복, 버전 drift 가 생기므로 피한다.
 
 ## 2. Feature Flags
@@ -372,8 +374,9 @@ curl -sf https://broker.example.com/tasks/$TASK_ID \
 3. **`a2a-docker-runner`** 설치: `/opt/a2a-docker-runner/` 에 repo clone
    후 `npm ci && npm run build`
 4. **GitHub token** (`gh auth login` → `~/.config/gh/hosts.yml` 존재)
-5. **OpenClaw A2A worker** (`openclaw-a2a-worker.service`) 가 설치되어
-   있고 `scripts/openclaw-a2a-task-handler.mjs` (version >= 0.2.0) 배포 완료
+5. **A2A worker** (`a2a-worker.service`, migration 전에는
+   `openclaw-a2a-worker.service`) 가 설치되어 있고
+   `scripts/a2a-task-handler.mjs` (version >= 0.2.11) 배포 완료
 6. **Runtime handler compat path** 가 동기화되어 있음:
    `/opt/openclaw-a2a-worker/scripts/openclaw-a2a-task-handler.mjs` 와
    `/opt/openclaw-a2a-worker/handlers/openclaw-a2a-task-handler.mjs` 의 SHA-256 이 일치

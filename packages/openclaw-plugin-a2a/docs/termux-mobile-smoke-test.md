@@ -1,6 +1,6 @@
 # Termux / Mobile Node Smoke Test Guide
 
-Quick verification that `openclaw-plugin-a2a` works on an Android Termux node.
+Quick verification that `plugin-a2a` works on an Android Termux node.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Quick verification that `openclaw-plugin-a2a` works on an Android Termux node.
 
 ```bash
 git clone <plugin-repo-url>
-cd openclaw-plugin-a2a
+cd plugin-a2a
 npm install --legacy-peer-deps
 ln -sfn "$(npm root -g)/openclaw" node_modules/openclaw
 npm run build    # → 0 errors

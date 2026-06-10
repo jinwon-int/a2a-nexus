@@ -238,7 +238,7 @@ async function runSmokeForWorker(baseUrl, edgeSecret, workerId, options) {
   const evidence = await waitForTerminalEvidence(baseUrl, edgeSecret, created.id, options.timeoutMs, options.intervalMs);
 
   const summary = typeof evidence.task.result?.summary === 'string' ? evidence.task.result.summary : '';
-  const genericFallback = /generic .* accepted by versioned OpenClaw A2A handler/.test(summary);
+  const genericFallback = /generic .* accepted by versioned (?:A2A task handler|OpenClaw A2A handler)/.test(summary);
 
   return {
     ok: evidence.task.status === 'succeeded' && evidence.sawClaim && evidence.sawStart && !genericFallback,

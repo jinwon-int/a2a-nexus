@@ -50,6 +50,8 @@ export interface Team1RoundSpec {
   parentRoundTotal?: number;
   /** 1-based lane/task order inside the parent round. Defaults to lane. */
   parentRoundOrder?: number;
+  /** Actual Team1 workers that will receive tasks in this dispatch round. */
+  dispatchWorkers?: string[];
   /** Explicit allowlisted model override for this round's tasks. */
   workerModel?: string;
   /** Explicit thinking level override for this round's tasks. */
@@ -136,8 +138,8 @@ export interface Team1ParentRoundDispatchMetadata {
   parentRoundId: string;
   parentRoundTotal: number;
   parentRoundOrder: number;
-  parentRoundTotalSource: "explicit" | "team1-default";
-  parentRoundOrderSource: "explicit" | "lane";
+  parentRoundTotalSource: "explicit" | "team1-default" | "dispatch-workers";
+  parentRoundOrderSource: "explicit" | "lane" | "dispatch-workers";
 }
 
 const TAG_REASON_MAP: Record<string, Team1ModelEscalationReason> = {
@@ -161,8 +163,14 @@ export function resolveTeam1ParentRoundMetadata(roundSpec: Team1RoundSpec): {
 } {
   const issues: string[] = [];
   const parentRoundId = (roundSpec.parentRoundId ?? roundSpec.runId).trim();
-  const parentRoundTotal = roundSpec.parentRoundTotal ?? TEAM1_DEFAULT_PARENT_ROUND_TOTAL;
-  const parentRoundOrder = roundSpec.parentRoundOrder ?? roundSpec.lane;
+  const dispatchWorkers = normalizeWorkerList(roundSpec.dispatchWorkers);
+  const dispatchOrder = dispatchWorkers.indexOf(roundSpec.worker) + 1;
+  const parentRoundTotal = dispatchWorkers.length > 0
+    ? dispatchWorkers.length
+    : roundSpec.parentRoundTotal ?? TEAM1_DEFAULT_PARENT_ROUND_TOTAL;
+  const parentRoundOrder = dispatchOrder > 0
+    ? dispatchOrder
+    : roundSpec.parentRoundOrder ?? roundSpec.lane;
 
   if (parentRoundId.length === 0) {
     issues.push("parentRoundId is required; provide --run-id or --parent-round-id");
@@ -176,6 +184,9 @@ export function resolveTeam1ParentRoundMetadata(roundSpec: Team1RoundSpec): {
   if (isPositiveInteger(parentRoundTotal) && isPositiveInteger(parentRoundOrder) && parentRoundOrder > parentRoundTotal) {
     issues.push(`parentRoundOrder must be <= parentRoundTotal, got ${parentRoundOrder}/${parentRoundTotal}`);
   }
+  if (dispatchWorkers.length > 0 && dispatchOrder <= 0) {
+    issues.push(`worker must be present in dispatchWorkers, got worker=${roundSpec.worker}`);
+  }
 
   if (issues.length > 0) {
     return { issues };
@@ -186,11 +197,27 @@ export function resolveTeam1ParentRoundMetadata(roundSpec: Team1RoundSpec): {
       parentRoundId,
       parentRoundTotal,
       parentRoundOrder,
-      parentRoundTotalSource: roundSpec.parentRoundTotal === undefined ? "team1-default" : "explicit",
-      parentRoundOrderSource: roundSpec.parentRoundOrder === undefined ? "lane" : "explicit",
+      parentRoundTotalSource: dispatchWorkers.length > 0
+        ? "dispatch-workers"
+        : roundSpec.parentRoundTotal === undefined ? "team1-default" : "explicit",
+      parentRoundOrderSource: dispatchWorkers.length > 0
+        ? "dispatch-workers"
+        : roundSpec.parentRoundOrder === undefined ? "lane" : "explicit",
     },
     issues,
   };
+}
+
+function normalizeWorkerList(workers: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const worker of workers ?? []) {
+    const value = worker.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
 }
 
 /**
@@ -386,15 +413,17 @@ export function buildDeterministicTaskId(
   config: Team1DispatchConfig,
   kind: string = "dispatch-plan",
 ): DeterministicTaskId {
+  const parentRound = resolveTeam1ParentRoundMetadata(roundSpec).metadata;
   const preImage = [
     "team1-dispatch-wrapper/v1",
     `teamId=${roundSpec.teamId}`,
     `lane=${roundSpec.lane}`,
     `worker=${roundSpec.worker}`,
     `runId=${roundSpec.runId}`,
-    `parentRoundId=${roundSpec.parentRoundId ?? roundSpec.runId}`,
-    `parentRoundTotal=${String(roundSpec.parentRoundTotal ?? TEAM1_DEFAULT_PARENT_ROUND_TOTAL)}`,
-    `parentRoundOrder=${String(roundSpec.parentRoundOrder ?? roundSpec.lane)}`,
+    `parentRoundId=${parentRound?.parentRoundId ?? roundSpec.parentRoundId ?? roundSpec.runId}`,
+    `parentRoundTotal=${String(parentRound?.parentRoundTotal ?? roundSpec.parentRoundTotal ?? TEAM1_DEFAULT_PARENT_ROUND_TOTAL)}`,
+    `parentRoundOrder=${String(parentRound?.parentRoundOrder ?? roundSpec.parentRoundOrder ?? roundSpec.lane)}`,
+    `dispatchWorkers=${normalizeWorkerList(roundSpec.dispatchWorkers).join(",")}`,
     `parentIssue=${roundSpec.parentIssueUrl}`,
     `childIssue=${roundSpec.childIssueUrl}`,
     `dryRun=${String(config.dryRun)}`,
@@ -442,6 +471,7 @@ export interface Team1DispatchTaskPayload {
   parentRoundId: string;
   parentRoundTotal: number;
   parentRoundOrder: number;
+  dispatchedWorkers?: string[];
   parentIssueUrl: string;
   childIssueUrl: string;
   childIssue?: string;
@@ -930,6 +960,9 @@ export function buildTeam1DispatchPlan(
         parentRoundId: parentRoundMetadata.parentRoundId,
         parentRoundTotal: parentRoundMetadata.parentRoundTotal,
         parentRoundOrder: parentRoundMetadata.parentRoundOrder,
+        ...(roundSpec.dispatchWorkers && roundSpec.dispatchWorkers.length > 0
+          ? { dispatchedWorkers: normalizeWorkerList(roundSpec.dispatchWorkers) }
+          : {}),
         parentIssueUrl: sanitizeText(roundSpec.parentIssueUrl),
         childIssueUrl: sanitizeText(roundSpec.childIssueUrl),
         childIssue: roundSpec.childIssue,

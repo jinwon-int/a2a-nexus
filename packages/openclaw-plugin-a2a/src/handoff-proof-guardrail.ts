@@ -7,7 +7,7 @@
  *
  * Mobile nodes submit observation payloads; they never run heavy gates.
  *
- * Closes jinwon-int/openclaw-plugin-a2a#81.
+ * Closes jinwon-int/plugin-a2a#81.
  */
 
 // ── Types ─────────────────────────────────────────────────────

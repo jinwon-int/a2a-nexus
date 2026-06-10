@@ -1,7 +1,7 @@
 /**
  * Integration lock tests for the durable-runtime handoff.
  *
- * Issue: jinwon-int/openclaw-plugin-a2a#35
+ * Issue: jinwon-int/plugin-a2a#35
  *
  * These tests verify the end-to-end contract boundary between:
  *   - Core seam (jinwon-int/openclaw#29): wait-run registration, resolve, cancel

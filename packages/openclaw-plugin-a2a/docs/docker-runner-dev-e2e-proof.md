@@ -1,15 +1,15 @@
 # a2a-docker-runner 개발 E2E proof
 
-이 문서는 `openclaw-plugin-a2a` 개발 작업이 `a2a-docker-runner`의 clean checkout 환경에서 설치, 테스트, evidence artifact 생성까지 이어지는지 검증하는 plugin-side runbook/fixture이다.
+이 문서는 `plugin-a2a` 개발 작업이 `a2a-docker-runner`의 clean checkout 환경에서 설치, 테스트, evidence artifact 생성까지 이어지는지 검증하는 plugin-side runbook/fixture이다.
 
 ## Runner preset
 
-반드시 runner preset `openclaw-plugin-a2a-dev`를 사용한다.
+반드시 runner preset `plugin-a2a-dev`를 사용한다.
 
 ```json
 {
-  "runnerPreset": "openclaw-plugin-a2a-dev",
-  "repository": "jinwon-int/openclaw-plugin-a2a",
+  "runnerPreset": "plugin-a2a-dev",
+  "repository": "jinwon-int/plugin-a2a",
   "checkout": "clean",
   "commands": ["npm ci", "npm test"],
   "artifact": "runner-result.json"
@@ -18,7 +18,7 @@
 
 ## Clean container 검증 절차
 
-1. `a2a-docker-runner`가 작업별 빈 디렉터리에 `jinwon-int/openclaw-plugin-a2a`를 fresh clone 한다.
+1. `a2a-docker-runner`가 작업별 빈 디렉터리에 `jinwon-int/plugin-a2a`를 fresh clone 한다.
 2. preset은 기존 node workspace, host `node_modules`, OpenClaw session dump, local secret 파일을 mount하지 않는다.
 3. 컨테이너 안에서 아래 명령을 순서대로 실행한다.
 
@@ -34,7 +34,7 @@ npm test
 이 이슈에서 고정하는 canary evidence는 다음 조건을 만족해야 한다.
 
 - Runner: `a2a-docker-runner`
-- Preset: `openclaw-plugin-a2a-dev`
+- Preset: `plugin-a2a-dev`
 - Checkout: clean per-task checkout
 - Commands: `npm ci && npm test`
 - Expected terminal result: success / exit code `0`
@@ -48,7 +48,7 @@ npm ci -> ok
 npm test -> ok, tests 676, pass 676, fail 0
 ```
 
-> 참고: 노숙 실행 환경에는 Docker CLI가 없어 runner 자체를 로컬에서 재실행하지 못했다. 이 문서/fixture는 plugin repo가 runner preset과 artifact contract를 추적하도록 고정하고, 실제 clean container 실행 evidence는 `a2a-docker-runner`의 `openclaw-plugin-a2a-dev` preset run result로 연결한다.
+> 참고: 노숙 실행 환경에는 Docker CLI가 없어 runner 자체를 로컬에서 재실행하지 못했다. 이 문서/fixture는 plugin repo가 runner preset과 artifact contract를 추적하도록 고정하고, 실제 clean container 실행 evidence는 `a2a-docker-runner`의 `plugin-a2a-dev` preset run result로 연결한다.
 
 ## Runner result artifact contract
 
@@ -57,8 +57,8 @@ Plugin-side monitoring/status는 runner artifact를 아래 additive contract로 
 ```ts
 type DockerRunnerResultArtifact = {
   schemaVersion: "a2a-docker-runner.result.v1";
-  runnerPreset: "openclaw-plugin-a2a-dev";
-  repository: "jinwon-int/openclaw-plugin-a2a";
+  runnerPreset: "plugin-a2a-dev";
+  repository: "jinwon-int/plugin-a2a";
   checkout: "clean";
   commitSha: string;
   round?: "runner-evidence-split-20260430" | string;
@@ -114,7 +114,7 @@ status: no-diff
 
 ## PR 체크리스트
 
-- [ ] `docs/docker-runner-dev-e2e-proof.md`가 `openclaw-plugin-a2a-dev` preset을 명시한다.
+- [ ] `docs/docker-runner-dev-e2e-proof.md`가 `plugin-a2a-dev` preset을 명시한다.
 - [ ] `npm ci && npm test` clean container command evidence를 포함한다.
 - [ ] runner result artifact를 plugin-side monitoring/status에 연결하는 contract note를 포함한다.
 - [ ] Docker Runner branch mismatch / no-diff terminal evidence contract를 포함한다.

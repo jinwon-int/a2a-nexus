@@ -1,6 +1,6 @@
 # Gateway config bridge — operatorEvents/notification
 
-Issue:  jinwon-int/openclaw-plugin-a2a#269
+Issue:  jinwon-int/plugin-a2a#269
 Parent: jinwon-int/a2a-plane#241
 Run:    terminal-brief-activation-20260511T080211Z
 
@@ -24,7 +24,7 @@ The Gateway config bridge provides a safe, auditable mechanism for injecting
 import {
   applyGatewayConfigBridgeSafe,
   buildOperatorNotificationConfigTemplate,
-} from "@jinwon-int/openclaw-plugin-a2a/gateway-config-bridge";
+} from "@jinwon-int/plugin-a2a/gateway-config-bridge";
 
 const config = {
   plugins: {
