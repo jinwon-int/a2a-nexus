@@ -27,6 +27,32 @@ test("sha256Json produces deterministic output for same input", () => {
   assert.equal(a, b, "Key order must not affect digest");
 });
 
+test("sha256Json binds nested object fields", () => {
+  // Regression: a sorted-keys array passed as the JSON.stringify replacer is a
+  // recursive property allow-list, which silently dropped every nested key and
+  // made digests collide for tasks differing only in nested fields.
+  const taskA = {
+    id: "t1",
+    repos: [{ url: "https://github.com/o/repo-a", branch: "main" }],
+    env: { TOKEN_SOURCE: "a" },
+  };
+  const taskB = {
+    id: "t1",
+    repos: [{ url: "https://github.com/o/repo-b", branch: "main" }],
+    env: { TOKEN_SOURCE: "b" },
+  };
+
+  assert.notEqual(
+    sha256Json(taskA),
+    sha256Json(taskB),
+    "digests must differ when only nested fields differ",
+  );
+
+  const nestedA = sha256Json({ outer: { x: 1, y: 2 } });
+  const nestedB = sha256Json({ outer: { y: 2, x: 1 } });
+  assert.equal(nestedA, nestedB, "nested key order must not affect digest");
+});
+
 test("sha256Text produces consistent hashes", () => {
   const h1 = sha256Text("hello");
   const h2 = sha256Text("hello");

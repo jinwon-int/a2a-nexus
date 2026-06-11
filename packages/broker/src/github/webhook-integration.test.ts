@@ -4,6 +4,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { once } from "node:events";
 
 import { createBrokerServer, type BrokerServerOptions } from "../server.js";
@@ -323,6 +324,98 @@ test("startPoller is exposed via runtime", async () => {
 
     // stopStaleReaper should still work
     runtime.stopStaleReaper();
+  } finally {
+    runtime.server.close();
+    runtime.stopPoller();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Integration tests: X-Hub-Signature-256 verification
+// ---------------------------------------------------------------------------
+
+const WEBHOOK_SECRET = "test-webhook-secret";
+
+function signedIssueOpenedBody(): string {
+  return JSON.stringify({
+    action: "opened",
+    repository: {
+      owner: { login: "sig-org" },
+      name: "sig-repo",
+      full_name: "sig-org/sig-repo",
+    },
+    issue: {
+      number: 7,
+      title: "Signed issue",
+      html_url: "https://github.com/sig-org/sig-repo/issues/7",
+      state: "open",
+    },
+    sender: { login: "sig-user", id: 1 },
+  });
+}
+
+function signBody(body: string, secret: string): string {
+  return `sha256=${createHmac("sha256", secret).update(body, "utf8").digest("hex")}`;
+}
+
+test("POST /github/webhook rejects unsigned deliveries when a webhook secret is configured", async () => {
+  const { runtime, base } = await startTestServer({ githubWebhookSecret: WEBHOOK_SECRET });
+  try {
+    const res = await fetch(`${base}/github/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": "sig-delivery-unsigned",
+      },
+      body: signedIssueOpenedBody(),
+    });
+    assert.equal(res.status, 401);
+    const body = await res.json() as { error?: { message?: string } };
+    assert.ok(body.error?.message?.includes("x-hub-signature-256"), `unexpected error: ${JSON.stringify(body.error)}`);
+  } finally {
+    runtime.server.close();
+    runtime.stopPoller();
+  }
+});
+
+test("POST /github/webhook rejects deliveries with a mismatched signature", async () => {
+  const { runtime, base } = await startTestServer({ githubWebhookSecret: WEBHOOK_SECRET });
+  try {
+    const payload = signedIssueOpenedBody();
+    const res = await fetch(`${base}/github/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": "sig-delivery-bad",
+        "X-Hub-Signature-256": signBody(payload, "some-other-secret"),
+      },
+      body: payload,
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    runtime.server.close();
+    runtime.stopPoller();
+  }
+});
+
+test("POST /github/webhook accepts a correctly signed delivery", async () => {
+  const { runtime, base } = await startTestServer({ githubWebhookSecret: WEBHOOK_SECRET });
+  try {
+    const payload = signedIssueOpenedBody();
+    const res = await fetch(`${base}/github/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "issues",
+        "X-GitHub-Delivery": "sig-delivery-ok",
+        "X-Hub-Signature-256": signBody(payload, WEBHOOK_SECRET),
+      },
+      body: payload,
+    });
+    const body = await res.json() as Record<string, unknown>;
+    assert.ok(res.status === 200 || res.status === 201, `expected 200/201, got ${res.status}: ${JSON.stringify(body)}`);
   } finally {
     runtime.server.close();
     runtime.stopPoller();

@@ -4,7 +4,7 @@
 // Parent: a2a-plane#335
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createHash } from "node:crypto";
+import { sha256Json } from "./execution-proof.js";
 import type {
   RunnerTask,
   TaskTemplate,
@@ -230,13 +230,7 @@ export function buildTemplateExpansionEvidence(
   };
 }
 
-/**
- * Compute a deterministic sha256 hex digest of a JSON-serialisable value.
- */
-export function sha256Json(value: unknown): string {
-  const json = JSON.stringify(value, Object.keys(value as Record<string, unknown>).sort());
-  return createHash("sha256").update(json).digest("hex");
-}
+export { sha256Json };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Built-in Terminal Brief Ops-Readiness Templates (Team1 nosuk lane, A2A R25)

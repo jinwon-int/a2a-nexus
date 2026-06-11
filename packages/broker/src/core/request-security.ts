@@ -38,7 +38,7 @@
  * and x-a2a-ratelimit-bucket.
  */
 
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
@@ -246,7 +246,7 @@ export function classifyRateLimitBucket(req: IncomingMessage, url: URL): RateLim
     req.method === "POST" &&
     segments[0] === "tasks" &&
     segments[1] &&
-    ["claim", "start", "complete", "evidence", "fail"].includes(segments[2] ?? "")
+    ["claim", "start", "complete", "evidence", "fail", "heartbeat"].includes(segments[2] ?? "")
   ) {
     return "worker";
   }
@@ -378,6 +378,42 @@ export function assertRequesterHasRole(
     throw new BrokerError(
       "unauthorized",
       `${context} requester role must be one of: ${allowedRoles.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * Verify a GitHub webhook delivery against the shared webhook secret using
+ * the X-Hub-Signature-256 header (HMAC-SHA256 over the raw request body).
+ *
+ * When no secret is configured the check is skipped, preserving existing
+ * deployments; when a secret is configured the check fails closed: a missing,
+ * malformed, or mismatched signature rejects the delivery before parsing.
+ */
+export function assertGitHubWebhookSignature(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+  expectedSecret: string | undefined,
+): void {
+  if (!expectedSecret) {
+    return;
+  }
+
+  const prefix = "sha256=";
+  if (!signatureHeader || !signatureHeader.startsWith(prefix)) {
+    throw new BrokerError(
+      "unauthorized",
+      "x-hub-signature-256 is required for this route",
+    );
+  }
+
+  const expectedDigest = createHmac("sha256", expectedSecret)
+    .update(rawBody)
+    .digest("hex");
+  if (!secretsMatch(signatureHeader.slice(prefix.length).toLowerCase(), expectedDigest)) {
+    throw new BrokerError(
+      "unauthorized",
+      "x-hub-signature-256 verification failed",
     );
   }
 }

@@ -18,18 +18,30 @@ import type {
 // ─── Digest Helpers ─────────────────────────────────────────────────────
 
 /**
+ * Recursively serialise a JSON-compatible value with object keys sorted at
+ * every depth. A plain sorted-keys array passed as the JSON.stringify replacer
+ * is NOT equivalent: the replacer array acts as a recursive property
+ * allow-list, so nested keys absent from the top level would be dropped and
+ * the digest would not bind nested fields (repos[].url, env, policyContext).
+ */
+function stableJsonStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .filter((key) => record[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${stableJsonStringify(record[key])}`);
+  return `{${entries.join(",")}}`;
+}
+
+/**
  * Compute a deterministic sha256 hex digest of a JSON-serialisable value.
- * Keys are sorted for stability.  The output matches the sha256Json helper
- * in task-templates.ts (both must use the same algorithm).
+ * Keys are sorted at every nesting depth for stability. task-templates.ts
+ * re-exports this helper so both modules always use the same algorithm.
  */
 export function sha256Json(value: unknown): string {
-  const json = JSON.stringify(
-    value,
-    typeof value === "object" && value !== null && !Array.isArray(value)
-      ? Object.keys(value as Record<string, unknown>).sort()
-      : undefined,
-  );
-  return createHash("sha256").update(json).digest("hex");
+  return createHash("sha256").update(stableJsonStringify(value)).digest("hex");
 }
 
 /**

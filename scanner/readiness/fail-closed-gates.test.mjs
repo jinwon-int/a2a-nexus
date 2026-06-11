@@ -91,3 +91,21 @@ test('NO-GO remains a valid fail-closed outcome with unresolved gates', () => {
   assert.match(result.stdout, /"decision": "NO-GO"/);
   assert.match(result.stdout, /externalScannerEvidence: status is MISSING/);
 });
+
+test('malformed decision values fail closed instead of skipping evidence checks', () => {
+  for (const decision of ['GO ', 'Go-live', 'YES']) {
+    const input = { ...allGo(), decision };
+    // Strip all evidence so a fail-open run would have plenty to miss.
+    for (const gate of Object.values(input.gates)) gate.evidence = [];
+    const result = run(input);
+
+    if (decision.trim().toUpperCase() === 'GO') {
+      // 'GO ' normalizes to GO and must enforce the full evidence checks.
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /redacted evidence link is missing/);
+    } else {
+      assert.notEqual(result.status, 0, `decision ${JSON.stringify(decision)} must not pass`);
+      assert.match(result.stderr, /decision: unrecognized value/);
+    }
+  }
+});
