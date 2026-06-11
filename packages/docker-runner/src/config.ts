@@ -92,6 +92,12 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
     network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" || profile === "hermes" ? "host" : "bridge"),
+    pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
+    noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
+    capDrop: (env.A2A_DOCKER_RUNNER_CAP_DROP ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     extraMounts,
     containedSubagents: loadContainedSubagentsConfig(env, profile),
     ...patchCommand,
@@ -126,6 +132,10 @@ export function validateRunnerConfig(config: RunnerConfig): void {
 
   if (config.memory && !/^\d+[bkmgtpe]?$/i.test(config.memory)) {
     errors.push(`invalid memory limit: ${JSON.stringify(config.memory)} (expected format like "2g" or "512m")`);
+  }
+
+  if (config.pidsLimit && !/^\d+$/.test(config.pidsLimit)) {
+    errors.push(`invalid pids limit: ${JSON.stringify(config.pidsLimit)} (expected a positive integer)`);
   }
 
   if (config.cpus && !/^\d+(\.\d+)?$/.test(config.cpus)) {
