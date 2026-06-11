@@ -26,6 +26,7 @@ const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 const DEFAULT_HANDLER_TIMEOUT_MS = 60_000;
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_USER_AGENT = "a2a-broker-worker/0.1";
 
 export type FetchLike = typeof fetch;
@@ -57,6 +58,8 @@ export interface BrokerWorkerConfig {
   pollIntervalMs: number;
   heartbeatIntervalMs: number;
   handlerTimeoutMs: number;
+  /** Per-request HTTP timeout for broker calls; bounds a hung connection. */
+  requestTimeoutMs?: number;
   userAgent: string;
   handler: WorkerTaskHandler;
 }
@@ -101,6 +104,7 @@ export class A2ABrokerWorker {
   private readonly config: BrokerWorkerConfig;
   private running = false;
   private stopping = false;
+  private heartbeatInFlight = false;
   private stopHeartbeatLoop: (() => void) | null = null;
   private loopAbort: (() => void) | null = null;
   private homeBrokerVerified = false;
@@ -172,13 +176,22 @@ export class A2ABrokerWorker {
       throw new Error(`worker ${this.workerId} is already running`);
     }
 
+    // Reset the stop flag BEFORE any await. register()/heartbeat() can take a
+    // while; a stop() arriving during them must be observed afterwards rather
+    // than cleared by a late `this.stopping = false`.
+    this.stopping = false;
+
     await this.register();
     await this.heartbeat();
+
+    if (this.stopping) {
+      console.log(`[worker:${this.workerId}] stop requested during startup; not entering poll loop`);
+      return;
+    }
 
     console.log(`[worker:${this.workerId}] registered with ${this.brokerUrl}`);
 
     this.running = true;
-    this.stopping = false;
     const loopAbortController = new AbortController();
     this.loopAbort = () => loopAbortController.abort();
     this.startHeartbeatTimer();
@@ -293,11 +306,17 @@ export class A2ABrokerWorker {
 
   private startTaskHeartbeatTimer(taskId: string): () => void {
     let stopped = false;
+    let inFlight = false;
     const heartbeatTimer = setInterval(() => {
-      if (stopped) {
+      // Skip while a previous task heartbeat is still in flight so a slow
+      // broker cannot pile up concurrent requests for the same task.
+      if (stopped || inFlight) {
         return;
       }
-      void this.safeTaskHeartbeat(taskId);
+      inFlight = true;
+      void this.safeTaskHeartbeat(taskId).finally(() => {
+        inFlight = false;
+      });
     }, this.config.heartbeatIntervalMs);
     if (typeof heartbeatTimer.unref === "function") {
       heartbeatTimer.unref();
@@ -424,14 +443,19 @@ export class A2ABrokerWorker {
   }
 
   private async safeHeartbeat(): Promise<void> {
-    if (!this.running || this.stopping) {
+    if (!this.running || this.stopping || this.heartbeatInFlight) {
+      // Skip the tick if a heartbeat is still in flight; otherwise a slow
+      // broker would accumulate unbounded concurrent heartbeat requests.
       return;
     }
 
+    this.heartbeatInFlight = true;
     try {
       await this.heartbeat();
     } catch (error) {
       console.error(`[worker:${this.workerId}] heartbeat failed`, error);
+    } finally {
+      this.heartbeatInFlight = false;
     }
   }
 
@@ -467,6 +491,7 @@ export class A2ABrokerWorker {
         accept: "application/json",
         "user-agent": this.config.userAgent,
       }),
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
     const text = await response.text();
     const json = parseJsonText(text) as BrokerHealthResponse | null;
@@ -509,6 +534,7 @@ export class A2ABrokerWorker {
       method: init?.method ?? "GET",
       headers,
       body,
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
     const text = await response.text();
@@ -699,6 +725,11 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
       "WORKER_HEARTBEAT_INTERVAL_MS",
     ),
     handlerTimeoutMs,
+    requestTimeoutMs: parsePositiveInt(
+      env.WORKER_REQUEST_TIMEOUT_MS ?? env.A2A_WORKER_REQUEST_TIMEOUT_MS,
+      DEFAULT_REQUEST_TIMEOUT_MS,
+      "WORKER_REQUEST_TIMEOUT_MS",
+    ),
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
     handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
   };
