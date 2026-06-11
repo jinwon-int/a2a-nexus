@@ -4,11 +4,11 @@
 # Prerequisites:
 #   - Android Termux with Node.js v24+
 #   - openclaw installed globally (npm install -g openclaw)
-#   - a2a-broker sibling checkout
+#   - broker sibling package (packages/broker in the monorepo)
 #   - Network access (no external broker needed for local smoke)
 #
 # Usage:
-#   bash scripts/smoke-termux.sh [--skip-build] [--broker-path ../a2a-broker]
+#   bash scripts/smoke-termux.sh [--skip-build] [--broker-path=../broker]
 #
 # Exit codes:
 #   0 — all checks passed
@@ -20,7 +20,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BROKER_PATH="${1:-$(cd "$PLUGIN_ROOT/../a2a-broker" && pwd)}"
+# Monorepo sibling package (was ../a2a-broker in the standalone repo). Keep this
+# as a plain path so `set -e` does not abort when the dir is absent — the
+# existence check below reports that as a normal failure. Override with
+# --broker-path=...; do not consume $1 positionally (it collided with flags).
+BROKER_PATH="$PLUGIN_ROOT/../broker"
 SKIP_BUILD=false
 
 # Parse args
