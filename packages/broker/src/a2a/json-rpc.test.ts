@@ -467,8 +467,10 @@ test("GetTask on a missing task returns A2A TaskNotFoundError (-32001) with Erro
   const broker = new InMemoryA2ABroker();
   const result = executeA2AJsonRpc(
     { jsonrpc: "2.0", id: "e1", method: "GetTask", params: { taskId: "nope" } },
-    { broker },
-  ) as JsonRpcFailure;
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
 
   assert.equal(result.error.code, -32001);
   const data = result.error.data as Array<Record<string, unknown>>;
@@ -484,8 +486,10 @@ test("broker-specific errors carry an ErrorInfo array in the broker domain", () 
   // bad_request (validation) stays standard -32602 with an array data payload.
   const result = executeA2AJsonRpc(
     { jsonrpc: "2.0", id: "e2", method: "GetTask", params: {} },
-    { broker },
-  ) as JsonRpcFailure;
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
 
   assert.equal(result.error.code, -32602);
   const data = result.error.data as Array<Record<string, unknown>>;
