@@ -764,3 +764,47 @@ describe("source-public execution orchestrator (#263)", () => {
 });
 
 // ── Re-export nothing (test file) ──────────────────────────────────
+
+
+describe("NO_GO plan integrity (a2a-nexus#575 items 11-12)", () => {
+  it("reindexes every step uniquely so the rollback runbook keeps all rows", () => {
+    const plan = buildSourcePublicExecutionPlan(
+      { approvalPacket: noGoPacket() },
+      configActive(),
+      { runId: "test-exec-nogo-orders-001" },
+    );
+    assert.equal(plan.decision, "NO_GO");
+
+    // Pre-fix the abort step kept order 0 ([0, 0, 2, 3, ...]); the runbook
+    // keys rows by step.order, so the abort step overwrote the operator-
+    // review step's rollback path and key 1 was missing.
+    const orders = plan.steps.map((s) => s.order);
+    assert.deepEqual(
+      orders,
+      plan.steps.map((_, i) => i),
+      "step orders must be unique and sequential",
+    );
+    for (const step of plan.steps) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(plan.runbook.partialRollbacks, step.order),
+        `runbook must have a rollback row for step ${step.order}`,
+      );
+    }
+    assert.equal(
+      Object.keys(plan.runbook.partialRollbacks).length,
+      plan.steps.length,
+      "one runbook row per step",
+    );
+  });
+
+  it("labels audit digests sha256 only when they actually are SHA-256", () => {
+    const plan = buildSourcePublicExecutionPlan(
+      { approvalPacket: goCandidatePacket() },
+      configActive(),
+      { runId: "test-exec-digest-001" },
+    );
+    // Pre-fix this was a 64-bit FNV-1a hash (16 hex chars) labeled sha256:.
+    assert.match(plan.binding.scannerArtifacts.manifestDigest, /^sha256:[0-9a-f]{64}$/);
+    assert.match(plan.idempotency.nonce, /^sha256:[0-9a-f]{64}$/);
+  });
+});

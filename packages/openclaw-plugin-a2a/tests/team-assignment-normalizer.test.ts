@@ -377,3 +377,28 @@ describe("buildTeamAssignmentRequests (gateway-handlers wrapper)", () => {
     }
   });
 });
+
+
+describe("secret scan covers broker-forwarded requester fields (a2a-nexus#575 item 13)", () => {
+  it("rejects a credential smuggled through requester.displayKey", () => {
+    const result = validateTeamAssignmentInput({
+      ...baseInput(),
+      requester: { ...BASE_REQUESTER, displayKey: "api_key=super-secret-value" },
+    });
+    assert.equal(result.valid, false);
+    if (!result.valid) {
+      assert.equal(result.error.code, TeamAssignmentErrorCodes.SECRET_LEAK_DETECTED);
+    }
+  });
+
+  it("rejects a credential smuggled through requester.channel", () => {
+    const result = validateTeamAssignmentInput({
+      ...baseInput(),
+      requester: { ...BASE_REQUESTER, channel: "access_token=placeholder-not-a-real-token" },
+    });
+    assert.equal(result.valid, false);
+    if (!result.valid) {
+      assert.equal(result.error.code, TeamAssignmentErrorCodes.SECRET_LEAK_DETECTED);
+    }
+  });
+});

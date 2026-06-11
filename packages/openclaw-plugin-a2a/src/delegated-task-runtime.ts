@@ -1043,9 +1043,14 @@ export function createDelegatedTaskRuntime(
 
   function trackBackground<T>(promise: Promise<T>): Promise<T> {
     backgroundTasks.add(promise);
-    promise.finally(() => {
+    const remove = () => {
       backgroundTasks.delete(promise);
-    });
+    };
+    // .finally() creates a derived promise; dropping it makes any rejection
+    // of the tracked promise fire unhandledRejection even when the caller
+    // handles the original. then(remove, remove) observes the rejection on
+    // the derived chain without re-throwing.
+    promise.then(remove, remove);
     return promise;
   }
 
