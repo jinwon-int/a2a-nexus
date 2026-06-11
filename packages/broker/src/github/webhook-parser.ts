@@ -55,13 +55,47 @@ export function parseGitHubWebhook(
   const event = coerceWebhookEvent(eventHeader, body as Record<string, unknown>);
   if (!event) return null;
 
+  const payloadTimestamp = extractPayloadTimestamp(eventHeader, body as Record<string, unknown>);
+
   return {
     event,
     ctx: {
       deliveryId: deliveryHeader,
       receivedAt: new Date().toISOString(),
+      ...(payloadTimestamp ? { payloadTimestamp } : {}),
     },
   };
+}
+
+/**
+ * Extract the payload's own modification timestamp for replay watermarking.
+ * Returns a millisecond-precision ISO string (so mixed comparisons with
+ * `receivedAt` stay lexicographically chronological), or null when the
+ * payload carries no usable timestamp.
+ */
+function extractPayloadTimestamp(
+  eventHeader: string,
+  body: Record<string, unknown>,
+): string | null {
+  const subject = (() => {
+    switch (eventHeader) {
+      case "issues":
+        return body.issue as Record<string, unknown> | undefined;
+      case "pull_request":
+        return body.pull_request as Record<string, unknown> | undefined;
+      case "issue_comment":
+      case "pull_request_review_comment":
+        return body.comment as Record<string, unknown> | undefined;
+      default:
+        return undefined;
+    }
+  })();
+  if (!subject) return null;
+  const raw = subject.updated_at ?? subject.created_at;
+  if (typeof raw !== "string") return null;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return new Date(parsed).toISOString();
 }
 
 /**

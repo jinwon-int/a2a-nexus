@@ -109,6 +109,14 @@ export interface GitHubDeliveryContext {
   deliveryId: string;
   /** ISO timestamp when the broker received the webhook. */
   receivedAt: string;
+  /**
+   * The event payload's own `updated_at`-style timestamp, normalized to
+   * millisecond-precision ISO so lexicographic comparison stays
+   * chronological. When present, replay watermarks compare this instead of
+   * `receivedAt`: arrival time always moves forward, so an out-of-order
+   * redelivery of an older event would otherwise always pass the watermark.
+   */
+  payloadTimestamp?: string;
 }
 
 // ---------------------------------------------------------------------------

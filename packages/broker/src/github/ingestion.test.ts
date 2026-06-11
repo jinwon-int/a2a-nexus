@@ -1003,3 +1003,80 @@ describe("GitHubIngestionService — bounded dedup and replay maps (a2a-nexus#57
     assert.equal(staleB.replaySkipped, false, "evicted pair restarts its watermark");
   });
 });
+
+describe("GitHubIngestionService — payload-timestamp watermark (a2a-nexus#573 item 18)", () => {
+  it("rejects an out-of-order redelivery whose payload timestamp is older than the watermark", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+    const issue = makeIssue({ number: 201 });
+
+    // Newer payload arrives first.
+    const first = ingestion.ingest(makeIssueEvent({ issue, action: "edited" }), {
+      deliveryId: "wm-new",
+      receivedAt: "2026-04-26T12:00:10.000Z",
+      payloadTimestamp: "2026-04-26T12:00:05.000Z",
+    });
+    assert.equal(first.replaySkipped, false);
+
+    // Out-of-order redelivery of an OLDER event arrives LATER. Arrival time
+    // alone always moves forward, so before payload watermarking this was
+    // always accepted.
+    const stale = ingestion.ingest(makeIssueEvent({ issue, action: "edited" }), {
+      deliveryId: "wm-old",
+      receivedAt: "2026-04-26T12:00:20.000Z",
+      payloadTimestamp: "2026-04-26T12:00:01.000Z",
+    });
+    assert.equal(stale.replaySkipped, true, "older payload must be rejected as stale");
+    assert.equal(ingestion.getReplayStats().staleSkipped, 1);
+  });
+
+  it("falls back to receivedAt when payloadTimestamp is absent (poller behavior unchanged)", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+    const issue = makeIssue({ number: 202 });
+
+    ingestion.ingest(makeIssueEvent({ issue, action: "edited" }), makeContext("fb-1", "2026-04-26T12:00:01Z"));
+    const later = ingestion.ingest(
+      makeIssueEvent({ issue, action: "edited" }),
+      makeContext("fb-2", "2026-04-26T12:00:02Z"),
+    );
+    assert.equal(later.replaySkipped, false);
+
+    const stale = ingestion.ingest(
+      makeIssueEvent({ issue, action: "edited" }),
+      makeContext("fb-3", "2026-04-26T12:00:00Z"),
+    );
+    assert.equal(stale.replaySkipped, true);
+  });
+
+  it("applies the payload watermark to lifecycle events", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+    const issue = makeIssue({ number: 203 });
+
+    // Create the parent task, then close the issue (payload T2).
+    ingestion.ingest(makeIssueEvent({ issue, action: "opened" }), {
+      deliveryId: "lc-open",
+      receivedAt: "2026-04-26T12:00:01.000Z",
+      payloadTimestamp: "2026-04-26T12:00:01.000Z",
+    });
+    const closed = ingestion.ingest(makeIssueEvent({ issue, action: "closed" }), {
+      deliveryId: "lc-close",
+      receivedAt: "2026-04-26T12:00:10.000Z",
+      payloadTimestamp: "2026-04-26T12:00:09.000Z",
+    });
+    assert.equal(closed.replaySkipped, false);
+
+    // A delayed redelivery of the original "opened" payload (older payload
+    // timestamp, later arrival) must not be replayed into the pipeline.
+    const replayedOpen = ingestion.ingest(makeIssueEvent({ issue, action: "opened" }), {
+      deliveryId: "lc-open-redelivery",
+      receivedAt: "2026-04-26T12:00:30.000Z",
+      payloadTimestamp: "2026-04-26T12:00:01.000Z",
+    });
+    assert.equal(replayedOpen.replaySkipped, true, "stale lifecycle redelivery must be rejected");
+  });
+});
