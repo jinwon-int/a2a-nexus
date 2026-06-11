@@ -241,21 +241,22 @@ describe("source-public approval rehearsal (#261)", () => {
       assert.equal(pluginGate.passed, false);
     });
 
-    it("returns GO_CANDIDATE when repo is already public (no-op: not_already_public is non-required)", () => {
+    it("returns NO_GO when repo is already public (a2a-nexus#575 item 2)", () => {
       const input = baseInput({ currentVisibility: "public" });
       const report = rehearseSourcePublicApproval(input, configActive(), {
         runId: "test-no-go-already-public-001",
       });
 
-      // not_already_public is marked as required: false when already public
-      // (the gate is non-required because no visibility change is needed).
-      // All other required gates pass → GO_CANDIDATE (no-op approval).
-      assert.equal(report.decision, "GO_CANDIDATE");
+      // The gate previously demoted itself to required: false exactly when it
+      // failed, so an already-public repo was reported GO_CANDIDATE with
+      // "All required gates passed". A visibility change on an already-public
+      // repo is a no-op and must be NO_GO, never an executable candidate.
+      assert.equal(report.decision, "NO_GO");
 
       const gate = report.evidenceBundle.gates.find((g) => g.gate === "not_already_public");
       assert.ok(gate, "not_already_public gate must exist");
       assert.equal(gate.passed, false, "gate signals already-public via failure");
-      assert.equal(gate.required, false, "gate is non-required when already public");
+      assert.equal(gate.required, true, "gate stays required even when it fails");
       assert.ok(gate.message.includes("already public"));
       assert.ok(gate.message.includes("no-op"));
     });

@@ -200,3 +200,42 @@ describe("T10 — offline/reconnect duplicate wake", () => {
     assert.ok(st.totalRateLimited >= 4);
   });
 });
+
+describe("retry exhaustion is terminal (a2a-nexus#575 item 8)", () => {
+  it("blocks re-registration after failed retries are exhausted", () => {
+    const { guard, advance } = createClockableGuard({
+      retryPolicy: { maxAttempts: 2, baseDelayMs: 100, maxDelayMs: 1000, jitterFactor: 0 },
+    });
+    guard.evaluate({ actionId: "exhaust-1", kind: "cancel", taskId: "task-1" });
+    guard.start("exhaust-1");
+    guard.fail("exhaust-1", "error 1");
+    advance(200);
+    guard.evaluate({ actionId: "exhaust-1", kind: "cancel", taskId: "task-1" });
+    guard.start("exhaust-1");
+    guard.fail("exhaust-1", "error 2");
+    advance(10_000);
+
+    // Pre-fix, an exhausted failed action fell through to re-registration
+    // (no maxAttempts check on this path) and ran forever.
+    const blocked = guard.evaluate({ actionId: "exhaust-1", kind: "cancel", taskId: "task-1" });
+    assert.equal(blocked.allowed, false, "exhausted action must stay blocked");
+    assert.ok(blocked.reason.includes("exhausted"));
+  });
+
+  it("blocks abandoned actions from immediately re-registering past maxAttempts", () => {
+    const { guard, advance } = createClockableGuard({
+      actionTimeoutMs: 1000,
+      retryPolicy: { maxAttempts: 1, baseDelayMs: 100, maxDelayMs: 1000, jitterFactor: 0 },
+    });
+    guard.evaluate({ actionId: "abandon-1", kind: "requeue", taskId: "task-1" });
+    guard.start("abandon-1");
+    advance(2000); // next evaluate() abandons the timed-out running action
+
+    // Pre-fix, evaluate() had no abandoned branch at all: the abandoned
+    // record fell through to registration with attemptCount + 1 and became
+    // immediately eligible again, defeating the retry-storm guard.
+    const blocked = guard.evaluate({ actionId: "abandon-1", kind: "requeue", taskId: "task-1" });
+    assert.equal(blocked.allowed, false, "abandoned action past maxAttempts must stay blocked");
+    assert.ok(blocked.reason.includes("exhausted"));
+  });
+});

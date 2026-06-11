@@ -362,7 +362,19 @@ export function validateTeamAssignmentInput(input: unknown): TeamAssignmentValid
   // Defense-in-depth: refuse any payload that looks like it carries a token,
   // raw credential, or other secret. The plugin must not relay these to the
   // broker even by accident.
-  const scanFields = [instructions, summary, ...(lanes ?? []), ...(workMode ? [workMode] : [])];
+  // requester.* and targetNodes are forwarded to the broker verbatim by
+  // buildRequest, so they must be scanned too — a displayKey of
+  // "api_key=sk-..." previously passed through unchecked.
+  const scanFields = [
+    instructions,
+    summary,
+    ...(lanes ?? []),
+    ...(workMode ? [workMode] : []),
+    requesterSessionKey,
+    ...(requesterDisplayKey ? [requesterDisplayKey] : []),
+    ...(requesterChannel ? [requesterChannel] : []),
+    ...targetNodes,
+  ];
   for (const value of scanFields) {
     if (value && detectSecret(value)) {
       return bad(

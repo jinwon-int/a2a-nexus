@@ -184,6 +184,13 @@ export class BoundedPoller {
 
   private scheduleNext(): void {
     if (!this._running) return;
+    // Replace any pending timer. Without this, stop()+start() while a poll
+    // cycle is in-flight leaves two live timer chains (start() schedules one,
+    // then the in-flight cycle's finally schedules another), doubling the
+    // poll rate permanently.
+    if (this._timer !== null) {
+      clearTimeout(this._timer);
+    }
     this._timer = setTimeout(() => this.poll(), this._currentBackoffMs);
     this._timer.unref?.();
   }
@@ -231,10 +238,7 @@ export class BoundedPoller {
         this._currentBackoffMs = this.pollIntervalMs;
       } else {
         // Exponential backoff on idle cycles
-        this._currentBackoffMs = Math.min(
-          this._currentBackoffMs * 2,
-          this.maxBackoffMs,
-        );
+        this.enterBackoff();
       }
     } catch (error) {
       this._totalPolls++;
@@ -244,19 +248,25 @@ export class BoundedPoller {
       this.logger.error(`[${this.label}] poll cycle error: ${this._lastErrorMessage}`);
 
       // Exponential backoff on errors
-      this._currentBackoffMs = Math.min(
-        this._currentBackoffMs * 2,
-        this.maxBackoffMs,
-      );
-
-      // Reset backoff to base on first error after a successful cycle
-      if (this._idleCycles === 0 && this._totalEventsFetched > 0) {
-        this._currentBackoffMs = Math.max(this.baseBackoffMs, this._currentBackoffMs);
-      }
+      this.enterBackoff();
     } finally {
       this._busy = false;
     }
 
     this.scheduleNext();
+  }
+
+  /**
+   * Double the current delay for an idle or failed cycle, with baseBackoffMs
+   * as the floor of any backoff delay and maxBackoffMs as the ceiling.
+   * (The previous "reset to base on first error" branch compared against
+   * cumulative counters and applied Math.max after doubling, so it could
+   * never fire and never lower anything — baseBackoffMs was dead.)
+   */
+  private enterBackoff(): void {
+    this._currentBackoffMs = Math.min(
+      Math.max(this._currentBackoffMs * 2, this.baseBackoffMs),
+      this.maxBackoffMs,
+    );
   }
 }

@@ -124,7 +124,7 @@ a2a-terminal-brief-sidecar \
   --delivery-command-arg --channel \
   --delivery-command-arg telegram \
   --delivery-command-arg --target \
-  --delivery-command-arg telegram:7360371189
+  --delivery-command-arg telegram:<operator-chat-id>
 ~~~
 
 ## Hermes Or Other Harness Adapter

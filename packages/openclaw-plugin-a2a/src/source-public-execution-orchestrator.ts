@@ -20,6 +20,7 @@
  *  - Never mutates production DB
  *  - All outputs are simulation artifacts — no real side effects
  */
+import { createHash } from "node:crypto";
 import type {
   SourcePublicApprovalRehearsalReport,
   SourcePublicApprovalPacket,
@@ -754,18 +755,21 @@ function buildExecutionSteps(
       simulateOnly: false,
       projectedOutput: `⛔ ABORTED: ${packet.repo} execution plan halted due to NO_GO decision`,
     };
-    // Insert after step 0 and mark all subsequent as aborted
+    // Insert after step 0 and mark all subsequent as aborted. Every step
+    // gets its final index here: the abort step previously kept order 0,
+    // producing [0, 0, 2, 3, ...] — buildRollbackAbortRunbook keys rows by
+    // step.order, so the abort step overwrote the operator-review step's
+    // rollback path and key 1 was missing entirely.
     const reindexed: ExecutionPlanStep[] = [steps[0], abortStep];
     for (let i = 1; i < steps.length; i++) {
       reindexed.push({
         ...steps[i],
-        order: reindexed.length,
         simulateOnly: true,
         description: `[BLOCKED by NO_GO] ${steps[i].description}`,
         projectedOutput: `⛔ SKIPPED (NO_GO): ${steps[i].projectedOutput ?? steps[i].description}`,
       });
     }
-    return reindexed;
+    return reindexed.map((step, index) => ({ ...step, order: index }));
   }
 
   return steps;
@@ -979,17 +983,13 @@ function buildProjectedOutcome(
   };
 }
 
-// ── Simple deterministic hash (no crypto dependency needed) ─────────
+// ── Deterministic digest for audit evidence ─────────────────────────
 
 function simpleSha256Hex(input: string): string {
-  // FNV-1a 64-bit for deterministic hashing without crypto
-  let h = 0xcbf29ce484222325n;
-  for (let i = 0; i < input.length; i++) {
-    h ^= BigInt(input.charCodeAt(i));
-    h *= 0x100000001b3n;
-    h &= 0xffffffffffffffffn;
-  }
-  return `sha256:${h.toString(16).padStart(16, "0")}`;
+  // Audit evidence (manifestDigest, idempotency nonce) is labeled sha256:,
+  // so it must actually be SHA-256 — the previous FNV-1a 64-bit hash is
+  // trivially collidable and mislabeled the evidence.
+  return `sha256:${createHash("sha256").update(input).digest("hex")}`;
 }
 
 // ── Re-export types from rehearsal for convenience ──────────────────

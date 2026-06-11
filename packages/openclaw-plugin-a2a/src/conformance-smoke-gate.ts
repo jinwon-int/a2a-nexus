@@ -112,17 +112,17 @@ export function createA2AConformanceSmokeGate(
   config: A2ABrokerAdapterPluginRuntimeConfig,
   deps: ConformanceSmokeGateDeps = {},
 ): {
-  run(): ConformanceSmokeGateReport;
+  run(): Promise<ConformanceSmokeGateReport>;
 } {
   const resolved = resolveA2ABrokerAdapterPluginConfig(config);
   const now = deps.now ?? Date.now;
   const runId = deps.runId ?? `conformance-smoke-${now()}`;
 
   return {
-    run(): ConformanceSmokeGateReport {
+    async run(): Promise<ConformanceSmokeGateReport> {
       const schemaResult = runSchemaConformance();
-      const handlerResult = runHandlerFailClosedGate(config);
-      const receiptBoundaryResult = runReceiptRuntimeBoundaryGate(config, resolved);
+      const handlerResult = await runA2AConformanceHandlerFailClosedGate(config);
+      const receiptBoundaryResult = await runReceiptRuntimeBoundaryGate(config, resolved);
       const agentCardResult = runAgentCardConformance();
 
       const blockedFindings = [
@@ -359,165 +359,6 @@ async function runHandlerWithRespond(
   return response;
 }
 
-function runHandlerFailClosedGate(
-  config: A2ABrokerAdapterPluginRuntimeConfig,
-): ConformanceSmokeGateReport["handlerFailClosed"] {
-  const findings: ConformanceGateFinding[] = [];
-  let passed = 0;
-  let blocked = 0;
-
-  // Create handlers with a factory that always returns null (broker unavailable)
-  const handlers = createA2AGatewayHandlers(config, {
-    createBrokerClient: () => null,
-  });
-
-  const monitoringHandlers = createA2AMonitoringHandlers(config, {
-    createClient: () => {
-      throw new Error("broker unavailable for conformance smoke gate");
-    },
-  });
-
-  type HandlerCase = {
-    name: string;
-    handler: (opts: GatewayRequestHandlerOptions) => Promise<void>;
-    validParams: unknown;
-  };
-
-  const handlerCases: HandlerCase[] = [
-    {
-      name: "a2a.task.request",
-      handler: handlers.handleA2ATaskRequest,
-      validParams: buildValidTaskRequest(),
-    },
-    {
-      name: "a2a.task.update",
-      handler: handlers.handleA2ATaskUpdate,
-      validParams: buildValidTaskUpdate(),
-    },
-    {
-      name: "a2a.task.cancel",
-      handler: handlers.handleA2ATaskCancel,
-      validParams: buildValidTaskCancel(),
-    },
-    {
-      name: "a2a.task.approve",
-      handler: handlers.handleA2ATaskApprove,
-      validParams: buildValidTaskApprove(),
-    },
-    {
-      name: "a2a.task.reject_approval",
-      handler: handlers.handleA2ATaskRejectApproval,
-      validParams: buildValidTaskRejectApproval(),
-    },
-    {
-      name: "a2a.task.status",
-      handler: handlers.handleA2ATaskStatus,
-      validParams: buildValidTaskStatus(),
-    },
-    {
-      name: "a2a.peer.status",
-      handler: handlers.handleA2APeerStatus,
-      validParams: buildValidPeerStatus(),
-    },
-  ];
-
-  // Track responses for the sync run; we use a simple approach to avoid
-  // async complexity in the sync gate.
-  const responses: Array<{ name: string; response: HandlerResponse }> = [];
-
-  function checkHandlerCase(c: HandlerCase) {
-    return runHandlerWithRespond(c.handler, c.validParams).then((response) => {
-      responses.push({ name: c.name, response });
-    });
-  }
-
-  // Monitoring handlers also need testing
-  const monitorCases: HandlerCase[] = [
-    {
-      name: "a2a.alerts.list",
-      handler: monitoringHandlers.handleA2AAlertsList,
-      validParams: buildValidAlertsList(),
-    },
-    {
-      name: "a2a.monitor.status",
-      handler: monitoringHandlers.handleA2AMonitorStatus,
-      validParams: buildValidMonitorStatus(),
-    },
-  ];
-
-  // We use Promise.all for async
-  return runHandlerFailClosedGateAsync(
-    findings,
-    handlerCases,
-    monitorCases,
-    monitoringHandlers,
-    passed,
-    blocked,
-  );
-}
-
-// We need a separate async init and run
-function runHandlerFailClosedGateAsync(
-  findings: ConformanceGateFinding[],
-  handlerCases: Array<{
-    name: string;
-    handler: (opts: GatewayRequestHandlerOptions) => Promise<void>;
-    validParams: unknown;
-  }>,
-  monitorCases: Array<{
-    name: string;
-    handler: (opts: GatewayRequestHandlerOptions) => Promise<void>;
-    validParams: unknown;
-  }>,
-  _monitoringHandlers: ReturnType<typeof createA2AMonitoringHandlers>,
-  _passed: number,
-  _blocked: number,
-): ConformanceSmokeGateReport["handlerFailClosed"] {
-  // This runs synchronously by collecting promises
-  let passed = _passed;
-  let blocked = _blocked;
-
-  const allResponses: Array<{ name: string; response: HandlerResponse }> = [];
-
-  // For a sync smoke gate, we run synchronously by returning the sync portion
-  // The actual async execution is done in tests
-  // We still track findings for schema validity + handler responses
-
-  // Test that all handlers exist
-  for (const c of handlerCases) {
-    if (typeof c.handler !== "function") {
-      findings.push({
-        gate: `handler.${c.name}.exists`,
-        status: "blocked",
-        message: `${c.name} handler is not a function`,
-      });
-      blocked++;
-    } else {
-      passed++;
-    }
-  }
-  for (const c of monitorCases) {
-    if (typeof c.handler !== "function") {
-      findings.push({
-        gate: `handler.${c.name}.exists`,
-        status: "blocked",
-        message: `${c.name} handler is not a function`,
-      });
-      blocked++;
-    } else {
-      passed++;
-    }
-  }
-
-  return {
-    status: findings.some((f) => f.status === "blocked") ? "blocked" : "pass",
-    passed,
-    blocked,
-    total: passed + blocked,
-    findings,
-  };
-}
-
 /**
  * Async runner for handler fail-closed gate. Use this in tests to exercise
  * the full handler path with a null broker client.
@@ -637,16 +478,17 @@ export async function runA2AConformanceHandlerFailClosedGate(config?: A2ABrokerA
 
 // ── Receipt-Runtime Boundary (#229) ─────────────────────────────────
 
-function runReceiptRuntimeBoundaryGate(
+async function runReceiptRuntimeBoundaryGate(
   config: A2ABrokerAdapterPluginRuntimeConfig,
   resolved: ReturnType<typeof resolveA2ABrokerAdapterPluginConfig>,
-): ConformanceSmokeGateReport["receiptRuntimeBoundary"] {
+): Promise<ConformanceSmokeGateReport["receiptRuntimeBoundary"]> {
+  void resolved;
   const findings: ConformanceGateFinding[] = [];
   let passed = 0;
   let blocked = 0;
 
-  // 1. Verify notification adapter is undefined when no target configured
-  // (fail-closed: no adapter means no live send)
+  // 1. No notification target configured -> no adapter at all (fail-closed:
+  // nothing exists that could send).
   const minimalConfig: A2ABrokerAdapterPluginRuntimeConfig = {
     plugins: {
       entries: {
@@ -668,31 +510,102 @@ function runReceiptRuntimeBoundaryGate(
     passed++;
   }
 
-  // 2. Verify notification adapter fails closed when runtime is undefined
-  // (fail-closed: no runtime means notify returns undefined / no live send)
+  // 2. Adapter without a runtime must refuse a live (non-dry-run) send:
+  // notify() resolves undefined and records no receipt.
   const adapterWithoutRuntime = createA2AOperatorNotificationAdapter(
     configWithNotificationEnabled(),
     undefined,
   );
-  if (adapterWithoutRuntime !== undefined) {
-    // Adapter can exist but notify must resolve undefined without runtime
-    // Dry-run is the safe default test path
-    const envelope = buildReceiptBoundaryTestEnvelope("receipt-boundary-test", false);
-    // notify returns Promise; sync call returns a Promise
-    passed++;
+  if (!adapterWithoutRuntime) {
+    findings.push({
+      gate: "receipt.runtime.adapter.missing",
+      status: "blocked",
+      message: "notification adapter was not created for an enabled notification config",
+    });
+    blocked++;
   } else {
-    // No adapter = no possible send = fail-closed
-    passed++;
+    const liveReceipt = await adapterWithoutRuntime.notify(
+      buildReceiptBoundaryTestEnvelope("receipt-boundary-live-no-runtime", false),
+    );
+    if (liveReceipt !== undefined || adapterWithoutRuntime.listReceipts().length !== 0) {
+      findings.push({
+        gate: "receipt.runtime.live.noRuntime",
+        status: "blocked",
+        message: "live notify produced a receipt despite no runtime being available",
+      });
+      blocked++;
+    } else {
+      passed++;
+    }
   }
 
-  // 3. Verify dry-run notifications cannot produce real sends
-  // (fail-closed: dryRun=true must never result in provider send)
-  // Dry-run envelopes should always be safe — tested via adapter's dryRun gate
-  passed++;
-  passed += 0; // will not send — accounted for above
+  // 3. Dry-run notifications never touch the runtime send path and are
+  // receipted as dry_run_projection only.
+  const runtimeCalls = { loadAdapter: 0 };
+  const recordingRuntime = {
+    channel: {
+      outbound: {
+        loadAdapter: () => {
+          runtimeCalls.loadAdapter++;
+          return undefined;
+        },
+      },
+    },
+  };
+  const adapterWithRuntime = createA2AOperatorNotificationAdapter(
+    configWithNotificationEnabled(),
+    recordingRuntime,
+  );
+  if (!adapterWithRuntime) {
+    findings.push({
+      gate: "receipt.runtime.adapter.missing",
+      status: "blocked",
+      message: "notification adapter was not created for an enabled notification config",
+    });
+    blocked++;
+  } else {
+    const dryRunReceipt = await adapterWithRuntime.notify(
+      buildReceiptBoundaryTestEnvelope("receipt-boundary-dry-run", true),
+    );
+    const dryRunSafe =
+      dryRunReceipt !== undefined &&
+      dryRunReceipt.dryRun === true &&
+      dryRunReceipt.confirmationSource === "dry_run_projection" &&
+      runtimeCalls.loadAdapter === 0;
+    if (!dryRunSafe) {
+      findings.push({
+        gate: "receipt.runtime.dryRun.boundary",
+        status: "blocked",
+        message:
+          runtimeCalls.loadAdapter > 0
+            ? "dry-run notify reached the runtime outbound adapter (possible live send path)"
+            : "dry-run notify did not produce a dry_run_projection receipt",
+      });
+      blocked++;
+    } else {
+      passed++;
+    }
 
-  // 4. Verify preflight fails when notification target is disabled
-  // (fail-closed: disabled notification must block restart)
+    // 4. A live send whose runtime offers no receipt-capable outbound adapter
+    // must not acknowledge: provider/transport acceptance alone is never
+    // receipt evidence.
+    const liveNoSender = await adapterWithRuntime.notify(
+      buildReceiptBoundaryTestEnvelope("receipt-boundary-live-no-sender", false),
+    );
+    if (liveNoSender !== undefined) {
+      findings.push({
+        gate: "receipt.runtime.live.noReceiptCapableSender",
+        status: "blocked",
+        message: "live notify produced a receipt without a receipt-capable outbound adapter",
+      });
+      blocked++;
+    } else {
+      passed++;
+    }
+  }
+
+  // 5. Preflight on a disabled notification config must report not-ok and
+  // must not declare the Gateway safe to restart.
   const disabledConfig: A2ABrokerAdapterPluginRuntimeConfig = {
     plugins: {
       entries: {
@@ -705,23 +618,17 @@ function runReceiptRuntimeBoundaryGate(
       },
     },
   };
-  const preflightPromise = preflightA2AOperatorNotificationRuntime(disabledConfig, undefined);
-  // We can't await here synchronously, but we track that the API exists
-  if (typeof preflightA2AOperatorNotificationRuntime !== "function") {
+  const preflight = await preflightA2AOperatorNotificationRuntime(disabledConfig, undefined);
+  if (preflight.ok || preflight.safeToRestartGateway) {
     findings.push({
-      gate: "receipt.runtime.preflight.missing",
+      gate: "receipt.runtime.preflight.disabledConfig",
       status: "blocked",
-      message: "preflightA2AOperatorNotificationRuntime is not available",
+      message: "preflight reported ok/safe-to-restart for a disabled notification config",
     });
     blocked++;
   } else {
     passed++;
   }
-
-  // 5. Verify safety boundary: no combination of config can produce liveSend=true
-  // This is tested via the safeOperations block in the report itself
-  // and verified by all handler responses being fail-closed
-  passed++;
 
   return {
     status: findings.some((f) => f.status === "blocked") ? "blocked" : "pass",

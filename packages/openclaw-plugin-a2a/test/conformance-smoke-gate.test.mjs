@@ -22,7 +22,7 @@ import {
 
 // ── Schema conformance smoke gate ───────────────────────────────────
 
-test("conformance smoke gate validates all 9 A2A public gateway schemas", () => {
+test("conformance smoke gate validates all 9 A2A public gateway schemas", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -35,7 +35,7 @@ test("conformance smoke gate validates all 9 A2A public gateway schemas", () => 
     },
   }, { runId: "conformance-smoke-schema-test" });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   assert.equal(report.mode, "release-dryrun/no-live");
   assert.equal(report.status, "ready");
@@ -45,7 +45,7 @@ test("conformance smoke gate validates all 9 A2A public gateway schemas", () => 
   assert.equal(report.schemaConformance.blocked, 0);
 });
 
-test("conformance smoke gate safe operations are always false", () => {
+test("conformance smoke gate safe operations are always false", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -58,7 +58,7 @@ test("conformance smoke gate safe operations are always false", () => {
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   assert.equal(report.safeOperations.liveSend, false);
   assert.equal(report.safeOperations.terminalOutboxAck, false);
@@ -67,7 +67,7 @@ test("conformance smoke gate safe operations are always false", () => {
   assert.equal(report.safeOperations.providerSend, false);
 });
 
-test("conformance smoke gate has valid runId", () => {
+test("conformance smoke gate has valid runId", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -80,12 +80,12 @@ test("conformance smoke gate has valid runId", () => {
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   assert.ok(typeof report.runId === "string" && report.runId.length > 0, "runId should be non-empty string");
 });
 
-test("conformance smoke gate catches schema validation failures", () => {
+test("conformance smoke gate catches schema validation failures", async () => {
   // Valid inputs should all pass — no blocked findings
   const gate = createA2AConformanceSmokeGate({
     plugins: {
@@ -99,7 +99,7 @@ test("conformance smoke gate catches schema validation failures", () => {
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   // All valid inputs must pass
   assert.equal(report.schemaConformance.status, "pass");
@@ -315,7 +315,7 @@ test("receipt-runtime boundary: preflight blocks when runtime route is unavailab
     "runtime_adapter check must fail-closed when runtime is unavailable");
 });
 
-test("conformance smoke gate: receipt-runtime boundary findings are tracked", () => {
+test("conformance smoke gate: receipt-runtime boundary findings are tracked", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -328,7 +328,7 @@ test("conformance smoke gate: receipt-runtime boundary findings are tracked", ()
     },
   }, { runId: "conformance-receipt-boundary" });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   assert.equal(report.receiptRuntimeBoundary.status, "pass");
   assert.ok(report.receiptRuntimeBoundary.passed > 0,
@@ -344,7 +344,7 @@ test("conformance smoke gate: receipt-runtime boundary findings are tracked", ()
 
 // ── End-to-end conformance smoke gate report ─────────────────────────
 
-test("conformance smoke gate produces complete report with all sections", () => {
+test("conformance smoke gate produces complete report with all sections", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -357,7 +357,7 @@ test("conformance smoke gate produces complete report with all sections", () => 
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   // All sections must be present
   assert.ok(report.schemaConformance, "schemaConformance section required");
@@ -392,7 +392,7 @@ test("conformance smoke gate produces complete report with all sections", () => 
   }
 });
 
-test("conformance smoke gate: mode is always release-dryrun/no-live", () => {
+test("conformance smoke gate: mode is always release-dryrun/no-live", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -405,11 +405,11 @@ test("conformance smoke gate: mode is always release-dryrun/no-live", () => {
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
   assert.equal(report.mode, "release-dryrun/no-live");
 });
 
-test("conformance smoke gate: provider send never occurs in any finding", () => {
+test("conformance smoke gate: provider send never occurs in any finding", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -422,7 +422,7 @@ test("conformance smoke gate: provider send never occurs in any finding", () => 
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   // When all checks pass, findings may be empty — that's acceptable.
   // The key invariant: safe operations are always explicitly false.
@@ -439,7 +439,7 @@ test("conformance smoke gate: provider send never occurs in any finding", () => 
 
 // ── Agent Card Conformance (#267: a2a-inspector / a2a-python) ───────
 
-test("conformance smoke gate: agent card conformance passes with valid fixture", () => {
+test("conformance smoke gate: agent card conformance passes with valid fixture", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -452,7 +452,7 @@ test("conformance smoke gate: agent card conformance passes with valid fixture",
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   assert.ok(report.agentCardConformance, "agentCardConformance section required");
   assert.equal(report.agentCardConformance.status, "pass",
@@ -463,7 +463,7 @@ test("conformance smoke gate: agent card conformance passes with valid fixture",
     "agent card conformance should have passed checks");
 });
 
-test("conformance smoke gate: agent card has no blocked findings for required fields", () => {
+test("conformance smoke gate: agent card has no blocked findings for required fields", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -476,7 +476,7 @@ test("conformance smoke gate: agent card has no blocked findings for required fi
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
   const findings = report.agentCardConformance.findings;
 
   // No findings at all when fixture is valid (passes are counted, not stored)
@@ -488,7 +488,7 @@ test("conformance smoke gate: agent card has no blocked findings for required fi
     "at least 30 checks should pass for a valid agent card fixture");
 });
 
-test("conformance smoke gate: agent card conformance findings are included in blocked summary", () => {
+test("conformance smoke gate: agent card conformance findings are included in blocked summary", async () => {
   const gate = createA2AConformanceSmokeGate({
     plugins: {
       entries: {
@@ -501,7 +501,7 @@ test("conformance smoke gate: agent card conformance findings are included in bl
     },
   });
 
-  const report = gate.run();
+  const report = await gate.run();
 
   // When overall status is blocked, agent card findings must be included
   // in the blocked findings count (regression check)

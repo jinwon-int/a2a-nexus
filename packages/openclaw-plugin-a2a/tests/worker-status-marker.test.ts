@@ -1,41 +1,42 @@
 /**
  * Tests for worker status marker normalizer (Round 16, plugin-a2a#84).
  */
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   detectMarker,
   parseWorkerStatusMarker,
   toBrokerEvent,
   batchParseWorkerStatusMarkers,
   type WorkerStatusEvent,
-} from "./worker-status-marker.js";
+} from "../dist/src/worker-status-marker.js";
 
 // ── detectMarker ───────────────────────────────────────────────
 
 describe("detectMarker", () => {
   it("detects Start", () => {
-    expect(detectMarker("**Start** — working on it")).toBe("Start");
+    assert.equal(detectMarker("**Start** — working on it"), "Start");
   });
 
   it("detects Block", () => {
-    expect(detectMarker("**Block** — waiting on upstream")).toBe("Block");
+    assert.equal(detectMarker("**Block** — waiting on upstream"), "Block");
   });
 
   it("detects PR", () => {
-    expect(detectMarker("**PR** — https://github.com/org/repo/pull/1")).toBe("PR");
+    assert.equal(detectMarker("**PR** — https://github.com/org/repo/pull/1"), "PR");
   });
 
   it("detects Done", () => {
-    expect(detectMarker("**Done** — completed")).toBe("Done");
+    assert.equal(detectMarker("**Done** — completed"), "Done");
   });
 
   it("returns null for no marker", () => {
-    expect(detectMarker("Just a regular comment")).toBeNull();
+    assert.equal(detectMarker("Just a regular comment"), null);
   });
 
   it("is case-insensitive", () => {
-    expect(detectMarker("**start**")).toBe("Start");
-    expect(detectMarker("**BLOCK**")).toBe("Block");
+    assert.equal(detectMarker("**start**"), "Start");
+    assert.equal(detectMarker("**BLOCK**"), "Block");
   });
 });
 
@@ -44,11 +45,11 @@ describe("detectMarker", () => {
 describe("Start marker", () => {
   it("parses basic Start", () => {
     const result = parseWorkerStatusMarker("**Start**", "worker-alpha", "51") as WorkerStatusEvent;
-    expect(result.marker).toBe("Start");
-    expect(result.workerId).toBe("worker-alpha");
-    expect(result.taskId).toBe("51");
-    expect(result.parseStatus).toBe("clean");
-    expect(result.warnings).toEqual([]);
+    assert.equal(result.marker, "Start");
+    assert.equal(result.workerId, "worker-alpha");
+    assert.equal(result.taskId, "51");
+    assert.equal(result.parseStatus, "clean");
+    assert.deepEqual(result.warnings, []);
   });
 
   it("extracts summary text after marker", () => {
@@ -58,7 +59,7 @@ describe("Start marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Start") throw new Error("wrong marker");
-    expect(result.payload.summary).toContain("root cause");
+    assert.ok((result.payload.summary).includes("root cause"));
   });
 
   it("extracts issue URL from body", () => {
@@ -68,7 +69,7 @@ describe("Start marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Start") throw new Error("wrong marker");
-    expect(result.payload.issueUrl).toBe("https://github.com/org/repo/issues/42");
+    assert.equal(result.payload.issueUrl, "https://github.com/org/repo/issues/42");
   });
 });
 
@@ -82,7 +83,7 @@ describe("Block marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Block") throw new Error("wrong marker");
-    expect(result.payload.reason).toContain("upstream dependency");
+    assert.ok((result.payload.reason).includes("upstream dependency"));
   });
 
   it("extracts blockedOn reference", () => {
@@ -92,15 +93,15 @@ describe("Block marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Block") throw new Error("wrong marker");
-    expect(result.payload.blockedOn).toBe("upstream review");
+    assert.equal(result.payload.blockedOn, "upstream review");
   });
 
   it("warns when no reason text", () => {
     const result = parseWorkerStatusMarker("**Block**", "worker-alpha", "51") as WorkerStatusEvent;
     if (result.marker !== "Block") throw new Error("wrong marker");
-    expect(result.parseStatus).toBe("partial");
-    expect(result.warnings).toHaveLength(1);
-    expect(result.payload.reason).toBe("unspecified blocker");
+    assert.equal(result.parseStatus, "partial");
+    assert.equal((result.warnings).length, 1);
+    assert.equal(result.payload.reason, "unspecified blocker");
   });
 });
 
@@ -114,8 +115,8 @@ describe("PR marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "PR") throw new Error("wrong marker");
-    expect(result.payload.prUrl).toBe("https://github.com/jinwon-int/openclaw/pull/52");
-    expect(result.parseStatus).toBe("clean");
+    assert.equal(result.payload.prUrl, "https://github.com/jinwon-int/openclaw/pull/52");
+    assert.equal(result.parseStatus, "clean");
   });
 
   it("extracts branch name", () => {
@@ -125,7 +126,7 @@ describe("PR marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "PR") throw new Error("wrong marker");
-    expect(result.payload.branch).toBe("worker-alpha/r15-visibility");
+    assert.equal(result.payload.branch, "worker-alpha/r15-visibility");
   });
 
   it("detects Closes reference", () => {
@@ -135,7 +136,7 @@ describe("PR marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "PR") throw new Error("wrong marker");
-    expect(result.payload.closesIssue).toBe(true);
+    assert.equal(result.payload.closesIssue, true);
   });
 
   it("warns when no PR URL", () => {
@@ -145,8 +146,8 @@ describe("PR marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "PR") throw new Error("wrong marker");
-    expect(result.warnings).toContain("PR marker has no PR URL");
-    expect(result.payload.prUrl).toBe("");
+    assert.ok((result.warnings).includes("PR marker has no PR URL"));
+    assert.equal(result.payload.prUrl, "");
   });
 
   it("extracts verification summary", () => {
@@ -156,7 +157,7 @@ describe("PR marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "PR") throw new Error("wrong marker");
-    expect(result.payload.verificationSummary).toContain("All tests pass");
+    assert.ok((result.payload.verificationSummary).includes("All tests pass"));
   });
 });
 
@@ -170,8 +171,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(true);
-    expect(result.payload.completionSummary).toContain("visibility guard");
+    assert.equal(result.payload.success, true);
+    assert.ok((result.payload.completionSummary).includes("visibility guard"));
   });
 
   it("detects failure indicators", () => {
@@ -181,7 +182,7 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(false);
+    assert.equal(result.payload.success, false);
   });
 
   it("extracts PR URL from Done body", () => {
@@ -191,15 +192,15 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.prUrl).toBe("https://github.com/jinwon-int/openclaw/pull/52");
-    expect(result.payload.success).toBe(true);
+    assert.equal(result.payload.prUrl, "https://github.com/jinwon-int/openclaw/pull/52");
+    assert.equal(result.payload.success, true);
   });
 
   it("handles Done with no body", () => {
     const result = parseWorkerStatusMarker("**Done**", "worker-alpha", "51") as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(true);
-    expect(result.payload.outcome).toBeUndefined();
+    assert.equal(result.payload.success, true);
+    assert.equal(result.payload.outcome, undefined);
   });
 
   it("classifies done_with_changes when PR URL is present", () => {
@@ -209,8 +210,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(true);
-    expect(result.payload.outcome).toBe("done_with_changes");
+    assert.equal(result.payload.success, true);
+    assert.equal(result.payload.outcome, "done_with_changes");
   });
 
   it("classifies done_evidence_only from explicit signal", () => {
@@ -220,8 +221,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(true);
-    expect(result.payload.outcome).toBe("done_evidence_only");
+    assert.equal(result.payload.success, true);
+    assert.equal(result.payload.outcome, "done_evidence_only");
   });
 
   it("classifies done_evidence_only from block evidence signal", () => {
@@ -231,7 +232,7 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBe("done_evidence_only");
+    assert.equal(result.payload.outcome, "done_evidence_only");
   });
 
   it("classifies done_no_changes from explicit signal", () => {
@@ -241,8 +242,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.success).toBe(true);
-    expect(result.payload.outcome).toBe("done_no_changes");
+    assert.equal(result.payload.success, true);
+    assert.equal(result.payload.outcome, "done_no_changes");
   });
 
   it("classifies done_no_changes from nothing to change signal", () => {
@@ -252,7 +253,7 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBe("done_no_changes");
+    assert.equal(result.payload.outcome, "done_no_changes");
   });
 
   it("does not set outcome when no signals are present and no PR URL", () => {
@@ -262,7 +263,7 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBeUndefined();
+    assert.equal(result.payload.outcome, undefined);
   });
 
   it("evidence-only overrides PR URL presence", () => {
@@ -272,8 +273,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBe("done_evidence_only");
-    expect(result.payload.prUrl).toBe("https://github.com/jinwon-int/openclaw/pull/52");
+    assert.equal(result.payload.outcome, "done_evidence_only");
+    assert.equal(result.payload.prUrl, "https://github.com/jinwon-int/openclaw/pull/52");
   });
   it("sets readOnly=true for done_evidence_only outcome", () => {
     const result = parseWorkerStatusMarker(
@@ -282,8 +283,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.readOnly).toBe(true);
-    expect(result.payload.outcome).toBe("done_evidence_only");
+    assert.equal(result.payload.readOnly, true);
+    assert.equal(result.payload.outcome, "done_evidence_only");
   });
 
   it("sets readOnly=true for done_no_changes outcome", () => {
@@ -293,8 +294,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.readOnly).toBe(true);
-    expect(result.payload.outcome).toBe("done_no_changes");
+    assert.equal(result.payload.readOnly, true);
+    assert.equal(result.payload.outcome, "done_no_changes");
   });
 
   it("readOnly is undefined for done_with_changes outcome", () => {
@@ -304,8 +305,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBe("done_with_changes");
-    expect(result.payload.readOnly).toBeUndefined();
+    assert.equal(result.payload.outcome, "done_with_changes");
+    assert.equal(result.payload.readOnly, undefined);
   });
 
   it("readOnly is undefined when no outcome is classified", () => {
@@ -315,8 +316,8 @@ describe("Done marker", () => {
       "51",
     ) as WorkerStatusEvent;
     if (result.marker !== "Done") throw new Error("wrong marker");
-    expect(result.payload.outcome).toBeUndefined();
-    expect(result.payload.readOnly).toBeUndefined();
+    assert.equal(result.payload.outcome, undefined);
+    assert.equal(result.payload.readOnly, undefined);
   });
 });
 
@@ -325,7 +326,7 @@ describe("Done marker", () => {
 describe("error handling", () => {
   it("returns error for empty text", () => {
     const result = parseWorkerStatusMarker("", "worker-alpha", "51");
-    expect(result).toEqual({
+    assert.deepEqual(result, {
       ok: false,
       error: "text must be a non-empty string",
       rawText: "",
@@ -334,7 +335,7 @@ describe("error handling", () => {
 
   it("returns error for no marker", () => {
     const result = parseWorkerStatusMarker("Regular text", "worker-alpha", "51");
-    expect(result).toEqual({
+    assert.deepEqual(result, {
       ok: false,
       error: "no recognized worker status marker found in text",
       rawText: "Regular text",
@@ -343,7 +344,7 @@ describe("error handling", () => {
 
   it("returns error for missing workerId", () => {
     const result = parseWorkerStatusMarker("**Start**", "", "51");
-    expect(result).toEqual({
+    assert.deepEqual(result, {
       ok: false,
       error: "workerId must be a non-empty string",
       rawText: "**Start**",
@@ -352,7 +353,7 @@ describe("error handling", () => {
 
   it("returns error for missing taskId", () => {
     const result = parseWorkerStatusMarker("**Start**", "worker-alpha", "");
-    expect(result).toEqual({
+    assert.deepEqual(result, {
       ok: false,
       error: "taskId must be a non-empty string",
       rawText: "**Start**",
@@ -370,17 +371,17 @@ describe("toBrokerEvent", () => {
       "84",
     ) as WorkerStatusEvent;
     const broker = toBrokerEvent(event);
-    expect(broker.type).toBe("worker-status");
-    expect(broker.marker).toBe("Start");
-    expect(broker.workerId).toBe("worker-alpha");
-    expect(broker.taskId).toBe("84");
-    expect(broker.meta.parseStatus).toBe("clean");
+    assert.equal(broker.type, "worker-status");
+    assert.equal(broker.marker, "Start");
+    assert.equal(broker.workerId, "worker-alpha");
+    assert.equal(broker.taskId, "84");
+    assert.equal(broker.meta.parseStatus, "clean");
   });
 
   it("preserves warnings in broker event", () => {
     const event = parseWorkerStatusMarker("**PR**", "worker-alpha", "84") as WorkerStatusEvent;
     const broker = toBrokerEvent(event);
-    expect(broker.meta.warnings).toContain("PR marker has no PR URL");
+    assert.ok((broker.meta.warnings).includes("PR marker has no PR URL"));
   });
 });
 
@@ -392,8 +393,8 @@ describe("batchParseWorkerStatusMarkers", () => {
       { text: "**Start** — work", workerId: "worker-alpha", taskId: "84" },
       { text: "**Done** — done", workerId: "worker-alpha", taskId: "84" },
     ]);
-    expect(events).toHaveLength(2);
-    expect(errors).toHaveLength(0);
+    assert.equal((events).length, 2);
+    assert.equal((errors).length, 0);
   });
 
   it("collects errors without failing the batch", () => {
@@ -402,7 +403,7 @@ describe("batchParseWorkerStatusMarkers", () => {
       { text: "no marker here", workerId: "worker-alpha", taskId: "84" },
       { text: "**Done**", workerId: "", taskId: "84" },
     ]);
-    expect(events).toHaveLength(1);
-    expect(errors).toHaveLength(2);
+    assert.equal((events).length, 1);
+    assert.equal((errors).length, 2);
   });
 });

@@ -6092,3 +6092,43 @@ test("a declined exchange ends with status failed, not queued (item 16)", () => 
     "a declined exchange must terminate as failed",
   );
 });
+
+test("broker retention prunes task event buffers and seqs for pruned tasks", async () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    retention: {
+      terminalRetentionMs: 0,
+      maxTerminalTasks: 0,
+    },
+  });
+  registerWorker(broker, "worker-buffer-prune");
+  const task = createWorkerTask(broker, "task-buffer-prune", "worker-buffer-prune");
+
+  // An active subscriber makes emitTaskUpdate start buffering replay events.
+  const unsubscribe = broker.subscribeToTask(task.id, () => {});
+  broker.claimTask(task.id, "worker-buffer-prune");
+  broker.startTask(task.id, "worker-buffer-prune");
+  broker.completeTask(task.id, "worker-buffer-prune", { summary: "done" });
+  unsubscribe();
+
+  assert.equal(
+    broker.getCompactDiagnostics().tasks.bufferedEventStreams,
+    1,
+    "terminal task should still hold a replay buffer before retention runs",
+  );
+  assert.ok(broker.replayTaskEvents(task.id, 0).length > 0);
+
+  // The retention cutoff is `now - retentionMs`; a task completed in the very
+  // same millisecond as the retention pass is still "within" zero retention,
+  // so let the clock tick before triggering it.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  // Any persisted mutation triggers a full-retention persistState pass.
+  registerWorker(broker, "worker-buffer-prune-2");
+
+  assert.equal(
+    broker.getCompactDiagnostics().tasks.bufferedEventStreams,
+    0,
+    "retention must prune event buffers of pruned tasks",
+  );
+  assert.deepEqual(broker.replayTaskEvents(task.id, 0), []);
+});

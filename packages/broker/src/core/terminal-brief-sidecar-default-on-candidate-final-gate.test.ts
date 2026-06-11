@@ -15,7 +15,7 @@ function observation(overrides: Partial<TerminalBriefSidecarBoundedDryRunObserva
   return {
     kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
     generatedAt: NOW,
-    operatorInstructionReference: "telegram:7360371189:53345",
+    operatorInstructionReference: "telegram:1000000001:53345",
     windowSeconds: 300,
     state: "bounded_dry_run_observation_passed",
     blockers: [],

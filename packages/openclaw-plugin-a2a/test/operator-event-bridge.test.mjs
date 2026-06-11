@@ -1836,7 +1836,7 @@ test("operator event bridge exposes receipt-gated terminal ack projections", asy
                   receipt: {
                     status: "receipt_confirmed",
                     evidence: "operator_visible",
-                    receiptId: "telegram:7360371189:message:47146",
+                    receiptId: "telegram:1000000001:message:47146",
                   },
                   eventId: "terminal-telegram-visible-event",
                 },

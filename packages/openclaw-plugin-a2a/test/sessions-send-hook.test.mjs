@@ -627,3 +627,135 @@ test("sessions_send wake envelope is not produced when broker acceptance fails",
   );
   assert.equal(wakeCalled, false);
 });
+
+test("no-duplicate-send fingerprint distinguishes field layouts that previously collided (a2a-nexus#575 item 1)", async () => {
+  const createTaskCalls = [];
+  const hook = createA2ASessionsSendHook(
+    {
+      plugins: {
+        entries: {
+          "a2a-broker-adapter": {
+            enabled: true,
+            config: { baseUrl: "https://broker.example" },
+          },
+        },
+      },
+    },
+    undefined,
+    {
+      createBrokerClient: () => ({
+        createTask: async (request) => {
+          createTaskCalls.push(request);
+          return {
+            id: `task-${createTaskCalls.length}`,
+            intent: "chat",
+            status: "queued",
+            requester: { id: "hub-session", kind: "session", role: "hub" },
+            target: { id: "worker-node", kind: "node" },
+            targetNodeId: "worker-node",
+            payload: request.payload,
+            createdAt: "2026-04-19T00:00:00Z",
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+        },
+      }),
+    },
+  );
+
+  // Pre-fix, .filter(Boolean) collapsed empty fingerprint slots, so these two
+  // distinct sends both hashed "k|i|m": the first has no correlationId
+  // ([key, intent, msg] = k|i|m) and the second has no message
+  // ([corr, key, intent] = k|i|m). The second send was suppressed as a
+  // duplicate of the first.
+  const first = await hook({
+    sessionKey: "k",
+    target: { sessionKey: "k", displayKey: "worker-node" },
+    message: "m",
+    task: {
+      intent: "i",
+      instructions: "do the first thing",
+      requester: { sessionKey: "hub-session", channel: "telegram" },
+    },
+    rawParams: {},
+  });
+  assert.equal(first.handled, true);
+  assert.equal(createTaskCalls.length, 1);
+
+  const second = await hook({
+    sessionKey: "i",
+    target: { sessionKey: "i", displayKey: "worker-node" },
+    task: {
+      intent: "m",
+      instructions: "do the second thing",
+      correlationId: "k",
+      requester: { sessionKey: "hub-session", channel: "telegram" },
+    },
+    rawParams: {},
+  });
+  assert.equal(
+    second.handled,
+    true,
+    "a send with a different field layout must not be suppressed as a duplicate",
+  );
+  assert.equal(createTaskCalls.length, 2);
+});
+
+test("a failed broker create rolls back the duplicate-send fingerprint (a2a-nexus#575 item 9)", async () => {
+  let calls = 0;
+  const hook = createA2ASessionsSendHook(
+    {
+      plugins: {
+        entries: {
+          "a2a-broker-adapter": {
+            enabled: true,
+            config: { baseUrl: "https://broker.example" },
+          },
+        },
+      },
+    },
+    undefined,
+    {
+      createBrokerClient: () => ({
+        createTask: async (request) => {
+          calls++;
+          if (calls === 1) {
+            throw new Error("broker unavailable");
+          }
+          return {
+            id: `task-${calls}`,
+            intent: "chat",
+            status: "queued",
+            requester: { id: "hub-session", kind: "session", role: "hub" },
+            target: { id: "worker-node", kind: "node" },
+            targetNodeId: "worker-node",
+            payload: request.payload,
+            createdAt: "2026-04-19T00:00:00Z",
+            updatedAt: "2026-04-19T00:00:00Z",
+          };
+        },
+      }),
+    },
+  );
+
+  const event = {
+    sessionKey: "worker-session",
+    target: { sessionKey: "worker-session", displayKey: "worker-node" },
+    message: "retry me",
+    task: {
+      intent: "delegate",
+      instructions: "retry me",
+      correlationId: "corr-rollback",
+      requester: { sessionKey: "hub-session", channel: "telegram" },
+    },
+    rawParams: {},
+  };
+
+  await assert.rejects(() => hook(event), /broker unavailable/);
+
+  // Pre-fix, the fingerprint was recorded before broker I/O with no rollback
+  // on throw, so this retry was suppressed as a duplicate of a send that
+  // never happened.
+  const retry = await hook(event);
+  assert.equal(retry.handled, true, "retry after a failed create must not be suppressed");
+  assert.equal(calls, 2);
+});

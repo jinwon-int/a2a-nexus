@@ -650,3 +650,28 @@ describe("cleanup-dry-run-projection (#278)", () => {
     });
   });
 });
+
+
+describe("safeForCleanup approval conjunction (a2a-nexus#575 item 10)", () => {
+  it("is false when acknowledged but not operator-approved", () => {
+    const discovery = buildDiscovery({ candidates: [buildSafeCandidate()] });
+    const plan = projectCleanupDryRunPlan({ discovery });
+    const gate = projectCleanupGateStatus(discovery, plan, "operator_acknowledged", {
+      backupConfirmed: true,
+      operatorAcknowledged: true,
+      approvalTokenValid: true,
+    });
+    assert.equal(gate.safeForCleanup, false, "ack without approval must not be safe");
+  });
+
+  it("is false when approved but the approval token is invalid", () => {
+    const discovery = buildDiscovery({ candidates: [buildSafeCandidate()] });
+    const plan = projectCleanupDryRunPlan({ discovery });
+    const gate = projectCleanupGateStatus(discovery, plan, "operator_approved", {
+      backupConfirmed: true,
+      operatorApproved: true,
+      approvalTokenValid: false,
+    });
+    assert.equal(gate.safeForCleanup, false, "approvalTokenRequired plan needs a valid token");
+  });
+});
