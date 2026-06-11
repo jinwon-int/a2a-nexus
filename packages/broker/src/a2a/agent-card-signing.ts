@@ -77,6 +77,63 @@ function algorithmForKey(key: KeyObject): { alg: "EdDSA" | "ES256"; cryptoAlg: s
   );
 }
 
+function readDerLength(input: Buffer, offset: number): { length: number; offset: number } {
+  const first = input[offset];
+  if (first === undefined) throw new Error("invalid ECDSA DER signature length");
+  if (first < 0x80) return { length: first, offset: offset + 1 };
+  const octets = first & 0x7f;
+  if (octets === 0 || octets > 2) throw new Error("unsupported ECDSA DER length encoding");
+  let length = 0;
+  for (let i = 0; i < octets; i += 1) {
+    const value = input[offset + 1 + i];
+    if (value === undefined) throw new Error("truncated ECDSA DER length");
+    length = (length << 8) | value;
+  }
+  return { length, offset: offset + 1 + octets };
+}
+
+function encodeDerLength(length: number): Buffer {
+  if (length < 0x80) return Buffer.from([length]);
+  if (length < 0x100) return Buffer.from([0x81, length]);
+  return Buffer.from([0x82, (length >> 8) & 0xff, length & 0xff]);
+}
+
+function normalizeUnsignedInteger(input: Buffer): Buffer {
+  let value = input;
+  while (value.length > 1 && value[0] === 0) value = value.subarray(1);
+  return value[0] !== undefined && (value[0] & 0x80) !== 0 ? Buffer.concat([Buffer.from([0]), value]) : value;
+}
+
+function derEcdsaSignatureToJose(der: Buffer, partLength: number): Buffer {
+  if (der[0] !== 0x30) throw new Error("invalid ECDSA DER signature");
+  let cursor = readDerLength(der, 1).offset;
+  if (der[cursor] !== 0x02) throw new Error("invalid ECDSA DER signature r marker");
+  const rLen = readDerLength(der, cursor + 1);
+  cursor = rLen.offset;
+  let r = der.subarray(cursor, cursor + rLen.length);
+  cursor += rLen.length;
+  if (der[cursor] !== 0x02) throw new Error("invalid ECDSA DER signature s marker");
+  const sLen = readDerLength(der, cursor + 1);
+  cursor = sLen.offset;
+  let s = der.subarray(cursor, cursor + sLen.length);
+  r = normalizeUnsignedInteger(r);
+  s = normalizeUnsignedInteger(s);
+  if (r[0] === 0) r = r.subarray(1);
+  if (s[0] === 0) s = s.subarray(1);
+  if (r.length > partLength || s.length > partLength) throw new Error("ECDSA signature part too large");
+  return Buffer.concat([Buffer.alloc(partLength - r.length), r, Buffer.alloc(partLength - s.length), s]);
+}
+
+function joseEcdsaSignatureToDer(raw: Buffer, partLength: number): Buffer {
+  if (raw.length !== partLength * 2) throw new Error(`invalid ES256 signature length: ${raw.length}`);
+  const r = normalizeUnsignedInteger(raw.subarray(0, partLength));
+  const s = normalizeUnsignedInteger(raw.subarray(partLength));
+  const rPart = Buffer.concat([Buffer.from([0x02]), encodeDerLength(r.length), r]);
+  const sPart = Buffer.concat([Buffer.from([0x02]), encodeDerLength(s.length), s]);
+  const body = Buffer.concat([rPart, sPart]);
+  return Buffer.concat([Buffer.from([0x30]), encodeDerLength(body.length), body]);
+}
+
 /** The exact bytes a card signature covers: JCS(card sans `signatures`). */
 export function agentCardSigningPayload(card: Record<string, unknown>): string {
   const { signatures: _ignored, ...rest } = card;
@@ -98,9 +155,10 @@ export function signAgentCard<T extends Record<string, unknown>>(
   const payload = base64url(agentCardSigningPayload(card));
   const signingInput = `${protectedHeader}.${payload}`;
   const signature = cryptoSign(cryptoAlg, Buffer.from(signingInput, "utf8"), key);
+  const jwsSignature = alg === "ES256" ? derEcdsaSignatureToJose(signature, 32) : signature;
   return {
     ...card,
-    signatures: [{ protected: protectedHeader, signature: signature.toString("base64url") }],
+    signatures: [{ protected: protectedHeader, signature: jwsSignature.toString("base64url") }],
   };
 }
 
@@ -114,13 +172,15 @@ export function verifyAgentCardSignature(
     return false;
   }
   const key = createPublicKey(publicKeyPem);
-  const { cryptoAlg } = algorithmForKey(key);
+  const { alg, cryptoAlg } = algorithmForKey(key);
   const payload = base64url(agentCardSigningPayload(card));
   const signingInput = `${entry.protected}.${payload}`;
+  const signature = Buffer.from(entry.signature, "base64url");
+  const cryptoSignature = alg === "ES256" ? joseEcdsaSignatureToDer(signature, 32) : signature;
   return cryptoVerify(
     cryptoAlg,
     Buffer.from(signingInput, "utf8"),
     key,
-    Buffer.from(entry.signature, "base64url"),
+    cryptoSignature,
   );
 }

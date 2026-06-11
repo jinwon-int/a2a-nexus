@@ -74,6 +74,7 @@ test("signAgentCard supports EC P-256 (ES256) and rejects unsupported key types"
   });
   const header = JSON.parse(Buffer.from(signed.signatures[0].protected, "base64url").toString());
   assert.equal(header.alg, "ES256");
+  assert.equal(Buffer.from(signed.signatures[0].signature, "base64url").length, 64, "ES256 JWS signature must be raw r||s");
   assert.equal(
     verifyAgentCardSignature(signed, publicKey.export({ type: "spki", format: "pem" }).toString()),
     true,
