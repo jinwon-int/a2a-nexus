@@ -65,6 +65,19 @@ export function executeA2AJsonRpc(
         return success(id, result);
       }
 
+      case "SendStreamingMessage": {
+        // The HTTP layer intercepts a single SendStreamingMessage request and
+        // answers with an SSE stream. Reaching this dispatcher means the call
+        // arrived where streaming is impossible (inside a batch, or via a
+        // non-streaming transport embedding) — fail closed instead of
+        // pretending a unary response is a stream.
+        return failure(
+          id,
+          -32600,
+          "SendStreamingMessage requires a streaming response and cannot be used inside a batch request",
+        );
+      }
+
       case "GetTask": {
         const taskId = requireString(params, "taskId");
         if (options.enforceRequesterIdentity) {
@@ -343,7 +356,7 @@ function requireRequesterIdentityForTaskRead(options: ExecuteJsonRpcOptions, met
   }
 }
 
-function executeSendMessage(
+export function executeSendMessage(
   params: unknown,
   options: ExecuteJsonRpcOptions,
 ): {
@@ -610,6 +623,18 @@ function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): s
   }
   const trimmed = publicBaseUrl.endsWith("/") ? publicBaseUrl.slice(0, -1) : publicBaseUrl;
   return `${trimmed}/a2a/tasks/${encodeURIComponent(taskId)}/events`;
+}
+
+/**
+ * Map an arbitrary thrown value to a JSON-RPC error object. BrokerError
+ * validation codes keep their -326xx mapping; anything else is -32603.
+ * Used by the HTTP layer for the SendStreamingMessage pre-stream phase.
+ */
+export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message: string; data?: Record<string, unknown> } {
+  if (error instanceof BrokerError) {
+    return { code: brokerErrorCode(error.code), message: error.message, data: { brokerCode: error.code } };
+  }
+  return { code: -32603, message: error instanceof Error ? error.message : String(error) };
 }
 
 function brokerErrorCode(code: BrokerError["code"]): number {
