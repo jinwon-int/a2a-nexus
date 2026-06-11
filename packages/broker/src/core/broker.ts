@@ -881,7 +881,11 @@ export class InMemoryA2ABroker {
     exchange.lastMessageAt = now;
     exchange.latestMessageId = message.id;
     exchange.updatedAt = now;
-    this.applyExchangeMessageDecision(exchange, message);
+    this.applyExchangeMessageDecision(
+      exchange,
+      message,
+      Boolean(request.targetNodeId || request.assignedWorkerId),
+    );
     this.setExchangeRecord(exchange);
     this.appendAuditEvent({
       actorId: request.actor.id,
@@ -1266,7 +1270,13 @@ export class InMemoryA2ABroker {
     };
 
     this.setValidationRecord(validation);
-    proposal.status = "validated";
+    // Only advance to "validated" from a pre-decision state. A stale validation
+    // — e.g. a validate_change task that completes after the proposal was
+    // already approved/applied/rejected — must not rewind the proposal into a
+    // second approve/apply cycle. The validation is still recorded as evidence.
+    if (proposal.status === "submitted" || proposal.status === "validated") {
+      proposal.status = "validated";
+    }
     proposal.updatedAt = isoNow();
     proposal.artifactIds = uniqueIds([...proposal.artifactIds, ...validation.artifactIds]);
     this.setProposalRecord(proposal);
@@ -3154,6 +3164,7 @@ export class InMemoryA2ABroker {
   private applyExchangeMessageDecision(
     exchange: A2AExchangeState,
     message: A2AExchangeMessageRecord,
+    hasExplicitAssignment: boolean,
   ): void {
     exchange.targetNodeId = message.targetNodeId ?? exchange.targetNodeId ?? exchange.target.id;
     exchange.assignedWorkerId = message.assignedWorkerId ?? exchange.assignedWorkerId;
@@ -3169,7 +3180,11 @@ export class InMemoryA2ABroker {
     }
 
     if (!message.decision) {
-      if (message.targetNodeId || message.assignedWorkerId) {
+      // message.targetNodeId is always populated (it defaults to the
+      // exchange target), so gating on it made every decision-less thread
+      // message spawn a task and flip a running exchange back to "queued".
+      // Only (re)assign when the request carried an explicit routing target.
+      if (hasExplicitAssignment) {
         const assignedWorkerId = exchange.assignedWorkerId ?? exchange.targetNodeId;
         this.ensureExchangeTask(exchange, message, assignedWorkerId);
         exchange.status = "queued";
