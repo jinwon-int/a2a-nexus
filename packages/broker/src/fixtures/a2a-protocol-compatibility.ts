@@ -23,6 +23,12 @@ export const A2A_COMPATIBILITY_PROFILE = {
   unsupportedPushNotifications: true,
   unsupportedA2A03Compat: true,
   /**
+   * A2A 1.0 signed agent cards: opt-in JWS (EdDSA or ES256) over the
+   * RFC 8785 canonicalized card excluding the signatures field, enabled via
+   * AGENT_CARD_SIGNING_KEY_FILE. Unsigned serving remains the default.
+   */
+  signedAgentCards: { optIn: true, algs: ["EdDSA", "ES256"], canonicalization: "RFC 8785" },
+  /**
    * A2A 1.0 version negotiation on /a2a/jsonrpc. Documented deviation: a
    * missing/empty A2A-Version header is served with 1.0 semantics instead of
    * the spec's 0.3 fallback (0.3 semantics are unsupported); an explicit
