@@ -147,6 +147,21 @@ export interface RunnerConfig {
   cpus?: string;
   /** Container network mode. Defaults to bridge; OpenClaw profile uses host to reach the local gateway. */
   network?: string;
+  /** Max PIDs inside the task container (fork-bomb guard). Default 512. */
+  pidsLimit?: string;
+  /**
+   * When true, setuid/setgid binaries inside the container cannot gain
+   * privileges (--security-opt no-new-privileges). Default true; opt out via
+   * A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1 only for images that
+   * genuinely need privilege escalation.
+   */
+  noNewPrivileges?: boolean;
+  /**
+   * Optional capability drop list passed as --cap-drop entries, e.g. ["ALL"].
+   * Opt-in (A2A_DOCKER_RUNNER_CAP_DROP) because root-based task images may
+   * rely on default capabilities (chown/setuid during package installs).
+   */
+  capDrop?: string[];
   /** Additional host paths to mount into the runner container. */
   extraMounts?: RunnerExtraMount[];
   /** First-class patch command profile selected by loadConfig. */

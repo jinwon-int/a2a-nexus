@@ -817,6 +817,17 @@ test("validateRunnerConfig rejects invalid memory format", () => {
   );
 });
 
+test("validateRunnerConfig rejects invalid pids limit", () => {
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ pidsLimit: "zero" })),
+    /invalid pids limit/,
+  );
+  assert.throws(
+    () => validateRunnerConfig(validConfig({ pidsLimit: "0" })),
+    /invalid pids limit/,
+  );
+});
+
 test("validateRunnerConfig rejects invalid cpus format", () => {
   assert.throws(
     () => validateRunnerConfig(validConfig({ cpus: "two" })),

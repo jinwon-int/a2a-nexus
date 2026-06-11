@@ -149,6 +149,7 @@ test("drift: JSON-RPC method inventory matches documented profile", () => {
   const implemented = [...A2A_COMPATIBILITY_PROFILE.jsonRpcMethods];
   const expected = [
     "SendMessage",
+    "SendStreamingMessage",
     "GetTask",
     "ListTasks",
     "CancelTask",
@@ -228,6 +229,14 @@ test("drift: external SDK references are tracked with pinned data", () => {
     assert.ok(ref.checkedSurfaces.length > 0, `${ref.repo} must list checkedSurfaces`);
     assert.ok(ref.pinned.kind, `${ref.repo} must have pinned kind`);
     assert.ok(ref.pinned.ref, `${ref.repo} must have pinned ref`);
+    // A floating ref like "main" defeats drift detection: the comparison
+    // baseline silently moves. Pins must be full commit SHAs (the
+    // refresh:drift-refs script writes these).
+    assert.match(
+      ref.pinned.ref,
+      /^[0-9a-f]{40}$/,
+      `${ref.repo} pinned ref must be a 40-hex commit SHA, got "${ref.pinned.ref}"`,
+    );
     assert.ok(ref.pinned.refreshedAt, `${ref.repo} must have pinned refreshedAt`);
   }
 });
