@@ -11313,6 +11313,57 @@ test("POST bodies over the size cap are rejected with 400 (a2a-nexus#573 item 13
   }
 });
 
+test("A2A-Version negotiation on /a2a/jsonrpc (A2A 1.0)", async () => {
+  const server = await startTestServer();
+  try {
+    const rpcBody = JSON.stringify({
+      jsonrpc: "2.0",
+      id: "version-probe",
+      method: "ListTasks",
+      params: {},
+    });
+    const headers = jsonHeaders({
+      "x-a2a-requester-id": "version-probe",
+      "x-a2a-requester-role": "hub",
+    });
+
+    // Explicit supported version is served and echoed.
+    const v1 = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...headers, "a2a-version": "1.0" },
+      body: rpcBody,
+    });
+    assert.equal(v1.status, 200);
+    assert.equal(v1.headers.get("a2a-version"), "1.0");
+
+    // Missing header is served with 1.0 semantics (documented deviation from
+    // the spec's 0.3 fallback: 0.3 semantics are unsupported) and the
+    // response advertises the version actually served.
+    const missing = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers,
+      body: rpcBody,
+    });
+    assert.equal(missing.status, 200);
+    assert.equal(missing.headers.get("a2a-version"), "1.0");
+
+    // A version we cannot honor fails closed instead of being silently
+    // served with the wrong semantics.
+    const v03 = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...headers, "a2a-version": "0.3" },
+      body: rpcBody,
+    });
+    assert.equal(v03.status, 400);
+    assert.equal(v03.headers.get("a2a-version"), "1.0");
+    const errorBody = await v03.json();
+    assert.equal(errorBody.error.code, -32600);
+    assert.match(errorBody.error.message, /unsupported A2A-Version "0\.3"/);
+  } finally {
+    await server.close();
+  }
+});
+
 test("SendStreamingMessage streams JSON-RPC envelopes over SSE (A2A 1.0)", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
