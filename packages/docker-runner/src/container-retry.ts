@@ -84,6 +84,12 @@ export function isTransientContainerError(completed: SpawnResult): boolean {
   const stdout = completed.stdout ?? "";
   const combined = `${stderr}\n${stdout}`;
 
+  // Terminal: a timeout consumed the full per-attempt budget. Retrying only
+  // multiplies wall-clock (3× with the default 1h timeout) with no reason to
+  // expect a faster run. Checked first so a timed-out container is never
+  // retried regardless of any incidental stderr noise.
+  if (completed.timedOut) return false;
+
   // Permanent: engine not installed or not executable.
   if (completed.errorCode === "ENOENT") return false;
 
@@ -138,9 +144,6 @@ export function isTransientContainerError(completed: SpawnResult): boolean {
   // so the retry harness handles unexpected engine-side flakes.
   if (stderr.toLowerCase().includes("error response from daemon")) return true;
 
-  // Timeout with partial output — could be transient resource contention.
-  if (completed.timedOut) return true;
-
   // Unknown spawn/process error with no stderr match — do NOT retry.
   return false;
 }
@@ -190,7 +193,7 @@ export async function runContainerWithRetry(
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
     const startedAt = Date.now();
-    const attemptResult = await spawnWithTimeout(command, args, timeoutMs, attempt, config.maxAttempts);
+    const attemptResult = await spawnWithTimeout(command, argsForAttempt(args, attempt), timeoutMs, attempt, config.maxAttempts);
 
     const elapsedMs = Date.now() - startedAt;
 
@@ -345,6 +348,26 @@ function spawnWithTimeout(
       });
     });
   });
+}
+
+/**
+ * Give each retry attempt a distinct container name.
+ *
+ * The caller bakes a fixed `--name` into args. If a prior attempt left a
+ * container behind (e.g. a SIGKILLed engine CLI while the container kept
+ * running detached), reusing the same name makes every retry fail with
+ * "container name already in use" — which this harness classifies as
+ * transient, producing a guaranteed-failing retry loop. Suffixing the name
+ * with the attempt number lets the retry start cleanly. The first attempt is
+ * left untouched.
+ */
+export function argsForAttempt(args: string[], attempt: number): string[] {
+  if (attempt <= 1) return args;
+  const nameIdx = args.indexOf("--name");
+  if (nameIdx < 0 || nameIdx + 1 >= args.length) return args;
+  const next = [...args];
+  next[nameIdx + 1] = `${next[nameIdx + 1]}-r${attempt}`.slice(0, 128);
+  return next;
 }
 
 function extractPrUrl(stdout: string): string | undefined {

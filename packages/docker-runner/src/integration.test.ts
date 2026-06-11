@@ -25,6 +25,7 @@ import {
   decideTerminalEvidenceAck,
   buildTerminalAckDecision,
   buildCanaryRecoveryAuditReport,
+  resultFilesChanged,
 } from "./integration.js";
 import type { HandlerTask, HandlerEnv, HandlerResult, RawRunnerOutput, TerminalAckDecision, TerminalEvidenceEvent, TerminalEvidenceKind, TerminalEvidenceStatus } from "./integration.js";
 
@@ -557,6 +558,37 @@ test("buildRunnerTaskFromHandlerPayload: default timeout is 60 minutes", () => {
   const result = buildRunnerTaskFromHandlerPayload(task, baseEnv);
 
   assert.equal(result.timeoutMs, 60 * 60 * 1000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// resultFilesChanged — workDir prefix stripping
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("resultFilesChanged strips the workDir prefix only on a path boundary", () => {
+  const result = {
+    workDir: "/tmp/work",
+    artifacts: [
+      "/tmp/work/src/a.ts",          // inside workDir → stripped
+      "/tmp/workspace/sibling.txt",  // sibling dir → must NOT be sliced into
+      "relative/already.txt",        // not under workDir → unchanged
+    ],
+  } as RawRunnerOutput;
+
+  assert.deepEqual(resultFilesChanged(result), [
+    "src/a.ts",
+    "/tmp/workspace/sibling.txt",
+    "relative/already.txt",
+  ]);
+});
+
+test("resultFilesChanged prefers the artifact manifest when present", () => {
+  const result = {
+    workDir: "/tmp/work",
+    artifactManifest: { artifacts: [{ path: "manifest/one.txt" }] },
+    artifacts: ["/tmp/work/ignored.txt"],
+  } as RawRunnerOutput;
+
+  assert.deepEqual(resultFilesChanged(result), ["manifest/one.txt"]);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

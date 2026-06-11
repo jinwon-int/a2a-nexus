@@ -1044,7 +1044,7 @@ function isSafeTerminalGitHubUrl(value: string): boolean {
   }
 }
 
-function resultFilesChanged(result: RawRunnerOutput): string[] {
+export function resultFilesChanged(result: RawRunnerOutput): string[] {
   const manifestArtifacts = result.artifactManifest?.artifacts;
   if (manifestArtifacts && manifestArtifacts.length > 0) {
     return manifestArtifacts.map((artifact) => artifact.path);
@@ -1052,7 +1052,12 @@ function resultFilesChanged(result: RawRunnerOutput): string[] {
   const artifacts = result.artifacts ?? [];
   const workDir = result.workDir;
   if (workDir) {
-    return artifacts.map((p) => p.startsWith(workDir) ? p.slice(workDir.length + 1) : p);
+    // Only strip when the artifact is genuinely inside workDir, i.e. the next
+    // character is a path separator. A bare startsWith() also matched sibling
+    // dirs like "/tmp/workspace" against workDir "/tmp/work", slicing into the
+    // middle of a path segment ("ace/f.txt").
+    const prefix = workDir.endsWith("/") ? workDir : `${workDir}/`;
+    return artifacts.map((p) => p.startsWith(prefix) ? p.slice(prefix.length) : p);
   }
   return artifacts;
 }
