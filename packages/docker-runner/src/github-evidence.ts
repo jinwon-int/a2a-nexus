@@ -30,8 +30,11 @@ export async function postStartComment(
   const dedupeKey = buildStartCommentDedupeKey(task);
   const dedupeMarker = `<!-- a2a-runner-start-comment:${dedupeKey} -->`;
 
-  // Idempotency: check if a Start comment with this dedupe marker already exists.
-  const existingUrl = await findExistingCommentByMarker(token, task.issueUrl, "a2a-runner-start-comment");
+  // Idempotency: check if a Start comment with this exact dedupe marker
+  // already exists. The marker must include the dedupe key — searching for the
+  // bare prefix would match every prior run's Start comment and collapse
+  // idempotency from per-run to per-issue (only the first run would ever post).
+  const existingUrl = await findExistingCommentByMarker(token, task.issueUrl, dedupeMarker);
   if (existingUrl) {
     return { url: existingUrl, dedupeKey };
   }

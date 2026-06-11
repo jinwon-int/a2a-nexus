@@ -451,8 +451,15 @@ export function buildRunnerTaskFromHandlerPayload(
   const isVerifyMode = requestedMode === "github-verify";
   const isReadOnlyAuditMode = isVerifyMode || requestedMode === "family-wiki-readonly-audit";
 
-  const envTimeoutMs =
-    env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS != null ? Number(env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS) : NaN;
+  // Accept only a finite, strictly-positive timeout. Number("") === 0 and
+  // negatives are NOT NaN, so a naive `!isNaN(...)` guard would turn an empty
+  // or malformed env value into a 0 ms (instant) timeout instead of the
+  // 1-hour default.
+  const coercePositiveMs = (value: unknown): number | undefined => {
+    const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  const envTimeoutMs = coercePositiveMs(env.A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS);
   const runnerTask: RunnerTask = {
     id: normalizeString(task?.id) ?? `task-${Date.now()}`,
     intent: normalizeString(task?.intent) ?? "propose_patch",
@@ -498,15 +505,15 @@ export function buildRunnerTaskFromHandlerPayload(
         : undefined,
     readOnlyValidation: isReadOnlyAuditMode || Boolean(task?.payload?.readOnlyValidation ?? task?.payload?.validationOnly),
     timeoutMs:
-      !isNaN(envTimeoutMs)
-        ? envTimeoutMs
-        : task?.payload?.timeoutMs ?? 60 * 60 * 1000,
+      envTimeoutMs
+      ?? coercePositiveMs(task?.payload?.timeoutMs)
+      ?? 60 * 60 * 1000,
   };
 
   // ── issueUrl fallback: construct from repo + issue/issueNumber ──
   if (!runnerTask.issueUrl && repo) {
     const issueNum = extractIssueNumber(task);
-    if (issueNum) {
+    if (issueNum && /^\d+$/.test(issueNum)) {
       runnerTask.issueUrl = `https://github.com/${repo}/issues/${issueNum}`;
     }
   }
@@ -1159,7 +1166,7 @@ function normalizeGitHubIssueUrl(value?: string, repo?: string, issue?: string |
   if (safeValue && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/\d+(?:[#?].*)?$/.test(safeValue)) {
     return safeValue;
   }
-  const issueNumber = issue == null ? undefined : String(issue).match(/#?(\d+)/)?.[1];
+  const issueNumber = issue == null ? undefined : extractNumberRef(String(issue));
   if (repo && issueNumber && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
     return `https://github.com/${repo}/issues/${issueNumber}`;
   }
@@ -1386,16 +1393,32 @@ function normalizeExistingPrUrl(task: HandlerTask, repo?: string): string | unde
   if (explicit) return explicit;
 
   const prNumber = task?.payload?.existingPrNumber ?? task?.payload?.prNumber;
-  const pr = prNumber != null ? String(prNumber).match(/#?(\d+)/)?.[1] : undefined;
+  const pr = prNumber != null ? extractNumberRef(String(prNumber)) : undefined;
   if (!repo || !pr) return undefined;
   return `https://github.com/${repo}/pull/${pr}`;
+}
+
+/**
+ * Extract an issue/PR number from a free-form reference string.
+ *
+ * A plain `/#?(\d+)/` grabs the first digit run anywhere, which is wrong for
+ * inputs like `owner/a2a-plane#204` or a full issue URL whose repo name
+ * contains digits (e.g. `.../a2a-nexus/issues/204` → `2`). Resolve in
+ * priority order: number in an issues/pull URL path, then a `#<num>`
+ * reference, then a bare numeric value.
+ */
+function extractNumberRef(raw: string): string | undefined {
+  return (
+    raw.match(/\/(?:issues|pull)\/(\d+)/)?.[1] ??
+    raw.match(/#(\d+)/)?.[1] ??
+    raw.match(/^\s*(\d+)\s*$/)?.[1]
+  );
 }
 
 function extractIssueNumber(task: HandlerTask): string | undefined {
   const raw = normalizeString(task?.payload?.issue ?? task?.payload?.issueNumber);
   if (!raw) return undefined;
-  const match = raw.match(/#?(\d+)/);
-  return match ? match[1] : raw;
+  return extractNumberRef(raw) ?? raw;
 }
 
 // ── Re-exports that the handler may need ───────────────────────────────────

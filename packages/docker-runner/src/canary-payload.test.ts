@@ -250,6 +250,35 @@ test("default timeoutMs is 60 minutes when no override", () => {
   assert.equal(runnerTask.timeoutMs, 60 * 60 * 1000);
 });
 
+test("blank or invalid env timeout falls back to the default, not 0 ms", () => {
+  const handlerTask: HandlerTask = {
+    id: "canary-blank-timeout",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-docker-runner" },
+  };
+
+  for (const value of ["", "  ", "-5000", "0", "abc"]) {
+    const env: HandlerEnv = { A2A_DOCKER_RUNNER_ENABLED: "1", A2A_DOCKER_RUNNER_TASK_TIMEOUT_MS: value };
+    const runnerTask = buildRunnerTaskFromHandlerPayload(handlerTask, env);
+    assert.equal(runnerTask.timeoutMs, 60 * 60 * 1000, `env value ${JSON.stringify(value)} must not yield a 0 ms timeout`);
+  }
+});
+
+test("issueUrl is built from the real issue number, not the first digit run", () => {
+  // payload.issue is a repo-qualified reference whose repo name contains a
+  // digit; the issue number is 204, not the "2" inside "a2a-plane".
+  const handlerTask: HandlerTask = {
+    id: "canary-issue-ref",
+    payload: {
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-plane",
+      issue: "jinwon-int/a2a-plane#204",
+    },
+  };
+
+  const runnerTask = buildRunnerTaskFromHandlerPayload(handlerTask, baseEnv);
+  assert.equal(runnerTask.issueUrl, "https://github.com/jinwon-int/a2a-plane/issues/204");
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // shouldUseDockerRunnerForGithub with canary payload
 // ═══════════════════════════════════════════════════════════════════════════

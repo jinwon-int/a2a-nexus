@@ -280,6 +280,16 @@ test("buildExecutionProof stamps the canonicalization algorithm", () => {
   assert.equal(proof.canonicalization, "stable-json-recursive-v2");
 });
 
+test("buildExecutionProof generatedAt is a valid ISO-8601 timestamp when defaulted", () => {
+  // Regression: the previous default appended ".000Z" to a string that already
+  // ended in milliseconds + "Z", producing an unparseable "...00.000.000Z".
+  const proof = buildExecutionProof({ task: BASE_TASK, result: BASE_RESULT, runToken: "ts-1" });
+  assert.doesNotMatch(proof.generatedAt, /\.\d{3}\.\d{3}Z$/, "must not double-stamp milliseconds");
+  const parsed = new Date(proof.generatedAt);
+  assert.ok(!Number.isNaN(parsed.getTime()), `generatedAt must parse: ${proof.generatedAt}`);
+  assert.equal(parsed.toISOString(), proof.generatedAt, "generatedAt must round-trip through Date");
+});
+
 test("verifyExecutionProof rejects a legacy proof without canonicalization", () => {
   const task = BASE_TASK;
   const result = { ...BASE_RESULT, stdout: "hello\n", stderr: "" };
