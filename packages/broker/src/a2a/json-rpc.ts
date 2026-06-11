@@ -146,7 +146,7 @@ export function executeA2AJsonRpc(
         }
 
         if (!isRecord(params)) {
-          throw new Error("params must be an object");
+          throw new BrokerError("bad_request", "params must be an object");
         }
 
         const peerRequest: PeerStatusRequest = {
@@ -156,7 +156,7 @@ export function executeA2AJsonRpc(
         };
 
         if (!peerRequest.target) {
-          throw new Error("target is required");
+          throw new BrokerError("bad_request", "target is required");
         }
 
         if (
@@ -208,10 +208,62 @@ export function executeA2AJsonRpc(
       return failure(id, brokerErrorCode(error.code), error.message, { brokerCode: error.code });
     }
     if (error instanceof Error) {
-      return failure(id, -32602, error.message);
+      // An unexpected (non-BrokerError) exception is a server-side fault, not a
+      // client params error: -32603 internal error, never -32602.
+      return failure(id, -32603, error.message);
     }
     return failure(id, -32603, "internal error");
   }
+}
+
+export type JsonRpcResponse = JsonRpcSuccess | JsonRpcFailure;
+
+/**
+ * Execute a raw JSON-RPC request body, handling the full transport envelope:
+ *
+ *  - malformed JSON returns a single -32700 parse error;
+ *  - a batch array is processed per element, with an empty array rejected as
+ *    -32600 (a single object, per the spec);
+ *  - notifications (requests with no `id` member) receive no response.
+ *
+ * Returns a single response, an array of responses for a batch, or `null` when
+ * the input was entirely notifications and the transport must send no body.
+ */
+export function executeA2AJsonRpcBody(
+  rawBody: string,
+  options: ExecuteJsonRpcOptions,
+): JsonRpcResponse | JsonRpcResponse[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    return failure(null, -32700, "parse error");
+  }
+
+  if (Array.isArray(parsed)) {
+    if (parsed.length === 0) {
+      return failure(null, -32600, "invalid JSON-RPC request: empty batch");
+    }
+    const responses: JsonRpcResponse[] = [];
+    for (const entry of parsed) {
+      const outcome = executeOneJsonRpc(entry, options);
+      if (outcome) responses.push(outcome);
+    }
+    return responses.length > 0 ? responses : null;
+  }
+
+  return executeOneJsonRpc(parsed, options);
+}
+
+function executeOneJsonRpc(
+  request: unknown,
+  options: ExecuteJsonRpcOptions,
+): JsonRpcResponse | null {
+  // A request object with no `id` member is a notification and gets no
+  // response (note: `id: null` is a normal request, not a notification).
+  const isNotification = isRecord(request) && !("id" in request);
+  const response = executeA2AJsonRpc(request, options);
+  return isNotification ? null : response;
 }
 
 function parseJsonRpcRequest(request: unknown): JsonRpcRequest | JsonRpcFailure {
@@ -240,7 +292,7 @@ function parseListTaskFilters(params: unknown): TaskListFilters {
     return {};
   }
   if (!isRecord(params)) {
-    throw new Error("params must be an object");
+    throw new BrokerError("bad_request", "params must be an object");
   }
 
   return {
@@ -300,7 +352,7 @@ function executeSendMessage(
   messageId: string;
 } {
   if (!isRecord(params)) {
-    throw new Error("params must be an object");
+    throw new BrokerError("bad_request", "params must be an object");
   }
 
   const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
@@ -347,7 +399,7 @@ function executeSendMessage(
 
   const targetNodeId = optionalString(metadata.targetNodeId);
   if (!targetNodeId) {
-    throw new Error("metadata.targetNodeId is required when starting a new context");
+    throw new BrokerError("bad_request", "metadata.targetNodeId is required when starting a new context");
   }
 
   const targetWorker = options.broker.getWorker(targetNodeId);
@@ -357,7 +409,7 @@ function executeSendMessage(
 
   const assignedWorkerId = optionalString(metadata.assignedWorkerId) ?? targetWorker.nodeId;
   if (assignedWorkerId !== targetWorker.nodeId) {
-    throw new Error("metadata.assignedWorkerId must match targetNodeId when starting a new context");
+    throw new BrokerError("bad_request", "metadata.assignedWorkerId must match targetNodeId when starting a new context");
   }
   const assignedWorker = options.broker.getWorker(assignedWorkerId);
   if (!assignedWorker) {
@@ -400,7 +452,7 @@ function assertConsistentAssignmentMetadata(metadata: Record<string, unknown>): 
   const targetNodeId = optionalString(metadata.targetNodeId);
   const assignedWorkerId = optionalString(metadata.assignedWorkerId);
   if (targetNodeId && assignedWorkerId && assignedWorkerId !== targetNodeId) {
-    throw new Error("metadata.assignedWorkerId must match targetNodeId when provided");
+    throw new BrokerError("bad_request", "metadata.assignedWorkerId must match targetNodeId when provided");
   }
 }
 
@@ -410,11 +462,11 @@ function assertConsistentExistingContextAssignmentMetadata(
 ): void {
   const targetNodeId = optionalString(metadata.targetNodeId);
   if (targetNodeId && targetNodeId !== exchangeTargetNodeId) {
-    throw new Error("metadata.targetNodeId must match the exchange targetNodeId on existing contexts");
+    throw new BrokerError("bad_request", "metadata.targetNodeId must match the exchange targetNodeId on existing contexts");
   }
   const assignedWorkerId = optionalString(metadata.assignedWorkerId);
   if (assignedWorkerId && assignedWorkerId !== exchangeTargetNodeId) {
-    throw new Error("metadata.assignedWorkerId must match the exchange targetNodeId on existing contexts");
+    throw new BrokerError("bad_request", "metadata.assignedWorkerId must match the exchange targetNodeId on existing contexts");
   }
 }
 
@@ -444,7 +496,7 @@ function deriveActor(
   }
 
   if (!requesterIdentity?.id) {
-    throw new Error("actor.id is required");
+    throw new BrokerError("bad_request", "actor.id is required");
   }
 
   return requesterIdentity;
@@ -455,7 +507,7 @@ function extractMessageText(message: unknown): string {
     return message.trim();
   }
   if (!isRecord(message)) {
-    throw new Error("message is required");
+    throw new BrokerError("bad_request", "message is required");
   }
 
   const directText = optionalString(message.text);
@@ -475,7 +527,7 @@ function extractMessageText(message: unknown): string {
     }
   }
 
-  throw new Error("message text is required");
+  throw new BrokerError("bad_request", "message text is required");
 }
 
 function parseVia(metadata: Record<string, unknown>): A2AExchangeVia | undefined {
@@ -500,7 +552,7 @@ function parseVia(metadata: Record<string, unknown>): A2AExchangeVia | undefined
 
 function requireString(value: unknown, field: string): string {
   if (!isRecord(value) || typeof value[field] !== "string" || !value[field].trim()) {
-    throw new Error(`${field} is required`);
+    throw new BrokerError("bad_request", `${field} is required`);
   }
   return value[field].trim();
 }
@@ -525,7 +577,7 @@ function optionalEnum<T extends string>(value: unknown, allowed: readonly T[]): 
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readId(id: unknown): JsonRpcId {
@@ -575,6 +627,8 @@ function brokerErrorCode(code: BrokerError["code"]): number {
     case "rate_limited":
       return -32029;
     default:
-      throw new Error("unhandled broker error code");
+      // Never throw from inside the catch handler that calls this — an
+      // unmapped broker code becomes a generic internal error.
+      return -32603;
   }
 }
