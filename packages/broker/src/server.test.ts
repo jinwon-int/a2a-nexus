@@ -11443,6 +11443,50 @@ test("SendStreamingMessage streams JSON-RPC envelopes over SSE (A2A 1.0)", async
   }
 });
 
+test("SendStreamingMessage with malformed JSON-RPC envelope is rejected before streaming", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-stream-invalid", "analyst", "test-edge-secret");
+    const res = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: {
+        ...jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "hub-a",
+          "x-a2a-requester-role": "hub",
+        }),
+        accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        id: "stream-invalid",
+        method: "SendStreamingMessage",
+        params: {
+          message: { parts: [{ text: "invalid envelope" }] },
+          metadata: { targetNodeId: "worker-stream-invalid" },
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+    const body = await res.json();
+    assert.equal(body.id, "stream-invalid");
+    assert.equal(body.error.code, -32600);
+    assert.match(body.error.message, /jsonrpc must be '2\.0'/);
+
+    const listRes = await fetch(`${server.baseUrl}/tasks?targetNodeId=worker-stream-invalid`, {
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+    });
+    const listed = await listRes.json() as { items?: unknown[] };
+    assert.equal(listed.items?.length ?? 0, 0, "malformed streaming request must not create a task");
+  } finally {
+    await server.close();
+  }
+});
+
 test("SendStreamingMessage inside a batch is rejected with -32600", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {

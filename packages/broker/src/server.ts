@@ -7838,6 +7838,12 @@ function parseSingleStreamingMessageRequest(
   if (request.method !== "SendStreamingMessage") {
     return null;
   }
+  if (request.jsonrpc !== "2.0") {
+    // Preserve the generic JSON-RPC envelope validation path. The streaming
+    // fast path must not accept malformed requests that the unary dispatcher
+    // would reject with -32600.
+    return null;
+  }
   const id = request.id;
   if (typeof id !== "string" && typeof id !== "number") {
     // A streaming notification is meaningless: there is no id to correlate
