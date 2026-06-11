@@ -123,3 +123,77 @@ test("BoundedPoller getStats returns running false after stop", () => {
   poller.stop();
   assert.equal(poller.getStats().running, false);
 });
+
+// ---------------------------------------------------------------------------
+// Backoff floor / restart scheduling (a2a-nexus#573 item 19)
+// ---------------------------------------------------------------------------
+
+test("BoundedPoller backoff honors the baseBackoffMs floor and maxBackoffMs ceiling", async () => {
+  const poller = new BoundedPoller({
+    ingestionService: NULL_SERVICE,
+    fetchEvents: () => {
+      throw new Error("boom");
+    },
+    pollIntervalMs: 1_000,
+    baseBackoffMs: 50_000,
+    maxBackoffMs: 60_000,
+    label: "test-backoff-floor",
+  });
+  const internals = poller as unknown as { _running: boolean; poll(): Promise<void> };
+
+  // Drive cycles directly (no timers fire; interval far below the base floor).
+  internals._running = true;
+  await internals.poll();
+  assert.equal(
+    poller.getStats().currentBackoffMs,
+    50_000,
+    "first failed cycle must back off to at least baseBackoffMs",
+  );
+
+  await internals.poll();
+  assert.equal(
+    poller.getStats().currentBackoffMs,
+    60_000,
+    "doubling must stay capped at maxBackoffMs",
+  );
+
+  poller.stop();
+});
+
+test("BoundedPoller scheduleNext replaces a pending timer instead of stacking chains", async () => {
+  const cleared: unknown[] = [];
+  const origClear = globalThis.clearTimeout;
+  globalThis.clearTimeout = ((handle: Parameters<typeof clearTimeout>[0]) => {
+    cleared.push(handle);
+    return origClear(handle);
+  }) as typeof clearTimeout;
+
+  try {
+    const poller = new BoundedPoller({
+      ingestionService: NULL_SERVICE,
+      fetchEvents: () => emptyResult(),
+      pollIntervalMs: 100_000, // long — timers never fire during the test
+      label: "test-single-chain",
+    });
+    const internals = poller as unknown as { _timer: unknown; poll(): Promise<void> };
+
+    poller.start();
+    const firstTimer = internals._timer;
+    assert.ok(firstTimer, "start() must schedule a timer");
+
+    // Simulates the in-flight cycle finishing after a stop()+start(): its
+    // finally-scheduleNext must replace the pending timer, not add a second
+    // live chain.
+    await internals.poll();
+    const secondTimer = internals._timer;
+    assert.notEqual(secondTimer, firstTimer, "poll completion reschedules");
+    assert.ok(
+      cleared.includes(firstTimer),
+      "the previously pending timer must be cleared, not left running",
+    );
+
+    poller.stop();
+  } finally {
+    globalThis.clearTimeout = origClear;
+  }
+});
