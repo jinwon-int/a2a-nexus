@@ -7,7 +7,7 @@ import { once } from "node:events";
 
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
-import { A2ABrokerWorker, createExternalWorkerHandler, createWorkerConfigFromEnv } from "./worker.js";
+import { A2ABrokerWorker, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
   let snapshot = emptySnapshot();
@@ -952,4 +952,79 @@ test("worker fails github propose_patch tasks without PR evidence (existing cont
     await worker.stop();
     await server.close();
   }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Worker robustness regressions (a2a-nexus#573 items 6, 7)
+// ───────────────────────────────────────────────────────────────────────────
+
+function robustnessConfig(overrides: Partial<BrokerWorkerConfig> = {}): BrokerWorkerConfig {
+  return {
+    brokerUrl: "http://broker.invalid",
+    requesterKind: "node",
+    pollIntervalMs: 25,
+    heartbeatIntervalMs: 10_000,
+    handlerTimeoutMs: 1_000,
+    userAgent: "a2a-broker-worker-test",
+    handler: async (task) => ({
+      result: { summary: `echo ${task.intent}`, output: { taskId: task.id } },
+    }),
+    worker: {
+      nodeId: "worker-a",
+      role: "analyst",
+      displayName: "Worker A",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    },
+    ...overrides,
+  };
+}
+
+const jsonOk = () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+
+test("stop() during startup aborts the run loop and never polls tasks (item 6)", async () => {
+  const paths: string[] = [];
+  let workerRef: A2ABrokerWorker;
+  const fetchImpl = (async (url: URL | string) => {
+    const path = new URL(String(url)).pathname;
+    paths.push(path);
+    if (path === "/workers/register") {
+      // Simulate SIGINT/SIGTERM arriving mid-registration.
+      await workerRef.stop();
+    }
+    return jsonOk();
+  }) as unknown as typeof fetch;
+
+  workerRef = new A2ABrokerWorker(robustnessConfig(), { fetchImpl });
+
+  const runPromise = workerRef.run();
+  await Promise.race([runPromise, new Promise((r) => setTimeout(r, 200))]);
+
+  assert.ok(paths.includes("/workers/register"), "registration should have been attempted");
+  assert.ok(
+    !paths.some((p) => p.startsWith("/tasks")),
+    "a stop() during startup must prevent the worker from entering the poll loop",
+  );
+
+  await workerRef.stop();
+  await runPromise.catch(() => undefined);
+});
+
+test("broker requests abort on the request timeout instead of hanging forever (item 7)", async () => {
+  // A fetch that only settles when its abort signal fires; without a timeout
+  // signal this would hang the poll loop forever.
+  const fetchImpl = ((_url: URL | string, init?: { signal?: AbortSignal }) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted by signal")));
+    })) as unknown as typeof fetch;
+
+  const worker = new A2ABrokerWorker(robustnessConfig({ requestTimeoutMs: 50 }), { fetchImpl });
+
+  await assert.rejects(worker.register(), /aborted by signal/);
 });
