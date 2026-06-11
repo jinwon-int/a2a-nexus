@@ -220,6 +220,15 @@ keeps branch protection changes, release/tag creation, npm/GitHub Packages
 publication, Docker/GHCR publication, and canonical flip actions blocked until
 separate explicit operator approval.
 
+## Snapshot retention
+
+The `fixtures/current-state/*.json` snapshots above and their
+`check:monorepo-*` release-gate steps are governed by
+[`docs/snapshot-retention-policy.md`](snapshot-retention-policy.md), which
+defines when a superseded migration-phase snapshot may be retired and which
+terminal-state invariants must stay. Live-behavior gates are never retired
+under that policy.
+
 ## Completed Historical Gates
 
 These issues are completed and should not be treated as active blockers:
