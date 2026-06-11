@@ -726,3 +726,28 @@ describe("fixtures: swarm payload", () => {
     assert.equal(result.ok, true);
   });
 });
+
+describe("normalization gaps (a2a-nexus#575 item 19)", () => {
+  it("surfaces dropped extra targetNodes in team-assignment metadata", () => {
+    const result = normalizeA2APayload(
+      makeTeamAssignmentPayload({ targetNodes: ["worker-a", "worker-b", "worker-c"] }),
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.target.sessionKey, "worker-a");
+      assert.deepEqual(
+        (result.metadata as Record<string, unknown>).droppedTargetNodes,
+        ["worker-b", "worker-c"],
+        "extra targets must be surfaced, not dropped silently",
+      );
+    }
+  });
+
+  it("rejects a general payload that would emit an empty requester.sessionKey", () => {
+    const result = normalizeA2APayload(makeGeneralPayload({ sessionKey: "" }));
+    assert.equal(result.ok, false, "empty requester.sessionKey must not be emitted");
+    if (!result.ok) {
+      assert.equal(result.error.code, PayloadNormalizerErrorCodes.MISSING_REQUIRED_FIELD);
+    }
+  });
+});

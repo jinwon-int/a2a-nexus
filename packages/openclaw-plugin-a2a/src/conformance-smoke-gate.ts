@@ -287,9 +287,12 @@ function runSchemaConformance(): ConformanceSmokeGateReport["schemaConformance"]
   // Use inline test cases rather than a typed array to avoid
   // ts-predicate-vs-boolean friction with AJV validators.
   // Each case: {label, params, validator, method, forbiddenToken}
-  const testParams0 = { sessionKey: "" };
+  // Include a valid taskId so validation reaches the sessionKey checks
+  // instead of failing first on the missing sibling field, which skipped the
+  // intended error path entirely.
+  const testParams0 = { taskId: "task-1", sessionKey: "" };
   const testParams1 = { taskId: "task-1" };
-  const testParams2 = { sessionKey: 12345 };
+  const testParams2 = { taskId: "task-1", sessionKey: 12345 };
 
   const r0 = validateParams(testParams0, validateA2ATaskStatusParams, "a2a.task.status");
   if (r0.valid) {

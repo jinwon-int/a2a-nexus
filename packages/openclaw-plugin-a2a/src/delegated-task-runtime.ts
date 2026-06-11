@@ -1038,6 +1038,17 @@ export function createDelegatedTaskRuntime(
   const randomId = deps.randomId ?? randomUUID;
   const backgroundTasks = new Set<Promise<unknown>>();
   const recentWakeKeys = new Set<string>();
+  const MAX_RECENT_WAKE_KEYS = 256;
+
+  function recordRecentWakeKey(wakeKey: string): void {
+    recentWakeKeys.add(wakeKey);
+    while (recentWakeKeys.size > MAX_RECENT_WAKE_KEYS) {
+      const oldest = recentWakeKeys.values().next().value;
+      if (oldest === undefined) break;
+      recentWakeKeys.delete(oldest);
+    }
+  }
+
   const blockedAnnounceDeliveries = new Map<string, BlockedAnnounceDeliveryRecord>();
   const blockedAnnounceDeliveryByTaskId = new Map<string, string>();
 
@@ -1328,7 +1339,7 @@ export function createDelegatedTaskRuntime(
       state,
       onResult: async (params) => {
         if (params.result.plan.status === "scheduled") {
-          recentWakeKeys.add(params.result.plan.wakeKey);
+          recordRecentWakeKey(params.result.plan.wakeKey);
         }
         await deps.wake?.onResult?.(params);
       },
@@ -1564,10 +1575,16 @@ export function createDelegatedTaskRuntime(
       }),
     );
 
-    const fireAndForget =
+    // Same precedence as the wait-timeout computation above: an explicit
+    // constraints.timeoutSeconds wins over rawParams. Previously this was an
+    // OR, so rawParams.timeoutSeconds=0 short-circuited to fire-and-forget
+    // even when constraints asked for a synchronous wait.
+    const effectiveTimeoutSeconds =
+      normalizeFiniteNonNegativeNumber(event.task.constraints?.timeoutSeconds) ??
       normalizeFiniteNonNegativeNumber(
         (event.rawParams as Record<string, unknown> | undefined)?.timeoutSeconds,
-      ) === 0 || event.task.constraints?.timeoutSeconds === 0;
+      );
+    const fireAndForget = effectiveTimeoutSeconds === 0;
     if (fireAndForget) {
       return {
         handled: true,

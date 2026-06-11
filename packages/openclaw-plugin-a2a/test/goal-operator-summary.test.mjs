@@ -131,3 +131,17 @@ test('cross-broker projection with partial task success shows correct ratio', ()
     'partial task ratio must be visible in operator summary',
   );
 });
+
+test('succeeded count is clamped to total (a2a-nexus#575 item 21)', () => {
+  const summary = buildA2AGoalOperatorSummary({
+    goalId: 'goal-clamp',
+    title: 'clamp test',
+    summary: 'clamp test',
+    state: 'active',
+    taskTotalCount: 3,
+    taskSuccessCount: 5,
+  });
+  // Pre-fix the operator summary could render "5/3 child tasks succeeded".
+  assert.equal(summary.taskProgress.total, 3);
+  assert.equal(summary.taskProgress.succeeded, 3);
+});

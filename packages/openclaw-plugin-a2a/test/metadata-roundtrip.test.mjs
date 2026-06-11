@@ -259,3 +259,30 @@ test('status projection keeps taskInput metadata compact while preserving eviden
   assert.equal(serialized.includes('/home/alice'), false);
   assert.ok(serialized.length < 1_500, 'metadata should stay compact, got ' + serialized.length + ' bytes');
 });
+
+test('UNKNOWN mergeStateStatus maps to unknown, not conflict (a2a-nexus#575 item 15)', () => {
+  const baseTask = {
+    id: 'task-merge-unknown',
+    intent: 'github_pr',
+    status: 'running',
+    requester: { id: 'hub', kind: 'session', role: 'hub' },
+    target: { id: 'worker', kind: 'node' },
+    targetNodeId: 'worker',
+    createdAt: '2026-04-19T00:00:00Z',
+    updatedAt: '2026-04-19T00:00:00Z',
+  };
+
+  // GitHub reports UNKNOWN while mergeability is still being computed (e.g.
+  // a PR pushed moments ago). Pre-fix this rendered a false "conflict".
+  const unknown = buildGatewayTaskStatus({
+    ...baseTask,
+    payload: {
+      taskInput: {
+        mergeGate: {
+          mergeStateStatus: 'UNKNOWN',
+        },
+      },
+    },
+  });
+  assert.equal(unknown.metadata.githubMergeGate.state, 'unknown');
+});
