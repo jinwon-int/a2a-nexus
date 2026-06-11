@@ -158,6 +158,18 @@ export interface GitHubIngestionOptions {
   defaultIntent?: A2AExchangeIntent;
   /** Identity used as the requester when synthesizing tasks. */
   requesterId?: string;
+  /**
+   * Max retained delivery dedup keys. Oldest keys are evicted FIFO when
+   * exceeded; an evicted key can no longer dedup a very late redelivery,
+   * which is acceptable because lifecycle handlers are idempotent and the
+   * replay watermark still rejects stale events. Default: 10000.
+   */
+  maxSeenDeliveries?: number;
+  /**
+   * Max tracked `(repo, issue)` replay-watermark pairs. Least-recently-
+   * updated pairs are evicted when exceeded. Default: 5000.
+   */
+  maxReplayPairs?: number;
 }
 
 export type IngestionSkippedReason =
@@ -254,6 +266,8 @@ export class GitHubIngestionService {
   private readonly requesterId: string;
   private readonly seenDeliveries = new Set<string>();
   private readonly replayState = new Map<string, ReplayState>();
+  private readonly maxSeenDeliveries: number;
+  private readonly maxReplayPairs: number;
   private replayCounters = {
     totalEvents: 0,
     staleSkipped: 0,
@@ -264,6 +278,8 @@ export class GitHubIngestionService {
     this.broker = options.broker;
     this.defaultIntent = options.defaultIntent ?? "analyze";
     this.requesterId = options.requesterId ?? "github-ingestion";
+    this.maxSeenDeliveries = options.maxSeenDeliveries ?? 10_000;
+    this.maxReplayPairs = options.maxReplayPairs ?? 5_000;
   }
 
   ingest(event: GitHubWebhookEvent, ctx: GitHubDeliveryContext): IngestionResult {
@@ -294,7 +310,26 @@ export class GitHubIngestionService {
     // mid-ingest the key is not burned, so GitHub's redelivery can retry
     // instead of being silently dropped as a duplicate.
     this.seenDeliveries.add(dedupKey);
+    while (this.seenDeliveries.size > this.maxSeenDeliveries) {
+      const oldest = this.seenDeliveries.values().next().value;
+      if (oldest === undefined) break;
+      this.seenDeliveries.delete(oldest);
+    }
     return result;
+  }
+
+  /**
+   * (Re)insert a pair's replay state so Map insertion order tracks update
+   * recency, then evict the least-recently-updated pairs beyond the cap.
+   */
+  private touchReplayState(pairKey: string, state: ReplayState): void {
+    this.replayState.delete(pairKey);
+    this.replayState.set(pairKey, state);
+    while (this.replayState.size > this.maxReplayPairs) {
+      const oldestKey = this.replayState.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.replayState.delete(oldestKey);
+    }
   }
 
   private dispatchEvent(event: GitHubWebhookEvent, ctx: GitHubDeliveryContext): IngestionResult {
@@ -659,7 +694,7 @@ export class GitHubIngestionService {
     }
 
     if (!state) {
-      this.replayState.set(pairKey, {
+      this.touchReplayState(pairKey, {
         lastSeq: 1,
         lastSeenAt: ctx.receivedAt,
         lifecycleWatermark: ctx.receivedAt,
@@ -675,6 +710,7 @@ export class GitHubIngestionService {
     if (!state.lifecycleWatermark || ctx.receivedAt > state.lifecycleWatermark) {
       state.lifecycleWatermark = ctx.receivedAt;
     }
+    this.touchReplayState(pairKey, state);
     return null;
   }
 
@@ -780,7 +816,7 @@ export class GitHubIngestionService {
   private acceptEvent(pairKey: string, receivedAt: string): boolean {
     const state = this.replayState.get(pairKey);
     if (!state) {
-      this.replayState.set(pairKey, { lastSeq: 1, lastSeenAt: receivedAt });
+      this.touchReplayState(pairKey, { lastSeq: 1, lastSeenAt: receivedAt });
       this.replayCounters.totalEvents++;
       return true;
     }
@@ -793,6 +829,7 @@ export class GitHubIngestionService {
       state.lastSeenAt = receivedAt;
     }
     this.replayCounters.totalEvents++;
+    this.touchReplayState(pairKey, state);
     return true;
   }
 }

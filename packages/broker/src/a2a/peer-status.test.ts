@@ -720,3 +720,38 @@ test("PeerStatus via JSON-RPC with missing target returns error", () => {
   assert.ok("error" in result);
   if (!("error" in result)) return;
 });
+
+// ---------------------------------------------------------------------------
+// Tests: bounded cache / rate-bucket maps (a2a-nexus#573 item 14)
+// ---------------------------------------------------------------------------
+
+test("peer-status cache stays bounded under many distinct targets", () => {
+  const broker = createBroker();
+  const service = new PeerStatusService(broker);
+  const cache = (service as unknown as { cache: Map<string, unknown> }).cache;
+
+  for (let i = 0; i < 1_100; i++) {
+    const result = service.query({ target: `target-${i}` }, "caller");
+    assert.ok(isPeerStatusResponse(result), `query ${i} should compute a response`);
+  }
+
+  assert.ok(cache.size <= 1_000, `cache must stay at/below the cap, got ${cache.size}`);
+  // The most recent target survives eviction.
+  assert.ok(cache.has("target-1099"), "newest entry must be retained");
+});
+
+test("peer-status rate buckets stay bounded under many distinct callers", () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  const service = new PeerStatusService(broker);
+  const rateBuckets = (service as unknown as { rateBuckets: Map<string, unknown> }).rateBuckets;
+
+  for (let i = 0; i < 5_100; i++) {
+    service.query({ target: "worker-a" }, `caller-${i}`);
+  }
+
+  assert.ok(
+    rateBuckets.size <= 5_000,
+    `rate buckets must stay at/below the cap, got ${rateBuckets.size}`,
+  );
+});
