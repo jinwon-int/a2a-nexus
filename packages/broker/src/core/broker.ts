@@ -1975,9 +1975,12 @@ export class InMemoryA2ABroker {
       proposalId: task.proposalId,
       note: normalizedError.message,
     });
+    // writeTombstone mutates state (tombstone + audit event) without persisting,
+    // so it must run before persistState() — otherwise a crash between the two
+    // loses the tombstone until the next unrelated persist.
+    this.writeTombstone(task, "failed");
     this.persistState();
     this.emitTaskUpdate(task, "failed");
-    this.writeTombstone(task, "failed");
     return task;
   }
 
@@ -3206,7 +3209,10 @@ export class InMemoryA2ABroker {
       return;
     }
 
-    exchange.status = "failed";
+    // Cancel the in-flight task first, then mark the exchange failed. The
+    // previous code set "failed" before cancellation (a dead write that
+    // cancelActiveExchangeTask immediately overwrote) and only re-applied it
+    // afterward. addExchangeMessage persists this final "failed" status.
     this.cancelActiveExchangeTask(exchange, `decision=${message.decision}`);
     exchange.status = "failed";
   }
@@ -3316,9 +3322,11 @@ export class InMemoryA2ABroker {
       proposalId: task.proposalId,
       note: params.reason,
     });
+    // Tombstone before persist so a crash between the two cannot lose it
+    // (writeTombstone mutates state but does not persist on its own).
+    this.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
     this.persistState();
     this.emitTaskUpdate(task, "canceled");
-    this.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
     return task;
   }
 
