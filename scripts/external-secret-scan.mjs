@@ -8,9 +8,10 @@ function hasCommand(command) {
 
 function isAllowedGitleaksFinding(finding) {
   const file = String(finding.File ?? finding.file ?? '');
-  const secret = String(finding.Secret ?? finding.secret ?? '');
 
-  if (secret === 'REDACTED') return true;
+  // NOTE: never allowlist on the Secret field — the scan runs with --redact,
+  // which rewrites every finding's Secret to "REDACTED", so a secret-based
+  // allowlist would accept every finding and neutralize the gate.
   if (/(^|\/)dist\//.test(file)) return true;
   if (/(^|\/)(?:test|tests|__tests__)\//.test(file)) return true;
   if (/\.(?:test|spec)\.(?:ts|mts|cts|js|mjs|cjs)$/.test(file)) return true;
@@ -61,7 +62,7 @@ function runGitleaks() {
     process.exit(1);
   }
 
-  console.log(`gitleaks ok: ${findings.length} finding(s), ${findings.length - disallowed.length} allowlisted synthetic finding(s)`);
+  console.log(`gitleaks ok: ${findings.length} finding(s), ${findings.length - disallowed.length} allowlisted test/dist finding(s)`);
 }
 
 function runTrufflehog() {

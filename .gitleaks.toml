@@ -15,3 +15,11 @@ paths = [
   '''\.test\.(ts|js|mjs)$''',
   '''(^|/)tests/'''
 ]
+
+[[allowlists]]
+description = "Known false positives: scenario/status string-literal constants flagged by generic-api-key entropy (wake-proof scenario codes like S1_PRECONDITION, and the grantEvidenceAccepted= label), not credentials. Kept narrow on purpose — do not broaden to all uppercase-underscore strings."
+regexTarget = "secret"
+regexes = [
+  '''^S[0-9]+_[A-Z0-9]+(?:_[A-Z0-9]+)*$''',
+  '''^grantEvidenceAccepted=$'''
+]

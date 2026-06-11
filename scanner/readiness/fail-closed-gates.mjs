@@ -94,7 +94,17 @@ function validateSpec(spec) {
 function evaluateInput(spec, input) {
   const blockers = [];
   const gateStatuses = input.gates && typeof input.gates === 'object' ? input.gates : {};
-  const decision = String(input.decision || spec.defaultDecision || 'NO-GO').toUpperCase();
+  const decision = String(input.decision || spec.defaultDecision || 'NO-GO').trim().toUpperCase();
+
+  if (decision !== 'GO' && decision !== 'NO-GO') {
+    // Fail closed on malformed decisions: every evidence check below is keyed
+    // on an exact 'GO' match, so an unrecognized value must never sail through.
+    return {
+      ok: false,
+      decision,
+      blockers: [`decision: unrecognized value ${JSON.stringify(input.decision)} (expected GO or NO-GO)`],
+    };
+  }
 
   for (const id of spec.goDecisionRequires || []) {
     const gate = gateStatuses[id];

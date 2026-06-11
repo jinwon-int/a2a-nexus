@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { loadavg, cpus } from "node:os";
+import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
 import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
@@ -19,6 +20,7 @@ import {
 import {
   applyRateLimitHeaders,
   assertEdgeSecret,
+  assertGitHubWebhookSignature,
   assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
   assertRequesterCanTouchProposalArtifacts,
@@ -661,7 +663,6 @@ let _eventLoopDelayHistogram: ReturnType<typeof import("node:perf_hooks").monito
 function _initEventLoopHistogram(): void {
   if (_eventLoopDelayHistogram) return;
   try {
-    const { monitorEventLoopDelay } = require("node:perf_hooks") as typeof import("node:perf_hooks");
     _eventLoopDelayHistogram = monitorEventLoopDelay({ resolution: 20 });
     _eventLoopDelayHistogram.enable();
   } catch {
@@ -703,7 +704,6 @@ function _initGcObserver(): void {
   if (_gcObserverInitialized) return;
   _gcObserverInitialized = true;
   try {
-    const { PerformanceObserver } = require("node:perf_hooks") as typeof import("node:perf_hooks");
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         const durMs = entry.duration;
@@ -2504,6 +2504,11 @@ export interface BrokerServerOptions {
   workerRateLimitMaxRequests?: number;
   enforceRequesterIdentity?: boolean;
   edgeSecret?: string;
+  /**
+   * Shared secret for GitHub webhook deliveries. When set, POST /github/webhook
+   * requires a valid X-Hub-Signature-256 header (HMAC-SHA256 of the raw body).
+   */
+  githubWebhookSecret?: string;
   agentCard?: AgentCard;
   stateStore?: BrokerStateStore;
   broker?: InMemoryA2ABroker;
@@ -2628,6 +2633,7 @@ export interface BrokerServerRuntime {
     workerRateLimitMaxRequests: number;
     enforceRequesterIdentity: boolean;
     edgeSecret?: string;
+    githubWebhookSecret?: string;
     retentionPolicy: BrokerRetentionPolicy;
     maxSnapshotBytes: number;
     maxHotRuntimeNonTerminalTasks: number;
@@ -2685,6 +2691,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const enforceRequesterIdentity =
     options.enforceRequesterIdentity ?? process.env.ENFORCE_REQUESTER_IDENTITY !== "0";
   const edgeSecret = options.edgeSecret ?? process.env.EDGE_SECRET ?? process.env.A2A_EDGE_SECRET;
+  const githubWebhookSecret = firstNonEmpty(
+    options.githubWebhookSecret,
+    process.env.GITHUB_WEBHOOK_SECRET,
+    process.env.A2A_GITHUB_WEBHOOK_SECRET,
+  );
   const trustedProxy = options.trustedProxy ?? process.env.TRUSTED_PROXY === "1";
   const retentionPolicy = resolveBrokerRetentionPolicy(options.retentionPolicy);
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
@@ -5432,7 +5443,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           throw new BrokerError("bad_request", validationError);
         }
 
-        const body = await readJson<Record<string, unknown>>(req);
+        const rawBody = await readRawBody(req);
+        assertGitHubWebhookSignature(
+          rawBody,
+          req.headers["x-hub-signature-256"] as string | undefined,
+          githubWebhookSecret,
+        );
+        let body: Record<string, unknown> | null = null;
+        if (rawBody.length > 0) {
+          try {
+            body = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
+          } catch {
+            throw new BrokerError("bad_request", "invalid JSON body");
+          }
+        }
         const parsed = parseGitHubWebhook(
           req.headers["x-github-event"] as string,
           req.headers["x-github-delivery"] as string,
@@ -6137,19 +6161,38 @@ if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {
   startBrokerServer();
 }
 
-async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
+/**
+ * Resolve the first non-empty (after trimming) value from a precedence list.
+ *
+ * Plain `a ?? b` treats an empty string as "set", so a blank primary env var
+ * (GITHUB_WEBHOOK_SECRET=) would shadow a configured compatibility alias
+ * (A2A_GITHUB_WEBHOOK_SECRET=secret) and silently disable signature
+ * verification — a fail-open. Trimming and skipping blanks closes that gap.
+ */
+export function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
+  return Buffer.concat(chunks);
+}
 
-  if (chunks.length === 0) {
+async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
+  const raw = await readRawBody(req);
+  if (raw.length === 0) {
     return null;
   }
 
-  const raw = Buffer.concat(chunks).toString("utf8");
   try {
-    return JSON.parse(raw) as T;
+    return JSON.parse(raw.toString("utf8")) as T;
   } catch {
     throw new BrokerError("bad_request", "invalid JSON body");
   }

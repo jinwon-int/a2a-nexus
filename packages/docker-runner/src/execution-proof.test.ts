@@ -27,6 +27,32 @@ test("sha256Json produces deterministic output for same input", () => {
   assert.equal(a, b, "Key order must not affect digest");
 });
 
+test("sha256Json binds nested object fields", () => {
+  // Regression: a sorted-keys array passed as the JSON.stringify replacer is a
+  // recursive property allow-list, which silently dropped every nested key and
+  // made digests collide for tasks differing only in nested fields.
+  const taskA = {
+    id: "t1",
+    repos: [{ url: "https://github.com/o/repo-a", branch: "main" }],
+    env: { TOKEN_SOURCE: "a" },
+  };
+  const taskB = {
+    id: "t1",
+    repos: [{ url: "https://github.com/o/repo-b", branch: "main" }],
+    env: { TOKEN_SOURCE: "b" },
+  };
+
+  assert.notEqual(
+    sha256Json(taskA),
+    sha256Json(taskB),
+    "digests must differ when only nested fields differ",
+  );
+
+  const nestedA = sha256Json({ outer: { x: 1, y: 2 } });
+  const nestedB = sha256Json({ outer: { y: 2, x: 1 } });
+  assert.equal(nestedA, nestedB, "nested key order must not affect digest");
+});
+
 test("sha256Text produces consistent hashes", () => {
   const h1 = sha256Text("hello");
   const h2 = sha256Text("hello");
@@ -247,4 +273,23 @@ test("verifyExecutionProof succeeds with expanded task", () => {
 
   const verification = verifyExecutionProof(proof, task, expanded, result.stdout, result.stderr);
   assert.ok(verification.valid);
+});
+
+test("buildExecutionProof stamps the canonicalization algorithm", () => {
+  const proof = buildExecutionProof({ task: BASE_TASK, result: BASE_RESULT, runToken: "canon-1" });
+  assert.equal(proof.canonicalization, "stable-json-recursive-v2");
+});
+
+test("verifyExecutionProof rejects a legacy proof without canonicalization", () => {
+  const task = BASE_TASK;
+  const result = { ...BASE_RESULT, stdout: "hello\n", stderr: "" };
+  const proof = buildExecutionProof({ task, result, runToken: "legacy-1" });
+
+  // Simulate a proof produced before the digest fix (no canonicalization field).
+  const legacy = { ...proof };
+  delete (legacy as { canonicalization?: string }).canonicalization;
+
+  const verification = verifyExecutionProof(legacy, task, undefined, result.stdout, result.stderr);
+  assert.equal(verification.valid, false);
+  assert.match((verification as { reason: string }).reason, /canonicalization mismatch/);
 });
