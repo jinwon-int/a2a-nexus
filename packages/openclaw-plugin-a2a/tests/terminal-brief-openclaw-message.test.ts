@@ -50,7 +50,7 @@ function runNotifier(openclawResult: unknown, args: string[] = []) {
       "--channel",
       "telegram",
       "--target",
-      "telegram:7360371189",
+      "telegram:1000000001",
       ...args,
     ], {
       cwd: process.cwd(),
@@ -76,7 +76,7 @@ describe("Terminal Brief OpenClaw message notifier", () => {
       action: "send",
       channel: "telegram",
       handledBy: "core",
-      payload: { to: "telegram:7360371189" },
+      payload: { to: "telegram:1000000001" },
       result: {
         messageId: "telegram-message-1",
         confirmation: { source: "current_session_visible" },
@@ -93,7 +93,7 @@ describe("Terminal Brief OpenClaw message notifier", () => {
       "--channel",
       "telegram",
       "--target",
-      "telegram:7360371189",
+      "telegram:1000000001",
     ]);
     assert.ok(result.openclawArgs.includes("A2A Terminal Brief 완료: sogyo(1/1)\nsummary"));
   });
@@ -103,7 +103,7 @@ describe("Terminal Brief OpenClaw message notifier", () => {
       action: "send",
       channel: "telegram",
       handledBy: "core",
-      payload: { to: "telegram:7360371189" },
+      payload: { to: "telegram:1000000001" },
       result: { messageId: "telegram-message-2", status: "sent" },
     });
 

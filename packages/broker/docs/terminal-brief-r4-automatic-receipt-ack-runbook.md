@@ -14,7 +14,7 @@ Keep these states separate in every report, PR, and issue comment:
 | --- | --- | --- |
 | Provider send / `provider_accepted` | Telegram/OpenClaw accepted the outbound send request, or the adapter returned send success. | **No.** This is not operator-visible receipt. |
 | Current-session visible / `operator_visible` | The Terminal Brief is rendered in the operator's current session or otherwise has bounded operator-visible proof. | **Yes, if linked to the exact outbox/task id.** |
-| Manual operator confirmation / `operator_confirmed` | An operator explicitly confirms the same Terminal Brief was visible, for example the seoseo proof receipt `telegram:7360371189:message:47146`. | **Yes, after explicit approval for that ACK.** |
+| Manual operator confirmation / `operator_confirmed` | An operator explicitly confirms the same Terminal Brief was visible, for example the seoseo proof receipt `telegram:<operator-chat-id>:message:47146`. | **Yes, after explicit approval for that ACK.** |
 | Terminal ACK / `receipt_confirmed` | The broker terminal-outbox row is acknowledged with receipt evidence. | Final state; must never be inferred from provider send alone. |
 
 ## R4 child lanes and dependencies

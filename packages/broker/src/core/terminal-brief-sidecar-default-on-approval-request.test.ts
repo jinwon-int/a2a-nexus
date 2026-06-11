@@ -25,7 +25,7 @@ function finalGate(overrides: Partial<TerminalBriefSidecarDefaultOnCandidateFina
       observationKind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
       observationState: "bounded_dry_run_observation_passed",
       observationGeneratedAt: NOW,
-      operatorInstructionReference: "telegram:7360371189:53345",
+      operatorInstructionReference: "telegram:1000000001:53345",
       windowSeconds: 300,
       minObservationSeconds: 300,
     },
@@ -98,7 +98,7 @@ test("default-on approval request draft becomes ready without sending or enablin
     now: NOW,
     requestedBy: "broker-finalizer",
     operatorTarget: "operator-a",
-    operatorChannel: "telegram:7360371189",
+    operatorChannel: "telegram:1000000001",
   });
 
   assert.equal(packet.kind, "a2a-broker.terminal-brief-sidecar-default-on-approval-request.packet");
