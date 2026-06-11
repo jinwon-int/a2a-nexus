@@ -106,7 +106,10 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
     canonicalization: PROOF_CANONICALIZATION,
     taskId: result.taskId,
     runToken,
-    generatedAt: now ?? new Date().toISOString().replace("Z", ".000Z"),
+    // toISOString() already emits milliseconds and a trailing "Z"
+    // (e.g. 2026-06-11T00:00:00.000Z); appending ".000Z" produced an invalid
+    // "...00.000.000Z" that parsed as Invalid Date.
+    generatedAt: now ?? new Date().toISOString(),
     inputDigest,
     expandedDigest,
     outputDigest,

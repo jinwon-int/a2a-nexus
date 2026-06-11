@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildStartCommentBody, collectGitHubEvidence } from "./github-evidence.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildBlockCommentBody, buildCommentLedger, buildDoneCommentBody, buildStartCommentBody, collectGitHubEvidence, postStartComment } from "./github-evidence.js";
 import type { NormalizedRunnerTask, RunnerConfig } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -1043,4 +1046,52 @@ test("collectGitHubEvidence produces undefined parent round fields when absent",
   assert.equal(evidence?.parentRoundProgress, undefined);
   assert.equal(evidence?.brokerOfRecordId, undefined);
   assert.equal(evidence?.policyContext, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// postStartComment idempotency: dedupe marker must include the run key
+// (a2a-nexus#574 item 5) — otherwise the bare prefix matches every prior
+// run's Start comment and only the first run on an issue ever posts.
+// ---------------------------------------------------------------------------
+
+test("postStartComment dedupes per run, not per issue", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-gh-token-"));
+  const tokenFile = join(dir, "hosts.yml");
+  writeFileSync(tokenFile, "oauth_token: test-token\n");
+  const config = { githubTokenFile: tokenFile } as RunnerConfig;
+
+  const issueUrl = "https://github.com/jinwon-int/test-repo/issues/7";
+  // An existing Start comment from a previous run ("run-1").
+  const existingComment = {
+    html_url: "https://github.com/jinwon-int/test-repo/issues/7#issuecomment-111",
+    body: "Start round\n<!-- a2a-runner-start-comment:idem-task-run-1 -->",
+  };
+
+  const realFetch = globalThis.fetch;
+  let postCount = 0;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "GET") {
+      return new Response(JSON.stringify([existingComment]), { status: 200 });
+    }
+    postCount += 1;
+    return new Response(
+      JSON.stringify({ html_url: "https://github.com/jinwon-int/test-repo/issues/7#issuecomment-222" }),
+      { status: 201 },
+    );
+  }) as typeof globalThis.fetch;
+
+  try {
+    // A different run ("run-2") must NOT match run-1's comment — it posts anew.
+    const run2 = await postStartComment(config, { ...baseTask, id: "idem-task", issueUrl, runId: "run-2" } as NormalizedRunnerTask);
+    assert.equal(run2?.url, "https://github.com/jinwon-int/test-repo/issues/7#issuecomment-222", "run-2 should post a fresh Start comment");
+    assert.equal(postCount, 1, "run-2 must not be deduped against a different run's comment");
+
+    // The same run ("run-1") must dedupe against the existing comment — no post.
+    const run1 = await postStartComment(config, { ...baseTask, id: "idem-task", issueUrl, runId: "run-1" } as NormalizedRunnerTask);
+    assert.equal(run1?.url, existingComment.html_url, "run-1 should reuse its own existing Start comment");
+    assert.equal(postCount, 1, "run-1 must not post a duplicate");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
