@@ -1,8 +1,9 @@
 # plugin-a2a
 
-[![ci](https://github.com/jinwon-int/plugin-a2a/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/plugin-a2a/actions/workflows/ci.yml)
+[![ci](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml)
 
-Standalone A2A broker adapter plugin repo.
+A2A broker adapter plugin, developed in the `jinwon-int/a2a-nexus` monorepo
+under `packages/openclaw-plugin-a2a`.
 
 > Public-readiness note: this package is intentionally marked `private` and
 > should be treated as an unpublished/private-candidate plugin until the exact

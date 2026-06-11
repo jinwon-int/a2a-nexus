@@ -143,23 +143,6 @@ test('local quickstart task fixture is no-live and targets echo worker', async (
   assert.strictEqual(task.payload?.replaySafe, true);
 });
 
-// ── Package CI workflow validation ──────────────────────────────────────────
-
-const packageCiPaths = [
-  'packages/broker/.github/workflows/ci.yml',
-  'packages/docker-runner/.github/workflows/ci.yml',
-  'packages/openclaw-plugin-a2a/.github/workflows/ci.yml',
-];
-
-for (const ciPath of packageCiPaths) {
-  test(`${ciPath} exists and follows CI conventions`, async () => {
-    const content = await readFile(join(repoRoot, ciPath), 'utf8');
-    assert.match(content, /actions\/checkout/);
-    assert.match(content, /actions\/setup-node/);
-    assert.match(content, /npm (ci|test|run check)/);
-  });
-}
-
 // ── Root CI workflow validation ─────────────────────────────────────────────
 
 test('root CI workflow runs quickstart conformance', async () => {

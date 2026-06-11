@@ -318,12 +318,6 @@
         }
       },
       "noDuplicateSend": {
-        "uiHints": {
-          "enabled": {
-            "label": "No-Duplicate-Send Gate",
-            "help": "Hardened gate: blocks duplicate broker task creation from replay-prone callsites. Defaults to enabled (fail-closed)."
-          }
-        },
         "type": "object",
         "additionalProperties": false,
         "properties": {
