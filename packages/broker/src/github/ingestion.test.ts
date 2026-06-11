@@ -938,3 +938,68 @@ describe("GitHubIngestionService — batch dedup and PR actions (a2a-nexus#573)"
     assert.equal(broker.listTasks({}).length, 0, "synchronize must not re-run the assign flow");
   });
 });
+
+describe("GitHubIngestionService — bounded dedup and replay maps (a2a-nexus#573 item 14)", () => {
+  it("evicts the oldest delivery dedup keys beyond maxSeenDeliveries", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker, maxSeenDeliveries: 3 });
+
+    // Same pair, strictly increasing timestamps so nothing is replay-skipped.
+    for (let i = 1; i <= 5; i++) {
+      ingestion.ingest(
+        makeIssueEvent({ action: "edited" }),
+        makeContext(`d-${i}`, `2026-04-26T12:00:0${i}Z`),
+      );
+    }
+
+    // The two oldest keys were evicted, so replaying d-1 is no longer deduped
+    // (it is replay-skipped by the watermark instead — still not reprocessed).
+    const replayOldest = ingestion.ingest(
+      makeIssueEvent({ action: "edited" }),
+      makeContext("d-1", "2026-04-26T12:00:01Z"),
+    );
+    assert.equal(replayOldest.deduped, false, "evicted key must not dedup");
+    assert.equal(replayOldest.replaySkipped, true, "watermark still rejects the stale replay");
+
+    // The newest key is still present and dedups.
+    const replayNewest = ingestion.ingest(
+      makeIssueEvent({ action: "edited" }),
+      makeContext("d-5", "2026-04-26T12:00:05Z"),
+    );
+    assert.equal(replayNewest.deduped, true, "retained key must still dedup");
+  });
+
+  it("evicts the least-recently-updated replay pairs beyond maxReplayPairs", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker, maxReplayPairs: 2 });
+
+    const issueA = makeIssue({ number: 101 });
+    const issueB = makeIssue({ number: 102 });
+    const issueC = makeIssue({ number: 103 });
+
+    ingestion.ingest(makeIssueEvent({ issue: issueA, action: "edited" }), makeContext("p-a", "2026-04-26T12:00:01Z"));
+    ingestion.ingest(makeIssueEvent({ issue: issueB, action: "edited" }), makeContext("p-b", "2026-04-26T12:00:02Z"));
+    // Touch A so B becomes the least-recently-updated pair.
+    ingestion.ingest(makeIssueEvent({ issue: issueA, action: "edited" }), makeContext("p-a2", "2026-04-26T12:00:03Z"));
+    // Inserting C must evict B, not A.
+    ingestion.ingest(makeIssueEvent({ issue: issueC, action: "edited" }), makeContext("p-c", "2026-04-26T12:00:04Z"));
+
+    assert.equal(ingestion.getReplayStats().trackedPairs, 2, "pair map must stay at the cap");
+
+    // A's watermark survives: an older A event is still rejected as stale.
+    const staleA = ingestion.ingest(
+      makeIssueEvent({ issue: issueA, action: "edited" }),
+      makeContext("p-a-old", "2026-04-26T12:00:00Z"),
+    );
+    assert.equal(staleA.replaySkipped, true, "recently-updated pair keeps its watermark");
+
+    // B's watermark was evicted: an older B event is accepted fresh.
+    const staleB = ingestion.ingest(
+      makeIssueEvent({ issue: issueB, action: "edited" }),
+      makeContext("p-b-old", "2026-04-26T12:00:00Z"),
+    );
+    assert.equal(staleB.replaySkipped, false, "evicted pair restarts its watermark");
+  });
+});
