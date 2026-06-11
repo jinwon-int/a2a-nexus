@@ -253,3 +253,66 @@ test("parseGitHubWebhook parses a pull_request/ready_for_review event (a2a-nexus
 
   assert.ok(result !== null, "ready_for_review is a valid PR action and must parse");
 });
+
+// ---------------------------------------------------------------------------
+// Payload-timestamp extraction (a2a-nexus#573 item 18)
+// ---------------------------------------------------------------------------
+
+const watermarkRepo = {
+  owner: { login: "o" },
+  name: "r",
+  full_name: "o/r",
+};
+
+const watermarkIssue = {
+  number: 9,
+  title: "Watermark issue",
+  html_url: "https://github.com/o/r/issues/9",
+  state: "open",
+};
+
+test("parseGitHubWebhook extracts a normalized payload timestamp from issues events", () => {
+  const result = parseGitHubWebhook("issues", "w1", {
+    action: "edited",
+    repository: watermarkRepo,
+    issue: { ...watermarkIssue, updated_at: "2026-04-26T12:00:01Z" },
+    sender: { login: "u", id: 1 },
+  });
+
+  assert.ok(result !== null);
+  assert.equal(
+    result.ctx.payloadTimestamp,
+    "2026-04-26T12:00:01.000Z",
+    "payload updated_at must be normalized to millisecond ISO",
+  );
+});
+
+test("parseGitHubWebhook extracts the comment timestamp from comment events", () => {
+  const result = parseGitHubWebhook("issue_comment", "w2", {
+    action: "created",
+    repository: watermarkRepo,
+    issue: watermarkIssue,
+    comment: {
+      id: 1,
+      body: "hello",
+      html_url: "https://github.com/o/r/issues/9#issuecomment-1",
+      created_at: "2026-04-26T12:00:02Z",
+    },
+    sender: { login: "u", id: 1 },
+  });
+
+  assert.ok(result !== null);
+  assert.equal(result.ctx.payloadTimestamp, "2026-04-26T12:00:02.000Z");
+});
+
+test("parseGitHubWebhook omits payloadTimestamp when the payload has no usable timestamp", () => {
+  const result = parseGitHubWebhook("issues", "w3", {
+    action: "edited",
+    repository: watermarkRepo,
+    issue: { ...watermarkIssue, updated_at: "not-a-date" },
+    sender: { login: "u", id: 1 },
+  });
+
+  assert.ok(result !== null);
+  assert.equal(result.ctx.payloadTimestamp, undefined);
+});

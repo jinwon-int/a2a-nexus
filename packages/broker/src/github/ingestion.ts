@@ -221,9 +221,9 @@ export interface IngestionResult {
 interface ReplayState {
   /** Monotonic counter of accepted events for a `(repo, issue)` pair. */
   lastSeq: number;
-  /** Delivery `receivedAt` of the last accepted event for the pair. */
+  /** Watermark timestamp (payload `updated_at` when available, else delivery `receivedAt`) of the last accepted event. */
   lastSeenAt: string;
-  /** Delivery `receivedAt` of the last accepted lifecycle event. */
+  /** Watermark timestamp of the last accepted lifecycle event. */
   lifecycleWatermark?: string;
 }
 
@@ -248,6 +248,18 @@ const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
 
 function isTerminal(status: TaskStatus): boolean {
   return TERMINAL_STATUSES.has(status);
+}
+
+/**
+ * Watermark timestamp for an event: the payload's own modification time when
+ * the parser extracted one, else the broker arrival time. Arrival time always
+ * moves forward, so without the payload timestamp an out-of-order redelivery
+ * of an older event always passed the watermark (a2a-nexus#573 item 18).
+ * Sources that do not populate payloadTimestamp (e.g. the poller) keep the
+ * previous arrival-time behavior.
+ */
+function eventTimestamp(ctx: GitHubDeliveryContext): string {
+  return ctx.payloadTimestamp ?? ctx.receivedAt;
 }
 
 function emptyResult(overrides: Partial<IngestionResult> = {}): IngestionResult {
@@ -295,7 +307,7 @@ export class GitHubIngestionService {
 
     const pair = pairKeyForEvent(event);
     if (pair) {
-      const accepted = this.acceptEvent(pair, ctx.receivedAt);
+      const accepted = this.acceptEvent(pair, eventTimestamp(ctx));
       if (!accepted) {
         return emptyResult({
           replaySkipped: true,
@@ -668,7 +680,7 @@ export class GitHubIngestionService {
    * Returns a result when the event should be short-circuited as stale;
    * returns `null` when the caller should proceed with the transition.
    *
-   * Re-entry from `ingest()` is detected by `lastSeenAt === receivedAt`
+   * Re-entry from `ingest()` is detected by `lastSeenAt === eventTimestamp(ctx)`
    * (the outer dispatch already advanced state to this same timestamp) and
    * does not double-advance the pair counter.
    */
@@ -679,16 +691,17 @@ export class GitHubIngestionService {
   ): IngestionResult | null {
     const pairKey = makePairKey(repo, issueNumber);
     const state = this.replayState.get(pairKey);
+    const eventAt = eventTimestamp(ctx);
 
     // Lifecycle watermark check first so a stale lifecycle event never
     // double-increments counters via the pair-watermark path.
-    if (state?.lifecycleWatermark && ctx.receivedAt < state.lifecycleWatermark) {
+    if (state?.lifecycleWatermark && eventAt < state.lifecycleWatermark) {
       this.replayCounters.staleSkipped++;
       return emptyResult({ replaySkipped: true, skippedReason: "stale_lifecycle" });
     }
 
-    const isReentry = !!state && ctx.receivedAt === state.lastSeenAt;
-    if (state && !isReentry && ctx.receivedAt < state.lastSeenAt) {
+    const isReentry = !!state && eventAt === state.lastSeenAt;
+    if (state && !isReentry && eventAt < state.lastSeenAt) {
       this.replayCounters.staleSkipped++;
       return emptyResult({ replaySkipped: true, skippedReason: "stale_lifecycle" });
     }
@@ -696,19 +709,19 @@ export class GitHubIngestionService {
     if (!state) {
       this.touchReplayState(pairKey, {
         lastSeq: 1,
-        lastSeenAt: ctx.receivedAt,
-        lifecycleWatermark: ctx.receivedAt,
+        lastSeenAt: eventAt,
+        lifecycleWatermark: eventAt,
       });
       this.replayCounters.totalEvents++;
       return null;
     }
     if (!isReentry) {
       state.lastSeq++;
-      state.lastSeenAt = ctx.receivedAt;
+      state.lastSeenAt = eventAt;
       this.replayCounters.totalEvents++;
     }
-    if (!state.lifecycleWatermark || ctx.receivedAt > state.lifecycleWatermark) {
-      state.lifecycleWatermark = ctx.receivedAt;
+    if (!state.lifecycleWatermark || eventAt > state.lifecycleWatermark) {
+      state.lifecycleWatermark = eventAt;
     }
     this.touchReplayState(pairKey, state);
     return null;
