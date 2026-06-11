@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
-import { spawn } from "node:child_process";
 import { normalizeTask } from "./task-normalizer.js";
 import { collectGitHubEvidence } from "./github-evidence.js";
 import { sanitizeSourcePublicExecutionPreflight } from "./source-public-preflight.js";
@@ -953,7 +952,7 @@ export function jsonArgvToScript(json: string): string {
     const msg = err instanceof Error ? err.message : String(err);
     return `#!/usr/bin/env bash
 set -euo pipefail
-printf 'error=json_parse_failed: %s\\n' >&2 "${shellQuote(msg)}"
+printf 'error=json_parse_failed: %s\\n' >&2 ${shellQuote(msg)}
 exit 2
 `;
   }
@@ -1600,42 +1599,6 @@ interface SpawnResult {
   elapsedMs?: number;
 }
 
-function spawnWithTimeout(command: string, args: string[], timeoutMs: number): Promise<SpawnResult> {
-  const startMs = Date.now();
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 5000).unref();
-    }, timeoutMs);
-    timer.unref();
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", (error: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
-      resolvePromise({
-        code: null,
-        signal: null,
-        stdout: "",
-        stderr: redactSecrets(error.message),
-        timedOut,
-        errorCode: error.code,
-        elapsedMs: Date.now() - startMs,
-      });
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      resolvePromise({ code, signal, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr), timedOut, elapsedMs: Date.now() - startMs });
-    });
-  });
-}
-
 async function listArtifacts(workDir: string): Promise<string[]> {
   const dir = join(workDir, "artifacts");
   try {
@@ -1664,6 +1627,9 @@ export function shouldTreatDetectedPrUrlAsCanonical(
   return !(task.allowNoChanges || task.readOnlyValidation);
 }
 
-function extractPrUrl(stdout: string): string | undefined {
-  return stdout.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/)?.[0];
+export function extractPrUrl(stdout: string): string | undefined {
+  // owner/repo are single path segments — using [^\s]+ for them let the match
+  // greedily span two adjacent URLs and capture a wrong PR, which drives the
+  // non-zero-exit -> success recovery and can flip a failed run to "completed".
+  return stdout.match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/)?.[0];
 }
