@@ -38,21 +38,23 @@ anywhere.
 ```bash
 # one-time setup
 git clone https://github.com/a2aproject/a2a-tck
-cd a2a-tck && pip install -e . && cd -
+cd a2a-tck
+uv venv
+. .venv/bin/activate
+uv pip install -e .
+cd -
 
-# run the mandatory category against a fresh local broker
+# run MUST-level JSON-RPC conformance against a fresh local broker
 cd packages/broker
-A2A_TCK_DIR=/path/to/a2a-tck npm run tck:run -- --category mandatory
+A2A_TCK_DIR=/path/to/a2a-tck npm run tck:run -- --level must --transport jsonrpc
 ```
 
-Categories (per the TCK):
+Requirement levels and transports (per the TCK):
 
-| Category | Meaning |
-| --- | --- |
-| `mandatory` | A2A compliance validation (MUST requirements) |
-| `capabilities` | Conditional-mandatory based on agent-card declarations |
-| `quality` | Production-readiness checks |
-| `features` | Optional behaviors |
+| Flag | Values | Meaning |
+| --- | --- | --- |
+| `--level` | `must`, `should`, `may` | RFC 2119 requirement level to run |
+| `--transport` | `jsonrpc`, `grpc`, `http_json` | Transport filter; this broker currently uses JSON-RPC |
 
 Reports are written by the TCK into its own output directory; attach the
 JSON/HTML report to the round evidence when citing compliance numbers.

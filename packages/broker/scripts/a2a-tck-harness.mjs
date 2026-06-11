@@ -17,11 +17,11 @@
  *     Boot the broker, verify the agent card + JSON-RPC surface respond,
  *     and exit. No Python required; safe anywhere.
  *
- *   A2A_TCK_DIR=/path/to/a2a-tck node scripts/a2a-tck-harness.mjs [--category mandatory]
+ *   A2A_TCK_DIR=/path/to/a2a-tck node scripts/a2a-tck-harness.mjs [--level must] [--transport jsonrpc]
  *     Boot the broker and invoke the TCK from a local clone:
  *       git clone https://github.com/a2aproject/a2a-tck
- *       cd a2a-tck && pip install -e .
- *     The TCK's run_tck.py is executed with --sut-url pointed at the local
+ *       cd a2a-tck && uv venv && . .venv/bin/activate && uv pip install -e .
+ *     The TCK's run_tck.py is executed with --sut-host pointed at the local
  *     broker. Reports land in the TCK's report output directory.
  *
  * Safety: loopback only, ephemeral state, no live sends, no deploy, no ACK.
@@ -29,32 +29,48 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const selfCheck = args.includes("--self-check");
-const categoryIndex = args.indexOf("--category");
-const category = categoryIndex >= 0 ? args[categoryIndex + 1] : "mandatory";
+const levelIndex = args.indexOf("--level");
+const level = levelIndex >= 0 ? args[levelIndex + 1] : "must";
+const transportIndex = args.indexOf("--transport");
+const transport = transportIndex >= 0 ? args[transportIndex + 1] : "jsonrpc";
 
 const { createBrokerServer } = await import("../dist/server.js");
 const { mkdtempSync } = await import("node:fs");
 const { tmpdir } = await import("node:os");
 
+async function reserveLoopbackPort() {
+  const probe = createNetServer();
+  probe.listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const address = probe.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise((resolve) => probe.close(resolve));
+  if (!port) {
+    throw new Error("failed to reserve a loopback port for the TCK harness");
+  }
+  return port;
+}
+
 // Ephemeral state file so the run never touches real broker state.
 const stateDir = mkdtempSync(join(tmpdir(), "a2a-tck-state-"));
+const port = await reserveLoopbackPort();
+const baseUrl = `http://127.0.0.1:${port}`;
 const runtime = createBrokerServer({
   host: "127.0.0.1",
-  port: 0,
+  port,
   stateFile: join(stateDir, "state.json"),
-  publicBaseUrl: "http://127.0.0.1:0/",
+  publicBaseUrl: baseUrl,
   // TCK clients do not send broker requester-identity headers.
   enforceRequesterIdentity: false,
   staleReaperEnabled: false,
 });
-runtime.server.listen(0, "127.0.0.1");
+runtime.server.listen(port, "127.0.0.1");
 await once(runtime.server, "listening");
-const address = runtime.server.address();
-const baseUrl = `http://127.0.0.1:${address.port}`;
 console.log(`[tck-harness] broker listening at ${baseUrl} (loopback, ephemeral)`);
 
 async function shutdown(code) {
@@ -72,6 +88,10 @@ if (cardRes.status !== 200) {
   await shutdown(1);
 }
 const card = await cardRes.json();
+if (JSON.stringify(card).includes("127.0.0.1:0")) {
+  console.error("[tck-harness] agent card contains unresolved port 0 URL");
+  await shutdown(1);
+}
 console.log(`[tck-harness] agent card ok: ${card.name} (protocolVersion ${card.protocolVersion})`);
 
 const rpcRes = await fetch(`${baseUrl}/a2a/jsonrpc`, {
@@ -96,8 +116,8 @@ if (!tckDir) {
   console.error(
     "[tck-harness] A2A_TCK_DIR is not set.\n" +
       "  git clone https://github.com/a2aproject/a2a-tck\n" +
-      "  cd a2a-tck && pip install -e .\n" +
-      "  A2A_TCK_DIR=$(pwd) node scripts/a2a-tck-harness.mjs --category mandatory",
+      "  cd a2a-tck && uv venv && . .venv/bin/activate && uv pip install -e .\n" +
+      "  A2A_TCK_DIR=$(pwd) node scripts/a2a-tck-harness.mjs --level must --transport jsonrpc",
   );
   await shutdown(2);
 }
@@ -107,8 +127,8 @@ if (!existsSync(runTck)) {
   await shutdown(2);
 }
 
-console.log(`[tck-harness] running TCK category "${category}" against ${baseUrl}`);
-const tck = spawn("python3", [runTck, "--sut-url", baseUrl, "--category", category], {
+console.log(`[tck-harness] running TCK level "${level}" transport "${transport}" against ${baseUrl}`);
+const tck = spawn("python3", [runTck, "--sut-host", baseUrl, "--transport", transport, "--level", level], {
   cwd: tckDir,
   stdio: "inherit",
 });
