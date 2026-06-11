@@ -21,15 +21,33 @@ export const A2A_COMPATIBILITY_PROFILE = {
   ],
   unsupportedPushNotifications: true,
   unsupportedA2A03Compat: true,
-  taskStates: ["submitted", "working", "completed", "failed", "canceled"],
+  taskStates: [
+    "submitted",
+    "working",
+    "auth-required",
+    "completed",
+    "failed",
+    "canceled",
+    "rejected",
+  ],
+  // input-required is typed in A2ATaskState for spec completeness but has no
+  // broker-internal source yet (reserved for a requester-input checkpoint).
   internalStatusToA2AState: {
-    blocked: "submitted",
+    blocked: "auth-required",
     queued: "submitted",
     claimed: "working",
     running: "working",
     succeeded: "completed",
     failed: "failed",
     canceled: "canceled",
+  },
+  /**
+   * Terminal projection refinements applied on top of the base status map:
+   * a canceled task whose approvalOutcome.status is "rejected" projects as
+   * the spec's `rejected` terminal state instead of generic `canceled`.
+   */
+  terminalRefinements: {
+    canceled: { when: "approvalOutcome.status === \"rejected\"", state: "rejected" },
   },
   projectionKeys: ["artifacts", "id", "kind", "metadata", "status"],
   metadataKeys: [

@@ -23,7 +23,9 @@ The agent card currently advertises:
   `SubscribeToTask`
 - push notification capability: `false`
 - default input/output modes: `text`
-- public projected task states: `submitted`, `working`, `completed`, `failed`, `canceled`
+- public projected task states: `submitted`, `working`, `auth-required`, `completed`, `failed`, `canceled`, `rejected`
+  - `blocked` (approval-gated) projects as `auth-required`; a task terminated by an operator approval rejection (`approvalOutcome.status === "rejected"`) projects as `rejected` instead of `canceled`
+  - `input-required` is typed for spec completeness but has no broker-internal source yet
 
 ## Compatibility matrix
 
