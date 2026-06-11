@@ -274,3 +274,22 @@ test("verifyExecutionProof succeeds with expanded task", () => {
   const verification = verifyExecutionProof(proof, task, expanded, result.stdout, result.stderr);
   assert.ok(verification.valid);
 });
+
+test("buildExecutionProof stamps the canonicalization algorithm", () => {
+  const proof = buildExecutionProof({ task: BASE_TASK, result: BASE_RESULT, runToken: "canon-1" });
+  assert.equal(proof.canonicalization, "stable-json-recursive-v2");
+});
+
+test("verifyExecutionProof rejects a legacy proof without canonicalization", () => {
+  const task = BASE_TASK;
+  const result = { ...BASE_RESULT, stdout: "hello\n", stderr: "" };
+  const proof = buildExecutionProof({ task, result, runToken: "legacy-1" });
+
+  // Simulate a proof produced before the digest fix (no canonicalization field).
+  const legacy = { ...proof };
+  delete (legacy as { canonicalization?: string }).canonicalization;
+
+  const verification = verifyExecutionProof(legacy, task, undefined, result.stdout, result.stderr);
+  assert.equal(verification.valid, false);
+  assert.match((verification as { reason: string }).reason, /canonicalization mismatch/);
+});

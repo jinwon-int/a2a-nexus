@@ -4,7 +4,7 @@
 // Parent: a2a-plane#335
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { sha256Json } from "./execution-proof.js";
+import { sha256Json, PROOF_CANONICALIZATION } from "./execution-proof.js";
 import type {
   RunnerTask,
   TaskTemplate,
@@ -220,6 +220,7 @@ export function buildTemplateExpansionEvidence(
 
   return {
     schemaVersion: "a2a.runner.template-expansion.v1",
+    canonicalization: PROOF_CANONICALIZATION,
     templateId: template.id,
     templateVersion: template.version,
     varsProvided,
@@ -230,7 +231,7 @@ export function buildTemplateExpansionEvidence(
   };
 }
 
-export { sha256Json };
+export { sha256Json, PROOF_CANONICALIZATION };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Built-in Terminal Brief Ops-Readiness Templates (Team1 nosuk lane, A2A R25)

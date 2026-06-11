@@ -36,6 +36,13 @@ function stableJsonStringify(value: unknown): string {
 }
 
 /**
+ * Identifier for the canonicalization algorithm used by sha256Json. Recorded on
+ * generated proofs so verifiers can tell a fixed digest from a legacy one whose
+ * canonicalization (a flat sorted-keys replacer) failed to bind nested fields.
+ */
+export const PROOF_CANONICALIZATION = "stable-json-recursive-v2" as const;
+
+/**
  * Compute a deterministic sha256 hex digest of a JSON-serialisable value.
  * Keys are sorted at every nesting depth for stability. task-templates.ts
  * re-exports this helper so both modules always use the same algorithm.
@@ -96,6 +103,7 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
 
   return {
     schemaVersion: "a2a.runner.execution-proof.v1",
+    canonicalization: PROOF_CANONICALIZATION,
     taskId: result.taskId,
     runToken,
     generatedAt: now ?? new Date().toISOString().replace("Z", ".000Z"),
@@ -189,6 +197,16 @@ export function verifyExecutionProof(
   stdout: string,
   stderr: string,
 ): { valid: true } | { valid: false; reason: string } {
+  // A proof produced under a different (or absent) canonicalization cannot be
+  // re-verified with the current serializer: its digests were computed by a
+  // different algorithm. Report that explicitly instead of as a digest mismatch.
+  if (proof.canonicalization !== PROOF_CANONICALIZATION) {
+    return {
+      valid: false,
+      reason: `canonicalization mismatch: proof uses ${proof.canonicalization ?? "legacy (unversioned)"}, verifier expects ${PROOF_CANONICALIZATION}`,
+    };
+  }
+
   if (task) {
     const inputDigest = sha256Json(task);
     if (inputDigest !== proof.inputDigest) {
