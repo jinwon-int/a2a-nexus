@@ -173,7 +173,7 @@ export const A2A_DRIFT_EXTERNAL_REFS = [
       "server handlers",
     ],
     checkedSurfaces: ["AgentCard", "Task", "Message", "Artifact", "JSON-RPC envelope", "transport abstractions"],
-    pinned: { kind: "commit" as const, ref: "06fc41a67184e9d7c6ef0349c4b5506c5c2a011b", refreshedAt: "2026-06-11T12:25:00KST" },
+    pinned: { kind: "commit" as const, ref: "2e0a4e535e738ae12af2a757c7013cf60283fa71", refreshedAt: "2026-06-11T13:07:00KST" },
   },
   {
     repo: "a2aproject/a2a-python",
