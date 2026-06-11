@@ -646,8 +646,27 @@ export class TerminalTaskEventOutbox {
   }
 
   private enforceRetention(): void {
-    if (this.events.length > this.maxEvents) {
-      this.events.splice(0, this.events.length - this.maxEvents);
+    if (this.events.length <= this.maxEvents) return;
+
+    // Evict the oldest receipt-confirmed events first. Events still awaiting a
+    // receipt must be retained so subscribeWithCursor can replay them — a plain
+    // "drop oldest" splice silently evicted unacked events under burst and
+    // broke the replay-unacked contract.
+    let toRemove = this.events.length - this.maxEvents;
+    for (let i = 0; i < this.events.length && toRemove > 0; ) {
+      if (isReceiptConfirmed(this.events[i]!)) {
+        this.events.splice(i, 1);
+        toRemove--;
+      } else {
+        i++;
+      }
+    }
+
+    // Hard ceiling so the buffer cannot grow without bound if receipts never
+    // arrive; only then are the oldest unacked events dropped.
+    const hardCap = this.maxEvents * 2;
+    if (this.events.length > hardCap) {
+      this.events.splice(0, this.events.length - hardCap);
     }
   }
 }
