@@ -80,6 +80,12 @@ export interface RateLimitPressureSnapshot {
   }>;
 }
 
+// Hard cap on the number of per-key rate-limit buckets. The key is the
+// (self-asserted) requester id or client ip, so an attacker rotating ids could
+// grow this map without bound. check() only prunes when the map is over this
+// cap, keeping the hot path allocation-free in the common case.
+const RATE_LIMITER_MAX_KEYS = 10_000;
+
 export class InMemoryRateLimiter {
   private readonly buckets = new Map<string, number[]>();
   private allowedRequests = 0;
@@ -104,6 +110,10 @@ export class InMemoryRateLimiter {
 
     this.buckets.set(key, timestamps);
 
+    if (this.buckets.size > RATE_LIMITER_MAX_KEYS) {
+      this.pruneBuckets(nowMs);
+    }
+
     const earliest = timestamps[0] ?? nowMs;
     const resetAtMs = earliest + this.windowMs;
     const retryAfterSec = Math.max(1, Math.ceil((resetAtMs - nowMs) / 1000));
@@ -116,6 +126,29 @@ export class InMemoryRateLimiter {
       retryAfterSec,
       allowed,
     };
+  }
+
+  /**
+   * Bound the bucket map. First drop buckets that are entirely outside the
+   * current window (idle keys); if still over the cap, evict the
+   * oldest-inserted buckets so memory stays bounded even under a flood of
+   * distinct (e.g. rotated) keys.
+   */
+  private pruneBuckets(nowMs: number): void {
+    const windowStart = nowMs - this.windowMs;
+    for (const [key, timestamps] of this.buckets) {
+      if (timestamps.length === 0 || timestamps[timestamps.length - 1]! <= windowStart) {
+        this.buckets.delete(key);
+      }
+    }
+    if (this.buckets.size > RATE_LIMITER_MAX_KEYS) {
+      let over = this.buckets.size - RATE_LIMITER_MAX_KEYS;
+      for (const key of this.buckets.keys()) {
+        if (over <= 0) break;
+        this.buckets.delete(key);
+        over -= 1;
+      }
+    }
   }
 
   snapshot(nowMs = Date.now(), topKeys = 5): RateLimitPressureSnapshot {
