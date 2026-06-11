@@ -107,11 +107,8 @@ jobs:
   # ── Docker runner package (isolated execution, evidence) ────────────
   docker-runner:
     needs: [setup, paths-filter]
-    if: ${{ needs.paths-filter.outputs.docker-runner == 'true' || needs.paths-filter.outputs.root == 'true' }}
+    if: ${{ needs.paths-filter.outputs.docker-runner == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/docker-runner
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -119,9 +116,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --include=dev
-        working-directory: .
       - run: node scripts/run-monorepo-package-ci-parity.mjs docker-runner
-        working-directory: .
 
   # ── OpenClaw plugin package (broker adapter, Gateway hooks) ────────
   plugin:

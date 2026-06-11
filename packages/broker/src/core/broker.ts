@@ -2631,6 +2631,8 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.auditEvents, retainedAuditEventIds);
     pruneMapEntries(this.lastPersistedWorkerHeartbeatAtMs, retainedWorkerIds);
     pruneMapEntries(this.lastPersistedTaskHeartbeatAuditAtMs, retainedTaskIds);
+    pruneMapEntries(this.taskEventBuffers, retainedTaskIds);
+    pruneMapEntries(this.taskEventSeqs, retainedTaskIds);
   }
 
   private collectRetainedExchangeMessageIds(retainedExchangeIds: Set<string>): Set<string> {

@@ -24,6 +24,7 @@ assert.equal(
 assert.equal(fixture.canaryContract.terminalOutboxAckPerformed, false);
 
 const artifacts = [];
+const seenTerminalOutboxIds = new Set();
 
 for (const entry of fixture.cases) {
   const event = buildTerminalEvidenceEvent(
@@ -33,12 +34,21 @@ for (const entry of fixture.cases) {
     fixture.emittedAt,
   );
 
-  let ackDecision;
+  const ackDecision = buildTerminalAckDecision(event, entry.receipt);
   if (entry.providerSendSuccessOnly) {
-    // Provider send success only — receipt has operatorVisible: false
-    ackDecision = buildTerminalAckDecision(event, entry.receipt);
-  } else {
-    ackDecision = buildTerminalAckDecision(event, entry.receipt);
+    // Provider send success alone is never receipt evidence: the receipt must
+    // not be operator-visible and the decision must refuse to acknowledge,
+    // independent of what the fixture's `expected` block says.
+    assert.equal(
+      entry.receipt.operatorVisible,
+      false,
+      `${entry.name}: provider-send-success-only receipt must not be operator-visible`,
+    );
+    assert.equal(
+      ackDecision.acknowledged,
+      false,
+      `${entry.name}: provider send success alone must never acknowledge`,
+    );
   }
 
   // Validate evidence kind and status
@@ -57,10 +67,16 @@ for (const entry of fixture.cases) {
     `${entry.name}: cursor mismatch`,
   );
 
-  // terminalOutboxId must match the case entry
-  if (entry.terminalOutboxId) {
-    assert.ok(entry.terminalOutboxId, `${entry.name}: missing terminalOutboxId`);
-  }
+  // Every case carries a non-empty, unique terminal outbox id.
+  assert.ok(
+    typeof entry.terminalOutboxId === "string" && entry.terminalOutboxId.length > 0,
+    `${entry.name}: missing terminalOutboxId`,
+  );
+  assert.ok(
+    !seenTerminalOutboxIds.has(entry.terminalOutboxId),
+    `${entry.name}: duplicate terminalOutboxId ${entry.terminalOutboxId}`,
+  );
+  seenTerminalOutboxIds.add(entry.terminalOutboxId);
 
   // Serialize and check for leaks
   const serialized = JSON.stringify({ event, ackDecision });
