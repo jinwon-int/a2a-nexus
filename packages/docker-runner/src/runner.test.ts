@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildActionableError, buildContainerScript, buildRunArgs, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
+import { buildActionableError, buildContainerScript, buildRunArgs, extractPrUrl, jsonArgvToScript, redactSecrets, runTask, shouldTreatDetectedPrUrlAsCanonical } from "./runner.js";
 import type { NormalizedRunnerTask, RunnerConfig, RunnerTask } from "./types.js";
 
 const baseConfig: RunnerConfig = {
@@ -1066,4 +1066,30 @@ test("buildContainerScript ownership restore guards against stat failure on /wor
     restoreFn.includes("-n") && (restoreFn.includes("$owner") || restoreFn.includes("owner")),
     "restore must check owner is non-empty before chown",
   );
+});
+
+// ── extractPrUrl: single-URL capture (a2a-nexus#574 item 13) ───────────────
+
+test("extractPrUrl captures one PR URL and does not span adjacent URLs", () => {
+  assert.equal(
+    extractPrUrl("Pushed and created https://github.com/jinwon-int/test-repo/pull/42"),
+    "https://github.com/jinwon-int/test-repo/pull/42",
+  );
+
+  // Two URLs with no whitespace between them must not be merged into one.
+  const adjacent = "https://github.com/o/r1/pull/5#https://github.com/o/r2/pull/9";
+  assert.equal(extractPrUrl(adjacent), "https://github.com/o/r1/pull/5");
+
+  assert.equal(extractPrUrl("no url here"), undefined);
+});
+
+// ── jsonArgvToScript: parse-error path quoting (a2a-nexus#574 item 19) ──────
+
+test("jsonArgvToScript parse-error path single-quotes the message safely", () => {
+  const script = jsonArgvToScript("{ not valid json $(touch /tmp/pwned) `evil` }");
+  assert.match(script, /error=json_parse_failed/);
+  // The error message is a single bare shell-quoted token — never wrapped in
+  // double quotes, which would re-expose $()/backticks from the message.
+  assert.doesNotMatch(script, /printf '[^']*' >&2 "/);
+  assert.doesNotMatch(script, /\$\(touch/);
 });

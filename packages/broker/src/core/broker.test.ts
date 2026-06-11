@@ -5888,3 +5888,110 @@ test("Hermes worker registration preserves runtimeFlavor and gatewayRequired in 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Exchange/proposal state-machine regressions (a2a-nexus#573 items 4, 5)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("a plain thread reply does not requeue a running exchange (item 4)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-a" });
+  registerWorker(broker, "worker-a");
+
+  const exchange = broker.startExchange({
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "start",
+    intent: "chat",
+  });
+
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "accepting",
+    decision: "accepted",
+  });
+  const running = broker.getExchange(exchange.id)!;
+  assert.equal(running.status, "running");
+  const taskId = running.activeTaskId;
+  assert.ok(taskId, "accepted decision should create a task");
+
+  // A plain chat reply with no decision and no explicit target/worker must not
+  // flip the running exchange back to queued or spawn a second task.
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    message: "just a reply",
+  });
+  const after = broker.getExchange(exchange.id)!;
+  assert.equal(after.status, "running", "plain reply must not requeue a running exchange");
+  assert.equal(after.activeTaskId, taskId, "plain reply must not spawn a new task");
+});
+
+test("a plain thread reply on a fresh exchange does not spawn a task (item 4)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-a" });
+  registerWorker(broker, "worker-a");
+
+  const exchange = broker.startExchange({
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "start",
+    intent: "chat",
+  });
+  assert.equal(broker.getExchange(exchange.id)?.activeTaskId, undefined);
+
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    message: "just chatting",
+  });
+  assert.equal(
+    broker.getExchange(exchange.id)?.activeTaskId,
+    undefined,
+    "a decision-less reply with no explicit routing must not create a task",
+  );
+});
+
+test("a thread message with an explicit target still assigns a task (item 4)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-a" });
+  registerWorker(broker, "worker-a");
+
+  const exchange = broker.startExchange({
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "start",
+    intent: "chat",
+  });
+
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "hub-a", kind: "node", role: "hub" },
+    message: "please take this",
+    targetNodeId: "worker-a",
+  });
+  assert.ok(
+    broker.getExchange(exchange.id)?.activeTaskId,
+    "an explicit routing target must still assign a task",
+  );
+});
+
+test("submitValidationResult does not rewind an approved proposal (item 5)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-a" });
+
+  const proposal = broker.createProposal({
+    source: { id: "research-a", kind: "node", role: "researcher" },
+    target: { id: "live-a", kind: "node", role: "live-trader" },
+    kind: "patch",
+    summary: "state machine regression",
+    workspace: { nodeId: "live-a", workspaceId: "repo" },
+    patchText: "diff --git a/file b/file",
+  });
+
+  broker.submitValidationResult(proposal.id, { nodeId: "live-a", kind: "smoke", verdict: "pass" });
+  broker.approveProposal(proposal.id, { actor: { id: "live-a", kind: "node", role: "live-trader" } });
+  assert.equal(broker.getProposal(proposal.id)?.status, "approved");
+
+  // A stale validation (e.g. a validate_change task completing late) must not
+  // rewind the proposal to "validated" and reopen a second approve/apply cycle.
+  broker.submitValidationResult(proposal.id, { nodeId: "live-a", kind: "smoke", verdict: "pass" });
+  assert.equal(
+    broker.getProposal(proposal.id)?.status,
+    "approved",
+    "a late validation must not rewind an approved proposal",
+  );
+});

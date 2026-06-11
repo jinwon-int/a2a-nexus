@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import type { RunnerConfig, RunnerEngine } from "./types.js";
@@ -148,8 +148,15 @@ export async function cleanup(options: CleanupOptions): Promise<CleanupReport> {
         const remaining = await readdir(taskRoot).catch(() => [] as string[]);
         if (remaining.length === 0) {
           candidates.push(taskRoot);
-          await rm(taskRoot, { recursive: true, force: true });
-          removed.push(taskRoot);
+          // Non-recursive rmdir: if a run dir is created concurrently between
+          // the readdir check and removal, this fails with ENOTEMPTY instead
+          // of recursively deleting the freshly-started run.
+          try {
+            await rmdir(taskRoot);
+            removed.push(taskRoot);
+          } catch {
+            // A concurrent run repopulated the task root; leave it in place.
+          }
         }
       }
     }
@@ -385,9 +392,11 @@ export async function checkDeployMarker(
     };
   }
 
-  // Accept either full (40-char) or short (12-char) SHA match.
+  // Accept an exact match or any abbreviated-SHA prefix (git --short defaults
+  // to 7 chars, so a strict 12-char comparison rejected valid 7-char markers).
   const marker = expectedRevision.toLowerCase();
-  const matches = fullLocalSha === marker || localSha === marker;
+  const markerIsShaPrefix = /^[0-9a-f]{7,40}$/.test(marker);
+  const matches = fullLocalSha === marker || (markerIsShaPrefix && fullLocalSha.startsWith(marker));
 
   const status: OpsStatus = matches ? "ok" : "fail";
   const summaryStatus = status === "ok" ? "PASS" : "FAIL";
