@@ -472,11 +472,22 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     config.memory ?? "2g",
     "--cpus",
     config.cpus ?? "2",
+    "--pids-limit",
+    config.pidsLimit ?? "512",
     "-v",
     `${workDir}:/work`,
     "-w",
     "/work",
   ];
+
+  // Task containers run arbitrary task commands with a GitHub token mounted;
+  // setuid escalation inside the container buys an attacker nothing extra.
+  if (config.noNewPrivileges !== false) {
+    args.push("--security-opt", "no-new-privileges");
+  }
+  for (const cap of config.capDrop ?? []) {
+    args.push("--cap-drop", cap);
+  }
 
   if (config.githubTokenFile) {
     args.push("-v", `${config.githubTokenFile}:/run/secrets/gh-hosts.yml:ro`);

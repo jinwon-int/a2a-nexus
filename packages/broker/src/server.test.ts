@@ -11312,3 +11312,255 @@ test("POST bodies over the size cap are rejected with 400 (a2a-nexus#573 item 13
     await server.close();
   }
 });
+
+test("agent card is served signed when a signing key is configured (A2A 1.0)", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { writeFileSync, mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { verifyAgentCardSignature } = await import("./a2a/agent-card-signing.js");
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const keyDir = mkdtempSync(join(tmpdir(), "a2a-card-key-"));
+  const keyFile = join(keyDir, "signing-key.pem");
+  writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+
+  const server = await startTestServer({
+    agentCardSigningKeyFile: keyFile,
+    agentCardSigningKid: "integration-key-1",
+  });
+  try {
+    const res = await fetch(`${server.baseUrl}/.well-known/agent-card.json`);
+    assert.equal(res.status, 200);
+    const card = await res.json();
+    assert.ok(Array.isArray(card.signatures), "served card must carry signatures");
+    assert.equal(card.signatures.length, 1);
+    const header = JSON.parse(Buffer.from(card.signatures[0].protected, "base64url").toString());
+    assert.equal(header.alg, "EdDSA");
+    assert.equal(header.kid, "integration-key-1");
+    assert.equal(
+      verifyAgentCardSignature(card, publicKey.export({ type: "spki", format: "pem" }).toString()),
+      true,
+      "served signature must verify against the public key",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("agent card stays unsigned when no signing key is configured", async () => {
+  const server = await startTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/.well-known/agent-card.json`);
+    const card = await res.json();
+    assert.equal("signatures" in card, false, "unsigned card must not carry a signatures field");
+  } finally {
+    await server.close();
+  }
+});
+
+test("A2A-Version negotiation on /a2a/jsonrpc (A2A 1.0)", async () => {
+  const server = await startTestServer();
+  try {
+    const rpcBody = JSON.stringify({
+      jsonrpc: "2.0",
+      id: "version-probe",
+      method: "ListTasks",
+      params: {},
+    });
+    const headers = jsonHeaders({
+      "x-a2a-requester-id": "version-probe",
+      "x-a2a-requester-role": "hub",
+    });
+
+    // Explicit supported version is served and echoed.
+    const v1 = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...headers, "a2a-version": "1.0" },
+      body: rpcBody,
+    });
+    assert.equal(v1.status, 200);
+    assert.equal(v1.headers.get("a2a-version"), "1.0");
+
+    // Missing header is served with 1.0 semantics (documented deviation from
+    // the spec's 0.3 fallback: 0.3 semantics are unsupported) and the
+    // response advertises the version actually served.
+    const missing = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers,
+      body: rpcBody,
+    });
+    assert.equal(missing.status, 200);
+    assert.equal(missing.headers.get("a2a-version"), "1.0");
+
+    // A version we cannot honor fails closed instead of being silently
+    // served with the wrong semantics.
+    const v03 = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...headers, "a2a-version": "0.3" },
+      body: rpcBody,
+    });
+    assert.equal(v03.status, 400);
+    assert.equal(v03.headers.get("a2a-version"), "1.0");
+    const errorBody = await v03.json();
+    assert.equal(errorBody.error.code, -32600);
+    assert.match(errorBody.error.message, /unsupported A2A-Version "0\.3"/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("SendStreamingMessage streams JSON-RPC envelopes over SSE (A2A 1.0)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-stream", "analyst", "test-edge-secret");
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+
+    const streamRes = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...hubHeaders, accept: "text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "stream-1",
+        method: "SendStreamingMessage",
+        params: {
+          message: { parts: [{ text: "analyze streaming" }] },
+          metadata: { targetNodeId: "worker-stream", intent: "analyze" },
+        },
+      }),
+    });
+    assert.equal(streamRes.status, 200);
+    assert.match(streamRes.headers.get("content-type") ?? "", /text\/event-stream/);
+
+    // Drive the task to terminal while the stream is open.
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-stream",
+      "x-a2a-requester-role": "analyst",
+    });
+    const listRes = await fetch(`${server.baseUrl}/tasks?targetNodeId=worker-stream`, {
+      headers: hubHeaders,
+    });
+    const listed = await listRes.json() as { items?: Array<{ id: string }> };
+    const streamTaskId = listed.items?.[0]?.id;
+    assert.ok(streamTaskId, "streamed task must be visible via REST list");
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${streamTaskId}/claim`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream" }),
+    });
+    assert.equal(claimRes.status, 200);
+    await fetch(`${server.baseUrl}/tasks/${streamTaskId}/complete`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream", result: { summary: "stream done" } }),
+    });
+
+    const events = await readSseEventsUntil(streamRes, (seen) =>
+      seen.some((e) => {
+        if (e.event !== "task-status-update") return false;
+        const body = JSON.parse(e.data);
+        return body.result?.final === true;
+      }),
+    );
+
+    // Every SSE payload is a JSON-RPC result envelope correlated to the id.
+    const snapshot = events.find((e) => e.event === "task-snapshot");
+    assert.ok(snapshot, "stream must open with a task snapshot");
+    const snapshotBody = JSON.parse(snapshot.data);
+    assert.equal(snapshotBody.jsonrpc, "2.0");
+    assert.equal(snapshotBody.id, "stream-1");
+    assert.equal(snapshotBody.result.task.metadata.targetNodeId, "worker-stream");
+    assert.ok(typeof snapshotBody.result.contextId === "string");
+
+    const finalEvent = events
+      .filter((e) => e.event === "task-status-update")
+      .map((e) => JSON.parse(e.data))
+      .find((body) => body.result?.final === true);
+    assert.ok(finalEvent, "stream must end with a final status update");
+    assert.equal(finalEvent.id, "stream-1");
+    assert.equal(finalEvent.result.task.status.state, "completed");
+  } finally {
+    await server.close();
+  }
+});
+
+test("SendStreamingMessage with malformed JSON-RPC envelope is rejected before streaming", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-stream-invalid", "analyst", "test-edge-secret");
+    const res = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: {
+        ...jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "hub-a",
+          "x-a2a-requester-role": "hub",
+        }),
+        accept: "text/event-stream",
+      },
+      body: JSON.stringify({
+        id: "stream-invalid",
+        method: "SendStreamingMessage",
+        params: {
+          message: { parts: [{ text: "invalid envelope" }] },
+          metadata: { targetNodeId: "worker-stream-invalid" },
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+    const body = await res.json();
+    assert.equal(body.id, "stream-invalid");
+    assert.equal(body.error.code, -32600);
+    assert.match(body.error.message, /jsonrpc must be '2\.0'/);
+
+    const listRes = await fetch(`${server.baseUrl}/tasks?targetNodeId=worker-stream-invalid`, {
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+    });
+    const listed = await listRes.json() as { items?: unknown[] };
+    assert.equal(listed.items?.length ?? 0, 0, "malformed streaming request must not create a task");
+  } finally {
+    await server.close();
+  }
+});
+
+test("SendStreamingMessage inside a batch is rejected with -32600", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-batch-stream", "analyst", "test-edge-secret");
+    const res = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify([
+        {
+          jsonrpc: "2.0",
+          id: "batch-stream-1",
+          method: "SendStreamingMessage",
+          params: {
+            message: { parts: [{ text: "no batch streaming" }] },
+            metadata: { targetNodeId: "worker-batch-stream" },
+          },
+        },
+      ]),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body[0].error.code, -32600);
+    assert.match(body[0].error.message, /cannot be used inside a batch/);
+  } finally {
+    await server.close();
+  }
+});

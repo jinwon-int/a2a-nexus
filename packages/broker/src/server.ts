@@ -5,7 +5,8 @@ import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
 import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
-import { executeA2AJsonRpcBody } from "./a2a/json-rpc.js";
+import { signAgentCard } from "./a2a/agent-card-signing.js";
+import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
 import {
@@ -396,6 +397,7 @@ import type { TaskStatusEvent } from "./core/task-events.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
 import { parseGitHubWebhook, validateWebhookHeaders } from "./github/webhook-parser.js";
+import { A2A_VERSION_HEADER, SUPPORTED_A2A_VERSIONS, negotiateA2AVersion } from "./a2a/version-negotiation.js";
 
 const DEFAULT_TASK_LIST_LIMIT = 100;
 const MAX_TASK_LIST_LIMIT = 500;
@@ -2539,6 +2541,10 @@ export interface BrokerServerOptions {
    */
   githubWebhookSecret?: string;
   agentCard?: AgentCard;
+  /** PEM private key file (Ed25519 or EC P-256) for A2A 1.0 signed agent cards. Falls back to AGENT_CARD_SIGNING_KEY_FILE. */
+  agentCardSigningKeyFile?: string;
+  /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
+  agentCardSigningKid?: string;
   stateStore?: BrokerStateStore;
   broker?: InMemoryA2ABroker;
   /**
@@ -2862,7 +2868,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     Math.max(1, workerRateLimitMaxRequests),
     Math.max(1, workerRateLimitWindowSec) * 1000,
   );
-  const agentCard =
+  const unsignedAgentCard =
     options.agentCard ??
     createBrokerAgentCard({
       serviceName,
@@ -2870,6 +2876,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       supportsStreaming: true,
       supportsPushNotifications: false,
     });
+  // A2A 1.0 signed agent cards: opt-in via AGENT_CARD_SIGNING_KEY_FILE
+  // (PEM Ed25519 or EC P-256 private key). A missing key serves the card
+  // unsigned exactly as before; a configured-but-unreadable key fails
+  // startup loudly instead of silently serving an unsigned card.
+  const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
+  const agentCard = signingKeyFile
+    ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
+        privateKeyPem: readFileSync(signingKeyFile, "utf8"),
+        kid: options.agentCardSigningKid ?? process.env.AGENT_CARD_SIGNING_KID,
+      }) as unknown as typeof unsignedAgentCard
+    : unsignedAgentCard;
   const peerStatusService = peerStatusEnabled
     ? new PeerStatusService(broker, { workerOfflineAfterMs: workerOfflineAfterSec * 1000 })
     : undefined;
@@ -3315,10 +3332,63 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path === "/a2a/jsonrpc") {
+        // A2A 1.0 version negotiation: serve the requested version's
+        // semantics or fail closed on a version we cannot honor. The
+        // response always advertises the version actually served.
+        const negotiated = negotiateA2AVersion(req.headers[A2A_VERSION_HEADER]);
+        if (!negotiated.ok) {
+          return sendJson(
+            res,
+            400,
+            { jsonrpc: "2.0", id: null, error: { code: -32600, message: negotiated.message } },
+            { "a2a-version": SUPPORTED_A2A_VERSIONS.join(", ") },
+          );
+        }
+        res.setHeader("a2a-version", negotiated.version);
         // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
         // than the broker's HTTP error envelope, and so batch arrays /
         // notifications are handled by the JSON-RPC transport layer.
         const rawBody = (await readRawBody(req)).toString("utf8");
+
+        // A2A 1.0 SendStreamingMessage: a single (non-batch) request streams
+        // JSON-RPC result envelopes over SSE instead of a unary response.
+        // Batch-embedded SendStreamingMessage falls through to the JSON-RPC
+        // layer, which rejects it with -32600.
+        const streamingRequest = parseSingleStreamingMessageRequest(rawBody);
+        if (streamingRequest) {
+          let created;
+          try {
+            created = executeSendMessage(streamingRequest.params, {
+              broker,
+              agentCard,
+              publicBaseUrl,
+              requesterIdentity,
+              enforceRequesterIdentity,
+              peerStatusService,
+            });
+          } catch (error) {
+            const rpcError = jsonRpcErrorFromUnknown(error);
+            return sendJson(res, 200, {
+              jsonrpc: "2.0",
+              id: streamingRequest.id,
+              error: rpcError,
+            });
+          }
+          const createdTask = created.task ? broker.getTask(created.task.id) : null;
+          if (!createdTask) {
+            // Context-only sends (no active task) have nothing to stream.
+            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: created });
+          }
+          handleStreamingMessageResponse(req, res, {
+            broker,
+            rpcId: streamingRequest.id,
+            sendResult: created,
+            task: createdTask,
+            heartbeatMs: taskSubscribeHeartbeatSec * 1000,
+          });
+          return;
+        }
+
         const response = executeA2AJsonRpcBody(rawBody, {
           broker,
           agentCard,
@@ -7732,6 +7802,142 @@ function handleTaskEventStream(
         reason: update.reason,
         final: update.final,
       },
+      broker.formatSseEventId(task.id, update.seq),
+    );
+    if (update.final) {
+      cleanup();
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  });
+
+  req.on("close", () => {
+    cleanup();
+    if (!res.writableEnded) {
+      res.end();
+    }
+  });
+  req.on("error", cleanup);
+
+  if (heartbeatMs > 0) {
+    heartbeatTimer = setInterval(() => {
+      if (res.writableEnded) {
+        cleanup();
+        return;
+      }
+      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+    }, heartbeatMs);
+    heartbeatTimer.unref?.();
+  }
+}
+
+/**
+ * Parse the raw JSON-RPC body and return the request when it is a single
+ * (non-batch) SendStreamingMessage call with a non-null id. Returns null for
+ * everything else so the generic JSON-RPC executor handles it (including the
+ * batch case, which the dispatcher rejects with -32600).
+ */
+function parseSingleStreamingMessageRequest(
+  rawBody: string,
+): { id: string | number; params: unknown } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(parsed) || typeof parsed !== "object" || parsed === null) {
+    return null;
+  }
+  const request = parsed as Record<string, unknown>;
+  if (request.method !== "SendStreamingMessage") {
+    return null;
+  }
+  if (request.jsonrpc !== "2.0") {
+    // Preserve the generic JSON-RPC envelope validation path. The streaming
+    // fast path must not accept malformed requests that the unary dispatcher
+    // would reject with -32600.
+    return null;
+  }
+  const id = request.id;
+  if (typeof id !== "string" && typeof id !== "number") {
+    // A streaming notification is meaningless: there is no id to correlate
+    // streamed envelopes with. Let the generic layer answer.
+    return null;
+  }
+  return { id, params: request.params };
+}
+
+/**
+ * A2A 1.0 SendStreamingMessage response: an SSE stream where every data
+ * payload is a JSON-RPC result envelope correlated by the request id. The
+ * opening event carries the SendMessage result (context + task snapshot);
+ * subsequent task-status-update events stream until the task is terminal.
+ * SSE event ids reuse the broker's task-event sequence so Last-Event-Id
+ * reconnects on /a2a/tasks/:id/events can resume the same stream.
+ */
+function handleStreamingMessageResponse(
+  req: IncomingMessage,
+  res: ServerResponse<IncomingMessage>,
+  params: {
+    broker: InMemoryA2ABroker;
+    rpcId: string | number;
+    sendResult: ReturnType<typeof executeSendMessage>;
+    task: TaskRecord;
+    heartbeatMs: number;
+  },
+): void {
+  const { broker, rpcId, sendResult, task, heartbeatMs } = params;
+
+  writeSseResponseHeaders(res);
+
+  const envelope = (result: Record<string, unknown>): Record<string, unknown> => ({
+    jsonrpc: "2.0",
+    id: rpcId,
+    result,
+  });
+
+  const snapshotSeq = broker.replayTaskEvents(task.id, -1).length;
+  writeSseEvent(
+    res,
+    "task-snapshot",
+    envelope({
+      ...sendResult,
+      task: projectBrokerTask(task),
+      final: isTerminalSnapshotStatus(task.status),
+    }),
+    broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
+  );
+
+  if (isTerminalSnapshotStatus(task.status)) {
+    res.end();
+    return;
+  }
+
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let unsubscribe: (() => void) | null = null;
+
+  const cleanup = (): void => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  };
+
+  unsubscribe = broker.subscribeToTask(task.id, (update) => {
+    writeSseEvent(
+      res,
+      "task-status-update",
+      envelope({
+        task: projectBrokerTask(update.task),
+        reason: update.reason,
+        final: update.final,
+      }),
       broker.formatSseEventId(task.id, update.seq),
     );
     if (update.final) {

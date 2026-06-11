@@ -271,3 +271,37 @@ test("AgentCard.capabilities and WorkerCapabilities are disjoint public-seam sha
     "WorkerCapabilities must contain array-typed fields distinct from AgentCard.capabilities",
   );
 });
+
+test("approval-gated and approval-rejected tasks project the A2A 1.0 spec states", () => {
+  // blocked = waiting for an out-of-band operator authorization decision.
+  const gated = projectBrokerTask(makeTask("blocked"));
+  assert.equal(gated.status.state, "auth-required");
+
+  // A task terminated by an approval rejection is the spec's `rejected`
+  // terminal state, not a generic `canceled`.
+  const rejected = projectBrokerTask(
+    makeTask("canceled", {
+      approvalOutcome: {
+        status: "rejected",
+        approvalId: "approval-golden",
+        decidedAt: COMPLETED_TIME,
+        decidedBy: "operator-a",
+        reason: "policy review failed",
+      },
+    }),
+  );
+  assert.equal(rejected.status.state, "rejected");
+
+  // Other approval outcomes (expired/canceled) stay generic canceled.
+  const expired = projectBrokerTask(
+    makeTask("canceled", {
+      approvalOutcome: {
+        status: "expired",
+        approvalId: "approval-golden-2",
+        decidedAt: COMPLETED_TIME,
+        decidedBy: "operator-a",
+      },
+    }),
+  );
+  assert.equal(expired.status.state, "canceled");
+});

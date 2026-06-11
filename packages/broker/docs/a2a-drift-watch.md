@@ -32,6 +32,7 @@ These surfaces are production-covered and pinned by the drift-watch test.
 |---|---|---|---|
 | AgentCard discovery | `GET /.well-known/agent-card.json`, `GetExtendedAgentCard` (JSON-RPC) | HTTP GET, JSON-RPC | Agent card shape, `protocolVersion`, capability flags, `defaultInputModes`/`defaultOutputModes` pinned in golden fixture |
 | `SendMessage` | `src/a2a/json-rpc.ts` — creates exchange + task or appends to exchange | JSON-RPC 2.0 POST | Task projection shape, metadata keys, contextId aliasing |
+| `SendStreamingMessage` | `src/server.ts` HTTP intercept + `src/a2a/json-rpc.ts` batch guard — SendMessage semantics, then SSE stream of JSON-RPC result envelopes until the task is terminal | JSON-RPC 2.0 POST → SSE | Envelope correlation by request id, batch rejection (-32600), task-event sequence reuse |
 | `GetTask` / `ListTasks` | `src/a2a/json-rpc.ts` — task detail and filtered list | JSON-RPC 2.0 POST | Projection keys, list metadata summary behavior, state mapping |
 | `CancelTask` | `src/a2a/json-rpc.ts` — idempotent task-scoped cancel with fan-out | JSON-RPC 2.0 POST | Cancel state mapping, terminal immutability, fan-out lineage |
 | `SubscribeToTask` (SSE) | `src/a2a/json-rpc.ts` advisory + `GET /a2a/tasks/:id/events` | JSON-RPC advisory + SSE event stream | Snapshot, status-update, terminal close, heartbeat, Last-Event-ID replay |
@@ -79,6 +80,7 @@ set matches the documented profile.
 | Method | Status | A2A 1.0? | Notes |
 |---|---|---|---|
 | `SendMessage` | ✅ Implemented | Yes | With `metadata.contextId` alias |
+| `SendStreamingMessage` | ✅ Implemented | Yes | Single non-batch requests only; SSE response |
 | `GetTask` | ✅ Implemented | Yes | Returns `A2ATaskProjection` |
 | `ListTasks` | ✅ Implemented | Yes | Broker-oriented filters |
 | `CancelTask` | ✅ Implemented | Yes | Idempotent, fan-out |
