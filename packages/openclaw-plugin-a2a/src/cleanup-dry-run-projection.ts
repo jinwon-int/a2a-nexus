@@ -411,11 +411,16 @@ export function projectCleanupGateStatus(
   const operatorApproved =
     options.operatorApproved ?? (receiptStatus === "operator_approved");
 
+  // The plan declares approvalTokenRequired: true, so the conjunction must
+  // include operator approval and a valid token — without them an
+  // acknowledged-but-unapproved state could report safe-to-mutate.
   const safeForCleanup =
     discovery.totalCandidates > 0 &&
     plan.totalSteps > 0 &&
     receiptGate.satisfied &&
     operatorAcknowledged &&
+    operatorApproved &&
+    (options.approvalTokenValid ?? false) &&
     (options.backupConfirmed ?? false);
 
   const warnings: string[] = [];

@@ -7,6 +7,8 @@
  * Closes jinwon-int/plugin-a2a#77.
  */
 
+import os from "node:os";
+
 // ── Types ─────────────────────────────────────────────────────
 
 export type RecoveryActionKind =
@@ -99,16 +101,21 @@ const DEFAULT_RECORD_RETENTION_MS = 300_000; // 5 min
 // ── Detection ─────────────────────────────────────────────────
 
 function detectMobileProfile(): boolean {
+  // Only Android (Termux) is a mobile profile. arch === "arm64" alone must
+  // not count: Apple Silicon dev machines and Graviton servers are arm64 and
+  // were silently getting the conservative mobile retry policy.
   const platform = typeof process !== "undefined" ? process.platform : "";
-  const arch = typeof process !== "undefined" ? process.arch : "";
-  return platform === "android" || arch === "arm64";
+  return platform === "android";
 }
 
 function detectLowResource(): boolean {
   // Termux on Android typically has limited memory
   if (detectMobileProfile()) return true;
   try {
-    const memInfo = require("os").totalmem?.();
+    // This is an ESM module: require() is undefined at runtime, so the
+    // previous require("os") always threw and low-memory detection never
+    // fired off-mobile.
+    const memInfo = os.totalmem?.();
     if (memInfo && memInfo < 2 * 1024 * 1024 * 1024) return true; // < 2 GB
   } catch {}
   return false;
@@ -269,8 +276,23 @@ export function createRecoveryGuard(options: RecoveryGuardOptions = {}): Recover
           totalDeduplicated++;
           return { allowed: true, dedup: true };
         }
-        // Failed — check if retry is possible
-        if (existing.status === "failed" && existing.attemptCount < retryPolicy.maxAttempts) {
+        // Failed or abandoned with retries exhausted — permanently blocked.
+        // Previously neither status was checked against maxAttempts on this
+        // path, so an exhausted (or timed-out/abandoned) action fell through
+        // to re-registration and became immediately eligible again,
+        // defeating the retry-storm guard.
+        if (
+          (existing.status === "failed" || existing.status === "abandoned") &&
+          existing.attemptCount >= retryPolicy.maxAttempts
+        ) {
+          totalRateLimited++;
+          return {
+            allowed: false,
+            reason: `Retries exhausted (${existing.attemptCount}/${retryPolicy.maxAttempts})`,
+          };
+        }
+        // Failed or abandoned with retries remaining — enforce backoff.
+        if (existing.status === "failed" || existing.status === "abandoned") {
           const delay = nextRetryDelayMsForRecord(existing, retryPolicy, nowMs());
           if (delay > 0) {
             totalRateLimited++;
