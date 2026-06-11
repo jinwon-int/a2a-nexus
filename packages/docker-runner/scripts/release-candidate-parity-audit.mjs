@@ -13,12 +13,18 @@
 import { readFileSync } from "node:fs";
 
 const REQUIRED_PACKAGE_SCRIPTS = ["check", "build", "lint", "test", "chaos:e2e"];
-const REQUIRED_CI_STEPS = [
-  "npm run check",
-  "npm run build",
-  "npm run lint",
-  "npm test",
-  "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .",
+// In the monorepo, GitHub Actions never runs this package's nested
+// .github/workflows/ci.yml — the docker-runner gates are executed by the root
+// CI via scripts/run-monorepo-package-ci-parity.mjs. Validate that live runner
+// (relative to this package dir) instead of the dead nested workflow.
+const MONOREPO_PARITY_RUNNER = "../../scripts/run-monorepo-package-ci-parity.mjs";
+const REQUIRED_PARITY_GATES = [
+  "'check', '-w', 'packages/docker-runner'",
+  "'build', '-w', 'packages/docker-runner'",
+  "'lint', '-w', 'packages/docker-runner'",
+  "'test', '-w', 'packages/docker-runner'",
+  "pre-pr-bootstrap-guard.mjs",
+  "chaos:e2e",
 ];
 const REQUIRED_BOOTSTRAP_PATHS = [
   "AGENTS.md",
@@ -65,13 +71,13 @@ function workerChecks(text, workers, expectation, evidencePath) {
 
 function main() {
   const pkg = JSON.parse(readText("package.json"));
-  const ci = readText(".github/workflows/ci.yml");
+  const parityRunner = readText(MONOREPO_PARITY_RUNNER);
   const guard = readText("scripts/pre-pr-bootstrap-guard.mjs");
   const rollout = readText("docs/release-rollout-checklist.md");
 
   const checks = [
     ...packageScriptChecks(pkg),
-    ...containsChecks(ci, REQUIRED_CI_STEPS, "ci-step", ".github/workflows/ci.yml"),
+    ...containsChecks(parityRunner, REQUIRED_PARITY_GATES, "parity-gate", MONOREPO_PARITY_RUNNER),
     ...containsChecks(guard, REQUIRED_BOOTSTRAP_PATHS, "bootstrap-guard-path", "scripts/pre-pr-bootstrap-guard.mjs"),
     ...containsChecks(rollout, ["npm run chaos:e2e", "node --test dist/canary.test.js", "npm run rollout:receipt-evidence"], "rollout-gate", "docs/release-rollout-checklist.md"),
     ...workerChecks(rollout, ACTIVE_WORKERS, "active", "docs/release-rollout-checklist.md"),
@@ -92,7 +98,7 @@ function main() {
     bootstrapGuardBannedPaths: REQUIRED_BOOTSTRAP_PATHS,
     checkedFiles: [
       "package.json",
-      ".github/workflows/ci.yml",
+      MONOREPO_PARITY_RUNNER,
       "scripts/pre-pr-bootstrap-guard.mjs",
       "docs/release-rollout-checklist.md",
     ],
