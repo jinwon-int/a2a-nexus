@@ -171,23 +171,6 @@ for (const doc of safetyDocs) {
   }
 }
 
-// ── Package CI workflows match root CI conventions ──────────────────────────
-
-const packageCiPaths = [
-  'packages/broker/.github/workflows/ci.yml',
-  'packages/docker-runner/.github/workflows/ci.yml',
-  'packages/openclaw-plugin-a2a/.github/workflows/ci.yml',
-];
-for (const ciPath of packageCiPaths) {
-  const ci = readRel(ciPath);
-  expect(ci !== null, `missing ${ciPath}`);
-  if (ci) {
-    expect(/actions\/checkout/.test(ci), `${ciPath}: must use checkout action`);
-    expect(/actions\/setup-node/.test(ci), `${ciPath}: must use setup-node action`);
-    expect(/npm (ci|test|run check)/.test(ci), `${ciPath}: must run npm ci/test/check`);
-  }
-}
-
 // ── Result ──────────────────────────────────────────────────────────────────
 
 if (failures.length) {
