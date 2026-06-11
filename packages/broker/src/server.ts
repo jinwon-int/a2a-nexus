@@ -5,7 +5,7 @@ import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
 import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
-import { executeA2AJsonRpc } from "./a2a/json-rpc.js";
+import { executeA2AJsonRpcBody } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
 import {
@@ -3286,8 +3286,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path === "/a2a/jsonrpc") {
-        const body = await readJson(req);
-        const response = executeA2AJsonRpc(body, {
+        // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
+        // than the broker's HTTP error envelope, and so batch arrays /
+        // notifications are handled by the JSON-RPC transport layer.
+        const rawBody = (await readRawBody(req)).toString("utf8");
+        const response = executeA2AJsonRpcBody(rawBody, {
           broker,
           agentCard,
           publicBaseUrl,
@@ -3295,6 +3298,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           enforceRequesterIdentity,
           peerStatusService,
         });
+        if (response === null) {
+          // Entirely notifications — JSON-RPC requires no response body.
+          res.writeHead(204);
+          res.end();
+          return;
+        }
         return sendJson(res, 200, response);
       }
 

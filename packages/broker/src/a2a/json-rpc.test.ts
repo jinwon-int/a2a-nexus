@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { createBrokerAgentCard } from "./agent-card.js";
-import { executeA2AJsonRpc, type ExecuteJsonRpcOptions } from "./json-rpc.js";
+import { executeA2AJsonRpc, executeA2AJsonRpcBody, type ExecuteJsonRpcOptions, type JsonRpcResponse } from "./json-rpc.js";
 
 function createBroker(): InMemoryA2ABroker {
   return new InMemoryA2ABroker();
@@ -374,4 +374,70 @@ test("SendMessage rejects mismatched targetNodeId and assignedWorkerId by defaul
   if (!("error" in result)) return;
   assert.equal(result.error.code, -32602);
   assert.match(result.error.message, /assignedWorkerId must match targetNodeId/);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// JSON-RPC transport conformance (a2a-nexus#573 item 10)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("malformed JSON body returns a -32700 parse error", () => {
+  const broker = createBroker();
+  const result = executeA2AJsonRpcBody("{ not valid json", createJsonRpcOptions(broker));
+  assert.ok(result && !Array.isArray(result) && "error" in result);
+  assert.equal((result as JsonRpcResponse & { error: { code: number } }).error.code, -32700);
+});
+
+test("a batch array is processed per element and returns an array of responses", () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  const body = JSON.stringify([
+    { jsonrpc: "2.0", id: 1, method: "ListTasks", params: {} },
+    { jsonrpc: "2.0", id: 2, method: "GetExtendedAgentCard" },
+    { jsonrpc: "2.0", id: 3, method: "NoSuchMethod" },
+  ]);
+  const result = executeA2AJsonRpcBody(body, createJsonRpcOptions(broker));
+  assert.ok(Array.isArray(result), "a batch must return an array of responses");
+  assert.equal(result.length, 3);
+  assert.deepEqual(result.map((r) => r.id), [1, 2, 3]);
+  assert.ok("result" in result[0]!);
+  assert.ok("error" in result[2]! && (result[2] as { error: { code: number } }).error.code === -32601);
+});
+
+test("an empty batch array is rejected with -32600", () => {
+  const broker = createBroker();
+  const result = executeA2AJsonRpcBody("[]", createJsonRpcOptions(broker));
+  assert.ok(result && !Array.isArray(result) && "error" in result);
+  assert.equal((result as { error: { code: number } }).error.code, -32600);
+});
+
+test("a notification (no id member) gets no response", () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  // GetExtendedAgentCard with no `id` is a notification.
+  const result = executeA2AJsonRpcBody(
+    JSON.stringify({ jsonrpc: "2.0", method: "GetExtendedAgentCard" }),
+    createJsonRpcOptions(broker),
+  );
+  assert.equal(result, null, "a notification must not produce a response");
+});
+
+test("a batch of only notifications returns null (no response body)", () => {
+  const broker = createBroker();
+  const body = JSON.stringify([
+    { jsonrpc: "2.0", method: "GetExtendedAgentCard" },
+    { jsonrpc: "2.0", method: "GetExtendedAgentCard" },
+  ]);
+  const result = executeA2AJsonRpcBody(body, createJsonRpcOptions(broker));
+  assert.equal(result, null);
+});
+
+test("id: null is a normal request and still gets a response", () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  const result = executeA2AJsonRpcBody(
+    JSON.stringify({ jsonrpc: "2.0", id: null, method: "GetExtendedAgentCard" }),
+    createJsonRpcOptions(broker),
+  );
+  assert.ok(result && !Array.isArray(result) && "result" in result);
+  assert.equal((result as JsonRpcResponse).id, null);
 });
