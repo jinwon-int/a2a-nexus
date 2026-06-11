@@ -33,6 +33,9 @@ const scenarioDefinitions = [
       const taskId = ctx.submitTask("worker-kill");
       ctx.claimTask(taskId, "worker-a");
       ctx.killWorker("worker-a");
+      // The kill must return the claim to the queue so worker-b can reclaim it;
+      // assert that path explicitly so a regression cannot pass trivially.
+      ctx.assertEvent(taskId, "reclaimed_after_kill");
       ctx.workerTick("worker-b");
       ctx.completeTask(taskId, "worker-b");
       ctx.assertCompletedOnce(taskId);
@@ -217,6 +220,7 @@ function createMockContext(events) {
       const task = mustTask(state, taskId);
       if (state.workers.get(worker) !== "online") throw new Error(`${worker} is not online`);
       if (!state.networkOnline) {
+        task.events.push("claim_deferred");
         emit({ type: "claim_deferred_network_down", taskId, worker });
         return;
       }
@@ -231,6 +235,17 @@ function createMockContext(events) {
     },
     killWorker(worker) {
       state.workers.set(worker, "dead");
+      // A killed worker's in-flight claims return to the queue so another
+      // worker can reclaim them (models the broker's stale-claim reaper).
+      // Without this the task stayed "claimed" and workerTick (queued-only)
+      // never reassigned it, so the reclaim path was never exercised.
+      for (const [taskId, task] of state.tasks) {
+        if (task.status === "claimed" && task.claims[task.claims.length - 1] === worker) {
+          task.status = "queued";
+          task.events.push("reclaimed_after_kill");
+          emit({ type: "task_reclaimed_after_kill", taskId, worker });
+        }
+      }
       emit({ type: "worker_killed", worker });
     },
     markStale(taskId) {
@@ -259,7 +274,12 @@ function createMockContext(events) {
     },
     networkUp() {
       state.networkOnline = true;
-      for (const task of state.tasks.values()) task.events.push("network_restored");
+      // Only tasks whose claim was actually deferred while the network was
+      // down see a restore — pushing it to every task made
+      // assertEvent(network_restored) pass on the fault injection itself.
+      for (const task of state.tasks.values()) {
+        if (task.events.includes("claim_deferred")) task.events.push("network_restored");
+      }
       emit({ type: "network_restored" });
     },
     completeTask(taskId, worker = "worker-a") {
