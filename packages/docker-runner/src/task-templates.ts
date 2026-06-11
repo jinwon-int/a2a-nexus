@@ -88,19 +88,6 @@ export function expandVars(template: string, vars: TaskTemplateVars): string {
   });
 }
 
-/**
- * Detect missing required variables after expansion.
- */
-export function findMissingVars(template: string, required: string[]): string[] {
-  const used = new Set<string>();
-  let m: RegExpExecArray | null;
-  const re = new RegExp(VAR_PATTERN.source, "g");
-  while ((m = re.exec(template)) !== null) {
-    used.add(m[1]);
-  }
-  return required.filter((name) => used.has(name) && !BUILTIN_TEMPLATES.has(name));
-}
-
 // ─── Task Expansion ─────────────────────────────────────────────────────
 
 /**

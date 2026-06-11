@@ -183,7 +183,6 @@ export async function runContainerWithRetry(
   config: RetryConfig = defaultRetryConfig(),
 ): Promise<{ result: SpawnResult; retryEvidence: ContainerRetryEvidence }> {
   const attempts: RetryAttemptRecord[] = [];
-  let lastError: string | undefined;
   let succeededOnAttempt = 0;
 
   // We accumulate output from all attempts so no evidence is lost.
@@ -249,7 +248,6 @@ export async function runContainerWithRetry(
 
     // Permanent failure: do not retry.
     if (isTransientContainerError(attemptResult) === false) {
-      lastError = attemptResult.stdout + attemptResult.stderr;
       return {
         result: {
           code: attemptResult.code,
@@ -371,7 +369,10 @@ export function argsForAttempt(args: string[], attempt: number): string[] {
 }
 
 function extractPrUrl(stdout: string): string | undefined {
-  return stdout.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/)?.[0];
+  // owner/repo are single path segments — using [^\s]+ for them let the match
+  // greedily span two adjacent URLs (e.g. "...repo/pull/5#https://.../pull/9")
+  // and capture a wrong PR, which can flip a failed run to "completed".
+  return stdout.match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/)?.[0];
 }
 
 function sleep(ms: number): Promise<void> {

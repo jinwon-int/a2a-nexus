@@ -561,13 +561,17 @@ export async function createArtifactBundle(options: BundleOptions): Promise<Arti
  * Binary files are copied as-is.
  */
 async function copyAndRedactFile(srcPath: string, destPath: string): Promise<void> {
+  const raw = await readFile(srcPath);
   let content: string;
   try {
-    content = await readFile(srcPath, "utf8");
+    // readFile(path, "utf8") does NOT throw on binary input — it lossily
+    // replaces invalid bytes with U+FFFD, so the redact/truncate path would
+    // silently corrupt images, archives, etc. Detect binary content (a NUL
+    // byte, or bytes that are not valid UTF-8) and copy those raw instead.
+    if (raw.includes(0)) throw new Error("binary content");
+    content = new TextDecoder("utf-8", { fatal: true }).decode(raw);
   } catch {
-    // Not a text file or unreadable; copy raw.
-    const { copyFile } = await import("node:fs/promises");
-    await copyFile(srcPath, destPath);
+    await writeFile(destPath, raw);
     return;
   }
 

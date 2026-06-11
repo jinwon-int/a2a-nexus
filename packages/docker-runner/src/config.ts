@@ -159,7 +159,7 @@ function loadBuildMetadata(env: NodeJS.ProcessEnv, runtimeImage: string): Runner
     source: safeMetadataValue(env.A2A_DOCKER_RUNNER_BUILD_SOURCE),
     revision: safeMetadataValue(env.A2A_DOCKER_RUNNER_BUILD_REVISION),
     builtAt: safeMetadataValue(env.A2A_DOCKER_RUNNER_BUILD_BUILT_AT),
-    image: safeMetadataValue(env.A2A_DOCKER_RUNNER_BUILD_IMAGE ?? runtimeImage),
+    image: safeMetadataValue(env.A2A_DOCKER_RUNNER_BUILD_IMAGE || runtimeImage),
   }).filter(([, value]) => value)) as RunnerBuildMetadata;
   return Object.values(metadata).some(Boolean) ? metadata : undefined;
 }
