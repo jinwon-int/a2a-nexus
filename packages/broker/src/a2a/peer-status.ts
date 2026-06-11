@@ -167,7 +167,9 @@ export class PeerStatusService {
       return rateError;
     }
 
-    const maxCacheAge = request.maxCacheAgeMs ?? DEFAULT_CACHE_TTL_MS;
+    // Per-request maxCacheAgeMs overrides the configured cache TTL; without
+    // this the constructor's cacheTtlMs option was ignored entirely.
+    const maxCacheAge = request.maxCacheAgeMs ?? this.cacheTtlMs;
 
     // Check cache
     const cached = this.cache.get(target);

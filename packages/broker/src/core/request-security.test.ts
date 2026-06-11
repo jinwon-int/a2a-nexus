@@ -7,6 +7,7 @@ import {
   assertGitHubWebhookSignature,
   classifyRateLimitBucket,
   extractRequesterIdentity,
+  InMemoryRateLimiter,
   rateLimitKey,
 } from "./request-security.js";
 
@@ -132,4 +133,37 @@ test("assertGitHubWebhookSignature accepts a valid signature over the raw body",
   assert.doesNotThrow(() =>
     assertGitHubWebhookSignature(body, valid.toUpperCase().replace("SHA256=", "sha256="), "secret"),
   );
+});
+
+test("InMemoryRateLimiter bounds its bucket map under a flood of distinct keys (a2a-nexus#573 item 14)", () => {
+  const limiter = new InMemoryRateLimiter(100, 60_000);
+  const now = 1_000_000;
+
+  // The key is the (self-asserted) requester id, so a rotating-id flood could
+  // grow the map without bound. Far more distinct keys than the cap, all within
+  // the window, must still leave the bucket map bounded.
+  for (let i = 0; i < 25_000; i++) {
+    limiter.check(`key-${i}`, now);
+  }
+
+  const snap = limiter.snapshot(now);
+  assert.ok(
+    snap.activeKeys <= 10_000,
+    `rate-limiter bucket map must stay bounded, got ${snap.activeKeys}`,
+  );
+});
+
+test("InMemoryRateLimiter prunes idle buckets once over the cap (a2a-nexus#573 item 14)", () => {
+  const limiter = new InMemoryRateLimiter(100, 60_000);
+
+  // Insert just over the cap with old timestamps, then one fresh key past the
+  // cap so check() runs a prune; the stale buckets should be dropped.
+  for (let i = 0; i < 10_001; i++) {
+    limiter.check(`stale-${i}`, 0);
+  }
+  // Far past the window so the earlier keys are idle.
+  limiter.check("fresh", 10 * 60_000);
+
+  const snap = limiter.snapshot(10 * 60_000);
+  assert.ok(snap.activeKeys <= 10_000, `idle buckets should be pruned, got ${snap.activeKeys}`);
 });

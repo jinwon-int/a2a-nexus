@@ -5995,3 +5995,100 @@ test("submitValidationResult does not rewind an approved proposal (item 5)", () 
     "a late validation must not rewind an approved proposal",
   );
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Persistence/terminal-state consistency regressions (a2a-nexus#573 items 15, 16)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("failTask persists the tombstone in the same snapshot as the failed task (item 15)", () => {
+  const snapshots: BrokerSnapshot[] = [];
+  const store = {
+    load: () => emptySnapshot(),
+    save: (snapshot: BrokerSnapshot) => snapshots.push(structuredClone(snapshot)),
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    id: "fail-tombstone-order",
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "x",
+  });
+  broker.claimTask(task.id, "worker-a");
+  snapshots.length = 0;
+
+  broker.failTask(task.id, "worker-a", { code: "boom", message: "m" });
+
+  // The persistState() inside failTask must already include the tombstone, not
+  // just the failed task — otherwise a crash before the next persist loses it.
+  const last = snapshots.at(-1);
+  assert.ok(last, "failTask should have persisted at least once");
+  assert.equal(last!.tasks.find((t) => t.id === task.id)?.status, "failed");
+  assert.ok(
+    last!.tombstones?.some((tomb) => tomb.taskId === task.id),
+    "the tombstone must be in the same snapshot as the failed task",
+  );
+});
+
+test("cancelTask persists the tombstone in the same snapshot as the canceled task (item 15)", () => {
+  const snapshots: BrokerSnapshot[] = [];
+  const store = {
+    load: () => emptySnapshot(),
+    save: (snapshot: BrokerSnapshot) => snapshots.push(structuredClone(snapshot)),
+  };
+  const broker = new InMemoryA2ABroker(store, store.load());
+  registerWorker(broker, "worker-a");
+
+  const task = broker.createTask({
+    id: "cancel-tombstone-order",
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    message: "x",
+  });
+  snapshots.length = 0;
+
+  broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" }, reason: "no longer needed" });
+
+  const last = snapshots.at(-1);
+  assert.ok(last, "cancelTask should have persisted at least once");
+  assert.equal(last!.tasks.find((t) => t.id === task.id)?.status, "canceled");
+  assert.ok(
+    last!.tombstones?.some((tomb) => tomb.taskId === task.id),
+    "the tombstone must be in the same snapshot as the canceled task",
+  );
+});
+
+test("a declined exchange ends with status failed, not queued (item 16)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-a" });
+  registerWorker(broker, "worker-a");
+
+  const exchange = broker.startExchange({
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "start",
+    intent: "chat",
+  });
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "accepting",
+    decision: "accepted",
+  });
+  assert.equal(broker.getExchange(exchange.id)?.status, "running");
+
+  broker.addExchangeMessage(exchange.id, {
+    actor: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "declining",
+    decision: "declined",
+  });
+
+  assert.equal(
+    broker.getExchange(exchange.id)?.status,
+    "failed",
+    "a declined exchange must terminate as failed",
+  );
+});

@@ -1663,6 +1663,12 @@ function initSchedulingHook(
       _probeCounter.set(prefix, entry);
     }
     entry.count++;
+    // /livez is public and unauthenticated, so a distinct peer /24 per request
+    // would grow this map without bound. Prune only when it gets large so the
+    // hot path stays cheap.
+    if (_probeCounter.size > PROBE_COUNTER_MAX_ENTRIES) {
+      pruneProbeCounter(now);
+    }
   }
 
   let flushCalledAt = 0;
@@ -2146,6 +2152,29 @@ function readRequestLifecycleTiming(req: IncomingMessage): RequestLifecycleTimin
 }
 
 /** Returns a snapshot of probe burst peers for diagnostic display. Lightweight scan of active entries. */
+// Bound on distinct peer /24 prefixes tracked for /livez probe-burst detection.
+const PROBE_COUNTER_MAX_ENTRIES = 4096;
+
+function pruneProbeCounter(now: number): void {
+  // Drop entries whose window has expired (the readers already ignore these).
+  for (const [prefix, entry] of _probeCounter) {
+    if (now - entry.windowStartMs > PROBE_WINDOW_MS) {
+      _probeCounter.delete(prefix);
+    }
+  }
+  // If still over the cap (many active prefixes), evict the oldest by window
+  // start so the map cannot grow without bound.
+  if (_probeCounter.size > PROBE_COUNTER_MAX_ENTRIES) {
+    const oldestFirst = [..._probeCounter.entries()].sort(
+      (a, b) => a[1].windowStartMs - b[1].windowStartMs,
+    );
+    const toRemove = _probeCounter.size - PROBE_COUNTER_MAX_ENTRIES;
+    for (let i = 0; i < toRemove; i++) {
+      _probeCounter.delete(oldestFirst[i]![0]);
+    }
+  }
+}
+
 function readProbeBursts(): Array<{ peerPrefix: string; count: number; ageMs: number }> {
   const now = Date.now();
   const bursts: Array<{ peerPrefix: string; count: number; ageMs: number }> = [];
