@@ -51,6 +51,12 @@ jobs:
                   continue
               if pr.get("headRefOid") != head_sha:
                   continue
+              # Only merge PRs GitHub itself reports as ready: CLEAN means
+              # required reviews are approved, required checks pass, and there
+              # is no conflict. Without this gate the workflow would attempt to
+              # merge unreviewed PRs if branch protection were ever relaxed.
+              if pr.get("mergeStateStatus") != "CLEAN":
+                  continue
               number = pr.get("number")
               if number is not None:
                   print(number)
