@@ -67,7 +67,7 @@ export function mergeRunnerEnvFile(
 }
 
 export async function loadConfig(env = process.env): Promise<RunnerConfig> {
-  const engine = normalizeEngine(env.A2A_DOCKER_RUNNER_ENGINE) ?? (env.A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT ? "docker" : detectEngine());
+  const engine = normalizeEngine(env.A2A_DOCKER_RUNNER_ENGINE) ?? (isTruthy(env.A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT) ? "docker" : detectEngine());
   const githubTokenFile = env.A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE;
   if (githubTokenFile && existsSync(githubTokenFile)) {
     await access(githubTokenFile, constants.R_OK);

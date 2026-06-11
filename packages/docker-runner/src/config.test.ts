@@ -93,6 +93,28 @@ test("mergeRunnerEnvFile supports Hermes patch profile", async () => {
   }
 });
 
+test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by mere presence", async () => {
+  // Truthy values skip detection and force docker (deterministic on any host).
+  for (const value of ["1", "true", "yes", "on"]) {
+    const config = await loadConfig({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: value });
+    assert.equal(config.engine, "docker", `${JSON.stringify(value)} should skip detection`);
+  }
+
+  // Falsy values must NOT short-circuit to docker — they go through detection,
+  // i.e. behave exactly as when the flag is absent. (Previously "0"/"false"
+  // were truthy by mere presence and forced docker on podman-only hosts.)
+  const resolve = async (env: Record<string, string>): Promise<string | undefined> => {
+    try {
+      return (await loadConfig(env)).engine;
+    } catch (error) {
+      return `THREW:${(error as Error).message}`;
+    }
+  };
+  const absent = await resolve({});
+  assert.equal(await resolve({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "0" }), absent);
+  assert.equal(await resolve({ A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "false" }), absent);
+});
+
 test("loadConfig enforces expected patch command profile", async () => {
   const config = await loadConfig({
     ...baseEnv,

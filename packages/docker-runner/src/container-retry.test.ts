@@ -11,12 +11,45 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  argsForAttempt,
   computeRetryDelay,
   defaultRetryConfig,
   isTransientContainerError,
   runContainerWithRetry,
 } from "./container-retry.js";
 import type { RetryConfig } from "./container-retry.js";
+
+// ─── argsForAttempt: unique container name per retry ─────────────────────────
+
+describe("argsForAttempt", () => {
+  const base = ["run", "--rm", "--name", "a2a-task-tok", "--network", "bridge"];
+
+  it("leaves the first attempt's args unchanged", () => {
+    assert.deepEqual(argsForAttempt(base, 1), base);
+  });
+
+  it("suffixes the container name on retries so a leftover does not block", () => {
+    assert.deepEqual(
+      argsForAttempt(base, 2),
+      ["run", "--rm", "--name", "a2a-task-tok-r2", "--network", "bridge"],
+    );
+    assert.deepEqual(
+      argsForAttempt(base, 3),
+      ["run", "--rm", "--name", "a2a-task-tok-r3", "--network", "bridge"],
+    );
+  });
+
+  it("does not mutate the input args array", () => {
+    const copy = [...base];
+    argsForAttempt(base, 2);
+    assert.deepEqual(base, copy);
+  });
+
+  it("is a no-op when there is no --name flag", () => {
+    const noName = ["run", "--rm", "--network", "bridge"];
+    assert.deepEqual(argsForAttempt(noName, 2), noName);
+  });
+});
 
 // ─── isTransientContainerError ──────────────────────────────────────────────
 
@@ -89,10 +122,18 @@ describe("isTransientContainerError", () => {
     }), true);
   });
 
-  it("returns true for timed out results", () => {
+  it("returns false for timed out results (retrying only multiplies wall-clock)", () => {
     assert.equal(isTransientContainerError({
       code: null, signal: "SIGTERM", stdout: "", stderr: "", timedOut: true,
-    }), true);
+    }), false);
+  });
+
+  it("does not retry a timeout even when stderr would otherwise look transient", () => {
+    assert.equal(isTransientContainerError({
+      code: null, signal: "SIGTERM", stdout: "",
+      stderr: "Error response from daemon: timeout",
+      timedOut: true,
+    }), false);
   });
 
   it("returns false for unknown non-zero exit", () => {
