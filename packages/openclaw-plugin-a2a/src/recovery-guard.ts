@@ -162,7 +162,7 @@ export function createRecoveryGuard(options: RecoveryGuardOptions = {}): Recover
   const nowMs = options.nowMs ?? Date.now;
   const nodeProfile: RecoveryNodeProfile = {
     isMobile: options.nodeProfile?.isMobile ?? detectMobileProfile(),
-    isLowResource: options.nodeProfile?.isLowResource ?? (options.nodeProfile?.isLowResource ?? detectLowResource()),
+    isLowResource: options.nodeProfile?.isLowResource ?? detectLowResource(),
     nodeId: options.nodeProfile?.nodeId,
   };
   const retryPolicy: RecoveryRetryPolicy = {

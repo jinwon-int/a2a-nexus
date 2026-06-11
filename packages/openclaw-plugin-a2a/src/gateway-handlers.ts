@@ -285,7 +285,7 @@ export function createA2AGatewayHandlers(
         opts.respond(
           false,
           undefined,
-          a2aError(A2AErrorCodes.INVALID_REQUEST, `a2a.task.update failed: ${error}`),
+          a2aError(A2AErrorCodes.INTERNAL, `a2a.task.update failed: ${error}`),
         );
       }
     },
@@ -317,7 +317,7 @@ export function createA2AGatewayHandlers(
         opts.respond(
           false,
           undefined,
-          a2aError(A2AErrorCodes.INVALID_REQUEST, `a2a.task.cancel failed: ${error}`),
+          a2aError(A2AErrorCodes.INTERNAL, `a2a.task.cancel failed: ${error}`),
         );
       }
     },
@@ -381,7 +381,7 @@ export function createA2AGatewayHandlers(
         opts.respond(
           false,
           undefined,
-          a2aError(A2AErrorCodes.INVALID_REQUEST, `a2a.task.approve failed: ${error}`),
+          a2aError(A2AErrorCodes.INTERNAL, `a2a.task.approve failed: ${error}`),
         );
       }
     },
@@ -417,7 +417,7 @@ export function createA2AGatewayHandlers(
         opts.respond(
           false,
           undefined,
-          a2aError(A2AErrorCodes.INVALID_REQUEST, `a2a.task.reject_approval failed: ${error}`),
+          a2aError(A2AErrorCodes.INTERNAL, `a2a.task.reject_approval failed: ${error}`),
         );
       }
     },
@@ -925,7 +925,11 @@ function deriveGitHubMergeGateState(params: {
 }): GitHubMergeGateState {
   const mergeStateStatus = params.mergeStateStatus?.toUpperCase();
   const reviewDecision = params.reviewDecision?.toUpperCase();
-  if (params.hasConflicts === true || mergeStateStatus === "DIRTY" || mergeStateStatus === "UNKNOWN") {
+  // UNKNOWN means GitHub has not computed mergeability yet (e.g. a PR pushed
+  // moments ago) — reporting it as "conflict" showed false conflicts. Only
+  // DIRTY / explicit conflicts map to "conflict"; UNKNOWN falls through to
+  // the "unknown" default.
+  if (params.hasConflicts === true || mergeStateStatus === "DIRTY") {
     return "conflict";
   }
   if (

@@ -189,8 +189,20 @@ function normalizeGeneralMode(input: Record<string, unknown>): PayloadNormalizeR
 
   const requesterBlock = readRecord(request, "requester");
   const sessionKey = readString(input, "sessionKey") ?? "";
+  const resolvedRequesterSessionKey = requesterBlock
+    ? (readString(requesterBlock, "sessionKey") ?? sessionKey)
+    : sessionKey;
+  if (!resolvedRequesterSessionKey) {
+    // The normalized type requires a non-empty requester.sessionKey; emitting
+    // "" pushed an invalid requester downstream to the broker.
+    return fail(
+      PayloadNormalizerErrorCodes.MISSING_REQUIRED_FIELD,
+      "requester.sessionKey (or top-level sessionKey) is required",
+      "requester.sessionKey",
+    );
+  }
   const requester: NormalizedRequester = {
-    sessionKey: requesterBlock ? (readString(requesterBlock, "sessionKey") ?? sessionKey) : sessionKey,
+    sessionKey: resolvedRequesterSessionKey,
     ...(requesterBlock?.displayKey ? { displayKey: readString(requesterBlock, "displayKey") } : {}),
     ...(requesterBlock?.channel ? { channel: readString(requesterBlock, "channel") } : {}),
   };
@@ -269,6 +281,10 @@ function normalizeTeamAssignmentMode(input: Record<string, unknown>): PayloadNor
   if (!firstTarget) {
     return fail(PayloadNormalizerErrorCodes.MISSING_REQUIRED_FIELD, "targetNodes first entry must be a non-empty string", "targetNodes[0]");
   }
+  const droppedTargetNodes = targets
+    .slice(1)
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
 
   const summary = readString(input, "summary");
   const requester: NormalizedRequester = {
@@ -314,6 +330,9 @@ function normalizeTeamAssignmentMode(input: Record<string, unknown>): PayloadNor
       source: "team-assignment",
       detectedMode: "team-assignment",
       originalShape: input,
+      // Single-target normalization keeps only targetNodes[0]; surface the
+      // rest so multi-target assignments are not dropped silently.
+      ...(droppedTargetNodes.length > 0 ? { droppedTargetNodes } : {}),
     },
   };
 }

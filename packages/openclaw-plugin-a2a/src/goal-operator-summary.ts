@@ -76,8 +76,13 @@ export function buildA2AGoalOperatorSummary(
   const goalId = normalizeRequiredText(input.goalId, "goal id");
   const title = normalizeRequiredText(input.title, "goal title");
   const childTaskLinks = (input.childTasks ?? []).map(normalizeChildTaskLink);
-  const total = input.taskTotalCount ?? childTaskLinks.length;
-  const succeeded = input.taskSuccessCount ?? childTaskLinks.filter(isSuccessfulChildTask).length;
+  const total = Math.max(0, input.taskTotalCount ?? childTaskLinks.length);
+  // Clamp so inconsistent caller counts can never render "5/3 child tasks
+  // succeeded" to the operator.
+  const succeeded = Math.min(
+    Math.max(0, input.taskSuccessCount ?? childTaskLinks.filter(isSuccessfulChildTask).length),
+    total,
+  );
   const achieved = input.goalAchieved ?? input.state === "achieved";
   const headline = `${stateLabels[input.state]} goal: ${title}`;
 

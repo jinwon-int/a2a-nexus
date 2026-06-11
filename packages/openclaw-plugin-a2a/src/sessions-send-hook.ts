@@ -157,6 +157,17 @@ export function createA2ASessionsSendHook(
   } = {},
 ) {
   const recentWakeKeys = new Set<string>();
+  const MAX_RECENT_WAKE_KEYS = 256;
+
+  function recordRecentWakeKey(wakeKey: string): void {
+    recentWakeKeys.add(wakeKey);
+    while (recentWakeKeys.size > MAX_RECENT_WAKE_KEYS) {
+      const oldest = recentWakeKeys.values().next().value;
+      if (oldest === undefined) break;
+      recentWakeKeys.delete(oldest);
+    }
+  }
+
   const recentSendFingerprints = new Set<string>();
   const MAX_RECENT_SENDS = 256;
 
@@ -208,7 +219,7 @@ export function createA2ASessionsSendHook(
       state,
       onResult: async (params) => {
         if (params.result.plan.status === "scheduled") {
-          recentWakeKeys.add(params.result.plan.wakeKey);
+          recordRecentWakeKey(params.result.plan.wakeKey);
         }
         await base?.onResult?.(params);
       },
@@ -274,7 +285,7 @@ export function createA2ASessionsSendHook(
       // the wake layer skips with duplicate_wake, but allow the broker
       // task to be created idempotently.
       const wakeKey = `${normalizeOptionalString(event.task.correlationId) ?? ""}:${normalizeOptionalString(event.task.runtime?.waitRunId) ?? targetSessionKey}`;
-      recentWakeKeys.add(wakeKey);
+      recordRecentWakeKey(wakeKey);
     }
 
     // Record fingerprint before broker task creation to prevent
