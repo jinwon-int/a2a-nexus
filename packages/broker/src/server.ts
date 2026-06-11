@@ -396,6 +396,7 @@ import type { TaskStatusEvent } from "./core/task-events.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
 import { parseGitHubWebhook, validateWebhookHeaders } from "./github/webhook-parser.js";
+import { A2A_VERSION_HEADER, SUPPORTED_A2A_VERSIONS, negotiateA2AVersion } from "./a2a/version-negotiation.js";
 
 const DEFAULT_TASK_LIST_LIMIT = 100;
 const MAX_TASK_LIST_LIMIT = 500;
@@ -3315,6 +3316,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path === "/a2a/jsonrpc") {
+        // A2A 1.0 version negotiation: serve the requested version's
+        // semantics or fail closed on a version we cannot honor. The
+        // response always advertises the version actually served.
+        const negotiated = negotiateA2AVersion(req.headers[A2A_VERSION_HEADER]);
+        if (!negotiated.ok) {
+          return sendJson(
+            res,
+            400,
+            { jsonrpc: "2.0", id: null, error: { code: -32600, message: negotiated.message } },
+            { "a2a-version": SUPPORTED_A2A_VERSIONS.join(", ") },
+          );
+        }
+        res.setHeader("a2a-version", negotiated.version);
         // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
         // than the broker's HTTP error envelope, and so batch arrays /
         // notifications are handled by the JSON-RPC transport layer.

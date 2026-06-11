@@ -21,6 +21,17 @@ export const A2A_COMPATIBILITY_PROFILE = {
   ],
   unsupportedPushNotifications: true,
   unsupportedA2A03Compat: true,
+  /**
+   * A2A 1.0 version negotiation on /a2a/jsonrpc. Documented deviation: a
+   * missing/empty A2A-Version header is served with 1.0 semantics instead of
+   * the spec's 0.3 fallback (0.3 semantics are unsupported); an explicit
+   * version we cannot honor is rejected with -32600.
+   */
+  versionNegotiation: {
+    header: "A2A-Version",
+    supported: ["1.0"],
+    emptyFallback: "1.0 (spec says 0.3; deviation documented — 0.3 unsupported)",
+  },
   taskStates: ["submitted", "working", "completed", "failed", "canceled"],
   internalStatusToA2AState: {
     blocked: "submitted",
