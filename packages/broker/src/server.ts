@@ -6188,6 +6188,14 @@ export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServ
         })
         .finally(() => process.exit());
     });
+    // server.close() only fires its callback once every connection ends, but
+    // SSE streams are kept alive by heartbeats and never end on their own.
+    // Close idle connections immediately and force-close any still-open ones
+    // after a grace period so shutdown cannot hang until SIGKILL.
+    runtime.server.closeIdleConnections?.();
+    setTimeout(() => {
+      runtime.server.closeAllConnections?.();
+    }, SHUTDOWN_FORCE_CLOSE_MS).unref?.();
   };
   process.once("SIGINT", gracefulShutdown);
   process.once("SIGTERM", gracefulShutdown);
@@ -6215,10 +6223,25 @@ export function firstNonEmpty(...values: Array<string | undefined>): string | un
   return undefined;
 }
 
+// Hard cap on any request body the broker buffers, so a single oversized POST
+// cannot exhaust memory. Generous for JSON APIs (task/proposal payloads); large
+// state transfers have their own bounded paths.
+const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
+
+// Grace period after server.close() before force-closing lingering (e.g. SSE)
+// connections so a graceful shutdown cannot hang indefinitely.
+const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
+
 async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > MAX_REQUEST_BODY_BYTES) {
+      throw new BrokerError("bad_request", `request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`);
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks);
 }
@@ -7608,14 +7631,21 @@ function handleTerminalTaskEventStream(
       res.end();
     }
   });
+  req.on("error", cleanup);
 
-  heartbeatTimer = setInterval(() => {
-    if (res.writableEnded) {
-      cleanup();
-      return;
-    }
-    res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-  }, heartbeatMs);
+  // Match the other SSE handlers: skip the heartbeat entirely when disabled
+  // (heartbeatMs <= 0) — otherwise setInterval(..., 0) becomes a ~1ms
+  // busy-loop — and unref the timer so it never keeps the process alive.
+  if (heartbeatMs > 0) {
+    heartbeatTimer = setInterval(() => {
+      if (res.writableEnded) {
+        cleanup();
+        return;
+      }
+      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+    }, heartbeatMs);
+    heartbeatTimer.unref?.();
+  }
 }
 
 function handleTaskEventStream(

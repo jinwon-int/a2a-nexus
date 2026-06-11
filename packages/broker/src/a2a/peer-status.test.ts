@@ -263,6 +263,25 @@ test("cache serves result within TTL", () => {
   );
 });
 
+test("a configured cacheTtlMs is honored when no per-request override is given (a2a-nexus#573 item 17)", async () => {
+  const broker = createBroker();
+  registerWorker(broker, "worker-a");
+  // cacheTtlMs: 0 means "never serve from cache". Previously the constructor
+  // option was ignored and the default 5s TTL was always used, so this entry
+  // would have been served stale.
+  const service = new PeerStatusService(broker, { cacheTtlMs: 0 });
+
+  service.query({ target: "worker-a" }, "caller"); // populate cache
+  await new Promise((resolve) => setTimeout(resolve, 8));
+  const result = service.query({ target: "worker-a" }, "caller");
+  assert.ok(isPeerStatusResponse(result));
+  assert.equal(
+    (result as PeerStatusResponse).cacheAgeMs,
+    0,
+    "cacheTtlMs=0 must recompute rather than serve an 8ms-old cache entry",
+  );
+});
+
 test("maxCacheAgeMs=0 forces fresh computation", () => {
   const broker = createBroker();
   registerWorker(broker, "worker-a");

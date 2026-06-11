@@ -11289,3 +11289,26 @@ test("POST /complexity-execution-plan/draft rejects invalid input", async () => 
     await server.close();
   }
 });
+
+test("POST bodies over the size cap are rejected with 400 (a2a-nexus#573 item 13)", async () => {
+  const server = await startTestServer();
+  try {
+    // 10 MB + 1 byte of raw payload exceeds MAX_REQUEST_BODY_BYTES.
+    const oversized = Buffer.alloc(10 * 1024 * 1024 + 1, 0x61);
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+        "x-a2a-requester-kind": "node",
+      },
+      body: oversized,
+    });
+    assert.equal(response.status, 400);
+    const body = await response.json() as { error?: { message?: string } };
+    assert.match(String(body.error?.message), /request body exceeds/);
+  } finally {
+    await server.close();
+  }
+});
