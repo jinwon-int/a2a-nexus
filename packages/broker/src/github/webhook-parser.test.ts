@@ -209,3 +209,47 @@ test("parseGitHubWebhook handles pull_request_review_comment events", () => {
     assert.equal(result.event.comment.id, 200);
   }
 });
+
+test("parseGitHubWebhook parses a pull_request/synchronize event instead of rejecting it (a2a-nexus#573 item 18)", () => {
+  const result = parseGitHubWebhook("pull_request", "d-sync", {
+    action: "synchronize",
+    repository: {
+      owner: { login: "test-owner" },
+      name: "test-repo",
+      full_name: "test-owner/test-repo",
+    },
+    pull_request: {
+      number: 7,
+      title: "Add feature",
+      html_url: "https://github.com/test-owner/test-repo/pull/7",
+      state: "open",
+      base: { ref: "main" },
+    },
+    sender: { login: "test-user", id: 42 },
+  });
+
+  // Must NOT be null — a null here makes the broker throw bad_request and
+  // GitHub marks the webhook as failing.
+  assert.ok(result !== null, "synchronize is a valid PR action and must parse");
+  assert.equal(result.event.kind, "pull_request");
+  if (result.event.kind === "pull_request") {
+    assert.equal(result.event.action, "synchronize");
+  }
+});
+
+test("parseGitHubWebhook parses a pull_request/ready_for_review event (a2a-nexus#573 item 18)", () => {
+  const result = parseGitHubWebhook("pull_request", "d-ready", {
+    action: "ready_for_review",
+    repository: { owner: { login: "o" }, name: "r", full_name: "o/r" },
+    pull_request: {
+      number: 8,
+      title: "Ready",
+      html_url: "https://github.com/o/r/pull/8",
+      state: "open",
+      base: { ref: "main" },
+    },
+    sender: { login: "u", id: 1 },
+  });
+
+  assert.ok(result !== null, "ready_for_review is a valid PR action and must parse");
+});

@@ -889,3 +889,52 @@ describe("GitHubIngestionService — replay protection", () => {
     assert.equal(broker.listTasks({}).length, 4);
   });
 });
+
+describe("GitHubIngestionService — batch dedup and PR actions (a2a-nexus#573)", () => {
+  it("ingests every distinct event sharing one delivery context (item 9)", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+
+    // The poller passes ONE shared delivery context for a whole batch.
+    const ctx = makeContext("batch-1");
+    const a = ingestion.ingest(
+      makeIssueEvent({ issue: makeIssue({ number: 11, body: "/a2a assign worker-a --work-mode github" }) }),
+      ctx,
+    );
+    const b = ingestion.ingest(
+      makeIssueEvent({ issue: makeIssue({ number: 22, body: "/a2a assign worker-a --work-mode github" }) }),
+      ctx,
+    );
+
+    assert.equal(a.deduped, false);
+    assert.equal(b.deduped, false, "the second batch event must not be dropped as a duplicate");
+    assert.equal(broker.listTasks({}).length, 2);
+  });
+
+  it("still dedups a genuine redelivery of the same event (item 9)", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+
+    const event = makeIssueEvent({ issue: makeIssue({ body: "/a2a assign worker-a --work-mode github" }) });
+    assert.equal(ingestion.ingest(event, makeContext("d1")).deduped, false);
+    assert.equal(ingestion.ingest(event, makeContext("d1")).deduped, true);
+    assert.equal(broker.listTasks({}).length, 1);
+  });
+
+  it("treats a pull_request synchronize action as a recognized no-op, not an error (item 18)", () => {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const ingestion = new GitHubIngestionService({ broker });
+
+    const result = ingestion.ingest(
+      makePullRequestEvent({ action: "synchronize" }),
+      makeContext("d-sync"),
+    );
+
+    assert.equal(result.skippedReason, "unhandled_pr_action");
+    assert.equal(result.deduped, false);
+    assert.equal(broker.listTasks({}).length, 0, "synchronize must not re-run the assign flow");
+  });
+});

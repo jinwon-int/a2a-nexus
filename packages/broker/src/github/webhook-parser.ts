@@ -248,7 +248,7 @@ function coercePullRequestEvent(body: Record<string, unknown>): GitHubPullReques
   );
   if (!repo || !sender || !pr) return null;
 
-  const action = normalizeIssueAction(body.action as string | undefined);
+  const action = normalizePullRequestAction(body.action as string | undefined);
   if (!action) return null;
 
   return {
@@ -297,6 +297,21 @@ const VALID_COMMENT_ACTIONS = new Set(["created", "edited", "deleted"]);
 function normalizeIssueAction(raw: string | undefined): GitHubIssueAction | null {
   if (typeof raw !== "string") return null;
   return VALID_ISSUE_ACTIONS.has(raw) ? (raw as GitHubIssueAction) : null;
+}
+
+// Pull requests carry the issue actions plus a couple of PR-only actions.
+// They must be recognized so well-formed deliveries are not rejected as
+// bad_request (the handler decides whether to act on them).
+const VALID_PULL_REQUEST_EXTRA_ACTIONS = new Set(["synchronize", "ready_for_review"]);
+
+function normalizePullRequestAction(
+  raw: string | undefined,
+): GitHubPullRequestEvent["action"] | null {
+  if (typeof raw !== "string") return null;
+  if (VALID_ISSUE_ACTIONS.has(raw) || VALID_PULL_REQUEST_EXTRA_ACTIONS.has(raw)) {
+    return raw as GitHubPullRequestEvent["action"];
+  }
+  return null;
 }
 
 function normalizeCommentAction(raw: string | undefined): GitHubCommentAction | null {
