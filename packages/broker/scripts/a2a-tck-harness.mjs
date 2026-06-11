@@ -68,6 +68,9 @@ const runtime = createBrokerServer({
   // TCK clients do not send broker requester-identity headers.
   enforceRequesterIdentity: false,
   staleReaperEnabled: false,
+  // Single-agent conformance mode: a worker-less SendMessage must produce a
+  // task the embedded default agent drives to terminal.
+  defaultAgentMode: true,
 });
 runtime.server.listen(port, "127.0.0.1");
 await once(runtime.server, "listening");
