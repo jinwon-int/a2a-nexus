@@ -134,7 +134,7 @@ export function validateRunnerConfig(config: RunnerConfig): void {
     errors.push(`invalid memory limit: ${JSON.stringify(config.memory)} (expected format like "2g" or "512m")`);
   }
 
-  if (config.pidsLimit && !/^\d+$/.test(config.pidsLimit)) {
+  if (config.pidsLimit && (!/^\d+$/.test(config.pidsLimit) || Number(config.pidsLimit) <= 0)) {
     errors.push(`invalid pids limit: ${JSON.stringify(config.pidsLimit)} (expected a positive integer)`);
   }
 
