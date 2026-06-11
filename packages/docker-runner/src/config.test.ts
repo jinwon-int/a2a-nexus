@@ -184,6 +184,18 @@ test("loadConfig reads bounded safe runner build metadata", async () => {
   });
 });
 
+test("loadConfig falls back to the runtime image when BUILD_IMAGE is blank", async () => {
+  // A blank A2A_DOCKER_RUNNER_BUILD_IMAGE must fall through to the runtime
+  // image; `?? ` kept the empty string, yielding image: "".
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_IMAGE: "ghcr.io/jinwon-int/a2a-docker-runner:ci",
+    A2A_DOCKER_RUNNER_BUILD_VERSION: "0.1.0",
+    A2A_DOCKER_RUNNER_BUILD_IMAGE: "",
+  });
+  assert.equal(config.buildMetadata?.image, "ghcr.io/jinwon-int/a2a-docker-runner:ci");
+});
+
 test("loadConfig drops unsafe runner build metadata values", async () => {
   const config = await loadConfig({
     ...baseEnv,

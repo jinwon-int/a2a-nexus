@@ -72,6 +72,16 @@ test("deploy marker doctor passes with short SHA marker", async () => {
   assert.match(String(report.detail?.summary), /^PASS /);
 });
 
+test("deploy marker doctor passes with a 7-char short SHA marker (git --short default)", async () => {
+  const { repo, head } = await makeRevisionRepo();
+
+  const shortSha = head.slice(0, 7);
+  const report = await checkDeployMarker(shortSha, repo);
+
+  assert.equal(report.status, "ok", `7-char marker ${shortSha} should match ${head}`);
+  assert.match(String(report.detail?.summary), /^PASS /);
+});
+
 test("deploy marker doctor fails when deployed revision mismatches the expected marker", async () => {
   const { repo } = await makeRevisionRepo();
 
