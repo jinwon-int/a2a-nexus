@@ -149,6 +149,7 @@ test("drift: JSON-RPC method inventory matches documented profile", () => {
   const implemented = [...A2A_COMPATIBILITY_PROFILE.jsonRpcMethods];
   const expected = [
     "SendMessage",
+    "SendStreamingMessage",
     "GetTask",
     "ListTasks",
     "CancelTask",

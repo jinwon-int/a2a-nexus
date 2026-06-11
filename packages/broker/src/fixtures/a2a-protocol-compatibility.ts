@@ -6,6 +6,7 @@ export const A2A_COMPATIBILITY_PROFILE = {
   protocolVersion: "1.0",
   jsonRpcMethods: [
     "SendMessage",
+    "SendStreamingMessage",
     "GetTask",
     "ListTasks",
     "CancelTask",
