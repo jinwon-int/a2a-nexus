@@ -48,6 +48,9 @@ test("builds a Docker/Podman-compatible invocation contract without requiring an
   assert.ok(args.includes("256m"));
   assert.ok(args.includes("--cpus"));
   assert.ok(args.includes("0.5"));
+  assert.ok(args.includes("--pids-limit"), "fork-bomb guard must be present");
+  assert.ok(args.includes("--security-opt"), "hardening must be on by default");
+  assert.ok(args.includes("no-new-privileges"));
   assert.ok(args.includes("/tmp/a2a-work:/work"));
   assert.ok(args.includes("/tmp/hosts.yml:/run/secrets/gh-hosts.yml:ro"));
   assert.ok(args.includes("GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml"));
@@ -385,4 +388,27 @@ test("same task id gets unique traceable container names for retries", () => {
   assert.match(secondName, /^a2a-contract_test_1-run-b$/);
   assert.ok(first.includes("a2a.task.id=contract_test_1"));
   assert.ok(second.includes("a2a.task.id=contract_test_1"));
+});
+
+
+test("buildRunArgs hardening can be tuned through config", () => {
+  const hardened = buildRunArgs(
+    { ...config, pidsLimit: "128", capDrop: ["ALL"] },
+    task,
+    "/tmp/a2a-work",
+    "ci-run-2",
+  );
+  const pidsIndex = hardened.indexOf("--pids-limit");
+  assert.equal(hardened[pidsIndex + 1], "128");
+  const capIndex = hardened.indexOf("--cap-drop");
+  assert.equal(hardened[capIndex + 1], "ALL");
+
+  const optedOut = buildRunArgs(
+    { ...config, noNewPrivileges: false },
+    task,
+    "/tmp/a2a-work",
+    "ci-run-3",
+  );
+  assert.ok(!optedOut.includes("no-new-privileges"), "explicit opt-out must be honored");
+  assert.ok(optedOut.includes("--pids-limit"), "pids limit stays even when escalation is allowed");
 });

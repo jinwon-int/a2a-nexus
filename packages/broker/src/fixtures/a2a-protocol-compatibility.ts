@@ -191,7 +191,7 @@ export const A2A_DRIFT_EXTERNAL_REFS = [
       "server handlers",
     ],
     checkedSurfaces: ["AgentCard", "Task", "Message", "Artifact", "JSON-RPC envelope", "transport abstractions"],
-    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+    pinned: { kind: "commit" as const, ref: "2e0a4e535e738ae12af2a757c7013cf60283fa71", refreshedAt: "2026-06-11T13:07:00KST" },
   },
   {
     repo: "a2aproject/a2a-python",
@@ -200,7 +200,7 @@ export const A2A_DRIFT_EXTERNAL_REFS = [
       "client/server route helpers",
     ],
     checkedSurfaces: ["protocol buffer types", "JSON-RPC routes", "REST routes"],
-    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+    pinned: { kind: "commit" as const, ref: "b264a6ffafe156f684828edeaa3e526b9fcbe7b0", refreshedAt: "2026-06-11T12:25:00KST" },
   },
   {
     repo: "a2aproject/a2a-samples",
@@ -209,6 +209,6 @@ export const A2A_DRIFT_EXTERNAL_REFS = [
       "multi-language samples",
     ],
     checkedSurfaces: ["interop test harness", "multi-language agent/server patterns"],
-    pinned: { kind: "commit" as const, ref: "main", refreshedAt: "2026-05-28T01:39:00KST" },
+    pinned: { kind: "commit" as const, ref: "22b48d5e8f88a35b7098ab06257d0c2c3eb47c0b", refreshedAt: "2026-06-11T12:25:00KST" },
   },
 ];
