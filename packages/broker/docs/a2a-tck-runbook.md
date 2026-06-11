@@ -59,6 +59,24 @@ Requirement levels and transports (per the TCK):
 Reports are written by the TCK into its own output directory; attach the
 JSON/HTML report to the round evidence when citing compliance numbers.
 
+## Measured baseline (2026-06-11, `--level must --transport jsonrpc`)
+
+First official-TCK run after wiring `supportedInterfaces` and relaxing the
+harness rate limits:
+
+- **agent_card: 6/6** — full agent-card tier passes (required fields,
+  `supportedInterfaces` protocol bindings, schema).
+- **jsonrpc MUST: 12/75 pass, rest fail/skip** — the dominant remaining
+  blockers are (a) JSON-RPC error codes not matching the A2A reserved family
+  (`-32001 TaskNotFoundError` etc.) and missing `ErrorInfo` in `error.data`,
+  and (b) `SendMessage` requiring a pre-registered broker worker, which the
+  TCK (a single-agent client) cannot satisfy, cascading into the task-
+  creating CORE tests.
+
+Track this number down as alignment PRs land. The error-code/`ErrorInfo`
+alignment is in-scope correctness work; the worker-registration model is an
+architectural decision recorded for follow-up.
+
 ## Safety
 
 The harness binds loopback only, uses an ephemeral temp state file, disables
