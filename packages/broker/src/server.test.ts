@@ -11312,3 +11312,49 @@ test("POST bodies over the size cap are rejected with 400 (a2a-nexus#573 item 13
     await server.close();
   }
 });
+
+test("agent card is served signed when a signing key is configured (A2A 1.0)", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { writeFileSync, mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { verifyAgentCardSignature } = await import("./a2a/agent-card-signing.js");
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const keyDir = mkdtempSync(join(tmpdir(), "a2a-card-key-"));
+  const keyFile = join(keyDir, "signing-key.pem");
+  writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+
+  const server = await startTestServer({
+    agentCardSigningKeyFile: keyFile,
+    agentCardSigningKid: "integration-key-1",
+  });
+  try {
+    const res = await fetch(`${server.baseUrl}/.well-known/agent-card.json`);
+    assert.equal(res.status, 200);
+    const card = await res.json();
+    assert.ok(Array.isArray(card.signatures), "served card must carry signatures");
+    assert.equal(card.signatures.length, 1);
+    const header = JSON.parse(Buffer.from(card.signatures[0].protected, "base64url").toString());
+    assert.equal(header.alg, "EdDSA");
+    assert.equal(header.kid, "integration-key-1");
+    assert.equal(
+      verifyAgentCardSignature(card, publicKey.export({ type: "spki", format: "pem" }).toString()),
+      true,
+      "served signature must verify against the public key",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("agent card stays unsigned when no signing key is configured", async () => {
+  const server = await startTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/.well-known/agent-card.json`);
+    const card = await res.json();
+    assert.equal("signatures" in card, false, "unsigned card must not carry a signatures field");
+  } finally {
+    await server.close();
+  }
+});
