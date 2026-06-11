@@ -17,15 +17,9 @@ paths = [
 ]
 
 [[allowlists]]
-description = "Known false positives: SCREAMING_SNAKE status/enum string literals and code-label constants flagged by generic-api-key entropy (e.g. S1_PRECONDITION, grantEvidenceAccepted=), not credentials"
+description = "Known false positives: scenario/status string-literal constants flagged by generic-api-key entropy (wake-proof scenario codes like S1_PRECONDITION, and the grantEvidenceAccepted= label), not credentials. Kept narrow on purpose — do not broaden to all uppercase-underscore strings."
 regexTarget = "secret"
 regexes = [
-  '''^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$''',
+  '''^S[0-9]+_[A-Z0-9]+(?:_[A-Z0-9]+)*$''',
   '''^grantEvidenceAccepted=$'''
-]
-
-[[allowlists]]
-description = "Documentation example placeholders (non-secret illustrative tokens in API/spec drafts)"
-paths = [
-  '''(^|/)docs/.*\.md$'''
 ]

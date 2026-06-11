@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { once } from "node:events";
 
-import { createBrokerServer, type BrokerServerOptions } from "../server.js";
+import { createBrokerServer, firstNonEmpty, type BrokerServerOptions } from "../server.js";
 import { emptySnapshot } from "../core/store.js";
 import type { BrokerStateStore } from "../core/store.js";
 
@@ -420,4 +420,61 @@ test("POST /github/webhook accepts a correctly signed delivery", async () => {
     runtime.server.close();
     runtime.stopPoller();
   }
+});
+
+test("POST /github/webhook honors the alias secret when the primary env var is blank", async () => {
+  // Regression: a blank GITHUB_WEBHOOK_SECRET must not shadow a configured
+  // A2A_GITHUB_WEBHOOK_SECRET alias and silently disable verification.
+  const prevPrimary = process.env.GITHUB_WEBHOOK_SECRET;
+  const prevAlias = process.env.A2A_GITHUB_WEBHOOK_SECRET;
+  process.env.GITHUB_WEBHOOK_SECRET = "";
+  process.env.A2A_GITHUB_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  try {
+    // Do NOT pass githubWebhookSecret via options — force env resolution.
+    const { runtime, base } = await startTestServer();
+    try {
+      const payload = signedIssueOpenedBody();
+
+      const unsigned = await fetch(`${base}/github/webhook`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-Event": "issues",
+          "X-GitHub-Delivery": "alias-delivery-unsigned",
+        },
+        body: payload,
+      });
+      assert.equal(unsigned.status, 401, "unsigned delivery must be rejected when the alias secret is set");
+
+      const signed = await fetch(`${base}/github/webhook`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GitHub-Event": "issues",
+          "X-GitHub-Delivery": "alias-delivery-signed",
+          "X-Hub-Signature-256": signBody(payload, WEBHOOK_SECRET),
+        },
+        body: payload,
+      });
+      const body = await signed.json() as Record<string, unknown>;
+      assert.ok(signed.status === 200 || signed.status === 201, `expected 200/201, got ${signed.status}: ${JSON.stringify(body)}`);
+    } finally {
+      runtime.server.close();
+      runtime.stopPoller();
+    }
+  } finally {
+    if (prevPrimary === undefined) delete process.env.GITHUB_WEBHOOK_SECRET;
+    else process.env.GITHUB_WEBHOOK_SECRET = prevPrimary;
+    if (prevAlias === undefined) delete process.env.A2A_GITHUB_WEBHOOK_SECRET;
+    else process.env.A2A_GITHUB_WEBHOOK_SECRET = prevAlias;
+  }
+});
+
+test("firstNonEmpty skips blank values and trims", () => {
+  assert.equal(firstNonEmpty("", "real"), "real");
+  assert.equal(firstNonEmpty("   ", "real"), "real");
+  assert.equal(firstNonEmpty(undefined, "", "  x  "), "x");
+  assert.equal(firstNonEmpty("primary", "alias"), "primary");
+  assert.equal(firstNonEmpty(undefined, "", "   "), undefined);
+  assert.equal(firstNonEmpty(), undefined);
 });

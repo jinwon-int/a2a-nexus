@@ -866,7 +866,7 @@ pruning.
 {
   "kind": "broker.cleanup.plan",
   "mode": "dry-run",
-  "planId": "a1b2c3d4e5f6g7h8",
+  "planId": "example-plan-id",
   "summary": {
     "candidateTables": 2,
     "totalPruneCandidates": 5,
@@ -909,8 +909,8 @@ confirmation string, and backup evidence.
 
 ```json
 {
-  "planId": "a1b2c3d4e5f6g7h8",
-  "approvalToken": "a1b2c3d4e5f6g7h8",
+  "planId": "example-plan-id",
+  "approvalToken": "example-approval-token",
   "confirmation": "APPLY_BROKER_CLEANUP_PLAN",
   "backupProof": "s3://backups/broker-20260520T120000Z.sqlite sha256=abc123",
   "allowWorkerPrune": false,
@@ -923,7 +923,7 @@ confirmation string, and backup evidence.
 ```json
 {
   "kind": "broker.cleanup.execution",
-  "planId": "a1b2c3d4e5f6g7h8",
+  "planId": "example-plan-id",
   "appliedAt": "2026-05-20T12:05:00.000Z",
   "results": [
     { "table": "broker_tasks", "prunedCount": 3, "remainingCount": 197 },

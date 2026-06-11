@@ -2691,10 +2691,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const enforceRequesterIdentity =
     options.enforceRequesterIdentity ?? process.env.ENFORCE_REQUESTER_IDENTITY !== "0";
   const edgeSecret = options.edgeSecret ?? process.env.EDGE_SECRET ?? process.env.A2A_EDGE_SECRET;
-  const githubWebhookSecret =
-    options.githubWebhookSecret ??
-    process.env.GITHUB_WEBHOOK_SECRET ??
-    process.env.A2A_GITHUB_WEBHOOK_SECRET;
+  const githubWebhookSecret = firstNonEmpty(
+    options.githubWebhookSecret,
+    process.env.GITHUB_WEBHOOK_SECRET,
+    process.env.A2A_GITHUB_WEBHOOK_SECRET,
+  );
   const trustedProxy = options.trustedProxy ?? process.env.TRUSTED_PROXY === "1";
   const retentionPolicy = resolveBrokerRetentionPolicy(options.retentionPolicy);
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
@@ -6158,6 +6159,22 @@ export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServ
 
 if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {
   startBrokerServer();
+}
+
+/**
+ * Resolve the first non-empty (after trimming) value from a precedence list.
+ *
+ * Plain `a ?? b` treats an empty string as "set", so a blank primary env var
+ * (GITHUB_WEBHOOK_SECRET=) would shadow a configured compatibility alias
+ * (A2A_GITHUB_WEBHOOK_SECRET=secret) and silently disable signature
+ * verification — a fail-open. Trimming and skipping blanks closes that gap.
+ */
+export function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 async function readRawBody(req: IncomingMessage): Promise<Buffer> {
