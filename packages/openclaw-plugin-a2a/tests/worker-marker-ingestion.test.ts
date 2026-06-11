@@ -1,16 +1,18 @@
 /**
  * Tests for GitHub worker marker ingestion (Round 17, plugin-a2a#88).
  */
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   extractGitHubCommentSource,
+  buildGitHubCommentUrl,
   deriveEventId,
   resolveWorkerId,
   ingestGitHubComment,
   batchIngestGitHubComments,
   InMemoryDeduplicationStore,
   type IngestionResult,
-} from "./worker-marker-ingestion.js";
+} from "../dist/src/worker-marker-ingestion.js";
 
 // ── Fixtures ───────────────────────────────────────────────────
 
@@ -49,7 +51,7 @@ function makePRCommentPayload(overrides: Record<string, unknown> = {}): Record<s
 describe("extractGitHubCommentSource", () => {
   it("extracts from issue_comment payload", () => {
     const source = extractGitHubCommentSource(makeIssueCommentPayload());
-    expect(source).toEqual({
+    assert.deepEqual(source, {
       deliveryId: undefined,
       repository: "jinwon-int/plugin-a2a",
       issueNumber: 88,
@@ -60,14 +62,14 @@ describe("extractGitHubCommentSource", () => {
 
   it("extracts from pull_request review comment", () => {
     const source = extractGitHubCommentSource(makePRCommentPayload());
-    expect(source).not.toBeNull();
-    expect(source!.issueNumber).toBe(86);
-    expect(source!.commentId).toBe(67890);
+    assert.notEqual(source, null);
+    assert.equal(source!.issueNumber, 86);
+    assert.equal(source!.commentId, 67890);
   });
 
   it("returns null for missing repository", () => {
     const source = extractGitHubCommentSource({ issue: { number: 1 }, comment: { id: 1, user: { login: "a" } } });
-    expect(source).toBeNull();
+    assert.equal(source, null);
   });
 
   it("returns null for missing issue/PR number", () => {
@@ -75,7 +77,7 @@ describe("extractGitHubCommentSource", () => {
       repository: { full_name: "org/repo" },
       comment: { id: 1, user: { login: "a" } },
     });
-    expect(source).toBeNull();
+    assert.equal(source, null);
   });
 
   it("returns null for missing comment", () => {
@@ -83,14 +85,14 @@ describe("extractGitHubCommentSource", () => {
       repository: { full_name: "org/repo" },
       issue: { number: 1 },
     });
-    expect(source).toBeNull();
+    assert.equal(source, null);
   });
 
   it("extracts deliveryId when present", () => {
     const source = extractGitHubCommentSource(
       makeIssueCommentPayload({ deliveryId: "abc-123" }),
     );
-    expect(source!.deliveryId).toBe("abc-123");
+    assert.equal(source!.deliveryId, "abc-123");
   });
 });
 
@@ -106,14 +108,14 @@ describe("deriveEventId", () => {
     };
     const id1 = deriveEventId(source);
     const id2 = deriveEventId(source);
-    expect(id1).toBe(id2);
-    expect(id1).toBe("gh:jinwon-int/plugin-a2a:88#12345");
+    assert.equal(id1, id2);
+    assert.equal(id1, "gh:jinwon-int/plugin-a2a:88#12345");
   });
 
   it("produces different IDs for different comments", () => {
     const s1 = { repository: "org/repo", issueNumber: 1, commentId: 100, authorLogin: "a" };
     const s2 = { repository: "org/repo", issueNumber: 1, commentId: 200, authorLogin: "a" };
-    expect(deriveEventId(s1)).not.toBe(deriveEventId(s2));
+    assert.notEqual(deriveEventId(s1), deriveEventId(s2));
   });
 });
 
@@ -121,17 +123,17 @@ describe("deriveEventId", () => {
 
 describe("resolveWorkerId", () => {
   it("returns login as-is without map", () => {
-    expect(resolveWorkerId("worker-bot")).toBe("worker-bot");
+    assert.equal(resolveWorkerId("worker-bot"), "worker-bot");
   });
 
   it("maps login to worker ID", () => {
     const map = { "worker-bot": "worker-alpha" };
-    expect(resolveWorkerId("worker-bot", map)).toBe("worker-alpha");
+    assert.equal(resolveWorkerId("worker-bot", map), "worker-alpha");
   });
 
   it("returns login for unmapped users", () => {
     const map = { other: "worker" };
-    expect(resolveWorkerId("worker-bot", map)).toBe("worker-bot");
+    assert.equal(resolveWorkerId("worker-bot", map), "worker-bot");
   });
 });
 
@@ -140,9 +142,9 @@ describe("resolveWorkerId", () => {
 describe("InMemoryDeduplicationStore", () => {
   it("tracks seen event IDs", () => {
     const store = new InMemoryDeduplicationStore();
-    expect(store.has("id1")).toBe(false);
+    assert.equal(store.has("id1"), false);
     store.add("id1");
-    expect(store.has("id1")).toBe(true);
+    assert.equal(store.has("id1"), true);
   });
 
   it("clears all entries", () => {
@@ -150,8 +152,8 @@ describe("InMemoryDeduplicationStore", () => {
     store.add("id1");
     store.add("id2");
     store.clear();
-    expect(store.has("id1")).toBe(false);
-    expect(store.has("id2")).toBe(false);
+    assert.equal(store.has("id1"), false);
+    assert.equal(store.has("id2"), false);
   });
 
   it("evicts old entries when full", () => {
@@ -164,7 +166,7 @@ describe("InMemoryDeduplicationStore", () => {
     // Adding beyond capacity triggers eviction
     store.add("6");
     // Some old entries should be evicted
-    expect(store.has("6")).toBe(true);
+    assert.equal(store.has("6"), true);
   });
 });
 
@@ -175,13 +177,13 @@ describe("ingestGitHubComment", () => {
     const store = new InMemoryDeduplicationStore();
     const result = ingestGitHubComment(makeIssueCommentPayload(), store);
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.eventId).toBe("gh:jinwon-int/plugin-a2a:88#12345");
-    expect(result.brokerEvent.marker).toBe("Start");
-    expect(result.brokerEvent.workerId).toBe("worker-bot");
+    assert.equal(result.eventId, "gh:jinwon-int/plugin-a2a:88#12345");
+    assert.equal(result.brokerEvent.marker, "Start");
+    assert.equal(result.brokerEvent.workerId, "worker-bot");
   });
 
   it("skips comments without markers", () => {
@@ -193,11 +195,11 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok) throw new Error("expected ok");
     if (!("skipped" in result)) throw new Error("expected skip");
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain("no worker status marker");
+    assert.equal(result.skipped, true);
+    assert.ok((result.reason).includes("no worker status marker"));
   });
 
   it("skips non-allowed actions", () => {
@@ -207,11 +209,11 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok) throw new Error("expected ok");
     if (!("skipped" in result)) throw new Error("expected skip");
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain("action");
+    assert.equal(result.skipped, true);
+    assert.ok((result.reason).includes("action"));
   });
 
   it("allows edited action", () => {
@@ -221,11 +223,11 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.brokerEvent.marker).toBe("Start");
+    assert.equal(result.brokerEvent.marker, "Start");
   });
 
   it("deduplicates identical deliveries", () => {
@@ -233,23 +235,23 @@ describe("ingestGitHubComment", () => {
     const payload = makeIssueCommentPayload();
 
     const result1 = ingestGitHubComment(payload, store);
-    expect(result1.ok).toBe(true);
+    assert.equal(result1.ok, true);
 
     const result2 = ingestGitHubComment(payload, store);
-    expect(result2.ok).toBe(true);
+    assert.equal(result2.ok, true);
     if (!result2.ok) throw new Error("expected ok");
     if (!("skipped" in result2)) throw new Error("expected skip");
-    expect(result2.skipped).toBe(true);
-    expect(result2.reason).toContain("duplicate");
+    assert.equal(result2.skipped, true);
+    assert.ok((result2.reason).includes("duplicate"));
   });
 
   it("returns error for invalid payload", () => {
     const store = new InMemoryDeduplicationStore();
     const result = ingestGitHubComment({}, store);
 
-    expect(result.ok).toBe(false);
+    assert.equal(result.ok, false);
     if (result.ok) throw new Error("expected error");
-    expect(result.error).toContain("source identifiers");
+    assert.ok((result.error).includes("source identifiers"));
   });
 
   it("returns error for missing comment body", () => {
@@ -261,22 +263,22 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(false);
+    assert.equal(result.ok, false);
     if (result.ok) throw new Error("expected error");
-    expect(result.error).toContain("comment.body");
+    assert.ok((result.error).includes("comment.body"));
   });
 
   it("ingests PR marker with full payload", () => {
     const store = new InMemoryDeduplicationStore();
     const result = ingestGitHubComment(makePRCommentPayload(), store);
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.brokerEvent.marker).toBe("PR");
-    expect(result.brokerEvent.workerId).toBe("worker-bot");
-    expect(result.brokerEvent.taskId).toBe("jinwon-int/plugin-a2a#86");
+    assert.equal(result.brokerEvent.marker, "PR");
+    assert.equal(result.brokerEvent.workerId, "worker-bot");
+    assert.equal(result.brokerEvent.taskId, "jinwon-int/plugin-a2a#86");
   });
 
   it("ingests Block marker", () => {
@@ -292,11 +294,11 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.brokerEvent.marker).toBe("Block");
+    assert.equal(result.brokerEvent.marker, "Block");
   });
 
   it("ingests Done marker", () => {
@@ -312,11 +314,11 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.brokerEvent.marker).toBe("Done");
+    assert.equal(result.brokerEvent.marker, "Done");
   });
 
   it("uses login-to-worker mapping", () => {
@@ -326,11 +328,11 @@ describe("ingestGitHubComment", () => {
       loginToWorkerMap: map,
     });
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.brokerEvent.workerId).toBe("worker-alpha");
+    assert.equal(result.brokerEvent.workerId, "worker-alpha");
   });
 
   it("preserves parse warnings in result", () => {
@@ -346,12 +348,12 @@ describe("ingestGitHubComment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.warnings).toContain("PR marker has no PR URL");
-    expect(result.parseStatus).toBe("partial");
+    assert.ok((result.warnings).includes("PR marker has no PR URL"));
+    assert.equal(result.parseStatus, "partial");
   });
 
   it("returns error for detected but unparseable marker", () => {
@@ -369,7 +371,7 @@ describe("ingestGitHubComment", () => {
       store,
     );
     // Start with no body should still parse (just no summary)
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
   });
 });
 // ── buildGitHubCommentUrl ────────────────────────────────────
@@ -382,7 +384,7 @@ describe("buildGitHubCommentUrl", () => {
       commentId: 12345,
       authorLogin: "worker-bot",
     });
-    expect(url).toBe("https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-12345");
+    assert.equal(url, "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-12345");
   });
 
   it("includes deliveryId when present", () => {
@@ -393,8 +395,8 @@ describe("buildGitHubCommentUrl", () => {
       authorLogin: "bot",
       deliveryId: "abc-123",
     });
-    expect(url).toContain("org/repo");
-    expect(url).toContain("issuecomment-999");
+    assert.ok((url).includes("org/repo"));
+    assert.ok((url).includes("issuecomment-999"));
   });
 });
 
@@ -414,13 +416,13 @@ describe("evidence URL enrichment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.workerEvent.marker).toBe("Done");
-    expect(result.workerEvent.payload.outcome).toBe("done_evidence_only");
-    expect(result.workerEvent.payload.doneUrl).toBe(
+    assert.equal(result.workerEvent.marker, "Done");
+    assert.equal(result.workerEvent.payload.outcome, "done_evidence_only");
+    assert.equal(result.workerEvent.payload.doneUrl, 
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100001",
     );
   });
@@ -438,12 +440,12 @@ describe("evidence URL enrichment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.workerEvent.marker).toBe("Done");
-    expect(result.workerEvent.payload.doneUrl).toBe(
+    assert.equal(result.workerEvent.marker, "Done");
+    assert.equal(result.workerEvent.payload.doneUrl, 
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100002",
     );
   });
@@ -461,12 +463,12 @@ describe("evidence URL enrichment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.workerEvent.marker).toBe("Block");
-    expect(result.workerEvent.payload.blockUrl).toBe(
+    assert.equal(result.workerEvent.marker, "Block");
+    assert.equal(result.workerEvent.payload.blockUrl, 
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100003",
     );
   });
@@ -484,13 +486,13 @@ describe("evidence URL enrichment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.workerEvent.marker).toBe("Done");
-    expect(result.workerEvent.payload.outcome).toBe("done_with_changes");
-    expect(result.workerEvent.payload.doneUrl).toBeUndefined();
+    assert.equal(result.workerEvent.marker, "Done");
+    assert.equal(result.workerEvent.payload.outcome, "done_with_changes");
+    assert.equal(result.workerEvent.payload.doneUrl, undefined);
   });
 
   it("does not enrich Start marker with evidence URL", () => {
@@ -506,11 +508,11 @@ describe("evidence URL enrichment", () => {
       store,
     );
 
-    expect(result.ok).toBe(true);
+    assert.equal(result.ok, true);
     if (!result.ok || ("skipped" in result && result.skipped)) {
       throw new Error("expected success");
     }
-    expect(result.workerEvent.marker).toBe("Start");
+    assert.equal(result.workerEvent.marker, "Start");
   });
 });
 
@@ -529,10 +531,10 @@ describe("batchIngestGitHubComments", () => {
       store,
     );
 
-    expect(results).toHaveLength(4);
-    expect(ingested).toBe(2);
-    expect(skipped).toBe(1);
-    expect(errors).toBe(1);
+    assert.equal((results).length, 4);
+    assert.equal(ingested, 2);
+    assert.equal(skipped, 1);
+    assert.equal(errors, 1);
   });
 
   it("deduplicates across batch", () => {
@@ -540,7 +542,7 @@ describe("batchIngestGitHubComments", () => {
     const payload = makeIssueCommentPayload();
     const { ingested, skipped } = batchIngestGitHubComments([payload, payload], store);
 
-    expect(ingested).toBe(1);
-    expect(skipped).toBe(1);
+    assert.equal(ingested, 1);
+    assert.equal(skipped, 1);
   });
 });
