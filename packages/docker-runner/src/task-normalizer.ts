@@ -138,9 +138,7 @@ function buildDefaultCommentOnlyCommands(task: RunnerTask): string[] {
   const existingPrUrl = task.existingPrUrl ?? buildExistingPrUrl(task);
 
   return [[
-    `cat > /work/artifacts/prompt.md << 'A2A_PROMPT_EOF'`,
-    task.prompt ?? `Comment-only closeout task ${task.id}`,
-    `A2A_PROMPT_EOF`,
+    shellWriteTextFile(task.prompt ?? `Comment-only closeout task ${task.id}`, "/work/artifacts/prompt.md"),
     `printf 'patch_mode=comment_only\\n' | tee -a /work/artifacts/summary.txt`,
     `printf 'new_pr_allowed=0\\n' | tee -a /work/artifacts/summary.txt`,
     `printf 'task=%s\\n' ${shellSingleQuote(safeTitle)} | tee -a /work/artifacts/summary.txt`,
@@ -151,7 +149,7 @@ function buildDefaultCommentOnlyCommands(task: RunnerTask): string[] {
 
 function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
   const repoPath = primaryRepo.path ?? "repo";
-  const baseBranch = task.baseBranch ?? primaryRepo.branch ?? "main";
+  const baseBranch = sanitizeGitRef(task.baseBranch ?? primaryRepo.branch ?? "main");
   const safeTitle = (task.id || "a2a-patch").replace(/[^a-zA-Z0-9_.-]/g, "_");
   const issueCommentTarget = task.issueUrl ? shellSingleQuote(task.issueUrl) : "";
   const issueClosingRef = buildIssueClosingRef(task, primaryRepo);
@@ -160,9 +158,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
 
   // Step 1: materialise prompt + task metadata as artifacts.
   const writePrompt = [
-    `cat > /work/artifacts/prompt.md << 'A2A_PROMPT_EOF'`,
-    task.prompt ?? `Auto-patch task ${task.id}`,
-    `A2A_PROMPT_EOF`,
+    shellWriteTextFile(task.prompt ?? `Auto-patch task ${task.id}`, "/work/artifacts/prompt.md"),
     `printf 'patch_mode=github-propose-patch\\n' | tee -a /work/artifacts/summary.txt`,
     `printf 'prompt_bytes=%s\\n' "$(wc -c < /work/artifacts/prompt.md)" | tee -a /work/artifacts/summary.txt`,
   ].join("\n");
@@ -600,8 +596,60 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+/**
+ * Emit a shell command that writes arbitrary text to a file without any
+ * heredoc or quoting hazard. The text is base64-encoded on the host and
+ * decoded in the container; the base64 alphabet ([A-Za-z0-9+/=]) is
+ * shell-safe inside single quotes, so the payload cannot break out of the
+ * surrounding command regardless of its contents (e.g. a line that matches a
+ * heredoc delimiter, embedded quotes, `$(...)`, or backticks).
+ */
+function shellWriteTextFile(content: string, destPath: string): string {
+  const encoded = Buffer.from(content, "utf8").toString("base64");
+  return `printf '%s' '${encoded}' | base64 -d > ${destPath}`;
+}
+
+/**
+ * Sanitize a repository checkout path. The result is interpolated UNQUOTED
+ * into generated shell (e.g. `cd /work/<path>`), so it must contain no
+ * shell-active characters and no parent-directory traversal. Each path
+ * segment is reduced to a strict filename allowlist; empty and dot-only
+ * segments (".", "..") are dropped.
+ */
 function sanitizeRelativePath(path: string): string {
-  const cleaned = path.replace(/^\/+/, "").replace(/\.\./g, "_");
-  if (!cleaned || cleaned === ".") return "repo";
+  const segments = path
+    .split("/")
+    .map((segment) => segment.replace(/[^A-Za-z0-9_.-]/g, "_"))
+    .filter((segment) => segment !== "" && !/^\.+$/.test(segment));
+  const cleaned = segments.join("/");
+  if (!cleaned) return "repo";
   return cleaned;
 }
+
+/**
+ * Validate a git ref (branch) name for safe interpolation into shell. Branch
+ * names flow into double-quoted shell strings (e.g. `git diff
+ * "origin/<branch>...HEAD"`, `gh pr create --base "<branch>"`), where `$`,
+ * backticks, `"`, and `\` are still active.
+ *
+ * Rather than partially sanitizing untrusted input into a Frankenstein branch
+ * name, a ref is accepted only if it is already a legal git branch ref
+ * (git-ref characters, no ".." sequence, no leading/trailing separator);
+ * anything else falls back to the safe default "main". This guarantees the
+ * result contains no shell-active characters.
+ */
+function sanitizeGitRef(ref: string): string {
+  const trimmed = ref.trim();
+  if (
+    trimmed.length > 0 &&
+    trimmed.length <= 255 &&
+    /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(trimmed) &&
+    !trimmed.includes("..") &&
+    !trimmed.endsWith("/") &&
+    !trimmed.endsWith(".")
+  ) {
+    return trimmed;
+  }
+  return "main";
+}
+
