@@ -167,7 +167,8 @@ export type IngestionSkippedReason =
   | "unsupported_event"
   | "no_parent_task"
   | "stale_lifecycle"
-  | "reconciliation_needed";
+  | "reconciliation_needed"
+  | "unhandled_pr_action";
 
 export type LifecycleAction = "issue_closed" | "issue_reopened" | "pr_merged" | "pr_closed";
 
@@ -266,11 +267,15 @@ export class GitHubIngestionService {
   }
 
   ingest(event: GitHubWebhookEvent, ctx: GitHubDeliveryContext): IngestionResult {
-    if (this.seenDeliveries.has(ctx.deliveryId)) {
+    // Dedup on (deliveryId + per-event fingerprint), not deliveryId alone. The
+    // poller passes one shared delivery context for a whole batch, so keying
+    // only on deliveryId marked the first event seen and dropped every other
+    // event in the batch as a duplicate — permanently.
+    const dedupKey = `${ctx.deliveryId}:${eventFingerprint(event)}`;
+    if (this.seenDeliveries.has(dedupKey)) {
       this.replayCounters.duplicateDeliveries++;
       return emptyResult({ deduped: true, skippedReason: "duplicate_delivery" });
     }
-    this.seenDeliveries.add(ctx.deliveryId);
 
     const pair = pairKeyForEvent(event);
     if (pair) {
@@ -283,6 +288,16 @@ export class GitHubIngestionService {
       }
     }
 
+    const result = this.dispatchEvent(event, ctx);
+
+    // Record the dedup key only after the handler ran. If a handler throws
+    // mid-ingest the key is not burned, so GitHub's redelivery can retry
+    // instead of being silently dropped as a duplicate.
+    this.seenDeliveries.add(dedupKey);
+    return result;
+  }
+
+  private dispatchEvent(event: GitHubWebhookEvent, ctx: GitHubDeliveryContext): IngestionResult {
     switch (event.kind) {
       case "issues":
         return this.ingestIssue(event, ctx);
@@ -484,6 +499,13 @@ export class GitHubIngestionService {
     }
     if (event.action === "reopened") {
       return this.handleIssueReopened(event.repo, event.pullRequest, ctx);
+    }
+
+    if (event.action === "synchronize" || event.action === "ready_for_review") {
+      // Recognized PR actions we do not act on. Returning a (non-error) skip
+      // result keeps the webhook delivery successful instead of re-running the
+      // issue-shaped assign flow on every push to the PR.
+      return emptyResult({ skippedReason: "unhandled_pr_action" });
     }
 
     // Pull requests reuse the issue-shaped flow for opened/edited/etc. The
@@ -794,6 +816,27 @@ function pairKeyForEvent(event: GitHubWebhookEvent): string | null {
 
 function makePairKey(repo: GitHubRepoRef, issueNumber: number): string {
   return `${repo.fullName}#${issueNumber}`;
+}
+
+/**
+ * A stable per-event identity used (together with the delivery id) as the
+ * dedup key. Two distinct events polled under one shared delivery context must
+ * produce different fingerprints; a genuine redelivery of the same event must
+ * produce the same one.
+ */
+function eventFingerprint(event: GitHubWebhookEvent): string {
+  switch (event.kind) {
+    case "issues":
+      return `issues:${event.repo.fullName}#${event.issue.number}:${event.action}`;
+    case "issue_comment":
+      return `issue_comment:${event.repo.fullName}#${event.issue.number}:${event.action}:${event.comment.id}`;
+    case "pull_request":
+      return `pull_request:${event.repo.fullName}#${event.pullRequest.number}:${event.action}`;
+    case "pull_request_review_comment":
+      return `pr_review_comment:${event.repo.fullName}#${event.pullRequest.number}:${event.action}:${event.comment.id}`;
+    default:
+      return "unknown";
+  }
 }
 
 // ---------------------------------------------------------------------------
