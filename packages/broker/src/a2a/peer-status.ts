@@ -96,11 +96,11 @@ const RATE_BURST = 5; // extra burst above limit
 
 const GLOBAL_RECOMPUTE_CAP_PER_S = 200;
 
-// ---------------------------------------------------------------------------
-// Stampede protection
-// ---------------------------------------------------------------------------
-
-const inFlightComputations = new Map<string, Promise<PeerStatusResponse>>();
+// Targets and (caller, target) pairs are caller-asserted strings, so both
+// maps are bounded to keep an id-rotating caller from growing them without
+// limit. Expired entries are evicted first; insertion order breaks ties.
+const MAX_CACHE_ENTRIES = 1_000;
+const MAX_RATE_BUCKETS = 5_000;
 
 // ---------------------------------------------------------------------------
 // PeerStatusService
@@ -192,8 +192,25 @@ export class PeerStatusService {
 
     // Store in cache
     this.cache.set(target, { response, computedAt: now });
+    if (this.cache.size > MAX_CACHE_ENTRIES) {
+      this.evictCacheEntries(now);
+    }
 
     return response;
+  }
+
+  /** Evict expired cache entries first, then oldest-inserted beyond the cap. */
+  private evictCacheEntries(nowMs: number): void {
+    for (const [key, entry] of this.cache) {
+      if (nowMs - entry.computedAt > this.cacheTtlMs) {
+        this.cache.delete(key);
+      }
+    }
+    while (this.cache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.cache.delete(oldestKey);
+    }
   }
 
   /** Clear all cached entries. Useful for testing. */
@@ -318,6 +335,9 @@ export class PeerStatusService {
     if (!bucket || now - bucket.windowStart >= RATE_WINDOW_MS) {
       bucket = { count: 0, windowStart: now };
       this.rateBuckets.set(key, bucket);
+      if (this.rateBuckets.size > MAX_RATE_BUCKETS) {
+        this.evictRateBuckets(now);
+      }
     }
 
     const limit = RATE_LIMIT + RATE_BURST;
@@ -332,6 +352,20 @@ export class PeerStatusService {
 
     bucket.count++;
     return null;
+  }
+
+  /** Evict expired-window buckets first, then oldest-inserted beyond the cap. */
+  private evictRateBuckets(nowMs: number): void {
+    for (const [key, bucket] of this.rateBuckets) {
+      if (nowMs - bucket.windowStart >= RATE_WINDOW_MS) {
+        this.rateBuckets.delete(key);
+      }
+    }
+    while (this.rateBuckets.size > MAX_RATE_BUCKETS) {
+      const oldestKey = this.rateBuckets.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.rateBuckets.delete(oldestKey);
+    }
   }
 
   private getRateLimitInfo(callerId: string, target: string): { remaining: number; resetAt: number } {

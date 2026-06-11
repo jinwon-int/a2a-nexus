@@ -9597,7 +9597,7 @@ test("POST /terminal-brief/sidecar/default-on-candidate-final-gate returns sourc
           observationPacket: {
             kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
             generatedAt: "2026-05-19T03:31:05.000Z",
-            operatorInstructionReference: "telegram:7360371189:53345",
+            operatorInstructionReference: "telegram:1000000001:53345",
             windowSeconds: 300,
             state: "bounded_dry_run_observation_passed",
             blockers: [],
@@ -9670,7 +9670,7 @@ test("POST /terminal-brief/sidecar/default-on-approval-request returns source-on
         observationKind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
         observationState: "bounded_dry_run_observation_passed",
         observationGeneratedAt: "2026-05-19T03:31:05.000Z",
-        operatorInstructionReference: "telegram:7360371189:53345",
+        operatorInstructionReference: "telegram:1000000001:53345",
         windowSeconds: 300,
         minObservationSeconds: 300,
       },
@@ -9749,7 +9749,7 @@ test("POST /terminal-brief/sidecar/default-on-approval-request returns source-on
           defaultOnApprovalRequest: {
             now: "2026-05-19T03:56:00.000Z",
             operatorTarget: "operator-a",
-            operatorChannel: "telegram:7360371189",
+            operatorChannel: "telegram:1000000001",
           },
         }),
       },

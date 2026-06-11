@@ -69,7 +69,7 @@ The package also includes a receipt-safe OpenClaw CLI notifier adapter:
 ```bash
 a2a-terminal-brief-openclaw-message \
   --channel telegram \
-  --target telegram:7360371189 \
+  --target telegram:<operator-chat-id> \
   --dry-run
 ```
 

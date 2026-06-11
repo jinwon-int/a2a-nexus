@@ -223,6 +223,9 @@ const HARD_BLOCKER_GATES: ReadonlySet<SourcePublicGateName> = new Set([
   "repo_exists",
   "no_secrets_in_branch",
   "no_runtime_context_in_branch",
+  // An already-public repo makes the visibility change a no-op; reporting
+  // GO_CANDIDATE (or asking for approval) for a no-op misleads the operator.
+  "not_already_public",
 ]);
 
 /** Gates that can be waived with operator approval. */
@@ -338,7 +341,7 @@ function runAllGates(
   gates.push({
     gate: "not_already_public",
     passed: !alreadyPublic,
-    required: !alreadyPublic,
+    required: true,
     message: alreadyPublic
       ? "repository is already public — source-public operation is no-op"
       : "repository is not already public",

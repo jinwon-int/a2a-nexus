@@ -514,7 +514,7 @@ test("operator notification adapter maps Telegram-visible operator evidence to c
                   to: "operator-chat",
                   status: "receipt_confirmed",
                   evidence: "operator_visible",
-                  receiptId: "telegram:7360371189:message:47146",
+                  receiptId: "telegram:1000000001:message:47146",
                 },
               };
             },
@@ -553,7 +553,7 @@ test("operator notification adapter matches Telegram prefixed target with numeri
   const adapter = createA2AOperatorNotificationAdapter(activatedConfig({
     enabled: true,
     channel: "telegram",
-    to: "telegram:7360371189",
+    to: "telegram:1000000001",
     accountId: "default",
   }), {
     channel: {
@@ -565,11 +565,11 @@ test("operator notification adapter matches Telegram prefixed target with numeri
             async sendText() {
               return {
                 channel: "telegram",
-                chatId: 7360371189,
+                chatId: 1000000001,
                 messageId: 51949,
                 delivery: {
                   providerAccepted: true,
-                  chatId: 7360371189,
+                  chatId: 1000000001,
                   messageId: 51949,
                 },
               };

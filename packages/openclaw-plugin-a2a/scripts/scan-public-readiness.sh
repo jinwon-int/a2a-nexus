@@ -87,7 +87,7 @@ while IFS=: read -r file line content; do
   fi
   FINDINGS+=("TELEGRAM_ID $file:$line: $content")
   T3=$((T3 + 1))
-done < <(echo "$SCAN_ALL" | xargs grep -nE '(?:telegram|chatId|chat_id|chat\.id)\s*[:=]\s*["'"'"']?\d{6,}' 2>/dev/null || true)
+done < <(echo "$SCAN_ALL" | xargs grep -nE '(telegram|chatId|chat_id|chat\.id)[[:space:]]*[:=][[:space:]]*["'"'"']?[0-9]{6,}' 2>/dev/null || true)
 echo "  → $T3 potential numeric Telegram chat ID findings"
 
 # ── Rule 4: raw edgeSecret / literal secret values in configs ─────────

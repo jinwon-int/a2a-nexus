@@ -165,14 +165,17 @@ export function createA2ASessionsSendHook(
    * and reject if the same send was recently dispatched.
    */
   function buildSendFingerprint(event: SessionsSendHookEvent): string {
+    // Field-prefixed, position-preserving encoding. The previous
+    // .filter(Boolean) collapsed empty slots, so sends with different field
+    // layouts could hash identically (e.g. correlationId "x" + target "t"
+    // vs no correlationId + target "x" + intent "t") and the fail-closed
+    // gate silently suppressed a legitimate send.
     const raw = [
-      normalizeOptionalString(event.task?.correlationId) ?? "",
-      normalizeOptionalString(event.target?.sessionKey) ?? normalizeOptionalString(event.sessionKey),
-      normalizeOptionalString(event.task?.intent) ?? "",
-      normalizeOptionalString(event.message),
-    ]
-      .filter(Boolean)
-      .join("|");
+      `corr:${normalizeOptionalString(event.task?.correlationId) ?? ""}`,
+      `key:${normalizeOptionalString(event.target?.sessionKey) ?? normalizeOptionalString(event.sessionKey) ?? ""}`,
+      `intent:${normalizeOptionalString(event.task?.intent) ?? ""}`,
+      `msg:${normalizeOptionalString(event.message) ?? ""}`,
+    ].join("|");
     return createHash("sha256").update(raw).digest("hex").slice(0, 24);
   }
 
