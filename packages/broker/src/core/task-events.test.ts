@@ -1308,21 +1308,37 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(settled.reconciledUnacked, 0);
   });
 
-  it("keeps terminal outbox retention bounded", () => {
+  it("retains unacked terminal outbox events for replay, bounded by the hard cap (a2a-nexus#573 item 20)", () => {
     const broker = new InMemoryA2ABroker(undefined, undefined, { maxTerminalTaskOutboxEvents: 2 });
     registerWorker(broker);
 
+    // 3 completed tasks => 3 receipt-unconfirmed terminal events. They exceed
+    // maxEvents=2 but must NOT be evicted: subscribeWithCursor replays unacked
+    // events, and a plain "drop oldest" would silently lose them.
     for (const id of ["retain-1", "retain-2", "retain-3"]) {
       const task = createTask(broker, { id });
       broker.claimTask(task.id, "worker-1");
       broker.completeTask(task.id, "worker-1", { summary: `done ${id}` });
     }
-
-    const retained = broker.getTerminalTaskEventOutbox().subscribe();
-    assert.equal(retained.length, 2);
+    let retained = broker.getTerminalTaskEventOutbox().subscribe();
+    assert.equal(retained.length, 3, "unacked events must not be evicted at maxEvents");
     assert.deepEqual(
       retained.map((event) => event.payload.taskId),
-      ["retain-2", "retain-3"],
+      ["retain-1", "retain-2", "retain-3"],
+    );
+
+    // Two more unacked events trip the hard cap (2 * maxEvents = 4); only then
+    // is the oldest unacked event dropped, so memory stays bounded.
+    for (const id of ["retain-4", "retain-5"]) {
+      const task = createTask(broker, { id });
+      broker.claimTask(task.id, "worker-1");
+      broker.completeTask(task.id, "worker-1", { summary: `done ${id}` });
+    }
+    retained = broker.getTerminalTaskEventOutbox().subscribe();
+    assert.equal(retained.length, 4, "the hard cap bounds unacked growth at 2x maxEvents");
+    assert.deepEqual(
+      retained.map((event) => event.payload.taskId),
+      ["retain-2", "retain-3", "retain-4", "retain-5"],
     );
   });
 
