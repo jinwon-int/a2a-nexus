@@ -394,7 +394,7 @@ describe("secret scan covers broker-forwarded requester fields (a2a-nexus#575 it
   it("rejects a credential smuggled through requester.channel", () => {
     const result = validateTeamAssignmentInput({
       ...baseInput(),
-      requester: { ...BASE_REQUESTER, channel: "access_token=gho_aaaaaaaaaaaaaaaaaaaaaaaaa" },
+      requester: { ...BASE_REQUESTER, channel: "access_token=placeholder-not-a-real-token" },
     });
     assert.equal(result.valid, false);
     if (!result.valid) {
