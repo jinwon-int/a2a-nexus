@@ -116,22 +116,32 @@ const forbiddenRuntimePaths = [
   '.openclaw/',
 ];
 
-for (const forbiddenPath of forbiddenRuntimePaths) {
-  // The contract should reference these in hygiene scan instructions, but not literally
-  // Check that the references are only in code blocks or as examples
-  const occurrences = contractText.split(forbiddenPath).length - 1;
-  if (occurrences > 0) {
-    // Only allowed if in a code block context (hygiene scan command)
-    const lines = contractText.split('\n');
-    const offendingLines = lines.filter(l => l.includes(forbiddenPath) && !l.startsWith('```') && !l.startsWith('#'));
-    if (offendingLines.length > 0) {
-      // The hygiene scan command is expected to reference these paths
-      // Check they're inside a code block
-      assert(`OpenClaw path ${forbiddenPath} only in code blocks`,
-        true, // we allow it because it's in the hygiene scan command block
-      );
+// Forbidden OpenClaw runtime paths are legitimate inside fenced code blocks
+// (the hygiene-scan find command) and as inline code (`AGENTS.md`) in the gate
+// table, but must never appear as bare prose where they read like an
+// instruction to create them. Track fenced code blocks and flag any bare
+// (non-backticked) prose reference.
+{
+  const lines = contractText.split('\n');
+  let inFence = false;
+  const proseOffenders = [];
+  for (const line of lines) {
+    if (line.trimStart().startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    for (const forbiddenPath of forbiddenRuntimePaths) {
+      if (line.includes(forbiddenPath) && !line.includes('`' + forbiddenPath)) {
+        proseOffenders.push(`${forbiddenPath}: ${line.trim().slice(0, 80)}`);
+      }
     }
   }
+  assert(
+    'OpenClaw runtime paths appear only in code/inline-code, never bare prose',
+    proseOffenders.length === 0,
+    proseOffenders.length ? proseOffenders.join(' | ') : undefined,
+  );
 }
 
 // --- Summary ---
