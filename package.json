@@ -90,11 +90,15 @@
     "check:team1-yukson-live-activation-checklist": "node --test scripts/check-team1-yukson-terminal-brief-live-activation-checklist.test.mjs",
     "check:team1-dispatch-guard": "node --test scripts/a2a-team1-dispatch-guard.test.mjs",
     "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input",
+    "fleet:routing-guard": "node scripts/a2a-fleet-routing-guard.mjs",
+    "fleet:routing-guard:test": "node --test scripts/a2a-fleet-routing-guard.test.mjs",
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
     "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs",
     "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs",
     "dispatch:round": "node scripts/a2a-dispatch-round.mjs",
-    "dispatch:round:test": "node --test scripts/a2a-dispatch-round.test.mjs"
+    "dispatch:round:test": "node --test scripts/a2a-dispatch-round.test.mjs",
+    "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
+    "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs"
   },
   "license": "MIT",
   "devDependencies": {
