@@ -126,17 +126,24 @@ export function buildCrossBrokerSenderProof(
 
 export type CrossBrokerVerdict = { ok: true; brokerId: string } | { ok: false; reason: string };
 
-/** Bounded replay cache: nonces seen within the freshness window. */
+/**
+ * Bounded replay cache: nonces seen within the freshness window, scoped per
+ * broker id so two trusted peers independently choosing the same nonce never
+ * collide (a nonce only guards replay of the SAME sender's proof). Entries
+ * are committed only after full signature verification — an attacker must
+ * not be able to poison a future valid nonce with an invalid proof.
+ */
 export class CrossBrokerNonceCache {
   private readonly seen = new Map<string, number>();
   constructor(private readonly maxEntries = 10_000) {}
 
-  checkAndAdd(nonce: string, nowMs: number, windowMs: number): boolean {
+  checkAndAdd(brokerId: string, nonce: string, nowMs: number, windowMs: number): boolean {
     for (const [key, atMs] of this.seen) {
       if (nowMs - atMs > windowMs) this.seen.delete(key);
     }
-    if (this.seen.has(nonce)) return false;
-    this.seen.set(nonce, nowMs);
+    const scoped = `${brokerId}\u0000${nonce}`;
+    if (this.seen.has(scoped)) return false;
+    this.seen.set(scoped, nowMs);
     while (this.seen.size > this.maxEntries) {
       const oldest = this.seen.keys().next().value;
       if (oldest === undefined) break;
@@ -196,8 +203,8 @@ export function verifyCrossBrokerSenderProof(
   if (!Number.isFinite(issuedAtMs) || Math.abs(now - issuedAtMs) > windowMs) {
     return { ok: false, reason: "senderProof issuedAt is outside the freshness window" };
   }
-  if (!binding.nonce || !options.nonceCache.checkAndAdd(binding.nonce, now, windowMs)) {
-    return { ok: false, reason: "senderProof nonce is missing or replayed" };
+  if (!binding.nonce) {
+    return { ok: false, reason: "senderProof nonce is missing" };
   }
 
   let key: KeyObject;
@@ -231,6 +238,14 @@ export function verifyCrossBrokerSenderProof(
   }
   if (!verified) {
     return { ok: false, reason: `senderProof signature does not verify against the pinned key for "${claimedBrokerId}"` };
+  }
+  // Replay check LAST: the nonce is committed to the cache only for a fully
+  // verified proof. An invalid signature carrying a future valid nonce must
+  // not poison the cache and break the later legitimate request, and the
+  // cache key is scoped by broker id so two peers using the same nonce do
+  // not produce cross-peer false positives.
+  if (!options.nonceCache.checkAndAdd(claimedBrokerId, binding.nonce, now, windowMs)) {
+    return { ok: false, reason: "senderProof nonce was already used (replay)" };
   }
   return { ok: true, brokerId: claimedBrokerId };
 }

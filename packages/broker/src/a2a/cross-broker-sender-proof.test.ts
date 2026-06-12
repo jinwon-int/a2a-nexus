@@ -9,7 +9,7 @@ import {
   buildCrossBrokerSenderProof,
   loadCrossBrokerTrustAnchors,
   verifyCrossBrokerSenderProof,
-} from "./cross-broker-card-trust.js";
+} from "./cross-broker-sender-proof.js";
 
 function keys() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -107,4 +107,53 @@ test("stale, unknown-broker, missing-proof, and wrong-key cases fail closed", ()
   const wrongKey = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: wrongProof }, { nonceCache: new CrossBrokerNonceCache(), now });
   assert.equal(wrongKey.ok, false);
   assert.match((wrongKey as { reason: string }).reason, /does not verify/);
+});
+
+test("an invalid signature cannot poison the replay cache for a future valid nonce (a2a-nexus#618 review)", () => {
+  const { priv, pub } = keys();
+  const { priv: attackerPriv } = keys();
+  const anchors = new Map([["peer-a", pub]]);
+  const now = Date.parse("2026-06-12T00:00:00.000Z");
+  const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r1" };
+  const cache = new CrossBrokerNonceCache();
+
+  // Attacker submits a proof with a NOT-pinned key but the victim's future
+  // nonce. It must fail on the signature WITHOUT consuming the nonce.
+  const poison = buildCrossBrokerSenderProof(attackerPriv, { brokerId: "peer-a", body, nonce: "victim-nonce", issuedAt: new Date(now).toISOString() });
+  const poisoned = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: poison }, { nonceCache: cache, now });
+  assert.equal(poisoned.ok, false);
+  assert.match((poisoned as { reason: string }).reason, /does not verify/);
+
+  // The legitimate sender's proof with the same nonce still verifies: the
+  // nonce was only committed for fully verified proofs.
+  const legit = buildCrossBrokerSenderProof(priv, { brokerId: "peer-a", body, nonce: "victim-nonce", issuedAt: new Date(now).toISOString() });
+  assert.deepEqual(
+    verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: legit }, { nonceCache: cache, now }),
+    { ok: true, brokerId: "peer-a" },
+  );
+
+  // And only now is the nonce burned for THIS broker.
+  const replay = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: legit }, { nonceCache: cache, now });
+  assert.equal(replay.ok, false);
+  assert.match((replay as { reason: string }).reason, /replay/);
+});
+
+test("nonce scope is per broker: two trusted peers may use the same nonce (a2a-nexus#618 review)", () => {
+  const { priv: privA, pub: pubA } = keys();
+  const { priv: privB, pub: pubB } = keys();
+  const anchors = new Map([["peer-a", pubA], ["peer-b", pubB]]);
+  const now = Date.parse("2026-06-12T00:00:00.000Z");
+  const cache = new CrossBrokerNonceCache();
+
+  const bodyA = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "rA" };
+  const bodyB = { crossBrokerHandoff: { handoffBrokerId: "peer-b" }, parentRoundId: "rB" };
+  const proofA = buildCrossBrokerSenderProof(privA, { brokerId: "peer-a", body: bodyA, nonce: "shared", issuedAt: new Date(now).toISOString() });
+  const proofB = buildCrossBrokerSenderProof(privB, { brokerId: "peer-b", body: bodyB, nonce: "shared", issuedAt: new Date(now).toISOString() });
+
+  assert.equal(verifyCrossBrokerSenderProof(anchors, { ...bodyA, senderProof: proofA }, { nonceCache: cache, now }).ok, true);
+  // Different broker, same nonce string: not a replay (no cross-peer false positive).
+  assert.equal(verifyCrossBrokerSenderProof(anchors, { ...bodyB, senderProof: proofB }, { nonceCache: cache, now }).ok, true);
+  // Same broker reusing its own nonce IS a replay.
+  const replayA = verifyCrossBrokerSenderProof(anchors, { ...bodyA, senderProof: proofA }, { nonceCache: cache, now });
+  assert.equal(replayA.ok, false);
 });

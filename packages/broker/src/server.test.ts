@@ -11574,7 +11574,7 @@ test("cross-broker receiver enforces request-bound proof of possession when anch
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-card-trust.js");
+  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-sender-proof.js");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
@@ -11586,7 +11586,7 @@ test("cross-broker receiver enforces request-bound proof of possession when anch
 
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",
-    crossBrokerTrustedCardKeysFile: anchorsFile,
+    crossBrokerSenderProofKeysFile: anchorsFile,
   });
   try {
     const headers = jsonHeaders({
