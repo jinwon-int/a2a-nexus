@@ -34,6 +34,13 @@ export const A2A_COMPATIBILITY_PROFILE = {
    * the spec's 0.3 fallback (0.3 semantics are unsupported); an explicit
    * version we cannot honor is rejected with -32600.
    */
+  /**
+   * Result wire shapes: clients that explicitly negotiate A2A-Version get
+   * the spec's bare Task/Message results (top-level contextId); header-less
+   * legacy clients keep the historical { task } / { contextId, messageId,
+   * task } envelopes.
+   */
+  responseShapes: { spec: "explicit A2A-Version header", legacy: "no header (plugin-era clients)" },
   versionNegotiation: {
     header: "A2A-Version",
     supported: ["1.0"],
