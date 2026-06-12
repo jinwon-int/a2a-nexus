@@ -967,6 +967,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       mkdirSync(dirname(dbFile), { recursive: true });
     }
     this.db = new DatabaseSync(dbFile);
+    // Wait up to 5s for a lock instead of failing immediately with
+    // SQLITE_BUSY ("database is locked"). WAL allows concurrent readers, but
+    // a writer plus a fresh reader (e.g. the worker-thread persistence path,
+    // or parallel test processes sharing a db file) can still momentarily
+    // contend; busy_timeout makes that wait rather than error.
+    this.db.exec("PRAGMA busy_timeout = 5000");
     this.journalMode = this.initializeDatabase();
   }
 

@@ -43,7 +43,7 @@ export interface A2AWorkerSubagentPolicyPacket {
   task: A2AWorkerSubagentTaskProfile;
   host: A2AWorkerSubagentHostSnapshot;
   decision: {
-    parallelismHint: 0 | 1 | 2 | 3;
+    parallelismHint: 0 | 1 | 2 | 3 | 4;
     recommendedSubagents: Array<{ role: A2ASubagentRole; purpose: string; writeSet?: string }>;
     directExecutionAllowed: boolean;
     oneFinalizerRequired: true;
@@ -97,10 +97,10 @@ export function buildA2AWorkerSubagentOrchestrationPolicy(input: A2AWorkerSubage
   const generatedAt = input.now ?? new Date().toISOString();
   const resourceGate = buildResourceGate(input.host);
   const taskCeiling = taskParallelismCeiling(input.task);
-  const workerRemaining = (input.host.workerSubagentCap ?? 2) - (input.host.activeSubagents ?? 0);
+  const workerRemaining = (input.host.workerSubagentCap ?? 4) - (input.host.activeSubagents ?? 0);
   const brokerRemaining = (input.host.brokerSubagentCap ?? 12) - (input.host.brokerActiveSubagents ?? 0);
-  const capCeiling = Math.max(0, Math.min(input.host.workerSubagentCap ?? 2, workerRemaining, brokerRemaining));
-  const resourceCeiling = resourceGate.reducedBy.length ? resourceReducedCeiling(resourceGate.reducedBy) : 3;
+  const capCeiling = Math.max(0, Math.min(input.host.workerSubagentCap ?? 4, workerRemaining, brokerRemaining));
+  const resourceCeiling = resourceGate.reducedBy.length ? resourceReducedCeiling(resourceGate.reducedBy) : 4;
   const parallelismHint = clampParallelism(Math.min(taskCeiling, capCeiling, resourceCeiling));
   const recommendedSubagents = rolesFor(input.task, parallelismHint);
 
@@ -155,7 +155,10 @@ function taskParallelismCeiling(task: A2AWorkerSubagentTaskProfile): number {
   if (task.size === "small") return 1;
   if (task.size === "medium") return task.hasIndependentSubtasks ? 2 : 1;
   if (!task.hasIndependentSubtasks) return 1;
-  return hasOverlappingWriteSets(task.writeSets ?? []) ? 2 : 3;
+  if (hasOverlappingWriteSets(task.writeSets ?? [])) return 2;
+  // A large task with independent subtasks and disjoint write sets may use
+  // the full conductor budget: explorer + two scoped implementers + verifier.
+  return (task.writeSets ?? []).length >= 2 ? 4 : 3;
 }
 
 function extractTaskProfile(value: unknown): A2AWorkerSubagentTaskProfile {
@@ -220,7 +223,7 @@ function resourceReducedCeiling(reducedBy: string[]): number {
   return 2;
 }
 
-function rolesFor(task: A2AWorkerSubagentTaskProfile, count: 0 | 1 | 2 | 3): A2AWorkerSubagentPolicyPacket["decision"]["recommendedSubagents"] {
+function rolesFor(task: A2AWorkerSubagentTaskProfile, count: 0 | 1 | 2 | 3 | 4): A2AWorkerSubagentPolicyPacket["decision"]["recommendedSubagents"] {
   if (count === 0) return [];
   if (count === 1) return [{ role: "verifier", purpose: "parallel risk/test review" }];
   if (count === 2) return [
@@ -228,9 +231,15 @@ function rolesFor(task: A2AWorkerSubagentTaskProfile, count: 0 | 1 | 2 | 3): A2A
     { role: "verifier", purpose: "test and risk review" },
   ];
   const writeSets = task.writeSets ?? [];
-  return [
+  if (count === 3) return [
     { role: "explorer", purpose: "bounded code and issue investigation" },
     { role: "implementer", purpose: "scoped implementation", writeSet: writeSets[0] ?? "assigned-disjoint-write-set" },
+    { role: "verifier", purpose: "test and risk review" },
+  ];
+  return [
+    { role: "explorer", purpose: "bounded code and issue investigation" },
+    { role: "implementer", purpose: "scoped implementation (lane A)", writeSet: writeSets[0] ?? "assigned-disjoint-write-set-a" },
+    { role: "implementer", purpose: "scoped implementation (lane B)", writeSet: writeSets[1] ?? "assigned-disjoint-write-set-b" },
     { role: "verifier", purpose: "test and risk review" },
   ];
 }
@@ -239,11 +248,12 @@ function hasOverlappingWriteSets(writeSets: string[]): boolean {
   return new Set(writeSets).size !== writeSets.length;
 }
 
-function clampParallelism(value: number): 0 | 1 | 2 | 3 {
+function clampParallelism(value: number): 0 | 1 | 2 | 3 | 4 {
   if (value <= 0) return 0;
   if (value === 1) return 1;
   if (value === 2) return 2;
-  return 3;
+  if (value === 3) return 3;
+  return 4;
 }
 
 function nextActionFor(parallelismHint: number, reducedBy: string[]): string {

@@ -64,7 +64,7 @@ export interface OIWorkerSubagentSpawnAuthorizationBridgePacket {
     plannerHandoffIdempotencyKey: string;
     selfAssessmentIdempotencyKey: string;
     plannerPolicyIdempotencyKey: string;
-    plannerParallelismHint: 0 | 1 | 2 | 3;
+    plannerParallelismHint: 0 | 1 | 2 | 3 | 4;
     recommendedRoles: string[];
     authorizationReference: string;
     requestReference: string;
