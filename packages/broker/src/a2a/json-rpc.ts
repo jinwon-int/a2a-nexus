@@ -44,6 +44,12 @@ export interface ExecuteJsonRpcOptions {
    * Optional peer status service instance. If provided, enables the PeerStatus RPC method.
    */
   peerStatusService?: PeerStatusService;
+  /**
+   * When set, a new-context SendMessage with no metadata.targetNodeId is
+   * routed to this embedded default-agent worker (A2A single-agent mode).
+   * An explicit targetNodeId always overrides it.
+   */
+  defaultAgentNodeId?: string;
 }
 
 export function executeA2AJsonRpc(
@@ -368,7 +374,16 @@ export function executeSendMessage(
     throw new BrokerError("bad_request", "params must be an object");
   }
 
-  const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
+  // In default-agent mode an anonymous A2A client (no broker requester
+  // identity, no params.actor) is accepted as a synthetic service requester
+  // so a bare message/send works like any standalone agent. Production
+  // (no default agent) keeps requiring an actor.
+  const effectiveIdentity: RequesterIdentity | null =
+    options.requesterIdentity ??
+    (options.defaultAgentNodeId && !options.enforceRequesterIdentity
+      ? { id: "a2a-anonymous-client", kind: "service", role: "hub" }
+      : null);
+  const actor = deriveActor(params, effectiveIdentity, options.enforceRequesterIdentity);
   const text = extractMessageText(params.message);
   const metadata = isRecord(params.metadata) ? params.metadata : {};
   const exchangeId = optionalString(metadata.exchangeId) ?? optionalString(metadata.contextId);
@@ -410,7 +425,7 @@ export function executeSendMessage(
     };
   }
 
-  const targetNodeId = optionalString(metadata.targetNodeId);
+  const targetNodeId = optionalString(metadata.targetNodeId) ?? options.defaultAgentNodeId;
   if (!targetNodeId) {
     throw new BrokerError("bad_request", "metadata.targetNodeId is required when starting a new context");
   }
