@@ -21,7 +21,11 @@ The agent card currently advertises:
 - public discovery: `/.well-known/agent-card.json`
 - streaming capability: `true`, implemented as SSE discovered via
   `SubscribeToTask`
-- push notification capability: `false`
+- push notification capability: `false` by default; opt-in via
+  `A2A_PUSH_NOTIFICATIONS_ENABLED`, which flips the card to `true` and enables
+  the task push-notification config methods `CreateTaskPushNotificationConfig`,
+  `GetTaskPushNotificationConfig`, `ListTaskPushNotificationConfigs`,
+  `DeleteTaskPushNotificationConfig` (registration only — no live send)
 - default input/output modes: `text`
 - public projected task states: `submitted`, `working`, `auth-required`, `completed`, `failed`, `canceled`, `rejected`
   - `blocked` (approval-gated) projects as `auth-required`; a task terminated by an operator approval rejection (`approvalOutcome.status === "rejected"`) projects as `rejected` instead of `canceled`

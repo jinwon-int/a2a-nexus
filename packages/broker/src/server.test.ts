@@ -11568,3 +11568,58 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
     await server.close();
   }
 });
+
+test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async () => {
+  const server = await startTestServer({ pushNotificationsEnabled: true });
+  try {
+    const headers = jsonHeaders({});
+    const rpc = (method: string, params: unknown, id = "p") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      }).then((r) => r.json());
+
+    // Card advertises the capability.
+    const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(card.capabilities.pushNotifications, true);
+
+    const created = await rpc("CreateTaskPushNotificationConfig", {
+      taskId: "task-push-1",
+      url: "https://example.com/tck-webhook",
+    });
+    assert.equal(created.result.taskId, "task-push-1");
+    const configId = created.result.id;
+
+    const got = await rpc("GetTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
+    assert.equal(got.result.id, configId);
+
+    const listed = await rpc("ListTaskPushNotificationConfigs", { taskId: "task-push-1" });
+    assert.equal(listed.result.configs.length, 1);
+
+    const deleted = await rpc("DeleteTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
+    assert.ok(!("error" in deleted));
+    const missing = await rpc("GetTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
+    assert.equal(missing.error.code, -32004); // not_found
+  } finally {
+    await server.close();
+  }
+});
+
+test("push notification methods are absent when the feature is disabled", async () => {
+  const server = await startTestServer();
+  try {
+    const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(card.capabilities.pushNotifications, false);
+    const resp = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "p", method: "CreateTaskPushNotificationConfig", params: { taskId: "t", url: "https://x.example" } }),
+    });
+    const body = await resp.json();
+    assert.ok(body.error, "disabled broker must not accept push config methods");
+    assert.match(body.error.message, /not enabled/);
+  } finally {
+    await server.close();
+  }
+});

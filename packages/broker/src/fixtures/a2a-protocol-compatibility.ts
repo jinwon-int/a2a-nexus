@@ -12,6 +12,10 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "CancelTask",
     "SubscribeToTask",
     "GetExtendedAgentCard",
+    "CreateTaskPushNotificationConfig",
+    "GetTaskPushNotificationConfig",
+    "ListTaskPushNotificationConfigs",
+    "DeleteTaskPushNotificationConfig",
   ],
   brokerExtensionMethods: [
     "a2a.peer.status",
@@ -20,6 +24,11 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "REST",
     "gRPC",
   ],
+  // Push-notification config CRUD is implemented but opt-in
+  // (A2A_PUSH_NOTIFICATIONS_ENABLED): default card keeps
+  // capabilities.pushNotifications false; enabled flips it true and the four
+  // config methods register destinations (registration only — no live send).
+  pushNotificationConfig: { optIn: true, methods: 4, capabilityWhenEnabled: true },
   unsupportedPushNotifications: true,
   unsupportedA2A03Compat: true,
   /**

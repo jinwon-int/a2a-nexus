@@ -156,6 +156,10 @@ test("drift: JSON-RPC method inventory matches documented profile", () => {
     "CancelTask",
     "SubscribeToTask",
     "GetExtendedAgentCard",
+    "CreateTaskPushNotificationConfig",
+    "GetTaskPushNotificationConfig",
+    "ListTaskPushNotificationConfigs",
+    "DeleteTaskPushNotificationConfig",
   ];
 
   assert.deepEqual(

@@ -85,6 +85,10 @@ set matches the documented profile.
 | `ListTasks` | ✅ Implemented | Yes | Broker-oriented filters |
 | `CancelTask` | ✅ Implemented | Yes | Idempotent, fan-out |
 | `SubscribeToTask` | ✅ Implemented | Yes | Advisory + SSE URL |
+| `CreateTaskPushNotificationConfig` | ✅ Implemented | Yes | Opt-in via A2A_PUSH_NOTIFICATIONS_ENABLED |
+| `GetTaskPushNotificationConfig` | ✅ Implemented | Yes | Opt-in |
+| `ListTaskPushNotificationConfigs` | ✅ Implemented | Yes | Opt-in |
+| `DeleteTaskPushNotificationConfig` | ✅ Implemented | Yes | Opt-in |
 | `GetExtendedAgentCard` | ✅ Implemented | Yes | Broker extension |
 | `a2a.peer.status` | ✅ Implemented | No (broker extension) | Extension-gated |
 

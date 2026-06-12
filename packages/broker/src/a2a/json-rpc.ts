@@ -1,4 +1,5 @@
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
+import { PushNotificationConfigStore, PushConfigError } from "./push-notification-config.js";
 import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard } from "./agent-card.js";
@@ -44,6 +45,11 @@ export interface ExecuteJsonRpcOptions {
    * Optional peer status service instance. If provided, enables the PeerStatus RPC method.
    */
   peerStatusService?: PeerStatusService;
+  /**
+   * Optional push-notification config store. When provided, the four A2A 1.0
+   * TaskPushNotificationConfig methods are enabled.
+   */
+  pushNotificationConfigStore?: PushNotificationConfigStore;
 }
 
 export function executeA2AJsonRpc(
@@ -139,6 +145,37 @@ export function executeA2AJsonRpc(
         });
       }
 
+      case "CreateTaskPushNotificationConfig": {
+        const store = requirePushStore(options);
+        const p = isRecord(params) ? params : {};
+        const cfg = store.create({
+          taskId: requireString(params, "taskId"),
+          id: optionalString(p.id),
+          url: typeof p.url === "string" ? p.url : "",
+          token: optionalString(p.token),
+          authentication: isRecord(p.authentication)
+            ? (p.authentication as Record<string, never>)
+            : undefined,
+        });
+        return success(id, cfg);
+      }
+
+      case "GetTaskPushNotificationConfig": {
+        const store = requirePushStore(options);
+        return success(id, store.get(requireString(params, "taskId"), requireString(params, "id")));
+      }
+
+      case "ListTaskPushNotificationConfigs": {
+        const store = requirePushStore(options);
+        return success(id, { configs: store.list(requireString(params, "taskId")) });
+      }
+
+      case "DeleteTaskPushNotificationConfig": {
+        const store = requirePushStore(options);
+        store.delete(requireString(params, "taskId"), requireString(params, "id"));
+        return success(id, {});
+      }
+
       case "GetExtendedAgentCard": {
         return success(id, options.agentCard);
       }
@@ -217,6 +254,9 @@ export function executeA2AJsonRpc(
         return failure(id, -32601, `method not found: ${method}`);
     }
   } catch (error) {
+    if (error instanceof PushConfigError) {
+      return failure(id, brokerErrorCode(error.code), error.message, { brokerCode: error.code });
+    }
     if (error instanceof BrokerError) {
       return failure(id, brokerErrorCode(error.code), error.message, { brokerCode: error.code });
     }
@@ -615,6 +655,13 @@ function failure(id: JsonRpcId, code: number, message: string, data?: unknown): 
       data,
     },
   };
+}
+
+function requirePushStore(options: ExecuteJsonRpcOptions): PushNotificationConfigStore {
+  if (!options.pushNotificationConfigStore) {
+    throw new BrokerError("not_found", "push notifications are not enabled on this broker");
+  }
+  return options.pushNotificationConfigStore;
 }
 
 function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): string | undefined {

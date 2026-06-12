@@ -5,6 +5,7 @@ import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
 import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
+import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
@@ -2541,6 +2542,12 @@ export interface BrokerServerOptions {
    */
   githubWebhookSecret?: string;
   agentCard?: AgentCard;
+  /**
+   * Enable A2A 1.0 task push-notification config CRUD and advertise
+   * capabilities.pushNotifications on the agent card. Falls back to
+   * A2A_PUSH_NOTIFICATIONS_ENABLED. Off by default.
+   */
+  pushNotificationsEnabled?: boolean;
   /** PEM private key file (Ed25519 or EC P-256) for A2A 1.0 signed agent cards. Falls back to AGENT_CARD_SIGNING_KEY_FILE. */
   agentCardSigningKeyFile?: string;
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
@@ -2868,13 +2875,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     Math.max(1, workerRateLimitMaxRequests),
     Math.max(1, workerRateLimitWindowSec) * 1000,
   );
+  const pushNotificationsEnabled =
+    options.pushNotificationsEnabled ?? resolveBooleanEnv(process.env.A2A_PUSH_NOTIFICATIONS_ENABLED, false);
+  const pushNotificationConfigStore = pushNotificationsEnabled ? new PushNotificationConfigStore() : undefined;
   const unsignedAgentCard =
     options.agentCard ??
     createBrokerAgentCard({
       serviceName,
       publicBaseUrl,
       supportsStreaming: true,
-      supportsPushNotifications: false,
+      supportsPushNotifications: pushNotificationsEnabled,
     });
   // A2A 1.0 signed agent cards: opt-in via AGENT_CARD_SIGNING_KEY_FILE
   // (PEM Ed25519 or EC P-256 private key). A missing key serves the card
@@ -3365,6 +3375,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               requesterIdentity,
               enforceRequesterIdentity,
               peerStatusService,
+              pushNotificationConfigStore,
             });
           } catch (error) {
             const rpcError = jsonRpcErrorFromUnknown(error);
@@ -3396,6 +3407,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requesterIdentity,
           enforceRequesterIdentity,
           peerStatusService,
+          pushNotificationConfigStore,
         });
         if (response === null) {
           // Entirely notifications — JSON-RPC requires no response body.
