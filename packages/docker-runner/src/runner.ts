@@ -505,6 +505,19 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("--label", `a2a.trace.id=${safeId(traceId)}`);
   }
 
+  // Contained-subagent conductor directive: the in-container agent harness is
+  // the orchestra conductor for its own task — simple work is done directly,
+  // heavy work may fan out to at most maxCount (hard cap 4) evidence-only
+  // helpers. The config existed but was never advertised to the container;
+  // without these env vars the in-container harness had no budget to honor.
+  if (config.containedSubagents?.enabled) {
+    args.push("-e", "A2A_CONTAINED_SUBAGENTS_ENABLED=1");
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_MAX=${config.containedSubagents.maxCount}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_ROLES=${config.containedSubagents.roles.join(",")}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES=${config.containedSubagents.outputBytes}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_REASONS=${config.containedSubagents.reasons.join(",")}`);
+  }
+
   for (const mount of config.extraMounts ?? []) {
     const mode = mount.readOnly === false ? "rw" : "ro";
     args.push("-v", `${mount.source}:${mount.target}:${mode}`);
@@ -525,7 +538,17 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", `${key}=${value}`);
   }
 
+  // Reserved conductor keys are policy-controlled: a task-supplied env must
+  // never override the opt-in flag or the hard-cap budget injected above.
+  const reservedSubagentEnv = new Set([
+    "A2A_CONTAINED_SUBAGENTS_ENABLED",
+    "A2A_CONTAINED_SUBAGENTS_MAX",
+    "A2A_CONTAINED_SUBAGENTS_ROLES",
+    "A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES",
+    "A2A_CONTAINED_SUBAGENTS_REASONS",
+  ]);
   for (const [key, value] of Object.entries(task.env ?? {})) {
+    if (reservedSubagentEnv.has(key)) continue;
     args.push("-e", `${key}=${value}`);
   }
 
