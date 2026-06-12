@@ -1,0 +1,102 @@
+# A2A TCK compliance measurement (opt-in, scheduled)
+#
+# Runs the official A2A Technology Compatibility Kit against a freshly built,
+# locally-booted broker and publishes the compliance report as an artifact.
+# This is a MEASUREMENT lane, not a release gate: the broker is an A2A
+# 1.0-compatible alpha with documented deviations
+# (packages/broker/src/fixtures/a2a-protocol-compatibility.ts), so some
+# mandatory TCK tests are expected to fail. The value is a tracked,
+# versioned compliance number so regressions surface automatically.
+#
+# Triggers: weekly schedule + manual dispatch. Never blocks a PR.
+
+name: tck-measurement
+on:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "RFC 2119 level to measure (must|should|may)"
+        required: false
+        default: "must"
+      transport:
+        description: "Transport filter"
+        required: false
+        default: "jsonrpc"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tck-measurement
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: measure A2A TCK compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run build -w packages/broker
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the official A2A TCK
+        env:
+          # Pinned to a reviewed commit instead of a moving default branch:
+          # this workflow runs in a private-repo context, so the external
+          # TCK source is a supply-chain surface. Bump deliberately.
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run the TCK against a local broker
+        id: tck
+        continue-on-error: true
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+          TCK_LEVEL: ${{ github.event.inputs.level || 'must' }}
+          TCK_TRANSPORT: ${{ github.event.inputs.transport || 'jsonrpc' }}
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" | tee /tmp/tck-run.log
+
+      - name: Upload TCK reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tck-compliance-report
+          path: |
+            /tmp/a2a-tck/reports/**
+            /tmp/tck-run.log
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Summarize compliance
+        if: always()
+        run: |
+          {
+            echo "## A2A TCK compliance measurement"
+            echo ""
+            echo "Measurement lane (not a gate). Documented profile deviations mean some MUST tests are expected to fail."
+            echo ""
+            echo '```'
+            grep -E "OVERALL COMPATIBILITY|MUST|SHOULD|MAY|agent_card:|jsonrpc:|http_json:|grpc:" /tmp/tck-run.log || echo "no summary captured"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

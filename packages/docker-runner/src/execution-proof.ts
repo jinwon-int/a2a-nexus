@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash } from "node:crypto";
+import { signExecutionProof, verifyExecutionProofSignature } from "./execution-proof-signing.js";
 import type {
   RunnerTask,
   NormalizedRunnerTask,
@@ -24,7 +25,7 @@ import type {
  * allow-list, so nested keys absent from the top level would be dropped and
  * the digest would not bind nested fields (repos[].url, env, policyContext).
  */
-function stableJsonStringify(value: unknown): string {
+export function stableJsonStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
   const record = value as Record<string, unknown>;
@@ -74,6 +75,10 @@ export interface BuildExecutionProofOptions {
   runToken: string;
   /** ISO-8601 timestamp.  Omit to use current UTC time. */
   now?: string;
+  /** PEM private key (Ed25519/EC P-256). When set, the proof is JWS-signed. */
+  signingKeyPem?: string;
+  /** Optional JWS kid for the proof signature. */
+  signingKid?: string;
 }
 
 /**
@@ -101,7 +106,7 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
   // Determine outcome classification.
   const status = result.ok ? "completed" : result.status === "timeout" ? "timeout" : "failed";
 
-  return {
+  const proof: ExecutionProof = {
     schemaVersion: "a2a.runner.execution-proof.v1",
     canonicalization: PROOF_CANONICALIZATION,
     taskId: result.taskId,
@@ -123,6 +128,11 @@ export function buildExecutionProof(options: BuildExecutionProofOptions): Execut
     ...(buildSummary(result) ? { summary: buildSummary(result) } : {}),
     manifestPath: "artifacts/manifest.json",
   };
+
+  if (options.signingKeyPem) {
+    return signExecutionProof(proof, { privateKeyPem: options.signingKeyPem, kid: options.signingKid });
+  }
+  return proof;
 }
 
 // ─── Outcome Classification ─────────────────────────────────────────────
@@ -199,6 +209,7 @@ export function verifyExecutionProof(
   expanded: RunnerTask | undefined,
   stdout: string,
   stderr: string,
+  options: { publicKeyPem?: string } = {},
 ): { valid: true } | { valid: false; reason: string } {
   // A proof produced under a different (or absent) canonicalization cannot be
   // re-verified with the current serializer: its digests were computed by a
@@ -232,6 +243,18 @@ export function verifyExecutionProof(
   const chainDigest = sha256Text(proof.inputDigest + proof.expandedDigest + outputDigest);
   if (chainDigest !== proof.chainDigest) {
     return { valid: false, reason: `chainDigest mismatch: got ${chainDigest}, expected ${proof.chainDigest}` };
+  }
+
+  // When a public key is supplied, the proof must carry a signature that
+  // verifies against it: the digests prove internal consistency, the
+  // signature proves which node produced the proof.
+  if (options.publicKeyPem) {
+    if (!proof.signature) {
+      return { valid: false, reason: "expected a signed proof but none was present" };
+    }
+    if (!verifyExecutionProofSignature(proof, options.publicKeyPem)) {
+      return { valid: false, reason: "execution-proof signature does not verify against the provided key" };
+    }
   }
 
   return { valid: true };
