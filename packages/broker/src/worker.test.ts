@@ -1107,3 +1107,86 @@ test("external handler injects the subagent conductor directive per task", async
   const none = (await optedOut(baseTask)) as { result: { output: Record<string, string | null> } };
   assert.equal(none.result.output.conductor, null);
 });
+
+test("conductor budget is a verifiable contract: reports are annotated, overruns fail closed", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-subagent-budget-"));
+  const scriptPath = join(dir, "report.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "const chunks = [];",
+      "for await (const chunk of process.stdin) chunks.push(chunk);",
+      "const task = JSON.parse(Buffer.concat(chunks).toString());",
+      "const count = Number(task.payload?.reportCount ?? 0);",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'done', output: { subagentReport: { count, roles: ['verifier'] } } } }));",
+    ].join("\n"),
+  );
+
+  const handler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    timeoutMs: 5_000,
+    workerId: "conductor-node",
+    subagentCap: 4,
+  });
+
+  const heavyProfile = {
+    subagentProfile: {
+      size: "large",
+      coupling: "low",
+      hasIndependentSubtasks: true,
+      writeSets: ["src/a.ts", "src/b.ts"],
+    },
+  };
+  const makeTask = (id: string, payload: Record<string, unknown>) =>
+    ({
+      id,
+      exchangeId: `exchange-${id}`,
+      intent: "propose_patch",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "conductor-node", kind: "node", role: "analyst" },
+      message: "budget test",
+      status: "running",
+      targetNodeId: "conductor-node",
+      payload,
+      createdAt: "2026-06-12T00:00:00Z",
+      updatedAt: "2026-06-12T00:00:00Z",
+    }) as never;
+
+  // Within budget (4): annotated with the budget for terminal evidence.
+  const ok = (await handler(makeTask("budget-ok", { ...heavyProfile, reportCount: 3 }))) as {
+    result: { output: { subagentReport: Record<string, unknown> } };
+  };
+  assert.equal(ok.result.output.subagentReport.count, 3);
+  assert.equal(ok.result.output.subagentReport.budget, 4);
+  assert.equal(ok.result.output.subagentReport.withinBudget, true);
+
+  // Over budget: fail closed.
+  const over = (await handler(makeTask("budget-over", { ...heavyProfile, reportCount: 5 }))) as {
+    error: { code: string; details: Record<string, unknown> };
+  };
+  assert.equal(over.error.code, "subagent_budget_exceeded");
+  assert.equal(over.error.details.budget, 4);
+  assert.equal(over.error.details.reported, 5);
+
+  // No report: result passes through untouched.
+  const silentScript = join(dir, "silent.mjs");
+  writeFileSync(
+    silentScript,
+    [
+      "for await (const chunk of process.stdin) void chunk;",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'no report' } }));",
+    ].join("\n"),
+  );
+  const silentHandler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [silentScript],
+    timeoutMs: 5_000,
+    subagentCap: 4,
+  });
+  const silent = (await silentHandler(makeTask("budget-silent", {}))) as { result: { summary: string } };
+  assert.equal(silent.result.summary, "no report");
+});
