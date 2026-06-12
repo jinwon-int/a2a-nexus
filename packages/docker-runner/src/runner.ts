@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
@@ -179,6 +180,12 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     result,
     expanded: expandedTask,
     runToken,
+    ...(config.proofSigningKeyFile
+      ? {
+          signingKeyPem: readFileSync(config.proofSigningKeyFile, "utf8"),
+          signingKid: config.proofSigningKid,
+        }
+      : {}),
   });
   result.executionProof = executionProof;
   result.templateExpansion = templateExpansionEv;

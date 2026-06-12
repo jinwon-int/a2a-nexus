@@ -98,6 +98,20 @@ export interface ExecutionProof {
   summary?: string;
   /** Reference to the artifact manifest path. */
   manifestPath: string;
+  /**
+   * Optional JWS signature over the canonicalized proof (sans this field).
+   * Present only when the runner is configured with a signing key. Lets a
+   * downstream consumer verify "this node produced this proof for this
+   * input" without trusting the transport.
+   */
+  signature?: ExecutionProofSignature;
+}
+
+export interface ExecutionProofSignature {
+  /** base64url(JSON protected header: { alg, typ, kid? }). */
+  protected: string;
+  /** base64url signature over `protected + "." + base64url(canonical proof sans signature)`. */
+  signature: string;
 }
 
 export type RunnerCommandProfile = "openclaw" | "hermes";
@@ -172,6 +186,10 @@ export interface RunnerConfig {
   hermesProfile?: RunnerHermesProfileConfig;
   /** Guarded OpenClaw/Hermes subagent policy for Docker-contained task work. */
   containedSubagents?: RunnerContainedSubagentsConfig;
+  /** PEM private key file for opt-in execution-proof JWS signing. */
+  proofSigningKeyFile?: string;
+  /** Optional JWS kid for execution-proof signatures. */
+  proofSigningKid?: string;
   /**
    * Escape hatch for github-propose-patch/propose_patch mode.
    * When set, injected as A2A_PATCH_COMMAND env var into containers.
