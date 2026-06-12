@@ -96,6 +96,8 @@
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
     "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs",
     "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs",
+    "dispatch:round": "node scripts/a2a-dispatch-round.mjs",
+    "dispatch:round:test": "node --test scripts/a2a-dispatch-round.test.mjs",
     "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
     "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs"
   },
