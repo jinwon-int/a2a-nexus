@@ -648,12 +648,13 @@ function deriveSubagentTaskProfile(task: TaskRecord): A2AWorkerSubagentTaskProfi
     task.intent === "apply_local_change" ||
     task.intent === "validate_change" ||
     task.intent === "backfill";
-  return {
-    taskId: task.id,
-    size: patchShaped ? "medium" : "small",
-    coupling: "low",
-    hasIndependentSubtasks: patchShaped,
-  };
+  // Without an explicit profile, only patch-shaped intents are treated as
+  // work that may justify fanout (medium + independent). Everything else is
+  // trivial -> budget 0: the conductor keeps simple work for itself. A task
+  // that genuinely needs helpers must opt in via payload.subagentProfile.
+  return patchShaped
+    ? { taskId: task.id, size: "medium", coupling: "low", hasIndependentSubtasks: true }
+    : { taskId: task.id, size: "trivial", coupling: "low" };
 }
 
 export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): WorkerTaskHandler {
