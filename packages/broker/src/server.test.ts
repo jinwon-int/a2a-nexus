@@ -11660,3 +11660,40 @@ test("awaiting_operator checkpoint projects input-required and a context message
     await server.close();
   }
 });
+
+test("explicit task resume requires task-party authorization (a2a-nexus#617 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-rz", "analyst", "test-edge-secret");
+    const hub = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" });
+    const worker = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-rz", "x-a2a-requester-role": "analyst" });
+
+    const send = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "rz", method: "SendMessage", params: { message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-rz", intent: "analyze" } } }),
+    })).json();
+    const taskId = send.result.task.id;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/start`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz", state: "awaiting_operator" }) });
+
+    // A stranger (analyst, not a party to this task) cannot resume it.
+    const stranger = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "intruder", "x-a2a-requester-role": "analyst" });
+    const denied = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: stranger, body: JSON.stringify({ actorId: "intruder" }) });
+    assert.ok(denied.status >= 400, "non-party resume must be rejected");
+
+    // checkpoint id mismatch is rejected for an authorized party.
+    const mismatch = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz", checkpointId: "wrong" }) });
+    assert.ok(mismatch.status >= 400, "checkpoint id mismatch must be rejected");
+
+    // The assigned worker (a party) can resume.
+    const ok = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz" }) });
+    assert.equal(ok.status, 200);
+
+    // Resuming a missing task is not_found.
+    const missing = await fetch(`${server.baseUrl}/tasks/no-such-task/resume`, { method: "POST", headers: hub, body: JSON.stringify({ actorId: "hub-a" }) });
+    assert.equal(missing.status, 404);
+  } finally {
+    await server.close();
+  }
+});

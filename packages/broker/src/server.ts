@@ -5437,8 +5437,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         if (!actorId) {
           throw new BrokerError("bad_request", "actorId is required");
         }
+        const resumeTarget = broker.getTask(segments[1]);
+        if (!resumeTarget) {
+          throw new BrokerError("not_found", "task not found");
+        }
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: actorId }, "task.resume");
+          // Clearing an operator checkpoint is a task mutation: the caller
+          // must be a party to the task (requester / target / assigned worker)
+          // or a hub/operator. Without this, anyone who knows a task id could
+          // clear another task's awaiting_operator checkpoint.
+          assertRequesterCanSubscribeToTask(requesterIdentity, resumeTarget);
         }
         const task = broker.resumeTask(segments[1], actorId, { checkpointId: body?.checkpointId });
         await awaitDurablePersistenceAck(stateStore);
