@@ -501,6 +501,17 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
   }
 
+  // Distributed-trace propagation: surface the task trace id to the in-
+  // container work and as a label so a container can be correlated back to
+  // the originating A2A request.
+  const rawTraceId = typeof task.traceId === "string" ? task.traceId.trim() : "";
+  const traceId =
+    rawTraceId && rawTraceId.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(rawTraceId) ? rawTraceId : "";
+  if (traceId) {
+    args.push("-e", `A2A_TRACE_ID=${traceId}`);
+    args.push("--label", `a2a.trace.id=${safeId(traceId)}`);
+  }
+
   // Contained-subagent conductor directive: the in-container agent harness is
   // the orchestra conductor for its own task — simple work is done directly,
   // heavy work may fan out to at most maxCount (hard cap 4) evidence-only

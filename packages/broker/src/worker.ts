@@ -686,6 +686,18 @@ export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): Work
   }
 }
 
+/**
+ * Externally-supplied trace ids land in process/container env, so bound them
+ * to a safe charset and length before propagation. Returns undefined for an
+ * absent or out-of-policy value.
+ */
+function sanitizeTraceId(raw: string | undefined): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 128) return undefined;
+  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
+}
+
 export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig): WorkerTaskHandler {
   if (!config.command?.trim()) {
     throw new Error("external handler command is required");
@@ -695,6 +707,12 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
   const timeoutMs = Math.max(1, config.timeoutMs ?? DEFAULT_HANDLER_TIMEOUT_MS);
 
   return async (task) => {
+    // Propagate the distributed-trace id end to end: requester -> broker
+    // (task.via.traceId) -> the handler process (and any container it spawns)
+    // -> evidence. A2A_TRACE_ID lets the in-handler/in-container work correlate
+    // back to the originating request.
+    const traceId = sanitizeTraceId(task.via?.traceId);
+    const traceEnv = traceId ? { A2A_TRACE_ID: traceId } : {};
     const directiveEnv = config.subagentDirectiveDisabled
       ? {}
       : buildSubagentDirectiveEnv(task, {
@@ -708,7 +726,7 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
       command: config.command,
       args,
       cwd: config.cwd,
-      env: { ...config.env, ...directiveEnv },
+      env: { ...config.env, ...traceEnv, ...directiveEnv },
       timeoutMs,
       input: JSON.stringify(task),
     });
