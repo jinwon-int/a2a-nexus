@@ -52,9 +52,15 @@ jobs:
           python-version: "3.11"
 
       - name: Clone and install the official A2A TCK
+        env:
+          # Pinned to a reviewed commit instead of a moving default branch:
+          # this workflow runs in a private-repo context, so the external
+          # TCK source is a supply-chain surface. Bump deliberately.
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
           python3 -m venv /tmp/a2a-tck/.venv
           /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
 
