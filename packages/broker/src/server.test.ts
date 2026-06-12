@@ -11569,12 +11569,12 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
   }
 });
 
-test("cross-broker receiver enforces signed-card trust when anchors are pinned", async () => {
+test("cross-broker receiver enforces request-bound proof of possession when anchors are pinned", async () => {
   const { generateKeyPairSync } = await import("node:crypto");
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { signAgentCard } = await import("./a2a/agent-card-signing.js");
+  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-card-trust.js");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
@@ -11594,33 +11594,31 @@ test("cross-broker receiver enforces signed-card trust when anchors are pinned",
       "x-a2a-requester-id": "hub-a",
       "x-a2a-requester-role": "hub",
     });
-    const claim = { crossBrokerHandoff: { handoffBrokerId: "peer-a" } };
+    const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r-trust" };
 
-    // No sender card -> fail closed before ingestion.
+    // No proof -> fail closed before ingestion.
     const rejected = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(claim),
+      body: JSON.stringify(body),
     });
     assert.ok(rejected.status >= 400);
-    const rejectedBody = await rejected.json();
-    assert.match(JSON.stringify(rejectedBody), /cross-broker card trust/);
+    assert.match(JSON.stringify(await rejected.json()), /cross-broker trust/);
 
-    // Verified card passes the trust gate (the response is now ingestion-level
-    // validation, not a trust rejection).
-    const signedCard = signAgentCard(
-      { name: "peer-a", protocolVersion: "1.0", capabilities: { streaming: true, pushNotifications: false }, skills: [] },
-      { privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString() },
+    // A fresh body-bound proof clears the trust gate (any further response is
+    // ingestion-level validation, not a trust rejection).
+    const proof = buildCrossBrokerSenderProof(
+      privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      { brokerId: "peer-a", body, nonce: `n-${Date.now()}` },
     );
     const passed = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ ...claim, senderAgentCard: signedCard }),
+      body: JSON.stringify({ ...body, senderProof: proof }),
     });
-    const passedBody = await passed.json();
     assert.ok(
-      !JSON.stringify(passedBody).includes("cross-broker card trust"),
-      "verified card must clear the trust gate",
+      !JSON.stringify(await passed.json()).includes("cross-broker trust"),
+      "a valid proof must clear the trust gate",
     );
   } finally {
     await server.close();

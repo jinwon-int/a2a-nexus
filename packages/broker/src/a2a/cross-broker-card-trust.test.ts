@@ -4,70 +4,107 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { signAgentCard } from "./agent-card-signing.js";
-import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderCard } from "./cross-broker-card-trust.js";
+import {
+  CrossBrokerNonceCache,
+  buildCrossBrokerSenderProof,
+  loadCrossBrokerTrustAnchors,
+  verifyCrossBrokerSenderProof,
+} from "./cross-broker-card-trust.js";
 
-function makeKeys() {
+function keys() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   return {
-    privatePem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    publicPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    priv: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    pub: publicKey.export({ type: "spki", format: "pem" }).toString(),
   };
 }
 
-const card = { name: "peer-broker", protocolVersion: "1.0", capabilities: { streaming: true, pushNotifications: false }, skills: [] };
-
-test("trust anchors load from a JSON pin file and reject malformed pins", () => {
-  const { publicPem } = makeKeys();
-  const dir = mkdtempSync(join(tmpdir(), "a2a-trust-"));
+test("trust anchors load from a pin file, rejecting empty ids and malformed pins", () => {
+  const { pub } = keys();
+  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-"));
   const file = join(dir, "anchors.json");
-  writeFileSync(file, JSON.stringify({ "peer-a": publicPem }));
-  const anchors = loadCrossBrokerTrustAnchors(file);
-  assert.ok(anchors?.has("peer-a"));
+  writeFileSync(file, JSON.stringify({ "peer-a": pub }));
+  assert.ok(loadCrossBrokerTrustAnchors(file)?.has("peer-a"));
+  assert.equal(loadCrossBrokerTrustAnchors(undefined), null);
 
-  assert.equal(loadCrossBrokerTrustAnchors(undefined), null, "unset file disables the gate");
-  const badFile = join(dir, "bad.json");
-  writeFileSync(badFile, JSON.stringify({ "peer-a": "not-a-pem" }));
-  assert.throws(() => loadCrossBrokerTrustAnchors(badFile), /SPKI public key PEM/);
+  const emptyId = join(dir, "empty.json");
+  writeFileSync(emptyId, JSON.stringify({ "   ": pub }));
+  assert.throws(() => loadCrossBrokerTrustAnchors(emptyId), /non-empty/);
+  const badPem = join(dir, "bad.json");
+  writeFileSync(badPem, JSON.stringify({ "peer-a": "nope" }));
+  assert.throws(() => loadCrossBrokerTrustAnchors(badPem), /SPKI public key PEM/);
 });
 
-test("verifyCrossBrokerSenderCard binds the claimed broker id to the pinned key", () => {
-  const { privatePem, publicPem } = makeKeys();
-  const anchors = new Map([["peer-a", publicPem]]);
-  const signed = signAgentCard(card, { privateKeyPem: privatePem });
+test("a fresh body-bound proof verifies; replay and tamper are rejected (a2a-nexus#618 review)", () => {
+  const { priv, pub } = keys();
+  const anchors = new Map([["peer-a", pub]]);
+  const now = Date.parse("2026-06-12T00:00:00.000Z");
+  const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r1", summary: "ok" };
+  const proof = buildCrossBrokerSenderProof(priv, { brokerId: "peer-a", body, nonce: "n1", issuedAt: new Date(now).toISOString() });
 
-  const ok = verifyCrossBrokerSenderCard(anchors, {
-    crossBrokerHandoff: { handoffBrokerId: "peer-a" },
-    senderAgentCard: signed,
-  });
-  assert.deepEqual(ok, { ok: true, brokerId: "peer-a" });
+  const cache = new CrossBrokerNonceCache();
+  assert.deepEqual(
+    verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: proof }, { nonceCache: cache, now }),
+    { ok: true, brokerId: "peer-a" },
+  );
 
-  const unknown = verifyCrossBrokerSenderCard(anchors, {
-    crossBrokerHandoff: { handoffBrokerId: "peer-b" },
-    senderAgentCard: signed,
-  });
+  // Replay of the same nonce is rejected.
+  const replay = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: proof }, { nonceCache: cache, now });
+  assert.equal(replay.ok, false);
+  assert.match((replay as { reason: string }).reason, /replay/);
+
+  // Tampering the body after signing breaks the bodyHash bind.
+  const tampered = verifyCrossBrokerSenderProof(
+    anchors,
+    { ...body, summary: "evil", senderProof: proof },
+    { nonceCache: new CrossBrokerNonceCache(), now },
+  );
+  assert.equal(tampered.ok, false);
+  assert.match((tampered as { reason: string }).reason, /bodyHash/);
+});
+
+test("a replayed peer card/proof for a different request cannot impersonate (a2a-nexus#618 review)", () => {
+  const { priv, pub } = keys();
+  const anchors = new Map([["peer-a", pub]]);
+  const now = Date.parse("2026-06-12T00:00:00.000Z");
+
+  // Proof minted for body A.
+  const bodyA = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "rA" };
+  const proofA = buildCrossBrokerSenderProof(priv, { brokerId: "peer-a", body: bodyA, nonce: "nA", issuedAt: new Date(now).toISOString() });
+
+  // Attacker attaches proofA to a different body B (same broker id) — rejected.
+  const bodyB = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "rB", senderProof: proofA };
+  const forged = verifyCrossBrokerSenderProof(anchors, bodyB, { nonceCache: new CrossBrokerNonceCache(), now });
+  assert.equal(forged.ok, false, "a proof minted for another body must not authenticate this request");
+});
+
+test("stale, unknown-broker, missing-proof, and wrong-key cases fail closed", () => {
+  const { priv, pub } = keys();
+  const anchors = new Map([["peer-a", pub]]);
+  const now = Date.parse("2026-06-12T00:00:00.000Z");
+  const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r1" };
+
+  // Missing proof.
+  const noProof = verifyCrossBrokerSenderProof(anchors, body, { nonceCache: new CrossBrokerNonceCache(), now });
+  assert.equal(noProof.ok, false);
+
+  // Stale issuedAt.
+  const stale = buildCrossBrokerSenderProof(priv, { brokerId: "peer-a", body, nonce: "ns", issuedAt: new Date(now - 600_000).toISOString() });
+  const staleV = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: stale }, { nonceCache: new CrossBrokerNonceCache(), now });
+  assert.equal(staleV.ok, false);
+  assert.match((staleV as { reason: string }).reason, /freshness/);
+
+  // Unknown broker id.
+  const otherBody = { crossBrokerHandoff: { handoffBrokerId: "peer-z" }, parentRoundId: "r1" };
+  const otherProof = buildCrossBrokerSenderProof(priv, { brokerId: "peer-z", body: otherBody, nonce: "nz", issuedAt: new Date(now).toISOString() });
+  const unknown = verifyCrossBrokerSenderProof(anchors, { ...otherBody, senderProof: otherProof }, { nonceCache: new CrossBrokerNonceCache(), now });
   assert.equal(unknown.ok, false);
   assert.match((unknown as { reason: string }).reason, /no trust anchor/);
 
-  const missingCard = verifyCrossBrokerSenderCard(anchors, {
-    crossBrokerHandoff: { handoffBrokerId: "peer-a" },
-  });
-  assert.equal(missingCard.ok, false);
-  assert.match((missingCard as { reason: string }).reason, /senderAgentCard/);
-
-  const tampered = verifyCrossBrokerSenderCard(anchors, {
-    crossBrokerHandoff: { handoffBrokerId: "peer-a" },
-    senderAgentCard: { ...signed, name: "evil-broker" },
-  });
-  assert.equal(tampered.ok, false);
-  assert.match((tampered as { reason: string }).reason, /does not verify/);
-
-  // A key the anchor does not pin must not verify even with a valid signature.
-  const { privatePem: otherKey } = makeKeys();
-  const otherSigned = signAgentCard(card, { privateKeyPem: otherKey });
-  const wrongKey = verifyCrossBrokerSenderCard(anchors, {
-    crossBrokerHandoff: { handoffBrokerId: "peer-a" },
-    senderAgentCard: otherSigned,
-  });
+  // Signed by a key the anchor does not pin.
+  const { priv: wrongPriv } = keys();
+  const wrongProof = buildCrossBrokerSenderProof(wrongPriv, { brokerId: "peer-a", body, nonce: "nw", issuedAt: new Date(now).toISOString() });
+  const wrongKey = verifyCrossBrokerSenderProof(anchors, { ...body, senderProof: wrongProof }, { nonceCache: new CrossBrokerNonceCache(), now });
   assert.equal(wrongKey.ok, false);
+  assert.match((wrongKey as { reason: string }).reason, /does not verify/);
 });

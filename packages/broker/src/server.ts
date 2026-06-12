@@ -6,7 +6,7 @@ import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
-import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderCard } from "./a2a/cross-broker-card-trust.js";
+import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderProof, CrossBrokerNonceCache } from "./a2a/cross-broker-card-trust.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
@@ -2893,6 +2893,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
     options.crossBrokerTrustedCardKeysFile ?? process.env.CROSS_BROKER_TRUSTED_CARD_KEYS_FILE,
   );
+  const crossBrokerNonceCache = crossBrokerTrustAnchors ? new CrossBrokerNonceCache() : undefined;
   const agentCard = signingKeyFile
     ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
         privateKeyPem: readFileSync(signingKeyFile, "utf8"),
@@ -3547,10 +3548,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
 
         const body = await readJson(req);
-        if (crossBrokerTrustAnchors) {
-          const verdict = verifyCrossBrokerSenderCard(crossBrokerTrustAnchors, body);
+        if (crossBrokerTrustAnchors && crossBrokerNonceCache) {
+          const verdict = verifyCrossBrokerSenderProof(crossBrokerTrustAnchors, body, {
+            nonceCache: crossBrokerNonceCache,
+          });
           if (!verdict.ok) {
-            throw new BrokerError("policy_denied", `cross-broker card trust: ${verdict.reason}`);
+            throw new BrokerError("policy_denied", `cross-broker trust: ${verdict.reason}`);
           }
         }
         const result = broker.ingestCrossBrokerTerminalBriefProjection(body as Parameters<typeof broker.ingestCrossBrokerTerminalBriefProjection>[0]);
