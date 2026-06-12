@@ -5,6 +5,45 @@ reduced the `tasks.list` hot read signal but still left residual `/livez`
 latency. It is intentionally a spike/ADR boundary, not an implementation plan
 for production worker-thread SQLite.
 
+## Status update (2026-06-12): spike answered — implemented opt-in, awaiting live approval
+
+The original `Verdict: PARTIAL / do not implement directly` below reflects the
+#1032 evidence at spike time. It is **superseded** by what subsequently landed
+in tracked source. Recording it here so the ADR is not read as a standing "do
+not build" decision:
+
+- The test-only queue semantics model graduated into a real implementation:
+  `src/core/sqlite-worker-thread-persistence.ts` (+ its 571-line
+  `*.test.ts`), wired into the server behind
+  `BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1` (off by default).
+- Every "required design proof before implementation" listed below is met by
+  that implementation:
+  - **Ordering** — `WriteQueue.pump()` dequeues one entry at a time (FIFO).
+  - **Read-after-write** — reads (`load`, `readHot*`, `getPersistenceInfo`)
+    stay synchronous on the main thread against the same DB file; only writes
+    are offloaded, so callers keep immediate visibility.
+  - **Backpressure** — bounded queue; `enqueue()` rejects with
+    `queue_saturated`; counters surface via the read-only `persistenceQueue`
+    diagnostics (`BrokerPersistenceQueueDiagnostics`), not a new hot-path
+    field.
+  - **Crash** — `abort()` rejects all pending and future writes
+    (`worker_crashed`).
+  - **Shutdown** — `drainAndClose({ timeoutMs })` drains or rejects
+    deterministically within a bounded timeout.
+  - **Error propagation** — ACK semantics reject the mutating caller; the
+    route wrappers do not report success before acknowledgement.
+  - **Rollback** — flipping the env off returns to the synchronous SQLite
+    path against the same DB file; no migration or data rewrite.
+
+Remaining gate: a **separate explicit live-deploy approval** (per the
+"Non-goals" below — no live deploy/recreate is authorized by this ADR). The
+diagnostics-only review and the implementation-readiness sections later in
+this document already describe that bar. The PR #1224 hot-path heartbeat
+attribution remains the explicit anti-pattern not to reintroduce.
+
+This is a documentation reconciliation only: it changes no code and grants no
+live approval.
+
 ## Verdict: PARTIAL
 
 Worker-thread isolation for SQLite is still plausible, but the current evidence
