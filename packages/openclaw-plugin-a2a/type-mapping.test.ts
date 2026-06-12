@@ -9,7 +9,7 @@ import {
   mapBrokerStatusToReceiptStatus,
   isTerminalReceiptStatus,
   resolveCancelTarget,
-} from '../dist/type-mapping.js';
+} from './dist/type-mapping.js';
 
 test('type mapping keeps current broker-to-openclaw contract stable', () => {
   assert.equal(mapBrokerStatusToExecutionStatus({ brokerStatus: 'queued' }), 'accepted');
