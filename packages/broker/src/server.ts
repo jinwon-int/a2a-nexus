@@ -3345,6 +3345,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           );
         }
         res.setHeader("a2a-version", negotiated.version);
+        // Explicit version negotiation opts the client into A2A 1.0 result
+        // shapes; header-less legacy clients keep the historical envelopes.
+        const responseShape = negotiated.requested !== null ? "spec" as const : "legacy" as const;
         // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
         // than the broker's HTTP error envelope, and so batch arrays /
         // notifications are handled by the JSON-RPC transport layer.
@@ -3396,6 +3399,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requesterIdentity,
           enforceRequesterIdentity,
           peerStatusService,
+          responseShape,
         });
         if (response === null) {
           // Entirely notifications — JSON-RPC requires no response body.

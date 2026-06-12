@@ -11568,3 +11568,59 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
     await server.close();
   }
 });
+
+test("explicit A2A-Version negotiation returns spec result shapes; legacy clients keep envelopes", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-shape", "analyst", "test-edge-secret");
+    const baseHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const sendParams = {
+      message: { parts: [{ text: "shape probe" }] },
+      metadata: { targetNodeId: "worker-shape", intent: "analyze" },
+    };
+
+    // Spec shape: result IS the Task, with top-level contextId and no wrapper.
+    const spec = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...baseHeaders, "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-1", method: "SendMessage", params: sendParams }),
+    });
+    const specBody = await spec.json();
+    // SendMessageResponse is a oneof wrapper: { task } here.
+    assert.ok(specBody.result.task, "spec SendMessage result is the { task } oneof");
+    assert.equal("messageId" in specBody.result, false, "no legacy wrapper fields");
+    assert.equal("contextId" in specBody.result, false, "contextId lives on the Task");
+    const specTask = specBody.result.task;
+    assert.ok(typeof specTask.contextId === "string");
+    assert.equal("kind" in specTask, false, "proto Task has no kind discriminator");
+    assert.equal(specTask.status.state, "TASK_STATE_SUBMITTED");
+    const taskId = specTask.id;
+
+    // GetTask returns the Task directly per the proto service contract.
+    const specGet = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...baseHeaders, "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-2", method: "GetTask", params: { taskId } }),
+    });
+    const specGetBody = await specGet.json();
+    assert.equal(specGetBody.result.id, taskId);
+    assert.equal(specGetBody.result.contextId, specTask.contextId);
+    assert.equal("task" in specGetBody.result, false, "GetTask spec result is the bare Task");
+
+    // Legacy shape (no header): historical envelopes, byte-compatible.
+    const legacy = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-3", method: "GetTask", params: { taskId } }),
+    });
+    const legacyBody = await legacy.json();
+    assert.ok(legacyBody.result.task, "legacy GetTask keeps the { task } envelope");
+    assert.equal(legacyBody.result.task.id, taskId);
+  } finally {
+    await server.close();
+  }
+});

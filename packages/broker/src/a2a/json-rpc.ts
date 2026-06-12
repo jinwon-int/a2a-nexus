@@ -44,6 +44,82 @@ export interface ExecuteJsonRpcOptions {
    * Optional peer status service instance. If provided, enables the PeerStatus RPC method.
    */
   peerStatusService?: PeerStatusService;
+  /**
+   * Response wire shape. "spec" (clients that explicitly negotiated an
+   * A2A-Version header) returns A2A 1.0 result objects: SendMessage/GetTask/
+   * CancelTask return the Task directly with a top-level contextId, and
+   * context-only sends return a Message. "legacy" (default; header-less
+   * clients such as the plugin) keeps the broker's historical envelopes.
+   */
+  responseShape?: "spec" | "legacy";
+}
+
+/** Map the public A2A state to the proto-JSON TaskState enum name. */
+function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]["state"]): string {
+  switch (state) {
+    case "submitted": return "TASK_STATE_SUBMITTED";
+    case "working": return "TASK_STATE_WORKING";
+    case "completed": return "TASK_STATE_COMPLETED";
+    case "failed": return "TASK_STATE_FAILED";
+    case "canceled": return "TASK_STATE_CANCELED";
+    case "input-required": return "TASK_STATE_INPUT_REQUIRED";
+    case "rejected": return "TASK_STATE_REJECTED";
+    case "auth-required": return "TASK_STATE_AUTH_REQUIRED";
+    default: return "TASK_STATE_UNSPECIFIED";
+  }
+}
+
+/**
+ * A2A 1.0 proto-JSON Task: id + contextId at the top level, TaskStatus with
+ * the proto enum state name and a proto Message (messageId required), no
+ * broker-era `kind` discriminator. Broker detail stays under metadata, which
+ * the spec types as an open Struct.
+ */
+function projectSpecTask(task: TaskRecord): Record<string, unknown> {
+  const projected = projectBrokerTask(task);
+  return {
+    id: projected.id,
+    contextId: task.exchangeId,
+    status: {
+      state: specTaskStateName(projected.status.state),
+      timestamp: projected.status.timestamp,
+      ...(projected.status.message
+        ? {
+            message: {
+              messageId: `${task.id}:status`,
+              taskId: task.id,
+              contextId: task.exchangeId,
+              role: "ROLE_AGENT",
+              parts: projected.status.message.parts,
+            },
+          }
+        : {}),
+    },
+    artifacts: projected.artifacts ?? [],
+    metadata: projected.metadata,
+  };
+}
+
+/** A2A 1.0 SendMessageResponse: a oneof wrapper of { task } or { message }. */
+function specSendResult(
+  send: { contextId: string; messageId: string; task?: ReturnType<typeof projectBrokerTask> },
+  broker: InMemoryA2ABroker,
+): Record<string, unknown> {
+  if (send.task) {
+    const record = broker.getTask(send.task.id);
+    if (record) {
+      return { task: projectSpecTask(record) };
+    }
+  }
+  // Context-only send: the oneof carries a Message.
+  return {
+    message: {
+      messageId: send.messageId,
+      contextId: send.contextId,
+      role: "ROLE_AGENT",
+      parts: [],
+    },
+  };
 }
 
 export function executeA2AJsonRpc(
@@ -62,6 +138,9 @@ export function executeA2AJsonRpc(
     switch (method) {
       case "SendMessage": {
         const result = executeSendMessage(params, options);
+        if (options.responseShape === "spec") {
+          return success(id, specSendResult(result, options.broker));
+        }
         return success(id, result);
       }
 
@@ -90,6 +169,9 @@ export function executeA2AJsonRpc(
         if (options.enforceRequesterIdentity) {
           assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
+        if (options.responseShape === "spec") {
+          return success(id, projectSpecTask(task));
+        }
         return success(id, { task: projectBrokerTask(task) });
       }
 
@@ -98,11 +180,13 @@ export function executeA2AJsonRpc(
         if (options.enforceRequesterIdentity) {
           requireTaskListRequester(options);
         }
-        const tasks = options.broker
+        const visible = options.broker
           .listTasks(filters)
-          .filter((task) => canReadTaskSnapshot(options, task))
-          .map(projectBrokerTaskForList);
-        return success(id, { tasks });
+          .filter((task) => canReadTaskSnapshot(options, task));
+        if (options.responseShape === "spec") {
+          return success(id, { tasks: visible.map(projectSpecTask) });
+        }
+        return success(id, { tasks: visible.map(projectBrokerTaskForList) });
       }
 
       case "CancelTask": {
@@ -110,6 +194,9 @@ export function executeA2AJsonRpc(
         const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
         const reason = optionalStringField(params, "reason");
         const task = options.broker.cancelTask(taskId, { actor, reason });
+        if (options.responseShape === "spec") {
+          return success(id, projectSpecTask(task));
+        }
         return success(id, { task: projectBrokerTask(task) });
       }
 
