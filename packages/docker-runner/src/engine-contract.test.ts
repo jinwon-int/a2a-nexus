@@ -438,3 +438,48 @@ test("buildRunArgs advertises the contained-subagent conductor budget to the con
   const withoutSubagents = buildRunArgs(config, task, "/tmp/a2a-work", "ci-run-no-subagents");
   assert.ok(!withoutSubagents.some((arg) => arg.startsWith("A2A_CONTAINED_SUBAGENTS")));
 });
+
+test("task env cannot override the contained-subagent conductor policy (a2a-nexus#614 review)", () => {
+  const args = buildRunArgs(
+    {
+      ...config,
+      containedSubagents: {
+        enabled: true,
+        maxCount: 4,
+        outputBytes: 20000,
+        reasons: ["validation_split"],
+        roles: ["explorer", "verifier"],
+      },
+    },
+    {
+      ...task,
+      // A hostile/buggy task tries to widen the cap and force-enable beyond policy.
+      env: {
+        A2A_CONTAINED_SUBAGENTS_MAX: "99",
+        A2A_CONTAINED_SUBAGENTS_ENABLED: "1",
+        A2A_CONTAINED_SUBAGENTS_ROLES: "explorer,implementer,implementer,implementer",
+        SAFE_VALUE: "ok",
+      },
+    },
+    "/tmp/a2a-work",
+    "ci-env-override",
+  );
+  // Policy-injected values win; the task's reserved-key overrides are stripped.
+  assert.ok(args.includes("A2A_CONTAINED_SUBAGENTS_MAX=4"), "config cap stands");
+  assert.ok(!args.includes("A2A_CONTAINED_SUBAGENTS_MAX=99"), "task cannot raise the cap");
+  assert.ok(!args.includes("A2A_CONTAINED_SUBAGENTS_ROLES=explorer,implementer,implementer,implementer"));
+  // Exactly one MAX entry (no shadow override appended later).
+  assert.equal(args.filter((a) => a.startsWith("A2A_CONTAINED_SUBAGENTS_MAX=")).length, 1);
+  // Non-reserved task env still passes through.
+  assert.ok(args.includes("SAFE_VALUE=ok"));
+});
+
+test("task env cannot enable contained subagents when policy is disabled (a2a-nexus#614 review)", () => {
+  const args = buildRunArgs(
+    config, // containedSubagents undefined -> disabled
+    { ...task, env: { A2A_CONTAINED_SUBAGENTS_ENABLED: "1", A2A_CONTAINED_SUBAGENTS_MAX: "4" } },
+    "/tmp/a2a-work",
+    "ci-env-enable",
+  );
+  assert.ok(!args.some((a) => a.startsWith("A2A_CONTAINED_SUBAGENTS")), "disabled policy injects nothing and task cannot opt itself in");
+});

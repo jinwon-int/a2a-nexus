@@ -126,3 +126,18 @@ test("conductor budget: a large two-lane task on a healthy host may use four sub
   });
   assert.equal(trivial.decision.parallelismHint, 0);
 });
+
+test("simple non-patch work without an explicit profile stays direct (budget 0) — a2a-nexus#614 review", () => {
+  // The orchestration policy never lets a small/trivial task fan out, but the
+  // worker's default profile is what feeds it; this pins the policy side that
+  // a trivial task is budget 0 regardless of host headroom.
+  const fixture = JSON.parse(readFileSync("fixtures/worker-subagent-orchestration/large-healthy.json", "utf8"));
+  const trivial = buildA2AWorkerSubagentOrchestrationPolicy({
+    ...fixture,
+    task: { taskId: "chat-1", size: "trivial", coupling: "low" },
+    host: { ...fixture.host, workerSubagentCap: 4, activeSubagents: 0 },
+    now: NOW,
+  });
+  assert.equal(trivial.decision.parallelismHint, 0);
+  assert.deepEqual(trivial.decision.recommendedSubagents, []);
+});

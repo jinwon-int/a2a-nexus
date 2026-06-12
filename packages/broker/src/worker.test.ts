@@ -1074,7 +1074,8 @@ test("external handler injects the subagent conductor directive per task", async
   // Simple work: the conductor keeps it for itself (budget reflects size).
   const simple = (await handler(baseTask)) as { result: { output: Record<string, string | null> } };
   assert.equal(simple.result.output.conductor, "1");
-  assert.ok(Number(simple.result.output.max) <= 1, "simple chat must not justify fanout");
+  assert.equal(simple.result.output.max, "0", "simple chat runs direct — the conductor keeps it");
+  assert.equal(simple.result.output.roles, "", "no subagents for simple work");
 
   // Heavy work with an explicit profile: full four-subagent budget.
   const heavyTask = {

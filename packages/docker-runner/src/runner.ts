@@ -527,7 +527,17 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", `${key}=${value}`);
   }
 
+  // Reserved conductor keys are policy-controlled: a task-supplied env must
+  // never override the opt-in flag or the hard-cap budget injected above.
+  const reservedSubagentEnv = new Set([
+    "A2A_CONTAINED_SUBAGENTS_ENABLED",
+    "A2A_CONTAINED_SUBAGENTS_MAX",
+    "A2A_CONTAINED_SUBAGENTS_ROLES",
+    "A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES",
+    "A2A_CONTAINED_SUBAGENTS_REASONS",
+  ]);
   for (const [key, value] of Object.entries(task.env ?? {})) {
+    if (reservedSubagentEnv.has(key)) continue;
     args.push("-e", `${key}=${value}`);
   }
 
