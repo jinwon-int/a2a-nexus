@@ -11,15 +11,18 @@ demand, not by default CI.
 
 The broker is an *A2A 1.0-compatible alpha profile* with documented
 deviations (see `src/fixtures/a2a-protocol-compatibility.ts`): REST and gRPC
-transports are unsupported, push notification config methods are not
-implemented, and 0.3 compatibility mode is intentionally absent. Some
-mandatory TCK tests are therefore **expected to fail today**. The value of
-the TCK here is a measured, versioned compliance report — claims about spec
-compatibility come from the official kit's output, not self-assertion.
+transports are unsupported, push notification **delivery** is not implemented
+(the four push-notification config CRUD methods ARE implemented, opt-in via
+`A2A_PUSH_NOTIFICATIONS_ENABLED` — the TCK's PUSH-* categories only run when
+the SUT is started with that flag, because they gate on
+`capabilities.pushNotifications`), and 0.3 compatibility mode is
+intentionally absent. Some mandatory TCK tests are therefore **expected to
+fail today**. The value of the TCK here is a measured, versioned compliance
+report — claims about spec compatibility come from the official kit's
+output, not self-assertion.
 
-When the deviation set shrinks (e.g. push notification CRUD lands), re-run
-the TCK and check the report delta. Promote categories to a CI gate only
-once they are stably green.
+When the deviation set shrinks, re-run the TCK and check the report delta.
+Promote categories to a CI gate only once they are stably green.
 
 ## Quick self-check (no Python required)
 
