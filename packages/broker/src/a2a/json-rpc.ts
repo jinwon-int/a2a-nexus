@@ -403,10 +403,18 @@ export function executeSendMessage(
     });
     const exchange = options.broker.getExchange(exchangeId);
     const activeTask = exchange?.activeTaskId ? options.broker.getTask(exchange.activeTaskId) : null;
+    // A2A multiturn resume: a message into a context whose active task is
+    // waiting on requester input (awaiting_operator checkpoint /
+    // input-required state) IS the requested input — clear the checkpoint so
+    // the task returns to working.
+    const resumedTask =
+      activeTask?.checkpoint?.state === "awaiting_operator"
+        ? options.broker.resumeTask(activeTask.id, actor.id)
+        : activeTask;
     return {
       contextId: exchangeId,
       messageId: message.id,
-      task: activeTask ? projectBrokerTask(activeTask) : undefined,
+      task: resumedTask ? projectBrokerTask(resumedTask) : undefined,
     };
   }
 

@@ -141,7 +141,7 @@ export function projectBrokerTaskForList(task: TaskRecord): A2ATaskListProjectio
  * A2A state (`completed`, `failed`, `canceled`, `rejected`) is likewise
  * immutable.
  */
-function mapTaskState(task: Pick<TaskRecord, "status" | "approvalOutcome">): A2ATaskState {
+function mapTaskState(task: Pick<TaskRecord, "status" | "approvalOutcome" | "checkpoint">): A2ATaskState {
   switch (task.status) {
     case "blocked":
       return "auth-required";
@@ -149,7 +149,11 @@ function mapTaskState(task: Pick<TaskRecord, "status" | "approvalOutcome">): A2A
       return "submitted";
     case "claimed":
     case "running":
-      return "working";
+      // A human-interrupt checkpoint (contracts/a2a/checkpoint-interrupt.md
+      // awaiting_operator) is the A2A input-required interrupted state: the
+      // task cannot proceed without requester/operator input. A plain paused
+      // checkpoint stays "working" (the spec has no paused state).
+      return task.checkpoint?.state === "awaiting_operator" ? "input-required" : "working";
     case "succeeded":
       return "completed";
     case "failed":

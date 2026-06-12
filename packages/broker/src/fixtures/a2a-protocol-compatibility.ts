@@ -48,8 +48,10 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "canceled",
     "rejected",
   ],
-  // input-required is typed in A2ATaskState for spec completeness but has no
-  // broker-internal source yet (reserved for a requester-input checkpoint).
+  // input-required is produced by the awaiting_operator checkpoint
+  // (contracts/a2a/checkpoint-interrupt.md): a worker human-interrupt pause
+  // that clears when the requester answers in the same context or an
+  // explicit resume is issued.
   internalStatusToA2AState: {
     blocked: "auth-required",
     queued: "submitted",
@@ -66,6 +68,15 @@ export const A2A_COMPATIBILITY_PROFILE = {
    */
   terminalRefinements: {
     canceled: { when: "approvalOutcome.status === \"rejected\"", state: "rejected" },
+  },
+  /**
+   * Interrupt refinements applied on top of the base status map: a claimed/
+   * running task with an awaiting_operator checkpoint projects as the spec's
+   * input-required interrupted state until requester input (a message into
+   * the same context) or an explicit resume clears it.
+   */
+  interruptRefinements: {
+    "claimed|running": { when: "checkpoint.state === \"awaiting_operator\"", state: "input-required" },
   },
   projectionKeys: ["artifacts", "id", "kind", "metadata", "status"],
   metadataKeys: [

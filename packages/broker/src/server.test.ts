@@ -11568,3 +11568,95 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
     await server.close();
   }
 });
+
+test("awaiting_operator checkpoint projects input-required and a context message resumes it (A2A multiturn)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-ckpt", "analyst", "test-edge-secret");
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-ckpt",
+      "x-a2a-requester-role": "analyst",
+    });
+
+    // Create + claim + start a task through SendMessage.
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "ckpt-1",
+        method: "SendMessage",
+        params: { message: { parts: [{ text: "needs input later" }] }, metadata: { targetNodeId: "worker-ckpt", intent: "analyze" } },
+      }),
+    });
+    const sendBody = await send.json();
+    const taskId = sendBody.result.task.id;
+    const contextId = sendBody.result.contextId;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST", headers: workerHeaders, body: JSON.stringify({ workerId: "worker-ckpt" }),
+    });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/start`, {
+      method: "POST", headers: workerHeaders, body: JSON.stringify({ workerId: "worker-ckpt" }),
+    });
+
+    // Worker hits a human-interrupt checkpoint.
+    const ckpt = await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-ckpt", state: "awaiting_operator", reason: "need the target branch name" }),
+    });
+    assert.equal(ckpt.status, 200);
+
+    const interrupted = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ckpt-2", method: "GetTask", params: { taskId } }),
+    });
+    const interruptedBody = await interrupted.json();
+    assert.equal(interruptedBody.result.task.status.state, "input-required");
+
+    // The requester answers in the same context — that IS the input.
+    const answer = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "ckpt-3",
+        method: "SendMessage",
+        params: { message: { parts: [{ text: "use branch release/1.2" }] }, metadata: { contextId } },
+      }),
+    });
+    const answerBody = await answer.json();
+    assert.equal(answerBody.result.task.status.state, "working", "context message must resume the task");
+
+    // A plain paused checkpoint stays "working" (spec has no paused state),
+    // and the explicit resume route clears it.
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-ckpt", state: "paused" }),
+    });
+    const paused = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ckpt-4", method: "GetTask", params: { taskId } }),
+    })).json();
+    assert.equal(paused.result.task.status.state, "working");
+    const resume = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ actorId: "worker-ckpt" }),
+    });
+    assert.equal(resume.status, 200);
+    const resumed = await resume.json();
+    assert.equal(resumed.checkpoint, undefined);
+  } finally {
+    await server.close();
+  }
+});

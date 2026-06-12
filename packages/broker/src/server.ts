@@ -1144,6 +1144,8 @@ function classifyRequestRoute(method: string | undefined, pathname: string, segm
   if (segments[0] === "tasks" && segments[1]) {
     if (segments[2] === "start") return "tasks.start";
     if (segments[2] === "heartbeat") return "tasks.heartbeat";
+    if (segments[2] === "checkpoint") return "tasks.heartbeat";
+    if (segments[2] === "resume") return "tasks.heartbeat";
     if (segments[2] === "complete") return "tasks.complete";
     if (segments[2] === "evidence") return "tasks.evidence";
     if (segments[2] === "fail") return "tasks.fail";
@@ -5408,6 +5410,37 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.heartbeat");
         }
         const task = broker.heartbeatTask(segments[1], body.workerId);
+        await awaitDurablePersistenceAck(stateStore);
+        return sendJson(res, 200, task);
+      }
+
+      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
+        const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string }>(req);
+        if (!body?.workerId) {
+          throw new BrokerError("bad_request", "workerId is required");
+        }
+        if (enforceRequesterIdentity) {
+          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.checkpoint");
+        }
+        const task = broker.checkpointTask(segments[1], body.workerId, {
+          state: body.state as "paused" | "awaiting_operator",
+          checkpointId: body.checkpointId,
+          reason: body.reason,
+        });
+        await awaitDurablePersistenceAck(stateStore);
+        return sendJson(res, 200, task);
+      }
+
+      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "resume") {
+        const body = await readJson<{ actorId?: string; checkpointId?: string }>(req);
+        const actorId = body?.actorId ?? requesterIdentity?.id;
+        if (!actorId) {
+          throw new BrokerError("bad_request", "actorId is required");
+        }
+        if (enforceRequesterIdentity) {
+          assertRequesterMatchesParty(requesterIdentity, { id: actorId }, "task.resume");
+        }
+        const task = broker.resumeTask(segments[1], actorId, { checkpointId: body?.checkpointId });
         await awaitDurablePersistenceAck(stateStore);
         return sendJson(res, 200, task);
       }

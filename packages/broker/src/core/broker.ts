@@ -97,6 +97,7 @@ import type {
   TaskHistorySummary,
   TaskListFilters,
   TaskQueueSummary,
+  TaskCheckpointState,
   TaskRecord,
   TaskReassignRequest,
   TaskResult,
@@ -3383,6 +3384,76 @@ export class InMemoryA2ABroker {
   // --- Task Heartbeat ---
 
   /** Record a task-level heartbeat from the assigned worker. */
+  /**
+   * Record a checkpoint (contracts/a2a/checkpoint-interrupt.md). The task
+   * stays non-terminal; `awaiting_operator` marks a human-interrupt pause
+   * that projects as the A2A `input-required` state until cleared.
+   */
+  checkpointTask(
+    taskId: string,
+    workerId: string,
+    request: { state: TaskCheckpointState; checkpointId?: string; reason?: string },
+  ): TaskRecord {
+    const task = this.requireTask(taskId);
+    this.assertTaskWorker(task, workerId, "checkpoint");
+    this.assertTaskStatus(task.status, ["claimed", "running"], "checkpoint");
+    if (request.state !== "paused" && request.state !== "awaiting_operator") {
+      throw new BrokerError("bad_request", "checkpoint state must be paused or awaiting_operator");
+    }
+
+    const now = isoNow();
+    task.checkpoint = {
+      state: request.state,
+      checkpointId: request.checkpointId?.trim() || randomUUID(),
+      reason: request.reason?.trim() || undefined,
+      recordedAt: now,
+      recordedBy: workerId,
+    };
+    task.updatedAt = now;
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId: workerId,
+      action: "task.checkpointed",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `checkpoint ${task.checkpoint.state}: ${task.checkpoint.reason ?? task.checkpoint.checkpointId}`,
+    });
+    this.persistState();
+    this.emitTaskUpdate(task, "started");
+    return task;
+  }
+
+  /** Clear an active checkpoint (operator approval, requester input, or worker resume). */
+  resumeTask(taskId: string, actorId: string, request: { checkpointId?: string } = {}): TaskRecord {
+    const task = this.requireTask(taskId);
+    if (!task.checkpoint) {
+      return task; // idempotent: nothing to resume
+    }
+    if (isTerminalTaskStatus(task.status)) {
+      throw new BrokerError("invalid_transition", `cannot resume task while status is ${task.status}`);
+    }
+    if (request.checkpointId && request.checkpointId !== task.checkpoint.checkpointId) {
+      throw new BrokerError("bad_request", "checkpointId does not match the active checkpoint");
+    }
+
+    const cleared = task.checkpoint;
+    task.checkpoint = undefined;
+    task.updatedAt = isoNow();
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId,
+      action: "task.resumed",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `resumed from ${cleared.state} checkpoint ${cleared.checkpointId}`,
+    });
+    this.persistState();
+    this.emitTaskUpdate(task, "started");
+    return task;
+  }
+
   heartbeatTask(taskId: string, workerId: string): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "heartbeat");

@@ -25,7 +25,7 @@ The agent card currently advertises:
 - default input/output modes: `text`
 - public projected task states: `submitted`, `working`, `auth-required`, `completed`, `failed`, `canceled`, `rejected`
   - `blocked` (approval-gated) projects as `auth-required`; a task terminated by an operator approval rejection (`approvalOutcome.status === "rejected"`) projects as `rejected` instead of `canceled`
-  - `input-required` is typed for spec completeness but has no broker-internal source yet
+  - `input-required` is produced by the `awaiting_operator` checkpoint (worker human-interrupt per `contracts/a2a/checkpoint-interrupt.md`); a requester message into the same context — or `POST /tasks/:id/resume` — clears it back to `working`
 
 ## Compatibility matrix
 
