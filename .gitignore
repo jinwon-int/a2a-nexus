@@ -13,3 +13,4 @@ HEARTBEAT.md
 IDENTITY.md
 *.log
 .DS_Store
+.claude/
