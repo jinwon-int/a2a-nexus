@@ -4,6 +4,7 @@ import { DEFAULT_BROKER_RETENTION_POLICY } from "./broker.js";
 import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "./terminal-event-outbox.js";
 import type {
   SqliteBrokerStateStore,
+  SqliteCanonicalSnapshotRetentionSyncResult,
   SqliteHotRetentionApplyResult,
   SqliteHotRetentionPlan,
 } from "./store.js";
@@ -92,6 +93,7 @@ export interface BrokerCleanupExecutionResult {
   planId: string;
   appliedAt: string;
   results: SqliteHotRetentionApplyResult[];
+  canonicalSnapshotSync: SqliteCanonicalSnapshotRetentionSyncResult;
   auditEvent: AuditEvent;
   rollbackNotes: string[];
 }
@@ -245,11 +247,13 @@ export function executeBrokerCleanupPlan(
     createdAt: appliedAt,
   };
   store.upsertHotAuditEvents([auditEvent]);
+  const canonicalSnapshotSync = store.syncCanonicalSnapshotWithHotRetentionPlans(plan.tables, auditEvent);
   return {
     kind: "broker.cleanup.execution",
     planId: plan.planId,
     appliedAt,
     results,
+    canonicalSnapshotSync,
     auditEvent,
     rollbackNotes: [
       "Stop broker writes before rollback.",

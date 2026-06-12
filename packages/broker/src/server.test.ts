@@ -2547,6 +2547,79 @@ test("server exposes broker cleanup dry-run plan for SQLite hot tables", async (
   }
 });
 
+test("server cleanup execute keeps snapshot-mode SQLite cleanup durable across reload", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-cleanup-snapshot-mode-"));
+  const dbFile = join(dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(dbFile);
+  const oldTask: BrokerSnapshot["tasks"][number] = {
+    id: "cleanup-snapshot-old-task",
+    intent: "chat",
+    requester: { id: "requester", kind: "session", role: "hub" },
+    target: { id: "worker-cleanup", kind: "node", role: "analyst" },
+    targetNodeId: "worker-cleanup",
+    assignedWorkerId: "worker-cleanup",
+    payload: { large: "old" },
+    status: "failed",
+    createdAt: "2026-04-27T00:00:00.000Z",
+    updatedAt: "2026-04-27T00:00:00.000Z",
+    completedAt: "2026-04-27T00:00:00.000Z",
+    taskOrigin: "api",
+  };
+  const retainedTask: BrokerSnapshot["tasks"][number] = {
+    ...oldTask,
+    id: "cleanup-snapshot-retained-task",
+    payload: { keep: true },
+    updatedAt: "2026-04-27T01:00:00.000Z",
+    completedAt: "2026-04-27T01:00:00.000Z",
+  };
+  store.save({ ...emptySnapshot(), tasks: [oldTask, retainedTask] });
+  const server = await startTestServer({ stateStore: store });
+  try {
+    const planRes = await fetch(
+      `${server.baseUrl}/operator/cleanup/plan?now_ms=${Date.parse("2026-04-27T02:00:00.000Z")}&task_retention_ms=1800000&max_terminal_tasks=1`,
+      { headers: { "x-a2a-requester-id": "operator-a", "x-a2a-requester-role": "operator" } },
+    );
+    assert.equal(planRes.status, 200);
+    const plan = await planRes.json();
+    assert.deepEqual(plan.tables.find((table: { table: string }) => table.table === "broker_tasks").pruneIds, [oldTask.id]);
+
+    const executeRes = await fetch(`${server.baseUrl}/operator/cleanup/execute`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "operator-a", "x-a2a-requester-role": "operator" }),
+      body: JSON.stringify({
+        nowMs: Date.parse("2026-04-27T02:00:00.000Z"),
+        taskRetentionMs: 1_800_000,
+        maxTerminalTasks: 1,
+        approvalToken: plan.planId,
+        confirmation: "APPLY_BROKER_CLEANUP_PLAN",
+        backupProof: "test-backup-proof",
+      }),
+    });
+    assert.equal(executeRes.status, 200);
+    const executed = await executeRes.json();
+    assert.equal(executed.ok, true);
+    assert.equal(executed.result.results.find((row: { table: string }) => row.table === "broker_tasks").prunedCount, 1);
+    assert.deepEqual(store.readHotTasks().map((task) => task.id), [retainedTask.id]);
+  } finally {
+    await server.close();
+    store.close();
+  }
+
+  const reloaded = new SqliteBrokerStateStore(dbFile);
+  try {
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.tasks.map((task) => task.id), [retainedTask.id]);
+    assert.equal(
+      snapshot.auditEvents.filter((event) => event.action === "broker.cleanup.applied").length,
+      1,
+      "cleanup audit event must survive snapshot-mode reload",
+    );
+  } finally {
+    reloaded.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("server falls back to broker task reads for unsupported SQLite task filters", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-tasks-fallback-"));
   const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));

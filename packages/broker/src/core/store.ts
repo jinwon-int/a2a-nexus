@@ -374,6 +374,23 @@ export interface SqliteHotRetentionApplyResult {
   remainingCount: number;
 }
 
+export interface SqliteCanonicalSnapshotRetentionSyncResult {
+  synced: boolean;
+  reason?: string;
+  before?: {
+    tasks: number;
+    auditEvents: number;
+    workers: number;
+    terminalOutbox: number;
+  };
+  after?: {
+    tasks: number;
+    auditEvents: number;
+    workers: number;
+    terminalOutbox: number;
+  };
+}
+
 export interface SqliteTaskHotRetentionPlanOptions {
   nowMs?: number;
   retentionMs: number;
@@ -1643,6 +1660,37 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return results;
   }
 
+  syncCanonicalSnapshotWithHotRetentionPlans(
+    plans: SqliteHotRetentionPlan[],
+    auditEvent: AuditEvent,
+  ): SqliteCanonicalSnapshotRetentionSyncResult {
+    const snapshot = this.readSnapshotRow();
+    if (!snapshot) {
+      return { synced: false, reason: "no_canonical_snapshot" };
+    }
+    const pruneIdsByTable = new Map(plans.map((plan) => [plan.table, new Set(plan.pruneIds)]));
+    const taskPruneIds = pruneIdsByTable.get("broker_tasks") ?? new Set<string>();
+    const auditPruneIds = pruneIdsByTable.get("broker_audit_events") ?? new Set<string>();
+    const workerPruneIds = pruneIdsByTable.get("broker_workers") ?? new Set<string>();
+    const terminalOutboxPruneIds = pruneIdsByTable.get("broker_terminal_outbox") ?? new Set<string>();
+    const before = canonicalSnapshotCounts(snapshot);
+    const nextSnapshot: BrokerSnapshot = {
+      ...snapshot,
+      tasks: snapshot.tasks.filter((task) => !taskPruneIds.has(task.id)),
+      auditEvents: [
+        ...snapshot.auditEvents.filter((event) => !auditPruneIds.has(event.id) && event.id !== auditEvent.id),
+        auditEvent,
+      ],
+      workers: snapshot.workers.filter((worker) => !workerPruneIds.has(worker.nodeId)),
+      terminalOutbox: (snapshot.terminalOutbox ?? []).filter((event) => !terminalOutboxPruneIds.has(event.id)),
+    };
+    const after = canonicalSnapshotCounts(nextSnapshot);
+    this.runImmediateTransaction(() => {
+      this.writeCanonicalSnapshotPayloadRow(nextSnapshot, new Date().toISOString());
+    });
+    return { synced: true, before, after };
+  }
+
   upsertHotTasks(tasks: TaskRecord[]): void {
     this.runImmediateTransaction(() => {
       this.upsertHotTasksUnsafe(tasks);
@@ -1949,19 +1997,23 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     options?: { skipFullSnapshot?: boolean },
   ): void {
     if (!options?.skipFullSnapshot) {
-      const payload = serializeBrokerSnapshot(snapshot, this.maxBytes);
-      this.db
-        .prepare(
-          `INSERT INTO broker_snapshots (id, version, payload, updated_at)
-           VALUES (1, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             version = excluded.version,
-             payload = excluded.payload,
-             updated_at = excluded.updated_at`,
-        )
-        .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
+      this.writeCanonicalSnapshotPayloadRow(snapshot, updatedAt);
     }
     this.writeHotEntityTables(snapshot, hints);
+  }
+
+  private writeCanonicalSnapshotPayloadRow(snapshot: BrokerSnapshot, updatedAt: string): void {
+    const payload = serializeBrokerSnapshot(snapshot, this.maxBytes);
+    this.db
+      .prepare(
+        `INSERT INTO broker_snapshots (id, version, payload, updated_at)
+         VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           version = excluded.version,
+           payload = excluded.payload,
+           updated_at = excluded.updated_at`,
+      )
+      .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
   }
 
   private writePersistDiagnostics(
@@ -2859,6 +2911,15 @@ function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: nu
 function normalizeOptionalSqliteLimit(value: number | undefined): number | undefined {
   if (value === undefined) return undefined;
   return normalizeNonNegativeSqliteLimit(value, 0);
+}
+
+function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCanonicalSnapshotRetentionSyncResult["before"]> {
+  return {
+    tasks: snapshot.tasks.length,
+    auditEvents: snapshot.auditEvents.length,
+    workers: snapshot.workers.length,
+    terminalOutbox: snapshot.terminalOutbox?.length ?? 0,
+  };
 }
 
 export function serializeBrokerSnapshot(
