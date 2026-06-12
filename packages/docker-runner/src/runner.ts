@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { runContainerWithRetry, type ContainerRetryEvidence } from "./container-retry.js";
@@ -179,6 +180,12 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     result,
     expanded: expandedTask,
     runToken,
+    ...(config.proofSigningKeyFile
+      ? {
+          signingKeyPem: readFileSync(config.proofSigningKeyFile, "utf8"),
+          signingKid: config.proofSigningKid,
+        }
+      : {}),
   });
   result.executionProof = executionProof;
   result.templateExpansion = templateExpansionEv;
@@ -492,6 +499,17 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   if (config.githubTokenFile) {
     args.push("-v", `${config.githubTokenFile}:/run/secrets/gh-hosts.yml:ro`);
     args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
+  }
+
+  // Distributed-trace propagation: surface the task trace id to the in-
+  // container work and as a label so a container can be correlated back to
+  // the originating A2A request.
+  const rawTraceId = typeof task.traceId === "string" ? task.traceId.trim() : "";
+  const traceId =
+    rawTraceId && rawTraceId.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(rawTraceId) ? rawTraceId : "";
+  if (traceId) {
+    args.push("-e", `A2A_TRACE_ID=${traceId}`);
+    args.push("--label", `a2a.trace.id=${safeId(traceId)}`);
   }
 
   // Contained-subagent conductor directive: the in-container agent harness is

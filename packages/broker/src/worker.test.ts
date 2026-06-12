@@ -1029,6 +1029,59 @@ test("broker requests abort on the request timeout instead of hanging forever (i
   await assert.rejects(worker.register(), /aborted by signal/);
 });
 
+test("external handler propagates the distributed trace id from task.via.traceId", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-trace-"));
+  const scriptPath = join(dir, "echo-trace.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "for await (const c of process.stdin) void c;",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: { traceId: process.env.A2A_TRACE_ID ?? null } } }));",
+    ].join("\n"),
+  );
+  const handler = createExternalWorkerHandler({ command: process.execPath, args: [scriptPath], timeoutMs: 5_000 });
+  const base = {
+    id: "task-trace-1", exchangeId: "exchange-trace-1", intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "m", status: "running", targetNodeId: "worker-a", payload: {},
+    createdAt: "2026-06-12T00:00:00Z", updatedAt: "2026-06-12T00:00:00Z",
+  };
+  const withTrace = (await handler({ ...base, via: { traceId: "trace-xyz" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(withTrace.result.output.traceId, "trace-xyz");
+  const withoutTrace = (await handler(base as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(withoutTrace.result.output.traceId, null, "no trace id -> env unset");
+});
+
+test("worker rejects an out-of-policy trace id instead of propagating it (a2a-nexus#621 review)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-trace-bound-"));
+  const scriptPath = join(dir, "echo-trace.mjs");
+  writeFileSync(scriptPath, [
+    "for await (const c of process.stdin) void c;",
+    "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: { traceId: process.env.A2A_TRACE_ID ?? null } } }));",
+  ].join("\n"));
+  const handler = createExternalWorkerHandler({ command: process.execPath, args: [scriptPath], timeoutMs: 5_000 });
+  const base = {
+    id: "t-bound", exchangeId: "e-bound", intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" }, target: { id: "w", kind: "node", role: "analyst" },
+    message: "m", status: "running", targetNodeId: "w", payload: {},
+    createdAt: "2026-06-12T00:00:00Z", updatedAt: "2026-06-12T00:00:00Z",
+  };
+  // Injection-y / overlong trace ids are dropped, not forwarded.
+  const bad = (await handler({ ...base, via: { traceId: "trace; rm -rf /" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(bad.result.output.traceId, null);
+  const long = (await handler({ ...base, via: { traceId: "x".repeat(200) } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(long.result.output.traceId, null);
+  const good = (await handler({ ...base, via: { traceId: "trace-ok_1:2.3" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(good.result.output.traceId, "trace-ok_1:2.3");
+});
+
 test("external handler injects the subagent conductor directive per task", async () => {
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -1107,4 +1160,87 @@ test("external handler injects the subagent conductor directive per task", async
   });
   const none = (await optedOut(baseTask)) as { result: { output: Record<string, string | null> } };
   assert.equal(none.result.output.conductor, null);
+});
+
+test("conductor budget is a verifiable contract: reports are annotated, overruns fail closed", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-subagent-budget-"));
+  const scriptPath = join(dir, "report.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "const chunks = [];",
+      "for await (const chunk of process.stdin) chunks.push(chunk);",
+      "const task = JSON.parse(Buffer.concat(chunks).toString());",
+      "const count = Number(task.payload?.reportCount ?? 0);",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'done', output: { subagentReport: { count, roles: ['verifier'] } } } }));",
+    ].join("\n"),
+  );
+
+  const handler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    timeoutMs: 5_000,
+    workerId: "conductor-node",
+    subagentCap: 4,
+  });
+
+  const heavyProfile = {
+    subagentProfile: {
+      size: "large",
+      coupling: "low",
+      hasIndependentSubtasks: true,
+      writeSets: ["src/a.ts", "src/b.ts"],
+    },
+  };
+  const makeTask = (id: string, payload: Record<string, unknown>) =>
+    ({
+      id,
+      exchangeId: `exchange-${id}`,
+      intent: "propose_patch",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "conductor-node", kind: "node", role: "analyst" },
+      message: "budget test",
+      status: "running",
+      targetNodeId: "conductor-node",
+      payload,
+      createdAt: "2026-06-12T00:00:00Z",
+      updatedAt: "2026-06-12T00:00:00Z",
+    }) as never;
+
+  // Within budget (4): annotated with the budget for terminal evidence.
+  const ok = (await handler(makeTask("budget-ok", { ...heavyProfile, reportCount: 3 }))) as {
+    result: { output: { subagentReport: Record<string, unknown> } };
+  };
+  assert.equal(ok.result.output.subagentReport.count, 3);
+  assert.equal(ok.result.output.subagentReport.budget, 4);
+  assert.equal(ok.result.output.subagentReport.withinBudget, true);
+
+  // Over budget: fail closed.
+  const over = (await handler(makeTask("budget-over", { ...heavyProfile, reportCount: 5 }))) as {
+    error: { code: string; details: Record<string, unknown> };
+  };
+  assert.equal(over.error.code, "subagent_budget_exceeded");
+  assert.equal(over.error.details.budget, 4);
+  assert.equal(over.error.details.reported, 5);
+
+  // No report: result passes through untouched.
+  const silentScript = join(dir, "silent.mjs");
+  writeFileSync(
+    silentScript,
+    [
+      "for await (const chunk of process.stdin) void chunk;",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'no report' } }));",
+    ].join("\n"),
+  );
+  const silentHandler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [silentScript],
+    timeoutMs: 5_000,
+    subagentCap: 4,
+  });
+  const silent = (await silentHandler(makeTask("budget-silent", {}))) as { result: { summary: string } };
+  assert.equal(silent.result.summary, "no report");
 });

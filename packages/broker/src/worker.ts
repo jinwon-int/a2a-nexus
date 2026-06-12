@@ -686,6 +686,18 @@ export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): Work
   }
 }
 
+/**
+ * Externally-supplied trace ids land in process/container env, so bound them
+ * to a safe charset and length before propagation. Returns undefined for an
+ * absent or out-of-policy value.
+ */
+function sanitizeTraceId(raw: string | undefined): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 128) return undefined;
+  return /^[A-Za-z0-9._:-]+$/.test(trimmed) ? trimmed : undefined;
+}
+
 export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig): WorkerTaskHandler {
   if (!config.command?.trim()) {
     throw new Error("external handler command is required");
@@ -695,17 +707,26 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
   const timeoutMs = Math.max(1, config.timeoutMs ?? DEFAULT_HANDLER_TIMEOUT_MS);
 
   return async (task) => {
+    // Propagate the distributed-trace id end to end: requester -> broker
+    // (task.via.traceId) -> the handler process (and any container it spawns)
+    // -> evidence. A2A_TRACE_ID lets the in-handler/in-container work correlate
+    // back to the originating request.
+    const traceId = sanitizeTraceId(task.via?.traceId);
+    const traceEnv = traceId ? { A2A_TRACE_ID: traceId } : {};
     const directiveEnv = config.subagentDirectiveDisabled
       ? {}
       : buildSubagentDirectiveEnv(task, {
           workerId: config.workerId ?? "worker",
           subagentCap: config.subagentCap ?? 4,
         });
+    const directiveBudget = config.subagentDirectiveDisabled
+      ? null
+      : Number(directiveEnv.A2A_SUBAGENT_MAX ?? 0);
     const { stdout, stderr, code, signal, timedOut } = await runExternalHandler({
       command: config.command,
       args,
       cwd: config.cwd,
-      env: { ...config.env, ...directiveEnv },
+      env: { ...config.env, ...traceEnv, ...directiveEnv },
       timeoutMs,
       input: JSON.stringify(task),
     });
@@ -777,14 +798,68 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
     }
 
     if (record.result && typeof record.result === "object" && !Array.isArray(record.result)) {
-      return {
-        result: record.result as TaskResult,
-      } satisfies WorkerHandlerOutcome;
+      return finalizeSubagentEvidence(record.result as TaskResult, directiveBudget, config.command);
     }
 
+    return finalizeSubagentEvidence(record as TaskResult, directiveBudget, config.command);
+  };
+}
+
+/**
+ * Close the conductor evidence loop: when the handler reports actual
+ * subagent usage (result.output.subagentReport = { count, roles?,
+ * writeSets? }), the worker verifies it against the directive budget it
+ * injected for this task. Exceeding the budget fails closed — the directive
+ * is a verifiable contract, not advice. Within-budget reports are annotated
+ * with the budget so terminal evidence carries the full round trip.
+ */
+function finalizeSubagentEvidence(
+  result: TaskResult,
+  directiveBudget: number | null,
+  command: string,
+): WorkerHandlerOutcome {
+  if (directiveBudget === null) {
+    return { result };
+  }
+  const output = result.output;
+  const report =
+    output && typeof output === "object" && !Array.isArray(output)
+      ? (output as Record<string, unknown>).subagentReport
+      : undefined;
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    return { result };
+  }
+  const reported = Number((report as Record<string, unknown>).count);
+  if (!Number.isInteger(reported) || reported < 0) {
     return {
-      result: record as TaskResult,
-    } satisfies WorkerHandlerOutcome;
+      error: {
+        code: "subagent_report_invalid",
+        message: "subagentReport.count must be a non-negative integer",
+        details: { command, subagentReport: report },
+      },
+    };
+  }
+  if (reported > directiveBudget) {
+    return {
+      error: {
+        code: "subagent_budget_exceeded",
+        message: `handler reported ${reported} subagents but the conductor budget for this task was ${directiveBudget}`,
+        details: { command, budget: directiveBudget, reported, subagentReport: report },
+      },
+    };
+  }
+  return {
+    result: {
+      ...result,
+      output: {
+        ...(output as Record<string, unknown>),
+        subagentReport: {
+          ...(report as Record<string, unknown>),
+          budget: directiveBudget,
+          withinBudget: true,
+        },
+      },
+    },
   };
 }
 
