@@ -228,12 +228,12 @@ test("mutating task routes wait for durable persistence ACK before success", asy
   }
 });
 
-test("mutating task routes map durable persistence queue errors to retryable 503", async () => {
+test("task create disambiguates durable-ack failure as 202 accepted-unconfirmed; other mutations keep 503 (a2a-nexus#636/#638)", async () => {
   const stateStore: BrokerStateStore = {
     load: () => emptySnapshot(),
     save: () => {},
     awaitDurablePersistenceAck: async () => {
-      throw new Error("queue_saturated");
+      throw new Error("queue_drain_timeout");
     },
   };
   const server = await startTestServer({ stateStore, enforceRequesterIdentity: true });
@@ -250,19 +250,44 @@ test("mutating task routes map durable persistence queue errors to retryable 503
         environments: ["research"],
       },
     });
+    // The task exists in the broker once createTask returns; an ack timeout
+    // must not masquerade as a rejection with no task id. The 202 carries
+    // the created task plus the ack error so dispatch tooling can classify
+    // accepted-unconfirmed and verify via GET /tasks/:id.
     const response = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
         "x-a2a-requester-id": "test-hub",
         "x-a2a-requester-role": "hub",
       }),
-      body: JSON.stringify(createTaskRequest("task-durable-ack-503")),
+      body: JSON.stringify(createTaskRequest("task-durable-ack-202")),
     });
+    assert.equal(response.status, 202);
+    const body = await response.json() as {
+      task: { id: string };
+      durable: boolean;
+      ackError: { code: string };
+      hint: string;
+    };
+    assert.equal(body.task.id, "task-durable-ack-202");
+    assert.equal(body.durable, false);
+    assert.equal(body.ackError.code, "queue_drain_timeout");
+    assert.match(body.hint, /GET \/tasks\/task-durable-ack-202/);
+    assert.ok(server.runtime.broker.getTask("task-durable-ack-202"), "task really exists despite ack failure");
 
-    assert.equal(response.status, 503);
-    const body = await response.json() as { error: { code: string; message: string } };
-    assert.equal(body.error.code, "queue_saturated");
-    assert.equal(body.error.message, "queue_saturated");
+    // Other mutating routes keep the retryable 503: the caller can simply
+    // retry them, unlike create where the retry answer is "it exists".
+    const claim = await fetch(`${server.baseUrl}/tasks/task-durable-ack-202/claim`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "worker-a",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({ workerId: "worker-a" }),
+    });
+    assert.equal(claim.status, 503);
+    const claimBody = await claim.json() as { error: { code: string } };
+    assert.equal(claimBody.error.code, "queue_drain_timeout");
   } finally {
     await server.close();
   }

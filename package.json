@@ -12,6 +12,7 @@
     "smoke:quickstart": "npm run build && npm run check:quickstart-conformance && npm run check:external-harness-conformance && npm run test:release-gate",
     "release-gate": "node scripts/release-gate.mjs",
     "check:layout": "node scripts/check-layout.mjs",
+    "review:check": "node scripts/review-worktree-check.mjs",
     "check:packages": "node scripts/check-packages.mjs",
     "check:runner-import-smoke": "node scripts/check-runner-import-smoke.mjs",
     "check:terminal-brief-routing": "node scripts/check-terminal-brief-routing.mjs",

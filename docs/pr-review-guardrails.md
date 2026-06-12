@@ -166,3 +166,24 @@ The runbook does not grant approval for:
 - Hermes gateway restart/reload or default model change.
 
 Those require separate operator approval.
+
+## Worktree review checks (`npm run review:check`)
+
+Reviewing a PR in a fresh clone or `git worktree` that never ran `npm ci`
+makes `tsc` fail with misleading errors like `Cannot find module 'node:test'`
+or `Cannot find module 'node:events'` — a harness/setup failure that looks
+like PR breakage (observed during the a2a-nexus#638 review round on #618/#620).
+
+The canonical package-level check sequence for any review worktree is:
+
+```bash
+npm run review:check                          # broker workspace (default)
+npm run review:check -- -w a2a-docker-runner  # additional workspaces
+```
+
+The script verifies dependencies are actually installed (`node_modules` plus
+`@types/node`, the package whose absence produces the misleading failure),
+runs `npm ci` when they are not (`--no-install` to fail loudly instead), then
+builds and tests the requested workspaces. It exits non-zero when any stage
+fails and names the failed stage, so "the harness was never set up" can no
+longer be misread as "the PR is broken".

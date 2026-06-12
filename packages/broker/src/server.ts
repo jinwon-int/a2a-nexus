@@ -5168,7 +5168,28 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           );
         }
         const task = broker.createTask(body);
-        await awaitDurablePersistenceAck(stateStore);
+        // Durable-ack disambiguation (a2a-nexus#636/#638): at this point the
+        // task EXISTS in the broker — a persistence-queue ack timeout must
+        // not be reported as a creation failure with no task id, or the
+        // operator cannot tell rejected from accepted-but-slow. 202 carries
+        // the created task plus the ack error so dispatch tooling can
+        // classify it as accepted-unconfirmed and verify via GET /tasks/:id.
+        try {
+          await awaitDurablePersistenceAck(stateStore);
+        } catch (error) {
+          if (
+            error instanceof BrokerError &&
+            (error.code === "queue_drain_timeout" || error.code === "queue_saturated")
+          ) {
+            return sendJson(res, 202, {
+              task,
+              durable: false,
+              ackError: { code: error.code, message: error.message },
+              hint: `task ${task.id} was created; confirm with GET /tasks/${task.id} — it persists on the next successful flush`,
+            });
+          }
+          throw error;
+        }
         return sendJson(res, 201, task);
       }
 
