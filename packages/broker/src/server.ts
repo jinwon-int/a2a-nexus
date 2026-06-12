@@ -6,6 +6,7 @@ import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
+import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
@@ -1120,7 +1121,9 @@ function classifyRequestRoute(method: string | undefined, pathname: string, segm
   ) {
     return "workers.assignment-events";
   }
-  if (pathname === "/a2a/jsonrpc") return "a2a.jsonrpc";
+  // Trailing-slash tolerant: A2A clients built on httpx-style base_url
+  // merging (the official TCK included) post to "/a2a/jsonrpc/".
+  if (pathname === "/a2a/jsonrpc" || pathname === "/a2a/jsonrpc/") return "a2a.jsonrpc";
   if (pathname === "/a2a/tasks/terminal-outbox/receipt") return "a2a.tasks.terminal-outbox.receipt";
   if (pathname === "/a2a/tasks/terminal-outbox/ack") return "a2a.tasks.terminal-outbox.ack";
   if (pathname === "/a2a/tasks/terminal-outbox") return "a2a.tasks.terminal-outbox";
@@ -2545,6 +2548,13 @@ export interface BrokerServerOptions {
   agentCardSigningKeyFile?: string;
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
   agentCardSigningKid?: string;
+  /**
+   * Enable the embedded default A2A agent: register a built-in worker and
+   * drive its tasks in-process so a worker-less SendMessage produces a task
+   * (single-agent / conformance mode). Falls back to A2A_DEFAULT_AGENT_MODE.
+   * Off by default; production multi-worker routing is unchanged.
+   */
+  defaultAgentMode?: boolean;
   stateStore?: BrokerStateStore;
   broker?: InMemoryA2ABroker;
   /**
@@ -2890,6 +2900,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const peerStatusService = peerStatusEnabled
     ? new PeerStatusService(broker, { workerOfflineAfterMs: workerOfflineAfterSec * 1000 })
     : undefined;
+
+  // Embedded default A2A agent (opt-in). Registering its worker and driving
+  // tasks in-process lets the broker also answer worker-less SendMessage as a
+  // standalone agent. Off by default; an explicit targetNodeId always wins.
+  const defaultAgentEnabled = options.defaultAgentMode ?? resolveBooleanEnv(process.env.A2A_DEFAULT_AGENT_MODE, false);
+  let defaultAgentHandle: DefaultAgentHandle | undefined;
+  if (defaultAgentEnabled) {
+    defaultAgentHandle = startDefaultAgent(broker);
+  }
+  const defaultAgentNodeId = defaultAgentHandle?.nodeId;
 
   const healthDiagnosticsCache = new HealthDiagnosticsCache();
 
@@ -3331,7 +3351,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "POST" && path === "/a2a/jsonrpc") {
+      if (req.method === "POST" && (path === "/a2a/jsonrpc" || path === "/a2a/jsonrpc/")) {
         // A2A 1.0 version negotiation: serve the requested version's
         // semantics or fail closed on a version we cannot honor. The
         // response always advertises the version actually served.
@@ -3368,6 +3388,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               requesterIdentity,
               enforceRequesterIdentity,
               peerStatusService,
+              defaultAgentNodeId,
             });
           } catch (error) {
             const rpcError = jsonRpcErrorFromUnknown(error);
@@ -3400,6 +3421,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           enforceRequesterIdentity,
           peerStatusService,
           responseShape,
+          defaultAgentNodeId,
         });
         if (response === null) {
           // Entirely notifications — JSON-RPC requires no response body.
@@ -5787,6 +5809,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   server.on("close", () => {
     stopStaleReaper();
     stopPoller();
+    defaultAgentHandle?.stop();
     unsubscribeBrokerState();
     void closeWorkerPersistence().catch((error) => {
       console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);

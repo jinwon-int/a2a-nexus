@@ -11569,6 +11569,94 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
   }
 });
 
+test("default-agent mode: worker-less SendMessage produces a task driven to completed (A2A single-agent)", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    // TCK/httpx-style trailing-slash POST must hit the same endpoint.
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-1",
+        method: "SendMessage",
+        params: { message: { role: "ROLE_USER", parts: [{ text: "hello agent" }], messageId: "da-msg-1" } },
+      }),
+    });
+    assert.equal(send.status, 200);
+    const sendBody = await send.json();
+    const taskId = sendBody.result?.task?.id;
+    assert.ok(taskId, "worker-less SendMessage must create a task in default-agent mode");
+    assert.equal(sendBody.result.task.metadata.targetNodeId, "default-agent");
+
+    // The embedded agent drives the task to terminal.
+    let finalState = "";
+    for (let i = 0; i < 50; i++) {
+      const get = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "da-2", method: "GetTask", params: { taskId } }),
+      });
+      const body = await get.json();
+      finalState = body.result?.task?.status?.state ?? "";
+      if (finalState === "completed" || finalState === "failed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(finalState, "completed");
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent mode preserves explicit targetNodeId routing failures", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-explicit-missing",
+        method: "SendMessage",
+        params: {
+          message: { parts: [{ text: "do not fallback" }] },
+          metadata: { targetNodeId: "missing-worker" },
+        },
+      }),
+    });
+    const body = await send.json();
+    assert.ok(body.error, "explicit missing target must fail instead of falling back to default-agent");
+    assert.match(body.error.message, /target worker not found/);
+    assert.notEqual(body.result?.task?.metadata?.targetNodeId, "default-agent");
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent mode off keeps requiring a target worker for new contexts", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-off-1",
+        method: "SendMessage",
+        params: {
+          actor: { id: "client-x", kind: "service", role: "hub" },
+          message: { parts: [{ text: "no agent" }] },
+        },
+      }),
+    });
+    const body = await send.json();
+    assert.ok(body.error, "without the default agent a worker-less send must fail");
+    assert.match(body.error.message, /targetNodeId is required/);
+  } finally {
+    await server.close();
+  }
+});
+
 test("explicit A2A-Version negotiation returns spec result shapes; legacy clients keep envelopes", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
@@ -11620,6 +11708,59 @@ test("explicit A2A-Version negotiation returns spec result shapes; legacy client
     const legacyBody = await legacy.json();
     assert.ok(legacyBody.result.task, "legacy GetTask keeps the { task } envelope");
     assert.equal(legacyBody.result.task.id, taskId);
+  } finally {
+    await server.close();
+  }
+});
+
+test("spec response shape covers ListTasks, CancelTask, context-only send, and default-agent (a2a-nexus#615 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", defaultAgentMode: true });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-s2", "analyst", "test-edge-secret");
+    const hub = { ...jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }), "a2a-version": "1.0" };
+    const rpc = (method: string, params: unknown, id = "s") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, { method: "POST", headers: hub, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then((r) => r.json());
+
+    const send = await rpc("SendMessage", { message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-s2", intent: "analyze" } }, "s1");
+    const taskId = send.result.task.id;
+    const contextId = send.result.task.contextId;
+
+    // ListTasks spec items are proto Tasks (top-level contextId, enum state, no kind).
+    const list = await rpc("ListTasks", { contextId }, "s2");
+    assert.ok(Array.isArray(list.result.tasks));
+    const item = list.result.tasks.find((t: { id: string }) => t.id === taskId);
+    assert.ok(item, "task visible in spec ListTasks");
+    assert.equal("kind" in item, false);
+    assert.ok(typeof item.contextId === "string");
+    assert.match(item.status.state, /^TASK_STATE_/);
+
+    // Context-only SendMessage (append to an existing context) -> Message oneof.
+    const ctxSend = await rpc("SendMessage", { message: { parts: [{ text: "follow-up" }] }, metadata: { contextId } }, "s3");
+    // For a context with an active task this returns { task }; assert it's a valid oneof either way.
+    assert.ok(ctxSend.result.task || ctxSend.result.message, "context send returns a task or message oneof");
+
+    // CancelTask spec -> bare Task.
+    const cancel = await rpc("CancelTask", { taskId, actor: { id: "hub-a", kind: "node", role: "hub" } }, "s4");
+    assert.equal(cancel.result.id, taskId);
+    assert.match(cancel.result.status.state, /^TASK_STATE_/);
+    assert.equal("task" in cancel.result, false, "CancelTask spec result is the bare Task");
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent worker-less send + spec header returns the proto task oneof (a2a-nexus#615 review)", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const res = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "da-spec", method: "SendMessage", params: { message: { role: "ROLE_USER", parts: [{ text: "hi" }], messageId: "m1" } } }),
+    });
+    const body = await res.json();
+    assert.ok(body.result.task, "worker-less spec send returns the { task } oneof");
+    assert.ok(typeof body.result.task.contextId === "string");
+    assert.match(body.result.task.status.state, /^TASK_STATE_/);
   } finally {
     await server.close();
   }
