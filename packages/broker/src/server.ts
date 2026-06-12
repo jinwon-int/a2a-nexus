@@ -7,6 +7,7 @@ import { getHeapStatistics } from "node:v8";
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
+import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderProof, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, specSendResult, specStreamStatusUpdate, specStreamTaskSnapshot } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
@@ -2558,6 +2559,17 @@ export interface BrokerServerOptions {
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
   agentCardSigningKid?: string;
   /**
+   * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
+   * the cross-broker terminal-brief receiver. When set, every inbound
+   * projection must carry a request-bound `senderProof` (a JWS over
+   * { brokerId, bodyHash, issuedAt, nonce } signed by the pinned key) —
+   * NOT merely a signed agent card, which is public and replayable.
+   * Enabling this fail-closes peers that do not emit senderProof yet, so
+   * roll out sender-side support before pinning a peer's key. Falls back
+   * to CROSS_BROKER_SENDER_PROOF_KEYS_FILE. Unset keeps today's behavior.
+   */
+  crossBrokerSenderProofKeysFile?: string;
+  /**
    * Enable the embedded default A2A agent: register a built-in worker and
    * drive its tasks in-process so a worker-less SendMessage produces a task
    * (single-agent / conformance mode). Falls back to A2A_DEFAULT_AGENT_MODE.
@@ -2913,6 +2925,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // unsigned exactly as before; a configured-but-unreadable key fails
   // startup loudly instead of silently serving an unsigned card.
   const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
+  const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
+    options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
+  );
+  const crossBrokerNonceCache = crossBrokerTrustAnchors ? new CrossBrokerNonceCache() : undefined;
   const agentCard = signingKeyFile
     ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
         privateKeyPem: readFileSync(signingKeyFile, "utf8"),
@@ -3587,6 +3603,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
 
         const body = await readJson(req);
+        if (crossBrokerTrustAnchors && crossBrokerNonceCache) {
+          const verdict = verifyCrossBrokerSenderProof(crossBrokerTrustAnchors, body, {
+            nonceCache: crossBrokerNonceCache,
+          });
+          if (!verdict.ok) {
+            throw new BrokerError("policy_denied", `cross-broker trust: ${verdict.reason}`);
+          }
+        }
         const result = broker.ingestCrossBrokerTerminalBriefProjection(body as Parameters<typeof broker.ingestCrossBrokerTerminalBriefProjection>[0]);
         if (!result.accepted) {
           const status = result.ack.code === "missing_parent" ? 404 : result.ack.code === "stale_replay" ? 409 : 400;
