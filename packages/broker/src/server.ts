@@ -5437,7 +5437,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
-        const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string }>(req);
+        const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string; decisionType?: string; artifactRefs?: string[] }>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
@@ -5448,6 +5448,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           state: body.state as "paused" | "awaiting_operator",
           checkpointId: body.checkpointId,
           reason: body.reason,
+          decisionType: body.decisionType,
+          artifactRefs: body.artifactRefs,
         });
         await awaitDurablePersistenceAck(stateStore);
         return sendJson(res, 200, task);

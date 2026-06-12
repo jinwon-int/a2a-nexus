@@ -26,6 +26,9 @@ The agent card currently advertises:
 - public projected task states: `submitted`, `working`, `auth-required`, `completed`, `failed`, `canceled`, `rejected`
   - `blocked` (approval-gated) projects as `auth-required`; a task terminated by an operator approval rejection (`approvalOutcome.status === "rejected"`) projects as `rejected` instead of `canceled`
   - `input-required` is produced by the `awaiting_operator` checkpoint (worker human-interrupt per `contracts/a2a/checkpoint-interrupt.md`); a requester message into the same context — or `POST /tasks/:id/resume` — clears it back to `working`
+  - an active checkpoint is a real lifecycle gate: `complete`/`fail` are rejected until resume or cancel (cancel clears the checkpoint), the stale-task reaper never requeues a checkpointed task, and a checkpoint that is not resumed within the broker's `checkpointTimeoutMs` (default 24h, contract §1.4/§2.3) is canceled by the stale sweep
+  - `awaiting_operator` checkpoints carry a contract §2.2 `decisionType` (`safety_gate` / `ambiguous_scope` / `approval_required` (default) / `conflict_detected`) and optional bounded `artifactRefs`; checkpoint `reason` (≤500 chars), `checkpointId` (≤128 chars, `[A-Za-z0-9._:-]`), and refs are bounded/shape-checked before becoming operator-visible state
+  - **documented deviation from contract §1.4**: the broker retains the worker assignment across a checkpoint (the same claim resumes) instead of releasing it; release-and-reclaim semantics are deferred until worker capability gating for `checkpoint` lands
 
 ## Compatibility matrix
 

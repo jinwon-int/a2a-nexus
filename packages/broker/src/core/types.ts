@@ -423,11 +423,25 @@ export interface TaskApprovalInfo {
 
 export type TaskCheckpointState = "paused" | "awaiting_operator";
 
+/** Interrupt decision types frozen by contracts/a2a/checkpoint-interrupt.md §2.2. */
+export type TaskInterruptDecisionType =
+  | "safety_gate"
+  | "ambiguous_scope"
+  | "approval_required"
+  | "conflict_detected";
+
 export interface TaskCheckpointInfo {
   state: TaskCheckpointState;
   checkpointId: string;
   /** Redacted, operator-safe description of what input is needed. */
   reason?: string;
+  /**
+   * Contract §2.2 decision type for `awaiting_operator` interrupts. Defaults
+   * to `approval_required` when the worker does not specify one.
+   */
+  decisionType?: TaskInterruptDecisionType;
+  /** Repo-relative, public-safe artifact references at the checkpoint (contract §1.3). */
+  artifactRefs?: string[];
   recordedAt: string;
   recordedBy: string;
 }
