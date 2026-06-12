@@ -12,6 +12,10 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "CancelTask",
     "SubscribeToTask",
     "GetExtendedAgentCard",
+    "CreateTaskPushNotificationConfig",
+    "GetTaskPushNotificationConfig",
+    "ListTaskPushNotificationConfigs",
+    "DeleteTaskPushNotificationConfig",
   ],
   brokerExtensionMethods: [
     "a2a.peer.status",
@@ -20,7 +24,15 @@ export const A2A_COMPATIBILITY_PROFILE = {
     "REST",
     "gRPC",
   ],
-  unsupportedPushNotifications: true,
+  // Push-notification config CRUD is implemented but opt-in
+  // (A2A_PUSH_NOTIFICATIONS_ENABLED): default card keeps
+  // capabilities.pushNotifications false; enabled flips it true and the four
+  // config methods register destinations (registration only — no live send).
+  pushNotificationConfig: { optIn: true, methods: 4, capabilityWhenEnabled: true },
+  // Push DELIVERY (live sends, retries, replay protection, receipts) remains
+  // unsupported regardless of the opt-in: the config surface above is
+  // registration-only and never performs a send.
+  unsupportedPushDelivery: true,
   unsupportedA2A03Compat: true,
   /**
    * A2A 1.0 signed agent cards: opt-in JWS (EdDSA or ES256) over the

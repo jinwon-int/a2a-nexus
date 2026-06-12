@@ -12164,3 +12164,128 @@ test("cross-broker receiver enforces request-bound proof of possession when anch
   }
 });
 
+
+test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async () => {
+  const server = await startTestServer({ pushNotificationsEnabled: true, enforceRequesterIdentity: false });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-push", "analyst", undefined);
+    const headers = jsonHeaders({});
+    const rpc = (method: string, params: unknown, id = "p") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      }).then((r) => r.json());
+
+    // Card advertises the capability.
+    const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(card.capabilities.pushNotifications, true);
+
+    // A real task is required — config ops are authorized against it.
+    const send = await rpc("SendMessage", { actor: { id: "hub-a", kind: "node", role: "hub" }, message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-push", intent: "analyze" } }, "mk");
+    const pushTaskId = send.result.task.id;
+
+    // Operations on a non-existent task fail closed.
+    const noTask = await rpc("CreateTaskPushNotificationConfig", { taskId: "no-such-task", url: "https://x.example" });
+    assert.ok(noTask.error, "config ops require the task to exist");
+
+    const created = await rpc("CreateTaskPushNotificationConfig", {
+      taskId: pushTaskId,
+      url: "https://example.com/tck-webhook",
+      token: "super-secret-token",
+      authentication: { schemes: ["Bearer"], credentials: "secret-cred" },
+    });
+    assert.equal(created.result.taskId, pushTaskId);
+    const configId = created.result.id;
+
+    // Reads redact delivery secrets.
+    const got = await rpc("GetTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
+    assert.equal(got.result.id, configId);
+    assert.equal(got.result.token, "[redacted]");
+    assert.equal(got.result.authentication.credentials, "[redacted]");
+    assert.ok(!JSON.stringify(got.result).includes("super-secret-token"));
+    assert.ok(!JSON.stringify(got.result).includes("secret-cred"));
+
+    const listed = await rpc("ListTaskPushNotificationConfigs", { taskId: pushTaskId });
+    assert.equal(listed.result.configs.length, 1);
+    assert.ok(!JSON.stringify(listed.result).includes("super-secret-token"));
+
+    const deleted = await rpc("DeleteTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
+    assert.ok(!("error" in deleted));
+    const missing = await rpc("GetTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
+    assert.ok(missing.error, "deleted config no longer retrievable");
+  } finally {
+    await server.close();
+  }
+});
+
+test("push notification methods are absent when the feature is disabled", async () => {
+  const server = await startTestServer();
+  try {
+    const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(card.capabilities.pushNotifications, false);
+    const resp = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "p", method: "CreateTaskPushNotificationConfig", params: { taskId: "t", url: "https://x.example" } }),
+    });
+    const body = await resp.json();
+    assert.ok(body.error, "disabled broker must not accept push config methods");
+    // Disabled mode means the methods are absent from the surface entirely:
+    // JSON-RPC method-not-found, exactly like other extension-gated methods.
+    assert.equal(body.error.code, -32601);
+    assert.match(body.error.message, /method not found/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("push config CRUD enforces task-party authorization and never leaks secrets (a2a-nexus#620 review)", async () => {
+  const server = await startTestServer({ pushNotificationsEnabled: true, edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-pauth", "analyst", "test-edge-secret");
+    const hub = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" });
+    const stranger = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "intruder", "x-a2a-requester-role": "analyst" });
+    const rpc = (headers: Record<string, string>, method: string, params: unknown, id = "pa") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then((r) => r.json());
+
+    const send = await rpc(hub, "SendMessage", { message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-pauth", intent: "analyze" } }, "pa-mk");
+    const taskId = send.result.task.id;
+    const created = await rpc(hub, "CreateTaskPushNotificationConfig", {
+      taskId,
+      url: "https://example.com/hook",
+      token: "party-secret-token",
+      authentication: { schemes: ["Bearer"], credentials: "party-secret-cred" },
+    });
+    assert.ok(created.result?.id, "task party can create a config");
+    const configId = created.result.id;
+
+    // A non-party requester is denied on all four operations, and no
+    // response ever carries the raw secrets.
+    const deniedCreate = await rpc(stranger, "CreateTaskPushNotificationConfig", { taskId, url: "https://evil.example" });
+    assert.ok(deniedCreate.error, "non-party create denied");
+    const deniedGet = await rpc(stranger, "GetTaskPushNotificationConfig", { taskId, id: configId });
+    assert.ok(deniedGet.error, "non-party get denied");
+    assert.ok(!JSON.stringify(deniedGet).includes("party-secret"), "denied get must not leak secrets");
+    const deniedList = await rpc(stranger, "ListTaskPushNotificationConfigs", { taskId });
+    assert.ok(deniedList.error, "non-party list denied");
+    assert.ok(!JSON.stringify(deniedList).includes("party-secret"), "denied list must not leak secrets");
+    const deniedDelete = await rpc(stranger, "DeleteTaskPushNotificationConfig", { taskId, id: configId });
+    assert.ok(deniedDelete.error, "non-party delete denied");
+    const stillThere = await rpc(hub, "GetTaskPushNotificationConfig", { taskId, id: configId });
+    assert.equal(stillThere.result?.id, configId, "denied delete must not remove the config");
+
+    // Authorized reads stay redacted: even a party never reads raw secrets back.
+    assert.equal(stillThere.result.token, "[redacted]");
+    assert.ok(!JSON.stringify(stillThere).includes("party-secret"));
+
+    // TCK wire form: the official JSON-RPC client sends proto field names
+    // (task_id); the methods accept it as an alias for taskId.
+    const viaSnake = await rpc(hub, "ListTaskPushNotificationConfigs", { task_id: taskId });
+    assert.equal(viaSnake.result?.configs?.length, 1, "task_id (TCK wire form) accepted");
+    assert.equal(viaSnake.result.nextPageToken, "", "proto list response carries nextPageToken");
+  } finally {
+    await server.close();
+  }
+});
+
