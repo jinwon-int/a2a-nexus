@@ -412,3 +412,29 @@ test("buildRunArgs hardening can be tuned through config", () => {
   assert.ok(!optedOut.includes("no-new-privileges"), "explicit opt-out must be honored");
   assert.ok(optedOut.includes("--pids-limit"), "pids limit stays even when escalation is allowed");
 });
+
+test("buildRunArgs advertises the contained-subagent conductor budget to the container", () => {
+  const withSubagents = buildRunArgs(
+    {
+      ...config,
+      containedSubagents: {
+        enabled: true,
+        maxCount: 4,
+        outputBytes: 20000,
+        reasons: ["validation_split"],
+        roles: ["explorer", "implementer", "verifier"],
+      },
+    },
+    task,
+    "/tmp/a2a-work",
+    "ci-run-subagents",
+  );
+  assert.ok(withSubagents.includes("A2A_CONTAINED_SUBAGENTS_ENABLED=1"));
+  assert.ok(withSubagents.includes("A2A_CONTAINED_SUBAGENTS_MAX=4"));
+  assert.ok(withSubagents.includes("A2A_CONTAINED_SUBAGENTS_ROLES=explorer,implementer,verifier"));
+  assert.ok(withSubagents.includes("A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES=20000"));
+
+  // Default (disabled) keeps the container env clean — fanout stays opt-in.
+  const withoutSubagents = buildRunArgs(config, task, "/tmp/a2a-work", "ci-run-no-subagents");
+  assert.ok(!withoutSubagents.some((arg) => arg.startsWith("A2A_CONTAINED_SUBAGENTS")));
+});

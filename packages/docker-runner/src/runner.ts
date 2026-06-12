@@ -494,6 +494,19 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
   }
 
+  // Contained-subagent conductor directive: the in-container agent harness is
+  // the orchestra conductor for its own task — simple work is done directly,
+  // heavy work may fan out to at most maxCount (hard cap 4) evidence-only
+  // helpers. The config existed but was never advertised to the container;
+  // without these env vars the in-container harness had no budget to honor.
+  if (config.containedSubagents?.enabled) {
+    args.push("-e", "A2A_CONTAINED_SUBAGENTS_ENABLED=1");
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_MAX=${config.containedSubagents.maxCount}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_ROLES=${config.containedSubagents.roles.join(",")}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_OUTPUT_BYTES=${config.containedSubagents.outputBytes}`);
+    args.push("-e", `A2A_CONTAINED_SUBAGENTS_REASONS=${config.containedSubagents.reasons.join(",")}`);
+  }
+
   for (const mount of config.extraMounts ?? []) {
     const mode = mount.readOnly === false ? "rw" : "ro";
     args.push("-v", `${mount.source}:${mount.target}:${mode}`);
