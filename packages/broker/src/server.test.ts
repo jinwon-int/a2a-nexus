@@ -11660,57 +11660,93 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
   }
 });
 
-test("cross-broker receiver enforces request-bound proof of possession when anchors are pinned", async () => {
-  const { generateKeyPairSync } = await import("node:crypto");
-  const { mkdtempSync, writeFileSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-sender-proof.js");
-
-  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
-  const anchorsFile = join(dir, "anchors.json");
-  writeFileSync(
-    anchorsFile,
-    JSON.stringify({ "peer-a": publicKey.export({ type: "spki", format: "pem" }).toString() }),
-  );
-
-  const server = await startTestServer({
-    edgeSecret: "test-edge-secret",
-    crossBrokerSenderProofKeysFile: anchorsFile,
-  });
+test("awaiting_operator checkpoint projects input-required and a context message resumes it (A2A multiturn)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
-    const headers = jsonHeaders({
+    await registerTestWorker(server.baseUrl, "worker-ckpt", "analyst", "test-edge-secret");
+    const hubHeaders = jsonHeaders({
       "x-a2a-edge-secret": "test-edge-secret",
       "x-a2a-requester-id": "hub-a",
       "x-a2a-requester-role": "hub",
     });
-    const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r-trust" };
-
-    // No proof -> fail closed before ingestion.
-    const rejected = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-ckpt",
+      "x-a2a-requester-role": "analyst",
     });
-    assert.ok(rejected.status >= 400);
-    assert.match(JSON.stringify(await rejected.json()), /cross-broker trust/);
 
-    // A fresh body-bound proof clears the trust gate (any further response is
-    // ingestion-level validation, not a trust rejection).
-    const proof = buildCrossBrokerSenderProof(
-      privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-      { brokerId: "peer-a", body, nonce: `n-${Date.now()}` },
-    );
-    const passed = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+    // Create + claim + start a task through SendMessage.
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
       method: "POST",
-      headers,
-      body: JSON.stringify({ ...body, senderProof: proof }),
+      headers: hubHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "ckpt-1",
+        method: "SendMessage",
+        params: { message: { parts: [{ text: "needs input later" }] }, metadata: { targetNodeId: "worker-ckpt", intent: "analyze" } },
+      }),
     });
-    assert.ok(
-      !JSON.stringify(await passed.json()).includes("cross-broker trust"),
-      "a valid proof must clear the trust gate",
-    );
+    const sendBody = await send.json();
+    const taskId = sendBody.result.task.id;
+    const contextId = sendBody.result.contextId;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST", headers: workerHeaders, body: JSON.stringify({ workerId: "worker-ckpt" }),
+    });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/start`, {
+      method: "POST", headers: workerHeaders, body: JSON.stringify({ workerId: "worker-ckpt" }),
+    });
+
+    // Worker hits a human-interrupt checkpoint.
+    const ckpt = await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-ckpt", state: "awaiting_operator", reason: "need the target branch name" }),
+    });
+    assert.equal(ckpt.status, 200);
+
+    const interrupted = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ckpt-2", method: "GetTask", params: { taskId } }),
+    });
+    const interruptedBody = await interrupted.json();
+    assert.equal(interruptedBody.result.task.status.state, "input-required");
+
+    // The requester answers in the same context — that IS the input.
+    const answer = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "ckpt-3",
+        method: "SendMessage",
+        params: { message: { parts: [{ text: "use branch release/1.2" }] }, metadata: { contextId } },
+      }),
+    });
+    const answerBody = await answer.json();
+    assert.equal(answerBody.result.task.status.state, "working", "context message must resume the task");
+
+    // A plain paused checkpoint stays "working" (spec has no paused state),
+    // and the explicit resume route clears it.
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-ckpt", state: "paused" }),
+    });
+    const paused = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ckpt-4", method: "GetTask", params: { taskId } }),
+    })).json();
+    assert.equal(paused.result.task.status.state, "working");
+    const resume = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ actorId: "worker-ckpt" }),
+    });
+    assert.equal(resume.status, 200);
+    const resumed = await resume.json();
+    assert.equal(resumed.checkpoint, undefined);
   } finally {
     await server.close();
   }
@@ -11775,6 +11811,87 @@ test("default-agent mode preserves explicit targetNodeId routing failures", asyn
     assert.ok(body.error, "explicit missing target must fail instead of falling back to default-agent");
     assert.match(body.error.message, /target worker not found/);
     assert.notEqual(body.result?.task?.metadata?.targetNodeId, "default-agent");
+  } finally {
+    await server.close();
+  }
+});
+
+test("SendMessage context resume requires task-party authorization (a2a-nexus#617 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-ctxrz", "analyst", "test-edge-secret");
+    const hub = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" });
+    const worker = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-ctxrz", "x-a2a-requester-role": "analyst" });
+
+    const send = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ctxrz-1", method: "SendMessage", params: { message: { parts: [{ text: "needs input" }] }, metadata: { targetNodeId: "worker-ctxrz", intent: "analyze" } } }),
+    })).json();
+    const taskId = send.result.task.id;
+    const contextId = send.result.contextId;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-ctxrz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/start`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-ctxrz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-ctxrz", state: "awaiting_operator", reason: "need input" }) });
+
+    // A non-party requester who knows the contextId cannot auto-clear the
+    // awaiting_operator checkpoint by messaging into the context.
+    const stranger = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "intruder", "x-a2a-requester-role": "analyst" });
+    const deniedBody = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: stranger,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ctxrz-2", method: "SendMessage", params: { message: { parts: [{ text: "hijack resume" }] }, metadata: { contextId } } }),
+    })).json();
+    assert.ok(deniedBody.error, "non-party context message must not resume the task");
+
+    // The checkpoint is still in force: the task remains input-required.
+    const still = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ctxrz-3", method: "GetTask", params: { taskId } }),
+    })).json();
+    assert.equal(still.result.task.status.state, "input-required");
+
+    // The original requester (a task party) resumes it with the same call.
+    const resumedBody = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "ctxrz-4", method: "SendMessage", params: { message: { parts: [{ text: "here is the input" }] }, metadata: { contextId } } }),
+    })).json();
+    assert.equal(resumedBody.result.task.status.state, "working", "party context message must resume the task");
+  } finally {
+    await server.close();
+  }
+});
+
+test("explicit task resume requires task-party authorization (a2a-nexus#617 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-rz", "analyst", "test-edge-secret");
+    const hub = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" });
+    const worker = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-rz", "x-a2a-requester-role": "analyst" });
+
+    const send = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "rz", method: "SendMessage", params: { message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-rz", intent: "analyze" } } }),
+    })).json();
+    const taskId = send.result.task.id;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/start`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz", state: "awaiting_operator" }) });
+
+    // A stranger (analyst, not a party to this task) cannot resume it.
+    const stranger = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "intruder", "x-a2a-requester-role": "analyst" });
+    const denied = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: stranger, body: JSON.stringify({ actorId: "intruder" }) });
+    assert.ok(denied.status >= 400, "non-party resume must be rejected");
+
+    // checkpoint id mismatch is rejected for an authorized party.
+    const mismatch = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz", checkpointId: "wrong" }) });
+    assert.ok(mismatch.status >= 400, "checkpoint id mismatch must be rejected");
+
+    // The assigned worker (a party) can resume.
+    const ok = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz" }) });
+    assert.equal(ok.status, 200);
+
+    // Resuming a missing task is not_found.
+    const missing = await fetch(`${server.baseUrl}/tasks/no-such-task/resume`, { method: "POST", headers: hub, body: JSON.stringify({ actorId: "hub-a" }) });
+    assert.equal(missing.status, 404);
   } finally {
     await server.close();
   }
@@ -11990,3 +12107,60 @@ test("default-agent worker-less send + spec header returns the proto task oneof 
     await server.close();
   }
 });
+
+test("cross-broker receiver enforces request-bound proof of possession when anchors are pinned", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-sender-proof.js");
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
+  const anchorsFile = join(dir, "anchors.json");
+  writeFileSync(
+    anchorsFile,
+    JSON.stringify({ "peer-a": publicKey.export({ type: "spki", format: "pem" }).toString() }),
+  );
+
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    crossBrokerSenderProofKeysFile: anchorsFile,
+  });
+  try {
+    const headers = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r-trust" };
+
+    // No proof -> fail closed before ingestion.
+    const rejected = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    assert.ok(rejected.status >= 400);
+    assert.match(JSON.stringify(await rejected.json()), /cross-broker trust/);
+
+    // A fresh body-bound proof clears the trust gate (any further response is
+    // ingestion-level validation, not a trust rejection).
+    const proof = buildCrossBrokerSenderProof(
+      privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      { brokerId: "peer-a", body, nonce: `n-${Date.now()}` },
+    );
+    const passed = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, senderProof: proof }),
+    });
+    assert.ok(
+      !JSON.stringify(await passed.json()).includes("cross-broker trust"),
+      "a valid proof must clear the trust gate",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
