@@ -114,12 +114,13 @@ export const A2A_COMPATIBILITY_PROFILE = {
   ],
 } as const;
 
-export const A2A_AGENT_CARD_GOLDEN: Pick<AgentCard, "protocolVersion" | "capabilities" | "defaultInputModes" | "defaultOutputModes"> = {
+export const A2A_AGENT_CARD_GOLDEN: Pick<AgentCard, "protocolVersion" | "capabilities" | "defaultInputModes" | "defaultOutputModes" | "supportedInterfaces"> = {
   protocolVersion: A2A_COMPATIBILITY_PROFILE.protocolVersion,
   capabilities: {
     streaming: true,
     pushNotifications: false,
   },
+  supportedInterfaces: [{ protocolBinding: "JSONRPC", url: "https://broker.example.com/a2a/jsonrpc" }],
   defaultInputModes: ["text"],
   defaultOutputModes: ["text"],
 };
