@@ -7,6 +7,16 @@
  * delivered. Actual delivery stays governed by the broker's terminal-outbox
  * receipt policy and the plugin's no-live-send defaults — registering a
  * config never performs a live send.
+ *
+ * Authorization & secrecy (enforced at the JSON-RPC layer):
+ * - Every operation is authorized against an existing task; the caller must
+ *   be a task party (requester/target/assigned worker) or hub/operator.
+ * - Reads (get/list) redact delivery secrets (token, authentication
+ *   credentials) via redactPushConfigSecrets — secrets are write-only.
+ *
+ * Durability: configs are in-memory per broker process and do not survive a
+ * restart (consistent with this opt-in, registration-only surface). A future
+ * durable store can replace this class without changing the method contract.
  */
 import { randomUUID } from "node:crypto";
 
@@ -89,6 +99,26 @@ export class PushNotificationConfigStore {
   clearTask(taskId: string): void {
     this.byTask.delete(taskId?.trim());
   }
+}
+
+/**
+ * Read-time redaction: a config's delivery secrets (token, authentication
+ * credentials) are write-only. Reads (get/list) return existence + url and
+ * mark secrets redacted so an authorized party cannot exfiltrate the raw
+ * secret material a different party registered.
+ */
+export function redactPushConfigSecrets(config: TaskPushNotificationConfig): TaskPushNotificationConfig {
+  const redacted: TaskPushNotificationConfig = { id: config.id, taskId: config.taskId, url: config.url };
+  if (config.token !== undefined) {
+    redacted.token = "[redacted]";
+  }
+  if (config.authentication) {
+    redacted.authentication = {
+      ...(config.authentication.schemes ? { schemes: config.authentication.schemes } : {}),
+      ...(config.authentication.credentials !== undefined ? { credentials: "[redacted]" } : {}),
+    };
+  }
+  return redacted;
 }
 
 export class PushConfigError extends Error {

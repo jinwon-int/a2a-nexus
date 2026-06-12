@@ -11570,8 +11570,9 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
 });
 
 test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async () => {
-  const server = await startTestServer({ pushNotificationsEnabled: true });
+  const server = await startTestServer({ pushNotificationsEnabled: true, enforceRequesterIdentity: false });
   try {
+    await registerTestWorker(server.baseUrl, "worker-push", "analyst", undefined);
     const headers = jsonHeaders({});
     const rpc = (method: string, params: unknown, id = "p") =>
       fetch(`${server.baseUrl}/a2a/jsonrpc`, {
@@ -11584,23 +11585,39 @@ test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async
     const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
     assert.equal(card.capabilities.pushNotifications, true);
 
+    // A real task is required — config ops are authorized against it.
+    const send = await rpc("SendMessage", { actor: { id: "hub-a", kind: "node", role: "hub" }, message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-push", intent: "analyze" } }, "mk");
+    const pushTaskId = send.result.task.id;
+
+    // Operations on a non-existent task fail closed.
+    const noTask = await rpc("CreateTaskPushNotificationConfig", { taskId: "no-such-task", url: "https://x.example" });
+    assert.ok(noTask.error, "config ops require the task to exist");
+
     const created = await rpc("CreateTaskPushNotificationConfig", {
-      taskId: "task-push-1",
+      taskId: pushTaskId,
       url: "https://example.com/tck-webhook",
+      token: "super-secret-token",
+      authentication: { schemes: ["Bearer"], credentials: "secret-cred" },
     });
-    assert.equal(created.result.taskId, "task-push-1");
+    assert.equal(created.result.taskId, pushTaskId);
     const configId = created.result.id;
 
-    const got = await rpc("GetTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
+    // Reads redact delivery secrets.
+    const got = await rpc("GetTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
     assert.equal(got.result.id, configId);
+    assert.equal(got.result.token, "[redacted]");
+    assert.equal(got.result.authentication.credentials, "[redacted]");
+    assert.ok(!JSON.stringify(got.result).includes("super-secret-token"));
+    assert.ok(!JSON.stringify(got.result).includes("secret-cred"));
 
-    const listed = await rpc("ListTaskPushNotificationConfigs", { taskId: "task-push-1" });
+    const listed = await rpc("ListTaskPushNotificationConfigs", { taskId: pushTaskId });
     assert.equal(listed.result.configs.length, 1);
+    assert.ok(!JSON.stringify(listed.result).includes("super-secret-token"));
 
-    const deleted = await rpc("DeleteTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
+    const deleted = await rpc("DeleteTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
     assert.ok(!("error" in deleted));
-    const missing = await rpc("GetTaskPushNotificationConfig", { taskId: "task-push-1", id: configId });
-    assert.equal(missing.error.code, -32004); // not_found
+    const missing = await rpc("GetTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
+    assert.ok(missing.error, "deleted config no longer retrievable");
   } finally {
     await server.close();
   }

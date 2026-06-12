@@ -1,5 +1,5 @@
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
-import { PushNotificationConfigStore, PushConfigError } from "./push-notification-config.js";
+import { PushNotificationConfigStore, PushConfigError, redactPushConfigSecrets } from "./push-notification-config.js";
 import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard } from "./agent-card.js";
@@ -148,8 +148,10 @@ export function executeA2AJsonRpc(
       case "CreateTaskPushNotificationConfig": {
         const store = requirePushStore(options);
         const p = isRecord(params) ? params : {};
+        const createTaskId = requireString(params, "taskId");
+        requireAuthorizedTask(options, createTaskId);
         const cfg = store.create({
-          taskId: requireString(params, "taskId"),
+          taskId: createTaskId,
           id: optionalString(p.id),
           url: typeof p.url === "string" ? p.url : "",
           token: optionalString(p.token),
@@ -162,17 +164,23 @@ export function executeA2AJsonRpc(
 
       case "GetTaskPushNotificationConfig": {
         const store = requirePushStore(options);
-        return success(id, store.get(requireString(params, "taskId"), requireString(params, "id")));
+        const getTaskId = requireString(params, "taskId");
+        requireAuthorizedTask(options, getTaskId);
+        return success(id, redactPushConfigSecrets(store.get(getTaskId, requireString(params, "id"))));
       }
 
       case "ListTaskPushNotificationConfigs": {
         const store = requirePushStore(options);
-        return success(id, { configs: store.list(requireString(params, "taskId")) });
+        const listTaskId = requireString(params, "taskId");
+        requireAuthorizedTask(options, listTaskId);
+        return success(id, { configs: store.list(listTaskId).map(redactPushConfigSecrets) });
       }
 
       case "DeleteTaskPushNotificationConfig": {
         const store = requirePushStore(options);
-        store.delete(requireString(params, "taskId"), requireString(params, "id"));
+        const delTaskId = requireString(params, "taskId");
+        requireAuthorizedTask(options, delTaskId);
+        store.delete(delTaskId, requireString(params, "id"));
         return success(id, {});
       }
 
@@ -662,6 +670,23 @@ function requirePushStore(options: ExecuteJsonRpcOptions): PushNotificationConfi
     throw new BrokerError("not_found", "push notifications are not enabled on this broker");
   }
   return options.pushNotificationConfigStore;
+}
+
+/**
+ * Resolve and authorize the task a push-config operation targets. The task
+ * must exist, and (under identity enforcement) the caller must be a party to
+ * it (requester / target / assigned worker) or a hub/operator — push configs
+ * carry delivery tokens/auth, so unauthorized read/list is a secret-leak
+ * surface.
+ */
+function requireAuthorizedTask(options: ExecuteJsonRpcOptions, taskId: string): void {
+  const task = options.broker.getTask(taskId);
+  if (!task) {
+    throw new BrokerError("not_found", "task not found");
+  }
+  if (options.enforceRequesterIdentity) {
+    assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
+  }
 }
 
 function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): string | undefined {

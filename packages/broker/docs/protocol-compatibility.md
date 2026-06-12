@@ -25,7 +25,9 @@ The agent card currently advertises:
   `A2A_PUSH_NOTIFICATIONS_ENABLED`, which flips the card to `true` and enables
   the task push-notification config methods `CreateTaskPushNotificationConfig`,
   `GetTaskPushNotificationConfig`, `ListTaskPushNotificationConfigs`,
-  `DeleteTaskPushNotificationConfig` (registration only — no live send)
+  `DeleteTaskPushNotificationConfig` (registration only — no live send; every
+  operation is authorized against an existing task and reads redact delivery
+  secrets; configs are in-memory per process)
 - default input/output modes: `text`
 - public projected task states: `submitted`, `working`, `auth-required`, `completed`, `failed`, `canceled`, `rejected`
   - `blocked` (approval-gated) projects as `auth-required`; a task terminated by an operator approval rejection (`approvalOutcome.status === "rejected"`) projects as `rejected` instead of `canceled`
