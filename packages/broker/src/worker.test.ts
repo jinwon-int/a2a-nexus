@@ -1055,3 +1055,29 @@ test("external handler propagates the distributed trace id from task.via.traceId
   const withoutTrace = (await handler(base as never)) as { result: { output: { traceId: string | null } } };
   assert.equal(withoutTrace.result.output.traceId, null, "no trace id -> env unset");
 });
+
+test("worker rejects an out-of-policy trace id instead of propagating it (a2a-nexus#621 review)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-trace-bound-"));
+  const scriptPath = join(dir, "echo-trace.mjs");
+  writeFileSync(scriptPath, [
+    "for await (const c of process.stdin) void c;",
+    "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: { traceId: process.env.A2A_TRACE_ID ?? null } } }));",
+  ].join("\n"));
+  const handler = createExternalWorkerHandler({ command: process.execPath, args: [scriptPath], timeoutMs: 5_000 });
+  const base = {
+    id: "t-bound", exchangeId: "e-bound", intent: "analyze",
+    requester: { id: "hub", kind: "node", role: "hub" }, target: { id: "w", kind: "node", role: "analyst" },
+    message: "m", status: "running", targetNodeId: "w", payload: {},
+    createdAt: "2026-06-12T00:00:00Z", updatedAt: "2026-06-12T00:00:00Z",
+  };
+  // Injection-y / overlong trace ids are dropped, not forwarded.
+  const bad = (await handler({ ...base, via: { traceId: "trace; rm -rf /" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(bad.result.output.traceId, null);
+  const long = (await handler({ ...base, via: { traceId: "x".repeat(200) } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(long.result.output.traceId, null);
+  const good = (await handler({ ...base, via: { traceId: "trace-ok_1:2.3" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(good.result.output.traceId, "trace-ok_1:2.3");
+});
