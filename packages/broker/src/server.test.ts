@@ -11608,6 +11608,31 @@ test("default-agent mode: worker-less SendMessage produces a task driven to comp
   }
 });
 
+test("default-agent mode preserves explicit targetNodeId routing failures", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-explicit-missing",
+        method: "SendMessage",
+        params: {
+          message: { parts: [{ text: "do not fallback" }] },
+          metadata: { targetNodeId: "missing-worker" },
+        },
+      }),
+    });
+    const body = await send.json();
+    assert.ok(body.error, "explicit missing target must fail instead of falling back to default-agent");
+    assert.match(body.error.message, /target worker not found/);
+    assert.notEqual(body.result?.task?.metadata?.targetNodeId, "default-agent");
+  } finally {
+    await server.close();
+  }
+});
+
 test("default-agent mode off keeps requiring a target worker for new contexts", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
   try {
