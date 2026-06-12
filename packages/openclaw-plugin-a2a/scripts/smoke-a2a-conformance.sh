@@ -29,7 +29,7 @@ echo ""
 
 # ── Step 3: Run conformance smoke gate tests ──────────────────────────
 echo "[3/4] Running A2A conformance smoke gate tests …"
-node --test test/conformance-smoke-gate.test.mjs
+node --test src/conformance-smoke-gate.test.ts
 echo ""
 
 # ── Step 4: Run agent card discovery tests ───────────────────────────
