@@ -151,10 +151,20 @@ export function executeA2AJsonRpc(
         });
       }
 
+      // A2A 1.0 push-notification config CRUD. Method names are the proto
+      // rpc names (the official TCK's JSON-RPC binding sends these exact
+      // strings); params accept both proto-JSON camelCase (taskId) and the
+      // TCK's snake_case wire form (task_id). Disabled mode: the methods are
+      // absent from the surface entirely (-32601, like other extension-gated
+      // methods), so a probing client sees "method not found", not a task
+      // error.
       case "CreateTaskPushNotificationConfig": {
-        const store = requirePushStore(options);
+        const store = options.pushNotificationConfigStore;
+        if (!store) {
+          return failure(id, -32601, `method not found: ${method}`);
+        }
         const p = isRecord(params) ? params : {};
-        const createTaskId = requireString(params, "taskId");
+        const createTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, createTaskId);
         const cfg = store.create({
           taskId: createTaskId,
@@ -169,22 +179,36 @@ export function executeA2AJsonRpc(
       }
 
       case "GetTaskPushNotificationConfig": {
-        const store = requirePushStore(options);
-        const getTaskId = requireString(params, "taskId");
+        const store = options.pushNotificationConfigStore;
+        if (!store) {
+          return failure(id, -32601, `method not found: ${method}`);
+        }
+        const getTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, getTaskId);
         return success(id, redactPushConfigSecrets(store.get(getTaskId, requireString(params, "id"))));
       }
 
       case "ListTaskPushNotificationConfigs": {
-        const store = requirePushStore(options);
-        const listTaskId = requireString(params, "taskId");
+        const store = options.pushNotificationConfigStore;
+        if (!store) {
+          return failure(id, -32601, `method not found: ${method}`);
+        }
+        const listTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, listTaskId);
-        return success(id, { configs: store.list(listTaskId).map(redactPushConfigSecrets) });
+        // Proto ListTaskPushNotificationConfigsResponse: configs + nextPageToken
+        // (single-page semantics, so the token is always empty).
+        return success(id, {
+          configs: store.list(listTaskId).map(redactPushConfigSecrets),
+          nextPageToken: "",
+        });
       }
 
       case "DeleteTaskPushNotificationConfig": {
-        const store = requirePushStore(options);
-        const delTaskId = requireString(params, "taskId");
+        const store = options.pushNotificationConfigStore;
+        if (!store) {
+          return failure(id, -32601, `method not found: ${method}`);
+        }
+        const delTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, delTaskId);
         store.delete(delTaskId, requireString(params, "id"));
         return success(id, {});
@@ -680,11 +704,16 @@ function failure(id: JsonRpcId, code: number, message: string, data?: unknown): 
   };
 }
 
-function requirePushStore(options: ExecuteJsonRpcOptions): PushNotificationConfigStore {
-  if (!options.pushNotificationConfigStore) {
-    throw new BrokerError("not_found", "push notifications are not enabled on this broker");
+/**
+ * Push-config methods accept the task id as proto-JSON `taskId` or the
+ * official TCK's snake_case wire form `task_id` (its JSON-RPC client sends
+ * proto field names verbatim).
+ */
+function requirePushTaskId(params: unknown): string {
+  if (isRecord(params) && typeof params.taskId !== "string" && typeof params.task_id === "string") {
+    return requireString(params, "task_id");
   }
-  return options.pushNotificationConfigStore;
+  return requireString(params, "taskId");
 }
 
 /**

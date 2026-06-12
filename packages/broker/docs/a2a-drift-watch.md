@@ -50,7 +50,7 @@ explicitly added to the compatibility matrix.
 |---|---|---|---|
 | **REST transport** (`a2aproject/a2a-js` REST client/server) | HTTP REST (non-JSON-RPC) | Broker uses JSON-RPC 2.0 as the sole A2A task protocol. REST endpoints exist for broker operator/internal surfaces (`/tasks`, `/exchanges`, `/workers`) but are not A2A-rest-conforming. | Add A2A REST routes matching official SDK shapes + update this document + add drift-watch coverage. |
 | **gRPC transport** (`a2aproject/a2a-js` gRPC client/server, `a2aproject/a2a-python` proto modules) | gRPC | No gRPC server or client is integrated. The broker is HTTP/JSON-RPC only. | Add gRPC server with proto-defined A2A services + update this document + add drift-watch coverage. |
-| **Push notifications** | A2A push notification delivery, retries, replay protection, receipt semantics | Agent card advertises `pushNotifications: false`. Outbox APIs are broker/operator integration surfaces, not A2A push conformance. | Implement A2A push delivery + update agent card capabilities + update this document + add drift-watch coverage. |
+| **Push notification delivery** | Live push sends, retries, replay protection, receipt semantics | Config CRUD is implemented opt-in (`A2A_PUSH_NOTIFICATIONS_ENABLED`, registration only); the **default** card advertises `pushNotifications: false` and delivery is never performed. Outbox APIs are broker/operator integration surfaces, not A2A push conformance. | Implement A2A push delivery + update this document + add drift-watch coverage. |
 | **A2A 0.3 compatibility mode** | Any | No 0.3-style protocol is implemented. The broker is 1.0-compatible only. | Add 0.3 envelope/method translation layer + update compatibility matrix + add drift-watch coverage. |
 | **OAuth/OIDC dynamic client auth** | HTTP discovery | Not modeled. Broker uses edge-secret and requester identity headers. | Implement official A2A auth-flow discovery + update this document. |
 
@@ -64,7 +64,9 @@ golden fixture:
 {
   capabilities: {
     streaming: true,        // SSE via SubscribeToTask
-    pushNotifications: false, // EXPLICITLY unsupported
+    pushNotifications: false, // default; opt-in A2A_PUSH_NOTIFICATIONS_ENABLED
+                              // flips it true (config CRUD only — delivery
+                              // remains EXPLICITLY unsupported)
   }
 }
 ```
@@ -96,9 +98,8 @@ Methods from the official SDK NOT implemented:
 
 - Any REST-specific task endpoints (SDK REST transport layer)
 - Any gRPC-specific service methods (SDK gRPC transport layer)
-- `SetTaskPushNotificationConfig` — push is disabled
-- `GetTaskPushNotificationConfig` — push is disabled
-- `ListTaskPushNotificationConfig` — push is disabled
+- `SetTaskPushNotificationConfig` — 0.x-style method name; the 1.0 surface uses
+  `CreateTaskPushNotificationConfig` (implemented opt-in, see inventory above)
 - `ResubscribeToTask` — not in broker surface
 
 ## Drift-watch test suite
@@ -107,8 +108,9 @@ The drift-watch test lives at `src/a2a/drift-watch.test.ts` and enforces:
 
 1. **Profile pinning:** The `A2A_COMPATIBILITY_PROFILE` fixture matches the
    documented profile in `docs/protocol-compatibility.md`.
-2. **AgentCard capability enforcement:** `pushNotifications` remains `false`,
-   `streaming` remains `true`.
+2. **AgentCard capability enforcement:** `pushNotifications` remains `false`
+   by default (opt-in mode flips it true for config CRUD only), `streaming`
+   remains `true`.
 3. **Unsupported surfaces guard:** The broker does not advertise REST, gRPC, or
    push notification transport capabilities in its agent card or public profile.
 4. **Method inventory:** The implemented JSON-RPC method set matches the

@@ -29,7 +29,10 @@ export const A2A_COMPATIBILITY_PROFILE = {
   // capabilities.pushNotifications false; enabled flips it true and the four
   // config methods register destinations (registration only — no live send).
   pushNotificationConfig: { optIn: true, methods: 4, capabilityWhenEnabled: true },
-  unsupportedPushNotifications: true,
+  // Push DELIVERY (live sends, retries, replay protection, receipts) remains
+  // unsupported regardless of the opt-in: the config surface above is
+  // registration-only and never performs a send.
+  unsupportedPushDelivery: true,
   unsupportedA2A03Compat: true,
   /**
    * A2A 1.0 signed agent cards: opt-in JWS (EdDSA or ES256) over the

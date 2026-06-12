@@ -2888,6 +2888,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const pushNotificationsEnabled =
     options.pushNotificationsEnabled ?? resolveBooleanEnv(process.env.A2A_PUSH_NOTIFICATIONS_ENABLED, false);
   const pushNotificationConfigStore = pushNotificationsEnabled ? new PushNotificationConfigStore() : undefined;
+  if (pushNotificationConfigStore) {
+    // Release push configs (and their delivery secrets) on the same lifecycle
+    // as the tasks they belong to: when retention prunes a task, its configs
+    // must not outlive it in memory.
+    broker.registerTaskPruneListener((prunedTaskIds) => {
+      for (const taskId of prunedTaskIds) {
+        pushNotificationConfigStore.clearTask(taskId);
+      }
+    });
+  }
   const unsignedAgentCard =
     options.agentCard ??
     createBrokerAgentCard({

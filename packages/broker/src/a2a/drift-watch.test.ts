@@ -74,14 +74,19 @@ test("drift: gRPC transport is explicitly unsupported", () => {
   );
 });
 
-test("drift: push notifications are explicitly unsupported", () => {
+test("drift: push delivery is explicitly unsupported (config CRUD is opt-in, registration only)", () => {
   assert.equal(
-    A2A_COMPATIBILITY_PROFILE.unsupportedPushNotifications,
+    A2A_COMPATIBILITY_PROFILE.unsupportedPushDelivery,
     true,
-    "unsupportedPushNotifications must remain true until push is implemented",
+    "unsupportedPushDelivery must remain true until live push delivery is implemented",
+  );
+  assert.equal(
+    A2A_COMPATIBILITY_PROFILE.pushNotificationConfig.optIn,
+    true,
+    "push config CRUD stays opt-in (A2A_PUSH_NOTIFICATIONS_ENABLED)",
   );
 
-  // AgentCard must continue to advertise push as disabled.
+  // The DEFAULT AgentCard must continue to advertise push as disabled.
   const card = createBrokerAgentCard({
     serviceName: "drift-broker",
     publicBaseUrl: "https://broker.example.com/",
@@ -92,7 +97,7 @@ test("drift: push notifications are explicitly unsupported", () => {
   assert.equal(
     card.capabilities.pushNotifications,
     false,
-    "AgentCard.capabilities.pushNotifications must be false until push is implemented",
+    "default AgentCard.capabilities.pushNotifications must stay false (opt-in only)",
   );
 });
 
@@ -196,7 +201,7 @@ test("drift: drift-watch document exists and references the fixture", () => {
   assert.match(doc, /drift-watch test lives at `src\/a2a\/drift-watch\.test\.ts`/i);
   assert.match(doc, /REST transport/i);
   assert.match(doc, /gRPC transport/i);
-  assert.match(doc, /Push notifications/i);
+  assert.match(doc, /Push notification delivery/i);
   assert.match(doc, /A2A 0\.3 compatibility mode/i);
   assert.match(doc, /a2aproject\/a2a-js/i);
   assert.match(doc, /a2aproject\/a2a-python/i);

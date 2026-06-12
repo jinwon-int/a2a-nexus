@@ -33,3 +33,44 @@ test("a client-supplied id is honored and re-create updates in place", () => {
   assert.equal(store.list("t2").length, 1);
   assert.equal(store.get("t2", "fixed").url, "https://a.example/2");
 });
+
+test("push configs are released when retention prunes their task (no secret outlives the task)", async () => {
+  const { InMemoryA2ABroker } = await import("../core/broker.js");
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    retention: { terminalRetentionMs: 0, maxTerminalTasks: 0, maxTerminalExchanges: 0 },
+  });
+  broker.registerWorker({
+    nodeId: "worker-prune",
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  });
+  const store = new PushNotificationConfigStore();
+  broker.registerTaskPruneListener((prunedTaskIds) => {
+    for (const taskId of prunedTaskIds) {
+      store.clearTask(taskId);
+    }
+  });
+
+  const task = broker.createTask({
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-prune", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-prune",
+  });
+  store.create({ taskId: task.id, url: "https://example.com/hook", token: "prune-secret" });
+  assert.equal(store.list(task.id).length, 1);
+
+  // Driving the task terminal triggers persistState -> retention; with a
+  // zero retention window the task is pruned and the listener must release
+  // its configs (and the secrets they hold).
+  broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" } });
+  assert.equal(broker.getTask(task.id), null, "terminal task pruned by zero-retention policy");
+  assert.deepEqual(store.list(task.id), [], "push configs must not outlive their task");
+});

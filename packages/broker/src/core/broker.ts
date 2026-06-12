@@ -405,6 +405,7 @@ export class InMemoryA2ABroker {
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly tombstones = new Map<string, TaskTombstone>();
   private readonly taskListeners = new Map<string, Set<TaskUpdateListener>>();
+  private readonly taskPruneListeners = new Set<(prunedTaskIds: string[]) => void>();
   private readonly taskEventBuffers = new Map<string, BufferedTaskEvent[]>();
   private readonly taskEventSeqs = new Map<string, number>();
   private readonly pendingHotTasks = new Map<string, TaskRecord>();
@@ -571,6 +572,19 @@ export class InMemoryA2ABroker {
    * `getTask(taskId)` before subscribing. Listener errors are caught and logged so a broken
    * subscriber cannot stall the broker.
    */
+  /**
+   * Register a listener invoked with the ids of tasks removed by the
+   * retention policy, so task-scoped state held outside the broker (e.g.
+   * push-notification configs and their delivery secrets) can be released
+   * on the same lifecycle instead of outliving the task.
+   */
+  registerTaskPruneListener(listener: (prunedTaskIds: string[]) => void): () => void {
+    this.taskPruneListeners.add(listener);
+    return () => {
+      this.taskPruneListeners.delete(listener);
+    };
+  }
+
   subscribeToTask(taskId: string, listener: TaskUpdateListener): () => void {
     let listeners = this.taskListeners.get(taskId);
     if (!listeners) {
@@ -2621,6 +2635,8 @@ export class InMemoryA2ABroker {
       retainedWorkerIds,
     });
 
+    const prunedTaskIds = [...this.tasks.keys()].filter((taskId) => !retainedTaskIds.has(taskId));
+
     pruneMapEntries(this.exchanges, retainedExchangeIds);
     pruneMapEntries(this.exchangeMessages, retainedMessageIds);
     pruneMapEntries(this.tasks, retainedTaskIds);
@@ -2633,6 +2649,16 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.lastPersistedTaskHeartbeatAuditAtMs, retainedTaskIds);
     pruneMapEntries(this.taskEventBuffers, retainedTaskIds);
     pruneMapEntries(this.taskEventSeqs, retainedTaskIds);
+
+    if (prunedTaskIds.length > 0) {
+      for (const listener of this.taskPruneListeners) {
+        try {
+          listener(prunedTaskIds);
+        } catch {
+          // A cleanup listener failure must never break retention itself.
+        }
+      }
+    }
   }
 
   private collectRetainedExchangeMessageIds(retainedExchangeIds: Set<string>): Set<string> {
