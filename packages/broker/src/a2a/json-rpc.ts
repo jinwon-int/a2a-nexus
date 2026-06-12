@@ -73,7 +73,7 @@ function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]
 }
 
 /** A2A 1.0 proto-JSON Task: id + top-level contextId, TASK_STATE_* status, no kind. */
-function projectSpecTask(task: TaskRecord): Record<string, unknown> {
+export function projectSpecTask(task: TaskRecord): Record<string, unknown> {
   const projected = projectBrokerTask(task);
   return {
     id: projected.id,
@@ -98,8 +98,31 @@ function projectSpecTask(task: TaskRecord): Record<string, unknown> {
   };
 }
 
+/**
+ * A2A 1.0 StreamResponse payloads for SendStreamingMessage. The proto's
+ * StreamResponse is a oneof of { task | message | statusUpdate |
+ * artifactUpdate }; the opening event carries the Task snapshot and
+ * subsequent events carry TaskStatusUpdateEvent ({ taskId, contextId,
+ * status, final }).
+ */
+export function specStreamTaskSnapshot(task: TaskRecord): Record<string, unknown> {
+  return { task: projectSpecTask(task) };
+}
+
+export function specStreamStatusUpdate(task: TaskRecord, final: boolean): Record<string, unknown> {
+  const projected = projectSpecTask(task);
+  return {
+    statusUpdate: {
+      taskId: task.id,
+      contextId: task.exchangeId,
+      status: projected.status,
+      final,
+    },
+  };
+}
+
 /** A2A 1.0 SendMessageResponse: a oneof wrapper of { task } or { message }. */
-function specSendResult(
+export function specSendResult(
   send: { contextId: string; messageId: string; task?: ReturnType<typeof projectBrokerTask> },
   broker: InMemoryA2ABroker,
 ): Record<string, unknown> {

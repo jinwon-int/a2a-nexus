@@ -7,7 +7,7 @@ import { getHeapStatistics } from "node:v8";
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
-import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
+import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, specSendResult, specStreamStatusUpdate, specStreamTaskSnapshot } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
 import {
@@ -3401,7 +3401,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           const createdTask = created.task ? broker.getTask(created.task.id) : null;
           if (!createdTask) {
             // Context-only sends (no active task) have nothing to stream.
-            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: created });
+            const contextResult = responseShape === "spec" ? specSendResult(created, broker) : created;
+            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: contextResult });
           }
           handleStreamingMessageResponse(req, res, {
             broker,
@@ -3409,6 +3410,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             sendResult: created,
             task: createdTask,
             heartbeatMs: taskSubscribeHeartbeatSec * 1000,
+            responseShape,
           });
           return;
         }
@@ -7903,6 +7905,11 @@ function parseSingleStreamingMessageRequest(
  * subsequent task-status-update events stream until the task is terminal.
  * SSE event ids reuse the broker's task-event sequence so Last-Event-Id
  * reconnects on /a2a/tasks/:id/events can resume the same stream.
+ *
+ * `responseShape: "spec"` (clients that negotiated an A2A-Version header)
+ * streams A2A 1.0 StreamResponse oneofs — { task } for the opening snapshot
+ * and { statusUpdate } for subsequent events — while "legacy" keeps the
+ * historical envelopes for header-less plugin clients.
  */
 function handleStreamingMessageResponse(
   req: IncomingMessage,
@@ -7913,9 +7920,11 @@ function handleStreamingMessageResponse(
     sendResult: ReturnType<typeof executeSendMessage>;
     task: TaskRecord;
     heartbeatMs: number;
+    responseShape?: "spec" | "legacy";
   },
 ): void {
   const { broker, rpcId, sendResult, task, heartbeatMs } = params;
+  const spec = params.responseShape === "spec";
 
   writeSseResponseHeaders(res);
 
@@ -7929,11 +7938,15 @@ function handleStreamingMessageResponse(
   writeSseEvent(
     res,
     "task-snapshot",
-    envelope({
-      ...sendResult,
-      task: projectBrokerTask(task),
-      final: isTerminalSnapshotStatus(task.status),
-    }),
+    envelope(
+      spec
+        ? specStreamTaskSnapshot(task)
+        : {
+            ...sendResult,
+            task: projectBrokerTask(task),
+            final: isTerminalSnapshotStatus(task.status),
+          },
+    ),
     broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
   );
 
@@ -7960,11 +7973,15 @@ function handleStreamingMessageResponse(
     writeSseEvent(
       res,
       "task-status-update",
-      envelope({
-        task: projectBrokerTask(update.task),
-        reason: update.reason,
-        final: update.final,
-      }),
+      envelope(
+        spec
+          ? specStreamStatusUpdate(update.task, update.final)
+          : {
+              task: projectBrokerTask(update.task),
+              reason: update.reason,
+              final: update.final,
+            },
+      ),
       broker.formatSseEventId(task.id, update.seq),
     );
     if (update.final) {

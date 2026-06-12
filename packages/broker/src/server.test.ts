@@ -11493,6 +11493,94 @@ test("SendStreamingMessage streams JSON-RPC envelopes over SSE (A2A 1.0)", async
   }
 });
 
+test("SendStreamingMessage with explicit A2A-Version streams spec StreamResponse oneofs", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-stream-spec", "analyst", "test-edge-secret");
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+
+    const streamRes = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...hubHeaders, accept: "text/event-stream", "a2a-version": "1.0" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "stream-spec-1",
+        method: "SendStreamingMessage",
+        params: {
+          message: { parts: [{ text: "analyze streaming spec" }] },
+          metadata: { targetNodeId: "worker-stream-spec", intent: "analyze" },
+        },
+      }),
+    });
+    assert.equal(streamRes.status, 200);
+    assert.equal(streamRes.headers.get("a2a-version"), "1.0");
+    assert.match(streamRes.headers.get("content-type") ?? "", /text\/event-stream/);
+
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-stream-spec",
+      "x-a2a-requester-role": "analyst",
+    });
+    const listRes = await fetch(`${server.baseUrl}/tasks?targetNodeId=worker-stream-spec`, {
+      headers: hubHeaders,
+    });
+    const listed = await listRes.json() as { items?: Array<{ id: string }> };
+    const streamTaskId = listed.items?.[0]?.id;
+    assert.ok(streamTaskId, "streamed task must be visible via REST list");
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${streamTaskId}/claim`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream-spec" }),
+    });
+    assert.equal(claimRes.status, 200);
+    await fetch(`${server.baseUrl}/tasks/${streamTaskId}/complete`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream-spec", result: { summary: "stream done" } }),
+    });
+
+    const events = await readSseEventsUntil(streamRes, (seen) =>
+      seen.some((e) => {
+        if (e.event !== "task-status-update") return false;
+        const body = JSON.parse(e.data);
+        return body.result?.statusUpdate?.final === true;
+      }),
+    );
+
+    // Opening event: StreamResponse { task } with proto-JSON Task — top-level
+    // contextId, TASK_STATE_* status, no legacy contextId/final siblings.
+    const snapshot = events.find((e) => e.event === "task-snapshot");
+    assert.ok(snapshot, "stream must open with a task snapshot");
+    const snapshotBody = JSON.parse(snapshot.data);
+    assert.equal(snapshotBody.jsonrpc, "2.0");
+    assert.equal(snapshotBody.id, "stream-spec-1");
+    assert.equal(snapshotBody.result.task.id, streamTaskId);
+    assert.ok(typeof snapshotBody.result.task.contextId === "string");
+    assert.match(snapshotBody.result.task.status.state, /^TASK_STATE_/);
+    assert.equal(snapshotBody.result.contextId, undefined);
+    assert.equal(snapshotBody.result.final, undefined);
+    assert.equal(snapshotBody.result.task.kind, undefined);
+
+    // Subsequent events: StreamResponse { statusUpdate } TaskStatusUpdateEvent.
+    const finalEvent = events
+      .filter((e) => e.event === "task-status-update")
+      .map((e) => JSON.parse(e.data))
+      .find((body) => body.result?.statusUpdate?.final === true);
+    assert.ok(finalEvent, "stream must end with a final statusUpdate");
+    assert.equal(finalEvent.id, "stream-spec-1");
+    assert.equal(finalEvent.result.statusUpdate.taskId, streamTaskId);
+    assert.ok(typeof finalEvent.result.statusUpdate.contextId === "string");
+    assert.equal(finalEvent.result.statusUpdate.status.state, "TASK_STATE_COMPLETED");
+    assert.equal(finalEvent.result.task, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
 test("SendStreamingMessage with malformed JSON-RPC envelope is rejected before streaming", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
