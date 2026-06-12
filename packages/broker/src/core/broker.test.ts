@@ -6132,3 +6132,130 @@ test("broker retention prunes task event buffers and seqs for pruned tasks", asy
   );
   assert.deepEqual(broker.replayTaskEvents(task.id, 0), []);
 });
+
+// ---------------------------------------------------------------------------
+// Checkpoint lifecycle gate (a2a-nexus#617 review; contracts/a2a/checkpoint-interrupt.md)
+// ---------------------------------------------------------------------------
+
+test("an active checkpoint blocks terminal worker mutations until resume or cancel", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-ckgate");
+  const task = createWorkerTask(broker, "ckgate-1", "worker-ckgate");
+  broker.claimTask(task.id, "worker-ckgate");
+  broker.startTask(task.id, "worker-ckgate");
+  broker.checkpointTask(task.id, "worker-ckgate", { state: "awaiting_operator", reason: "need operator input" });
+
+  // Terminal mutations are gated while the checkpoint is active.
+  assert.throws(() => broker.completeTask(task.id, "worker-ckgate", { summary: "done" }), /checkpoint is active/);
+  assert.throws(() => broker.failTask(task.id, "worker-ckgate", { code: "x", message: "boom" }), /checkpoint is active/);
+  assert.equal(broker.getTask(task.id)?.status, "running", "gate must not mutate the task");
+
+  // Resume reopens the terminal path.
+  broker.resumeTask(task.id, "worker-ckgate");
+  const done = broker.completeTask(task.id, "worker-ckgate", { summary: "done" });
+  assert.equal(done.status, "succeeded");
+  assert.equal(done.checkpoint, undefined, "no stale checkpoint metadata on a terminal task");
+});
+
+test("cancel clears an active checkpoint instead of leaving stale metadata", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-ckcancel");
+  const task = createWorkerTask(broker, "ckcancel-1", "worker-ckcancel");
+  broker.claimTask(task.id, "worker-ckcancel");
+  broker.checkpointTask(task.id, "worker-ckcancel", { state: "paused" });
+  const canceled = broker.cancelTask(task.id, { actor: { id: "hub-a", kind: "node", role: "hub" }, reason: "operator cancel" });
+  assert.equal(canceled.status, "canceled");
+  assert.equal(canceled.checkpoint, undefined, "cancel is a sanctioned checkpoint exit; metadata must be cleared");
+});
+
+test("the stale reaper does not requeue checkpointed tasks; checkpoint expiry cancels instead", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { checkpointTimeoutMs: 60_000 });
+  registerWorker(broker, "worker-ckreap");
+  const task = createWorkerTask(broker, "ckreap-1", "worker-ckreap");
+  broker.claimTask(task.id, "worker-ckreap");
+  broker.startTask(task.id, "worker-ckreap");
+  broker.checkpointTask(task.id, "worker-ckreap", { state: "awaiting_operator", reason: "waiting on operator" });
+
+  // Far past the stale threshold but inside the checkpoint timeout: the task
+  // is deliberately suspended, not stale — no requeue, projection unchanged.
+  const requeued = broker.requeueStaleTasks(0, { nowMs: Date.now() + 30_000 });
+  assert.equal(requeued.length, 0, "checkpointed tasks are excluded from stale requeue");
+  const still = broker.getTask(task.id);
+  assert.equal(still?.status, "running");
+  assert.equal(still?.checkpoint?.state, "awaiting_operator");
+
+  // Past the checkpoint timeout: contract §2.3 — transition to cancelled.
+  broker.requeueStaleTasks(0, { nowMs: Date.now() + 61_000 });
+  const expired = broker.getTask(task.id);
+  assert.equal(expired?.status, "canceled", "expired checkpoint must cancel the task");
+  assert.equal(expired?.checkpoint, undefined, "no stale checkpoint metadata after expiry");
+  assert.match(expired?.cancellation?.reason ?? "", /expired/);
+});
+
+test("checkpoint inputs are bounded and decision-typed before becoming operator-visible state", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-ckbounds");
+  const task = createWorkerTask(broker, "ckbounds-1", "worker-ckbounds");
+  broker.claimTask(task.id, "worker-ckbounds");
+
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator", reason: "x".repeat(501) }),
+    /500/,
+    "overlong reason rejected",
+  );
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator", reason: "bad\u0007bell" }),
+    /control characters/,
+    "control characters rejected",
+  );
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator", checkpointId: "bad id with spaces!" }),
+    /checkpointId/,
+    "checkpointId charset bounded",
+  );
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator", decisionType: "nuke_everything" }),
+    /decisionType/,
+    "unknown decision type rejected (contract v0 freeze)",
+  );
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "paused", decisionType: "safety_gate" }),
+    /only applies/,
+    "decisionType is interrupt-only",
+  );
+  assert.throws(
+    () => broker.checkpointTask(task.id, "worker-ckbounds", { state: "paused", artifactRefs: Array.from({ length: 33 }, (_, i) => `a/${i}`) }),
+    /32/,
+    "artifactRefs count bounded",
+  );
+
+  const interrupted = broker.checkpointTask(task.id, "worker-ckbounds", {
+    state: "awaiting_operator",
+    decisionType: "safety_gate",
+    artifactRefs: ["contracts/a2a/checkpoint-interrupt.md"],
+    reason: "operator must confirm",
+  });
+  assert.equal(interrupted.checkpoint?.decisionType, "safety_gate");
+  assert.deepEqual(interrupted.checkpoint?.artifactRefs, ["contracts/a2a/checkpoint-interrupt.md"]);
+
+  // Default decision type for an unannotated interrupt is approval_required.
+  broker.resumeTask(task.id, "worker-ckbounds");
+  const defaulted = broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator" });
+  assert.equal(defaulted.checkpoint?.decisionType, "approval_required");
+});
+
+test("checkpoint and resume emit dedicated task event reasons", () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-ckevents");
+  const task = createWorkerTask(broker, "ckevents-1", "worker-ckevents");
+  broker.claimTask(task.id, "worker-ckevents");
+  const reasons: string[] = [];
+  const unsubscribe = broker.subscribeToTask(task.id, (update) => {
+    reasons.push(update.reason);
+  });
+  broker.checkpointTask(task.id, "worker-ckevents", { state: "paused" });
+  broker.resumeTask(task.id, "worker-ckevents");
+  unsubscribe();
+  assert.ok(reasons.includes("checkpointed"), `expected checkpointed in ${reasons.join(",")}`);
+  assert.ok(reasons.includes("resumed"), `expected resumed in ${reasons.join(",")}`);
+});

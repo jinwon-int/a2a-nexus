@@ -547,6 +547,20 @@ export function executeSendMessage(
       throw new BrokerError("not_found", "exchange not found");
     }
     assertConsistentExistingContextAssignmentMetadata(metadata, existingExchange.target.id);
+    // Clearing an awaiting_operator checkpoint resumes the task, so a
+    // context message that would trigger the auto-resume needs the same
+    // task-party authorization as the explicit /tasks/:id/resume route
+    // (hub/operator, requester, target node, or assigned worker). Checked
+    // before the message is recorded so a non-party send fails closed.
+    const checkpointedTask = existingExchange.activeTaskId
+      ? options.broker.getTask(existingExchange.activeTaskId)
+      : null;
+    if (
+      checkpointedTask?.checkpoint?.state === "awaiting_operator" &&
+      options.enforceRequesterIdentity
+    ) {
+      assertRequesterCanSubscribeToTask(options.requesterIdentity, checkpointedTask);
+    }
     const message = options.broker.addExchangeMessage(exchangeId, {
       actor,
       message: text,
@@ -557,10 +571,18 @@ export function executeSendMessage(
     });
     const exchange = options.broker.getExchange(exchangeId);
     const activeTask = exchange?.activeTaskId ? options.broker.getTask(exchange.activeTaskId) : null;
+    // A2A multiturn resume: a message into a context whose active task is
+    // waiting on requester input (awaiting_operator checkpoint /
+    // input-required state) IS the requested input — clear the checkpoint so
+    // the task returns to working.
+    const resumedTask =
+      activeTask?.checkpoint?.state === "awaiting_operator"
+        ? options.broker.resumeTask(activeTask.id, actor.id)
+        : activeTask;
     return {
       contextId: exchangeId,
       messageId: message.id,
-      task: activeTask ? projectBrokerTask(activeTask) : undefined,
+      task: resumedTask ? projectBrokerTask(resumedTask) : undefined,
     };
   }
 
