@@ -1,0 +1,312 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+import { computeVerdict, classify, citedEvidenceIds } from './a2ad-finalizer-gate.mjs';
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const scriptPath = join(repoRoot, 'scripts', 'a2ad-finalizer-gate.mjs');
+
+const ROUND = 'pr-review-20260612-abc';
+
+// Build a lane task record for the round under test.
+function lane(id, status, extra = {}) {
+  return {
+    id,
+    status,
+    assignedWorkerId: extra.worker || `worker-${id}`,
+    payload: {
+      parentRoundId: ROUND,
+      parentRoundTotal: extra.total ?? 3,
+      parentRoundOrder: extra.order ?? 1,
+      reviewTarget: extra.reviewTarget,
+      ...(extra.payload || {}),
+    },
+    ...(extra.top || {}),
+  };
+}
+
+function writeTmp(prefix, content) {
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'a2ad-gate-'));
+  const file = join(dir, prefix);
+  fs.writeFileSync(file, content);
+  return file;
+}
+
+function writeTasks(items) {
+  return writeTmp('tasks.json', JSON.stringify({ items }));
+}
+
+function runGate(extraArgs, draftBody) {
+  const args = [scriptPath, ...extraArgs];
+  if (draftBody != null) {
+    const draftFile = writeTmp('draft.md', draftBody);
+    args.push('--draft', draftFile);
+  }
+  return spawnSync(process.execPath, args, { encoding: 'utf8' });
+}
+
+// ─── Unit-level verdict ──────────────────────────────────────────────────────
+
+test('classify maps statuses into succeeded/failed/pending buckets', () => {
+  assert.equal(classify('succeeded'), 'succeeded');
+  assert.equal(classify('failed'), 'failed');
+  assert.equal(classify('canceled'), 'failed');
+  assert.equal(classify('blocked'), 'failed');
+  assert.equal(classify('timeout'), 'failed');
+  assert.equal(classify('queued'), 'pending');
+  assert.equal(classify('running'), 'pending');
+  assert.equal(classify('approval_pending'), 'pending');
+  // Unknown statuses fail closed → pending (block finality).
+  assert.equal(classify('weird'), 'pending');
+});
+
+test('all workers complete and draft cites evidence → FINAL', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus over lanes t1, t2, t3.',
+  });
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.expectedTotal, 3);
+  assert.deepEqual(result.evidenceIdsCitedInDraft.sort(), ['t1', 't2', 't3']);
+  assert.deepEqual(result.missingLanes, []);
+});
+
+test('partial complete → BLOCKED with missing lanes listed', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'running'),
+    lane('t3', 'queued'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.pending, 2);
+  const ids = result.missingLanes.map((l) => l.taskId).sort();
+  assert.deepEqual(ids, ['t2', 't3']);
+  assert.ok(result.reasons.some((r) => /pending/i.test(r)));
+});
+
+test('dispatch failure (fewer lanes than parentRoundTotal) → BLOCKED naming the gap', () => {
+  // Only 2 lanes exist but each declares parentRoundTotal=3.
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t2.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.ok(result.reasons.some((r) => /dispatch gap.*2 of 3/i.test(r)), result.reasons.join('; '));
+});
+
+test('worker timeout/failed lanes are enumerated and never counted toward quorum', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'failed'),
+    lane('t3', 'timeout'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 3,
+    perTarget: null,
+    draft: 'Cites t1.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 2);
+  const failedIds = result.missingLanes.map((l) => l.taskId).sort();
+  assert.deepEqual(failedIds, ['t2', 't3']);
+  // Quorum of 3 not met because failed lanes do not count.
+  assert.ok(result.reasons.some((r) => /succeeded lanes 1 < required quorum 3/.test(r)));
+});
+
+test('FINAL refused when draft cites no succeeded-lane task ids', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Looks good to me. Approving. (no task ids cited)',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.evidenceIdsCitedInDraft.length, 0);
+  assert.ok(result.reasons.some((r) => /evidence id/i.test(r)));
+});
+
+test('per-target quorum blocks when one target is short', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { reviewTarget: 'pr-100' }),
+    lane('t2', 'succeeded', { reviewTarget: 'pr-100' }),
+    lane('t3', 'failed', { reviewTarget: 'pr-200' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 1,
+    perTarget: 1,
+    draft: 'Cites t1 t2.',
+  });
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.ok(result.reasons.some((r) => /per-target 'pr-200'/.test(r)), result.reasons.join('; '));
+});
+
+test('citedEvidenceIds returns only ids present in the draft', () => {
+  assert.deepEqual(citedEvidenceIds('refs t1 only', ['t1', 't2']), ['t1']);
+  assert.deepEqual(citedEvidenceIds('', ['t1']), []);
+  assert.deepEqual(citedEvidenceIds('text', []), []);
+});
+
+// ─── CLI-level behavior ──────────────────────────────────────────────────────
+
+test('CLI exits 0 with FINAL when quorum satisfied', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ]);
+  const result = runGate(['--tasks', tasksFile, '--round', ROUND], 'Consensus from t1 t2 t3.');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /FINAL/);
+});
+
+test('CLI exits 1 with BLOCKED when lanes pending', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'running'),
+    lane('t3', 'queued'),
+  ]);
+  const result = runGate(['--tasks', tasksFile, '--round', ROUND], 'Cites t1.');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /BLOCKED/);
+  assert.match(result.stderr, /t2/);
+  assert.match(result.stderr, /t3/);
+});
+
+test('--allow-preliminary exits 0 and prepends the loud PRELIMINARY banner', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'running'),
+    lane('t3', 'queued'),
+  ]);
+  const result = runGate(
+    ['--tasks', tasksFile, '--round', ROUND, '--allow-preliminary'],
+    'Finalizer-only summary.',
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /⚠️ PRELIMINARY/);
+  assert.match(result.stdout, /A2AD worker quorum NOT satisfied/);
+  assert.match(result.stdout, /1\/3 succeeded/);
+  assert.match(result.stdout, /lanes pending: t2, t3/);
+  // The original body is preserved after the banner.
+  assert.match(result.stdout, /Finalizer-only summary\./);
+});
+
+test('--dry-run prints would-post body + missing-evidence list, exits 0, no banner', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'failed'),
+    lane('t3', 'queued'),
+  ]);
+  const result = runGate(
+    ['--tasks', tasksFile, '--round', ROUND, '--dry-run'],
+    'Would post this body.',
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /would-post body/);
+  assert.match(result.stdout, /Would post this body\./);
+  assert.match(result.stdout, /t2 \[failed\]/);
+  assert.match(result.stdout, /t3 \[queued\]/);
+  assert.doesNotMatch(result.stdout, /PRELIMINARY/);
+});
+
+test('--json emits the structured verdict contract', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'failed'),
+    lane('t3', 'queued'),
+  ]);
+  const result = runGate(['--tasks', tasksFile, '--round', ROUND, '--json'], 'Cites t1.');
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.verdict, 'BLOCKED');
+  assert.equal(parsed.round, ROUND);
+  assert.equal(parsed.expectedTotal, 3);
+  assert.equal(parsed.succeeded, 1);
+  assert.equal(parsed.failed, 1);
+  assert.equal(parsed.pending, 1);
+  assert.deepEqual(parsed.evidenceIdsCitedInDraft, ['t1']);
+  const ids = parsed.missingLanes.map((l) => l.taskId).sort();
+  assert.deepEqual(ids, ['t2', 't3']);
+});
+
+test('malformed dump fails loudly (exit 2)', () => {
+  const badFile = writeTmp('bad.json', '{ not valid json ');
+  const result = runGate(['--tasks', badFile, '--round', ROUND], 'x');
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /parse|read/i);
+});
+
+test('dump that is neither array nor {items} fails loudly', () => {
+  const badFile = writeTmp('shape.json', JSON.stringify({ tasks: [] }));
+  const result = runGate(['--tasks', badFile, '--round', ROUND], 'x');
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /array|items/i);
+});
+
+test('task record missing id fails loudly', () => {
+  const badFile = writeTmp('noid.json', JSON.stringify({ items: [{ status: 'succeeded' }] }));
+  const result = runGate(['--tasks', badFile, '--round', ROUND], 'x');
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /id/);
+});
+
+test('accepts a bare JSON array dump', () => {
+  const file = writeTmp('arr.json', JSON.stringify([
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ]));
+  const result = runGate(['--tasks', file, '--round', ROUND], 'Consensus t1 t2 t3.');
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('--help documents the fail-closed publication contract', () => {
+  const result = spawnSync(process.execPath, [scriptPath, '--help'], { encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /fail-closed/i);
+  assert.match(result.stdout, /never posts to GitHub/i);
+  assert.match(result.stdout, /allow-preliminary/);
+});
+
+test('missing required flags fail loudly', () => {
+  const noTasks = spawnSync(process.execPath, [scriptPath, '--round', ROUND], { encoding: 'utf8' });
+  assert.equal(noTasks.status, 2);
+  assert.match(noTasks.stderr, /--tasks/);
+  const tasksFile = writeTasks([lane('t1', 'succeeded')]);
+  const noRound = spawnSync(process.execPath, [scriptPath, '--tasks', tasksFile], { encoding: 'utf8' });
+  assert.equal(noRound.status, 2);
+  assert.match(noRound.stderr, /--round/);
+});
