@@ -1,4 +1,8 @@
 import { spawn } from "node:child_process";
+import {
+  buildA2AWorkerSubagentOrchestrationPolicy,
+  type A2AWorkerSubagentTaskProfile,
+} from "./core/worker-subagent-orchestration-policy.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -46,6 +50,16 @@ export interface ExternalWorkerHandlerConfig {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  /**
+   * Conductor identity/budget for the subagent directive injected per task.
+   * The node instance is the orchestra conductor: simple tasks are executed
+   * directly; heavy tasks may fan out to at most `subagentCap` (default 4)
+   * evidence-only subagents. Set `subagentDirectiveDisabled` to skip
+   * injection entirely.
+   */
+  workerId?: string;
+  subagentCap?: number;
+  subagentDirectiveDisabled?: boolean;
 }
 
 export interface BrokerWorkerConfig {
@@ -558,6 +572,91 @@ export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskRe
   return validateGithubTaskCompletionEvidence(task, result);
 }
 
+/**
+ * Build the per-task subagent conductor directive env for an external
+ * handler (the node-instance agent process, including Docker-contained
+ * runs that inherit this env).
+ *
+ * The node instance is the orchestra conductor: simple tasks are executed
+ * directly (budget 0), heavy tasks may fan out to at most the worker cap
+ * (default 4) evidence-only subagents with disjoint write sets and a single
+ * finalizer. The plan comes from the worker-subagent orchestration policy;
+ * an explicit task.payload.subagentProfile wins over the conservative
+ * intent-based default profile.
+ */
+export function buildSubagentDirectiveEnv(
+  task: TaskRecord,
+  options: { workerId: string; subagentCap: number },
+): Record<string, string> {
+  const profile = deriveSubagentTaskProfile(task);
+  const packet = buildA2AWorkerSubagentOrchestrationPolicy({
+    task: profile,
+    host: {
+      workerId: options.workerId,
+      workerSubagentCap: Math.max(0, Math.min(4, options.subagentCap)),
+      activeSubagents: 0,
+    },
+  });
+  return {
+    A2A_SUBAGENT_CONDUCTOR: "1",
+    A2A_SUBAGENT_MAX: String(packet.decision.parallelismHint),
+    A2A_SUBAGENT_ROLES: packet.decision.recommendedSubagents.map((agent) => agent.role).join(","),
+    A2A_SUBAGENT_PLAN: JSON.stringify({
+      taskId: task.id,
+      parallelismHint: packet.decision.parallelismHint,
+      recommendedSubagents: packet.decision.recommendedSubagents,
+      oneFinalizerRequired: packet.decision.oneFinalizerRequired,
+      writeSetIsolationRequired: packet.decision.writeSetIsolationRequired,
+      directExecutionAllowed: packet.decision.directExecutionAllowed,
+    }),
+  };
+}
+
+/**
+ * Derive a conservative task profile for the orchestration policy.
+ * Explicit payload.subagentProfile wins; otherwise patch-shaped intents are
+ * treated as medium independent work and everything else as small direct
+ * work, so a node never fans out for trivial chatter.
+ */
+function deriveSubagentTaskProfile(task: TaskRecord): A2AWorkerSubagentTaskProfile {
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  const explicit = payload.subagentProfile;
+  if (explicit && typeof explicit === "object" && !Array.isArray(explicit)) {
+    const candidate = explicit as Record<string, unknown>;
+    const size = candidate.size;
+    const coupling = candidate.coupling;
+    if (
+      (size === "trivial" || size === "small" || size === "medium" || size === "large") &&
+      (coupling === "low" || coupling === "medium" || coupling === "high")
+    ) {
+      return {
+        taskId: task.id,
+        size,
+        coupling,
+        sensitive: candidate.sensitive === true,
+        urgent: candidate.urgent === true,
+        hasIndependentSubtasks: candidate.hasIndependentSubtasks === true,
+        writeSets: Array.isArray(candidate.writeSets)
+          ? candidate.writeSets.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+        requiresSingleDesignDecision: candidate.requiresSingleDesignDecision === true,
+      };
+    }
+  }
+  const patchShaped =
+    task.intent === "propose_patch" ||
+    task.intent === "apply_local_change" ||
+    task.intent === "validate_change" ||
+    task.intent === "backfill";
+  // Without an explicit profile, only patch-shaped intents are treated as
+  // work that may justify fanout (medium + independent). Everything else is
+  // trivial -> budget 0: the conductor keeps simple work for itself. A task
+  // that genuinely needs helpers must opt in via payload.subagentProfile.
+  return patchShaped
+    ? { taskId: task.id, size: "medium", coupling: "low", hasIndependentSubtasks: true }
+    : { taskId: task.id, size: "trivial", coupling: "low" };
+}
+
 export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): WorkerTaskHandler {
   switch (kind) {
     case "noop":
@@ -596,11 +695,17 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
   const timeoutMs = Math.max(1, config.timeoutMs ?? DEFAULT_HANDLER_TIMEOUT_MS);
 
   return async (task) => {
+    const directiveEnv = config.subagentDirectiveDisabled
+      ? {}
+      : buildSubagentDirectiveEnv(task, {
+          workerId: config.workerId ?? "worker",
+          subagentCap: config.subagentCap ?? 4,
+        });
     const { stdout, stderr, code, signal, timedOut } = await runExternalHandler({
       command: config.command,
       args,
       cwd: config.cwd,
-      env: config.env,
+      env: { ...config.env, ...directiveEnv },
       timeoutMs,
       input: JSON.stringify(task),
     });
@@ -765,6 +870,9 @@ function createWorkerHandlerFromEnv(
       cwd: optionalTrimmed(env.WORKER_HANDLER_CWD ?? env.A2A_WORKER_HANDLER_CWD),
       env: buildWorkerHandlerEnv(env, runtimeProfile),
       timeoutMs: handlerTimeoutMs,
+      workerId: optionalTrimmed(env.WORKER_ID ?? env.A2A_WORKER_ID),
+      subagentCap: parseBoundedSubagentCap(env.WORKER_SUBAGENT_CAP),
+      subagentDirectiveDisabled: env.WORKER_SUBAGENT_DIRECTIVE_DISABLED === "1",
     });
   }
 
@@ -1011,6 +1119,12 @@ function parseBooleanEnv(value: string | undefined, fallback = false): boolean {
     return false;
   }
   throw new Error(`invalid boolean value: ${value}`);
+}
+
+function parseBoundedSubagentCap(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) return 4;
+  return Math.min(4, parsed);
 }
 
 function parseStringArrayEnv(value: string | undefined): string[] {

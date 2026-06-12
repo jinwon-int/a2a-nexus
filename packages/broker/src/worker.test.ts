@@ -1028,3 +1028,83 @@ test("broker requests abort on the request timeout instead of hanging forever (i
 
   await assert.rejects(worker.register(), /aborted by signal/);
 });
+
+test("external handler injects the subagent conductor directive per task", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-subagent-env-"));
+  const scriptPath = join(dir, "echo-env.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "const chunks = [];",
+      "for await (const chunk of process.stdin) chunks.push(chunk);",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'env probe', output: {",
+      "  conductor: process.env.A2A_SUBAGENT_CONDUCTOR ?? null,",
+      "  max: process.env.A2A_SUBAGENT_MAX ?? null,",
+      "  roles: process.env.A2A_SUBAGENT_ROLES ?? null,",
+      "  plan: process.env.A2A_SUBAGENT_PLAN ?? null,",
+      "} } }));",
+    ].join("\n"),
+  );
+
+  const handler = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    timeoutMs: 5_000,
+    workerId: "conductor-node",
+    subagentCap: 4,
+  });
+
+  const baseTask = {
+    id: "task-conductor-1",
+    exchangeId: "exchange-conductor-1",
+    intent: "chat",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "conductor-node", kind: "node", role: "analyst" },
+    message: "simple chat",
+    status: "running",
+    targetNodeId: "conductor-node",
+    payload: {},
+    createdAt: "2026-06-12T00:00:00Z",
+    updatedAt: "2026-06-12T00:00:00Z",
+  } as never;
+
+  // Simple work: the conductor keeps it for itself (budget reflects size).
+  const simple = (await handler(baseTask)) as { result: { output: Record<string, string | null> } };
+  assert.equal(simple.result.output.conductor, "1");
+  assert.equal(simple.result.output.max, "0", "simple chat runs direct — the conductor keeps it");
+  assert.equal(simple.result.output.roles, "", "no subagents for simple work");
+
+  // Heavy work with an explicit profile: full four-subagent budget.
+  const heavyTask = {
+    ...(baseTask as Record<string, unknown>),
+    id: "task-conductor-2",
+    intent: "propose_patch",
+    payload: {
+      subagentProfile: {
+        size: "large",
+        coupling: "low",
+        hasIndependentSubtasks: true,
+        writeSets: ["src/a.ts", "src/b.ts"],
+      },
+    },
+  } as never;
+  const heavy = (await handler(heavyTask)) as { result: { output: Record<string, string | null> } };
+  assert.equal(heavy.result.output.max, "4");
+  assert.equal(heavy.result.output.roles, "explorer,implementer,implementer,verifier");
+  const plan = JSON.parse(heavy.result.output.plan ?? "{}");
+  assert.equal(plan.oneFinalizerRequired, true);
+  assert.equal(plan.writeSetIsolationRequired, true);
+
+  // Opt-out keeps the env clean.
+  const optedOut = createExternalWorkerHandler({
+    command: process.execPath,
+    args: [scriptPath],
+    timeoutMs: 5_000,
+    subagentDirectiveDisabled: true,
+  });
+  const none = (await optedOut(baseTask)) as { result: { output: Record<string, string | null> } };
+  assert.equal(none.result.output.conductor, null);
+});
