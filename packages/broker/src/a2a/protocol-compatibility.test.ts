@@ -311,3 +311,16 @@ test("approval-gated and approval-rejected tasks project the A2A 1.0 spec states
   );
   assert.equal(expired.status.state, "canceled");
 });
+
+test("task projection exposes only via.traceId, never session/channel/node routing detail (a2a-nexus#621 review)", () => {
+  const task = makeTask("running", {
+    via: { traceId: "trace-abc", transport: "jsonrpc", channel: "telegram", nodeId: "node-secret", sessionId: "sess-secret" },
+  });
+  for (const projection of [projectBrokerTask(task), projectBrokerTaskForList(task)]) {
+    assert.deepEqual(projection.metadata.via, { traceId: "trace-abc" });
+    const serialized = JSON.stringify(projection.metadata.via);
+    assert.ok(!serialized.includes("node-secret"));
+    assert.ok(!serialized.includes("sess-secret"));
+    assert.ok(!serialized.includes("telegram"));
+  }
+});
