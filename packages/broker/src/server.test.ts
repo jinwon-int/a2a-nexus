@@ -11493,6 +11493,97 @@ test("SendStreamingMessage streams JSON-RPC envelopes over SSE (A2A 1.0)", async
   }
 });
 
+test("SendStreamingMessage with explicit A2A-Version streams spec StreamResponse oneofs", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-stream-spec", "analyst", "test-edge-secret");
+    const hubHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+
+    const streamRes = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...hubHeaders, accept: "text/event-stream", "a2a-version": "1.0" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "stream-spec-1",
+        method: "SendStreamingMessage",
+        params: {
+          message: { parts: [{ text: "analyze streaming spec" }] },
+          metadata: { targetNodeId: "worker-stream-spec", intent: "analyze" },
+        },
+      }),
+    });
+    assert.equal(streamRes.status, 200);
+    assert.equal(streamRes.headers.get("a2a-version"), "1.0");
+    assert.match(streamRes.headers.get("content-type") ?? "", /text\/event-stream/);
+
+    const workerHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "worker-stream-spec",
+      "x-a2a-requester-role": "analyst",
+    });
+    const listRes = await fetch(`${server.baseUrl}/tasks?targetNodeId=worker-stream-spec`, {
+      headers: hubHeaders,
+    });
+    const listed = await listRes.json() as { items?: Array<{ id: string }> };
+    const streamTaskId = listed.items?.[0]?.id;
+    assert.ok(streamTaskId, "streamed task must be visible via REST list");
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${streamTaskId}/claim`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream-spec" }),
+    });
+    assert.equal(claimRes.status, 200);
+    await fetch(`${server.baseUrl}/tasks/${streamTaskId}/complete`, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ workerId: "worker-stream-spec", result: { summary: "stream done" } }),
+    });
+
+    const events = await readSseEventsUntil(streamRes, (seen) =>
+      seen.some((e) => {
+        if (e.event !== "task-status-update") return false;
+        const body = JSON.parse(e.data);
+        return body.result?.statusUpdate?.metadata?.final === true;
+      }),
+    );
+
+    // Opening event: StreamResponse { task } with proto-JSON Task — top-level
+    // contextId, TASK_STATE_* status, no legacy contextId/final siblings.
+    const snapshot = events.find((e) => e.event === "task-snapshot");
+    assert.ok(snapshot, "stream must open with a task snapshot");
+    const snapshotBody = JSON.parse(snapshot.data);
+    assert.equal(snapshotBody.jsonrpc, "2.0");
+    assert.equal(snapshotBody.id, "stream-spec-1");
+    assert.equal(snapshotBody.result.task.id, streamTaskId);
+    assert.ok(typeof snapshotBody.result.task.contextId === "string");
+    assert.match(snapshotBody.result.task.status.state, /^TASK_STATE_/);
+    assert.equal(snapshotBody.result.contextId, undefined);
+    assert.equal(snapshotBody.result.final, undefined);
+    assert.equal(snapshotBody.result.task.kind, undefined);
+
+    // Subsequent events: StreamResponse { statusUpdate } TaskStatusUpdateEvent.
+    // The proto event is { taskId, contextId, status, metadata } only — no
+    // top-level `final` field; the broker's final flag rides in metadata.
+    const finalEvent = events
+      .filter((e) => e.event === "task-status-update")
+      .map((e) => JSON.parse(e.data))
+      .find((body) => body.result?.statusUpdate?.metadata?.final === true);
+    assert.ok(finalEvent, "stream must end with a final statusUpdate");
+    assert.equal(finalEvent.id, "stream-spec-1");
+    assert.equal(finalEvent.result.statusUpdate.taskId, streamTaskId);
+    assert.ok(typeof finalEvent.result.statusUpdate.contextId === "string");
+    assert.equal(finalEvent.result.statusUpdate.status.state, "TASK_STATE_COMPLETED");
+    assert.equal("final" in finalEvent.result.statusUpdate, false, "proto TaskStatusUpdateEvent has no final field");
+    assert.equal(finalEvent.result.task, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
 test("SendStreamingMessage with malformed JSON-RPC envelope is rejected before streaming", async () => {
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
@@ -11708,6 +11799,193 @@ test("default-agent mode off keeps requiring a target worker for new contexts", 
     const body = await send.json();
     assert.ok(body.error, "without the default agent a worker-less send must fail");
     assert.match(body.error.message, /targetNodeId is required/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("explicit A2A-Version negotiation returns spec result shapes; legacy clients keep envelopes", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-shape", "analyst", "test-edge-secret");
+    const baseHeaders = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const sendParams = {
+      message: { parts: [{ text: "shape probe" }] },
+      metadata: { targetNodeId: "worker-shape", intent: "analyze" },
+    };
+
+    // Spec shape: result IS the Task, with top-level contextId and no wrapper.
+    const spec = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...baseHeaders, "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-1", method: "SendMessage", params: sendParams }),
+    });
+    const specBody = await spec.json();
+    // SendMessageResponse is a oneof wrapper: { task } here.
+    assert.ok(specBody.result.task, "spec SendMessage result is the { task } oneof");
+    assert.equal("messageId" in specBody.result, false, "no legacy wrapper fields");
+    assert.equal("contextId" in specBody.result, false, "contextId lives on the Task");
+    const specTask = specBody.result.task;
+    assert.ok(typeof specTask.contextId === "string");
+    assert.equal("kind" in specTask, false, "proto Task has no kind discriminator");
+    assert.equal(specTask.status.state, "TASK_STATE_SUBMITTED");
+    const taskId = specTask.id;
+
+    // GetTask returns the Task directly per the proto service contract.
+    const specGet = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { ...baseHeaders, "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-2", method: "GetTask", params: { taskId } }),
+    });
+    const specGetBody = await specGet.json();
+    assert.equal(specGetBody.result.id, taskId);
+    assert.equal(specGetBody.result.contextId, specTask.contextId);
+    assert.equal("task" in specGetBody.result, false, "GetTask spec result is the bare Task");
+
+    // Legacy shape (no header): historical envelopes, byte-compatible.
+    const legacy = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "shape-3", method: "GetTask", params: { taskId } }),
+    });
+    const legacyBody = await legacy.json();
+    assert.ok(legacyBody.result.task, "legacy GetTask keeps the { task } envelope");
+    assert.equal(legacyBody.result.task.id, taskId);
+  } finally {
+    await server.close();
+  }
+});
+
+test("spec response shape covers ListTasks, CancelTask, context-only send, and default-agent (a2a-nexus#615 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", defaultAgentMode: true });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-s2", "analyst", "test-edge-secret");
+    const hub = { ...jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }), "a2a-version": "1.0" };
+    const rpc = (method: string, params: unknown, id = "s") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, { method: "POST", headers: hub, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then((r) => r.json());
+
+    const send = await rpc("SendMessage", { message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-s2", intent: "analyze" } }, "s1");
+    const taskId = send.result.task.id;
+    const contextId = send.result.task.contextId;
+
+    // ListTasks spec items are proto Tasks (top-level contextId, enum state, no kind),
+    // and ListTasksResponse carries the REQUIRED pagination fields.
+    const list = await rpc("ListTasks", { contextId }, "s2");
+    assert.ok(Array.isArray(list.result.tasks));
+    assert.equal(list.result.nextPageToken, "", "single-page response has an empty nextPageToken");
+    assert.equal(list.result.pageSize, list.result.tasks.length);
+    assert.equal(list.result.totalSize, list.result.tasks.length);
+    const item = list.result.tasks.find((t: { id: string }) => t.id === taskId);
+    assert.ok(item, "task visible in spec ListTasks");
+    assert.equal("kind" in item, false);
+    assert.ok(typeof item.contextId === "string");
+    assert.match(item.status.state, /^TASK_STATE_/);
+
+    // Context-only SendMessage (append to an existing context) -> Message oneof.
+    const ctxSend = await rpc("SendMessage", { message: { parts: [{ text: "follow-up" }] }, metadata: { contextId } }, "s3");
+    // For a context with an active task this returns { task }; assert it's a valid oneof either way.
+    assert.ok(ctxSend.result.task || ctxSend.result.message, "context send returns a task or message oneof");
+
+    // CancelTask spec -> bare Task.
+    const cancel = await rpc("CancelTask", { taskId, actor: { id: "hub-a", kind: "node", role: "hub" } }, "s4");
+    assert.equal(cancel.result.id, taskId);
+    assert.match(cancel.result.status.state, /^TASK_STATE_/);
+    assert.equal("task" in cancel.result, false, "CancelTask spec result is the bare Task");
+  } finally {
+    await server.close();
+  }
+});
+
+test("spec Task projects proto Artifacts (artifactId + parts), not the legacy { id } shape (a2a-nexus#615 review)", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-art", "analyst", "test-edge-secret");
+    const hub = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" });
+    const worker = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-art", "x-a2a-requester-role": "analyst" });
+
+    // A resolvable artifact record (uri/contentType/summary) via a proposal.
+    const proposalRes = await fetch(`${server.baseUrl}/proposals`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-art", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({
+        source: { id: "worker-art", kind: "node", role: "analyst" },
+        target: { id: "hub-a", kind: "node", role: "hub" },
+        kind: "patch",
+        summary: "artifact projection probe",
+        workspace: { nodeId: "hub-a", workspaceId: "ws-art" },
+        patchText: "diff --git a/x b/x",
+      }),
+    });
+    assert.equal(proposalRes.status, 201);
+    const proposal = await proposalRes.json();
+    const artifactRes = await fetch(`${server.baseUrl}/proposals/${proposal.id}/artifacts`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "worker-art", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({ kind: "report", uri: "file:///tmp/report.md", contentType: "text/markdown", summary: "analysis report" }),
+    });
+    assert.equal(artifactRes.status, 201);
+    const artifact = await artifactRes.json();
+
+    // Drive a task to completion carrying both a resolvable and a dangling artifact id.
+    const send = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "art-1", method: "SendMessage", params: { message: { parts: [{ text: "produce artifacts" }] }, metadata: { targetNodeId: "worker-art", intent: "analyze" } } }),
+    })).json();
+    const taskId = send.result.task.id;
+    await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-art" }) });
+    await fetch(`${server.baseUrl}/tasks/${taskId}/complete`, {
+      method: "POST", headers: worker,
+      body: JSON.stringify({ workerId: "worker-art", result: { summary: "done", artifactIds: [artifact.id, "art-dangling"] } }),
+    });
+
+    const specGet = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: { ...hub, "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "art-2", method: "GetTask", params: { taskId } }),
+    })).json();
+    const artifacts = specGet.result.artifacts as Array<Record<string, unknown>>;
+    assert.equal(artifacts.length, 2);
+    for (const a of artifacts) {
+      assert.equal("id" in a, false, "spec Artifact must not carry the legacy id key");
+      assert.ok(typeof a.artifactId === "string" && a.artifactId.length > 0);
+      assert.ok(Array.isArray(a.parts) && a.parts.length >= 1, "proto Artifact.parts is REQUIRED with >=1 part");
+    }
+    const resolved = artifacts.find((a) => a.artifactId === artifact.id);
+    assert.ok(resolved, "resolvable artifact projected");
+    const part = (resolved!.parts as Array<Record<string, unknown>>)[0];
+    assert.equal(part.url, "file:///tmp/report.md");
+    assert.equal(part.mediaType, "text/markdown");
+    assert.equal(resolved!.name, "report");
+    assert.equal(resolved!.description, "analysis report");
+    const dangling = artifacts.find((a) => a.artifactId === "art-dangling");
+    assert.ok(dangling, "dangling artifact id still projects a valid proto Artifact");
+
+    // Legacy clients keep the historical { id } shape untouched.
+    const legacyGet = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: hub,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "art-3", method: "GetTask", params: { taskId } }),
+    })).json();
+    assert.deepEqual(legacyGet.result.task.artifacts.map((a: { id: string }) => a.id).sort(), [artifact.id, "art-dangling"].sort());
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent worker-less send + spec header returns the proto task oneof (a2a-nexus#615 review)", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const res = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "a2a-version": "1.0" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "da-spec", method: "SendMessage", params: { message: { role: "ROLE_USER", parts: [{ text: "hi" }], messageId: "m1" } } }),
+    });
+    const body = await res.json();
+    assert.ok(body.result.task, "worker-less spec send returns the { task } oneof");
+    assert.ok(typeof body.result.task.contextId === "string");
+    assert.match(body.result.task.status.state, /^TASK_STATE_/);
   } finally {
     await server.close();
   }
