@@ -97,6 +97,8 @@ import type {
   TaskHistorySummary,
   TaskListFilters,
   TaskQueueSummary,
+  TaskCheckpointState,
+  TaskInterruptDecisionType,
   TaskRecord,
   TaskReassignRequest,
   TaskResult,
@@ -196,6 +198,13 @@ export interface InMemoryA2ABrokerOptions {
    * cap (unlimited requeues, legacy behavior).
    */
   maxRequeueAttempts?: number;
+  /**
+   * Checkpoint/interrupt timeout in milliseconds (contract §1.4/§2.3): a
+   * paused or awaiting_operator checkpoint that is not resumed within this
+   * window is canceled by the stale-task sweep. Default 24h; 0 disables
+   * timeout cancellation.
+   */
+  checkpointTimeoutMs?: number;
   /**
    * Max buffered SSE events per task for replay after reconnect.
    * Events beyond this limit are discarded (oldest first).
@@ -299,6 +308,16 @@ export const DEFAULT_BROKER_RETENTION_POLICY: BrokerRetentionPolicy = {
   heartbeatAuditSampleIntervalMs: DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
 };
 
+/** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
+const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
+  "safety_gate",
+  "ambiguous_scope",
+  "approval_required",
+  "conflict_detected",
+];
+
+const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
 export type TaskUpdateReason =
   | "created"
   | "approved"
@@ -308,6 +327,8 @@ export type TaskUpdateReason =
   | "failed"
   | "canceled"
   | "updated"
+  | "checkpointed"
+  | "resumed"
   | "reassigned"
   | "requeued"
   | "dead_lettered"
@@ -464,6 +485,7 @@ export class InMemoryA2ABroker {
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
+    this.checkpointTimeoutMs = Math.max(0, options.checkpointTimeoutMs ?? DEFAULT_CHECKPOINT_TIMEOUT_MS);
     this.maxBufferedEventsPerTask = options.maxBufferedEventsPerTask ?? 100;
     this.taskEventStream = new TaskEventStream({ maxEvents: options.maxTaskStatusEvents });
     this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({ maxEvents: options.maxTerminalTaskOutboxEvents });
@@ -558,6 +580,7 @@ export class InMemoryA2ABroker {
 
   private readonly retentionPolicy: BrokerRetentionPolicy;
   private readonly maxRequeueAttempts: number;
+  private readonly checkpointTimeoutMs: number;
 
   /** Returns the configured max automatic requeues per task. `0` means disabled. */
   getMaxRequeueAttempts(): number {
@@ -1914,6 +1937,15 @@ export class InMemoryA2ABroker {
     if (task.status !== "claimed" && task.status !== "running") {
       throw new BrokerError("invalid_transition", "cannot complete task while status is " + task.status);
     }
+    // Contract §1.3: a checkpointed task is a real lifecycle gate. The worker
+    // must not land terminal mutations while paused/awaiting_operator —
+    // resume (operator/requester input) or cancel first.
+    if (task.checkpoint) {
+      throw new BrokerError(
+        "invalid_transition",
+        `cannot complete task while a ${task.checkpoint.state} checkpoint is active; resume or cancel first`,
+      );
+    }
 
     const normalizedResult = normalizeTaskResult(result);
     const completionEvidenceError = validateGithubTaskCompletionEvidence(task, normalizedResult);
@@ -1970,6 +2002,14 @@ export class InMemoryA2ABroker {
     }
     if (task.status !== "claimed" && task.status !== "running") {
       throw new BrokerError("invalid_transition", "cannot fail task while status is " + task.status);
+    }
+    // Contract §1.3: terminal mutations are gated while a checkpoint is
+    // active (see completeTask).
+    if (task.checkpoint) {
+      throw new BrokerError(
+        "invalid_transition",
+        `cannot fail task while a ${task.checkpoint.state} checkpoint is active; resume or cancel first`,
+      );
     }
 
     const now = isoNow();
@@ -2032,7 +2072,20 @@ export class InMemoryA2ABroker {
     const requeued: TaskRecord[] = [];
     const deadLettered: TaskRecord[] = [];
 
+    const expiredCheckpointTaskIds: string[] = [];
     for (const task of this.tasks.values()) {
+      // Contract §1.4/§2.3: a checkpoint that is never resumed transitions to
+      // cancelled when its timeout expires (collected first; cancelTask
+      // mutates and persists, so it runs after this scan).
+      if (
+        task.checkpoint &&
+        this.checkpointTimeoutMs > 0 &&
+        (task.status === "claimed" || task.status === "running") &&
+        nowMs - Date.parse(task.checkpoint.recordedAt) >= this.checkpointTimeoutMs
+      ) {
+        expiredCheckpointTaskIds.push(task.id);
+        continue;
+      }
       const requeueReason = getTaskRequeueReason(task, thresholdMs, staleWorkerIds, nowMs);
       if (!requeueReason) {
         continue;
@@ -2103,6 +2156,22 @@ export class InMemoryA2ABroker {
     }
     for (const task of requeued) {
       this.emitTaskUpdate(task, "requeued");
+    }
+
+    // Expired checkpoints transition to cancelled (contract §1.4/§2.3:
+    // "transition to cancelled if the timeout expires without resume").
+    // cancelTask clears the lifecycle gate, records cancellation evidence,
+    // audits, persists, and emits the terminal update.
+    for (const taskId of expiredCheckpointTaskIds) {
+      const expired = this.tasks.get(taskId);
+      if (!expired?.checkpoint) {
+        continue;
+      }
+      const checkpoint = expired.checkpoint;
+      this.cancelTask(taskId, {
+        actor: { id: "broker", kind: "service", role: "operator" },
+        reason: `${checkpoint.state} checkpoint ${checkpoint.checkpointId} expired after ${this.checkpointTimeoutMs}ms without resume`,
+      });
     }
 
     return { requeued, deadLettered };
@@ -3323,6 +3392,10 @@ export class InMemoryA2ABroker {
     },
   ): TaskRecord {
     const canceledAt = isoNow();
+    // Cancellation is one of the two contract-sanctioned exits from a
+    // checkpoint (resume | cancel): clear the gate so terminal tasks never
+    // carry stale checkpoint metadata.
+    task.checkpoint = undefined;
     task.status = "canceled";
     task.claimedBy = undefined;
     task.claimedAt = undefined;
@@ -3409,6 +3482,124 @@ export class InMemoryA2ABroker {
   // --- Task Heartbeat ---
 
   /** Record a task-level heartbeat from the assigned worker. */
+  /**
+   * Record a checkpoint (contracts/a2a/checkpoint-interrupt.md). The task
+   * stays non-terminal; `awaiting_operator` marks a human-interrupt pause
+   * that projects as the A2A `input-required` state until cleared.
+   */
+  checkpointTask(
+    taskId: string,
+    workerId: string,
+    request: {
+      state: TaskCheckpointState;
+      checkpointId?: string;
+      reason?: string;
+      decisionType?: string;
+      artifactRefs?: string[];
+    },
+  ): TaskRecord {
+    const task = this.requireTask(taskId);
+    this.assertTaskWorker(task, workerId, "checkpoint");
+    this.assertTaskStatus(task.status, ["claimed", "running"], "checkpoint");
+    if (request.state !== "paused" && request.state !== "awaiting_operator") {
+      throw new BrokerError("bad_request", "checkpoint state must be paused or awaiting_operator");
+    }
+
+    // Checkpoint inputs become operator-visible and audit-visible state, so
+    // they are bounded and shape-checked before being recorded (contract
+    // §2.4: redacted, no raw internal state).
+    const checkpointId = request.checkpointId?.trim() || randomUUID();
+    if (checkpointId.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(checkpointId)) {
+      throw new BrokerError("bad_request", "checkpointId must be <=128 chars of [A-Za-z0-9._:-]");
+    }
+    const reason = request.reason?.trim() || undefined;
+    if (reason !== undefined && (reason.length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(reason))) {
+      throw new BrokerError("bad_request", "checkpoint reason must be <=500 chars with no control characters");
+    }
+    let decisionType: TaskInterruptDecisionType | undefined;
+    if (request.state === "awaiting_operator") {
+      // Contract §2.2: human interrupts carry one of the four frozen
+      // decision types; approval_required is the default interrupt shape.
+      const requested = request.decisionType?.trim() || "approval_required";
+      if (!TASK_INTERRUPT_DECISION_TYPES.includes(requested as TaskInterruptDecisionType)) {
+        throw new BrokerError(
+          "bad_request",
+          `decisionType must be one of ${TASK_INTERRUPT_DECISION_TYPES.join(", ")}`,
+        );
+      }
+      decisionType = requested as TaskInterruptDecisionType;
+    } else if (request.decisionType?.trim()) {
+      throw new BrokerError("bad_request", "decisionType only applies to awaiting_operator checkpoints");
+    }
+    let artifactRefs: string[] | undefined;
+    if (request.artifactRefs !== undefined) {
+      if (!Array.isArray(request.artifactRefs) || request.artifactRefs.length > 32) {
+        throw new BrokerError("bad_request", "artifactRefs must be an array of at most 32 references");
+      }
+      artifactRefs = request.artifactRefs.map((ref) => {
+        const trimmed = typeof ref === "string" ? ref.trim() : "";
+        if (!trimmed || trimmed.length > 256 || /[\u0000-\u001f]/.test(trimmed)) {
+          throw new BrokerError("bad_request", "each artifactRef must be a 1-256 char string with no control characters");
+        }
+        return trimmed;
+      });
+    }
+
+    const now = isoNow();
+    task.checkpoint = {
+      state: request.state,
+      checkpointId,
+      reason,
+      ...(decisionType ? { decisionType } : {}),
+      ...(artifactRefs && artifactRefs.length > 0 ? { artifactRefs } : {}),
+      recordedAt: now,
+      recordedBy: workerId,
+    };
+    task.updatedAt = now;
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId: workerId,
+      action: "task.checkpointed",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `checkpoint ${task.checkpoint.state}${decisionType ? ` (${decisionType})` : ""}: ${task.checkpoint.reason ?? task.checkpoint.checkpointId}`,
+    });
+    this.persistState();
+    this.emitTaskUpdate(task, "checkpointed");
+    return task;
+  }
+
+  /** Clear an active checkpoint (operator approval, requester input, or worker resume). */
+  resumeTask(taskId: string, actorId: string, request: { checkpointId?: string } = {}): TaskRecord {
+    const task = this.requireTask(taskId);
+    if (!task.checkpoint) {
+      return task; // idempotent: nothing to resume
+    }
+    if (isTerminalTaskStatus(task.status)) {
+      throw new BrokerError("invalid_transition", `cannot resume task while status is ${task.status}`);
+    }
+    if (request.checkpointId && request.checkpointId !== task.checkpoint.checkpointId) {
+      throw new BrokerError("bad_request", "checkpointId does not match the active checkpoint");
+    }
+
+    const cleared = task.checkpoint;
+    task.checkpoint = undefined;
+    task.updatedAt = isoNow();
+    this.setTaskRecord(task);
+    this.appendAuditEvent({
+      actorId,
+      action: "task.resumed",
+      targetType: "task",
+      targetId: task.id,
+      proposalId: task.proposalId,
+      note: `resumed from ${cleared.state} checkpoint ${cleared.checkpointId}`,
+    });
+    this.persistState();
+    this.emitTaskUpdate(task, "resumed");
+    return task;
+  }
+
   heartbeatTask(taskId: string, workerId: string): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "heartbeat");
@@ -4548,6 +4739,14 @@ function getTaskRequeueReason(
   }
 
   if (task.completedAt) {
+    return null;
+  }
+
+  // A checkpointed task is deliberately suspended (paused/awaiting_operator),
+  // not stale: requeueing it would strip the public input-required projection
+  // while the checkpoint remains. Checkpoint expiry is handled separately by
+  // the timeout sweep (contract: cancelled on timeout), not by requeue.
+  if (task.checkpoint) {
     return null;
   }
 

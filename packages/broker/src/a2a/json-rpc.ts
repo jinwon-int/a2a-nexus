@@ -56,6 +56,125 @@ export interface ExecuteJsonRpcOptions {
    * An explicit targetNodeId always overrides it.
    */
   defaultAgentNodeId?: string;
+  /**
+   * Response wire shape. "spec" (clients that explicitly negotiated an
+   * A2A-Version header) returns A2A 1.0 result objects; "legacy" (default;
+   * header-less clients such as the plugin) keeps the historical envelopes.
+   */
+  responseShape?: "spec" | "legacy";
+}
+
+function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]["state"]): string {
+  switch (state) {
+    case "submitted": return "TASK_STATE_SUBMITTED";
+    case "working": return "TASK_STATE_WORKING";
+    case "completed": return "TASK_STATE_COMPLETED";
+    case "failed": return "TASK_STATE_FAILED";
+    case "canceled": return "TASK_STATE_CANCELED";
+    case "input-required": return "TASK_STATE_INPUT_REQUIRED";
+    case "rejected": return "TASK_STATE_REJECTED";
+    case "auth-required": return "TASK_STATE_AUTH_REQUIRED";
+    default: return "TASK_STATE_UNSPECIFIED";
+  }
+}
+
+/** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
+function specTaskStatus(task: TaskRecord): Record<string, unknown> {
+  const projected = projectBrokerTask(task);
+  return {
+    state: specTaskStateName(projected.status.state),
+    timestamp: projected.status.timestamp,
+    ...(projected.status.message
+      ? {
+          message: {
+            messageId: `${task.id}:status`,
+            taskId: task.id,
+            contextId: task.exchangeId,
+            role: "ROLE_AGENT",
+            parts: projected.status.message.parts,
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Proto-JSON Artifact: artifactId + parts (>=1) are REQUIRED. Broker tasks
+ * carry artifact ids; the records resolve to a uri/contentType, projected as
+ * a url Part. A dangling id (record pruned) degrades to a data Part carrying
+ * the reference so the REQUIRED parts constraint still holds.
+ */
+function specTaskArtifacts(task: TaskRecord, broker: InMemoryA2ABroker): Array<Record<string, unknown>> {
+  const ids = task.result?.artifactIds ?? task.artifactIds ?? [];
+  return ids.map((id) => {
+    const record = broker.getArtifact(id);
+    if (!record) {
+      return { artifactId: id, parts: [{ data: { brokerArtifactId: id } }] };
+    }
+    return {
+      artifactId: record.id,
+      ...(record.kind ? { name: record.kind } : {}),
+      ...(record.summary ? { description: record.summary } : {}),
+      parts: [
+        {
+          url: record.uri,
+          ...(record.contentType ? { mediaType: record.contentType } : {}),
+        },
+      ],
+    };
+  });
+}
+
+/** A2A 1.0 proto-JSON Task: id + top-level contextId, TASK_STATE_* status, no kind. */
+export function projectSpecTask(task: TaskRecord, broker: InMemoryA2ABroker): Record<string, unknown> {
+  const projected = projectBrokerTask(task);
+  return {
+    id: projected.id,
+    contextId: task.exchangeId,
+    status: specTaskStatus(task),
+    artifacts: specTaskArtifacts(task, broker),
+    metadata: projected.metadata,
+  };
+}
+
+/**
+ * A2A 1.0 StreamResponse payloads for SendStreamingMessage. The proto's
+ * StreamResponse is a oneof of { task | message | statusUpdate |
+ * artifactUpdate }; the opening event carries the Task snapshot and
+ * subsequent events carry TaskStatusUpdateEvent ({ taskId, contextId,
+ * status, metadata }). The proto event has no `final` field — stream
+ * termination is signaled by a terminal status.state plus the stream
+ * closing; the broker's final flag rides in the open metadata Struct.
+ */
+export function specStreamTaskSnapshot(task: TaskRecord, broker: InMemoryA2ABroker): Record<string, unknown> {
+  return { task: projectSpecTask(task, broker) };
+}
+
+export function specStreamStatusUpdate(task: TaskRecord, final: boolean): Record<string, unknown> {
+  return {
+    statusUpdate: {
+      taskId: task.id,
+      contextId: task.exchangeId,
+      status: specTaskStatus(task),
+      metadata: { final },
+    },
+  };
+}
+
+/** A2A 1.0 SendMessageResponse: a oneof wrapper of { task } or { message }. */
+export function specSendResult(
+  send: { contextId: string; messageId: string; task?: ReturnType<typeof projectBrokerTask> },
+  broker: InMemoryA2ABroker,
+): Record<string, unknown> {
+  if (send.task) {
+    const record = broker.getTask(send.task.id);
+    if (record) {
+      return { task: projectSpecTask(record, broker) };
+    }
+  }
+  return {
+    message: { messageId: send.messageId, contextId: send.contextId, role: "ROLE_AGENT", parts: [] },
+  };
 }
 
 export function executeA2AJsonRpc(
@@ -74,6 +193,9 @@ export function executeA2AJsonRpc(
     switch (method) {
       case "SendMessage": {
         const result = executeSendMessage(params, options);
+        if (options.responseShape === "spec") {
+          return success(id, specSendResult(result, options.broker));
+        }
         return success(id, result);
       }
 
@@ -102,6 +224,9 @@ export function executeA2AJsonRpc(
         if (options.enforceRequesterIdentity) {
           assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
+        if (options.responseShape === "spec") {
+          return success(id, projectSpecTask(task, options.broker));
+        }
         return success(id, { task: projectBrokerTask(task) });
       }
 
@@ -110,11 +235,22 @@ export function executeA2AJsonRpc(
         if (options.enforceRequesterIdentity) {
           requireTaskListRequester(options);
         }
-        const tasks = options.broker
+        const visible = options.broker
           .listTasks(filters)
-          .filter((task) => canReadTaskSnapshot(options, task))
-          .map(projectBrokerTaskForList);
-        return success(id, { tasks });
+          .filter((task) => canReadTaskSnapshot(options, task));
+        if (options.responseShape === "spec") {
+          // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
+          // are all REQUIRED. The broker serves the full result set in one
+          // page, so the token is empty and both sizes equal the result count.
+          const tasks = visible.map((task) => projectSpecTask(task, options.broker));
+          return success(id, {
+            tasks,
+            nextPageToken: "",
+            pageSize: tasks.length,
+            totalSize: tasks.length,
+          });
+        }
+        return success(id, { tasks: visible.map(projectBrokerTaskForList) });
       }
 
       case "CancelTask": {
@@ -122,6 +258,9 @@ export function executeA2AJsonRpc(
         const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
         const reason = optionalStringField(params, "reason");
         const task = options.broker.cancelTask(taskId, { actor, reason });
+        if (options.responseShape === "spec") {
+          return success(id, projectSpecTask(task, options.broker));
+        }
         return success(id, { task: projectBrokerTask(task) });
       }
 
@@ -480,6 +619,20 @@ export function executeSendMessage(
       throw new BrokerError("not_found", "exchange not found");
     }
     assertConsistentExistingContextAssignmentMetadata(metadata, existingExchange.target.id);
+    // Clearing an awaiting_operator checkpoint resumes the task, so a
+    // context message that would trigger the auto-resume needs the same
+    // task-party authorization as the explicit /tasks/:id/resume route
+    // (hub/operator, requester, target node, or assigned worker). Checked
+    // before the message is recorded so a non-party send fails closed.
+    const checkpointedTask = existingExchange.activeTaskId
+      ? options.broker.getTask(existingExchange.activeTaskId)
+      : null;
+    if (
+      checkpointedTask?.checkpoint?.state === "awaiting_operator" &&
+      options.enforceRequesterIdentity
+    ) {
+      assertRequesterCanSubscribeToTask(options.requesterIdentity, checkpointedTask);
+    }
     const message = options.broker.addExchangeMessage(exchangeId, {
       actor,
       message: text,
@@ -490,10 +643,18 @@ export function executeSendMessage(
     });
     const exchange = options.broker.getExchange(exchangeId);
     const activeTask = exchange?.activeTaskId ? options.broker.getTask(exchange.activeTaskId) : null;
+    // A2A multiturn resume: a message into a context whose active task is
+    // waiting on requester input (awaiting_operator checkpoint /
+    // input-required state) IS the requested input — clear the checkpoint so
+    // the task returns to working.
+    const resumedTask =
+      activeTask?.checkpoint?.state === "awaiting_operator"
+        ? options.broker.resumeTask(activeTask.id, actor.id)
+        : activeTask;
     return {
       contextId: exchangeId,
       messageId: message.id,
-      task: activeTask ? projectBrokerTask(activeTask) : undefined,
+      task: resumedTask ? projectBrokerTask(resumedTask) : undefined,
     };
   }
 

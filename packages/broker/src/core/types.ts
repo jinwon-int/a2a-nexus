@@ -188,6 +188,8 @@ export type AuditAction =
   | "task.claimed"
   | "task.started"
   | "task.heartbeat"
+  | "task.checkpointed"
+  | "task.resumed"
   | "task.reassigned"
   | "task.requeued"
   | "task.succeeded"
@@ -419,6 +421,31 @@ export interface TaskApprovalInfo {
   reason?: string;
 }
 
+export type TaskCheckpointState = "paused" | "awaiting_operator";
+
+/** Interrupt decision types frozen by contracts/a2a/checkpoint-interrupt.md §2.2. */
+export type TaskInterruptDecisionType =
+  | "safety_gate"
+  | "ambiguous_scope"
+  | "approval_required"
+  | "conflict_detected";
+
+export interface TaskCheckpointInfo {
+  state: TaskCheckpointState;
+  checkpointId: string;
+  /** Redacted, operator-safe description of what input is needed. */
+  reason?: string;
+  /**
+   * Contract §2.2 decision type for `awaiting_operator` interrupts. Defaults
+   * to `approval_required` when the worker does not specify one.
+   */
+  decisionType?: TaskInterruptDecisionType;
+  /** Repo-relative, public-safe artifact references at the checkpoint (contract §1.3). */
+  artifactRefs?: string[];
+  recordedAt: string;
+  recordedBy: string;
+}
+
 export type TaskApprovalOutcomeStatus = "approved" | "rejected" | "expired" | "canceled";
 
 export interface TaskApprovalOutcomeInfo {
@@ -508,6 +535,13 @@ export interface TaskRecord extends A2ATaskRequest {
   cancellation?: TaskCancellationInfo;
   /** Operator/hub approval that released an approval-gated task for worker claim. */
   approval?: TaskApprovalInfo;
+  /**
+   * Active checkpoint per contracts/a2a/checkpoint-interrupt.md. Transitory
+   * and non-terminal: `awaiting_operator` projects as the A2A 1.0
+   * `input-required` state until requester input (a SendMessage into the
+   * same context) or an explicit resume clears it.
+   */
+  checkpoint?: TaskCheckpointInfo;
   /** Terminal approval decision, including negative outcomes that keep live-impact work stopped. */
   approvalOutcome?: TaskApprovalOutcomeInfo;
   /**

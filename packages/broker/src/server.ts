@@ -8,7 +8,7 @@ import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
-import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
+import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, specSendResult, specStreamStatusUpdate, specStreamTaskSnapshot } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
 import {
@@ -1148,6 +1148,8 @@ function classifyRequestRoute(method: string | undefined, pathname: string, segm
   if (segments[0] === "tasks" && segments[1]) {
     if (segments[2] === "start") return "tasks.start";
     if (segments[2] === "heartbeat") return "tasks.heartbeat";
+    if (segments[2] === "checkpoint") return "tasks.heartbeat";
+    if (segments[2] === "resume") return "tasks.heartbeat";
     if (segments[2] === "complete") return "tasks.complete";
     if (segments[2] === "evidence") return "tasks.evidence";
     if (segments[2] === "fail") return "tasks.fail";
@@ -3385,6 +3387,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           );
         }
         res.setHeader("a2a-version", negotiated.version);
+        // Explicit version negotiation opts the client into A2A 1.0 result
+        // shapes; header-less legacy clients keep the historical envelopes.
+        const responseShape = negotiated.requested !== null ? "spec" as const : "legacy" as const;
         // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
         // than the broker's HTTP error envelope, and so batch arrays /
         // notifications are handled by the JSON-RPC transport layer.
@@ -3419,7 +3424,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           const createdTask = created.task ? broker.getTask(created.task.id) : null;
           if (!createdTask) {
             // Context-only sends (no active task) have nothing to stream.
-            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: created });
+            const contextResult = responseShape === "spec" ? specSendResult(created, broker) : created;
+            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: contextResult });
           }
           handleStreamingMessageResponse(req, res, {
             broker,
@@ -3427,6 +3433,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             sendResult: created,
             task: createdTask,
             heartbeatMs: taskSubscribeHeartbeatSec * 1000,
+            responseShape,
           });
           return;
         }
@@ -3439,6 +3446,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           enforceRequesterIdentity,
           peerStatusService,
           pushNotificationConfigStore,
+          responseShape,
           defaultAgentNodeId,
         });
         if (response === null) {
@@ -5452,6 +5460,48 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.heartbeat");
         }
         const task = broker.heartbeatTask(segments[1], body.workerId);
+        await awaitDurablePersistenceAck(stateStore);
+        return sendJson(res, 200, task);
+      }
+
+      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
+        const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string; decisionType?: string; artifactRefs?: string[] }>(req);
+        if (!body?.workerId) {
+          throw new BrokerError("bad_request", "workerId is required");
+        }
+        if (enforceRequesterIdentity) {
+          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.checkpoint");
+        }
+        const task = broker.checkpointTask(segments[1], body.workerId, {
+          state: body.state as "paused" | "awaiting_operator",
+          checkpointId: body.checkpointId,
+          reason: body.reason,
+          decisionType: body.decisionType,
+          artifactRefs: body.artifactRefs,
+        });
+        await awaitDurablePersistenceAck(stateStore);
+        return sendJson(res, 200, task);
+      }
+
+      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "resume") {
+        const body = await readJson<{ actorId?: string; checkpointId?: string }>(req);
+        const actorId = body?.actorId ?? requesterIdentity?.id;
+        if (!actorId) {
+          throw new BrokerError("bad_request", "actorId is required");
+        }
+        const resumeTarget = broker.getTask(segments[1]);
+        if (!resumeTarget) {
+          throw new BrokerError("not_found", "task not found");
+        }
+        if (enforceRequesterIdentity) {
+          assertRequesterMatchesParty(requesterIdentity, { id: actorId }, "task.resume");
+          // Clearing an operator checkpoint is a task mutation: the caller
+          // must be a party to the task (requester / target / assigned worker)
+          // or a hub/operator. Without this, anyone who knows a task id could
+          // clear another task's awaiting_operator checkpoint.
+          assertRequesterCanSubscribeToTask(requesterIdentity, resumeTarget);
+        }
+        const task = broker.resumeTask(segments[1], actorId, { checkpointId: body?.checkpointId });
         await awaitDurablePersistenceAck(stateStore);
         return sendJson(res, 200, task);
       }
@@ -7921,6 +7971,11 @@ function parseSingleStreamingMessageRequest(
  * subsequent task-status-update events stream until the task is terminal.
  * SSE event ids reuse the broker's task-event sequence so Last-Event-Id
  * reconnects on /a2a/tasks/:id/events can resume the same stream.
+ *
+ * `responseShape: "spec"` (clients that negotiated an A2A-Version header)
+ * streams A2A 1.0 StreamResponse oneofs — { task } for the opening snapshot
+ * and { statusUpdate } for subsequent events — while "legacy" keeps the
+ * historical envelopes for header-less plugin clients.
  */
 function handleStreamingMessageResponse(
   req: IncomingMessage,
@@ -7931,9 +7986,11 @@ function handleStreamingMessageResponse(
     sendResult: ReturnType<typeof executeSendMessage>;
     task: TaskRecord;
     heartbeatMs: number;
+    responseShape?: "spec" | "legacy";
   },
 ): void {
   const { broker, rpcId, sendResult, task, heartbeatMs } = params;
+  const spec = params.responseShape === "spec";
 
   writeSseResponseHeaders(res);
 
@@ -7947,11 +8004,15 @@ function handleStreamingMessageResponse(
   writeSseEvent(
     res,
     "task-snapshot",
-    envelope({
-      ...sendResult,
-      task: projectBrokerTask(task),
-      final: isTerminalSnapshotStatus(task.status),
-    }),
+    envelope(
+      spec
+        ? specStreamTaskSnapshot(task, broker)
+        : {
+            ...sendResult,
+            task: projectBrokerTask(task),
+            final: isTerminalSnapshotStatus(task.status),
+          },
+    ),
     broker.formatSseEventId(task.id, snapshotSeq > 0 ? snapshotSeq : 0),
   );
 
@@ -7978,11 +8039,15 @@ function handleStreamingMessageResponse(
     writeSseEvent(
       res,
       "task-status-update",
-      envelope({
-        task: projectBrokerTask(update.task),
-        reason: update.reason,
-        final: update.final,
-      }),
+      envelope(
+        spec
+          ? specStreamStatusUpdate(update.task, update.final)
+          : {
+              task: projectBrokerTask(update.task),
+              reason: update.reason,
+              final: update.final,
+            },
+      ),
       broker.formatSseEventId(task.id, update.seq),
     );
     if (update.final) {
