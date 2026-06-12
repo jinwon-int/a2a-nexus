@@ -41,7 +41,7 @@ export interface A2AWorkerSubagentSpawnAuthorizationRequestPacket {
     plannerHandoffReady: boolean;
     selfAssessmentIdempotencyKey: string;
     plannerPolicyIdempotencyKey: string;
-    plannerParallelismHint: 0 | 1 | 2 | 3;
+    plannerParallelismHint: 0 | 1 | 2 | 3 | 4;
     recommendedRoles: string[];
   };
   authorizationRequestDraft: {
@@ -84,7 +84,7 @@ export interface A2AWorkerSubagentSpawnAuthorizationRequestPacket {
     writeSetIsolationRequired: true;
     directExecutionEscapeHatch: true;
     capacityConstraints: {
-      plannerParallelismHint: 0 | 1 | 2 | 3;
+      plannerParallelismHint: 0 | 1 | 2 | 3 | 4;
       requestedSubagentCount: number;
       workerCapMustStillPermit: true;
       brokerCapMustStillPermit: true;

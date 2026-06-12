@@ -30,6 +30,8 @@ Separate approval is required for:
    for the #517 branch protection and release/package policy.
 6. [`migration.md`](migration.md), [`developers.md`](developers.md), and
    [`issue-routing.md`](issue-routing.md) for phase 0 workflow.
+7. [`pr-review-guardrails.md`](pr-review-guardrails.md) before Hermes-assisted
+   PR review or merge batches.
 
 ## Branch And Release Policy
 

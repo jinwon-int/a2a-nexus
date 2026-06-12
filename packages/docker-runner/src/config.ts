@@ -149,8 +149,8 @@ export function validateRunnerConfig(config: RunnerConfig): void {
   }
 
   if (config.containedSubagents) {
-    if (!Number.isInteger(config.containedSubagents.maxCount) || config.containedSubagents.maxCount < 0 || config.containedSubagents.maxCount > 3) {
-      errors.push(`invalid containedSubagents.maxCount: ${config.containedSubagents.maxCount} (expected integer 0..3)`);
+    if (!Number.isInteger(config.containedSubagents.maxCount) || config.containedSubagents.maxCount < 0 || config.containedSubagents.maxCount > 4) {
+      errors.push(`invalid containedSubagents.maxCount: ${config.containedSubagents.maxCount} (expected integer 0..4)`);
     }
     if (!Number.isInteger(config.containedSubagents.outputBytes) || config.containedSubagents.outputBytes < 1024 || config.containedSubagents.outputBytes > 60000) {
       errors.push(`invalid containedSubagents.outputBytes: ${config.containedSubagents.outputBytes} (expected integer 1024..60000)`);
@@ -385,7 +385,7 @@ function loadContainedSubagentsConfig(
 ): RunnerContainedSubagentsConfig {
   const enabled = isTruthy(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED);
   const maxCount = enabled
-    ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 2, 1, 3, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
+    ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 2, 1, 4, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
     : 0;
   const outputBytes = parseBoundedInteger(
     env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES,

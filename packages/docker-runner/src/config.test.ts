@@ -419,7 +419,7 @@ test("loadConfig rejects unsupported contained subagent values before prompt gen
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "9",
     }),
-    /A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX must be an integer between 1 and 3/,
+    /A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX must be an integer between 1 and 4/,
   );
 
   await assert.rejects(
