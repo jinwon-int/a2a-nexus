@@ -100,6 +100,8 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
       .filter(Boolean),
     extraMounts,
     containedSubagents: loadContainedSubagentsConfig(env, profile),
+    proofSigningKeyFile: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KEY_FILE || "").trim() || undefined,
+    proofSigningKid: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KID || "").trim() || undefined,
     ...patchCommand,
   };
 
