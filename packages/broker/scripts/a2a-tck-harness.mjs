@@ -71,6 +71,13 @@ const runtime = createBrokerServer({
   // Single-agent conformance mode: a worker-less SendMessage must produce a
   // task the embedded default agent drives to terminal.
   defaultAgentMode: true,
+  // The TCK drives many requests in a tight loop from one client. Rate
+  // limiting is deployment policy, not a protocol-conformance concern, so
+  // raise the caps far above the suite's burst to avoid false failures.
+  rateLimitMaxRequests: 100000,
+  rateLimitWindowSec: 1,
+  workerRateLimitMaxRequests: 100000,
+  workerRateLimitWindowSec: 1,
 });
 runtime.server.listen(port, "127.0.0.1");
 await once(runtime.server, "listening");

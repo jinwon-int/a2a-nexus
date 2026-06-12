@@ -68,10 +68,16 @@ test("agent card stays aligned with the documented A2A profile", () => {
       capabilities: card.capabilities,
       defaultInputModes: card.defaultInputModes,
       defaultOutputModes: card.defaultOutputModes,
+      supportedInterfaces: card.supportedInterfaces,
     },
     A2A_AGENT_CARD_GOLDEN,
   );
   assert.equal(card.url, "https://broker.example.com/a2a/jsonrpc");
+  // A2A 1.0 transport binding (CARD-PROTO-001 / BIND-FIELD-001): exactly the
+  // single JSON-RPC interface the broker serves, at the same URL as card.url.
+  assert.deepEqual(card.supportedInterfaces, [
+    { protocolBinding: "JSONRPC", url: "https://broker.example.com/a2a/jsonrpc" },
+  ]);
 });
 
 test("task projection shape is pinned for A2A compatibility", () => {
