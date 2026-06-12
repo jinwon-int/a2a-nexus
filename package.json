@@ -94,7 +94,9 @@
     "fleet:routing-guard:test": "node --test scripts/a2a-fleet-routing-guard.test.mjs",
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
     "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs",
-    "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs"
+    "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs",
+    "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
+    "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs"
   },
   "license": "MIT",
   "devDependencies": {
