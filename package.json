@@ -91,7 +91,8 @@
     "check:team1-dispatch-guard": "node --test scripts/a2a-team1-dispatch-guard.test.mjs",
     "a2a:team1-dispatch-guard": "node scripts/a2a-team1-dispatch-guard.mjs --input",
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
-    "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs"
+    "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs",
+    "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs"
   },
   "license": "MIT",
   "devDependencies": {

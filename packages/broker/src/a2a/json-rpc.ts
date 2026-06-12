@@ -44,6 +44,12 @@ export interface ExecuteJsonRpcOptions {
    * Optional peer status service instance. If provided, enables the PeerStatus RPC method.
    */
   peerStatusService?: PeerStatusService;
+  /**
+   * When set, a new-context SendMessage with no metadata.targetNodeId is
+   * routed to this embedded default-agent worker (A2A single-agent mode).
+   * An explicit targetNodeId always overrides it.
+   */
+  defaultAgentNodeId?: string;
 }
 
 export function executeA2AJsonRpc(
@@ -218,7 +224,7 @@ export function executeA2AJsonRpc(
     }
   } catch (error) {
     if (error instanceof BrokerError) {
-      return failure(id, brokerErrorCode(error.code), error.message, { brokerCode: error.code });
+      return failure(id, brokerErrorCode(error.code, error.message), error.message, brokerErrorData(error.code, error.message));
     }
     if (error instanceof Error) {
       // An unexpected (non-BrokerError) exception is a server-side fault, not a
@@ -368,7 +374,16 @@ export function executeSendMessage(
     throw new BrokerError("bad_request", "params must be an object");
   }
 
-  const actor = deriveActor(params, options.requesterIdentity, options.enforceRequesterIdentity);
+  // In default-agent mode an anonymous A2A client (no broker requester
+  // identity, no params.actor) is accepted as a synthetic service requester
+  // so a bare message/send works like any standalone agent. Production
+  // (no default agent) keeps requiring an actor.
+  const effectiveIdentity: RequesterIdentity | null =
+    options.requesterIdentity ??
+    (options.defaultAgentNodeId && !options.enforceRequesterIdentity
+      ? { id: "a2a-anonymous-client", kind: "service", role: "hub" }
+      : null);
+  const actor = deriveActor(params, effectiveIdentity, options.enforceRequesterIdentity);
   const text = extractMessageText(params.message);
   const metadata = isRecord(params.metadata) ? params.metadata : {};
   const exchangeId = optionalString(metadata.exchangeId) ?? optionalString(metadata.contextId);
@@ -393,6 +408,20 @@ export function executeSendMessage(
       throw new BrokerError("not_found", "exchange not found");
     }
     assertConsistentExistingContextAssignmentMetadata(metadata, existingExchange.target.id);
+    // Clearing an awaiting_operator checkpoint resumes the task, so a
+    // context message that would trigger the auto-resume needs the same
+    // task-party authorization as the explicit /tasks/:id/resume route
+    // (hub/operator, requester, target node, or assigned worker). Checked
+    // before the message is recorded so a non-party send fails closed.
+    const checkpointedTask = existingExchange.activeTaskId
+      ? options.broker.getTask(existingExchange.activeTaskId)
+      : null;
+    if (
+      checkpointedTask?.checkpoint?.state === "awaiting_operator" &&
+      options.enforceRequesterIdentity
+    ) {
+      assertRequesterCanSubscribeToTask(options.requesterIdentity, checkpointedTask);
+    }
     const message = options.broker.addExchangeMessage(exchangeId, {
       actor,
       message: text,
@@ -418,7 +447,7 @@ export function executeSendMessage(
     };
   }
 
-  const targetNodeId = optionalString(metadata.targetNodeId);
+  const targetNodeId = optionalString(metadata.targetNodeId) ?? options.defaultAgentNodeId;
   if (!targetNodeId) {
     throw new BrokerError("bad_request", "metadata.targetNodeId is required when starting a new context");
   }
@@ -638,30 +667,79 @@ function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): s
  * validation codes keep their -326xx mapping; anything else is -32603.
  * Used by the HTTP layer for the SendStreamingMessage pre-stream phase.
  */
-export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message: string; data?: Record<string, unknown> } {
+export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof BrokerError) {
-    return { code: brokerErrorCode(error.code), message: error.message, data: { brokerCode: error.code } };
+    return { code: brokerErrorCode(error.code, error.message), message: error.message, data: brokerErrorData(error.code, error.message) };
   }
   return { code: -32603, message: error instanceof Error ? error.message : String(error) };
 }
 
-function brokerErrorCode(code: BrokerError["code"]): number {
+// A2A 1.0 reserved JSON-RPC error family (a2a-protocol.org). Only the codes
+// the broker can actually produce are bound here; the rest of the -3200x
+// space (push/content-type/agent-response/extended-card/extension) is for
+// conditions this broker does not raise.
+const A2A_ERROR_DOMAIN = "a2a-protocol.org";
+const A2A_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo";
+
+interface BrokerErrorMapping {
+  code: number;
+  /** A2A google.rpc.ErrorInfo domain + reason when the condition is an A2A-bound error. */
+  a2a?: { reason: string };
+}
+
+function isA2ATaskNotFound(code: BrokerError["code"], message: string | undefined): boolean {
+  return code === "not_found" && /^task not found\b/i.test(message ?? "");
+}
+
+function brokerErrorMapping(code: BrokerError["code"], message?: string): BrokerErrorMapping {
   switch (code) {
-    case "bad_request":
-      return -32602;
-    case "unauthorized":
-      return -32001;
-    case "policy_denied":
-      return -32003;
     case "not_found":
-      return -32004;
+      if (isA2ATaskNotFound(code, message)) {
+        // Task/resource lookups that miss are A2A TaskNotFoundError. Do not map
+        // unrelated broker resources (workers/exchanges) to TASK_NOT_FOUND.
+        return { code: -32001, a2a: { reason: "TASK_NOT_FOUND" } };
+      }
+      return { code: -32014 };
     case "invalid_transition":
-      return -32009;
+      // A lifecycle transition the task can no longer make (e.g. cancel on a
+      // terminal task) is A2A TaskNotCancelableError for JSON-RPC task ops.
+      return { code: -32002, a2a: { reason: "TASK_NOT_CANCELABLE" } };
+    case "bad_request":
+      return { code: -32602 }; // standard JSON-RPC Invalid params
+    case "unauthorized":
+      return { code: -32011 }; // broker extension (A2A range, unbound)
+    case "policy_denied":
+      return { code: -32012 };
     case "rate_limited":
-      return -32029;
+      return { code: -32013 };
     default:
       // Never throw from inside the catch handler that calls this — an
       // unmapped broker code becomes a generic internal error.
-      return -32603;
+      return { code: -32603 };
   }
+}
+
+function brokerErrorCode(code: BrokerError["code"], message?: string): number {
+  return brokerErrorMapping(code, message).code;
+}
+
+/**
+ * Build the JSON-RPC `error.data` array for a BrokerError. A2A 1.0 requires a
+ * google.rpc.ErrorInfo entry in the data array; for A2A-bound conditions the
+ * domain is a2a-protocol.org with the spec reason, and for broker-specific
+ * conditions a broker domain is used (the broker code is always preserved in
+ * metadata for existing consumers).
+ */
+function brokerErrorData(code: BrokerError["code"], message?: string): unknown[] {
+  const mapping = brokerErrorMapping(code, message);
+  const reason = mapping.a2a?.reason ?? code.toUpperCase();
+  const domain = mapping.a2a ? A2A_ERROR_DOMAIN : "a2a-broker.local";
+  return [
+    {
+      "@type": A2A_ERROR_INFO_TYPE,
+      domain,
+      reason,
+      metadata: { brokerCode: code },
+    },
+  ];
 }

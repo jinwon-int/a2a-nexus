@@ -24,7 +24,7 @@ export interface A2AWorkerSubagentPlannerHandoffPacket {
     selfAssessmentIdempotencyKey: string;
     plannerPolicyIdempotencyKey: string;
     selfAssessmentReady: boolean;
-    plannerParallelismHint: 0 | 1 | 2 | 3;
+    plannerParallelismHint: 0 | 1 | 2 | 3 | 4;
     recommendedRoles: string[];
   };
   review: {
