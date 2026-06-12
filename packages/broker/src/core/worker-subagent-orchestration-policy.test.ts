@@ -100,3 +100,44 @@ test("extractor accepts route envelopes and snake_case capacity fields", () => {
   assert.equal(packet.host.workerId, "worker-route");
   assert.equal(packet.decision.parallelismHint, 2);
 });
+
+test("conductor budget: a large two-lane task on a healthy host may use four subagents", () => {
+  const fixture = JSON.parse(readFileSync("fixtures/worker-subagent-orchestration/large-healthy.json", "utf8"));
+  const packet = buildA2AWorkerSubagentOrchestrationPolicy({
+    ...fixture,
+    task: { ...fixture.task, writeSets: ["src/core/a.ts", "src/core/b.ts"] },
+    host: { ...fixture.host, workerSubagentCap: 4 },
+    now: NOW,
+  });
+
+  assert.equal(packet.decision.parallelismHint, 4);
+  assert.deepEqual(
+    packet.decision.recommendedSubagents.map((agent) => agent.role),
+    ["explorer", "implementer", "implementer", "verifier"],
+  );
+  // The two implementer lanes must have disjoint write sets.
+  const lanes = packet.decision.recommendedSubagents.filter((agent) => agent.role === "implementer");
+  assert.notEqual(lanes[0].writeSet, lanes[1].writeSet);
+  // Simple work stays self-executed: trivial tasks never spawn.
+  const trivial = buildA2AWorkerSubagentOrchestrationPolicy({
+    ...fixture,
+    task: { ...fixture.task, size: "trivial" },
+    now: NOW,
+  });
+  assert.equal(trivial.decision.parallelismHint, 0);
+});
+
+test("simple non-patch work without an explicit profile stays direct (budget 0) — a2a-nexus#614 review", () => {
+  // The orchestration policy never lets a small/trivial task fan out, but the
+  // worker's default profile is what feeds it; this pins the policy side that
+  // a trivial task is budget 0 regardless of host headroom.
+  const fixture = JSON.parse(readFileSync("fixtures/worker-subagent-orchestration/large-healthy.json", "utf8"));
+  const trivial = buildA2AWorkerSubagentOrchestrationPolicy({
+    ...fixture,
+    task: { taskId: "chat-1", size: "trivial", coupling: "low" },
+    host: { ...fixture.host, workerSubagentCap: 4, activeSubagents: 0 },
+    now: NOW,
+  });
+  assert.equal(trivial.decision.parallelismHint, 0);
+  assert.deepEqual(trivial.decision.recommendedSubagents, []);
+});
