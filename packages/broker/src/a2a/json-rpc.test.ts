@@ -481,6 +481,33 @@ test("GetTask on a missing task returns A2A TaskNotFoundError (-32001) with Erro
   assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "not_found");
 });
 
+test("broker resource not_found errors do not masquerade as A2A TaskNotFoundError", () => {
+  const broker = new InMemoryA2ABroker();
+  const result = executeA2AJsonRpc(
+    {
+      jsonrpc: "2.0",
+      id: "e1b",
+      method: "SendMessage",
+      params: {
+        message: { parts: [{ text: "need a missing worker" }] },
+        metadata: { targetNodeId: "missing-worker" },
+      },
+    },
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+
+  assert.notEqual(result.error.code, -32001, "worker lookup misses must not be reported as TASK_NOT_FOUND");
+  assert.equal(result.error.code, -32014);
+  const data = result.error.data as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(data), "broker resource misses still carry ErrorInfo data");
+  assert.equal(data[0]["@type"], "type.googleapis.com/google.rpc.ErrorInfo");
+  assert.equal(data[0].domain, "a2a-broker.local");
+  assert.equal(data[0].reason, "NOT_FOUND");
+  assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "not_found");
+});
+
 test("broker-specific errors carry an ErrorInfo array in the broker domain", () => {
   const broker = new InMemoryA2ABroker();
   // bad_request (validation) stays standard -32602 with an array data payload.

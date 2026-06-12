@@ -218,7 +218,7 @@ export function executeA2AJsonRpc(
     }
   } catch (error) {
     if (error instanceof BrokerError) {
-      return failure(id, brokerErrorCode(error.code), error.message, brokerErrorData(error.code));
+      return failure(id, brokerErrorCode(error.code, error.message), error.message, brokerErrorData(error.code, error.message));
     }
     if (error instanceof Error) {
       // An unexpected (non-BrokerError) exception is a server-side fault, not a
@@ -632,7 +632,7 @@ function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): s
  */
 export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof BrokerError) {
-    return { code: brokerErrorCode(error.code), message: error.message, data: brokerErrorData(error.code) };
+    return { code: brokerErrorCode(error.code, error.message), message: error.message, data: brokerErrorData(error.code, error.message) };
   }
   return { code: -32603, message: error instanceof Error ? error.message : String(error) };
 }
@@ -650,14 +650,22 @@ interface BrokerErrorMapping {
   a2a?: { reason: string };
 }
 
-function brokerErrorMapping(code: BrokerError["code"]): BrokerErrorMapping {
+function isA2ATaskNotFound(code: BrokerError["code"], message: string | undefined): boolean {
+  return code === "not_found" && /^task not found\b/i.test(message ?? "");
+}
+
+function brokerErrorMapping(code: BrokerError["code"], message?: string): BrokerErrorMapping {
   switch (code) {
     case "not_found":
-      // Task/resource lookups that miss are A2A TaskNotFoundError.
-      return { code: -32001, a2a: { reason: "TASK_NOT_FOUND" } };
+      if (isA2ATaskNotFound(code, message)) {
+        // Task/resource lookups that miss are A2A TaskNotFoundError. Do not map
+        // unrelated broker resources (workers/exchanges) to TASK_NOT_FOUND.
+        return { code: -32001, a2a: { reason: "TASK_NOT_FOUND" } };
+      }
+      return { code: -32014 };
     case "invalid_transition":
       // A lifecycle transition the task can no longer make (e.g. cancel on a
-      // terminal task) is A2A TaskNotCancelableError.
+      // terminal task) is A2A TaskNotCancelableError for JSON-RPC task ops.
       return { code: -32002, a2a: { reason: "TASK_NOT_CANCELABLE" } };
     case "bad_request":
       return { code: -32602 }; // standard JSON-RPC Invalid params
@@ -674,8 +682,8 @@ function brokerErrorMapping(code: BrokerError["code"]): BrokerErrorMapping {
   }
 }
 
-function brokerErrorCode(code: BrokerError["code"]): number {
-  return brokerErrorMapping(code).code;
+function brokerErrorCode(code: BrokerError["code"], message?: string): number {
+  return brokerErrorMapping(code, message).code;
 }
 
 /**
@@ -685,8 +693,8 @@ function brokerErrorCode(code: BrokerError["code"]): number {
  * conditions a broker domain is used (the broker code is always preserved in
  * metadata for existing consumers).
  */
-function brokerErrorData(code: BrokerError["code"]): unknown[] {
-  const mapping = brokerErrorMapping(code);
+function brokerErrorData(code: BrokerError["code"], message?: string): unknown[] {
+  const mapping = brokerErrorMapping(code, message);
   const reason = mapping.a2a?.reason ?? code.toUpperCase();
   const domain = mapping.a2a ? A2A_ERROR_DOMAIN : "a2a-broker.local";
   return [
