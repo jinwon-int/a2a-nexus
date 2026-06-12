@@ -7940,7 +7940,7 @@ function handleStreamingMessageResponse(
     "task-snapshot",
     envelope(
       spec
-        ? specStreamTaskSnapshot(task)
+        ? specStreamTaskSnapshot(task, broker)
         : {
             ...sendResult,
             task: projectBrokerTask(task),

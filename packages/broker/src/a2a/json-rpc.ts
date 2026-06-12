@@ -72,28 +72,61 @@ function specTaskStateName(state: ReturnType<typeof projectBrokerTask>["status"]
   }
 }
 
+/** Proto-JSON TaskStatus ({ state: TASK_STATE_*, timestamp, message? }). */
+function specTaskStatus(task: TaskRecord): Record<string, unknown> {
+  const projected = projectBrokerTask(task);
+  return {
+    state: specTaskStateName(projected.status.state),
+    timestamp: projected.status.timestamp,
+    ...(projected.status.message
+      ? {
+          message: {
+            messageId: `${task.id}:status`,
+            taskId: task.id,
+            contextId: task.exchangeId,
+            role: "ROLE_AGENT",
+            parts: projected.status.message.parts,
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Proto-JSON Artifact: artifactId + parts (>=1) are REQUIRED. Broker tasks
+ * carry artifact ids; the records resolve to a uri/contentType, projected as
+ * a url Part. A dangling id (record pruned) degrades to a data Part carrying
+ * the reference so the REQUIRED parts constraint still holds.
+ */
+function specTaskArtifacts(task: TaskRecord, broker: InMemoryA2ABroker): Array<Record<string, unknown>> {
+  const ids = task.result?.artifactIds ?? task.artifactIds ?? [];
+  return ids.map((id) => {
+    const record = broker.getArtifact(id);
+    if (!record) {
+      return { artifactId: id, parts: [{ data: { brokerArtifactId: id } }] };
+    }
+    return {
+      artifactId: record.id,
+      ...(record.kind ? { name: record.kind } : {}),
+      ...(record.summary ? { description: record.summary } : {}),
+      parts: [
+        {
+          url: record.uri,
+          ...(record.contentType ? { mediaType: record.contentType } : {}),
+        },
+      ],
+    };
+  });
+}
+
 /** A2A 1.0 proto-JSON Task: id + top-level contextId, TASK_STATE_* status, no kind. */
-export function projectSpecTask(task: TaskRecord): Record<string, unknown> {
+export function projectSpecTask(task: TaskRecord, broker: InMemoryA2ABroker): Record<string, unknown> {
   const projected = projectBrokerTask(task);
   return {
     id: projected.id,
     contextId: task.exchangeId,
-    status: {
-      state: specTaskStateName(projected.status.state),
-      timestamp: projected.status.timestamp,
-      ...(projected.status.message
-        ? {
-            message: {
-              messageId: `${task.id}:status`,
-              taskId: task.id,
-              contextId: task.exchangeId,
-              role: "ROLE_AGENT",
-              parts: projected.status.message.parts,
-            },
-          }
-        : {}),
-    },
-    artifacts: projected.artifacts ?? [],
+    status: specTaskStatus(task),
+    artifacts: specTaskArtifacts(task, broker),
     metadata: projected.metadata,
   };
 }
@@ -103,20 +136,21 @@ export function projectSpecTask(task: TaskRecord): Record<string, unknown> {
  * StreamResponse is a oneof of { task | message | statusUpdate |
  * artifactUpdate }; the opening event carries the Task snapshot and
  * subsequent events carry TaskStatusUpdateEvent ({ taskId, contextId,
- * status, final }).
+ * status, metadata }). The proto event has no `final` field — stream
+ * termination is signaled by a terminal status.state plus the stream
+ * closing; the broker's final flag rides in the open metadata Struct.
  */
-export function specStreamTaskSnapshot(task: TaskRecord): Record<string, unknown> {
-  return { task: projectSpecTask(task) };
+export function specStreamTaskSnapshot(task: TaskRecord, broker: InMemoryA2ABroker): Record<string, unknown> {
+  return { task: projectSpecTask(task, broker) };
 }
 
 export function specStreamStatusUpdate(task: TaskRecord, final: boolean): Record<string, unknown> {
-  const projected = projectSpecTask(task);
   return {
     statusUpdate: {
       taskId: task.id,
       contextId: task.exchangeId,
-      status: projected.status,
-      final,
+      status: specTaskStatus(task),
+      metadata: { final },
     },
   };
 }
@@ -129,7 +163,7 @@ export function specSendResult(
   if (send.task) {
     const record = broker.getTask(send.task.id);
     if (record) {
-      return { task: projectSpecTask(record) };
+      return { task: projectSpecTask(record, broker) };
     }
   }
   return {
@@ -185,7 +219,7 @@ export function executeA2AJsonRpc(
           assertRequesterCanSubscribeToTask(options.requesterIdentity, task);
         }
         if (options.responseShape === "spec") {
-          return success(id, projectSpecTask(task));
+          return success(id, projectSpecTask(task, options.broker));
         }
         return success(id, { task: projectBrokerTask(task) });
       }
@@ -199,7 +233,16 @@ export function executeA2AJsonRpc(
           .listTasks(filters)
           .filter((task) => canReadTaskSnapshot(options, task));
         if (options.responseShape === "spec") {
-          return success(id, { tasks: visible.map(projectSpecTask) });
+          // Proto ListTasksResponse: tasks + nextPageToken/pageSize/totalSize
+          // are all REQUIRED. The broker serves the full result set in one
+          // page, so the token is empty and both sizes equal the result count.
+          const tasks = visible.map((task) => projectSpecTask(task, options.broker));
+          return success(id, {
+            tasks,
+            nextPageToken: "",
+            pageSize: tasks.length,
+            totalSize: tasks.length,
+          });
         }
         return success(id, { tasks: visible.map(projectBrokerTaskForList) });
       }
@@ -210,7 +253,7 @@ export function executeA2AJsonRpc(
         const reason = optionalStringField(params, "reason");
         const task = options.broker.cancelTask(taskId, { actor, reason });
         if (options.responseShape === "spec") {
-          return success(id, projectSpecTask(task));
+          return success(id, projectSpecTask(task, options.broker));
         }
         return success(id, { task: projectBrokerTask(task) });
       }
