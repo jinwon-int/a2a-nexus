@@ -56,7 +56,7 @@ export interface ComplexityOrchestrationRecommendation {
   /** High-level orchestration action. */
   action: OrchestrationAction;
   /** Suggested subagent parallelism (0 = direct/blocked, 1–3 = subagents). */
-  parallelismHint: 0 | 1 | 2 | 3;
+  parallelismHint: 0 | 1 | 2 | 3 | 4;
   /** Confidence in the recommendation based on classification stability. */
   confidence: RecommendationConfidence;
   /** Human-readable rationale anchored to the classification signals. */

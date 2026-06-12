@@ -11624,3 +11624,91 @@ test("cross-broker receiver enforces request-bound proof of possession when anch
     await server.close();
   }
 });
+
+test("default-agent mode: worker-less SendMessage produces a task driven to completed (A2A single-agent)", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    // TCK/httpx-style trailing-slash POST must hit the same endpoint.
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-1",
+        method: "SendMessage",
+        params: { message: { role: "ROLE_USER", parts: [{ text: "hello agent" }], messageId: "da-msg-1" } },
+      }),
+    });
+    assert.equal(send.status, 200);
+    const sendBody = await send.json();
+    const taskId = sendBody.result?.task?.id;
+    assert.ok(taskId, "worker-less SendMessage must create a task in default-agent mode");
+    assert.equal(sendBody.result.task.metadata.targetNodeId, "default-agent");
+
+    // The embedded agent drives the task to terminal.
+    let finalState = "";
+    for (let i = 0; i < 50; i++) {
+      const get = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "da-2", method: "GetTask", params: { taskId } }),
+      });
+      const body = await get.json();
+      finalState = body.result?.task?.status?.state ?? "";
+      if (finalState === "completed" || finalState === "failed") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(finalState, "completed");
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent mode preserves explicit targetNodeId routing failures", async () => {
+  const server = await startTestServer({ defaultAgentMode: true, enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-explicit-missing",
+        method: "SendMessage",
+        params: {
+          message: { parts: [{ text: "do not fallback" }] },
+          metadata: { targetNodeId: "missing-worker" },
+        },
+      }),
+    });
+    const body = await send.json();
+    assert.ok(body.error, "explicit missing target must fail instead of falling back to default-agent");
+    assert.match(body.error.message, /target worker not found/);
+    assert.notEqual(body.result?.task?.metadata?.targetNodeId, "default-agent");
+  } finally {
+    await server.close();
+  }
+});
+
+test("default-agent mode off keeps requiring a target worker for new contexts", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    const send = await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "da-off-1",
+        method: "SendMessage",
+        params: {
+          actor: { id: "client-x", kind: "service", role: "hub" },
+          message: { parts: [{ text: "no agent" }] },
+        },
+      }),
+    });
+    const body = await send.json();
+    assert.ok(body.error, "without the default agent a worker-less send must fail");
+    assert.match(body.error.message, /targetNodeId is required/);
+  } finally {
+    await server.close();
+  }
+});
