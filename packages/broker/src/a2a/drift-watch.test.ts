@@ -122,6 +122,7 @@ test("drift: AgentCard golden fixture stays aligned with createBrokerAgentCard",
       capabilities: card.capabilities,
       defaultInputModes: card.defaultInputModes,
       defaultOutputModes: card.defaultOutputModes,
+      supportedInterfaces: card.supportedInterfaces,
     },
     A2A_AGENT_CARD_GOLDEN,
     "AgentCard golden fixture must match createBrokerAgentCard output. " +

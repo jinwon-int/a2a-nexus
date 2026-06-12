@@ -17,6 +17,17 @@ export interface AgentSkill {
 }
 
 /**
+ * A2A 1.0 protocol binding declaration. Each entry advertises one transport
+ * the agent serves and the URL where it is reachable. The broker speaks only
+ * JSON-RPC 2.0 (see A2A_COMPATIBILITY_PROFILE.unsupportedTransports), so it
+ * declares a single JSONRPC interface.
+ */
+export interface AgentInterface {
+  protocolBinding: "JSONRPC" | "GRPC" | "HTTP+JSON";
+  url: string;
+}
+
+/**
  * A2A 1.0 AgentCard (public discovery shape).
  *
  * **Naming guard:** `AgentCard.capabilities` carries A2A protocol-level flags
@@ -39,6 +50,8 @@ export interface AgentCard {
   defaultInputModes: string[];
   defaultOutputModes: string[];
   skills: AgentSkill[];
+  /** A2A 1.0 transport bindings the agent serves (CARD-PROTO / BIND-FIELD). */
+  supportedInterfaces: AgentInterface[];
 }
 
 export interface CreateBrokerAgentCardOptions {
@@ -54,12 +67,13 @@ export interface CreateBrokerAgentCardOptions {
 
 export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): AgentCard {
   const baseUrl = trimTrailingSlash(options.publicBaseUrl);
+  const jsonRpcUrl = `${baseUrl}/a2a/jsonrpc`;
   return {
     name: options.serviceName,
     description:
       options.description ??
       "Broker-first A2A coordination service for delegated tasks, proposal review, and auditable worker execution.",
-    url: `${baseUrl}/a2a/jsonrpc`,
+    url: jsonRpcUrl,
     version: options.version ?? "0.1.0",
     protocolVersion: options.protocolVersion ?? "1.0",
     provider: options.provider,
@@ -69,6 +83,7 @@ export function createBrokerAgentCard(options: CreateBrokerAgentCardOptions): Ag
     },
     defaultInputModes: ["text"],
     defaultOutputModes: ["text"],
+    supportedInterfaces: [{ protocolBinding: "JSONRPC", url: jsonRpcUrl }],
     skills: [
       {
         id: "analyze",

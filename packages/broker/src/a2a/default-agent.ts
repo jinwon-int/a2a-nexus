@@ -1,0 +1,101 @@
+/**
+ * Embedded default A2A agent (opt-in).
+ *
+ * A2A clients — including the official TCK and any single-agent peer — send a
+ * message and expect the receiving agent to produce a Task; they have no way
+ * to pre-register a broker worker. By default this broker is a multi-worker
+ * router and rejects a worker-less SendMessage. When the default-agent mode
+ * is enabled (A2A_DEFAULT_AGENT_MODE), the broker registers a single built-in
+ * worker and drives its tasks to completion in-process, so the broker also
+ * behaves as a conformant standalone agent.
+ *
+ * Production routing is unchanged: the mode is off by default, and an
+ * explicit metadata.targetNodeId always wins over the default agent.
+ */
+import { createBuiltinWorkerHandler, type BuiltinWorkerHandlerKind } from "../worker.js";
+import type { InMemoryA2ABroker } from "../core/broker.js";
+import type { TaskRecord, TaskResult } from "../core/types.js";
+
+export const DEFAULT_AGENT_NODE_ID = "default-agent";
+
+export interface DefaultAgentHandle {
+  nodeId: string;
+  stop: () => void;
+}
+
+export interface StartDefaultAgentOptions {
+  nodeId?: string;
+  handlerKind?: BuiltinWorkerHandlerKind;
+  displayName?: string;
+}
+
+/**
+ * Register the embedded agent worker and drive its queued tasks to terminal
+ * in-process. Returns a handle whose stop() unsubscribes the drive loop.
+ */
+export function startDefaultAgent(
+  broker: InMemoryA2ABroker,
+  options: StartDefaultAgentOptions = {},
+): DefaultAgentHandle {
+  const nodeId = options.nodeId ?? DEFAULT_AGENT_NODE_ID;
+  const handler = createBuiltinWorkerHandler(options.handlerKind ?? "echo");
+
+  broker.registerWorker({
+    nodeId,
+    role: "analyst",
+    displayName: options.displayName ?? "A2A Default Agent",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: false,
+      canPromoteLive: false,
+      workspaceIds: ["default-agent"],
+      environments: ["research"],
+    },
+  });
+
+  // Guard against re-entrant drives: broker mutations inside the loop emit
+  // more state events, so a task already being processed must not be picked
+  // up twice.
+  const inFlight = new Set<string>();
+  let stopped = false;
+
+  const drive = (): void => {
+    if (stopped) return;
+    const queued = broker.listTasks({ assignedWorkerId: nodeId, status: "queued" });
+    for (const task of queued) {
+      if (inFlight.has(task.id)) continue;
+      inFlight.add(task.id);
+      void processTask(task).finally(() => inFlight.delete(task.id));
+    }
+  };
+
+  const processTask = async (task: TaskRecord): Promise<void> => {
+    try {
+      broker.claimTask(task.id, nodeId);
+      broker.startTask(task.id, nodeId);
+      const current = broker.getTask(task.id) ?? task;
+      const outcome = await handler(current);
+      const result: TaskResult | undefined =
+        outcome && typeof outcome === "object" && "result" in outcome
+          ? (outcome.result as TaskResult)
+          : (outcome as TaskResult | undefined);
+      broker.completeTask(task.id, nodeId, result ?? { summary: `handled ${task.intent}` });
+    } catch {
+      // The agent must never throw into the broker's state-change emit path.
+      // A failed drive leaves the task for the stale reaper / next attempt.
+    }
+  };
+
+  const unsubscribe = broker.subscribeToState(drive);
+  // Pick up anything already queued at startup (e.g. restored snapshot).
+  drive();
+
+  return {
+    nodeId,
+    stop: () => {
+      stopped = true;
+      unsubscribe();
+    },
+  };
+}
