@@ -77,6 +77,19 @@ Track this number down as alignment PRs land. The error-code/`ErrorInfo`
 alignment is in-scope correctness work; the worker-registration model is an
 architectural decision recorded for follow-up.
 
+## Scheduled measurement (CI)
+
+`.github/workflows/tck-measurement.yml` runs this harness weekly (and on
+manual dispatch) against a freshly built, locally-booted broker, and uploads
+the official TCK compliance report as a 90-day artifact plus a job summary.
+
+It is an **opt-in measurement lane, never a release gate** (`continue-on-error`,
+no PR trigger): the documented profile deviations mean some MUST tests are
+expected to fail, so the job's purpose is a tracked compliance number that
+surfaces regressions, not a pass/fail gate. As deviations shrink (spec
+result shapes, error codes, default-agent mode, push config), the weekly
+number should climb; a drop is the signal to investigate.
+
 ## Safety
 
 The harness binds loopback only, uses an ephemeral temp state file, disables
