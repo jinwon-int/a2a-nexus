@@ -12107,3 +12107,60 @@ test("default-agent worker-less send + spec header returns the proto task oneof 
     await server.close();
   }
 });
+
+test("cross-broker receiver enforces request-bound proof of possession when anchors are pinned", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { buildCrossBrokerSenderProof } = await import("./a2a/cross-broker-sender-proof.js");
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
+  const anchorsFile = join(dir, "anchors.json");
+  writeFileSync(
+    anchorsFile,
+    JSON.stringify({ "peer-a": publicKey.export({ type: "spki", format: "pem" }).toString() }),
+  );
+
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    crossBrokerSenderProofKeysFile: anchorsFile,
+  });
+  try {
+    const headers = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const body = { crossBrokerHandoff: { handoffBrokerId: "peer-a" }, parentRoundId: "r-trust" };
+
+    // No proof -> fail closed before ingestion.
+    const rejected = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    assert.ok(rejected.status >= 400);
+    assert.match(JSON.stringify(await rejected.json()), /cross-broker trust/);
+
+    // A fresh body-bound proof clears the trust gate (any further response is
+    // ingestion-level validation, not a trust rejection).
+    const proof = buildCrossBrokerSenderProof(
+      privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      { brokerId: "peer-a", body, nonce: `n-${Date.now()}` },
+    );
+    const passed = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, senderProof: proof }),
+    });
+    assert.ok(
+      !JSON.stringify(await passed.json()).includes("cross-broker trust"),
+      "a valid proof must clear the trust gate",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
