@@ -84,8 +84,11 @@ test("SubscribeToTask rejects unauthenticated JSON-RPC callers before returning 
 
   assert.ok("error" in result, "SubscribeToTask should fail without requester identity");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("GetTask rejects unauthenticated JSON-RPC callers before returning task snapshots", () => {
@@ -107,8 +110,11 @@ test("GetTask rejects unauthenticated JSON-RPC callers before returning task sna
 
   assert.ok("error" in result, "GetTask should fail without requester identity");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("ListTasks filters JSON-RPC task snapshots to tasks visible to the requester", () => {
@@ -167,8 +173,11 @@ test("ListTasks rejects unauthenticated JSON-RPC callers", () => {
 
   assert.ok("error" in result, "ListTasks should fail without requester identity");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("ListTasks rejects unauthenticated JSON-RPC callers even when the broker has no tasks", () => {
@@ -189,8 +198,11 @@ test("ListTasks rejects unauthenticated JSON-RPC callers even when the broker ha
 
   assert.ok("error" in result, "ListTasks should fail without requester identity before listing tasks");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("ListTasks rejects unauthenticated JSON-RPC callers before applying no-match filters", () => {
@@ -212,8 +224,11 @@ test("ListTasks rejects unauthenticated JSON-RPC callers before applying no-matc
 
   assert.ok("error" in result, "ListTasks should fail without requester identity before applying filters");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("GetTask rejects unauthenticated JSON-RPC callers before task existence checks", () => {
@@ -234,8 +249,11 @@ test("GetTask rejects unauthenticated JSON-RPC callers before task existence che
 
   assert.ok("error" in result, "GetTask should fail auth before task lookup");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("SubscribeToTask rejects unauthenticated JSON-RPC callers before task existence checks", () => {
@@ -256,8 +274,11 @@ test("SubscribeToTask rejects unauthenticated JSON-RPC callers before task exist
 
   assert.ok("error" in result, "SubscribeToTask should fail auth before task lookup");
   if (!("error" in result)) return;
-  assert.equal(result.error.code, -32001);
-  assert.equal((result.error.data as Record<string, unknown>)?.brokerCode, "unauthorized");
+  assert.equal(result.error.code, -32011);
+  assert.equal(
+    ((result.error.data as Array<Record<string, unknown>>)?.[0]?.metadata as Record<string, unknown>)?.brokerCode,
+    "unauthorized",
+  );
 });
 
 test("SendMessage rejects mismatched targetNodeId and assignedWorkerId on existing contexts", () => {
@@ -440,4 +461,65 @@ test("id: null is a normal request and still gets a response", () => {
   );
   assert.ok(result && !Array.isArray(result) && "result" in result);
   assert.equal((result as JsonRpcResponse).id, null);
+});
+
+test("GetTask on a missing task returns A2A TaskNotFoundError (-32001) with ErrorInfo", () => {
+  const broker = new InMemoryA2ABroker();
+  const result = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: "e1", method: "GetTask", params: { taskId: "nope" } },
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+
+  assert.equal(result.error.code, -32001);
+  const data = result.error.data as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(data), "A2A error.data must be an array");
+  assert.equal(data[0]["@type"], "type.googleapis.com/google.rpc.ErrorInfo");
+  assert.equal(data[0].domain, "a2a-protocol.org");
+  assert.equal(data[0].reason, "TASK_NOT_FOUND");
+  assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "not_found");
+});
+
+test("broker resource not_found errors do not masquerade as A2A TaskNotFoundError", () => {
+  const broker = new InMemoryA2ABroker();
+  const result = executeA2AJsonRpc(
+    {
+      jsonrpc: "2.0",
+      id: "e1b",
+      method: "SendMessage",
+      params: {
+        message: { parts: [{ text: "need a missing worker" }] },
+        metadata: { targetNodeId: "missing-worker" },
+      },
+    },
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+
+  assert.notEqual(result.error.code, -32001, "worker lookup misses must not be reported as TASK_NOT_FOUND");
+  assert.equal(result.error.code, -32014);
+  const data = result.error.data as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(data), "broker resource misses still carry ErrorInfo data");
+  assert.equal(data[0]["@type"], "type.googleapis.com/google.rpc.ErrorInfo");
+  assert.equal(data[0].domain, "a2a-broker.local");
+  assert.equal(data[0].reason, "NOT_FOUND");
+  assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "not_found");
+});
+
+test("broker-specific errors carry an ErrorInfo array in the broker domain", () => {
+  const broker = new InMemoryA2ABroker();
+  // bad_request (validation) stays standard -32602 with an array data payload.
+  const result = executeA2AJsonRpc(
+    { jsonrpc: "2.0", id: "e2", method: "GetTask", params: {} },
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  assert.ok("error" in result);
+  if (!("error" in result)) return;
+
+  assert.equal(result.error.code, -32602);
+  const data = result.error.data as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(data));
+  assert.equal((data[0].metadata as Record<string, unknown>).brokerCode, "bad_request");
 });
