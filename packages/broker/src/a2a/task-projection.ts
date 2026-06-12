@@ -75,6 +75,9 @@ export function projectBrokerTask(task: TaskRecord): A2ATaskProjection {
       result: task.result,
       policyContext: task.policyContext,
       approval: task.approval,
+      // Distributed-trace context (requester -> broker -> worker -> evidence),
+      // present only when the request carried one.
+      ...(task.via ? { via: task.via } : {}),
     },
     artifacts: (task.result?.artifactIds ?? task.artifactIds ?? []).map((id) => ({ id })),
   };
@@ -106,6 +109,7 @@ export function projectBrokerTaskForList(task: TaskRecord): A2ATaskListProjectio
       resultSummary,
       policyContext: task.policyContext,
       approval: task.approval,
+      ...(task.via ? { via: task.via } : {}),
     },
   };
 }

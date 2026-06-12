@@ -596,11 +596,17 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
   const timeoutMs = Math.max(1, config.timeoutMs ?? DEFAULT_HANDLER_TIMEOUT_MS);
 
   return async (task) => {
+    // Propagate the distributed-trace id end to end: requester -> broker
+    // (task.via.traceId) -> the handler process (and any container it spawns)
+    // -> evidence. A2A_TRACE_ID lets the in-handler/in-container work correlate
+    // back to the originating request.
+    const traceId = task.via?.traceId?.trim();
+    const traceEnv = traceId ? { A2A_TRACE_ID: traceId } : {};
     const { stdout, stderr, code, signal, timedOut } = await runExternalHandler({
       command: config.command,
       args,
       cwd: config.cwd,
-      env: config.env,
+      env: { ...config.env, ...traceEnv },
       timeoutMs,
       input: JSON.stringify(task),
     });

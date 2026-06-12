@@ -494,6 +494,15 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
   }
 
+  // Distributed-trace propagation: surface the task trace id to the in-
+  // container work and as a label so a container can be correlated back to
+  // the originating A2A request.
+  const traceId = typeof task.traceId === "string" ? task.traceId.trim() : "";
+  if (traceId) {
+    args.push("-e", `A2A_TRACE_ID=${traceId}`);
+    args.push("--label", `a2a.trace.id=${safeId(traceId)}`);
+  }
+
   for (const mount of config.extraMounts ?? []) {
     const mode = mount.readOnly === false ? "rw" : "ro";
     args.push("-v", `${mount.source}:${mount.target}:${mode}`);

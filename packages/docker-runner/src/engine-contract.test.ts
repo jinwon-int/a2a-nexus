@@ -412,3 +412,12 @@ test("buildRunArgs hardening can be tuned through config", () => {
   assert.ok(!optedOut.includes("no-new-privileges"), "explicit opt-out must be honored");
   assert.ok(optedOut.includes("--pids-limit"), "pids limit stays even when escalation is allowed");
 });
+
+test("buildRunArgs propagates the distributed trace id into the container", () => {
+  const traced = buildRunArgs({ ...config }, { ...task, traceId: "trace-run-1" }, "/tmp/a2a-work", "ci-trace");
+  assert.ok(traced.includes("A2A_TRACE_ID=trace-run-1"), "trace id must reach the container env");
+  assert.ok(traced.some((arg) => arg === "a2a.trace.id=trace-run-1"), "trace id must label the container");
+
+  const untraced = buildRunArgs(config, task, "/tmp/a2a-work", "ci-untraced");
+  assert.ok(!untraced.some((arg) => arg.startsWith("A2A_TRACE_ID=")), "no trace id -> no trace env");
+});

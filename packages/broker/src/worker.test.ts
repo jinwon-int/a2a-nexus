@@ -1028,3 +1028,30 @@ test("broker requests abort on the request timeout instead of hanging forever (i
 
   await assert.rejects(worker.register(), /aborted by signal/);
 });
+
+test("external handler propagates the distributed trace id from task.via.traceId", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-trace-"));
+  const scriptPath = join(dir, "echo-trace.mjs");
+  writeFileSync(
+    scriptPath,
+    [
+      "for await (const c of process.stdin) void c;",
+      "process.stdout.write(JSON.stringify({ result: { summary: 'ok', output: { traceId: process.env.A2A_TRACE_ID ?? null } } }));",
+    ].join("\n"),
+  );
+  const handler = createExternalWorkerHandler({ command: process.execPath, args: [scriptPath], timeoutMs: 5_000 });
+  const base = {
+    id: "task-trace-1", exchangeId: "exchange-trace-1", intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    message: "m", status: "running", targetNodeId: "worker-a", payload: {},
+    createdAt: "2026-06-12T00:00:00Z", updatedAt: "2026-06-12T00:00:00Z",
+  };
+  const withTrace = (await handler({ ...base, via: { traceId: "trace-xyz" } } as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(withTrace.result.output.traceId, "trace-xyz");
+  const withoutTrace = (await handler(base as never)) as { result: { output: { traceId: string | null } } };
+  assert.equal(withoutTrace.result.output.traceId, null, "no trace id -> env unset");
+});
