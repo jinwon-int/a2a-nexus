@@ -6,6 +6,7 @@ import { getHeapStatistics } from "node:v8";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
+import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderCard } from "./a2a/cross-broker-card-trust.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import { projectBrokerTask } from "./a2a/task-projection.js";
@@ -2545,6 +2546,14 @@ export interface BrokerServerOptions {
   agentCardSigningKeyFile?: string;
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
   agentCardSigningKid?: string;
+  /**
+   * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
+   * the cross-broker terminal-brief receiver. When set, inbound projections
+   * must carry the sender's signed agent card, verified against the pinned
+   * key for the claimed broker id. Falls back to
+   * CROSS_BROKER_TRUSTED_CARD_KEYS_FILE. Unset keeps today's behavior.
+   */
+  crossBrokerTrustedCardKeysFile?: string;
   stateStore?: BrokerStateStore;
   broker?: InMemoryA2ABroker;
   /**
@@ -2881,6 +2890,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // unsigned exactly as before; a configured-but-unreadable key fails
   // startup loudly instead of silently serving an unsigned card.
   const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
+  const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
+    options.crossBrokerTrustedCardKeysFile ?? process.env.CROSS_BROKER_TRUSTED_CARD_KEYS_FILE,
+  );
   const agentCard = signingKeyFile
     ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
         privateKeyPem: readFileSync(signingKeyFile, "utf8"),
@@ -3535,6 +3547,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
 
         const body = await readJson(req);
+        if (crossBrokerTrustAnchors) {
+          const verdict = verifyCrossBrokerSenderCard(crossBrokerTrustAnchors, body);
+          if (!verdict.ok) {
+            throw new BrokerError("policy_denied", `cross-broker card trust: ${verdict.reason}`);
+          }
+        }
         const result = broker.ingestCrossBrokerTerminalBriefProjection(body as Parameters<typeof broker.ingestCrossBrokerTerminalBriefProjection>[0]);
         if (!result.accepted) {
           const status = result.ack.code === "missing_parent" ? 404 : result.ack.code === "stale_replay" ? 409 : 400;

@@ -11568,3 +11568,61 @@ test("SendStreamingMessage inside a batch is rejected with -32600", async () => 
     await server.close();
   }
 });
+
+test("cross-broker receiver enforces signed-card trust when anchors are pinned", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { signAgentCard } = await import("./a2a/agent-card-signing.js");
+
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-xbroker-trust-"));
+  const anchorsFile = join(dir, "anchors.json");
+  writeFileSync(
+    anchorsFile,
+    JSON.stringify({ "peer-a": publicKey.export({ type: "spki", format: "pem" }).toString() }),
+  );
+
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    crossBrokerTrustedCardKeysFile: anchorsFile,
+  });
+  try {
+    const headers = jsonHeaders({
+      "x-a2a-edge-secret": "test-edge-secret",
+      "x-a2a-requester-id": "hub-a",
+      "x-a2a-requester-role": "hub",
+    });
+    const claim = { crossBrokerHandoff: { handoffBrokerId: "peer-a" } };
+
+    // No sender card -> fail closed before ingestion.
+    const rejected = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(claim),
+    });
+    assert.ok(rejected.status >= 400);
+    const rejectedBody = await rejected.json();
+    assert.match(JSON.stringify(rejectedBody), /cross-broker card trust/);
+
+    // Verified card passes the trust gate (the response is now ingestion-level
+    // validation, not a trust rejection).
+    const signedCard = signAgentCard(
+      { name: "peer-a", protocolVersion: "1.0", capabilities: { streaming: true, pushNotifications: false }, skills: [] },
+      { privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString() },
+    );
+    const passed = await fetch(`${server.baseUrl}/a2a/cross-broker/terminal-briefs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...claim, senderAgentCard: signedCard }),
+    });
+    const passedBody = await passed.json();
+    assert.ok(
+      !JSON.stringify(passedBody).includes("cross-broker card trust"),
+      "verified card must clear the trust gate",
+    );
+  } finally {
+    await server.close();
+  }
+});
