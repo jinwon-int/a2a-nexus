@@ -586,8 +586,8 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 |---|---|---|---|
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT` | `commandScript` | `/work/patch-command.sh` | Recommended. Script content is written to a file and executed without `eval`. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Defaults to `A2A_HERMES_MODEL` or the old `A2A_OPENCLAW_MODEL` value when present. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Defaults to `A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. Do not present this profile or host-network mode as a public sandbox default. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | blocked | Legacy eval path; rejected for GitHub patch execution. |
 
 For the OpenClaw profile, prefer a runner image that already contains the
@@ -618,6 +618,8 @@ export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes
 export A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE=hermes
 export A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR=/root/.hermes
 export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:<runner-sha>
+# Optional: follow the mounted native Hermes profile model instead of pinning here.
+# export A2A_DOCKER_RUNNER_MODEL_SOURCE=native
 export A2A_HERMES_MODEL=deepseek/deepseek-v4-flash
 export A2A_HERMES_TIMEOUT_SEC=3600
 # Optional: enable bounded same-container helper fanout for broad A2A tasks.
@@ -645,6 +647,8 @@ export A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON='{"argv":["codex","exec","--full-aut
 # Use a minimal read-only auth directory, not a full workstation OpenClaw home.
 export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw
 export A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/secure/operator/openclaw-config
+# Optional: follow the mounted native OpenClaw agent/default model instead of pinning here.
+# export A2A_DOCKER_RUNNER_MODEL_SOURCE=native
 export A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5
 export A2A_OPENCLAW_THINKING=medium
 export A2A_OPENCLAW_TIMEOUT_SEC=3600
@@ -677,6 +681,8 @@ A safe Docker-first worker rollout from plugin-only routing to all-GitHub routin
 # OpenClaw profile use is operator-only; mount a minimal read-only auth directory.
 export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw
 export A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/secure/operator/openclaw-config
+# Optional: follow the mounted native OpenClaw agent/default model instead of pinning here.
+# export A2A_DOCKER_RUNNER_MODEL_SOURCE=native
 export A2A_OPENCLAW_MODEL=openai-codex/gpt-5.5
 export A2A_OPENCLAW_THINKING=medium
 export A2A_OPENCLAW_TIMEOUT_SEC=3600
