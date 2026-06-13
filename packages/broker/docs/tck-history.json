@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "description": "A2A TCK compliance trend. Appended by scripts/append-tck-history.mjs from the tck-measurement workflow log. A drop in the comparable metric (MUST pass count for a stable suite, else OVERALL percent) is flagged by scripts/check-tck-regressions.mjs. Categories green across the last N measurements are promotion candidates. See docs/a2a-tck-runbook.md.",
+  "measurements": [
+    {
+      "date": "2026-06-11",
+      "level": "must",
+      "transport": "jsonrpc",
+      "overallPercent": null,
+      "must": { "pass": 12, "total": 75 },
+      "categories": {
+        "agent_card": { "pass": 6, "total": 6 },
+        "jsonrpc": { "pass": 12, "total": 75 }
+      },
+      "source": "runbook baseline (first official-TCK run after wiring supportedInterfaces)"
+    }
+  ]
+}
