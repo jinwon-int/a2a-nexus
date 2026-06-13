@@ -75,7 +75,12 @@ export function findRegressions(history, { level, transport, current } = {}) {
     else notes.push({ ...d, toDate: cur.date });
   };
   if (current) {
-    if (sorted.length) pushDiff(sorted[sorted.length - 1], current);
+    // Compare against the latest PRIOR baseline, excluding the current run's
+    // own entry. The workflow appends the current run to history before this
+    // check runs, so the last scoped entry can be the current run itself —
+    // comparing it against itself would mask a real regression (#682).
+    const baseline = sorted.filter((m) => m.date !== current.date);
+    if (baseline.length) pushDiff(baseline[baseline.length - 1], current);
   } else {
     for (let i = 1; i < sorted.length; i++) pushDiff(sorted[i - 1], sorted[i]);
   }
@@ -143,11 +148,11 @@ function main() {
   const promotionCandidates = stablyGreenCategories(history, window, { level, transport });
   const report = { ok: regressions.length === 0, level, transport, regressions, notes, promotionCandidates };
 
-  if (!report.ok) {
-    console.error(JSON.stringify(report, null, 2));
-    process.exit(1);
-  }
+  // Always emit the structured report on stdout so a `... | tee summary` step
+  // captures the evidence on the failure path too (#682); the exit code still
+  // signals the regression.
   console.log(JSON.stringify(report, null, 2));
+  process.exit(report.ok ? 0 : 1);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

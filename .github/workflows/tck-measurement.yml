@@ -77,6 +77,30 @@ jobs:
           export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
           node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" | tee /tmp/tck-run.log
 
+      # Run the regression check BEFORE appending the current run, so it always
+      # compares against the previous historical baseline rather than the entry
+      # we are about to write (#682). check-tck-regressions.mjs also excludes the
+      # current run's own date as a second guard, and prints the report on stdout
+      # on both paths so `tee` captures it even when the check exits non-zero.
+      - name: Flag compliance regressions (loud, non-gating)
+        if: always()
+        continue-on-error: true
+        working-directory: packages/broker
+        env:
+          TCK_LEVEL: ${{ github.event.inputs.level || 'must' }}
+          TCK_TRANSPORT: ${{ github.event.inputs.transport || 'jsonrpc' }}
+        run: |
+          node scripts/check-tck-regressions.mjs \
+            --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" \
+            --against-log /tmp/tck-run.log | tee /tmp/tck-regressions.json || true
+          {
+            echo "### TCK regression check"
+            echo ""
+            echo '```json'
+            cat /tmp/tck-regressions.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Append measurement to the committed trend history
         if: always()
         working-directory: packages/broker
@@ -101,25 +125,6 @@ jobs:
             packages/broker/docs/tck-history.json
           if-no-files-found: warn
           retention-days: 90
-
-      - name: Flag compliance regressions (loud, non-gating)
-        if: always()
-        continue-on-error: true
-        working-directory: packages/broker
-        env:
-          TCK_LEVEL: ${{ github.event.inputs.level || 'must' }}
-          TCK_TRANSPORT: ${{ github.event.inputs.transport || 'jsonrpc' }}
-        run: |
-          node scripts/check-tck-regressions.mjs \
-            --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" \
-            --against-log /tmp/tck-run.log | tee /tmp/tck-regressions.json
-          {
-            echo "### TCK regression check"
-            echo ""
-            echo '```json'
-            cat /tmp/tck-regressions.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize compliance
         if: always()
