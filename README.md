@@ -1,10 +1,10 @@
 # A2A Nexus
 
-[![ci](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml)
+[![ci](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml)
 
 A2A Nexus is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
 
-The current public source layout remains split across four repositories. Per the [topology decision record](docs/topology-decision-record.md), the recommendation was to hold full monorepo consolidation and keep split implementation repos with `a2a-plane` as the stronger public umbrella. The operator-initiated monorepo re-entry is now tracked in [#511](https://github.com/jinwon-int/a2a-plane/issues/511) and recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md). During phase 0/1, each implementation repository remains canonical for its own runtime/package boundary.
+`a2a-nexus` is now the canonical implementation source. An operator-approved, source-state-only canonical flip (recorded in [`fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json`](fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json)) made `packages/broker`, `packages/openclaw-plugin-a2a`, and `packages/docker-runner` the canonical A2A source of truth in this repository. The former split repositories (`a2a-broker`, `openclaw-plugin-a2a`/`plugin-a2a`, `a2a-docker-runner`) remain **active provenance mirrors only** — unchanged, not archived, not redirected, with package ownership not transferred. Package publication, releases, and repository-visibility changes stay separately approval-gated and are not implied by this source-state flip. For historical context, see the [topology decision record](docs/topology-decision-record.md) and the monorepo re-entry decision in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md) (originally tracked as historical provenance in [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)).
 
 Start here:
 
@@ -28,9 +28,9 @@ All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visi
 - The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
 - Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK remain separate approval-gated actions and are **not** authorized by this repository's public visibility.
 
-Current active coordination:
+Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
 
-- [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) — monorepo phase-3 package CI parity job implementation before any package mirror refresh.
+- [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) — monorepo phase-3 package CI parity job implementation that preceded the source-state canonical flip.
 
 Completed groundwork:
 
@@ -63,18 +63,20 @@ A2A Nexus lets an operator-facing integration hand a task to a broker, route it 
 - Workers execute assigned tasks and report evidence back through the broker.
 - The Docker runner provides isolated GitHub patch execution for repository work.
 
-This repository is the public A2A Nexus umbrella and coordination workspace for those components. It is not a production deployment target.
+This repository is the canonical A2A Nexus source and coordination workspace for those components, with the implementation surfaces living in `packages/*`. It is not a production deployment target.
 
 ## Repository Map
 
-| Repository | Public role | Canonical implementation boundary |
-| --- | --- | --- |
-| [`a2a-plane`](https://github.com/jinwon-int/a2a-plane) | Start-here umbrella, cross-repo docs, coordination issues, contracts, examples, readiness and release gates | Project-level docs, contracts, compatibility/readiness policy, cross-repo issue routing |
-| [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service source | Task lifecycle API, worker registry, status/cancel semantics, terminal evidence collection |
-| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration | OpenClaw Gateway adapter for request/status/cancel, diagnostics, event/wake bridge |
-| [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker source | Containerized repository patch execution, PR/Done/Block evidence, artifact capture |
+`a2a-nexus` holds the canonical implementation source in `packages/*`. The former split repositories remain active provenance mirrors of their respective surfaces.
 
-The package paths below mirror those implementation areas in this checkout for integrated validation and docs, but the split repos above remain the public implementation boundaries per the [topology decision record](docs/topology-decision-record.md).
+| Repository | Public role | Canonical source |
+| --- | --- | --- |
+| [`a2a-nexus`](https://github.com/jinwon-int/a2a-nexus) | Canonical monorepo: broker, adapter plugin, Docker runner, contracts, docs, examples, readiness/release gates | **Canonical** — `packages/broker`, `packages/openclaw-plugin-a2a`, `packages/docker-runner`, project docs, contracts, compatibility/readiness policy, issue routing |
+| [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Broker service provenance mirror | Active provenance mirror of `packages/broker` (canonical source is `a2a-nexus`) |
+| [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
+| [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
+
+The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip.
 
 ## Package Map
 
@@ -106,16 +108,12 @@ Use redacted evidence in issues, pull requests, logs, and artifacts.
 
 ## Issue Routing
 
-Open project-level or ambiguous issues in `a2a-plane` first. Move or mirror implementation-specific follow-up to the owning repo when the boundary is clear:
+Open issues in `a2a-nexus`, the canonical source repository. Use the `source:*` labels (see [`docs/issue-routing.md`](docs/issue-routing.md)) to record which surface an issue belongs to:
 
-- Broker API, worker registry, task state, evidence storage, Agent Card/profile, and broker CI belong in `a2a-broker`.
-- OpenClaw adapter configuration, diagnostics, Gateway plugin behavior, and request/status/cancel mapping belong in `openclaw-plugin-a2a`.
-- Container worker execution, repository patch workflow, artifact capture, and PR/Done/Block worker evidence belong in `a2a-docker-runner`.
-- Cross-repo compatibility, public docs, release/provenance gates, security/readiness policy, and topology decisions belong in `a2a-plane`.
-
-Current public umbrella trackers:
-
-- [#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
+- Broker API, worker registry, task state, evidence storage, Agent Card/profile, and broker CI map to `packages/broker` (`source:a2a-broker`).
+- OpenClaw adapter configuration, diagnostics, Gateway plugin behavior, and request/status/cancel mapping map to `packages/openclaw-plugin-a2a` (`source:openclaw-plugin-a2a`).
+- Container worker execution, repository patch workflow, artifact capture, and PR/Done/Block worker evidence map to `packages/docker-runner` (`source:a2a-docker-runner`).
+- Cross-repo compatibility, public docs, release/provenance gates, security/readiness policy, and topology decisions are project-level (`source:a2a-plane`).
 
 Historical completed trackers:
 
@@ -192,11 +190,11 @@ Keep production connection details in private operator configuration, not in rep
 
 Default import mode is **sanitized/squash import**, not full private history preservation.
 
-The split implementation repositories remain canonical for their own boundaries per the [topology decision record](docs/topology-decision-record.md):
+Canonical source now lives in this repository's `packages/*`. The former split implementation repositories remain active provenance mirrors (unchanged, not archived), not canonical sources:
 
-- `jinwon-int/a2a-broker`
-- `jinwon-int/openclaw-plugin-a2a`
-- `jinwon-int/a2a-docker-runner`
+- `jinwon-int/a2a-broker` → mirror of `packages/broker`
+- `jinwon-int/openclaw-plugin-a2a` → mirror of `packages/openclaw-plugin-a2a`
+- `jinwon-int/a2a-docker-runner` → mirror of `packages/docker-runner`
 
 ## Verification
 

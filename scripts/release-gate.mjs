@@ -32,6 +32,7 @@ const steps = [
   ['monorepo-actual-canonical-flip-execution-result', 'npm', ['run', 'check:monorepo-actual-canonical-flip-execution-result']],
   ['monorepo-operator-approval-handoff', 'npm', ['run', 'check:monorepo-operator-approval-handoff']],
   ['monorepo-docs-routing', 'npm', ['run', 'check:monorepo-docs-routing']],
+  ['readme-canonical-surface', 'npm', ['run', 'check:readme-canonical-surface']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
 ];
 
