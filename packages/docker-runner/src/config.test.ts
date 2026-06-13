@@ -232,7 +232,8 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   });
 
   assert.match(config.commandScript ?? "", /openclaw agent/);
-  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='openai-codex\/gpt-5\.5'/);
+  assert.match(config.commandScript ?? "", /A2A_OPENCLAW_DEFAULT_MODEL='openai-codex\/gpt-5\.5'/);
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL="\$A2A_OPENCLAW_DEFAULT_MODEL"/);
   assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_THINKING='medium'/);
   assert.match(config.commandScript ?? "", /--model "\$A2A_OPENCLAW_MODEL"/);
   assert.match(config.commandScript ?? "", /--thinking "\$A2A_OPENCLAW_THINKING"/);
@@ -446,6 +447,20 @@ test("loadConfig Hermes patch profile honors custom config dir", async () => {
   assert.deepEqual(config.hermesProfile, { configDir: "/srv/hermes-profile" });
 });
 
+test("Hermes patch profile can opt into native model source without hardcoding Docker runner fallback", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
+  });
+
+  assert.match(config.commandScript ?? "", /A2A_DOCKER_RUNNER_MODEL_SOURCE='native'/);
+  assert.match(config.commandScript ?? "", /resolve_hermes_native_model/);
+  assert.match(config.commandScript ?? "", /error=hermes_native_model_unresolved/);
+  assert.match(config.commandScript ?? "", /model_source=native/);
+  assert.doesNotMatch(config.commandScript ?? "", /export A2A_HERMES_MODEL='deepseek\/deepseek-v4-flash'/);
+});
+
 test("OpenClaw patch profile defaults command timeout to 60 minutes", async () => {
   const config = await loadConfig({
     ...baseEnv,
@@ -476,10 +491,25 @@ test("loadConfig OpenClaw patch profile honors custom model", async () => {
     A2A_OPENCLAW_MODEL: "zai/glm-5.1",
   });
 
-  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='zai\/glm-5\.1'/);
+  assert.match(config.commandScript ?? "", /A2A_OPENCLAW_DEFAULT_MODEL='zai\/glm-5\.1'/);
+  assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL="\$A2A_OPENCLAW_DEFAULT_MODEL"/);
   assert.match(config.commandScript ?? "", /--model "\$A2A_OPENCLAW_MODEL"/);
   assert.match(config.commandScript ?? "", /const selectedModel = process\.env\.A2A_OPENCLAW_MODEL/);
   assert.match(config.commandScript ?? "", /selectedProvider/);
+});
+
+test("OpenClaw patch profile can opt into native model source without hardcoding Docker runner fallback", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
+  });
+
+  assert.match(config.commandScript ?? "", /A2A_DOCKER_RUNNER_MODEL_SOURCE='native'/);
+  assert.match(config.commandScript ?? "", /resolve_openclaw_native_model/);
+  assert.match(config.commandScript ?? "", /error=openclaw_native_model_unresolved/);
+  assert.match(config.commandScript ?? "", /model_source=native/);
+  assert.doesNotMatch(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='openai-codex\/gpt-5\.5'/);
 });
 
 test("loadConfig honors explicit Docker network override", async () => {

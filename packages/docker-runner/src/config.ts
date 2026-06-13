@@ -458,6 +458,14 @@ function normalizePatchCommandProfile(value?: string): "openclaw" | "hermes" | u
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
 }
 
+function normalizeRunnerModelSource(value?: string): "legacy" | "native" {
+  if (!value) return "legacy";
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  if (!normalized || normalized === "legacy" || normalized === "runner" || normalized === "docker") return "legacy";
+  if (normalized === "native" || normalized === "native-profile") return "native";
+  throw new Error(`unsupported A2A_DOCKER_RUNNER_MODEL_SOURCE: ${value}`);
+}
+
 function validatePatchCommandProfileSelection(options: {
   profile: RunnerCommandProfile | undefined;
   expectedProfile: RunnerCommandProfile | undefined;
@@ -489,7 +497,9 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
 }
 
 function buildHermesPatchCommandScript(env: NodeJS.ProcessEnv): string {
-  const defaultModel = shellSingleQuote(env.A2A_HERMES_MODEL || env.A2A_OPENCLAW_MODEL || "deepseek/deepseek-v4-flash");
+  const explicitModel = env.A2A_HERMES_MODEL || env.A2A_OPENCLAW_MODEL;
+  const defaultModel = shellSingleQuote(explicitModel || "deepseek/deepseek-v4-flash");
+  const modelSource = shellSingleQuote(normalizeRunnerModelSource(env.A2A_DOCKER_RUNNER_MODEL_SOURCE));
   const defaultTimeout = shellSingleQuote(env.A2A_HERMES_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_HERMES_TIMEOUT_SEC);
   const subagents = loadContainedSubagentsConfig(env, "hermes");
   const subagentInstruction = buildContainedSubagentPrompt("Hermes", subagents);
@@ -497,10 +507,12 @@ function buildHermesPatchCommandScript(env: NodeJS.ProcessEnv): string {
   return `#!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-if [ -z "\${A2A_HERMES_MODEL:-}" ]; then
-  export A2A_HERMES_MODEL=${defaultModel}
-else
+export A2A_DOCKER_RUNNER_MODEL_SOURCE=${modelSource}
+A2A_HERMES_DEFAULT_MODEL=${defaultModel}
+if [ -n "\${A2A_HERMES_MODEL:-}" ]; then
   export A2A_HERMES_MODEL
+elif [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" != "native" ]; then
+  export A2A_HERMES_MODEL="$A2A_HERMES_DEFAULT_MODEL"
 fi
 if [ -z "\${A2A_HERMES_TIMEOUT_SEC:-}" ]; then
   export A2A_HERMES_TIMEOUT_SEC=${defaultTimeout}
@@ -550,6 +562,55 @@ copy_file_if_exists /run/secrets/hermes-dir/.env /root/.hermes/.env
 copy_file_if_exists /run/secrets/hermes-dir/auth.json /root/.hermes/auth.json
 copy_file_if_exists /run/secrets/hermes-dir/honcho.json /root/.hermes/honcho.json
 copy_dir_if_exists /run/secrets/hermes-dir/skills /root/.hermes/skills
+
+resolve_hermes_native_model() {
+  node <<'A2A_RESOLVE_HERMES_NATIVE_MODEL'
+const fs = require("node:fs");
+const candidates = [];
+function add(value) {
+  if (typeof value !== "string") return;
+  const compact = value.trim();
+  if (compact) candidates.push(compact);
+}
+try {
+  const envText = fs.readFileSync("/root/.hermes/.env", "utf8");
+  for (const line of envText.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?(?:A2A_HERMES_MODEL|HERMES_MODEL|MODEL)=(.*)\s*$/.exec(line);
+    if (!match) continue;
+    add(match[1].trim().replace(/^['\"]|['\"]$/g, ""));
+  }
+} catch {}
+try {
+  const yaml = fs.readFileSync("/root/.hermes/config.yaml", "utf8");
+  let provider = "";
+  let model = "";
+  for (const line of yaml.split(/\r?\n/)) {
+    const clean = line.replace(/\s+#.*$/, "");
+    let match = /^\s*model\s*:\s*['\"]?([^'\"#\s][^#]*?)['\"]?\s*$/.exec(clean);
+    if (match && !model) model = match[1].trim();
+    match = /^\s*provider\s*:\s*['\"]?([^'\"#\s][^#]*?)['\"]?\s*$/.exec(clean);
+    if (match && !provider) provider = match[1].trim();
+  }
+  if (model && provider && !model.includes("/") && !/^(openai|anthropic|google|xai|minimax|deepseek)$/i.test(model)) add(provider + "/" + model);
+  add(model);
+} catch {}
+const selected = candidates.find((value) => !/(token|secret|password|api[_-]?key)\s*[:=]/i.test(value) && !value.includes("\n"));
+if (selected) process.stdout.write(selected);
+A2A_RESOLVE_HERMES_NATIVE_MODEL
+}
+
+if [ -z "\${A2A_HERMES_MODEL:-}" ] && [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" = "native" ]; then
+  native_model="$(resolve_hermes_native_model || true)"
+  if [ -z "$native_model" ]; then
+    printf 'error=hermes_native_model_unresolved\\n' | tee -a /work/artifacts/summary.txt
+    printf 'Hermes native model source requested, but no safe model was found in mounted Hermes profile config/.env. Set A2A_HERMES_MODEL explicitly or disable native model source.\\n' | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  export A2A_HERMES_MODEL="$native_model"
+  printf 'model_source=native profile=hermes\\n' | tee -a /work/artifacts/summary.txt
+else
+  printf 'model_source=%s profile=hermes\\n' "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" | tee -a /work/artifacts/summary.txt
+fi
 
 chmod -R u+rwX /root/.hermes
 export HERMES_HOME=/root/.hermes
@@ -670,6 +731,7 @@ fi
 function buildOpenClawPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const agent = shellSingleQuote(env.A2A_OPENCLAW_AGENT_ID || "main");
   const defaultModel = shellSingleQuote(env.A2A_OPENCLAW_MODEL || "openai-codex/gpt-5.5");
+  const modelSource = shellSingleQuote(normalizeRunnerModelSource(env.A2A_DOCKER_RUNNER_MODEL_SOURCE));
   const defaultThinking = shellSingleQuote(env.A2A_OPENCLAW_THINKING || "medium");
   const defaultTimeout = shellSingleQuote(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC);
   const disableBundledPlugins = shellSingleQuote(env.A2A_OPENCLAW_DISABLE_BUNDLED_PLUGINS || "0");
@@ -682,10 +744,12 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export OPENCLAW_DISABLE_BUNDLED_PLUGINS=${disableBundledPlugins}
 export A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK=${allowNpmInstallFallback}
-if [ -z "\${A2A_OPENCLAW_MODEL:-}" ]; then
-  export A2A_OPENCLAW_MODEL=${defaultModel}
-else
+export A2A_DOCKER_RUNNER_MODEL_SOURCE=${modelSource}
+A2A_OPENCLAW_DEFAULT_MODEL=${defaultModel}
+if [ -n "\${A2A_OPENCLAW_MODEL:-}" ]; then
   export A2A_OPENCLAW_MODEL
+elif [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" != "native" ]; then
+  export A2A_OPENCLAW_MODEL="$A2A_OPENCLAW_DEFAULT_MODEL"
 fi
 if [ -z "\${A2A_OPENCLAW_THINKING:-}" ]; then
   export A2A_OPENCLAW_THINKING=${defaultThinking}
@@ -766,6 +830,44 @@ copy_dir_if_exists /run/secrets/openclaw-dir/credentials /root/.openclaw/credent
 copy_file_if_exists /run/secrets/openclaw-dir/agents/${agent}/agent/auth-profiles.json /root/.openclaw/agents/${agent}/agent/auth-profiles.json
 copy_file_if_exists /run/secrets/openclaw-dir/agents/${agent}/agent/auth-state.json /root/.openclaw/agents/${agent}/agent/auth-state.json
 copy_file_if_exists /run/secrets/openclaw-dir/agents/${agent}/agent/models.json /root/.openclaw/agents/${agent}/agent/models.json
+
+resolve_openclaw_native_model() {
+  node <<'A2A_RESOLVE_OPENCLAW_NATIVE_MODEL'
+const fs = require("node:fs");
+const configPath = "/root/.openclaw/openclaw.json";
+function clean(value) {
+  if (typeof value !== "string") return "";
+  const compact = value.trim();
+  if (!compact || compact.includes("\n")) return "";
+  if (/(token|secret|password|api[_-]?key)\\s*[:=]/i.test(compact)) return "";
+  return compact;
+}
+function modelFrom(entry) {
+  return clean(entry?.model?.primary) || clean(entry?.models?.primary) || clean(entry?.model) || "";
+}
+try {
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const agentId = process.env.A2A_OPENCLAW_AGENT_ID || "main";
+  const list = Array.isArray(config?.agents?.list) ? config.agents.list : [];
+  const active = list.find((entry) => entry && typeof entry === "object" && (entry.id === agentId || entry.name === agentId));
+  const selected = modelFrom(active) || modelFrom(config?.agents?.defaults) || modelFrom(config?.defaults);
+  if (selected) process.stdout.write(selected);
+} catch {}
+A2A_RESOLVE_OPENCLAW_NATIVE_MODEL
+}
+
+if [ -z "\${A2A_OPENCLAW_MODEL:-}" ] && [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" = "native" ]; then
+  native_model="$(resolve_openclaw_native_model || true)"
+  if [ -z "$native_model" ]; then
+    printf 'error=openclaw_native_model_unresolved\\n' | tee -a /work/artifacts/summary.txt
+    printf 'OpenClaw native model source requested, but no safe model was found in mounted OpenClaw profile config. Set A2A_OPENCLAW_MODEL explicitly or disable native model source.\\n' | tee /work/artifacts/patch-command.log
+    exit 2
+  fi
+  export A2A_OPENCLAW_MODEL="$native_model"
+  printf 'model_source=native profile=openclaw\\n' | tee -a /work/artifacts/summary.txt
+else
+  printf 'model_source=%s profile=openclaw\\n' "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" | tee -a /work/artifacts/summary.txt
+fi
 
 if [ -f /root/.openclaw/openclaw.json ]; then
   node <<'A2A_SANITIZE_OPENCLAW_CONFIG'
