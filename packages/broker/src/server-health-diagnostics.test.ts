@@ -39,7 +39,7 @@ test("server surfaces env-injected broker version/build revision on health and d
       assert.deepEqual(health.build, {
         component: "a2a-broker",
         revision: "78b2b42fca6e",
-        source: "github.com/jinwon-int/a2a-broker",
+        source: "github.com/jinwon-int/a2a-nexus",
       });
 
       const dashboardRes = await fetch(`${server.baseUrl}/dashboard`, {
@@ -672,8 +672,24 @@ test("server redacts unsafe build metadata from health", async () => {
       assert.doesNotMatch(healthText, /credential\.example\.invalid|unsafe-revision|secret-path|private\.registry/);
       const health = JSON.parse(healthText);
       assert.equal(health.build.revision, "redacted");
-      assert.equal(health.build.source, "github.com/jinwon-int/a2a-broker");
+      assert.equal(health.build.source, "github.com/jinwon-int/a2a-nexus");
       assert.equal(health.build.image, undefined);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test("server normalizes legacy a2a-broker provenance to canonical a2a-nexus source", async () => {
+  await withEnv({
+    A2A_BROKER_SOURCE: "github.com/jinwon-int/a2a-broker",
+  }, async () => {
+    const server = await startTestServer();
+    try {
+      const healthRes = await fetch(`${server.baseUrl}/health`);
+      assert.equal(healthRes.status, 200);
+      const health = await healthRes.json();
+      assert.equal(health.build.source, "github.com/jinwon-int/a2a-nexus");
     } finally {
       await server.close();
     }
