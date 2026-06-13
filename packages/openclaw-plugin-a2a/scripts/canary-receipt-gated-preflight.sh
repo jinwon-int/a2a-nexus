@@ -35,7 +35,7 @@ npm run build
 
 # Phase 2: Config bridge tests (safe config backup/restore/diff/rollback)
 echo "--- Phase 2: Gateway config bridge tests ---"
-node --test test/gateway-config-bridge.test.mjs
+node --test src/gateway-config-bridge.test.ts
 
 # Phase 3: Operator event bridge tests (receipt-gated runtime + deploy-preflight projection)
 echo "--- Phase 3: Operator event bridge tests ---"
