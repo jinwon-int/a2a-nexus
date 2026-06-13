@@ -1,5 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { findRegressions, stablyGreenCategories } from "./check-tck-regressions.mjs";
 
 function history(measurements) {
@@ -46,6 +51,53 @@ test("findRegressions compares a fresh measurement against the latest committed 
   const { regressions } = findRegressions(h, { level: "must", transport: "jsonrpc", current });
   assert.equal(regressions.length, 1);
   assert.equal(regressions[0].to, 9);
+});
+
+test("findRegressions skips the appended current measurement before selecting a baseline", () => {
+  const current = { date: "2026-06-18", level: "must", transport: "jsonrpc", must: { pass: 9, total: 75 }, categories: {} };
+  const h = history([
+    { date: "2026-06-11", level: "must", transport: "jsonrpc", must: { pass: 12, total: 75 }, categories: {} },
+    current,
+  ]);
+  const { regressions, notes } = findRegressions(h, { level: "must", transport: "jsonrpc", current });
+  assert.equal(regressions.length, 1);
+  assert.equal(regressions[0].from, 12);
+  assert.equal(regressions[0].to, 9);
+  assert.equal(notes.some((note) => note.kind === "baseline-skipped-current" && note.count === 1), true);
+});
+
+test("CLI emits regression JSON to stdout even when exiting non-zero", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tck-regression-"));
+  try {
+    const historyPath = path.join(dir, "history.json");
+    const logPath = path.join(dir, "tck.log");
+    fs.writeFileSync(historyPath, JSON.stringify(history([
+      { date: "2026-06-11", level: "must", transport: "jsonrpc", must: { pass: 12, total: 75 }, categories: {} },
+      { date: "2026-06-18", level: "must", transport: "jsonrpc", must: { pass: 9, total: 75 }, categories: {} },
+    ]), null, 2));
+    fs.writeFileSync(logPath, "A2A TCK run\nOVERALL COMPATIBILITY: 42.0%\nMUST: 9/75\njsonrpc: 9/75\n");
+
+    const scriptPath = fileURLToPath(new URL("./check-tck-regressions.mjs", import.meta.url));
+    const result = spawnSync(process.execPath, [
+      scriptPath,
+      "--history", historyPath,
+      "--against-log", logPath,
+      "--date", "2026-06-18",
+      "--level", "must",
+      "--transport", "jsonrpc",
+    ], { encoding: "utf8" });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stderr, "");
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.ok, false);
+    assert.equal(report.regressions.length, 1);
+    assert.equal(report.regressions[0].from, 12);
+    assert.equal(report.regressions[0].to, 9);
+    assert.equal(report.notes.some((note) => note.kind === "baseline-skipped-current"), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("stablyGreenCategories lists categories green across the window", () => {

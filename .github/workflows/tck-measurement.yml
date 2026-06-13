@@ -77,6 +77,29 @@ jobs:
           export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
           node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" | tee /tmp/tck-run.log
 
+      - name: Flag compliance regressions (loud, non-gating)
+        if: always()
+        continue-on-error: true
+        working-directory: packages/broker
+        env:
+          TCK_LEVEL: ${{ github.event.inputs.level || 'must' }}
+          TCK_TRANSPORT: ${{ github.event.inputs.transport || 'jsonrpc' }}
+        run: |
+          set +e
+          node scripts/check-tck-regressions.mjs \
+            --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" \
+            --against-log /tmp/tck-run.log 2>&1 | tee /tmp/tck-regressions.json
+          status=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "### TCK regression check"
+            echo ""
+            echo '```json'
+            cat /tmp/tck-regressions.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
       - name: Append measurement to the committed trend history
         if: always()
         working-directory: packages/broker
@@ -98,28 +121,10 @@ jobs:
           path: |
             /tmp/a2a-tck/reports/**
             /tmp/tck-run.log
+            /tmp/tck-regressions.json
             packages/broker/docs/tck-history.json
           if-no-files-found: warn
           retention-days: 90
-
-      - name: Flag compliance regressions (loud, non-gating)
-        if: always()
-        continue-on-error: true
-        working-directory: packages/broker
-        env:
-          TCK_LEVEL: ${{ github.event.inputs.level || 'must' }}
-          TCK_TRANSPORT: ${{ github.event.inputs.transport || 'jsonrpc' }}
-        run: |
-          node scripts/check-tck-regressions.mjs \
-            --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" \
-            --against-log /tmp/tck-run.log | tee /tmp/tck-regressions.json
-          {
-            echo "### TCK regression check"
-            echo ""
-            echo '```json'
-            cat /tmp/tck-regressions.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize compliance
         if: always()

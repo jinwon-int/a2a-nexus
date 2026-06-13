@@ -64,6 +64,10 @@ function diff(prev, cur) {
   return null;
 }
 
+function measurementKey(m) {
+  return `${m.date}|${m.level}|${m.transport}`;
+}
+
 export function findRegressions(history, { level, transport, current } = {}) {
   const sorted = scoped(history, level, transport);
   const regressions = [];
@@ -75,7 +79,19 @@ export function findRegressions(history, { level, transport, current } = {}) {
     else notes.push({ ...d, toDate: cur.date });
   };
   if (current) {
-    if (sorted.length) pushDiff(sorted[sorted.length - 1], current);
+    const currentKey = measurementKey(current);
+    const baseline = sorted.filter((m) => measurementKey(m) !== currentKey);
+    const skippedCurrent = sorted.length - baseline.length;
+    if (skippedCurrent > 0) {
+      notes.push({
+        kind: "baseline-skipped-current",
+        count: skippedCurrent,
+        date: current.date,
+        level: current.level,
+        transport: current.transport,
+      });
+    }
+    if (baseline.length) pushDiff(baseline[baseline.length - 1], current);
   } else {
     for (let i = 1; i < sorted.length; i++) pushDiff(sorted[i - 1], sorted[i]);
   }
@@ -144,7 +160,7 @@ function main() {
   const report = { ok: regressions.length === 0, level, transport, regressions, notes, promotionCandidates };
 
   if (!report.ok) {
-    console.error(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report, null, 2));
     process.exit(1);
   }
   console.log(JSON.stringify(report, null, 2));
