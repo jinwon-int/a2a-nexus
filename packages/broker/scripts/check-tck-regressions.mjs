@@ -64,6 +64,10 @@ function diff(prev, cur) {
   return null;
 }
 
+function measurementKey(m) {
+  return `${m.date}|${m.level}|${m.transport}`;
+}
+
 export function findRegressions(history, { level, transport, current } = {}) {
   const sorted = scoped(history, level, transport);
   const regressions = [];
@@ -76,10 +80,21 @@ export function findRegressions(history, { level, transport, current } = {}) {
   };
   if (current) {
     // Compare against the latest PRIOR baseline, excluding the current run's
-    // own entry. The workflow appends the current run to history before this
-    // check runs, so the last scoped entry can be the current run itself —
-    // comparing it against itself would mask a real regression (#682).
-    const baseline = sorted.filter((m) => m.date !== current.date);
+    // own entry. The workflow normally runs this check before appending, but
+    // the script also defends against an already-appended current measurement:
+    // comparing the current run against itself would mask a real regression (#682).
+    const currentKey = measurementKey(current);
+    const baseline = sorted.filter((m) => measurementKey(m) !== currentKey);
+    const skippedCurrent = sorted.length - baseline.length;
+    if (skippedCurrent > 0) {
+      notes.push({
+        kind: "baseline-skipped-current",
+        count: skippedCurrent,
+        date: current.date,
+        level: current.level,
+        transport: current.transport,
+      });
+    }
     if (baseline.length) pushDiff(baseline[baseline.length - 1], current);
   } else {
     for (let i = 1; i < sorted.length; i++) pushDiff(sorted[i - 1], sorted[i]);
