@@ -47,7 +47,7 @@ function getRevision(env) {
 }
 
 function getSource() {
-  return "github.com/jinwon-int/a2a-broker";
+  return "github.com/jinwon-int/a2a-nexus";
 }
 
 function getBuiltAt(env) {

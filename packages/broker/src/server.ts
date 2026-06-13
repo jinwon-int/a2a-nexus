@@ -6199,7 +6199,7 @@ function resolveBrokerBuildInfo(options: BrokerServerOptions, serviceName: strin
       generated.revision,
     { fallback: "unknown", unsafeFallback: "redacted" },
   ) ?? "unknown";
-  const source = sanitizeBuildSource(process.env.A2A_BROKER_SOURCE ?? generated.source ?? "github.com/jinwon-int/a2a-broker");
+  const source = sanitizeBuildSource(process.env.A2A_BROKER_SOURCE ?? generated.source ?? "github.com/jinwon-int/a2a-nexus");
   const builtAt = sanitizeIsoTimestamp(process.env.A2A_BROKER_BUILT_AT ?? generated.builtAt);
   const runtime = sanitizeBuildToken(process.env.A2A_BROKER_RUNTIME ?? generated.runtime, {
     fallback: undefined,
@@ -6273,12 +6273,16 @@ function sanitizeBuildToken(value: string | undefined, options: { fallback: stri
 }
 
 function sanitizeBuildSource(value: string | undefined): string {
+  // a2a-nexus is the canonical source of record. Anything else — empty,
+  // overlong, credential-bearing, or the legacy split-repo a2a-broker label —
+  // normalizes to the canonical provenance instead of leaking through.
+  const canonical = "github.com/jinwon-int/a2a-nexus";
   const normalized = value?.trim();
   if (!normalized || normalized.length > 128) {
-    return "github.com/jinwon-int/a2a-broker";
+    return canonical;
   }
-  if (!/^(https:\/\/github\.com\/jinwon-int\/a2a-broker|github\.com\/jinwon-int\/a2a-broker)$/.test(normalized)) {
-    return "github.com/jinwon-int/a2a-broker";
+  if (!/^(https:\/\/github\.com\/jinwon-int\/a2a-nexus|github\.com\/jinwon-int\/a2a-nexus)$/.test(normalized)) {
+    return canonical;
   }
   return normalized.replace(/^https:\/\//, "");
 }
