@@ -54,6 +54,8 @@ export function handleOperatorEventStream(
     subscribe: (listener: (event: BufferedOperatorEvent) => void) => () => void;
     replayWindow: () => OperatorReplayWindow;
     heartbeatMs: number;
+    /** Test seam: invoked at the snapshot→subscribe boundary to exercise the gap. */
+    afterSnapshot?: () => void;
   },
 ): void {
   writeSseResponseHeaders(res);
@@ -61,26 +63,6 @@ export function handleOperatorEventStream(
   const replayAfterSeq = resolveOperatorReplayAfterSeq(
     req.headers["last-event-id"] as string | undefined,
     params.replayWindow(),
-  );
-
-  if (replayAfterSeq !== null) {
-    const missed = params.replayEvents(replayAfterSeq);
-    for (const buffered of missed) {
-      writeSseEvent(
-        res,
-        buffered.event,
-        buffered.data,
-        formatOperatorSseEventId(buffered.seq),
-      );
-    }
-  }
-
-  const snapshotSeq = params.replayWindow().currentSeq;
-  writeSseEvent(
-    res,
-    "operator-snapshot",
-    params.currentSnapshot(),
-    formatOperatorSseEventId(snapshotSeq > 0 ? snapshotSeq : 0),
   );
 
   let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -97,13 +79,27 @@ export function handleOperatorEventStream(
     }
   };
 
+  // Gap-safe ordering: register the live subscription FIRST and buffer events
+  // until replay + snapshot have been written, then flush deduped by seq. The
+  // operator high-watermark is the replay window's currentSeq at snapshot time;
+  // anything beyond it is a live event that must not be dropped.
+  let flushed = false;
+  let lastSentSeq = replayAfterSeq !== null ? replayAfterSeq : -1;
+  const pending: BufferedOperatorEvent[] = [];
+  const sendEvent = (event: BufferedOperatorEvent): void => {
+    if (event.seq <= lastSentSeq) {
+      return;
+    }
+    lastSentSeq = event.seq;
+    writeSseEvent(res, event.event, event.data, formatOperatorSseEventId(event.seq));
+  };
+
   unsubscribe = params.subscribe((event) => {
-    writeSseEvent(
-      res,
-      event.event,
-      event.data,
-      formatOperatorSseEventId(event.seq),
-    );
+    if (!flushed) {
+      pending.push(event);
+      return;
+    }
+    sendEvent(event);
   });
 
   req.on("close", () => {
@@ -113,6 +109,40 @@ export function handleOperatorEventStream(
     }
   });
   req.on("error", cleanup);
+
+  if (replayAfterSeq !== null) {
+    const missed = params.replayEvents(replayAfterSeq);
+    for (const buffered of missed) {
+      writeSseEvent(
+        res,
+        buffered.event,
+        buffered.data,
+        formatOperatorSseEventId(buffered.seq),
+      );
+      if (buffered.seq > lastSentSeq) {
+        lastSentSeq = buffered.seq;
+      }
+    }
+  }
+
+  const snapshotSeq = params.replayWindow().currentSeq;
+  writeSseEvent(
+    res,
+    "operator-snapshot",
+    params.currentSnapshot(),
+    formatOperatorSseEventId(snapshotSeq > 0 ? snapshotSeq : 0),
+  );
+  if (snapshotSeq > lastSentSeq) {
+    lastSentSeq = snapshotSeq;
+  }
+
+  params.afterSnapshot?.();
+
+  flushed = true;
+  for (const event of pending) {
+    sendEvent(event);
+  }
+  pending.length = 0;
 
   if (params.heartbeatMs > 0) {
     heartbeatTimer = setInterval(() => {
