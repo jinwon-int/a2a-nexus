@@ -48,6 +48,21 @@ test("findRegressions compares a fresh measurement against the latest committed 
   assert.equal(regressions[0].to, 9);
 });
 
+test("findRegressions ignores the current run's own already-appended entry (#682)", () => {
+  // The workflow appends the current run to history before the check, so the
+  // latest scoped entry is the current run itself. The regression vs the prior
+  // baseline (18 -> 9) must still be detected, not masked by a self-comparison.
+  const h = history([
+    { date: "2026-06-11", level: "must", transport: "jsonrpc", must: { pass: 18, total: 75 }, categories: {} },
+    { date: "2026-06-18", level: "must", transport: "jsonrpc", must: { pass: 9, total: 75 }, categories: {} },
+  ]);
+  const current = { date: "2026-06-18", level: "must", transport: "jsonrpc", must: { pass: 9, total: 75 }, categories: {} };
+  const { regressions } = findRegressions(h, { level: "must", transport: "jsonrpc", current });
+  assert.equal(regressions.length, 1, "must compare against the prior baseline, not itself");
+  assert.equal(regressions[0].from, 18);
+  assert.equal(regressions[0].to, 9);
+});
+
 test("stablyGreenCategories lists categories green across the window", () => {
   const h = history([
     { date: "2026-06-11", level: "must", transport: "jsonrpc", categories: { agent_card: { pass: 6, total: 6 }, jsonrpc: { pass: 12, total: 75 } } },
