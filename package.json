@@ -102,6 +102,8 @@
     "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs",
     "dispatch:round": "node scripts/a2a-dispatch-round.mjs",
     "dispatch:round:test": "node --test scripts/a2a-dispatch-round.test.mjs",
+    "dispatch:round:coordinator": "node scripts/round-coordinator-dispatch.mjs",
+    "dispatch:round:coordinator:test": "node --test scripts/round-coordinator-dispatch.test.mjs",
     "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
     "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs"
   },
