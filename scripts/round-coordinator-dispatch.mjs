@@ -177,6 +177,7 @@ function parseCli(argv) {
       "out-dir": { type: "string" },
       "dry-run": { type: "boolean" },
       execute: { type: "boolean" },
+      "execute-timeout-ms": { type: "string" },
     },
     allowPositionals: false,
   });
@@ -204,6 +205,65 @@ function buildTeamsFromCli(values) {
     });
   }
   return teams;
+}
+
+const DEFAULT_EXECUTE_TIMEOUT_MS = 600000; // 10 min per child dispatch
+
+/**
+ * Classify one child dispatch into the execution report: dispatched | failed |
+ * timeout, with bounded evidence and any task ids / lane classifications parsed
+ * from the dispatcher's --json output. Surfacing classifications (e.g.
+ * already-exists) makes the idempotent re-run behavior explicit.
+ */
+export function classifyChildResult(entry, child) {
+  const base = { teamId: entry.teamId, brokerUrl: entry.brokerUrl };
+  const timedOut = Boolean(child.error && (child.error.code === "ETIMEDOUT" || child.signal === "SIGTERM"));
+  if (timedOut) {
+    return { ...base, status: "timeout", exitCode: child.status ?? null, error: "child dispatch exceeded execute timeout" };
+  }
+
+  let report = null;
+  if (typeof child.stdout === "string" && child.stdout.trim()) {
+    try {
+      report = JSON.parse(child.stdout);
+    } catch {
+      /* dispatcher produced non-JSON output; leave report null */
+    }
+  }
+  const laneResults = report && Array.isArray(report.results) ? report.results : [];
+  const taskIds = laneResults.map((r) => r && r.taskId).filter(Boolean);
+  const classifications = {};
+  for (const r of laneResults) {
+    const c = r && typeof r.classification === "string" ? r.classification : "unknown";
+    classifications[c] = (classifications[c] ?? 0) + 1;
+  }
+
+  const ok = child.status === 0;
+  const result = { ...base, status: ok ? "dispatched" : "failed", exitCode: child.status ?? null, taskIds, classifications };
+  if (!ok) {
+    const stderr = typeof child.stderr === "string" ? child.stderr : "";
+    result.error = stderr.slice(-500) || "dispatch exited non-zero";
+  }
+  return result;
+}
+
+/**
+ * Execute each team's manifest by invoking the dispatcher with a per-child
+ * timeout. Lane ids are deterministic, so a re-run is idempotent and surfaces
+ * already-created tasks via the dispatcher's classifications. The injected
+ * spawn keeps this unit-testable; no network/secret handling lives here.
+ */
+export function runExecute(written, { dispatcherPath, timeoutMs = DEFAULT_EXECUTE_TIMEOUT_MS, spawnImpl, nodePath = process.execPath }) {
+  const results = [];
+  for (const entry of written) {
+    const child = spawnImpl(nodePath, [dispatcherPath, "--manifest", entry.file, "--json"], {
+      encoding: "utf8",
+      timeout: timeoutMs,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    results.push(classifyChildResult(entry, child));
+  }
+  return { ok: results.every((r) => r.status === "dispatched"), timeoutMs, results };
 }
 
 function main() {
@@ -247,16 +307,14 @@ function main() {
   }
 
   // Execute: dispatch each team's manifest to its broker (A2A_EDGE_SECRET from
-  // the environment only). Sequential; fail-closed if any team fails.
-  let failed = false;
-  for (const w of written) {
-    const result = spawnSync(process.execPath, [dispatcher, "--manifest", w.file], { stdio: "inherit" });
-    if (result.status !== 0) {
-      failed = true;
-      console.error(`round-coordinator: dispatch failed for ${w.teamId} (${w.brokerUrl})`);
-    }
-  }
-  process.exit(failed ? 1 : 0);
+  // the environment only) with a per-child timeout. Fail-closed: a failed or
+  // timed-out team makes the run exit non-zero. The structured report records
+  // per-team status, exit code, task ids, and lane classifications.
+  const rawTimeout = Number(values["execute-timeout-ms"]);
+  const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : DEFAULT_EXECUTE_TIMEOUT_MS;
+  const report = runExecute(written, { dispatcherPath: dispatcher, timeoutMs, spawnImpl: spawnSync });
+  console.log(JSON.stringify(report, null, 2));
+  process.exit(report.ok ? 0 : 1);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { buildRoundManifests } from "./round-coordinator-dispatch.mjs";
+import { buildRoundManifests, runExecute, classifyChildResult } from "./round-coordinator-dispatch.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const coordinator = path.join(scriptDir, "round-coordinator-dispatch.mjs");
@@ -107,4 +107,64 @@ test("CLI dry-run writes per-team manifests that the existing dispatcher accepts
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
+});
+
+// ─── #681: --execute hardening (timeout, idempotency, structured report) ──────
+
+const writtenFixture = [
+  { teamId: "team1", file: "/tmp/r.team1.manifest.json", brokerUrl: "https://seoseo.invalid" },
+  { teamId: "team2", file: "/tmp/r.team2.manifest.json", brokerUrl: "https://gwakga.invalid" },
+];
+
+test("runExecute reports dispatched with parsed task ids and lane classifications (#681)", () => {
+  const spawnImpl = () => ({
+    status: 0,
+    stdout: JSON.stringify({ ok: true, results: [
+      { id: "r:pr615:sogyo", classification: "created", taskId: "task-1" },
+      { id: "r:pr615:nosuk", classification: "already-exists", taskId: "task-2" },
+    ] }),
+    stderr: "",
+  });
+  const report = runExecute([writtenFixture[0]], { dispatcherPath: "d.mjs", spawnImpl, timeoutMs: 1000 });
+  assert.equal(report.ok, true);
+  assert.equal(report.results[0].status, "dispatched");
+  assert.deepEqual(report.results[0].taskIds, ["task-1", "task-2"]);
+  // Idempotency is explicit: the already-exists lane is surfaced.
+  assert.equal(report.results[0].classifications["already-exists"], 1);
+  assert.equal(report.results[0].classifications["created"], 1);
+});
+
+test("runExecute classifies a per-child timeout as timeout and fails closed (#681)", () => {
+  const spawnImpl = () => ({ status: null, error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }) });
+  const report = runExecute([writtenFixture[0]], { dispatcherPath: "d.mjs", spawnImpl, timeoutMs: 5 });
+  assert.equal(report.ok, false);
+  assert.equal(report.results[0].status, "timeout");
+});
+
+test("runExecute classifies a non-zero child exit as failed with bounded stderr (#681)", () => {
+  const spawnImpl = () => ({ status: 1, stdout: "{\"ok\":false,\"results\":[]}", stderr: "boom: unauthorized" });
+  const report = runExecute([writtenFixture[0]], { dispatcherPath: "d.mjs", spawnImpl, timeoutMs: 1000 });
+  assert.equal(report.ok, false);
+  assert.equal(report.results[0].status, "failed");
+  assert.equal(report.results[0].exitCode, 1);
+  assert.match(report.results[0].error, /boom/);
+});
+
+test("runExecute aggregates a multi-team summary and fails if any team fails (#681)", () => {
+  const byFile = {
+    "/tmp/r.team1.manifest.json": { status: 0, stdout: JSON.stringify({ results: [{ taskId: "a", classification: "created" }] }), stderr: "" },
+    "/tmp/r.team2.manifest.json": { status: 1, stdout: "{}", stderr: "nope" },
+  };
+  const spawnImpl = (_node, args) => byFile[args[args.indexOf("--manifest") + 1]];
+  const report = runExecute(writtenFixture, { dispatcherPath: "d.mjs", spawnImpl, timeoutMs: 1000 });
+  assert.equal(report.results.length, 2);
+  assert.equal(report.results[0].status, "dispatched");
+  assert.equal(report.results[1].status, "failed");
+  assert.equal(report.ok, false);
+});
+
+test("classifyChildResult tolerates non-JSON child stdout", () => {
+  const r = classifyChildResult(writtenFixture[0], { status: 0, stdout: "not json", stderr: "" });
+  assert.equal(r.status, "dispatched");
+  assert.deepEqual(r.taskIds, []);
 });
