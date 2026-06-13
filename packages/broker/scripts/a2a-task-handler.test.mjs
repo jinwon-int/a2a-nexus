@@ -53,7 +53,28 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
   assert.deepEqual(result.error.details.allowedModels, [
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
+    "minimax-m3",
   ]);
+});
+
+test("minimax-m3 payload workerModel is allowlisted and accepted (#673)", () => {
+  const result = handleTask(task({
+    payload: { workerModel: "minimax-m3" },
+  }), {});
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.result.output.effectiveModel, "minimax-m3");
+  assert.equal(result.result.output.modelFromPayload, true);
+});
+
+test("A2A_HERMES_DEFAULT_MODEL env resolves minimax-m3 as a fallback (#673)", () => {
+  const viaHermesEnv = __test.resolveWorkerModel(task({}), { A2A_HERMES_DEFAULT_MODEL: "minimax-m3" });
+  assert.equal(viaHermesEnv.model, "minimax-m3");
+  assert.equal(viaHermesEnv.fromPayload, false);
+
+  // The legacy env name still works too.
+  const viaOpenclawEnv = __test.resolveWorkerModel(task({}), { A2A_OPENCLAW_MODEL: "minimax-m3" });
+  assert.equal(viaOpenclawEnv.model, "minimax-m3");
 });
 
 test("normal source-only task uses Flash model and low thinking by default", () => {
