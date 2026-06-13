@@ -467,6 +467,145 @@ describe("collectRoundResults", () => {
     const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
     equal(lane.errorSummary, "Timeout after 300s");
   });
+
+  it("does not count wrapper-only review success as substantive A2AD evidence", () => {
+    const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
+    const message = "Review PR #653 and return JSON-like evidence";
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-pr-review-test",
+      lanes: [{ workerId: "nosuk", expectedOutcome: "review" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-nosuk-wrapper-only",
+        intent: "analyze",
+        assignedWorkerId: "nosuk",
+        targetNodeId: "nosuk",
+        message,
+        status: "succeeded",
+        updatedAt: "2026-06-13T01:21:23.197Z",
+        completedAt: "2026-06-13T01:21:23.197Z",
+        result: makeResult({
+          summary: message,
+          note: "echo handled task task-nosuk-wrapper-only",
+          output: { taskId: "task-nosuk-wrapper-only", intent: "analyze", message },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "blocked");
+    equal(lane.evidenceClass, "wrapper_only");
+    equal(output.summary.completed, 0);
+    equal(output.summary.wrapperOnly, 1);
+    ok(output.closeoutBundle.body.includes("wrapper-only"));
+    ok(output.closeoutBundle.body.includes("not substantive"));
+  });
+
+  it("classifies analysis bridge EACCES as handler artifact failure", () => {
+    const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-pr-review-test",
+      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-eacces",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        targetNodeId: "sogyo",
+        status: "failed",
+        updatedAt: "2026-06-13T01:21:07.905Z",
+        completedAt: "2026-06-13T01:21:07.905Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: "openclaw_analysis_spawn_failed",
+                message: "spawnSync /opt/a2a-broker-worker/scripts/hermes-a2a-analysis-bridge.mjs EACCES",
+              },
+            }),
+          },
+        },
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "failed");
+    equal(lane.evidenceClass, "handler_artifact_failure");
+    equal(output.summary.handlerArtifactFailures, 1);
+    ok(lane.errorSummary?.includes("openclaw_analysis_spawn_failed"));
+    ok(lane.errorSummary?.includes("EACCES"));
+  });
+
+  it("tracks queued target lanes as queued_unclaimed instead of missing", () => {
+    const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-pr-review-test",
+      lanes: [{ workerId: "daegyo", expectedOutcome: "review" }],
+      staleAfterMs: 30 * 60 * 1000,
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-daegyo-queued",
+        intent: "analyze",
+        assignedWorkerId: undefined,
+        claimedBy: undefined,
+        targetNodeId: "daegyo",
+        target: { id: "daegyo", kind: "node", role: "analyst" },
+        status: "queued",
+        updatedAt: "2026-06-13T01:22:34.449Z",
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "running");
+    equal(lane.evidenceClass, "queued_unclaimed");
+    equal(output.missingLanes.length, 0);
+    equal(output.summary.queuedUnclaimed, 1);
+    ok(output.closeoutBundle.body.includes("queued/unclaimed"));
+  });
+
+  it("counts explicit review analysisStatus done as substantive evidence", () => {
+    const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-pr-review-test",
+      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-review-done",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        targetNodeId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-13T01:21:07.905Z",
+        completedAt: "2026-06-13T01:21:07.905Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            verdict: "approve",
+            blockerFindings: [],
+            nonBlockingFindings: [],
+            commandsOrEvidenceUsed: ["gh pr diff 652"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "succeeded");
+    equal(lane.evidenceClass, "substantive");
+    equal(output.summary.completed, 1);
+    equal(output.summary.substantiveEvidence, 1);
+    ok(output.closeoutBundle.body.includes("Ready for finalizer closeout"));
+  });
 });
 
 // ---------------------------------------------------------------------------

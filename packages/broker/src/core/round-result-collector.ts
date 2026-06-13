@@ -80,6 +80,15 @@ export type RoundLaneState =
   | "timeout"
   | "blocked";
 
+export type RoundLaneEvidenceClass =
+  | "substantive"
+  | "wrapper_only"
+  | "handler_artifact_failure"
+  | "source_blocked"
+  | "queued_unclaimed"
+  | "stale_or_missing_worker"
+  | "non_substantive";
+
 export interface ResultLane {
   workerId: string;
   description?: string;
@@ -105,6 +114,8 @@ export interface ResultLane {
   expectedOutcome?: RoundLaneExpectedOutcome;
   /** Classified broker exit condition, if terminal and classifiable. */
   outcomeClass?: BrokerExitCondition;
+  /** Whether the lane contains substantive worker reasoning or only dispatch/infra evidence. */
+  evidenceClass?: RoundLaneEvidenceClass;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +142,12 @@ export interface RoundResultCollectorOutput {
     timeout: number;
     blocked: number;
     evidenceUrls: number;
+    substantiveEvidence: number;
+    wrapperOnly: number;
+    handlerArtifactFailures: number;
+    queuedUnclaimed: number;
+    sourceBlocked: number;
+    nonSubstantive: number;
   };
   lanes: ResultLane[];
   /** Required lane workerIds for which no task record was found. */
@@ -251,7 +268,7 @@ export function collectRoundResults(
 function groupTasksByWorker(tasks: TaskRecord[]): Map<string, TaskRecord[]> {
   const map = new Map<string, TaskRecord[]>();
   for (const task of tasks) {
-    const workerId = task.assignedWorkerId ?? task.claimedBy ?? "unassigned";
+    const workerId = task.assignedWorkerId ?? task.claimedBy ?? task.targetNodeId ?? task.target.id ?? "unassigned";
     let list = map.get(workerId);
     if (!list) {
       list = [];
@@ -305,6 +322,7 @@ function classifyLane(
   const evidence = extractEvidence(latest);
   const resultSummary = extractResultSummary(latest);
   const outcomeClass = classifyExitCondition(status, evidence);
+  const evidenceClass = classifyEvidenceClass(laneDef, latest, evidence);
 
   // 1. Timeout — non-terminal past deadline
   if (hasTimeout && !TERMINAL_STATUSES.has(status) && nowMs >= timeoutAtMs) {
@@ -392,6 +410,27 @@ function classifyLane(
 
   // 5. Succeeded
   if (status === "succeeded") {
+    if (isEvidenceRequired(laneDef) && evidenceClass !== "substantive") {
+      return buildLaneResult(laneDef, {
+        laneState: "blocked",
+        taskIds,
+        latest,
+        status,
+        evidence,
+        resultSummary: {
+          ...resultSummary,
+          errorSummary: evidenceClass === "wrapper_only"
+            ? "Wrapper-only task success is not substantive worker analysis"
+            : "Succeeded task did not include substantive worker analysis evidence",
+        },
+        ageMs,
+        updatedAt,
+        completedAt,
+        outcomeClass,
+        evidenceClass,
+        risk: "Succeeded task did not satisfy required substantive analysis evidence",
+      });
+    }
     return buildLaneResult(laneDef, {
       laneState: "succeeded",
       taskIds,
@@ -403,6 +442,7 @@ function classifyLane(
       updatedAt,
       completedAt,
       outcomeClass,
+      evidenceClass,
     });
   }
 
@@ -434,6 +474,7 @@ function buildLaneResult(
     updatedAt: string;
     completedAt?: string;
     outcomeClass?: BrokerExitCondition;
+    evidenceClass?: RoundLaneEvidenceClass;
     risk?: string;
   },
 ): ResultLane {
@@ -455,6 +496,7 @@ function buildLaneResult(
     ageMs: state.ageMs,
     expectedOutcome: laneDef.expectedOutcome,
     outcomeClass: state.outcomeClass,
+    evidenceClass: state.evidenceClass ?? classifyEvidenceClass(laneDef, state.latest, state.evidence),
   };
   return lane;
 }
@@ -531,6 +573,16 @@ function extractResultSummary(task: TaskRecord): {
   const testSummary = safeString(output["testSummary"]) ?? safeString(output["test_summary"]);
 
   const errorSummary = error?.message;
+  if (error) {
+    const nested = extractNestedErrorText(error);
+    if (nested) {
+      return {
+        outcomeSummary,
+        testSummary,
+        errorSummary: errorSummary ? `${errorSummary}: ${nested}` : nested,
+      };
+    }
+  }
   if (error?.details && typeof error.details === "object") {
     const detailStr = safeString(error.details["summary"]);
     if (detailStr) {
@@ -550,6 +602,95 @@ function extractResultSummary(task: TaskRecord): {
 function safeString(value: unknown): string | undefined {
   if (typeof value === "string" && value.length > 0) return value;
   return undefined;
+}
+
+function isEvidenceRequired(laneDef: RoundManifestLane): boolean {
+  return laneDef.expectedOutcome === "analysis" || laneDef.expectedOutcome === "review";
+}
+
+function classifyEvidenceClass(
+  laneDef: RoundManifestLane,
+  task: TaskRecord,
+  evidence: ExtractedEvidence,
+): RoundLaneEvidenceClass {
+  if (!task.assignedWorkerId && !task.claimedBy && task.status === "queued") {
+    return "queued_unclaimed";
+  }
+
+  if (task.status === "failed" || task.status === "canceled") {
+    const text = extractNestedErrorText(task.error).toLowerCase();
+    if (
+      text.includes("openclaw_analysis_spawn_failed") ||
+      text.includes("hermes-a2a-analysis-bridge.mjs eacces") ||
+      text.includes("analysis bridge") && text.includes("eacces")
+    ) {
+      return "handler_artifact_failure";
+    }
+    if (
+      text.includes("source root") ||
+      text.includes("repo root") ||
+      text.includes("source bundle") ||
+      text.includes("0 files") ||
+      text.includes("repo mapping")
+    ) {
+      return "source_blocked";
+    }
+    return "non_substantive";
+  }
+
+  if (task.status === "succeeded") {
+    if (hasSubstantiveWorkerOutput(task)) return "substantive";
+    if (isWrapperOnlySuccess(task)) return "wrapper_only";
+    if (!isEvidenceRequired(laneDef) && evidence.allUrls.length > 0) return "substantive";
+    if (!isEvidenceRequired(laneDef)) return "non_substantive";
+    return "non_substantive";
+  }
+
+  if (task.status === "blocked") return evidence.blockUrl ? "source_blocked" : "non_substantive";
+  return "non_substantive";
+}
+
+function hasSubstantiveWorkerOutput(task: TaskRecord): boolean {
+  const output = task.result?.output ?? {};
+  const analysisStatus = safeString(output["analysisStatus"]) ?? safeString(output["analysis_status"]);
+  if (analysisStatus === "done") return true;
+  if (safeString(output["verdict"])) return true;
+  if (Array.isArray(output["blockerFindings"]) && output["blockerFindings"].length > 0) return true;
+  if (Array.isArray(output["nonBlockingFindings"]) && output["nonBlockingFindings"].length > 0) return true;
+  if (Array.isArray(output["findings"]) && output["findings"].length > 0) return true;
+  return false;
+}
+
+function isWrapperOnlySuccess(task: TaskRecord): boolean {
+  if (task.status !== "succeeded") return false;
+  const output = task.result?.output ?? {};
+  const note = task.result?.note ?? "";
+  const summary = task.result?.summary ?? "";
+  const outputMessage = safeString(output["message"]);
+  return (
+    note.includes("echo handled task") ||
+    (Boolean(task.message) && summary === task.message) ||
+    (Boolean(task.message) && outputMessage === task.message)
+  );
+}
+
+function extractNestedErrorText(error: TaskRecord["error"]): string {
+  if (!error?.details || typeof error.details !== "object") return "";
+  const parts: string[] = [];
+  const details = error.details;
+  for (const key of ["summary", "stdout", "stderr"]) {
+    const value = safeString(details[key]);
+    if (!value) continue;
+    parts.push(value);
+    try {
+      const parsed = JSON.parse(value) as { error?: { code?: unknown; message?: unknown } };
+      if (typeof parsed.error?.code === "string") parts.push(parsed.error.code);
+      if (typeof parsed.error?.message === "string") parts.push(parsed.error.message);
+    } catch {
+      // Keep the raw value above; nested stdout is not always JSON.
+    }
+  }
+  return parts.join(" | ");
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +733,12 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
     timeout: 0,
     blocked: 0,
     evidenceUrls: 0,
+    substantiveEvidence: 0,
+    wrapperOnly: 0,
+    handlerArtifactFailures: 0,
+    queuedUnclaimed: 0,
+    sourceBlocked: 0,
+    nonSubstantive: 0,
   };
 
   const seenUrls = new Set<string>();
@@ -617,6 +764,26 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
         break;
       case "failed":
         counts.blocked++; // failed lanes are grouped under blocked for closeout
+        break;
+    }
+    switch (lane.evidenceClass) {
+      case "substantive":
+        counts.substantiveEvidence++;
+        break;
+      case "wrapper_only":
+        counts.wrapperOnly++;
+        break;
+      case "handler_artifact_failure":
+        counts.handlerArtifactFailures++;
+        break;
+      case "queued_unclaimed":
+        counts.queuedUnclaimed++;
+        break;
+      case "source_blocked":
+        counts.sourceBlocked++;
+        break;
+      case "non_substantive":
+        counts.nonSubstantive++;
         break;
     }
     for (const url of lane.evidenceUrls) seenUrls.add(url);
@@ -660,7 +827,7 @@ function closeoutTitle(context: {
   summary: RoundResultCollectorOutput["summary"];
 }): string {
   const { summary } = context;
-  const needsReviewCount = summary.stale + summary.timeout + summary.blocked;
+  const needsReviewCount = summary.stale + summary.timeout + summary.blocked + summary.queuedUnclaimed;
   const verb = needsReviewCount > 0 ? `needs review (${needsReviewCount} lane(s) require attention)` : "ready for review";
   return `Finalizer review: ${context.roundLabel} — ${verb}`;
 }
@@ -695,6 +862,7 @@ function closeoutBody(context: {
   const stale = summary.stale;
   const timeout = summary.timeout;
   lines.push(`**${ok}/${total} lanes completed.** ${ko} blocked, ${stale} stale, ${timeout} timeout, ${waiting} active.`);
+  lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
   lines.push("");
 
   // Quick verdict
@@ -733,7 +901,8 @@ function closeoutBody(context: {
             : lane.laneState === "stale"
               ? "stale"
               : lane.laneState;
-    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs} |`);
+    const evidenceClass = lane.evidenceClass ? `; ${lane.evidenceClass}` : "";
+    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs}${evidenceClass} |`);
   }
   lines.push("");
 
@@ -794,7 +963,7 @@ function closeoutBody(context: {
   // Finalizer next actions
   lines.push("### Finalizer next actions");
   lines.push("");
-  const actions = buildFinalizerActions(summary, missingLanes.length, staleLanes.length, timeoutLanes.length, blockedLanes.length);
+  const actions = buildFinalizerActions(summary, missingLanes.length, staleLanes.length, timeoutLanes.length, blockedLanes.length, summary.queuedUnclaimed);
   for (const action of actions) {
     lines.push(`- ${action}`);
   }
@@ -833,13 +1002,15 @@ function buildFinalizerActions(
   staleCount: number,
   timeoutCount: number,
   blockedCount: number,
+  queuedUnclaimedCount: number,
 ): string[] {
   const actions: string[] = [];
 
-  const needsReview = blockedCount > 0 || staleCount > 0 || timeoutCount > 0 || missingCount > 0;
+  const needsReview = blockedCount > 0 || staleCount > 0 || timeoutCount > 0 || missingCount > 0 || queuedUnclaimedCount > 0;
 
   if (needsReview) {
     if (missingCount > 0) actions.push(`Review ${missingCount} missing lane(s): dispatch or mark excluded before closeout.`);
+    if (queuedUnclaimedCount > 0) actions.push(`Review ${queuedUnclaimedCount} queued/unclaimed lane(s): verify worker liveness or exclude before final A2AD closeout.`);
     if (staleCount > 0) actions.push(`Inspect ${staleCount} stale lane(s): request progress or reassign.`);
     if (timeoutCount > 0) actions.push(`Review ${timeoutCount} timeout lane(s): decide retry, split, or defer.`);
     if (blockedCount > 0) actions.push(`Inspect ${blockedCount} blocked lane(s): read Block evidence and decide retry/skip.`);
