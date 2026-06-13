@@ -1,0 +1,258 @@
+{
+  "meta": {
+    "contract": "harness-neutral-analysis-adapter",
+    "version": "v0",
+    "issue": "https://github.com/jinwon-int/a2a-nexus/issues/666",
+    "parent": "https://github.com/jinwon-int/a2a-nexus/issues/663",
+    "round": "a2ad-open-issue-cleanup-20260613-20d668f",
+    "updatedAt": "2026-06-13T08:30:00.000Z",
+    "redacted": true
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-06-13T08:30:00.000Z",
+    "round": "a2ad-open-issue-cleanup-20260613-20d668f",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerRestart": false,
+    "workerRestart": false,
+    "liveProviderSend": false,
+    "terminalOutboxAckMutation": false,
+    "databaseMutation": false,
+    "releaseOrTagPublish": false,
+    "secretMovement": false,
+    "repoVisibilityChange": false,
+    "historyRewrite": false,
+    "forcePush": false
+  },
+  "requiredTaskInputs": {
+    "intent": "analyze",
+    "taskOrigin": "github",
+    "payloadFlags": {
+      "noLive": true,
+      "sourceOnly": true,
+      "readOnlyValidation": true
+    },
+    "roundMetadata": [
+      "parentRoundId",
+      "parentRoundTotal",
+      "parentRoundOrder",
+      "originBrokerId",
+      "brokerOfRecordId"
+    ],
+    "sourceEvidenceCarriers": [
+      "payload.repo + payload.paths/sourceHints",
+      "payload.sourceBundle.files[]",
+      "payload.sourceEvidence[]",
+      "explicit GitHub PR/issue refs fetchable read-only"
+    ]
+  },
+  "requiredOutputFields": [
+    "analysisStatus",
+    "evidenceClass",
+    "summary",
+    "findings",
+    "risks",
+    "recommendations",
+    "evidenceRefs"
+  ],
+  "evidenceClasses": [
+    "substantive",
+    "wrapper_only",
+    "source_blocked",
+    "handler_artifact_failure",
+    "queued_unclaimed",
+    "provider_or_model_failure"
+  ],
+  "classificationRules": {
+    "substantive": {
+      "analysisStatus": "done",
+      "countsAsWorkerOpinion": true,
+      "requiresFindings": true,
+      "requiresEvidenceRefs": true
+    },
+    "wrapper_only": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "analysis-only completed",
+        "reference worker dry-run completed",
+        "prompt echo without analysis"
+      ]
+    },
+    "source_blocked": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "missing repo root",
+        "empty sourceBundle.files",
+        "GitHub issue or PR ref unavailable",
+        "source bundle truncated before requested file"
+      ]
+    },
+    "handler_artifact_failure": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "EACCES executing analysis bridge",
+        "missing handler executable",
+        "missing WORKER_HANDLER_CWD",
+        "spawn ENOENT"
+      ]
+    },
+    "queued_unclaimed": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "task remained queued past finalizer cutoff",
+        "assigned worker stale or offline"
+      ]
+    },
+    "provider_or_model_failure": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "invalid JSON from model bridge",
+        "provider auth failure",
+        "model timeout",
+        "Hermes exited null"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "HNA-01",
+      "name": "substantive-analysis",
+      "input": {
+        "intent": "analyze",
+        "taskOrigin": "github",
+        "payload": {
+          "noLive": true,
+          "sourceOnly": true,
+          "readOnlyValidation": true,
+          "repo": "jinwon-int/a2a-nexus",
+          "sourceBundle": {
+            "files": [
+              {
+                "path": "contracts/a2a/harness-neutral-analysis-adapter.md",
+                "contentSha256": "redacted-fixture-sha"
+              }
+            ]
+          }
+        }
+      },
+      "output": {
+        "analysisStatus": "done",
+        "evidenceClass": "substantive",
+        "summary": "Found one contract/test gap and mapped it to a PR-first recommendation.",
+        "findings": [
+          {
+            "severity": "medium",
+            "title": "Finalizer needs a harness-neutral evidence class",
+            "evidenceRefs": ["contracts/a2a/harness-neutral-analysis-adapter.md"],
+            "recommendation": "Add conformance fixture and classify only analysisStatus=done as worker opinion."
+          }
+        ],
+        "risks": [],
+        "recommendations": ["Add a deterministic fixture checker."],
+        "evidenceRefs": ["#666", "contracts/a2a/harness-neutral-analysis-adapter.md"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": true,
+        "finalizerMayUseForSynthesis": true
+      }
+    },
+    {
+      "id": "HNA-02",
+      "name": "wrapper-only-success",
+      "output": {
+        "analysisStatus": "wrapper_only",
+        "evidenceClass": "wrapper_only",
+        "summary": "analysis-only completed",
+        "findings": [],
+        "risks": ["No source-backed analysis was produced."],
+        "recommendations": [],
+        "evidenceRefs": ["task:wrapper-only-redacted"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false
+      }
+    },
+    {
+      "id": "HNA-03",
+      "name": "source-mapping-blocked",
+      "output": {
+        "analysisStatus": "source_blocked",
+        "evidenceClass": "source_blocked",
+        "summary": "Repo root unavailable and sourceBundle.files was empty.",
+        "findings": [],
+        "risks": ["Worker did not inspect source."],
+        "recommendations": ["Retry with compact embedded sourceBundle.files."],
+        "evidenceRefs": ["task:source-blocked-redacted"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "retryRecommended": true
+      }
+    },
+    {
+      "id": "HNA-04",
+      "name": "handler-artifact-failure",
+      "output": {
+        "analysisStatus": "handler_artifact_failure",
+        "evidenceClass": "handler_artifact_failure",
+        "summary": "Analysis bridge could not execute: EACCES.",
+        "findings": [],
+        "risks": ["Worker artifact preflight failed."],
+        "recommendations": ["Fix worker artifact executable-bit preflight before retrying source review."],
+        "evidenceRefs": ["#659", "#655"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "linkToWorkerPreflight": true
+      }
+    },
+    {
+      "id": "HNA-05",
+      "name": "queued-unclaimed-lane",
+      "output": {
+        "analysisStatus": "queued_unclaimed",
+        "evidenceClass": "queued_unclaimed",
+        "summary": "Task stayed queued until finalizer cutoff.",
+        "findings": [],
+        "risks": ["No worker evidence exists for this lane."],
+        "recommendations": ["Classify as missing evidence, not as a worker opinion."],
+        "evidenceRefs": ["task:queued-redacted"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMustReportMissingLane": true
+      }
+    },
+    {
+      "id": "HNA-06",
+      "name": "provider-model-failure",
+      "output": {
+        "analysisStatus": "provider_or_model_failure",
+        "evidenceClass": "provider_or_model_failure",
+        "summary": "Model bridge returned invalid JSON after provider failure.",
+        "findings": [],
+        "risks": ["Prompt echo or generic error JSON must not be treated as analysis."],
+        "recommendations": ["Run bridge readiness smoke and retry only after strict JSON output is proven."],
+        "evidenceRefs": ["task:model-failure-redacted"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "bridgeReadinessRequired": true
+      }
+    }
+  ],
+  "finalizerAssertions": [
+    "Only substantive lanes count as worker opinions.",
+    "Wrapper-only, source-blocked, handler-artifact, queued, and provider/model failure lanes are operational evidence only.",
+    "A synthesis candidate is not an automatic winner.",
+    "Closes is reserved for issues fully satisfied by a PR; Refs is used for partial progress."
+  ],
+  "validationCommands": [
+    "node test/conformance/check-contract-fixtures.mjs"
+  ]
+}

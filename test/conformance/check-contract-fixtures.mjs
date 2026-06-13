@@ -22,6 +22,7 @@ const fixtureFiles = {
   workerCapabilityProfile: 'worker-capability-profile.json',
   embeddedExecutionStability: 'embedded-execution-stability-policy.json',
   adapterReceiptCapability: 'adapter-receipt-capability.json',
+  harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
 };
 
 const forbiddenRuntimePaths = [
@@ -93,6 +94,7 @@ const {
   workerCapabilityProfile,
   embeddedExecutionStability,
   adapterReceiptCapability,
+  harnessNeutralAnalysisAdapter,
 } = fixtures;
 
 assert.deepEqual(lifecycle.terminalStates.sort(), ['blocked', 'cancelled', 'done', 'pr']);
@@ -1635,6 +1637,85 @@ for (const pattern of secretLikePatterns) {
   assert.ok(
     !pattern.test(arcFixtureText),
     'adapter-receipt-capability fixture matched forbidden secret pattern ' + pattern,
+  );
+}
+
+// Harness-neutral source-only analysis adapter contract (#666)
+assert.equal(harnessNeutralAnalysisAdapter.meta.contract, 'harness-neutral-analysis-adapter');
+assert.equal(harnessNeutralAnalysisAdapter.meta.issue, 'https://github.com/jinwon-int/a2a-nexus/issues/666');
+assert.equal(harnessNeutralAnalysisAdapter.requiredTaskInputs.intent, 'analyze');
+assert.equal(harnessNeutralAnalysisAdapter.requiredTaskInputs.taskOrigin, 'github');
+assert.equal(harnessNeutralAnalysisAdapter.requiredTaskInputs.payloadFlags.noLive, true);
+assert.equal(harnessNeutralAnalysisAdapter.requiredTaskInputs.payloadFlags.sourceOnly, true);
+assert.equal(harnessNeutralAnalysisAdapter.requiredTaskInputs.payloadFlags.readOnlyValidation, true);
+
+const requiredRoundFields = new Set(harnessNeutralAnalysisAdapter.requiredTaskInputs.roundMetadata);
+for (const field of ['parentRoundId', 'parentRoundTotal', 'parentRoundOrder', 'originBrokerId', 'brokerOfRecordId']) {
+  assert.ok(requiredRoundFields.has(field), 'harness-neutral analysis task must require ' + field);
+}
+
+assert.deepEqual(
+  [...harnessNeutralAnalysisAdapter.evidenceClasses].sort(),
+  [
+    'handler_artifact_failure',
+    'provider_or_model_failure',
+    'queued_unclaimed',
+    'source_blocked',
+    'substantive',
+    'wrapper_only',
+  ],
+  'harness-neutral analysis evidence classes must be explicit and closed',
+);
+
+const hnaScenarios = new Map(harnessNeutralAnalysisAdapter.scenarios.map((scenario) => [scenario.name, scenario]));
+for (const name of [
+  'substantive-analysis',
+  'wrapper-only-success',
+  'source-mapping-blocked',
+  'handler-artifact-failure',
+  'queued-unclaimed-lane',
+  'provider-model-failure',
+]) {
+  assert.ok(hnaScenarios.has(name), 'missing harness-neutral analysis scenario ' + name);
+}
+
+assert.equal(hnaScenarios.get('substantive-analysis').output.analysisStatus, 'done');
+assert.equal(hnaScenarios.get('substantive-analysis').output.evidenceClass, 'substantive');
+assert.equal(hnaScenarios.get('substantive-analysis').expect.countsAsWorkerOpinion, true);
+assert.ok(hnaScenarios.get('substantive-analysis').output.findings.length > 0);
+assert.ok(hnaScenarios.get('substantive-analysis').output.evidenceRefs.length > 0);
+
+for (const name of [
+  'wrapper-only-success',
+  'source-mapping-blocked',
+  'handler-artifact-failure',
+  'queued-unclaimed-lane',
+  'provider-model-failure',
+]) {
+  const scenario = hnaScenarios.get(name);
+  assert.equal(scenario.expect.countsAsWorkerOpinion, false, name + ' must not count as worker opinion');
+  assert.equal(scenario.output.findings.length, 0, name + ' must not carry substantive findings');
+}
+
+assert.ok(
+  harnessNeutralAnalysisAdapter.finalizerAssertions.includes('Only substantive lanes count as worker opinions.'),
+  'harness-neutral analysis finalizer assertions must preserve substantive-only counting',
+);
+
+const hnaFixtureText = fs.readFileSync(
+  path.join(fixtureDir, 'harness-neutral-analysis-adapter.json'),
+  'utf8',
+);
+for (const forbiddenPath of forbiddenRuntimePaths) {
+  assert.ok(
+    !hnaFixtureText.includes(forbiddenPath),
+    'harness-neutral-analysis-adapter fixture must not reference OpenClaw runtime/bootstrap path ' + forbiddenPath,
+  );
+}
+for (const pattern of secretLikePatterns) {
+  assert.ok(
+    !pattern.test(hnaFixtureText),
+    'harness-neutral-analysis-adapter fixture matched forbidden secret pattern ' + pattern,
   );
 }
 

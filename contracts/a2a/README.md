@@ -22,6 +22,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 - [Embedded execution stability policy](./embedded-execution-stability-policy.md) — container isolation, config domain sanitization, workspace hygiene, session store guard, post-completion fail-closed checks for Docker Runner embedded OpenClaw execution
 - [Approval-gated auto-closeout action reconciliation](./action-reconciliation.md) — cross-repo contract between a2a-broker and a2a-plane for approval-gated auto-closeout action reconciliation, idempotency keys, rollback/no-op criteria, and canary gate
 - [Adapter receipt capability](./adapter-receipt-capability.md) — capability levels C1–C6 for non-OpenClaw/Hermes/spool Terminal Brief adapters, mapping produced/spooled/provider-only states to the four receipt levels, and explicit non-ACK boundary for adapter-level evidence
+- [Harness-neutral analysis adapter](./harness-neutral-analysis-adapter.md) — source-only analysis task inputs, adapter output fields, evidence classes, and finalizer counting rules independent of Hermes/OpenClaw/Docker-runner harnesses
 
 ## Compatibility
 
@@ -43,6 +44,7 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 - [R31 worker capability profile](../../fixtures/contract/worker-capability-profile.json) — worker capability profile fixture
 - [Embedded execution stability policy](../../fixtures/contract/embedded-execution-stability-policy.json) — machine-readable embedded execution stability policy fixture
 - [Action reconciliation](../../fixtures/contract/action-reconciliation.json) — approval-gated auto-closeout action reconciliation scenarios
+- [Harness-neutral analysis adapter](../../fixtures/contract/harness-neutral-analysis-adapter.json) — source-only analysis evidence classification scenarios for substantive, wrapper-only, source-blocked, handler-artifact, queued, and provider/model-failure lanes
 - [External harness no-live conformance](../../fixtures/external-harness/no-live-conformance.json) — public-safe external harness fixture for OpenClaw-agnostic no-live integration
 
 ### Compatibility fixtures
