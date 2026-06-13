@@ -412,9 +412,14 @@ import {
   parseSingleStreamingMessageRequest,
 } from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
-
-const DEFAULT_TASK_LIST_LIMIT = 100;
-const MAX_TASK_LIST_LIMIT = 500;
+import {
+  DEFAULT_TASK_LIST_LIMIT,
+  auditFiltersFromUrl,
+  proposalFiltersFromUrl,
+  taskFiltersFromUrl,
+  taskIdsFromUrl,
+  workerFiltersFromUrl,
+} from "./http/read-path-filters.js";
 
 interface ThreadedExchangeMessage extends A2AExchangeMessageRecord {
   replies: ThreadedExchangeMessage[];
@@ -6451,133 +6456,6 @@ export function firstNonEmpty(...values: Array<string | undefined>): string | un
 // Grace period after server.close() before force-closing lingering (e.g. SSE)
 // connections so a graceful shutdown cannot hang indefinitely.
 const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
-
-function proposalFiltersFromUrl(url: URL): {
-  status?: ProposalStatus;
-  sourceNodeId?: string;
-  targetNodeId?: string;
-  kind?: ProposalKind;
-} {
-  return {
-    status: optionalEnum(url.searchParams.get("status"), [
-      "draft",
-      "submitted",
-      "validated",
-      "approved",
-      "rejected",
-      "applied",
-      "rolled_back",
-    ]),
-    sourceNodeId: optionalString(url.searchParams.get("sourceNodeId")),
-    targetNodeId: optionalString(url.searchParams.get("targetNodeId")),
-    kind: optionalEnum(url.searchParams.get("kind"), ["patch", "params", "hybrid"]),
-  };
-}
-
-function workerFiltersFromUrl(url: URL): WorkerListFilters {
-  return {
-    role: optionalEnum(url.searchParams.get("role"), [
-      "hub",
-      "live-trader",
-      "researcher",
-      "analyst",
-      "operator",
-    ] as A2APartyRole[]),
-    environment: optionalEnum(url.searchParams.get("environment"), [
-      "research",
-      "staging",
-      "live",
-    ] as A2AWorkerEnvironment[]),
-    workspaceId: optionalString(url.searchParams.get("workspaceId")),
-  };
-}
-
-function taskFiltersFromUrl(url: URL, options: { defaultLimit?: number } = {}): {
-  exchangeId?: string;
-  status?: TaskStatus;
-  targetNodeId?: string;
-  proposalId?: string;
-  intent?: TaskKind;
-  claimedBy?: string;
-  assignedWorkerId?: string;
-  taskOrigin?: TaskOrigin;
-  limit?: number;
-} {
-  const rawStatus = url.searchParams.get("status");
-  const status = rawStatus === "pending"
-    ? "queued"
-    : optionalEnum(rawStatus, [
-      "blocked",
-      "queued",
-      "claimed",
-      "running",
-      "succeeded",
-      "failed",
-      "canceled",
-    ]);
-  return {
-    exchangeId: optionalString(url.searchParams.get("exchangeId")),
-    status,
-    targetNodeId: optionalString(url.searchParams.get("targetNodeId")),
-    proposalId: optionalString(url.searchParams.get("proposalId")),
-    intent: optionalEnum(url.searchParams.get("intent"), [
-      "chat",
-      "analyze",
-      "verify",
-      "backfill",
-      "propose_patch",
-      "propose_params",
-      "validate_change",
-      "apply_local_change",
-      "promote_to_live",
-      "rollback_live",
-    ]),
-    claimedBy: optionalString(url.searchParams.get("claimedBy")),
-    assignedWorkerId: optionalString(url.searchParams.get("assignedWorkerId")) ?? optionalString(url.searchParams.get("worker")),
-    taskOrigin: optionalEnum(url.searchParams.get("taskOrigin"), ["github", "api", "sessions_send", "operator", "unknown"]),
-    limit: boundedLimitQueryParam(url, "limit", MAX_TASK_LIST_LIMIT, options.defaultLimit),
-  };
-}
-
-function auditFiltersFromUrl(url: URL): {
-  proposalId?: string;
-  actorId?: string;
-  targetId?: string;
-  action?: AuditAction;
-} {
-  return {
-    proposalId: optionalString(url.searchParams.get("proposalId")),
-    actorId: optionalString(url.searchParams.get("actorId")),
-    targetId: optionalString(url.searchParams.get("targetId")),
-    action: optionalEnum(url.searchParams.get("action"), [
-      "exchange.message.added",
-      "proposal.created",
-      "artifact.attached",
-      "validation.submitted",
-      "proposal.approved",
-      "proposal.rejected",
-      "proposal.applied",
-      "task.created",
-      "task.approved",
-      "task.claimed",
-      "task.started",
-      "task.reassigned",
-      "task.requeued",
-      "task.succeeded",
-      "task.failed",
-      "task.canceled",
-      "worker.registered",
-      "worker.heartbeat",
-    ]),
-  };
-}
-
-function taskIdsFromUrl(url: URL): string[] {
-  const repeated = url.searchParams.getAll("task_id").flatMap((value) => value.split(","));
-  const csv = optionalString(url.searchParams.get("task_ids"));
-  if (csv) repeated.push(...csv.split(","));
-  return [...new Set(repeated.map((value) => value.trim()).filter(Boolean))];
-}
 
 function listAuditEventsForReadPath(
   stateStore: BrokerStateStore,
