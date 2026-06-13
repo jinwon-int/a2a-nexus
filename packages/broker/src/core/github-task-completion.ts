@@ -10,6 +10,7 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
   "libero-validation",
   "family-wiki-readonly-audit",
 ]);
+const REVIEW_VERDICTS = new Set(["approve", "request_changes", "comment"]);
 const RECEIPT_STATUSES = new Set([
   "accepted",
   "started",
@@ -34,23 +35,32 @@ export function validateGithubTaskCompletionEvidence(task: TaskRecord, result?: 
     return null;
   }
 
-  if (isGithubReadOnlyValidationTask(task) && !hasGithubNoPatchCompletionEvidence(result)) {
-    return {
-      code: "github_completion_evidence_missing",
-      message:
-        "github-origin read-only validation/libero tasks must return Done-comment or Block-comment evidence; PR-only evidence is reserved for propose_patch tasks",
-      details: {
-        taskId: task.id,
-        taskOrigin: task.taskOrigin,
-        mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
-        requiredEvidence: [
-          "result.output.github.doneCommentUrl",
-          "result.output.github.blockCommentUrl",
-          "result.output.doneCommentUrl",
-          "result.output.blockCommentUrl",
-        ],
-      },
-    };
+  if (isGithubReadOnlyValidationTask(task)) {
+    if (!hasGithubNoPatchCompletionEvidence(result) && !hasGithubReviewVerdictEvidence(result)) {
+      return {
+        code: "github_completion_evidence_missing",
+        message:
+          "github-origin read-only validation/libero tasks must return Done-comment or Block-comment evidence, or a review verdict (approve/request_changes/comment) with a review body reference; PR-only evidence is reserved for propose_patch tasks",
+        details: {
+          taskId: task.id,
+          taskOrigin: task.taskOrigin,
+          mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
+          requiredEvidence: [
+            "result.output.github.doneCommentUrl",
+            "result.output.github.blockCommentUrl",
+            "result.output.doneCommentUrl",
+            "result.output.blockCommentUrl",
+            "result.output.reviewVerdict (+ result.output.reviewBodyUrl/reviewBodyRef)",
+            "result.output.review.verdict (+ result.output.review.bodyUrl/bodyRef)",
+          ],
+        },
+      };
+    }
+
+    // Read-only completion evidence is satisfied (Done/Block marker or review
+    // verdict). These lanes never produce a patch, so the propose_patch PR-style
+    // evidence requirement below does not apply; only receipt sanity remains.
+    return validateCompletionReceipt(result);
   }
 
   if (!hasGithubCompletionEvidence(result)) {
@@ -163,6 +173,38 @@ function hasGithubNoPatchCompletionEvidence(result?: TaskResult): boolean {
   }
 
   return isHttpUrl(output.doneCommentUrl) || isHttpUrl(output.blockCommentUrl);
+}
+
+// Read-only review lanes (analyze/verify/validate_change on a github read-only
+// validation mode) deliver their result as a review verdict plus a reference to
+// the review body, not as a Done/Block comment. A complete verdict is canonical
+// completion evidence for those lanes. A review that produced no verdict (or no
+// body reference) still fails closed, exactly like a missing Done/Block marker.
+function hasGithubReviewVerdictEvidence(result?: TaskResult): boolean {
+  const output = result?.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return false;
+  }
+
+  const review = output.review;
+  if (review && typeof review === "object" && !Array.isArray(review)) {
+    const record = review as Record<string, unknown>;
+    if (isReviewVerdict(record.verdict) && hasReviewBodyRef(record.bodyUrl ?? record.bodyRef)) {
+      return true;
+    }
+  }
+
+  return isReviewVerdict(output.reviewVerdict) && hasReviewBodyRef(output.reviewBodyUrl ?? output.reviewBodyRef);
+}
+
+function isReviewVerdict(value: unknown): boolean {
+  return typeof value === "string" && REVIEW_VERDICTS.has(value);
+}
+
+function hasReviewBodyRef(value: unknown): boolean {
+  // A body reference can be the posted review/comment URL or a non-empty
+  // evidence id/ref string. Anything empty is treated as no evidence.
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function validateCompletionReceipt(result?: TaskResult): TaskError | null {

@@ -1237,6 +1237,49 @@ test("GitHub read-only validation requires Done or Block evidence but not a PR",
   assert.equal(doneEvidenceError, null);
 });
 
+test("GitHub read-only review task succeeds on a review verdict without a Done/Block marker (#654)", () => {
+  const task = githubTask({
+    intent: "analyze",
+    payload: { mode: "github-read-only-validation", repo: "owner/repo", prUrl: "https://github.com/owner/repo/pull/652" },
+  });
+  const taskRecord = { ...makeTaskRecord(task), taskOrigin: "github" as const };
+
+  // Flat reviewVerdict + body reference (url) is canonical completion evidence.
+  const flatVerdictError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "reviewed", output: { reviewVerdict: "approve", reviewBodyUrl: "https://github.com/owner/repo/pull/652#pullrequestreview-1" } } as any,
+  );
+  assert.equal(flatVerdictError, null);
+
+  // Nested review.{verdict,bodyRef} with a non-url evidence ref also passes.
+  const nestedVerdictError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "reviewed", output: { review: { verdict: "request_changes", bodyRef: "evidence://round/652/sogyo" } } } as any,
+  );
+  assert.equal(nestedVerdictError, null);
+
+  // A verdict without any body reference still fails closed.
+  const verdictNoBodyError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "reviewed", output: { reviewVerdict: "comment" } } as any,
+  );
+  assert.equal(verdictNoBodyError?.code, "github_completion_evidence_missing");
+
+  // A body reference with no/invalid verdict still fails closed.
+  const bodyNoVerdictError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "reviewed", output: { reviewVerdict: "lgtm", reviewBodyUrl: "https://github.com/owner/repo/pull/652#issuecomment-2" } } as any,
+  );
+  assert.equal(bodyNoVerdictError?.code, "github_completion_evidence_missing");
+
+  // Empty output (no verdict, no markers) still fails closed.
+  const emptyError = validateTaskCompletionEvidence(
+    taskRecord,
+    { summary: "reviewed", output: { runner: { status: "completed", artifacts: [] } } } as any,
+  );
+  assert.equal(emptyError?.code, "github_completion_evidence_missing");
+});
+
 test("docker runner with multi-evidence output maps all URLs correctly (contract #169)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "handler-multi-evidence-"));
   const fakeRunnerPath = join(tempDir, "fake-runner.mjs");
