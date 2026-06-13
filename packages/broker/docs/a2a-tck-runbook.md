@@ -80,11 +80,57 @@ Track this number down as alignment PRs land. The error-code/`ErrorInfo`
 alignment is in-scope correctness work; the worker-registration model is an
 architectural decision recorded for follow-up.
 
+## Compliance trend (committed, in-repo)
+
+The measured numbers are recorded in
+[`docs/tck-history.json`](tck-history.json) so the trend is readable without
+opening Actions artifacts. Each entry is one measurement (`date`, `level`,
+`transport`, `overallPercent`, `must` pass/total, and per-category
+pass/total).
+
+| Date | Level / transport | MUST | agent_card | jsonrpc |
+| --- | --- | --- | --- | --- |
+| 2026-06-11 | must / jsonrpc | 12/75 | 6/6 | 12/75 |
+
+Update the trend after a run:
+
+```bash
+cd packages/broker
+node scripts/append-tck-history.mjs --log /tmp/tck-run.log \
+  --level must --transport jsonrpc            # appends/refreshes today's entry
+node scripts/check-tck-regressions.mjs        # flags a drop, lists promotion candidates
+```
+
+`append-tck-history.mjs` parses the same summary lines the workflow greps and
+upserts the entry (one per `date`+`level`+`transport`). Commit the updated
+`tck-history.json` in a follow-up docs PR.
+
+### Stability ledger and gate promotion
+
+`check-tck-regressions.mjs` is the loud signal:
+
+- **Regression** — the comparable metric dropped between consecutive
+  measurements of the same level+transport (MUST pass count when the suite
+  size is unchanged, else OVERALL percent). It exits non-zero. A suite-size
+  change is reported as a note, not a regression, so a larger TCK does not
+  raise a false alarm.
+- **Promotion candidates** — categories that are fully green
+  (`pass == total`) across the last N measurements (default 2). These are the
+  categories the next sentence's rule applies to.
+
+Promote a category to a CI gate only once it appears as a stable promotion
+candidate. A dedicated gate lane that runs ONLY the promoted-category tests
+(fail-closed, on PRs touching the broker A2A surface) is tracked as opt-in
+follow-up; the measurement lane below stays non-gating regardless.
+
 ## Scheduled measurement (CI)
 
 `.github/workflows/tck-measurement.yml` runs this harness weekly (and on
-manual dispatch) against a freshly built, locally-booted broker, and uploads
-the official TCK compliance report as a 90-day artifact plus a job summary.
+manual dispatch) against a freshly built, locally-booted broker, uploads
+the official TCK compliance report as a 90-day artifact plus a job summary,
+appends the measurement to `docs/tck-history.json` (uploaded as an artifact
+to commit in a follow-up), and runs the regression check as a loud,
+non-gating step.
 
 It is an **opt-in measurement lane, never a release gate** (`continue-on-error`,
 no PR trigger): the documented profile deviations mean some MUST tests are

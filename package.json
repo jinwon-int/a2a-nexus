@@ -97,6 +97,8 @@
     "fleet:routing-guard:test": "node --test scripts/a2a-fleet-routing-guard.test.mjs",
     "routing:broker-id": "node scripts/a2a-broker-id-routing.mjs",
     "routing:broker-id:test": "node --test scripts/a2a-broker-id-routing.test.mjs",
+    "worker:readiness-preflight": "node scripts/a2a-worker-readiness-preflight.mjs",
+    "worker:readiness-preflight:test": "node --test scripts/a2a-worker-readiness-preflight.test.mjs",
     "check:repo-protection-baseline": "node scripts/check-repo-protection-baseline.mjs",
     "check:repo-protection-baseline:test": "node --test scripts/check-repo-protection-baseline.test.mjs scripts/check-split-repo-local-demo-conformance.test.mjs",
     "pr-review:healthcheck": "node scripts/pr-review-healthcheck.mjs",
