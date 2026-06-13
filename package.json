@@ -44,6 +44,7 @@
     "check:monorepo-actual-canonical-flip-execution-result": "node scripts/check-monorepo-actual-canonical-flip-execution-result.mjs",
     "check:monorepo-operator-approval-handoff": "node scripts/check-monorepo-operator-approval-handoff.mjs",
     "check:monorepo-docs-routing": "node scripts/check-monorepo-docs-routing.mjs",
+    "check:readme-canonical-surface": "node scripts/check-readme-canonical-surface.mjs",
     "check:monorepo-branch-release-policy": "node scripts/check-monorepo-branch-release-package-policy.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
     "scan:readiness-gates": "node scanner/readiness/fail-closed-gates.mjs --spec docs/readiness/fail-closed-gates.json",
