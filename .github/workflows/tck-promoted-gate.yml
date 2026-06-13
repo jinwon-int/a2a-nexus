@@ -1,0 +1,77 @@
+# Promoted-category A2A TCK PR gate
+#
+# This is intentionally narrower than tck-measurement.yml: it runs only TCK
+# categories that have documented stable-green evidence in the broker runbook.
+# The weekly measurement lane remains non-gating and tracks the full trend.
+
+name: tck-promoted-gate
+
+on:
+  pull_request:
+    paths:
+      - "packages/broker/src/a2a/**"
+      - "packages/broker/src/fixtures/a2a-protocol-compatibility.ts"
+      - "packages/broker/src/server.ts"
+      - "packages/broker/scripts/a2a-tck-harness*.mjs"
+      - "packages/broker/docs/a2a-tck-runbook.md"
+      - "packages/broker/docs/tck-history.json"
+      - "packages/broker/package.json"
+      - ".github/workflows/tck-promoted-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tck-promoted-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-card:
+    name: promoted TCK category — agent_card
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --include=dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone and install the pinned official A2A TCK
+        env:
+          # Same reviewed pin as tck-measurement.yml. Bump deliberately.
+          TCK_REF: "29063fe95e903cddac5d8ff811ab94df1ad6ef86"
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
+          git -C /tmp/a2a-tck checkout --detach "$TCK_REF"
+          python3 -m venv /tmp/a2a-tck/.venv
+          /tmp/a2a-tck/.venv/bin/pip install -q -e /tmp/a2a-tck
+
+      - name: Run promoted agent_card TCK category
+        working-directory: packages/broker
+        env:
+          A2A_TCK_DIR: /tmp/a2a-tck
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
+          npm run tck:run -- --level must --transport jsonrpc -- \
+            --ignore=tests/compatibility/core_operations \
+            --ignore=tests/compatibility/grpc \
+            --ignore=tests/compatibility/http_json \
+            --ignore=tests/compatibility/jsonrpc \
+            -q | tee /tmp/tck-promoted-agent-card.log
+
+      - name: Upload promoted-gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tck-promoted-agent-card-log
+          path: /tmp/tck-promoted-agent-card.log
+          if-no-files-found: warn
+          retention-days: 30

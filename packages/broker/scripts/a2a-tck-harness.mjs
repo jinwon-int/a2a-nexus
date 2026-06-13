@@ -31,13 +31,10 @@ import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
+import { buildRunTckArgs, parseHarnessArgs } from "./a2a-tck-harness-args.mjs";
 
-const args = process.argv.slice(2);
-const selfCheck = args.includes("--self-check");
-const levelIndex = args.indexOf("--level");
-const level = levelIndex >= 0 ? args[levelIndex + 1] : "must";
-const transportIndex = args.indexOf("--transport");
-const transport = transportIndex >= 0 ? args[transportIndex + 1] : "jsonrpc";
+const parsedArgs = parseHarnessArgs(process.argv.slice(2));
+const { selfCheck, level, transport, pytestArgs } = parsedArgs;
 
 const { createBrokerServer } = await import("../dist/server.js");
 const { mkdtempSync } = await import("node:fs");
@@ -138,7 +135,10 @@ if (!existsSync(runTck)) {
 }
 
 console.log(`[tck-harness] running TCK level "${level}" transport "${transport}" against ${baseUrl}`);
-const tck = spawn("python3", [runTck, "--sut-host", baseUrl, "--transport", transport, "--level", level], {
+if (pytestArgs.length > 0) {
+  console.log(`[tck-harness] pytest passthrough: ${pytestArgs.join(" ")}`);
+}
+const tck = spawn("python3", buildRunTckArgs({ runTckPath: runTck, baseUrl, level, transport, pytestArgs }), {
   cwd: tckDir,
   stdio: "inherit",
 });

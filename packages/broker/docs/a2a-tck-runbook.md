@@ -119,9 +119,38 @@ upserts the entry (one per `date`+`level`+`transport`). Commit the updated
   categories the next sentence's rule applies to.
 
 Promote a category to a CI gate only once it appears as a stable promotion
-candidate. A dedicated gate lane that runs ONLY the promoted-category tests
-(fail-closed, on PRs touching the broker A2A surface) is tracked as opt-in
-follow-up; the measurement lane below stays non-gating regardless.
+candidate.
+
+### Promoted-category PR gate
+
+`.github/workflows/tck-promoted-gate.yml` is the first promoted-category PR
+gate. It runs only the official TCK `agent_card` category:
+
+```bash
+cd packages/broker
+A2A_TCK_DIR=/tmp/a2a-tck npm run tck:run -- \
+  --level must --transport jsonrpc -- \
+  --ignore=tests/compatibility/core_operations \
+  --ignore=tests/compatibility/grpc \
+  --ignore=tests/compatibility/http_json \
+  --ignore=tests/compatibility/jsonrpc \
+  -q
+```
+
+`run_tck.py` always seeds pytest with `tests/compatibility/`, so this gate
+uses explicit `--ignore` entries for the non-promoted compatibility directories
+instead of appending `tests/compatibility/agent_card` as a positional path.
+
+Promotion evidence: the committed baseline records `agent_card: 6/6` green for
+`must / jsonrpc` on 2026-06-11. The promoted gate is deliberately scoped to
+broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
+`server.ts`, the TCK harness, this runbook/history, and the workflow itself).
+It is fail-closed for that promoted category, while the scheduled
+`tck-measurement` workflow remains the broader non-gating measurement lane.
+
+Do **not** broaden `tck-promoted-gate.yml` to the full TCK suite until the
+additional categories appear in the stability ledger; add promoted categories
+one at a time with their evidence and keep the measurement lane non-gating.
 
 ## Scheduled measurement (CI)
 
