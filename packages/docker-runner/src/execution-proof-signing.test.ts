@@ -63,6 +63,19 @@ test("unsigned proofs are unchanged and a key requirement fails closed on them",
   assert.equal(required.valid, false);
 });
 
+function looksLikeDerEcdsaSignature(signature: Buffer): boolean {
+  if (signature.length < 8 || signature[0] !== 0x30) return false;
+  const sequenceLength = signature[1];
+  if (sequenceLength === undefined || sequenceLength + 2 !== signature.length) return false;
+  if (signature[2] !== 0x02) return false;
+  const rLength = signature[3];
+  if (rLength === undefined) return false;
+  const sTypeOffset = 4 + rLength;
+  if (signature[sTypeOffset] !== 0x02) return false;
+  const sLength = signature[sTypeOffset + 1];
+  return sLength !== undefined && sTypeOffset + 2 + sLength === signature.length;
+}
+
 test("ES256 signatures are raw r||s (64 bytes), not DER (a2a-nexus#619 review)", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
   const proof = buildExecutionProof({
@@ -72,7 +85,7 @@ test("ES256 signatures are raw r||s (64 bytes), not DER (a2a-nexus#619 review)",
   assert.ok(proof.signature);
   const raw = Buffer.from(proof.signature.signature, "base64url");
   assert.equal(raw.length, 64, "JWS ES256 must be raw r||s 64 bytes");
-  assert.ok(raw[0] !== 0x30, "must not be DER-encoded (no SEQUENCE tag)");
+  assert.equal(looksLikeDerEcdsaSignature(raw), false, "must not be DER-encoded");
   assert.equal(
     verifyExecutionProofSignature(proof, publicKey.export({ type: "spki", format: "pem" }).toString()),
     true,
