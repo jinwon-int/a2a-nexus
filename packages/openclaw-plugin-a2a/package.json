@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && cp openclaw.plugin.json dist/openclaw.plugin.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test src/**/*.test.ts ./*.test.ts test/*.test.mjs tests/*.test.ts",
-    "test:gateway": "rm -rf dist && node ./node_modules/typescript/bin/tsc -p tsconfig.gateway-verify.json && node --test test/*.test.mjs",
+    "test:gateway": "rm -rf dist && tsc -p tsconfig.gateway-verify.json && node --test src/**/*.test.ts ./*.test.ts test/*.test.mjs",
     "preflight:canary:receipt-gated": "scripts/canary-receipt-gated-preflight.sh",
     "smoke:a2a-conformance": "scripts/smoke-a2a-conformance.sh",
     "scan:public-readiness": "scripts/scan-public-readiness.sh",
