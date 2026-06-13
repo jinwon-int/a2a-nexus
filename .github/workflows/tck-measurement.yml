@@ -77,6 +77,11 @@ jobs:
           export PATH="/tmp/a2a-tck/.venv/bin:$PATH"
           node scripts/a2a-tck-harness.mjs --level "$TCK_LEVEL" --transport "$TCK_TRANSPORT" | tee /tmp/tck-run.log
 
+      # Run the regression check BEFORE appending the current run, so it always
+      # compares against the previous historical baseline rather than the entry
+      # we are about to write (#682). check-tck-regressions.mjs also excludes the
+      # current run's own measurement key as a second guard, and prints the report
+      # on stdout on both paths so `tee` captures it even when the check exits non-zero.
       - name: Flag compliance regressions (loud, non-gating)
         if: always()
         continue-on-error: true

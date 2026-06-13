@@ -79,6 +79,10 @@ export function findRegressions(history, { level, transport, current } = {}) {
     else notes.push({ ...d, toDate: cur.date });
   };
   if (current) {
+    // Compare against the latest PRIOR baseline, excluding the current run's
+    // own entry. The workflow normally runs this check before appending, but
+    // the script also defends against an already-appended current measurement:
+    // comparing the current run against itself would mask a real regression (#682).
     const currentKey = measurementKey(current);
     const baseline = sorted.filter((m) => measurementKey(m) !== currentKey);
     const skippedCurrent = sorted.length - baseline.length;
@@ -159,11 +163,11 @@ function main() {
   const promotionCandidates = stablyGreenCategories(history, window, { level, transport });
   const report = { ok: regressions.length === 0, level, transport, regressions, notes, promotionCandidates };
 
-  if (!report.ok) {
-    console.log(JSON.stringify(report, null, 2));
-    process.exit(1);
-  }
+  // Always emit the structured report on stdout so a `... | tee summary` step
+  // captures the evidence on the failure path too (#682); the exit code still
+  // signals the regression.
   console.log(JSON.stringify(report, null, 2));
+  process.exit(report.ok ? 0 : 1);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

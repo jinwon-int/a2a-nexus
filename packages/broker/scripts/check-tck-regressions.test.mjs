@@ -53,14 +53,14 @@ test("findRegressions compares a fresh measurement against the latest committed 
   assert.equal(regressions[0].to, 9);
 });
 
-test("findRegressions skips the appended current measurement before selecting a baseline", () => {
+test("findRegressions skips the appended current measurement before selecting a baseline (#682)", () => {
   const current = { date: "2026-06-18", level: "must", transport: "jsonrpc", must: { pass: 9, total: 75 }, categories: {} };
   const h = history([
     { date: "2026-06-11", level: "must", transport: "jsonrpc", must: { pass: 12, total: 75 }, categories: {} },
     current,
   ]);
   const { regressions, notes } = findRegressions(h, { level: "must", transport: "jsonrpc", current });
-  assert.equal(regressions.length, 1);
+  assert.equal(regressions.length, 1, "must compare against the prior baseline, not itself");
   assert.equal(regressions[0].from, 12);
   assert.equal(regressions[0].to, 9);
   assert.equal(notes.some((note) => note.kind === "baseline-skipped-current" && note.count === 1), true);
