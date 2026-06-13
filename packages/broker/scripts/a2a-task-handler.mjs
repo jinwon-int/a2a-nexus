@@ -15,6 +15,8 @@ const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).dige
 const ALLOWED_WORKER_MODELS = new Set([
   "deepseek/deepseek-v4-flash",
   "deepseek/deepseek-v4-pro",
+  // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
+  "minimax-m3",
 ]);
 
 const VALID_WORKER_THINKING_LEVELS = new Set([
@@ -239,7 +241,9 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
 function resolveWorkerModel(task, env = process.env) {
   const payload = taskPayload(task);
   const payloadModel = safeText(payload.workerModel, "");
-  const envModel = safeText(env.A2A_OPENCLAW_MODEL, "");
+  // The host worker env file uses A2A_HERMES_DEFAULT_MODEL; accept it as a
+  // fallback alongside the legacy A2A_OPENCLAW_MODEL name (#673).
+  const envModel = safeText(env.A2A_OPENCLAW_MODEL, "") || safeText(env.A2A_HERMES_DEFAULT_MODEL, "");
 
   if (payloadModel && ALLOWED_WORKER_MODELS.has(payloadModel)) {
     return { model: payloadModel, fromPayload: true };
