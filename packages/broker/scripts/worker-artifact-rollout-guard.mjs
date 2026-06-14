@@ -25,7 +25,7 @@
 //   SCRIPTS_ROOT              — override scripts/ directory (default: ./scripts)
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -119,6 +119,92 @@ function readFileSafe(filePath) {
   } catch {
     return undefined;
   }
+}
+
+function executableBits(filePath) {
+  try {
+    return statSync(filePath).mode & 0o111;
+  } catch {
+    return undefined;
+  }
+}
+
+function executableHint(bits) {
+  if (bits === undefined) return 'missing';
+  return bits === 0 ? 'not-executable' : 'executable';
+}
+
+function compareCompatFile({ guardName, filename, sourceLabel, compatLabel }) {
+  const sourcePath = join(scriptsRoot, filename);
+  const compatPath = join(handlersRoot, filename);
+  const sourceContent = readFileSafe(sourcePath);
+  if (sourceContent === undefined) {
+    return fail(guardName, `${sourceLabel} not found: ${sourcePath}`);
+  }
+
+  const sourceHash = sha256(sourceContent);
+  if (!existsSync(compatPath)) {
+    if (!DEPLOYED_CHECK) {
+      return ok(guardName, {
+        checked: false,
+        reason: `${compatLabel} is generated during worker artifact deploy; use --deployed to require it`,
+        sourcePath,
+        compatPath,
+        sourceHash,
+      });
+    }
+    return fail(guardName, `${compatLabel} missing: ${compatPath}`, {
+      sourcePath,
+      compatPath,
+      sourceHash,
+      hint: `copy scripts/${filename} → handlers/${filename} before restarting the worker`,
+      runtimeCheck:
+        'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
+    });
+  }
+
+  const compatContent = readFileSafe(compatPath);
+  if (compatContent === undefined) {
+    return fail(guardName, `${compatLabel} unreadable: ${compatPath}`);
+  }
+
+  const compatHash = sha256(compatContent);
+  if (compatHash !== sourceHash) {
+    return fail(guardName, `${compatLabel} content differs from source`, {
+      sourcePath,
+      compatPath,
+      sourceHash,
+      compatHash,
+      hint: `update handlers/${filename} to match scripts/${filename} before restarting the worker`,
+      runtimeCheck:
+        'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
+    });
+  }
+
+  return ok(guardName, {
+    sourcePath,
+    compatPath,
+    matched: true,
+    sourceHash,
+  });
+}
+
+function compareExecutableParity(filename) {
+  const sourcePath = join(scriptsRoot, filename);
+  const compatPath = join(handlersRoot, filename);
+  const sourceExecutable = executableBits(sourcePath);
+  const compatExecutable = executableBits(compatPath);
+  const sourceIsExecutable = sourceExecutable !== undefined && sourceExecutable !== 0;
+  const compatIsExecutable = compatExecutable !== undefined && compatExecutable !== 0;
+
+  return {
+    filename,
+    sourcePath,
+    compatPath,
+    sourceMode: executableHint(sourceExecutable),
+    compatMode: executableHint(compatExecutable),
+    ok: sourceIsExecutable === compatIsExecutable,
+  };
 }
 
 function findReadableHandler(root) {
@@ -228,76 +314,48 @@ guard('source-handler', () => {
 });
 
 // Guard 2: Handlers compat path exists and matches source
-guard('handlers-compat-path', () => {
-  const source = findReadableHandler(scriptsRoot);
-  if (!source) {
-    return fail('handlers-compat-path', `cannot read source handler in ${scriptsRoot}`);
-  }
-  const handlersPath = join(handlersRoot, source.filename);
-  const sourceHash = sha256(source.content);
+guard('handlers-compat-path', () => compareCompatFile({
+  guardName: 'handlers-compat-path',
+  filename: CANONICAL_HANDLER_FILENAME,
+  sourceLabel: 'source handler',
+  compatLabel: 'handlers compat path',
+}));
 
-  if (!existsSync(handlersPath)) {
-    if (!DEPLOYED_CHECK) {
-      return ok('handlers-compat-path', {
-        checked: false,
-        reason: 'handlers compat path is generated during worker artifact deploy; use --deployed to require it',
-        sourcePath: source.path,
-        handlersPath,
-        sourceHash,
-      });
-    }
+// Guard 3: Bridge compat path exists and matches source
+guard('bridge-compat-path', () => compareCompatFile({
+  guardName: 'bridge-compat-path',
+  filename: 'hermes-a2a-analysis-bridge.mjs',
+  sourceLabel: 'source bridge',
+  compatLabel: 'bridge compat path',
+}));
 
-    return fail(
-      'handlers-compat-path',
-      `handlers compat path missing: ${handlersPath}`,
-      {
-        sourcePath,
-        sourceHash,
-        hint:
-          `copy scripts/${source.filename} → handlers/${source.filename} before restarting the worker`,
-        runtimeCheck:
-          'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
-        fix: DRY_RUN
-          ? '[dry-run] would copy handlers/'
-          : undefined,
-      },
-    );
+// Guard 4: Executable bits stay in parity across scripts/ and handlers/
+guard('artifact-executable-parity', () => {
+  if (!DEPLOYED_CHECK) {
+    return ok('artifact-executable-parity', {
+      checked: false,
+      reason: 'handlers compat executable bits are generated during worker artifact deploy; use --deployed to require parity',
+    });
   }
 
-  const handlersContent = readFileSafe(handlersPath);
-  if (handlersContent === undefined) {
-    return fail(
-      'handlers-compat-path',
-      `handlers compat path unreadable: ${handlersPath}`,
-    );
+  const artifacts = [
+    compareExecutableParity(CANONICAL_HANDLER_FILENAME),
+    compareExecutableParity('hermes-a2a-analysis-bridge.mjs'),
+  ];
+  const drift = artifacts.filter((artifact) => !artifact.ok);
+  if (drift.length > 0) {
+    return fail('artifact-executable-parity', 'scripts/ and handlers/ executable bits differ', {
+      drift,
+      hint: 'copy scripts artifacts to handlers with executable bits preserved before restarting the worker',
+      runtimeCheck:
+        'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
+    });
   }
 
-  const handlersHash = sha256(handlersContent);
-  if (handlersHash !== sourceHash) {
-    return fail(
-      'handlers-compat-path',
-      `handlers compat path content differs from source`,
-      {
-        sourcePath: source.path,
-        handlersPath,
-        sourceHash,
-        handlersHash,
-        hint: 'update handlers/ copy to match scripts/ before restarting the worker',
-        runtimeCheck:
-          'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
-      },
-    );
-  }
-
-  return ok('handlers-compat-path', {
-    sourcePath: source.path,
-    handlersPath,
-    matched: true,
-    sourceHash,
-  });
+  return ok('artifact-executable-parity', { artifacts });
 });
 
-// Guard 3: Upstream bridge marker present in handler
+// Guard 5: Upstream bridge marker present in handler
 guard('bridge-marker', () => {
   const source = findReadableHandler(scriptsRoot);
   if (!source) {
