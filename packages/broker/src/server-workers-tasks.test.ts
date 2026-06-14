@@ -376,6 +376,73 @@ test("strict A2A HTTP Signature worker route gate accepts signed worker flow and
   }
 });
 
+test("strict A2A HTTP Signature worker route gate fails closed when the signing key lacks the route scope (#691)", async () => {
+  // sogyo's key is scoped to registration/heartbeat only; bangtong stays unscoped (legacy).
+  const scopedKeyRegistry = {
+    "worker:sogyo:v1": {
+      ...routeGateKeyRegistry["worker:sogyo:v1"],
+      scopes: ["worker.register", "worker.heartbeat"] as const,
+    },
+    "worker:bangtong:v1": routeGateKeyRegistry["worker:bangtong:v1"],
+  };
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: scopedKeyRegistry,
+  });
+  try {
+    // In-scope route (worker.register) is authorized.
+    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "sogyo",
+        body: registerBody,
+        nonce: "scoped-register-sogyo",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    // Out-of-scope route (tasks.list) fails closed with 403 even though the
+    // signature itself is valid and the requester id matches the key owner.
+    const query = "worker=sogyo&status=pending&detail=full";
+    const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, {
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "GET",
+        path: "/tasks",
+        query,
+        workerId: "sogyo",
+        nonce: "scoped-poll-sogyo-denied",
+      }),
+    });
+    assert.equal(pollRes.status, 403);
+    const pollBody = await pollRes.json() as { error: { code: string; message: string } };
+    assert.equal(pollBody.error.code, "policy_denied");
+    assert.match(pollBody.error.message, /a2a_signature_scope_denied: signing key is not authorized for tasks\.list/);
+
+    // An unscoped (legacy) key remains authorized for the same route.
+    const bangtongQuery = "worker=bangtong&status=pending&detail=full";
+    const bangtongPollRes = await fetch(`${server.baseUrl}/tasks?${bangtongQuery}`, {
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "GET",
+        path: "/tasks",
+        query: bangtongQuery,
+        workerId: "bangtong",
+        nonce: "scoped-poll-bangtong-allowed",
+      }),
+    });
+    assert.equal(bangtongPollRes.status, 200);
+  } finally {
+    await server.close();
+  }
+});
+
 test("strict A2A HTTP Signature worker route gate does not let one worker mutate another worker task", async () => {
   const server = await startTestServer({
     brokerId: "seoseo",
