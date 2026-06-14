@@ -1,8 +1,93 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { createBrokerServer } from "./server.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
+import { buildA2AHttpSignatureBase } from "./core/request-security.js";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
+
+
+// Synthetic test-only Ed25519 fixture generated locally for deterministic verifier
+// coverage. This key pair is not used by any broker or worker deployment.
+const routeGatePrivateJwk = {
+  crv: "Ed25519",
+  d: "AaTuhLv-jaClRWi80aTnBCH7OaqKDTRI1-BhVY6n8hw",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const routeGatePublicJwk = {
+  crv: "Ed25519",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const routeGateKeyRegistry = {
+  "worker:sogyo:v1": {
+    keyid: "worker:sogyo:v1",
+    workerId: "sogyo",
+    publicKeyJwk: routeGatePublicJwk,
+  },
+  "worker:bangtong:v1": {
+    keyid: "worker:bangtong:v1",
+    workerId: "bangtong",
+    publicKeyJwk: routeGatePublicJwk,
+  },
+};
+
+function signedWorkerHeaders(params: {
+  baseUrl: string;
+  method: string;
+  path: string;
+  query?: string;
+  workerId: "sogyo" | "bangtong";
+  body?: string;
+  nonce: string;
+}): Record<string, string> {
+  const url = new URL(params.path + (params.query ? `?${params.query}` : ""), params.baseUrl);
+  const rawBody = Buffer.from(params.body ?? "");
+  const headers = {
+    "content-type": "application/json",
+    "content-digest": `sha-256=:${createHash("sha256").update(rawBody).digest("base64")}:`,
+    "x-a2a-requester-id": params.workerId,
+    "x-a2a-requester-role": "analyst",
+    "x-a2a-broker-id": "seoseo",
+  };
+  const keyid = `worker:${params.workerId}:v1`;
+  const created = Math.floor(Date.now() / 1000) - 1;
+  const expires = created + 60;
+  const signatureInput = `a2a=("@method" "@authority" "@path" "@query" "content-digest" "x-a2a-requester-id" "x-a2a-requester-role" "x-a2a-broker-id");alg="ed25519";keyid="${keyid}";created=${created};expires=${expires};nonce="${params.nonce}";tag="a2a-worker-v1"`;
+  const signatureBase = buildA2AHttpSignatureBase({
+    method: params.method,
+    authority: url.host,
+    path: url.pathname,
+    query: url.search.length > 0 ? url.search.slice(1) : "",
+    headers,
+    signatureInput,
+  });
+  const privateKey = createPrivateKey({ key: routeGatePrivateJwk, format: "jwk" });
+  const signature = sign(null, Buffer.from(signatureBase), privateKey).toString("base64");
+  return {
+    ...headers,
+    "signature-input": signatureInput,
+    signature: `a2a=:${signature}:`,
+  };
+}
+
+function workerPayload(nodeId: "sogyo" | "bangtong") {
+  return {
+    nodeId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  };
+}
 
 test("worker registration still records material metadata changes", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: true });
@@ -159,6 +244,328 @@ test("server accepts a broker-agnostic Hermes-style worker poll and evidence flo
     assert.deepEqual(evidenced.result?.output, { referenceWorker: "hermes-agent", openClawRequired: false });
   } finally {
     await server.close();
+  }
+});
+
+
+test("strict A2A HTTP Signature worker route gate rejects unsigned worker requests", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    const body = JSON.stringify(workerPayload("sogyo"));
+    const res = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body,
+    });
+
+    assert.equal(res.status, 401);
+    const errorBody = await res.json() as { error: { code: string; message: string } };
+    assert.equal(errorBody.error.code, "unauthorized");
+    assert.match(errorBody.error.message, /a2a_signature_required/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("strict A2A HTTP Signature worker route gate accepts signed worker flow and rejects replay", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerHeaders = signedWorkerHeaders({
+      baseUrl: server.baseUrl,
+      method: "POST",
+      path: "/workers/register",
+      workerId: "sogyo",
+      body: registerBody,
+      nonce: "route-register-sogyo",
+    });
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: registerHeaders,
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "signed-worker-poll-task",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        targetNodeId: "sogyo",
+        intent: "analyze",
+        message: "signed worker should be able to poll this task",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const unsignedPollRes = await fetch(`${server.baseUrl}/tasks?worker=sogyo&status=pending&detail=full`);
+    assert.equal(unsignedPollRes.status, 401);
+
+    const query = "worker=sogyo&status=pending&detail=full";
+    const pollHeaders = signedWorkerHeaders({
+      baseUrl: server.baseUrl,
+      method: "GET",
+      path: "/tasks",
+      query,
+      workerId: "sogyo",
+      nonce: "route-poll-sogyo",
+    });
+    const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, {
+      headers: pollHeaders,
+    });
+    assert.equal(pollRes.status, 200);
+    const pollBody = await pollRes.json() as { items: Array<{ id: string }> };
+    assert.deepEqual(pollBody.items.map((task) => task.id), ["signed-worker-poll-task"]);
+
+    const replayRes = await fetch(`${server.baseUrl}/tasks?${query}`, {
+      headers: pollHeaders,
+    });
+    assert.equal(replayRes.status, 401);
+    const replayBody = await replayRes.json() as { error: { message: string } };
+    assert.match(replayBody.error.message, /a2a_signature_replay/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("strict A2A HTTP Signature worker route gate does not let one worker mutate another worker task", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    for (const workerId of ["sogyo", "bangtong"] as const) {
+      const body = JSON.stringify(workerPayload(workerId));
+      const headers = signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId,
+        body,
+        nonce: `route-register-${workerId}`,
+      });
+      const res = await fetch(`${server.baseUrl}/workers/register`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      assert.equal(res.status, 201);
+    }
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "bangtong-owned-task",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "bangtong", kind: "node", role: "analyst" },
+        targetNodeId: "bangtong",
+        intent: "analyze",
+        message: "sogyo must not claim as bangtong",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const claimBody = JSON.stringify({ workerId: "bangtong" });
+    const claimHeaders = signedWorkerHeaders({
+      baseUrl: server.baseUrl,
+      method: "POST",
+      path: "/tasks/bangtong-owned-task/claim",
+      workerId: "sogyo",
+      body: claimBody,
+      nonce: "route-cross-worker-claim",
+    });
+    const claimRes = await fetch(`${server.baseUrl}/tasks/bangtong-owned-task/claim`, {
+      method: "POST",
+      headers: claimHeaders,
+      body: claimBody,
+    });
+    assert.equal(claimRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+
+test("strict A2A HTTP Signature worker route gate binds signed worker to poll query even without requester identity enforcement", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    for (const workerId of ["sogyo", "bangtong"] as const) {
+      const body = JSON.stringify(workerPayload(workerId));
+      const headers = signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId,
+        body,
+        nonce: `route-poll-bind-register-${workerId}`,
+      });
+      const res = await fetch(`${server.baseUrl}/workers/register`, { method: "POST", headers, body });
+      assert.equal(res.status, 201);
+    }
+
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "hub-a",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "sogyo-owned-poll-task",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "sogyo", kind: "node", role: "analyst" },
+        targetNodeId: "sogyo",
+        intent: "analyze",
+        message: "bangtong must not poll sogyo queue",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const query = "worker=sogyo&status=pending&detail=full";
+    const pollHeaders = signedWorkerHeaders({
+      baseUrl: server.baseUrl,
+      method: "GET",
+      path: "/tasks",
+      query,
+      workerId: "bangtong",
+      nonce: "route-cross-worker-poll",
+    });
+    const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, { headers: pollHeaders });
+    assert.equal(pollRes.status, 401);
+    const body = await pollRes.json() as { error: { message: string } };
+    assert.match(body.error.message, /a2a_signature_identity_mismatch/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("strict A2A HTTP Signature worker route gate rejects unsigned assignment-events subscriptions", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerHeaders = signedWorkerHeaders({
+      baseUrl: server.baseUrl,
+      method: "POST",
+      path: "/workers/register",
+      workerId: "sogyo",
+      body: registerBody,
+      nonce: "route-assignment-register-sogyo",
+    });
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: registerHeaders,
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const unsignedRes = await fetch(`${server.baseUrl}/a2a/workers/sogyo/assignment-events`, {
+      headers: {
+        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-role": "analyst",
+      },
+    });
+    assert.equal(unsignedRes.status, 401);
+    const errorBody = await unsignedRes.json() as { error: { message: string } };
+    assert.match(errorBody.error.message, /a2a_signature_required/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("A2A HTTP Signature worker route gate rejects body digest mismatches and optional-mode malformed signatures", async () => {
+  const strictServer = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    const signedBody = JSON.stringify(workerPayload("sogyo"));
+    const mutatedBody = JSON.stringify({ ...workerPayload("sogyo"), displayName: "tampered-body" });
+    const headers = signedWorkerHeaders({
+      baseUrl: strictServer.baseUrl,
+      method: "POST",
+      path: "/workers/register",
+      workerId: "sogyo",
+      body: signedBody,
+      nonce: "route-digest-mismatch",
+    });
+    const mismatchRes = await fetch(`${strictServer.baseUrl}/workers/register`, {
+      method: "POST",
+      headers,
+      body: mutatedBody,
+    });
+    assert.equal(mismatchRes.status, 401);
+    const mismatchBody = await mismatchRes.json() as { error: { message: string } };
+    assert.match(mismatchBody.error.message, /a2a_signature_digest_mismatch/);
+
+    const missingDigestHeaders = { ...headers };
+    delete missingDigestHeaders["content-digest"];
+    const missingDigestRes = await fetch(`${strictServer.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: missingDigestHeaders,
+      body: signedBody,
+    });
+    assert.equal(missingDigestRes.status, 401);
+    const missingDigestBody = await missingDigestRes.json() as { error: { message: string } };
+    assert.match(missingDigestBody.error.message, /a2a_signature_digest_required/);
+  } finally {
+    await strictServer.close();
+  }
+
+  const optionalServer = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "optional",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+  });
+  try {
+    const body = JSON.stringify(workerPayload("sogyo"));
+    const malformedHeaders = signedWorkerHeaders({
+      baseUrl: optionalServer.baseUrl,
+      method: "POST",
+      path: "/workers/register",
+      workerId: "sogyo",
+      body,
+      nonce: "route-optional-malformed",
+    });
+    malformedHeaders.signature = "a2a=:not-valid-base64?:";
+    const malformedRes = await fetch(`${optionalServer.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: malformedHeaders,
+      body,
+    });
+    assert.equal(malformedRes.status, 401);
+  } finally {
+    await optionalServer.close();
   }
 });
 

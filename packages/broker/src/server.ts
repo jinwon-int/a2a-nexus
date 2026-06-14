@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { loadavg, cpus } from "node:os";
 import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
@@ -31,7 +32,9 @@ import {
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
+  verifyA2AHttpSignature,
   rateLimitKey,
+  type A2AHttpSignatureKeyRegistry,
   type RateLimitPressureSnapshot,
   type RequesterIdentity,
 } from "./core/request-security.js";
@@ -2535,6 +2538,51 @@ class HealthDiagnosticsCache {
   }
 }
 
+export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
+
+interface A2AHttpSignatureVerifiedWorker {
+  keyid: string;
+  requesterId: string;
+}
+
+const A2A_HTTP_SIGNATURE_REPLAY_CACHE_MAX_ENTRIES = 10_000;
+
+class A2AHttpSignatureReplayCache {
+  private readonly entries = new Map<string, number>();
+
+  remember(keyid: string, nonce: string, expiresEpochSeconds: number, nowEpochSeconds = Math.floor(Date.now() / 1000)): boolean {
+    this.prune(nowEpochSeconds);
+    const cacheKey = `${keyid}\0${nonce}`;
+    const existingExpires = this.entries.get(cacheKey);
+    if (existingExpires !== undefined && existingExpires > nowEpochSeconds) {
+      return false;
+    }
+    this.entries.set(cacheKey, expiresEpochSeconds);
+    while (this.entries.size > A2A_HTTP_SIGNATURE_REPLAY_CACHE_MAX_ENTRIES) {
+      const oldest = this.entries.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    return true;
+  }
+
+  private prune(nowEpochSeconds: number): void {
+    for (const [key, expires] of this.entries) {
+      if (expires <= nowEpochSeconds) {
+        this.entries.delete(key);
+      }
+    }
+  }
+}
+
+function resolveA2AHttpSignatureWorkerAuthMode(value: string | undefined): A2AHttpSignatureWorkerAuthMode {
+  const normalized = (value ?? "off").trim().toLowerCase();
+  if (normalized === "off" || normalized === "optional" || normalized === "strict") {
+    return normalized;
+  }
+  throw new Error("A2A_HTTP_SIGNATURE_WORKER_AUTH must be one of: off, optional, strict");
+}
+
 export interface BrokerServerOptions {
   host?: string;
   port?: number;
@@ -2558,6 +2606,16 @@ export interface BrokerServerOptions {
   workerRateLimitMaxRequests?: number;
   enforceRequesterIdentity?: boolean;
   edgeSecret?: string;
+  /**
+   * Worker-plane A2A HTTP Signature rollout mode.
+   * - off: no route-level signature checks (default/backwards compatible)
+   * - optional: verify signed worker requests when signature headers are present
+   * - strict: require valid signatures for worker lifecycle/poll/mutation routes
+   * Env: `A2A_HTTP_SIGNATURE_WORKER_AUTH`.
+   */
+  a2aHttpSignatureWorkerAuth?: A2AHttpSignatureWorkerAuthMode;
+  /** In-memory key registry for worker HTTP Signature verification. File/key distribution is a later rollout slice. */
+  a2aHttpSignatureKeyRegistry?: A2AHttpSignatureKeyRegistry;
   /**
    * Shared secret for GitHub webhook deliveries. When set, POST /github/webhook
    * requires a valid X-Hub-Signature-256 header (HMAC-SHA256 of the raw body).
@@ -2715,6 +2773,8 @@ export interface BrokerServerRuntime {
     workerRateLimitMaxRequests: number;
     enforceRequesterIdentity: boolean;
     edgeSecret?: string;
+    a2aHttpSignatureWorkerAuth: A2AHttpSignatureWorkerAuthMode;
+    a2aHttpSignatureWorkerKeyCount: number;
     githubWebhookSecret?: string;
     retentionPolicy: BrokerRetentionPolicy;
     maxSnapshotBytes: number;
@@ -2773,6 +2833,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const enforceRequesterIdentity =
     options.enforceRequesterIdentity ?? process.env.ENFORCE_REQUESTER_IDENTITY !== "0";
   const edgeSecret = options.edgeSecret ?? process.env.EDGE_SECRET ?? process.env.A2A_EDGE_SECRET;
+  const a2aHttpSignatureWorkerAuth = resolveA2AHttpSignatureWorkerAuthMode(
+    options.a2aHttpSignatureWorkerAuth ?? process.env.A2A_HTTP_SIGNATURE_WORKER_AUTH,
+  );
+  const a2aHttpSignatureKeyRegistry = options.a2aHttpSignatureKeyRegistry ?? {};
+  const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,
@@ -3234,6 +3299,58 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
   let httpServerForDiagnostics: Server | null = null;
 
+  const assertWorkerHttpSignatureRoute = async (req: IncomingMessage, url: URL): Promise<A2AHttpSignatureVerifiedWorker | null> => {
+    if (a2aHttpSignatureWorkerAuth === "off") {
+      return null;
+    }
+    const hasSignatureHeaders = hasA2AHttpSignatureHeaders(req);
+    if (!hasSignatureHeaders) {
+      if (a2aHttpSignatureWorkerAuth === "strict") {
+        throw new BrokerError("unauthorized", "a2a_signature_required: worker route requires A2A HTTP Signature");
+      }
+      return null;
+    }
+
+    const rawBody = await readRawBody(req);
+    assertA2AContentDigestMatches(req, rawBody);
+    const result = verifyA2AHttpSignature({
+      method: req.method ?? "GET",
+      authority: headerValue(req, "host") ?? url.host,
+      path: url.pathname,
+      query: url.search.length > 0 ? url.search.slice(1) : "",
+      headers: requestHeadersForA2AHttpSignature(req),
+      signatureInput: headerValue(req, "signature-input") ?? "",
+      signature: headerValue(req, "signature"),
+    }, a2aHttpSignatureKeyRegistry);
+
+    if (!result.ok) {
+      throw new BrokerError("unauthorized", `${result.code}: ${result.message}`);
+    }
+    if (result.brokerId !== brokerId) {
+      throw new BrokerError("unauthorized", `a2a_signature_identity_mismatch: signed broker id ${result.brokerId} does not match ${brokerId}`);
+    }
+    if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
+      throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
+    }
+    return { keyid: result.keyid, requesterId: result.requesterId };
+  };
+
+  const assertVerifiedWorkerMatches = (
+    verified: A2AHttpSignatureVerifiedWorker | null,
+    expectedWorkerId: string | undefined,
+    operation: string,
+  ): void => {
+    if (!verified || !expectedWorkerId) {
+      return;
+    }
+    if (verified.requesterId !== expectedWorkerId) {
+      throw new BrokerError(
+        "unauthorized",
+        `a2a_signature_identity_mismatch: signed requester ${verified.requesterId} cannot authorize ${operation} for ${expectedWorkerId}`,
+      );
+    }
+  };
+
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
@@ -3373,6 +3490,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requestSecurity: {
             enforceRequesterIdentity,
             edgeSecretRequired: Boolean(edgeSecret),
+            a2aHttpSignatureWorkerAuth,
+            a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
             rateLimitWindowSec,
             rateLimitMaxRequests,
             workerRateLimitWindowSec,
@@ -3596,6 +3715,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         segments.length === 4
       ) {
         const workerId = segments[2];
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "workers.assignment-events");
         if (enforceRequesterIdentity) {
           assertRequesterCanSubscribeToWorkerAssignments(requesterIdentity, workerId);
         }
@@ -4927,6 +5048,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path === "/workers/register") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const readJsonStartedAt = performance.now();
         const body = await readJson<RegisterWorkerRequest>(req);
         recordWorkerRegisterPhase("readJson", readJsonStartedAt);
@@ -4934,6 +5056,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           throw new BrokerError("bad_request", "request body is required");
         }
         const workerId = typeof body.nodeId === "string" ? body.nodeId : undefined;
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.register");
         if (enforceRequesterIdentity) {
           const authAssertStartedAt = performance.now();
           assertRequesterMatchesParty(
@@ -4963,7 +5086,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "workers" && segments[1] && segments[2] === "heartbeat") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const workerId = segments[1];
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.heartbeat");
         const readJsonStartedAt = performance.now();
         const body = await readJson<WorkerHeartbeatRequest>(req);
         recordWorkerHeartbeatPhase("readJson", readJsonStartedAt, workerId);
@@ -5179,6 +5304,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/tasks") {
+        if (url.searchParams.has("worker")) {
+          const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
+          assertVerifiedWorkerMatches(verifiedWorker, optionalString(url.searchParams.get("worker")), "tasks.list");
+        }
         const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
         const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
         if (includeFullTaskRecords) {
@@ -5519,10 +5648,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
       if (
         req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "claim") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.claim");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.claim");
         }
@@ -5532,10 +5663,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "start") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.start");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.start");
         }
@@ -5545,10 +5678,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "heartbeat") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.heartbeat");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.heartbeat");
         }
@@ -5558,10 +5693,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string; decisionType?: string; artifactRefs?: string[] }>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.checkpoint");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.checkpoint");
         }
@@ -5600,10 +5737,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "complete") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskCompleteRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.complete");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.complete");
         }
@@ -5613,10 +5752,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "evidence") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskEvidenceRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.evidence");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.evidence");
         }
@@ -5638,10 +5779,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "fail") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskFailRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.fail");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.fail");
         }
@@ -6009,6 +6152,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerRateLimitMaxRequests,
       enforceRequesterIdentity,
       edgeSecret,
+      a2aHttpSignatureWorkerAuth,
+      a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
       retentionPolicy,
       maxSnapshotBytes,
       maxHotRuntimeNonTerminalTasks,
@@ -6044,6 +6189,40 @@ export interface BrokerHotRuntimeLimits {
  * heartbeats and can be reused. Node.js defaults to 5000ms, which forces every
  * heartbeat to create a new TCP connection.
  */
+function hasA2AHttpSignatureHeaders(req: IncomingMessage): boolean {
+  return Boolean(headerValue(req, "signature-input") || headerValue(req, "signature"));
+}
+
+function requestHeadersForA2AHttpSignature(req: IncomingMessage): Record<string, string | undefined> {
+  const headers: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    headers[name.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+  }
+  return headers;
+}
+
+function assertA2AContentDigestMatches(req: IncomingMessage, rawBody: Buffer): void {
+  const provided = headerValue(req, "content-digest");
+  if (!provided) {
+    throw new BrokerError("unauthorized", "a2a_signature_digest_required: content-digest is required");
+  }
+  const expected = `sha-256=:${createHash("sha256").update(rawBody).digest("base64")}:`;
+  if (provided !== expected) {
+    throw new BrokerError("unauthorized", "a2a_signature_digest_mismatch: content-digest does not match request body");
+  }
+}
+
+function headerValue(req: IncomingMessage, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0]?.trim() || undefined;
+  }
+  if (typeof value === "string") {
+    return value.trim() || undefined;
+  }
+  return undefined;
+}
+
 const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
 
 /**
