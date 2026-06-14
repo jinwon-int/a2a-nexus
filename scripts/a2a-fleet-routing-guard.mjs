@@ -19,23 +19,16 @@
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 
+import { hasText, normalizeUrl } from './a2a-routing-shared.mjs';
+
 // ─── Per-node fields that must match the team/fleet expectation ──────────────
 
 const CHECK_COLUMNS = ['team', 'brokerUrl', 'service', 'root', 'revision', 'auth', 'active'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function hasText(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function isSha256(value) {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value.trim());
-}
-
-function normalizeUrl(value) {
-  // Trailing slashes and surrounding whitespace are not meaningful for routing.
-  return hasText(value) ? value.trim().replace(/\/+$/, '') : value;
 }
 
 // ─── Inventory / observation validation ──────────────────────────────────────
