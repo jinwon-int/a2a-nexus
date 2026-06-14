@@ -17,10 +17,11 @@
  * (b) handler presence + executable bit, and (c) the unified #655 taxonomy.
  *
  * Failure codes: secret_invalid | broker_route_mismatch | service_path_drift |
- *                worker_root_missing | handler_missing
+ *                worker_root_missing | handler_missing | task_poll_unauthorized
  *
- * Secret-safe: consumes only secretLength / secretPresent — never a raw secret —
- * and emits only lengths/categories. Pure offline: no SSH, network, restart,
+ * Secret-safe: consumes only secretLength / secretPresent plus redaction-safe
+ * taskPollProbe metadata — never a raw secret — and emits only lengths/categories.
+ * Pure offline: no SSH, network, restart,
  * DB/outbox mutation, secret movement, or runtime execution.
  */
 import fs from "node:fs";
@@ -50,6 +51,21 @@ function secretLengthOf(record) {
     return Number(record.secretLength.trim());
   }
   return null;
+}
+
+function taskPollProbeStatusOf(probe) {
+  if (typeof probe?.httpStatus === "number" && Number.isInteger(probe.httpStatus)) {
+    return probe.httpStatus;
+  }
+  if (hasText(probe?.httpStatus) && /^\d+$/.test(probe.httpStatus.trim())) {
+    return Number(probe.httpStatus.trim());
+  }
+  return null;
+}
+
+function hasRawCredentialField(probe) {
+  if (!probe || typeof probe !== "object") return false;
+  return ["secret", "edgeSecret", "brokerEdgeSecret", "token", "authorization", "headers"].some((field) => Object.hasOwn(probe, field));
 }
 
 /**
@@ -100,6 +116,38 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is missing` });
     } else if (match.executable === false) {
       violations.push({ code: "handler_missing", reason: `required handler '${required}' is present but not executable (EACCES on spawn)` });
+    }
+  }
+
+  // 6. task-poll probe — optional by default for backwards compatibility, but
+  // fail-closed when explicitly required by a rollout/readiness gate (#697; ref
+  // #691/#695). The probe is collected elsewhere; this evaluator stays offline
+  // and secret-safe.
+  const taskPollProbe = record?.taskPollProbe;
+  if (exp.requireTaskPollProbe === true && !taskPollProbe) {
+    violations.push({ code: "task_poll_unauthorized", reason: "task-poll authorization probe is missing" });
+  } else if (taskPollProbe) {
+    if (hasRawCredentialField(taskPollProbe)) {
+      violations.push({ code: "task_poll_unauthorized", reason: "task-poll probe must not carry raw credential fields" });
+    }
+
+    const probeStatus = taskPollProbeStatusOf(taskPollProbe);
+    const probeOk = taskPollProbe.ok === true && probeStatus !== null && probeStatus >= 200 && probeStatus <= 299;
+    if (!probeOk) {
+      const statusLabel = probeStatus === null ? "missing/invalid HTTP status" : `HTTP ${probeStatus}`;
+      violations.push({ code: "task_poll_unauthorized", reason: `task-poll authorization probe failed (${statusLabel})` });
+    }
+
+    const probeAssignedWorkerId = hasText(taskPollProbe.assignedWorkerId) ? taskPollProbe.assignedWorkerId.trim() : null;
+    if (!probeAssignedWorkerId) {
+      violations.push({ code: "task_poll_unauthorized", reason: "task-poll probe did not report assignedWorkerId" });
+    } else if (probeAssignedWorkerId !== name) {
+      violations.push({ code: "task_poll_unauthorized", reason: `task-poll probe assignedWorkerId '${probeAssignedWorkerId}' does not match worker '${name}'` });
+    }
+
+    const probeBrokerId = hasText(taskPollProbe.brokerId) ? taskPollProbe.brokerId.trim() : null;
+    if (probeBrokerId && homeBrokerId && probeBrokerId !== homeBrokerId) {
+      violations.push({ code: "task_poll_unauthorized", reason: `task-poll probe brokerId '${probeBrokerId}' does not match home broker '${homeBrokerId}'` });
     }
   }
 
