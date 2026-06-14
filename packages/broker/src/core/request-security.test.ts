@@ -364,6 +364,91 @@ test("assertA2AWorkerScopeAllowed authorizes only the declared scopes and fails 
   );
 });
 
+test("A2A HTTP Signature key registry parses and validates credential lifecycle metadata", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-lifecycle-"));
+  const validFile = join(dir, "lifecycle.json");
+  writeFileSync(validFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      status: "revoked",
+      notBefore: "2026-06-01T00:00:00Z",
+      expiresAt: "2026-07-01T00:00:00Z",
+    },
+  }));
+  const record = loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:sogyo:v1"];
+  assert.equal(record.status, "revoked");
+  assert.equal(record.notBefore, "2026-06-01T00:00:00Z");
+  assert.equal(record.expiresAt, "2026-07-01T00:00:00Z");
+
+  const badStatus = join(dir, "bad-status.json");
+  writeFileSync(badStatus, JSON.stringify({
+    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, status: "disabled" },
+  }));
+  assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(badStatus), /status must be "active" or "revoked"/);
+
+  const badInstant = join(dir, "bad-instant.json");
+  writeFileSync(badInstant, JSON.stringify({
+    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, expiresAt: "not-a-date" },
+  }));
+  assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(badInstant), /expiresAt must be an ISO-8601 instant/);
+
+  const invertedWindow = join(dir, "inverted-window.json");
+  writeFileSync(invertedWindow, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      notBefore: "2026-07-01T00:00:00Z",
+      expiresAt: "2026-06-01T00:00:00Z",
+    },
+  }));
+  assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(invertedWindow), /notBefore must be earlier than expiresAt/);
+});
+
+test("A2A HTTP Signature verifier rejects revoked keys and keys outside their validity window (#691)", () => {
+  const now = 1770861630; // within the fixture's created/expires window
+  const iso = (epochSec: number) => new Date(epochSec * 1000).toISOString();
+  const request = makeSignedA2ARequest();
+
+  const revoked = verifyA2AHttpSignature(
+    request,
+    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], status: "revoked" } },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(revoked.ok, false);
+  assert.equal(revoked.ok === false && revoked.code, "a2a_signature_key_revoked");
+
+  const expired = verifyA2AHttpSignature(
+    request,
+    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], expiresAt: iso(now - 1) } },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(expired.ok === false && expired.code, "a2a_signature_key_inactive");
+
+  const notYet = verifyA2AHttpSignature(
+    request,
+    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], notBefore: iso(now + 1000) } },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(notYet.ok === false && notYet.code, "a2a_signature_key_inactive");
+
+  const active = verifyA2AHttpSignature(
+    request,
+    {
+      "worker:sogyo:v1": {
+        ...a2aKeyRegistry["worker:sogyo:v1"],
+        status: "active",
+        notBefore: iso(now - 1000),
+        expiresAt: iso(now + 1000),
+      },
+    },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(active.ok, true);
+});
+
 test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker request", () => {
   const result = verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
 

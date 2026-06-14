@@ -115,6 +115,15 @@ export interface A2AHttpSignatureKeyRecord {
    * are authorized and all other worker routes fail closed.
    */
   scopes?: readonly A2AWorkerRouteScope[];
+  /**
+   * Credential lifecycle status. A "revoked" key is rejected at verification
+   * time regardless of a valid signature. Omitted is treated as "active".
+   */
+  status?: "active" | "revoked";
+  /** ISO-8601 instant before which the key is not yet valid (optional). */
+  notBefore?: string;
+  /** ISO-8601 instant at/after which the key is expired (optional). */
+  expiresAt?: string;
 }
 
 export type A2AHttpSignatureKeyRegistry = Record<string, A2AHttpSignatureKeyRecord>;
@@ -153,14 +162,53 @@ function parseA2AHttpSignatureKeyRegistry(input: unknown, source: string): A2AHt
     const publicKeyJwk = record.publicKeyJwk;
     validateA2AHttpSignaturePublicJwk(publicKeyJwk, registryKey);
     const scopes = parseRegistryScopes(record.scopes, registryKey);
+    const lifecycle = parseRegistryLifecycle(record, registryKey);
     registry[registryKey] = {
       keyid,
       workerId,
       publicKeyJwk: publicKeyJwk as Record<string, unknown>,
       ...(scopes ? { scopes } : {}),
+      ...lifecycle,
     };
   }
   return registry;
+}
+
+function parseRegistryLifecycle(
+  record: Record<string, unknown>,
+  keyid: string,
+): { status?: "active" | "revoked"; notBefore?: string; expiresAt?: string } {
+  const result: { status?: "active" | "revoked"; notBefore?: string; expiresAt?: string } = {};
+  if (record.status !== undefined) {
+    if (record.status !== "active" && record.status !== "revoked") {
+      throw new Error(
+        `A2A HTTP Signature key registry record ${keyid} status must be "active" or "revoked" when present`,
+      );
+    }
+    result.status = record.status;
+  }
+  const notBefore = parseRegistryInstant(record.notBefore, "notBefore", keyid);
+  const expiresAt = parseRegistryInstant(record.expiresAt, "expiresAt", keyid);
+  if (notBefore !== undefined) result.notBefore = notBefore;
+  if (expiresAt !== undefined) result.expiresAt = expiresAt;
+  if (notBefore !== undefined && expiresAt !== undefined && Date.parse(notBefore) >= Date.parse(expiresAt)) {
+    throw new Error(
+      `A2A HTTP Signature key registry record ${keyid} notBefore must be earlier than expiresAt`,
+    );
+  }
+  return result;
+}
+
+function parseRegistryInstant(value: unknown, field: string, keyid: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    throw new Error(
+      `A2A HTTP Signature key registry record ${keyid} ${field} must be an ISO-8601 instant when present`,
+    );
+  }
+  return value;
 }
 
 function parseRegistryScopes(
@@ -218,6 +266,8 @@ export type A2AHttpSignatureFailureCode =
   | "a2a_signature_malformed"
   | "a2a_signature_unsupported_profile"
   | "a2a_signature_unknown_key"
+  | "a2a_signature_key_revoked"
+  | "a2a_signature_key_inactive"
   | "a2a_signature_identity_mismatch"
   | "a2a_signature_time_invalid"
   | "a2a_signature_invalid";
@@ -293,6 +343,9 @@ export function verifyA2AHttpSignature(
   if (!keyRecord) {
     return signatureFailure("a2a_signature_unknown_key", "A2A HTTP signature key id is unknown");
   }
+  if (keyRecord.status === "revoked") {
+    return signatureFailure("a2a_signature_key_revoked", "A2A HTTP signature key has been revoked");
+  }
 
   const requesterId = normalizedHeader(request, "x-a2a-requester-id");
   const brokerId = normalizedHeader(request, "x-a2a-broker-id");
@@ -306,6 +359,12 @@ export function verifyA2AHttpSignature(
   const nowEpochSeconds = options.nowEpochSeconds ?? Math.floor(Date.now() / 1000);
   if (parsed.created > nowEpochSeconds || parsed.expires <= nowEpochSeconds || parsed.expires <= parsed.created) {
     return signatureFailure("a2a_signature_time_invalid", "A2A HTTP signature created/expires window is invalid");
+  }
+  if (keyRecord.notBefore !== undefined && nowEpochSeconds < Math.floor(Date.parse(keyRecord.notBefore) / 1000)) {
+    return signatureFailure("a2a_signature_key_inactive", "A2A HTTP signature key is not yet valid");
+  }
+  if (keyRecord.expiresAt !== undefined && nowEpochSeconds >= Math.floor(Date.parse(keyRecord.expiresAt) / 1000)) {
+    return signatureFailure("a2a_signature_key_inactive", "A2A HTTP signature key has expired");
   }
 
   const signatureBytes = parseA2AHttpSignatureBytes(request.signature);
