@@ -173,7 +173,7 @@ fuller target design. The broker currently enforces a v1 subset:
   | `POST /workers/register` | `worker.register` |
   | `POST /workers/:id/heartbeat` | `worker.heartbeat` |
   | `GET /a2a/workers/:id/assignment-events` | `workers.assignment-events` |
-  | `GET /tasks?assignedWorkerId=:id` (worker poll) | `tasks.list` |
+  | `GET /tasks?assignedWorkerId=:id` (worker poll; `worker=:id` is an accepted alias) | `tasks.list` |
   | `POST /tasks/:id/claim` | `task.claim` |
   | `POST /tasks/:id/start` | `task.start` |
   | `POST /tasks/:id/heartbeat` | `task.heartbeat` |

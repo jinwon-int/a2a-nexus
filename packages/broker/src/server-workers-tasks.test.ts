@@ -443,6 +443,52 @@ test("strict A2A HTTP Signature worker route gate fails closed when the signing 
   }
 });
 
+test("strict A2A HTTP Signature worker route gate fails closed on every out-of-scope task mutation route (#691)", async () => {
+  // sogyo is scoped to registration only, so every task.* mutation route is out of
+  // scope. The scope check fires before any task lookup, so a placeholder task id is
+  // enough to exercise denial across the full mutation surface.
+  const scopedKeyRegistry = {
+    "worker:sogyo:v1": {
+      ...routeGateKeyRegistry["worker:sogyo:v1"],
+      scopes: ["worker.register"] as const,
+    },
+    "worker:bangtong:v1": routeGateKeyRegistry["worker:bangtong:v1"],
+  };
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: scopedKeyRegistry,
+  });
+  try {
+    const actions = ["claim", "start", "heartbeat", "checkpoint", "complete", "evidence", "fail"] as const;
+    for (const action of actions) {
+      const path = `/tasks/scope-probe-task/${action}`;
+      const body = JSON.stringify({ workerId: "sogyo" });
+      const res = await fetch(`${server.baseUrl}${path}`, {
+        method: "POST",
+        headers: signedWorkerHeaders({
+          baseUrl: server.baseUrl,
+          method: "POST",
+          path,
+          workerId: "sogyo",
+          body,
+          nonce: `scoped-deny-${action}`,
+        }),
+        body,
+      });
+      assert.equal(res.status, 403, `${action} must be scope-denied`);
+      const errorBody = await res.json() as { error: { code: string; message: string } };
+      assert.equal(errorBody.error.code, "policy_denied");
+      assert.match(
+        errorBody.error.message,
+        new RegExp(`a2a_signature_scope_denied: signing key is not authorized for task\\.${action}`),
+      );
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test("strict A2A HTTP Signature worker route gate does not let one worker mutate another worker task", async () => {
   const server = await startTestServer({
     brokerId: "seoseo",
