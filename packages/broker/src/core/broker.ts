@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
+
 import {
   assertProposalApplyAllowed,
   assertProposalCreationAllowed,
@@ -1648,6 +1650,11 @@ export class InMemoryA2ABroker {
       sortNewestFirst,
     );
     return applyTaskListLimit(tasks, filters?.limit);
+  }
+
+  /** Aggregate lane completion for an A2A/A2AD parent round (#629). */
+  getRoundStatus(parentRoundId: string): RoundStatusSummary {
+    return summarizeRoundStatus(this.listTasks(), parentRoundId);
   }
 
   updateTaskPayload(
