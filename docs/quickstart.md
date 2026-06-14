@@ -184,6 +184,7 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 - [Demo overview](docs/demo/README.md) — component map, demo paths, health checks, security rules
 - [Two-broker demo](docs/demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
 - [External harness quickstart](docs/external-harness-quickstart.md) — non-OpenClaw harness integration
+- [Promotion capstone](docs/promotion-capstone.md) — CI-backed 5-minute and 20-minute no-live promotion-ready paths
 - [Canonical demo description](docs/canonical-demo.md) — sequence diagram and evidence rules
 - [Ecosystem guide](docs/ecosystem-guide.md) — full repository map and Korean/English terms
 
