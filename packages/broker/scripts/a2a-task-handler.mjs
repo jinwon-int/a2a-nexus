@@ -388,7 +388,7 @@ function shouldUseOpenClawAnalysisBridge(task, env = process.env) {
 
 function normalizedBridgeAnalysisStatus(value) {
   const status = safeText(value, "done").toLowerCase();
-  return status === "blocked" || status === "block" ? "blocked" : "done";
+  return ["blocked", "block", "source_blocked"].includes(status) ? "blocked" : "done";
 }
 
 function githubIssueTargetFromTask(task) {

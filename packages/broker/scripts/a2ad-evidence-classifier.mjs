@@ -24,6 +24,11 @@ const SOURCE_BLOCKED_PATTERNS = [
   /Hermes analysis bridge response did not contain valid JSON/i,
   /Hermes exited with null/i,
   /handler_exit_nonzero/i,
+  /source_blocked/i,
+  /GitHub PR source unavailable/i,
+  /PR diff .*unavailable/i,
+  /gh pr (?:diff|view) failed/i,
+  /pull request source .*unavailable/i,
 ];
 
 const WRAPPER_ONLY_PATTERNS = [
