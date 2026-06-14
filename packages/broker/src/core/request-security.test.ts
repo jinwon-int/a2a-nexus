@@ -449,6 +449,60 @@ test("A2A HTTP Signature verifier rejects revoked keys and keys outside their va
   assert.equal(active.ok, true);
 });
 
+test("A2A HTTP Signature key registry parses and validates allowed roles", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-roles-"));
+  const validFile = join(dir, "roles.json");
+  writeFileSync(validFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      roles: ["analyst", "researcher", "analyst"],
+    },
+  }));
+  assert.deepEqual(loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:sogyo:v1"].roles, [
+    "analyst",
+    "researcher",
+  ]);
+
+  const unknownRole = join(dir, "unknown-role.json");
+  writeFileSync(unknownRole, JSON.stringify({
+    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, roles: ["overlord"] },
+  }));
+  assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(unknownRole), /unknown role/);
+
+  const emptyRoles = join(dir, "empty-roles.json");
+  writeFileSync(emptyRoles, JSON.stringify({
+    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, roles: [] },
+  }));
+  assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(emptyRoles), /roles must be a non-empty array/);
+});
+
+test("A2A HTTP Signature verifier binds the signed role to the key's allowed roles (#691)", () => {
+  const now = 1770861630; // within the fixture window
+  // The fixture signs x-a2a-requester-role: "analyst".
+  const request = makeSignedA2ARequest();
+
+  const denied = verifyA2AHttpSignature(
+    request,
+    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], roles: ["operator"] } },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(denied.ok, false);
+  assert.equal(denied.ok === false && denied.code, "a2a_signature_role_denied");
+
+  const allowed = verifyA2AHttpSignature(
+    request,
+    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], roles: ["analyst"] } },
+    { nowEpochSeconds: now },
+  );
+  assert.equal(allowed.ok, true);
+
+  // No declared roles => no role restriction (legacy compatibility).
+  const unrestricted = verifyA2AHttpSignature(request, a2aKeyRegistry, { nowEpochSeconds: now });
+  assert.equal(unrestricted.ok, true);
+});
+
 test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker request", () => {
   const result = verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
 
