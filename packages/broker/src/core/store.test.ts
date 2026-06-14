@@ -980,6 +980,32 @@ test("SqliteBrokerStateStore projects a runtime snapshot from hot tables without
   }
 });
 
+test("SqliteBrokerStateStore hot-table load skips corrupt canonical push sidecar", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const task = makeTask("task-hot-corrupt-sidecar", "queued", "worker-hot");
+    const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    store.upsertHotTasks([task]);
+    store.close();
+
+    const db = new DatabaseSync(temp.filePath);
+    try {
+      db.prepare("INSERT INTO broker_snapshots (id, version, payload, updated_at) VALUES (1, ?, ?, ?)")
+        .run(CURRENT_BROKER_STATE_VERSION, "{not-json", "2026-04-27T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.tasks.map((loadedTask) => loadedTask.id), [task.id]);
+    assert.equal(snapshot.pushNotificationConfigs, undefined);
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore bounds hot runtime hydration without hiding table-native reads", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -1740,6 +1766,46 @@ test("SqliteBrokerStateStore save hints update dirty task and audit rows while p
   }
 });
 
+test("SqliteBrokerStateStore keeps snapshot-only push configs current when saving with hot hints", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    const task = makeTask("task-push-sidecar", "queued", "worker-a");
+    store.save({
+      ...emptySnapshot(),
+      tasks: [task],
+      pushNotificationConfigs: [
+        { taskId: task.id, id: "cfg-sidecar", url: "https://example.com/sidecar", token: "sidecar-secret" },
+      ],
+    });
+
+    const claimedTask = {
+      ...task,
+      status: "claimed" as const,
+      claimedBy: "worker-a",
+      claimedAt: "2026-04-27T00:05:00.000Z",
+      updatedAt: "2026-04-27T00:05:00.000Z",
+    };
+    store.save(
+      {
+        ...emptySnapshot(),
+        tasks: [claimedTask],
+        pushNotificationConfigs: [],
+      },
+      { hotTasks: [claimedTask] },
+    );
+    store.close();
+
+    const reloaded = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
+    const snapshot = reloaded.load();
+    assert.deepEqual(snapshot.pushNotificationConfigs, []);
+    assert.equal(snapshot.tasks[0]?.status, "claimed");
+    reloaded.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore incremental hints leave unrelated hot tables untouched", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -1996,6 +2062,45 @@ test("SqliteBrokerStateStore applies task and audit hot retention plans", () => 
   }
 });
 
+test("SqliteBrokerStateStore canonical retention sync prunes push configs for pruned tasks", () => {
+  const temp = withTempFile("state.sqlite");
+  try {
+    const taskKeep = makeTask("task-keep", "succeeded", "worker-a");
+    const taskPrune = makeTask("task-prune", "failed", "worker-a");
+    const store = new SqliteBrokerStateStore(temp.filePath);
+    store.save({
+      ...emptySnapshot(),
+      tasks: [taskKeep, taskPrune],
+      auditEvents: [makeAuditEvent("audit-keep", "task.succeeded", taskKeep.id)],
+      pushNotificationConfigs: [
+        { taskId: taskKeep.id, id: "cfg-keep", url: "https://example.com/keep", token: "keep-secret" },
+        { taskId: taskPrune.id, id: "cfg-prune", url: "https://example.com/prune", token: "prune-secret" },
+      ],
+    });
+
+    const result = store.syncCanonicalSnapshotWithHotRetentionPlans(
+      [
+        {
+          table: "broker_tasks",
+          cutoffMs: 0,
+          retainedIds: [taskKeep.id],
+          pruneIds: [taskPrune.id],
+        },
+      ],
+      makeAuditEvent("audit-retention-sync", "broker.cleanup.applied", taskPrune.id),
+    );
+
+    assert.equal(result.synced, true);
+    const snapshot = store.load();
+    assert.deepEqual(snapshot.tasks.map((task) => task.id), [taskKeep.id]);
+    assert.deepEqual(snapshot.pushNotificationConfigs?.map((config) => config.id), ["cfg-keep"]);
+    assert.ok(!JSON.stringify(snapshot).includes("prune-secret"), "canonical snapshot must not retain pruned task push secrets");
+    store.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("SqliteBrokerStateStore save hints prune missing task and audit rows through retention plans", () => {
   const temp = withTempFile("state.sqlite");
   try {
@@ -2008,6 +2113,10 @@ test("SqliteBrokerStateStore save hints prune missing task and audit rows throug
       ...emptySnapshot(),
       tasks: [taskKeep, taskPrune],
       auditEvents: [auditKeep, auditPrune],
+      pushNotificationConfigs: [
+        { taskId: taskKeep.id, id: "cfg-keep", url: "https://example.com/keep", token: "keep-secret" },
+        { taskId: taskPrune.id, id: "cfg-prune", url: "https://example.com/prune", token: "prune-secret" },
+      ],
     });
 
     store.save(

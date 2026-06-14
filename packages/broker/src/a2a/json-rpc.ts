@@ -50,6 +50,8 @@ export interface ExecuteJsonRpcOptions {
    * TaskPushNotificationConfig methods are enabled.
    */
   pushNotificationConfigStore?: PushNotificationConfigStore;
+  /** Persist a push-config mutation into the broker's durable snapshot path. */
+  persistPushNotificationConfigs?: () => void;
   /**
    * When set, a new-context SendMessage with no metadata.targetNodeId is
    * routed to this embedded default-agent worker (A2A single-agent mode).
@@ -310,11 +312,12 @@ export function executeA2AJsonRpc(
           id: optionalString(p.id),
           url: typeof p.url === "string" ? p.url : "",
           token: optionalString(p.token),
-          authentication: isRecord(p.authentication)
-            ? (p.authentication as Record<string, never>)
+          authentication: Object.prototype.hasOwnProperty.call(p, "authentication")
+            ? p.authentication
             : undefined,
         });
-        return success(id, cfg);
+        options.persistPushNotificationConfigs?.();
+        return success(id, redactPushConfigSecrets(cfg));
       }
 
       case "GetTaskPushNotificationConfig": {
@@ -350,6 +353,7 @@ export function executeA2AJsonRpc(
         const delTaskId = requirePushTaskId(params);
         requireAuthorizedTask(options, delTaskId);
         store.delete(delTaskId, requireString(params, "id"));
+        options.persistPushNotificationConfigs?.();
         return success(id, {});
       }
 

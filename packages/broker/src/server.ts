@@ -2859,6 +2859,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     persistenceQueueDiagnosticsProvider = workerPersistenceHandle.diagnostics;
   }
 
+  const pushNotificationsEnabled =
+    options.pushNotificationsEnabled ?? resolveBooleanEnv(process.env.A2A_PUSH_NOTIFICATIONS_ENABLED, false);
+  const initialSnapshot = options.broker && !pushNotificationsEnabled ? undefined : stateStore.load();
+  const pushNotificationConfigStore = pushNotificationsEnabled
+    ? new PushNotificationConfigStore(initialSnapshot?.pushNotificationConfigs ?? [])
+    : undefined;
+  const pushNotificationSnapshotExtension = pushNotificationConfigStore
+    ? () => ({ pushNotificationConfigs: pushNotificationConfigStore.snapshot() })
+    : undefined;
+
   const sqliteRepositoryStore =
     workerPersistenceHandle || !(stateStore instanceof SqliteBrokerStateStore)
       ? undefined
@@ -2871,9 +2881,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     workerPersistenceClosePromise ??= workerPersistenceHandle.close();
     return workerPersistenceClosePromise;
   };
+  let unsubscribePushNotificationPruneListener: (() => void) | undefined;
+  let unsubscribePushNotificationSnapshotExtension: (() => void) | undefined;
   const broker =
     options.broker ??
-    new InMemoryA2ABroker(stateStore, stateStore.load(), {
+    new InMemoryA2ABroker(stateStore, initialSnapshot, {
       taskRepository: sqliteRepositoryStore
         ? new SqliteTaskRuntimeRepository(sqliteRepositoryStore)
         : undefined,
@@ -2906,7 +2918,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerHeartbeatPersistIntervalMs,
       brokerId,
       teamId,
+      snapshotExtensions: pushNotificationSnapshotExtension,
     });
+  if (options.broker && pushNotificationSnapshotExtension) {
+    unsubscribePushNotificationSnapshotExtension = broker.registerSnapshotExtension(pushNotificationSnapshotExtension);
+  }
   const rateLimiter = new InMemoryRateLimiter(
     Math.max(1, rateLimitMaxRequests),
     Math.max(1, rateLimitWindowSec) * 1000,
@@ -2915,18 +2931,26 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     Math.max(1, workerRateLimitMaxRequests),
     Math.max(1, workerRateLimitWindowSec) * 1000,
   );
-  const pushNotificationsEnabled =
-    options.pushNotificationsEnabled ?? resolveBooleanEnv(process.env.A2A_PUSH_NOTIFICATIONS_ENABLED, false);
-  const pushNotificationConfigStore = pushNotificationsEnabled ? new PushNotificationConfigStore() : undefined;
+  let startupPrunedPushConfigTaskCount = 0;
   if (pushNotificationConfigStore) {
     // Release push configs (and their delivery secrets) on the same lifecycle
     // as the tasks they belong to: when retention prunes a task, its configs
     // must not outlive it in memory.
-    broker.registerTaskPruneListener((prunedTaskIds) => {
+    unsubscribePushNotificationPruneListener = broker.registerTaskPruneListener((prunedTaskIds) => {
       for (const taskId of prunedTaskIds) {
         pushNotificationConfigStore.clearTask(taskId);
       }
     });
+    startupPrunedPushConfigTaskCount = pushNotificationConfigStore.retainTasks(broker.listTasks().map((task) => task.id));
+  }
+  const persistPushNotificationConfigs = pushNotificationConfigStore
+    ? () => stateStore.save({
+        ...broker.exportSnapshot(),
+        pushNotificationConfigs: pushNotificationConfigStore.snapshot(),
+      })
+    : undefined;
+  if (startupPrunedPushConfigTaskCount > 0 && !options.broker) {
+    persistPushNotificationConfigs?.();
   }
   const unsignedAgentCard =
     options.agentCard ??
@@ -3443,6 +3467,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               enforceRequesterIdentity,
               peerStatusService,
               pushNotificationConfigStore,
+              persistPushNotificationConfigs,
               defaultAgentNodeId,
             });
           } catch (error) {
@@ -3478,6 +3503,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           enforceRequesterIdentity,
           peerStatusService,
           pushNotificationConfigStore,
+          persistPushNotificationConfigs,
           responseShape,
           defaultAgentNodeId,
         });
@@ -5940,6 +5966,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     stopPoller();
     defaultAgentHandle?.stop();
     unsubscribeBrokerState();
+    unsubscribePushNotificationPruneListener?.();
+    unsubscribePushNotificationSnapshotExtension?.();
     void closeWorkerPersistence().catch((error) => {
       console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);
     });

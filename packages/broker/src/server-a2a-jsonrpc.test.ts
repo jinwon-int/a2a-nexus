@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startTestServer, jsonHeaders, registerTestWorker, readSseEventsUntil } from "./server-test-helpers.js";
+import { startTestServer, jsonHeaders, registerTestWorker, readSseEventsUntil, createInMemoryStateStore } from "./server-test-helpers.js";
+import { InMemoryA2ABroker } from "./core/broker.js";
+import { emptySnapshot } from "./core/store.js";
 
 test("server exposes a public agent card on the well-known path", async () => {
   const server = await startTestServer({
@@ -1105,6 +1107,15 @@ test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async
     const send = await rpc("SendMessage", { actor: { id: "hub-a", kind: "node", role: "hub" }, message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-push", intent: "analyze" } }, "mk");
     const pushTaskId = send.result.task.id;
 
+    const invalidAuth = await rpc("CreateTaskPushNotificationConfig", {
+      taskId: pushTaskId,
+      url: "https://example.com/invalid-auth",
+      authentication: "Bearer",
+    });
+    assert.ok(invalidAuth.error, "malformed authentication must fail instead of creating a weaker config");
+    const afterInvalidAuth = await rpc("ListTaskPushNotificationConfigs", { taskId: pushTaskId }, "after-invalid-auth");
+    assert.equal(afterInvalidAuth.result.configs.length, 0, "malformed auth input must not mutate the store");
+
     // Operations on a non-existent task fail closed.
     const noTask = await rpc("CreateTaskPushNotificationConfig", { taskId: "no-such-task", url: "https://x.example" });
     assert.ok(noTask.error, "config ops require the task to exist");
@@ -1116,6 +1127,10 @@ test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async
       authentication: { schemes: ["Bearer"], credentials: "secret-cred" },
     });
     assert.equal(created.result.taskId, pushTaskId);
+    assert.equal(created.result.token, "[redacted]", "create response keeps token write-only");
+    assert.equal(created.result.authentication.credentials, "[redacted]", "create response keeps auth credentials write-only");
+    assert.ok(!JSON.stringify(created).includes("super-secret-token"));
+    assert.ok(!JSON.stringify(created).includes("secret-cred"));
     const configId = created.result.id;
 
     // Reads redact delivery secrets.
@@ -1134,6 +1149,89 @@ test("push notification config CRUD over JSON-RPC when enabled (A2A 1.0)", async
     assert.ok(!("error" in deleted));
     const missing = await rpc("GetTaskPushNotificationConfig", { taskId: pushTaskId, id: configId });
     assert.ok(missing.error, "deleted config no longer retrievable");
+  } finally {
+    await server.close();
+  }
+});
+
+test("push notification configs survive broker restart for retained tasks (a2a-nexus#647)", async () => {
+  const stateStore = createInMemoryStateStore();
+  let server = await startTestServer({
+    stateStore,
+    pushNotificationsEnabled: true,
+    enforceRequesterIdentity: false,
+  });
+  let taskId = "";
+  let configId = "";
+  try {
+    await registerTestWorker(server.baseUrl, "worker-push-restart", "analyst", undefined);
+    const headers = jsonHeaders({});
+    const rpc = (method: string, params: unknown, id = "pr") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      }).then((r) => r.json());
+
+    const sent = await rpc(
+      "SendMessage",
+      { actor: { id: "hub-a", kind: "node", role: "hub" }, message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-push-restart", intent: "analyze" } },
+      "mk-restart",
+    );
+    taskId = sent.result.task.id;
+    const created = await rpc("CreateTaskPushNotificationConfig", {
+      taskId,
+      id: "cfg-restart",
+      url: "https://example.com/restart-hook",
+      token: "restart-secret-token",
+      authentication: { schemes: ["Bearer"], credentials: "restart-secret-cred" },
+    });
+    assert.equal(created.result.id, "cfg-restart");
+    configId = created.result.id;
+  } finally {
+    await server.close();
+  }
+
+  server = await startTestServer({
+    stateStore,
+    pushNotificationsEnabled: true,
+    enforceRequesterIdentity: false,
+  });
+  try {
+    const got = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "pr-get", method: "GetTaskPushNotificationConfig", params: { taskId, id: configId } }),
+    })).json();
+    assert.equal(got.result?.id, configId);
+    assert.equal(got.result?.url, "https://example.com/restart-hook");
+    assert.equal(got.result?.token, "[redacted]", "raw token remains write-only after restart");
+    assert.equal(got.result?.authentication?.credentials, "[redacted]");
+    assert.ok(!JSON.stringify(got).includes("restart-secret"), "restart read must not leak raw delivery secrets");
+
+    const deleted = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "pr-delete", method: "DeleteTaskPushNotificationConfig", params: { taskId, id: configId } }),
+    })).json();
+    assert.ok(!deleted.error, "delete after restart succeeds and persists through the current store instance");
+  } finally {
+    await server.close();
+  }
+
+  server = await startTestServer({
+    stateStore,
+    pushNotificationsEnabled: true,
+    enforceRequesterIdentity: false,
+  });
+  try {
+    const missing = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "pr-missing", method: "GetTaskPushNotificationConfig", params: { taskId, id: configId } }),
+    })).json();
+    assert.ok(missing.error, "deleted config must not resurrect on a second restart with the same state store");
+    assert.ok(!JSON.stringify(missing).includes("restart-secret"));
   } finally {
     await server.close();
   }
@@ -1160,6 +1258,63 @@ test("push notification methods are absent when the feature is disabled", async 
   }
 });
 
+test("disabled push notifications with supplied broker do not force state-store load", async () => {
+  const broker = new InMemoryA2ABroker();
+  const stateStore = {
+    load() {
+      throw new Error("state store load should not be called for disabled push notifications with a supplied broker");
+    },
+    save() {
+      throw new Error("state store save should not be called by an idle supplied broker server");
+    },
+  };
+  const server = await startTestServer({ broker, stateStore, pushNotificationsEnabled: false });
+  try {
+    const card = await (await fetch(`${server.baseUrl}/.well-known/agent-card.json`)).json();
+    assert.equal(card.capabilities.pushNotifications, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("push notification sidecar attaches to supplied broker snapshots", async () => {
+  const stateStore = createInMemoryStateStore();
+  const broker = new InMemoryA2ABroker(stateStore);
+  const server = await startTestServer({
+    broker,
+    stateStore,
+    pushNotificationsEnabled: true,
+    enforceRequesterIdentity: false,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-push-custom", "analyst", undefined);
+    const headers = jsonHeaders({});
+    const rpc = (method: string, params: unknown, id = "pc") =>
+      fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      }).then((r) => r.json());
+
+    const sent = await rpc(
+      "SendMessage",
+      { actor: { id: "hub-a", kind: "node", role: "hub" }, message: { parts: [{ text: "x" }] }, metadata: { targetNodeId: "worker-push-custom", intent: "analyze" } },
+      "pc-mk",
+    );
+    const taskId = sent.result.task.id;
+    const created = await rpc("CreateTaskPushNotificationConfig", {
+      taskId,
+      id: "cfg-custom-broker",
+      url: "https://example.com/custom-broker-hook",
+      token: "custom-broker-secret-token",
+    });
+    assert.equal(created.result?.token, "[redacted]");
+    assert.deepEqual(broker.exportSnapshot().pushNotificationConfigs?.map((config) => config.id), ["cfg-custom-broker"]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("push config CRUD enforces task-party authorization and never leaks secrets (a2a-nexus#620 review)", async () => {
   const server = await startTestServer({ pushNotificationsEnabled: true, edgeSecret: "test-edge-secret" });
   try {
@@ -1178,6 +1333,9 @@ test("push config CRUD enforces task-party authorization and never leaks secrets
       authentication: { schemes: ["Bearer"], credentials: "party-secret-cred" },
     });
     assert.ok(created.result?.id, "task party can create a config");
+    assert.equal(created.result.token, "[redacted]", "authorized create keeps token write-only");
+    assert.equal(created.result.authentication.credentials, "[redacted]", "authorized create keeps auth credentials write-only");
+    assert.ok(!JSON.stringify(created).includes("party-secret"), "create response must not leak raw delivery secrets");
     const configId = created.result.id;
 
     // A non-party requester is denied on all four operations, and no
