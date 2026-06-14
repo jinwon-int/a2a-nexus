@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarPreflightEvidenceCollectorPacket } from "./terminal-brief-sidecar-preflight-evidence-collector.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarPreflightChainReviewState =
   | "ready_for_supervised_dry_run_chain_review"
@@ -602,10 +603,6 @@ function titleForState(state: TerminalBriefSidecarPreflightChainReviewState): st
   if (state === "degraded") return "Degraded: Terminal Brief sidecar preflight chain";
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar preflight chain";
   return "Blocked: Terminal Brief sidecar preflight chain";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function list(items: unknown[]): string {

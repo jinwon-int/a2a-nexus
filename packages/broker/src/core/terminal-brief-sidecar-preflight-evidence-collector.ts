@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDryRunStartCanaryPlanPacket } from "./terminal-brief-sidecar-dry-run-start-canary-plan.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarPreflightEvidenceCollectorState =
   | "ready_for_supervised_dry_run_preflight_review"
@@ -859,10 +860,6 @@ function isStale(observedAt: string | undefined, expiresAt: string | undefined, 
   const observedMs = Date.parse(observedAt);
   if (!Number.isFinite(observedMs)) return true;
   return nowMs - observedMs > maxAgeMs || observedMs - nowMs > maxAgeMs;
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function optionalBoolean(value: unknown): boolean | undefined {
