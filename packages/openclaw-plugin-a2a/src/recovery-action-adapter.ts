@@ -12,6 +12,8 @@
  * canonical broker recovery payloads.
  */
 
+import { isPlainObject } from "./value-guards.js";
+
 // ── Recovery action types ──────────────────────────────────────
 
 export const RecoveryActionKinds = [
@@ -107,9 +109,6 @@ export type RecoveryAdapterResult = NormalizedRecoveryAction | RecoveryAdapterEr
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
