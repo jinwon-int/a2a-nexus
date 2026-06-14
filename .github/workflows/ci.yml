@@ -168,6 +168,21 @@ jobs:
       - run: npm run check:layout
       - run: echo "docs-only change — code build/smoke skipped"
 
+  # ── Promotion-ready quickstart capstone (no-live 5-minute path) ─────
+  promotion-capstone:
+    needs: [setup, paths-filter]
+    if: ${{ github.ref == 'refs/heads/main' || needs.paths-filter.outputs.docs == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run check:promotion-capstone
+      - run: npm run smoke:quickstart
+
   # ── Full release gate (main branch and cross-cutting changes) ───────
   check:
     if: ${{ github.ref == 'refs/heads/main' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
