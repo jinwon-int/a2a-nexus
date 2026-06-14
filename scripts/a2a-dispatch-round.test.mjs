@@ -14,6 +14,7 @@ import {
   CLASS_ACCEPTED_UNCONFIRMED,
   CLASS_ALREADY_EXISTS,
   CLASS_FAILED,
+  CLASS_PREFLIGHT_EXCLUDED,
 } from './a2a-dispatch-round.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -258,6 +259,44 @@ test('duplicate (POST 409, GET finds task) -> already-exists', async () => {
   }
 });
 
+test('preflight-excluded worker lanes are not POSTed and are reported separately (#659)', async () => {
+  const broker = await startMockBroker({
+    post: (body) => ({ status: 201, json: { task: { id: body.id, status: 'queued' } } }),
+  });
+  try {
+    const manifest = makeManifest(broker.url, 2);
+    manifest.workerReadiness = {
+      rows: [
+        { node: 'worker-1', ok: true, violations: [] },
+        {
+          node: 'worker-2',
+          ok: false,
+          violations: [
+            {
+              code: 'handler_missing',
+              reason: 'required handler hermes-a2a-analysis-bridge.mjs is present but not executable (EACCES on spawn)',
+            },
+          ],
+        },
+      ],
+    };
+
+    const out = await runDispatch(manifest, { fetchImpl: fetch, secret: SECRET });
+
+    assert.equal(out.exitCode, 0);
+    assert.equal(out.ok, true);
+    assert.equal(broker.getPostCalls(), 1, 'preflight-excluded lane must not create a broker task');
+    assert.equal(out.summary.counts[CLASS_CREATED], 1);
+    assert.equal(out.summary.counts[CLASS_PREFLIGHT_EXCLUDED], 1);
+    const excluded = out.results.find((row) => row.classification === CLASS_PREFLIGHT_EXCLUDED);
+    assert.equal(excluded.target, 'worker-2');
+    assert.equal(excluded.errorCode, 'handler_missing');
+    assert.match(excluded.detail, /EACCES/);
+  } finally {
+    await broker.close();
+  }
+});
+
 test('--verify re-fetches each lane and counts states', async () => {
   const store = new Map();
   const broker = await startMockBroker({
@@ -285,6 +324,34 @@ test('missing A2A_EDGE_SECRET refuses to dispatch', async () => {
 });
 
 // ─── Secret never leaks (child process, full output capture) ─────────────────
+
+test('CLI --worker-readiness excludes failed workers before POST /tasks', async () => {
+  const broker = await startBrokerProcess('ok');
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-dispatch-round-'));
+  const manifestPath = join(dir, 'manifest.json');
+  const readinessPath = join(dir, 'worker-readiness.json');
+  writeFileSync(manifestPath, JSON.stringify(makeManifest(broker.url, 2)));
+  writeFileSync(readinessPath, JSON.stringify({
+    rows: [
+      { node: 'worker-1', ok: true, violations: [] },
+      { node: 'worker-2', ok: false, violations: [{ code: 'handler_missing', reason: 'bridge EACCES' }] },
+    ],
+  }));
+  try {
+    const proc = spawnSync(process.execPath, [SCRIPT, '--manifest', manifestPath, '--worker-readiness', readinessPath, '--json'], {
+      encoding: 'utf8',
+      env: { ...process.env, A2A_EDGE_SECRET: SECRET },
+    });
+    assert.equal(proc.status, 0, `${proc.stdout}\n${proc.stderr}`);
+    const report = JSON.parse(proc.stdout);
+    assert.equal(report.summary.counts[CLASS_CREATED], 1);
+    assert.equal(report.summary.counts[CLASS_PREFLIGHT_EXCLUDED], 1);
+    assert.equal(report.results.find((row) => row.classification === CLASS_PREFLIGHT_EXCLUDED).errorCode, 'handler_missing');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    await broker.close();
+  }
+});
 
 test('secret never appears in CLI output', async () => {
   const broker = await startBrokerProcess('ok');

@@ -36,9 +36,12 @@ const CLASS_CREATED = 'created';
 const CLASS_ACCEPTED_UNCONFIRMED = 'accepted-unconfirmed';
 const CLASS_ALREADY_EXISTS = 'already-exists';
 const CLASS_FAILED = 'failed';
+const CLASS_PREFLIGHT_EXCLUDED = 'preflight-excluded';
 
-// A lane that counts toward a clean round.
-const OK_CLASSES = new Set([CLASS_CREATED, CLASS_ALREADY_EXISTS, CLASS_ACCEPTED_UNCONFIRMED]);
+// A lane that counts toward a clean round. `preflight-excluded` is cleanly
+// accounted for because no broker task should be created for an ineligible
+// worker; it is reported separately from created/failed lanes (#659).
+const OK_CLASSES = new Set([CLASS_CREATED, CLASS_ALREADY_EXISTS, CLASS_ACCEPTED_UNCONFIRMED, CLASS_PREFLIGHT_EXCLUDED]);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -293,6 +296,34 @@ function errorCodeOf(body) {
   return null;
 }
 
+function workerReadinessRows(manifest) {
+  if (Array.isArray(manifest.workerReadiness?.rows)) return manifest.workerReadiness.rows;
+  if (Array.isArray(manifest.workerReadiness)) return manifest.workerReadiness;
+  return [];
+}
+
+function preflightExclusionForLane(manifest, lane) {
+  const workerId = hasText(lane.assignedWorkerId) ? lane.assignedWorkerId : lane.target.id;
+  const row = workerReadinessRows(manifest).find((candidate) => {
+    const node = hasText(candidate?.node) ? candidate.node : candidate?.workerId;
+    return node === workerId;
+  });
+  if (!row || row.ok !== false) return null;
+
+  const violations = Array.isArray(row.violations) ? row.violations : [];
+  const first = violations.find((violation) => isPlainObject(violation)) ?? {};
+  return {
+    order: lane.order,
+    id: lane.id,
+    target: lane.target.id,
+    classification: CLASS_PREFLIGHT_EXCLUDED,
+    taskId: null,
+    status: null,
+    errorCode: hasText(first.code) ? first.code : 'worker_readiness_failed',
+    detail: hasText(first.reason) ? first.reason : `worker '${workerId}' failed readiness preflight`,
+  };
+}
+
 // ─── Verify (re-fetch round) ────────────────────────────────────────────────
 
 async function verifyRound(fetchImpl, manifest, secret, lanes) {
@@ -314,6 +345,7 @@ function summarize(results, lanesLength) {
     [CLASS_CREATED]: 0,
     [CLASS_ACCEPTED_UNCONFIRMED]: 0,
     [CLASS_ALREADY_EXISTS]: 0,
+    [CLASS_PREFLIGHT_EXCLUDED]: 0,
     [CLASS_FAILED]: 0,
   };
   for (const r of results) counts[r.classification] = (counts[r.classification] ?? 0) + 1;
@@ -399,16 +431,24 @@ async function runDispatch(manifest, opts = {}) {
     return { ok: false, exitCode: 1, mode: 'dispatch', errors: ['no fetch implementation available'], lanes: [], results: [], summary: null, verify: null };
   }
 
-  // Sequential dispatch — avoid the queue-drain stampede.
+  // Sequential dispatch — avoid the queue-drain stampede. Worker-readiness
+  // failures are accounted for without creating broker tasks (#659).
   const results = [];
+  const dispatchedLanes = [];
   for (const lane of lanes) {
+    const excluded = preflightExclusionForLane(manifest, lane);
+    if (excluded) {
+      results.push(excluded);
+      continue;
+    }
+    dispatchedLanes.push(lane);
     results.push(await dispatchLane(fetchImpl, manifest, secret, lane));
   }
 
   const summary = summarize(results, lanes.length);
   let verifyResult = null;
   if (verify) {
-    verifyResult = await verifyRound(fetchImpl, manifest, secret, lanes);
+    verifyResult = await verifyRound(fetchImpl, manifest, secret, dispatchedLanes);
   }
 
   return {
@@ -455,7 +495,8 @@ function printHuman(outcome, { json }) {
   const c = outcome.summary.counts;
   process.stdout.write(
     `counts: created=${c[CLASS_CREATED]} accepted-unconfirmed=${c[CLASS_ACCEPTED_UNCONFIRMED]} `
-    + `already-exists=${c[CLASS_ALREADY_EXISTS]} failed=${c[CLASS_FAILED]} / total=${outcome.results.length}\n`,
+    + `already-exists=${c[CLASS_ALREADY_EXISTS]} preflight-excluded=${c[CLASS_PREFLIGHT_EXCLUDED]} `
+    + `failed=${c[CLASS_FAILED]} / total=${outcome.results.length}\n`,
   );
 
   // Surface verify hints for accepted-unconfirmed lanes.
@@ -465,6 +506,9 @@ function printHuman(outcome, { json }) {
     }
     if (r.classification === CLASS_FAILED) {
       process.stderr.write(`  FAILED lane ${r.id}: status=${r.status ?? 'n/a'} code=${r.errorCode ?? 'n/a'}${r.detail ? ` detail=${r.detail}` : ''}\n`);
+    }
+    if (r.classification === CLASS_PREFLIGHT_EXCLUDED) {
+      process.stdout.write(`  preflight-excluded lane ${r.id}: code=${r.errorCode ?? 'worker_readiness_failed'}${r.detail ? ` detail=${r.detail}` : ''}\n`);
     }
   }
 
@@ -503,13 +547,14 @@ manifest as plain strings (zero shell interpolation). The edge secret is read
 from A2A_EDGE_SECRET only (never a CLI flag, never logged).
 
 Options:
-  --manifest <file>  JSON manifest: { roundId, brokerUrl, requester, defaults?, lanes[] }
-  --dry-run          Validate the manifest and print the would-create table; no network.
-  --verify           After dispatch, re-fetch each lane and print a round status table.
-  --json             Emit machine-readable JSON instead of tables.
+  --manifest <file>          JSON manifest: { roundId, brokerUrl, requester, defaults?, lanes[] }
+  --worker-readiness <file>  Optional a2a-worker-readiness-preflight JSON result; ok:false rows are preflight-excluded before POST /tasks.
+  --dry-run                  Validate the manifest and print the would-create table; no network.
+  --verify                   After dispatch, re-fetch each dispatched lane and print a round status table.
+  --json                     Emit machine-readable JSON instead of tables.
 
 Exit: 0 only when every lane is created / already-exists / accepted-unconfirmed
-and the total is fully accounted for; any failed lane exits 1.
+or preflight-excluded and the total is fully accounted for; any failed lane exits 1.
 `);
 }
 
@@ -519,6 +564,7 @@ async function main() {
     parsed = parseArgs({
       options: {
         manifest: { type: 'string', short: 'm', default: '' },
+        'worker-readiness': { type: 'string', default: '' },
         'dry-run': { type: 'boolean', default: false },
         verify: { type: 'boolean', default: false },
         json: { type: 'boolean', default: false },
@@ -548,6 +594,14 @@ async function main() {
   } catch (error) {
     process.stderr.write(`error: cannot read/parse manifest: ${error.message}\n`);
     process.exit(1);
+  }
+  if (hasText(values['worker-readiness'])) {
+    try {
+      manifest.workerReadiness = JSON.parse(fs.readFileSync(values['worker-readiness'], 'utf8'));
+    } catch (error) {
+      process.stderr.write(`error: cannot read/parse --worker-readiness: ${error.message}\n`);
+      process.exit(1);
+    }
   }
 
   const dryRun = values['dry-run'];
@@ -582,4 +636,5 @@ export {
   CLASS_ACCEPTED_UNCONFIRMED,
   CLASS_ALREADY_EXISTS,
   CLASS_FAILED,
+  CLASS_PREFLIGHT_EXCLUDED,
 };
