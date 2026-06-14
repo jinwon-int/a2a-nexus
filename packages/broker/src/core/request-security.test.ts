@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHmac } from "node:crypto";
+import { createHmac, createPrivateKey, sign } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import {
   assertGitHubWebhookSignature,
+  buildA2AHttpSignatureBase,
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
   rateLimitKey,
+  verifyA2AHttpSignature,
 } from "./request-security.js";
 
 function createRequest(params: {
@@ -166,4 +168,155 @@ test("InMemoryRateLimiter prunes idle buckets once over the cap (a2a-nexus#573 i
 
   const snap = limiter.snapshot(10 * 60_000);
   assert.ok(snap.activeKeys <= 10_000, `idle buckets should be pruned, got ${snap.activeKeys}`);
+});
+
+// Synthetic test-only Ed25519 fixture generated locally for deterministic verifier
+// coverage. This key pair is not used by any broker or worker deployment.
+const testPrivateJwk = {
+  crv: "Ed25519",
+  d: "AaTuhLv-jaClRWi80aTnBCH7OaqKDTRI1-BhVY6n8hw",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const testPublicJwk = {
+  crv: "Ed25519",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const signedRequestBase = {
+  method: "POST",
+  authority: "broker.seoyoon-family.com",
+  path: "/tasks/task-123/claim",
+  query: "",
+  headers: {
+    "content-digest": "sha-256=:HT2PpCSN0Yph+r0hZ1dMmC5RkVx9LBtB7l9nD7vrFq8=:",
+    "x-a2a-requester-id": "sogyo",
+    "x-a2a-requester-role": "analyst",
+    "x-a2a-broker-id": "seoseo",
+  },
+  signatureInput: "a2a=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-a2a-requester-id\" \"x-a2a-requester-role\" \"x-a2a-broker-id\");alg=\"ed25519\";keyid=\"worker:sogyo:v1\";created=1770861600;expires=1770861660;nonce=\"nonce-test-1\";tag=\"a2a-worker-v1\"",
+};
+
+function makeSignedA2ARequest(
+  overrides: Omit<Partial<typeof signedRequestBase>, "headers"> & {
+    headers?: Partial<typeof signedRequestBase.headers>;
+  } = {},
+) {
+  const request = {
+    ...signedRequestBase,
+    ...overrides,
+    headers: {
+      ...signedRequestBase.headers,
+      ...(overrides.headers ?? {}),
+    },
+  };
+  const privateKey = createPrivateKey({ key: testPrivateJwk, format: "jwk" });
+  const signature = sign(null, Buffer.from(buildA2AHttpSignatureBase(request)), privateKey).toString("base64");
+  return {
+    ...request,
+    signature: `a2a=:${signature}:`,
+  };
+}
+
+const a2aKeyRegistry = {
+  "worker:sogyo:v1": {
+    keyid: "worker:sogyo:v1",
+    workerId: "sogyo",
+    publicKeyJwk: testPublicJwk,
+  },
+};
+
+test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker request", () => {
+  const result = verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
+
+  assert.deepEqual(result, {
+    ok: true,
+    keyid: "worker:sogyo:v1",
+    requesterId: "sogyo",
+    brokerId: "seoseo",
+    created: 1770861600,
+    expires: 1770861660,
+    nonce: "nonce-test-1",
+  });
+});
+
+test("A2A HTTP Signature verifier rejects a signed request after covered path mutation", () => {
+  const signed = makeSignedA2ARequest();
+  const result = verifyA2AHttpSignature({ ...signed, path: "/tasks/task-999/claim" }, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "a2a_signature_invalid");
+});
+
+test("A2A HTTP Signature verifier rejects mutations to covered method, query, digest, or broker id", () => {
+  const signed = makeSignedA2ARequest();
+
+  for (const [label, mutated] of [
+    ["method", { ...signed, method: "GET" }],
+    ["query", { ...signed, query: "assignedWorkerId=sogyo" }],
+    [
+      "content-digest",
+      {
+        ...signed,
+        headers: { ...signed.headers, "content-digest": "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:" },
+      },
+    ],
+    ["broker id", { ...signed, headers: { ...signed.headers, "x-a2a-broker-id": "gwakga" } }],
+  ] as const) {
+    const result = verifyA2AHttpSignature(mutated, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
+    assert.equal(result.ok, false, label);
+    assert.equal(result.code, "a2a_signature_invalid", label);
+  }
+});
+
+test("A2A HTTP Signature verifier fails closed for unknown key ids", () => {
+  const request = makeSignedA2ARequest({
+    signatureInput: signedRequestBase.signatureInput.replace("worker:sogyo:v1", "worker:unknown:v1"),
+  });
+  const result = verifyA2AHttpSignature(request, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "a2a_signature_unknown_key");
+});
+
+test("A2A HTTP Signature verifier binds requester id to the key owner", () => {
+  const request = makeSignedA2ARequest({
+    headers: { "x-a2a-requester-id": "bangtong" },
+  });
+  const result = verifyA2AHttpSignature(request, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "a2a_signature_identity_mismatch");
+});
+
+test("A2A HTTP Signature verifier rejects expired or future-created signatures", () => {
+  assert.equal(
+    verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861661 }).code,
+    "a2a_signature_time_invalid",
+  );
+  assert.equal(
+    verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861500 }).code,
+    "a2a_signature_time_invalid",
+  );
+});
+
+test("A2A HTTP Signature verifier rejects unsupported algorithm or tag", () => {
+  assert.equal(
+    verifyA2AHttpSignature(
+      makeSignedA2ARequest({ signatureInput: signedRequestBase.signatureInput.replace('alg="ed25519"', 'alg="rsa-pss-sha512"') }),
+      a2aKeyRegistry,
+      { nowEpochSeconds: 1770861620 },
+    ).code,
+    "a2a_signature_unsupported_profile",
+  );
+  assert.equal(
+    verifyA2AHttpSignature(
+      makeSignedA2ARequest({ signatureInput: signedRequestBase.signatureInput.replace('tag="a2a-worker-v1"', 'tag="other"') }),
+      a2aKeyRegistry,
+      { nowEpochSeconds: 1770861620 },
+    ).code,
+    "a2a_signature_unsupported_profile",
+  );
 });

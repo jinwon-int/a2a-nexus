@@ -38,7 +38,7 @@
  * and x-a2a-ratelimit-bucket.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
@@ -56,6 +56,162 @@ export interface RequesterIdentity {
 }
 
 export type RateLimitBucket = "general" | "worker";
+
+const A2A_HTTP_SIGNATURE_COMPONENTS = [
+  "@method",
+  "@authority",
+  "@path",
+  "@query",
+  "content-digest",
+  "x-a2a-requester-id",
+  "x-a2a-requester-role",
+  "x-a2a-broker-id",
+] as const;
+
+export interface A2AHttpSignatureRequest {
+  method: string;
+  authority: string;
+  path: string;
+  query: string;
+  headers: Record<string, string | undefined>;
+  signatureInput: string;
+  signature?: string;
+}
+
+export interface A2AHttpSignatureKeyRecord {
+  keyid: string;
+  workerId: string;
+  publicKeyJwk: Record<string, unknown>;
+}
+
+export type A2AHttpSignatureKeyRegistry = Record<string, A2AHttpSignatureKeyRecord>;
+
+export type A2AHttpSignatureFailureCode =
+  | "a2a_signature_malformed"
+  | "a2a_signature_unsupported_profile"
+  | "a2a_signature_unknown_key"
+  | "a2a_signature_identity_mismatch"
+  | "a2a_signature_time_invalid"
+  | "a2a_signature_invalid";
+
+export type A2AHttpSignatureVerificationResult =
+  | {
+      ok: true;
+      code?: undefined;
+      keyid: string;
+      requesterId: string;
+      brokerId: string;
+      created: number;
+      expires: number;
+      nonce: string;
+    }
+  | {
+      ok: false;
+      code: A2AHttpSignatureFailureCode;
+      message: string;
+    };
+
+export interface A2AHttpSignatureVerifyOptions {
+  nowEpochSeconds?: number;
+}
+
+interface ParsedA2AHttpSignatureInput {
+  components: string[];
+  params: string;
+  alg: string;
+  keyid: string;
+  created: number;
+  expires: number;
+  nonce: string;
+  tag: string;
+}
+
+export function buildA2AHttpSignatureBase(request: A2AHttpSignatureRequest): string {
+  const parsed = parseA2AHttpSignatureInput(request.signatureInput);
+  if (!componentsMatchRequiredProfile(parsed.components)) {
+    throw new BrokerError("bad_request", "A2A HTTP signature input components are unsupported");
+  }
+
+  const lines = parsed.components.map((component) => {
+    const value = signatureComponentValue(request, component);
+    if (value === undefined) {
+      throw new BrokerError("bad_request", `A2A HTTP signature component is missing: ${component}`);
+    }
+    return `"${component}": ${value}`;
+  });
+  lines.push(`"@signature-params": ${parsed.params}`);
+  return lines.join("\n");
+}
+
+export function verifyA2AHttpSignature(
+  request: A2AHttpSignatureRequest,
+  keyRegistry: A2AHttpSignatureKeyRegistry,
+  options: A2AHttpSignatureVerifyOptions = {},
+): A2AHttpSignatureVerificationResult {
+  const parsed = safeParseA2AHttpSignatureInput(request.signatureInput);
+  if (!parsed) {
+    return signatureFailure("a2a_signature_malformed", "Signature-Input must contain an a2a signature label");
+  }
+
+  if (
+    !componentsMatchRequiredProfile(parsed.components) ||
+    parsed.alg !== "ed25519" ||
+    parsed.tag !== "a2a-worker-v1"
+  ) {
+    return signatureFailure("a2a_signature_unsupported_profile", "A2A HTTP signature profile is unsupported");
+  }
+
+  const keyRecord = keyRegistry[parsed.keyid];
+  if (!keyRecord) {
+    return signatureFailure("a2a_signature_unknown_key", "A2A HTTP signature key id is unknown");
+  }
+
+  const requesterId = normalizedHeader(request, "x-a2a-requester-id");
+  const brokerId = normalizedHeader(request, "x-a2a-broker-id");
+  if (!requesterId || requesterId !== keyRecord.workerId) {
+    return signatureFailure("a2a_signature_identity_mismatch", "A2A requester id does not match the signing key owner");
+  }
+  if (!brokerId) {
+    return signatureFailure("a2a_signature_malformed", "x-a2a-broker-id is required by the A2A HTTP signature profile");
+  }
+
+  const nowEpochSeconds = options.nowEpochSeconds ?? Math.floor(Date.now() / 1000);
+  if (parsed.created > nowEpochSeconds || parsed.expires <= nowEpochSeconds || parsed.expires <= parsed.created) {
+    return signatureFailure("a2a_signature_time_invalid", "A2A HTTP signature created/expires window is invalid");
+  }
+
+  const signatureBytes = parseA2AHttpSignatureBytes(request.signature);
+  if (!signatureBytes) {
+    return signatureFailure("a2a_signature_malformed", "Signature must contain an a2a base64 signature");
+  }
+
+  let signingBase: string;
+  try {
+    signingBase = buildA2AHttpSignatureBase(request);
+  } catch (error) {
+    return signatureFailure("a2a_signature_malformed", error instanceof Error ? error.message : "A2A HTTP signature base is malformed");
+  }
+
+  try {
+    const publicKey = createPublicKey({ key: keyRecord.publicKeyJwk, format: "jwk" });
+    const valid = verify(null, Buffer.from(signingBase), publicKey, signatureBytes);
+    if (!valid) {
+      return signatureFailure("a2a_signature_invalid", "A2A HTTP signature verification failed");
+    }
+  } catch (error) {
+    return signatureFailure("a2a_signature_invalid", error instanceof Error ? error.message : "A2A HTTP signature verification failed");
+  }
+
+  return {
+    ok: true,
+    keyid: parsed.keyid,
+    requesterId,
+    brokerId,
+    created: parsed.created,
+    expires: parsed.expires,
+    nonce: parsed.nonce,
+  };
+}
 
 export interface RateLimitDecision {
   key: string;
@@ -449,6 +605,115 @@ export function assertGitHubWebhookSignature(
       "x-hub-signature-256 verification failed",
     );
   }
+}
+
+function signatureFailure(
+  code: A2AHttpSignatureFailureCode,
+  message: string,
+): A2AHttpSignatureVerificationResult {
+  return { ok: false, code, message };
+}
+
+function parseA2AHttpSignatureInput(value: string): ParsedA2AHttpSignatureInput {
+  const parsed = safeParseA2AHttpSignatureInput(value);
+  if (!parsed) {
+    throw new BrokerError("bad_request", "Signature-Input must contain an a2a signature label");
+  }
+  return parsed;
+}
+
+function safeParseA2AHttpSignatureInput(value: string | undefined): ParsedA2AHttpSignatureInput | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = /^a2a=\((?<components>(?:"[^"]+"\s*)+)\)(?<params>(?:;[A-Za-z][A-Za-z0-9_-]*=(?:"[^"]*"|[0-9]+))+)$/.exec(value.trim());
+  if (!match?.groups) {
+    return null;
+  }
+
+  const components = [...match.groups.components.matchAll(/"([^"]+)"/g)].map((entry) => entry[1]).filter(Boolean);
+  const rawParams = match.groups.params;
+  const params = new Map<string, string>();
+  let consumed = 0;
+  for (const paramMatch of rawParams.matchAll(/;([A-Za-z][A-Za-z0-9_-]*)=("[^"]*"|[0-9]+)/g)) {
+    if (paramMatch.index !== consumed) {
+      return null;
+    }
+    consumed += paramMatch[0].length;
+    const rawValue = paramMatch[2] ?? "";
+    params.set(paramMatch[1] ?? "", rawValue.startsWith('"') ? rawValue.slice(1, -1) : rawValue);
+  }
+  if (consumed !== rawParams.length) {
+    return null;
+  }
+
+  const alg = params.get("alg");
+  const keyid = params.get("keyid");
+  const created = numberParam(params.get("created"));
+  const expires = numberParam(params.get("expires"));
+  const nonce = params.get("nonce");
+  const tag = params.get("tag");
+  if (!alg || !keyid || created === null || expires === null || !nonce || !tag) {
+    return null;
+  }
+
+  return {
+    components,
+    params: `(${components.map((component) => `"${component}"`).join(" ")})${rawParams}`,
+    alg,
+    keyid,
+    created,
+    expires,
+    nonce,
+    tag,
+  };
+}
+
+function numberParam(value: string | undefined): number | null {
+  if (!value || !/^\d+$/.test(value)) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function componentsMatchRequiredProfile(components: string[]): boolean {
+  return (
+    components.length === A2A_HTTP_SIGNATURE_COMPONENTS.length &&
+    A2A_HTTP_SIGNATURE_COMPONENTS.every((component, index) => components[index] === component)
+  );
+}
+
+function signatureComponentValue(request: A2AHttpSignatureRequest, component: string): string | undefined {
+  switch (component) {
+    case "@method":
+      return request.method.toUpperCase();
+    case "@authority":
+      return request.authority.toLowerCase();
+    case "@path":
+      return request.path;
+    case "@query":
+      return request.query;
+    default:
+      return normalizedHeader(request, component);
+  }
+}
+
+function normalizedHeader(request: A2AHttpSignatureRequest, name: string): string | undefined {
+  const value = request.headers[name.toLowerCase()] ?? request.headers[name];
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
+function parseA2AHttpSignatureBytes(value: string | undefined): Buffer | null {
+  if (!value) {
+    return null;
+  }
+  const match = /^a2a=:([A-Za-z0-9+/]+={0,2}):$/.exec(value.trim());
+  if (!match?.[1]) {
+    return null;
+  }
+  return Buffer.from(match[1], "base64");
 }
 
 function secretsMatch(providedSecret: string, expectedSecret: string): boolean {
