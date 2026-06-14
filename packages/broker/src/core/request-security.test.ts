@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createHmac, createPrivateKey, sign } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
@@ -9,6 +12,7 @@ import {
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
+  loadA2AHttpSignatureKeyRegistryFile,
   rateLimitKey,
   verifyA2AHttpSignature,
 } from "./request-security.js";
@@ -227,6 +231,68 @@ const a2aKeyRegistry = {
     publicKeyJwk: testPublicJwk,
   },
 };
+
+
+test("A2A HTTP Signature key registry loads validated public worker keys from a JSON file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-"));
+  const file = join(dir, "worker-public-keys.json");
+  writeFileSync(file, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+    },
+  }));
+
+  assert.deepEqual(loadA2AHttpSignatureKeyRegistryFile(file), a2aKeyRegistry);
+});
+
+test("A2A HTTP Signature key registry rejects private key material and keyid mismatches", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-invalid-"));
+  const privateFile = join(dir, "private-material.json");
+  writeFileSync(privateFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPrivateJwk,
+    },
+  }));
+  assert.throws(
+    () => loadA2AHttpSignatureKeyRegistryFile(privateFile),
+    /must not contain private key material/,
+  );
+
+  const mismatchFile = join(dir, "keyid-mismatch.json");
+  writeFileSync(mismatchFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:bangtong:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+    },
+  }));
+  assert.throws(
+    () => loadA2AHttpSignatureKeyRegistryFile(mismatchFile),
+    /registry key must match embedded keyid/,
+  );
+
+  const duplicateWorkerFile = join(dir, "duplicate-worker.json");
+  writeFileSync(duplicateWorkerFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+    },
+    "worker:sogyo:v2": {
+      keyid: "worker:sogyo:v2",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+    },
+  }));
+  assert.throws(
+    () => loadA2AHttpSignatureKeyRegistryFile(duplicateWorkerFile),
+    /duplicate workerId/,
+  );
+});
 
 test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker request", () => {
   const result = verifyA2AHttpSignature(makeSignedA2ARequest(), a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
