@@ -7,3 +7,8 @@
 export function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
+
+/** Pass through a boolean value; return undefined for any non-boolean. */
+export function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
