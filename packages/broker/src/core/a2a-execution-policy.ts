@@ -25,6 +25,11 @@ export const A2A_GUARDED_ACTIONS = [
 
 export type A2AGuardedAction = (typeof A2A_GUARDED_ACTIONS)[number];
 
+/** Execution lanes a finalizer decision may declare. "direct" is not a lane. */
+export const A2A_EXECUTION_LANES = ["a2a", "a2ad"] as const;
+
+export type A2AExecutionLane = (typeof A2A_EXECUTION_LANES)[number];
+
 /**
  * Provenance that a finalizer decision must carry to authorize a guarded action.
  * Mirrors the provenance schema required by #555.
@@ -34,7 +39,7 @@ export interface A2AFinalizerDecision {
   finalizerOwner: string;
   parentRoundId: string;
   brokerOfRecordId: string;
-  executionLane: string;
+  executionLane: A2AExecutionLane;
   /** Guarded actions this decision explicitly authorizes. Empty = authorize nothing. */
   allowedActions: readonly A2AGuardedAction[];
   /** Worker evidence ids that substantively back this decision. */
@@ -67,8 +72,14 @@ const REQUIRED_PROVENANCE_FIELDS = [
   "finalizerOwner",
   "parentRoundId",
   "brokerOfRecordId",
-  "executionLane",
 ] as const;
+
+const A2A_EXECUTION_LANE_SET: ReadonlySet<string> = new Set(A2A_EXECUTION_LANES);
+
+/** A non-empty trimmed string id, or undefined for any other value. */
+function normalizeEvidenceId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
 
 /**
  * Decide whether a guarded write action may proceed. Fails closed: when the
@@ -99,13 +110,27 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
     }
   }
 
-  if (!decision.allowedActions.includes(input.requestedAction)) {
+  // executionLane must be a real A2A/A2AD lane, not merely a non-empty string,
+  // so a decision claiming e.g. "direct" cannot authorize an A2A-required write.
+  if (typeof decision.executionLane !== "string" || !A2A_EXECUTION_LANE_SET.has(decision.executionLane)) {
+    blockers.push("invalid_finalizer_provenance:executionLane");
+  }
+
+  // Fail closed on malformed shapes rather than throwing, since the evaluator may
+  // be fed runtime JSON at the wiring step.
+  if (!Array.isArray(decision.allowedActions) || !decision.allowedActions.includes(input.requestedAction)) {
     blockers.push(`action_not_in_allowed_actions:${input.requestedAction}`);
   }
 
   if (routed.requiresWorkerEvidence) {
-    const wrapperOnly = new Set(input.wrapperOnlyEvidenceIds ?? []);
-    const substantive = (decision.workerEvidenceIds ?? []).filter((id) => !wrapperOnly.has(id));
+    const wrapperOnly = new Set(
+      (Array.isArray(input.wrapperOnlyEvidenceIds) ? input.wrapperOnlyEvidenceIds : [])
+        .map(normalizeEvidenceId)
+        .filter((id): id is string => id !== undefined),
+    );
+    const substantive = (Array.isArray(decision.workerEvidenceIds) ? decision.workerEvidenceIds : [])
+      .map(normalizeEvidenceId)
+      .filter((id): id is string => id !== undefined && !wrapperOnly.has(id));
     if (substantive.length === 0) {
       blockers.push("no_substantive_worker_evidence");
     }

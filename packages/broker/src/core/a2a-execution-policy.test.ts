@@ -68,6 +68,41 @@ test("wrapper-only evidence does not count as substantive worker evidence", () =
   assert.deepEqual(result.blockers, ["no_substantive_worker_evidence"]);
 });
 
+test("blank/whitespace worker evidence does not count as substantive (fail closed)", () => {
+  const result = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "pr_merge",
+    finalizerDecision: { ...completeDecision, workerEvidenceIds: ["   ", ""] },
+  });
+  assert.equal(result.allowed, false);
+  assert.deepEqual(result.blockers, ["no_substantive_worker_evidence"]);
+});
+
+test("an executionLane outside the known A2A/A2AD lanes fails closed", () => {
+  const result = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "pr_merge",
+    finalizerDecision: { ...completeDecision, executionLane: "direct" as never },
+  });
+  assert.equal(result.allowed, false);
+  assert.deepEqual(result.blockers, ["invalid_finalizer_provenance:executionLane"]);
+});
+
+test("malformed decision shapes fail closed instead of throwing", () => {
+  const result = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "pr_merge",
+    finalizerDecision: {
+      ...completeDecision,
+      allowedActions: "pr_merge" as never,
+      workerEvidenceIds: "ev-1" as never,
+    },
+  });
+  assert.equal(result.allowed, false);
+  assert.ok(result.blockers.includes("action_not_in_allowed_actions:pr_merge"));
+  assert.ok(result.blockers.includes("no_substantive_worker_evidence"));
+});
+
 test("a2a-required action is allowed with a complete, action-scoped finalizer decision", () => {
   const result = evaluateA2AExecutionPolicy({
     intent: "A2A로 진행해서 finalizer 판단으로 머지",
