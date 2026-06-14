@@ -7,7 +7,14 @@ import { BrokerError } from "../core/broker.js";
 // state transfers have their own bounded paths.
 export const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 
+const rawBodyCache = new WeakMap<IncomingMessage, Buffer>();
+
 export async function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  const cached = rawBodyCache.get(req);
+  if (cached) {
+    return cached;
+  }
+
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -18,7 +25,9 @@ export async function readRawBody(req: IncomingMessage): Promise<Buffer> {
     }
     chunks.push(buf);
   }
-  return Buffer.concat(chunks);
+  const raw = Buffer.concat(chunks);
+  rawBodyCache.set(req, raw);
+  return raw;
 }
 
 export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
