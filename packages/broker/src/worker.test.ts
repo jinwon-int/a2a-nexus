@@ -181,6 +181,71 @@ test("worker registers, heartbeats, polls queued work, and completes tasks", asy
   }
 });
 
+test("verifyPollReadiness resolves when the assigned-task poll path is reachable (#691)", async () => {
+  const server = await startTestServer();
+  const worker = createWorker(server.baseUrl);
+  try {
+    await worker.register();
+    await assert.doesNotReject(() => worker.verifyPollReadiness());
+  } finally {
+    await server.close();
+  }
+});
+
+test("run() fails closed at startup when register/heartbeat pass but the poll path is blocked (#691)", async () => {
+  // register + heartbeat succeed; only the assigned-task poll is blocked, which is
+  // exactly the silent-idle failure mode the readiness probe is meant to catch.
+  const fetchImpl = async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    const url = input instanceof URL ? input : new URL(String(input));
+    const method = init?.method ?? "GET";
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (method === "POST" && url.pathname === "/workers/register") {
+      return json(201, { nodeId: "worker-a", role: "analyst", status: "online", capabilities: { canAnalyze: true }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() });
+    }
+    if (method === "POST" && url.pathname.endsWith("/heartbeat")) {
+      return json(200, { nodeId: "worker-a", role: "analyst", status: "online", capabilities: { canAnalyze: true }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() });
+    }
+    if (method === "GET" && url.pathname === "/tasks") {
+      return json(403, { error: { code: "policy_denied", message: "edge blocked the poll path" } });
+    }
+    return json(404, { error: { code: "not_found", message: url.pathname } });
+  };
+  const worker = createWorker("https://broker.test");
+  (worker as unknown as { fetchImpl: typeof fetchImpl }).fetchImpl = fetchImpl;
+
+  await assert.rejects(
+    () => worker.run(),
+    /poll readiness probe failed.*not reachable or authorized \(403 policy_denied\)/s,
+  );
+});
+
+test("pollReadinessProbe=false lets startup proceed even when the poll path is blocked", async () => {
+  // register/heartbeat pass; poll stays blocked. With the probe disabled, startup
+  // must not fail closed — it enters the loop and tolerates poll errors as before.
+  const fetchImpl = async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    const url = input instanceof URL ? input : new URL(String(input));
+    const method = init?.method ?? "GET";
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (method === "GET" && url.pathname === "/tasks") {
+      return json(403, { error: { code: "policy_denied", message: "would block if probed" } });
+    }
+    return json(method === "POST" && url.pathname === "/workers/register" ? 201 : 200, {
+      nodeId: "worker-a", role: "analyst", status: "online", capabilities: { canAnalyze: true },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
+    });
+  };
+  const baseConfig = (createWorker("https://broker.test") as unknown as { config: BrokerWorkerConfig }).config;
+  const worker = new A2ABrokerWorker({ ...baseConfig, pollReadinessProbe: false }, { fetchImpl });
+  const runPromise = worker.run();
+  // Let startup pass the (disabled) probe and enter the loop, then stop cleanly.
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  await worker.stop();
+  // Resolves without throwing => startup was not gated by the poll probe.
+  await assert.doesNotReject(runPromise);
+});
+
 
 test("worker keeps legacy requester headers unsigned when HTTP Signature is not configured", async () => {
   let capturedHeaders: Headers | undefined;
