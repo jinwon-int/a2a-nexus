@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnRuntimeMutationPlanPacket } from "./terminal-brief-sidecar-default-on-runtime-mutation-plan.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDefaultOnExecutionRollbackEnvelopeState =
   | "ready_for_execution_approval_review"
@@ -510,10 +511,6 @@ function buildIdempotencyKey(
     envelopeReference,
   });
   return "tb-sidecar-default-on-execution-rollback-envelope:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function unique<T>(items: T[]): T[] {

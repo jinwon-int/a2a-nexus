@@ -7,6 +7,7 @@ import {
   type TerminalBriefSidecarActivationReceiptEvidenceRecord,
 } from "./terminal-brief-sidecar-activation-receipt-ingestor.js";
 import type { TerminalBriefSidecarDefaultOnExecutionApprovalRequestPacket } from "./terminal-brief-sidecar-default-on-execution-approval-request.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestorState =
   | "accepted"
@@ -720,10 +721,6 @@ function unique<T>(items: T[]): T[] {
 
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

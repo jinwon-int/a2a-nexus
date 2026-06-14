@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { A2AWorkerSubagentPlannerHandoffPacket } from "./worker-subagent-planner-handoff.js";
+import { optionalString } from "./value-text.js";
 
 export type A2AWorkerSubagentSpawnAuthorizationRequestState =
   | "authorization_request_draft_ready"
@@ -469,10 +470,6 @@ function buildIdempotencyKey(
     state,
   });
   return "a2a-worker-subagent-spawn-authorization-request:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

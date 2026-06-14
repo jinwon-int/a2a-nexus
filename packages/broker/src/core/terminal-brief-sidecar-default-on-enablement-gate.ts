@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnApprovalEvidenceIngestorPacket } from "./terminal-brief-sidecar-default-on-approval-evidence-ingestor.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDefaultOnEnablementGateState =
   | "ready_for_default_on_enablement_review"
@@ -446,10 +447,6 @@ function buildIdempotencyKey(
     gateReference,
   });
   return "tb-sidecar-default-on-enablement-gate:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function unique<T>(items: T[]): T[] {

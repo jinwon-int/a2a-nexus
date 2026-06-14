@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarExecutorInvocationRehearsalPacket } from "./terminal-brief-sidecar-executor-invocation-rehearsal.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarRuntimePreflightApprovalState =
   | "approval_packet_ready"
@@ -525,10 +526,6 @@ function titleForState(state: TerminalBriefSidecarRuntimePreflightApprovalState)
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar runtime preflight approval source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar runtime preflight approval source";
   return "Blocked: Terminal Brief sidecar runtime preflight approval";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

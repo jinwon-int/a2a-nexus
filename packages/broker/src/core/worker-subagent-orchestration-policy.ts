@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { optionalString } from "./value-text.js";
 
 export type A2AWorkerTaskSize = "trivial" | "small" | "medium" | "large";
 export type A2AWorkerTaskCoupling = "low" | "medium" | "high";
@@ -265,10 +266,6 @@ function nextActionFor(parallelismHint: number, reducedBy: string[]): string {
 function buildPolicyId(input: A2AWorkerSubagentPolicyInput, generatedAt: string, parallelismHint: number): string {
   const base = JSON.stringify({ input, generatedAt, parallelismHint });
   return "a2a-worker-subagent-policy:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function optionalBoolean(value: unknown): boolean | undefined {

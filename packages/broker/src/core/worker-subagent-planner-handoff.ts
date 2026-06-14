@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { A2AWorkerSelfAssessmentCapacityPacket } from "./worker-self-assessment-capacity.js";
 import type { A2AWorkerSubagentPolicyPacket } from "./worker-subagent-orchestration-policy.js";
+import { optionalString } from "./value-text.js";
 
 export interface A2AWorkerSubagentPlannerHandoffInput {
   now?: string;
@@ -236,10 +237,6 @@ function sortValue(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, sortValue(item)]));
   }
   return value;
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

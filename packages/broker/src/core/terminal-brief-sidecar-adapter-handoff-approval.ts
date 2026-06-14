@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarRuntimePreflightApprovalPacket } from "./terminal-brief-sidecar-runtime-preflight-approval.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarAdapterHandoffApprovalState =
   | "handoff_packet_ready"
@@ -529,10 +530,6 @@ function titleForState(state: TerminalBriefSidecarAdapterHandoffApprovalState): 
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar adapter handoff approval source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar adapter handoff approval source";
   return "Blocked: Terminal Brief sidecar adapter handoff approval";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function stringArray(value: unknown): string[] {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarActivationReceiptIngestorPacket } from "./terminal-brief-sidecar-activation-receipt-ingestor.js";
 import type { TerminalBriefSidecarDryRunStartApprovalReceiptIngestorPacket } from "./terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.js";
+import { optionalString } from "./value-text.js";
 
 type TerminalBriefSidecarStartExecutorGateReceipt =
   | TerminalBriefSidecarActivationReceiptIngestorPacket
@@ -491,10 +492,6 @@ function titleForState(state: TerminalBriefSidecarStartExecutorGateState): strin
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar start executor gate source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar start executor gate source";
   return "Blocked: Terminal Brief sidecar start executor gate";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

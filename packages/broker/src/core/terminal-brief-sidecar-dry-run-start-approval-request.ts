@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarPreflightChainReviewPacket } from "./terminal-brief-sidecar-preflight-chain-review.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunStartApprovalRequestState =
   | "approval_request_draft_ready"
@@ -591,10 +592,6 @@ function titleForState(state: TerminalBriefSidecarDryRunStartApprovalRequestStat
   if (state === "degraded") return "Degraded: Terminal Brief sidecar supervised dry-run start approval source";
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar supervised dry-run start approval source";
   return "Blocked: Terminal Brief sidecar supervised dry-run start approval request";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {
