@@ -28,6 +28,8 @@ import fs from "node:fs";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 
+import { TEAM_BROKER_INVARIANT, hasText } from "./a2a-routing-shared.mjs";
+
 // Canonical fleet expectations (#655). team↔home-broker invariant matches #633/#630.
 export const DEFAULT_EXPECTATIONS = {
   service: "a2a-hermes-worker",
@@ -35,12 +37,8 @@ export const DEFAULT_EXPECTATIONS = {
   root: "/opt/a2a-broker-worker",
   minSecretLength: 32,
   requiredHandlers: ["dist/worker.js", "a2a-task-handler.mjs", "hermes-a2a-analysis-bridge.mjs"],
-  teamBroker: { team1: "seoseo", team2: "gwakga" },
+  teamBroker: TEAM_BROKER_INVARIANT,
 };
-
-function hasText(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 function secretLengthOf(record) {
   if (typeof record?.secretLength === "number" && Number.isFinite(record.secretLength)) {

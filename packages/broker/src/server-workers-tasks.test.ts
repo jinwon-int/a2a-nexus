@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, sign } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
@@ -566,6 +569,46 @@ test("A2A HTTP Signature worker route gate rejects body digest mismatches and op
     assert.equal(malformedRes.status, 401);
   } finally {
     await optionalServer.close();
+  }
+});
+
+
+test("strict A2A HTTP Signature worker route gate loads worker public keys from a registry file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-route-signature-registry-"));
+  const registryFile = join(dir, "worker-public-keys.json");
+  writeFileSync(registryFile, JSON.stringify(routeGateKeyRegistry));
+
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistryFile: registryFile,
+  });
+  try {
+    assert.equal(server.runtime.config.a2aHttpSignatureWorkerKeyCount, 2);
+    assert.equal(server.runtime.config.a2aHttpSignatureWorkerKeySource, "file");
+
+    const healthRes = await fetch(`${server.baseUrl}/health`);
+    assert.equal(healthRes.status, 200);
+    const health = await healthRes.json() as { requestSecurity: { a2aHttpSignatureWorkerKeyCount: number; a2aHttpSignatureWorkerKeySource: string } };
+    assert.equal(health.requestSecurity.a2aHttpSignatureWorkerKeyCount, 2);
+    assert.equal(health.requestSecurity.a2aHttpSignatureWorkerKeySource, "file");
+
+    const body = JSON.stringify(workerPayload("sogyo"));
+    const res = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "sogyo",
+        body,
+        nonce: "route-file-registry-register-sogyo",
+      }),
+      body,
+    });
+    assert.equal(res.status, 201);
+  } finally {
+    await server.close();
   }
 });
 

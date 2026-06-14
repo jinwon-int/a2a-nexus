@@ -32,6 +32,7 @@ import {
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
+  loadA2AHttpSignatureKeyRegistryFile,
   verifyA2AHttpSignature,
   rateLimitKey,
   type A2AHttpSignatureKeyRegistry,
@@ -2293,6 +2294,7 @@ class HealthDiagnosticsCache {
 }
 
 export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
+export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
 
 interface A2AHttpSignatureVerifiedWorker {
   keyid: string;
@@ -2368,8 +2370,10 @@ export interface BrokerServerOptions {
    * Env: `A2A_HTTP_SIGNATURE_WORKER_AUTH`.
    */
   a2aHttpSignatureWorkerAuth?: A2AHttpSignatureWorkerAuthMode;
-  /** In-memory key registry for worker HTTP Signature verification. File/key distribution is a later rollout slice. */
+  /** In-memory key registry for worker HTTP Signature verification. */
   a2aHttpSignatureKeyRegistry?: A2AHttpSignatureKeyRegistry;
+  /** JSON file containing public worker HTTP Signature keys. Env: `A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE`. */
+  a2aHttpSignatureKeyRegistryFile?: string;
   /**
    * Shared secret for GitHub webhook deliveries. When set, POST /github/webhook
    * requires a valid X-Hub-Signature-256 header (HMAC-SHA256 of the raw body).
@@ -2529,6 +2533,7 @@ export interface BrokerServerRuntime {
     edgeSecret?: string;
     a2aHttpSignatureWorkerAuth: A2AHttpSignatureWorkerAuthMode;
     a2aHttpSignatureWorkerKeyCount: number;
+    a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource;
     githubWebhookSecret?: string;
     retentionPolicy: BrokerRetentionPolicy;
     maxSnapshotBytes: number;
@@ -2590,7 +2595,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const a2aHttpSignatureWorkerAuth = resolveA2AHttpSignatureWorkerAuthMode(
     options.a2aHttpSignatureWorkerAuth ?? process.env.A2A_HTTP_SIGNATURE_WORKER_AUTH,
   );
-  const a2aHttpSignatureKeyRegistry = options.a2aHttpSignatureKeyRegistry ?? {};
+  const a2aHttpSignatureKeyRegistryFile = resolveStringOption(
+    options.a2aHttpSignatureKeyRegistryFile,
+    process.env.A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE,
+  );
+  if (options.a2aHttpSignatureKeyRegistry && a2aHttpSignatureKeyRegistryFile) {
+    throw new Error("configure either a2aHttpSignatureKeyRegistry or A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE, not both");
+  }
+  const a2aHttpSignatureKeyRegistry = options.a2aHttpSignatureKeyRegistry
+    ?? (a2aHttpSignatureKeyRegistryFile ? loadA2AHttpSignatureKeyRegistryFile(a2aHttpSignatureKeyRegistryFile) : {});
+  const a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource = options.a2aHttpSignatureKeyRegistry
+    ? "inline"
+    : (a2aHttpSignatureKeyRegistryFile ? "file" : "empty");
   const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
@@ -3246,6 +3262,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             edgeSecretRequired: Boolean(edgeSecret),
             a2aHttpSignatureWorkerAuth,
             a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
+            a2aHttpSignatureWorkerKeySource,
             rateLimitWindowSec,
             rateLimitMaxRequests,
             workerRateLimitWindowSec,
@@ -5908,6 +5925,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       edgeSecret,
       a2aHttpSignatureWorkerAuth,
       a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
+      a2aHttpSignatureWorkerKeySource,
       retentionPolicy,
       maxSnapshotBytes,
       maxHotRuntimeNonTerminalTasks,
