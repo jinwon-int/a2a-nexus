@@ -680,6 +680,8 @@ export interface TaskListFilters {
   claimedBy?: string;
   assignedWorkerId?: string;
   taskOrigin?: TaskOrigin;
+  /** Include SQLite active rows that are absent from the live broker mutation map. Diagnostic only. */
+  includeStaleReadPath?: boolean;
   /** Maximum number of newest matching tasks to return. */
   limit?: number;
 }
