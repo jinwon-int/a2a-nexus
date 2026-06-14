@@ -4896,9 +4896,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/tasks") {
-        if (url.searchParams.has("worker")) {
+        if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
+          const workerParam = optionalString(url.searchParams.get("worker"));
+          const assignedWorkerParam = optionalString(url.searchParams.get("assignedWorkerId"));
+          if (workerParam && assignedWorkerParam && workerParam !== assignedWorkerParam) {
+            throw new BrokerError("bad_request", "worker and assignedWorkerId query parameters must match when both are provided");
+          }
+          const expectedWorkerId = assignedWorkerParam ?? workerParam;
+          if (!expectedWorkerId) {
+            throw new BrokerError("bad_request", "worker or assignedWorkerId query parameter is required");
+          }
           const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-          assertVerifiedWorkerMatches(verifiedWorker, optionalString(url.searchParams.get("worker")), "tasks.list");
+          assertVerifiedWorkerMatches(verifiedWorker, expectedWorkerId, "tasks.list");
         }
         const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
         const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
