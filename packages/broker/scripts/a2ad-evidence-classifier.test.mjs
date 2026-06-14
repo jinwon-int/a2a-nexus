@@ -20,6 +20,13 @@ test('source-root bridge failures are blocked from substantive worker opinions',
   assert.match(result.blockers.join('\n'), /source mapping\/analysis bridge failure/i);
 });
 
+test('GitHub PR source failures are blocked from substantive worker opinions', () => {
+  const result = classifyEvidenceText('analysis bridge blocked: GitHub PR source unavailable for jinwon-int/a2a-nexus#627: gh pr diff 627 failed');
+  assert.equal(result.classification, 'source_blocked');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+});
+
 test('wrapper-only dry-run outputs are reportable but not worker reasoning', () => {
   const result = classifyEvidenceText('Hermes reference worker completed local dry-run evidence');
   assert.equal(result.classification, 'wrapper_only');

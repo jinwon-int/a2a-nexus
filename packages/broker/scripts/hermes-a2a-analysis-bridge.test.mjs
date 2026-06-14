@@ -531,3 +531,126 @@ test("Hermes A2A analysis bridge rejects generic JSON from failed Hermes", () =>
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Hermes A2A analysis bridge fetches GitHub PR diff and metadata into the read-only source bundle", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-pr-source-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+  const ghArgsPath = join(tempDir, "gh-args.jsonl");
+
+  try {
+    writeFileSync(fakeGhPath, [
+      "#!/usr/bin/env node",
+      "import { appendFileSync } from 'node:fs';",
+      "appendFileSync(process.env.CAPTURE_GH_ARGS_PATH, JSON.stringify(process.argv.slice(2)) + '\\n');",
+      "const args = process.argv.slice(2);",
+      "if (args.join(' ') === 'pr diff 627 -R jinwon-int/a2a-nexus --color=never') {",
+      "  process.stdout.write('diff --git a/packages/broker/scripts/hermes-a2a-analysis-bridge.mjs b/packages/broker/scripts/hermes-a2a-analysis-bridge.mjs\\n+const prSource = true;\\n');",
+      "} else if (args[0] === 'pr' && args[1] === 'view' && args[2] === '627') {",
+      "  process.stdout.write(JSON.stringify({ number: 627, title: 'A2A analyze task source fetch', url: 'https://github.com/jinwon-int/a2a-nexus/pull/627', changedFiles: 1 }));",
+      "} else {",
+      "  console.error('unexpected gh args: ' + args.join(' '));",
+      "  process.exit(2);",
+      "}",
+      "",
+    ].join("\n"));
+    chmodSync(fakeGhPath, 0o755);
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('.github/pr-627.diff')) throw new Error('PR diff virtual file missing');",
+      "if (!prompt.includes('diff --git a/packages/broker/scripts/hermes-a2a-analysis-bridge.mjs')) throw new Error('PR diff content missing');",
+      "if (!prompt.includes('.github/pr-627.metadata.json')) throw new Error('PR metadata virtual file missing');",
+      "if (!prompt.includes('A2A analyze task source fetch')) throw new Error('PR metadata content missing');",
+      "console.log(JSON.stringify({ status: 'done', summary: 'PR source reached Hermes', findings: ['diff inspected'], risks: [], recommendations: [], evidenceRefs: ['jinwon-int/a2a-nexus#.github/pr-627.diff'] }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A analyze task requiring GitHub PR source.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/627",
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_HERMES_ANALYSIS_GITHUB_PR_BIN: fakeGhPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        CAPTURE_GH_ARGS_PATH: ghArgsPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "PR source reached Hermes");
+    const ghCalls = readFileSync(ghArgsPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(ghCalls[0], ["pr", "diff", "627", "-R", "jinwon-int/a2a-nexus", "--color=never"]);
+    assert.deepEqual(ghCalls[1].slice(0, 5), ["pr", "view", "627", "-R", "jinwon-int/a2a-nexus"]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge blocks without invoking Hermes when explicit PR source is unavailable", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-pr-source-blocked-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+
+  try {
+    writeFileSync(fakeGhPath, [
+      "#!/usr/bin/env node",
+      "console.error('AUTH_VALUE_REDACTED rate limited');",
+      "process.exit(1);",
+      "",
+    ].join("\n"));
+    chmodSync(fakeGhPath, 0o755);
+    writeFileSync(fakeHermesPath, "#!/usr/bin/env node\nthrow new Error('Hermes should not run when PR source is unavailable');\n");
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A analyze task requiring GitHub PR source.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        prRepo: "jinwon-int/a2a-nexus",
+        pr: 627,
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_HERMES_ANALYSIS_GITHUB_PR_BIN: fakeGhPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /secret-value/);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "blocked");
+    assert.match(payload.summary, /analysis bridge blocked: GitHub PR source unavailable/);
+    assert.deepEqual(payload.findings, []);
+    assert.match(payload.evidenceRefs[0], /jinwon-int\/a2a-nexus#627/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

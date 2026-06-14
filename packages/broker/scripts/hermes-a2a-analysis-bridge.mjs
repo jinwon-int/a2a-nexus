@@ -9,6 +9,9 @@ const DEFAULT_MAX_FILE_BYTES = 24 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES = 160 * 1024;
 const DEFAULT_TREE_ENTRIES = 80;
 const DEFAULT_HERMES_MAX_ATTEMPTS = 2;
+const DEFAULT_PR_DIFF_BYTES = 80 * 1024;
+const DEFAULT_PR_METADATA_BYTES = 16 * 1024;
+const DEFAULT_PR_FETCH_TIMEOUT_MS = 15_000;
 // Linux caps each argv string at 128 KiB (MAX_ARG_STRLEN) even when ARG_MAX is
 // larger. Hermes currently accepts one-shot prompts via `hermes chat -q`, so the
 // bridge must keep that single query argument below the OS per-argument limit.
@@ -296,6 +299,156 @@ function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remaining
   return { file: { repo, path, content, truncated, bytes: buffer.length } };
 }
 
+function truthyEnv(value) {
+  return /^(1|true|yes|on)$/i.test(safeText(value, ""));
+}
+
+function validGithubRepo(value) {
+  const repo = safeText(value, "");
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ? repo : "";
+}
+
+function normalizePrNumber(value) {
+  const text = safeText(value == null ? "" : String(value), "").replace(/^#/, "");
+  if (!/^\d+$/.test(text)) return 0;
+  const number = Number(text);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function parseGithubPrUrl(value) {
+  const text = safeText(value, "");
+  if (!text) return null;
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return { error: "invalid GitHub PR URL" };
+  }
+  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "github.com") {
+    return { error: "unsupported PR URL host" };
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length < 4 || parts[2] !== "pull") return { error: "GitHub URL is not a pull request" };
+  const repo = validGithubRepo(`${parts[0]}/${parts[1]}`);
+  const pr = normalizePrNumber(parts[3]);
+  if (!repo || !pr) return { error: "invalid GitHub pull request reference" };
+  return { repo, pr, url: `https://github.com/${repo}/pull/${pr}` };
+}
+
+function normalizeGithubPrRef(payload) {
+  const fromUrl = parseGithubPrUrl(payload.prUrl || payload.pullRequestUrl || payload.pull_request_url);
+  if (fromUrl?.error) return { blocked: `GitHub PR source unavailable: ${fromUrl.error}` };
+
+  const explicitPr = normalizePrNumber(payload.pr ?? payload.pullRequest ?? payload.pull_request ?? payload.prNumber ?? payload.pullRequestNumber);
+  const explicitRepo = validGithubRepo(payload.prRepo || payload.pullRequestRepo || (explicitPr ? (payload.repo || payload.repository) : ""));
+
+  if (fromUrl && explicitRepo && explicitRepo !== fromUrl.repo) {
+    return { blocked: `GitHub PR source unavailable: conflicting repo refs ${fromUrl.repo} vs ${explicitRepo}` };
+  }
+  if (fromUrl && explicitPr && explicitPr !== fromUrl.pr) {
+    return { blocked: `GitHub PR source unavailable: conflicting PR refs ${fromUrl.pr} vs ${explicitPr}` };
+  }
+  if (fromUrl) return fromUrl;
+  if (explicitRepo || explicitPr) {
+    if (!explicitRepo || !explicitPr) return { blocked: "GitHub PR source unavailable: incomplete PR repo/number reference" };
+    return { repo: explicitRepo, pr: explicitPr, url: `https://github.com/${explicitRepo}/pull/${explicitPr}` };
+  }
+  return null;
+}
+
+function redactForDiagnostics(text) {
+  return String(text || "")
+    .replace(/(GH_TOKEN|GITHUB_TOKEN|TOKEN|SECRET|PASSWORD|AUTHORIZATION)=[^\s]+/gi, "$1=[REDACTED]")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, "Bearer [REDACTED]")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "github_pat_[REDACTED]")
+    .replace(/ghp_[A-Za-z0-9_]+/g, "ghp_[REDACTED]")
+    .slice(0, 1000);
+}
+
+function boundedTextFile(repo, path, content, maxBytes) {
+  const buffer = Buffer.from(String(content || ""), "utf8");
+  const limit = Math.max(0, maxBytes);
+  const truncated = buffer.length > limit;
+  return {
+    repo,
+    path,
+    content: buffer.subarray(0, limit).toString("utf8"),
+    truncated,
+    bytes: buffer.length,
+  };
+}
+
+function runBoundedGh(args, env, { timeoutMs, maxBytes }) {
+  const ghBin = safeText(env.A2A_HERMES_ANALYSIS_GITHUB_PR_BIN || env.GH_BIN, "gh");
+  const child = spawnSync(ghBin, args, {
+    cwd: safeText(env.A2A_HANDLER_CWD, process.cwd()),
+    env,
+    encoding: "utf8",
+    maxBuffer: Math.max(maxBytes + 64 * 1024, 128 * 1024),
+    timeout: Math.max(1000, timeoutMs),
+    killSignal: "SIGKILL",
+  });
+  if (child.error) return { ok: false, reason: `gh spawn failed: ${redactForDiagnostics(child.error.message)}` };
+  if (child.status !== 0) {
+    const detail = redactForDiagnostics(child.stderr || child.stdout || `exit ${child.status}`);
+    return { ok: false, reason: `gh ${args.slice(0, 3).join(" ")} failed: ${detail}` };
+  }
+  return { ok: true, stdout: String(child.stdout || "") };
+}
+
+function fetchGithubPrSourceBundle(prRef, env, limits, remainingBytes) {
+  const timeoutMs = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_FETCH_TIMEOUT_MS, DEFAULT_PR_FETCH_TIMEOUT_MS);
+  const diffBudget = Math.min(
+    positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_DIFF_BYTES, DEFAULT_PR_DIFF_BYTES),
+    limits.maxFileBytes,
+    remainingBytes,
+  );
+  const metadataBudget = Math.min(
+    positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_METADATA_BYTES, DEFAULT_PR_METADATA_BYTES),
+    limits.maxFileBytes,
+    Math.max(0, remainingBytes - diffBudget),
+  );
+  const warnings = [];
+  const files = [];
+  const diff = runBoundedGh(["pr", "diff", String(prRef.pr), "-R", prRef.repo, "--color=never"], env, {
+    timeoutMs,
+    maxBytes: Math.max(diffBudget, 1024),
+  });
+  if (!diff.ok || !safeText(diff.stdout, "")) {
+    return { files, warnings, blockedReason: `GitHub PR source unavailable for ${prRef.repo}#${prRef.pr}: ${diff.reason || "empty diff"}` };
+  }
+  files.push(boundedTextFile(prRef.repo, `.github/pr-${prRef.pr}.diff`, diff.stdout, diffBudget));
+
+  if (metadataBudget > 0) {
+    const metadata = runBoundedGh([
+      "pr", "view", String(prRef.pr), "-R", prRef.repo,
+      "--json", "number,title,body,state,isDraft,baseRefName,headRefName,author,additions,deletions,changedFiles,url,comments,reviews",
+    ], env, { timeoutMs, maxBytes: Math.max(metadataBudget, 1024) });
+    if (metadata.ok && safeText(metadata.stdout, "")) {
+      files.push(boundedTextFile(prRef.repo, `.github/pr-${prRef.pr}.metadata.json`, metadata.stdout, metadataBudget));
+    } else {
+      warnings.push(`GitHub PR metadata unavailable for ${prRef.repo}#${prRef.pr}: ${metadata.reason || "empty metadata"}`);
+    }
+  }
+  return { files, warnings };
+}
+
+function buildSourceBlockedResponse(sourceBlocked) {
+  const summary = `analysis bridge blocked: ${sourceBlocked.reason}`;
+  return {
+    payloads: [{
+      text: JSON.stringify({
+        status: "blocked",
+        summary,
+        findings: [],
+        risks: ["Worker did not inspect the requested GitHub PR diff/source."],
+        recommendations: ["Retry with GitHub CLI auth/network available or embed payload.sourceBundle.files with the PR diff."],
+        evidenceRefs: sourceBlocked.evidenceRefs || [],
+      }),
+    }],
+  };
+}
+
 function collectSourceBundle(payload, env) {
   const repoMap = parseRepoMap(env);
   const repos = collectRepos(payload);
@@ -309,6 +462,37 @@ function collectSourceBundle(payload, env) {
   const files = [];
   const warnings = [];
   let totalBytes = 0;
+
+  const prRef = normalizeGithubPrRef(payload);
+  if (prRef?.blocked) {
+    return {
+      files,
+      warnings,
+      limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries },
+      sourceBlocked: { reason: prRef.blocked, evidenceRefs: [] },
+    };
+  }
+  if (prRef && !truthyEnv(env.A2A_HERMES_ANALYSIS_GITHUB_PR_SOURCE_DISABLED)) {
+    const fetched = fetchGithubPrSourceBundle(prRef, env, { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries }, maxTotalBytes);
+    warnings.push(...fetched.warnings);
+    if (fetched.blockedReason) {
+      return {
+        files,
+        warnings,
+        limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries },
+        sourceBlocked: { reason: fetched.blockedReason, evidenceRefs: [`${prRef.repo}#${prRef.pr}`] },
+      };
+    }
+    for (const file of fetched.files) {
+      if (files.length >= maxFiles || totalBytes >= maxTotalBytes) break;
+      const remaining = Math.max(0, maxTotalBytes - totalBytes);
+      const capped = boundedTextFile(file.repo, file.path, file.content, Math.min(maxFileBytes, remaining));
+      capped.bytes = file.bytes;
+      capped.truncated = file.truncated || capped.truncated;
+      files.push(capped);
+      totalBytes += Math.min(capped.bytes, maxFileBytes, remaining);
+    }
+  }
 
   const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
   for (const embedded of collectEmbeddedSourceEvidence(payload)) {
@@ -418,7 +602,7 @@ function hasExplicitAnalysisJsonShape(parsed) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
   const record = parsed;
   const status = safeText(record.status, "").toLowerCase();
-  if (!["done", "blocked", "block"].includes(status)) return false;
+  if (!["done", "blocked", "block", "source_blocked"].includes(status)) return false;
   if (!safeText(record.summary, "")) return false;
   for (const key of ["findings", "risks", "recommendations", "evidenceRefs"]) {
     if (!Array.isArray(record[key])) return false;
@@ -553,7 +737,7 @@ function normalizeResponse(parsed) {
     throw new Error("Hermes response JSON must be an object");
   }
   const statusRaw = safeText(parsed.status, "done").toLowerCase();
-  const status = statusRaw === "blocked" || statusRaw === "block" ? "blocked" : "done";
+  const status = ["blocked", "block", "source_blocked"].includes(statusRaw) ? "blocked" : "done";
   return {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
@@ -589,6 +773,11 @@ function main() {
   }
 
   const prompt = buildHermesPrompt({ message, payload, sourceBundle, flags });
+  if (sourceBundle.sourceBlocked) {
+    process.stdout.write(JSON.stringify(buildSourceBlockedResponse(sourceBundle.sourceBlocked)));
+    return;
+  }
+
   let hermesStdout;
   try {
     hermesStdout = runHermes(prompt, flags, process.env);
