@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash, createPrivateKey, randomUUID, sign, type JsonWebKey, type KeyObject } from "node:crypto";
 import {
   buildA2AWorkerSubagentOrchestrationPolicy,
   type A2AWorkerSubagentTaskProfile,
@@ -8,6 +9,7 @@ import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
+import { buildA2AHttpSignatureBase } from "./core/request-security.js";
 import type {
   A2APartyKind,
   A2APartyRole,
@@ -62,11 +64,23 @@ export interface ExternalWorkerHandlerConfig {
   subagentDirectiveDisabled?: boolean;
 }
 
+export interface WorkerHttpSignatureConfig {
+  /** Key id matching the broker public-key registry record. */
+  keyid: string;
+  /** Test/deployment supplied Ed25519 private JWK. Never logged or serialized by the worker. */
+  privateKeyJwk: Record<string, unknown>;
+  /** Expected broker/audience id signed into x-a2a-broker-id. */
+  brokerId: string;
+  /** Signature validity window. Defaults to 60 seconds. */
+  expiresInSeconds?: number;
+}
+
 export interface BrokerWorkerConfig {
   brokerUrl: string;
   edgeSecret?: string;
   homeBrokerId?: string;
   homeBrokerLeaseFile?: string;
+  httpSignature?: WorkerHttpSignatureConfig;
   worker: RegisterWorkerRequest;
   requesterKind: A2APartyKind;
   pollIntervalMs: number;
@@ -116,6 +130,7 @@ export class A2ABrokerWorker {
   private readonly brokerUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly config: BrokerWorkerConfig;
+  private readonly httpSignaturePrivateKey?: KeyObject;
   private running = false;
   private stopping = false;
   private heartbeatInFlight = false;
@@ -128,6 +143,7 @@ export class A2ABrokerWorker {
     this.config = config;
     this.fetchImpl = options?.fetchImpl ?? fetch;
     this.brokerUrl = normalizeBrokerUrl(config.brokerUrl);
+    this.httpSignaturePrivateKey = config.httpSignature ? createWorkerHttpSignaturePrivateKey(config.httpSignature) : undefined;
   }
 
   get workerId(): string {
@@ -544,8 +560,21 @@ export class A2ABrokerWorker {
       body = JSON.stringify(init.body);
     }
 
-    const response = await this.fetchImpl(new URL(path, this.brokerUrl), {
-      method: init?.method ?? "GET",
+    const method = init?.method ?? "GET";
+    const requestUrl = new URL(path, this.brokerUrl);
+    if (this.config.httpSignature && this.httpSignaturePrivateKey) {
+      signWorkerHttpSignatureRequest({
+        method,
+        url: requestUrl,
+        headers,
+        body,
+        config: this.config.httpSignature,
+        privateKey: this.httpSignaturePrivateKey,
+      });
+    }
+
+    const response = await this.fetchImpl(requestUrl, {
+      method,
       headers,
       body,
       signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
@@ -566,6 +595,58 @@ export class A2ABrokerWorker {
 
     return json as T;
   }
+}
+
+function createWorkerHttpSignaturePrivateKey(config: WorkerHttpSignatureConfig): KeyObject {
+  if (!config.keyid.trim()) {
+    throw new Error("A2A HTTP Signature worker keyid is required");
+  }
+  if (!config.brokerId.trim()) {
+    throw new Error("A2A HTTP Signature broker id is required");
+  }
+  try {
+    const privateKey = createPrivateKey({ key: config.privateKeyJwk as JsonWebKey, format: "jwk" });
+    if (privateKey.asymmetricKeyType !== "ed25519") {
+      throw new Error("expected Ed25519 private key");
+    }
+    return privateKey;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "invalid private key";
+    throw new Error(`A2A HTTP Signature worker private key is invalid: ${reason}`);
+  }
+}
+
+function signWorkerHttpSignatureRequest(params: {
+  method: string;
+  url: URL;
+  headers: Headers;
+  body: string | undefined;
+  config: WorkerHttpSignatureConfig;
+  privateKey: KeyObject;
+}): void {
+  const bodyBytes = Buffer.from(params.body ?? "");
+  params.headers.set("content-digest", `sha-256=:${createHash("sha256").update(bodyBytes).digest("base64")}:`);
+  params.headers.set("x-a2a-broker-id", params.config.brokerId.trim());
+
+  const created = Math.floor(Date.now() / 1000);
+  const expires = created + (params.config.expiresInSeconds ?? 60);
+  const nonce = randomUUID();
+  const signatureInput = `a2a=("@method" "@authority" "@path" "@query" "content-digest" "x-a2a-requester-id" "x-a2a-requester-role" "x-a2a-broker-id");alg="ed25519";keyid="${params.config.keyid.trim()}";created=${created};expires=${expires};nonce="${nonce}";tag="a2a-worker-v1"`;
+  const signatureBase = buildA2AHttpSignatureBase({
+    method: params.method,
+    authority: params.url.host,
+    path: params.url.pathname,
+    query: params.url.search.length > 0 ? params.url.search.slice(1) : "",
+    headers: headersToRecord(params.headers),
+    signatureInput,
+  });
+  const signatureBytes = sign(null, Buffer.from(signatureBase), params.privateKey);
+  params.headers.set("signature-input", signatureInput);
+  params.headers.set("signature", `a2a=:${signatureBytes.toString("base64")}:`);
+}
+
+function headersToRecord(headers: Headers): Record<string, string> {
+  return Object.fromEntries([...headers.entries()]);
 }
 
 export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskResult): TaskError | null {
@@ -884,14 +965,16 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     workerMode: parseWorkerMode(env.WORKER_MODE ?? env.A2A_WORKER_MODE),
     metadata: buildWorkerMetadata(env, runtimeProfile),
   };
+  const homeBrokerId = parseBrokerIdEnv(env.A2A_HOME_BROKER_ID ?? env.HOME_BROKER_ID, "A2A_HOME_BROKER_ID");
 
   return {
     brokerUrl,
     edgeSecret: optionalTrimmed(
       env.BROKER_EDGE_SECRET ?? env.A2A_BROKER_EDGE_SECRET ?? env.EDGE_SECRET ?? env.A2A_EDGE_SECRET,
     ),
-    homeBrokerId: parseBrokerIdEnv(env.A2A_HOME_BROKER_ID ?? env.HOME_BROKER_ID, "A2A_HOME_BROKER_ID"),
+    homeBrokerId,
     homeBrokerLeaseFile: optionalTrimmed(env.A2A_HOME_BROKER_LEASE_FILE ?? env.HOME_BROKER_LEASE_FILE),
+    httpSignature: parseWorkerHttpSignatureConfig(env, homeBrokerId),
     worker,
     requesterKind,
     pollIntervalMs: parsePositiveInt(
@@ -1165,6 +1248,66 @@ function parseBrokerIdEnv(value: string | undefined, label: string): string | un
     throw new Error(`${label} must use only letters, numbers, dots, underscores, colons, or hyphens`);
   }
   return normalized;
+}
+
+function parseWorkerHttpSignatureConfig(env: NodeJS.ProcessEnv, homeBrokerId: string | undefined): WorkerHttpSignatureConfig | undefined {
+  const keyid = optionalTrimmed(env.A2A_HTTP_SIGNATURE_KEY_ID ?? env.WORKER_HTTP_SIGNATURE_KEY_ID);
+  const privateKeyJwkText = optionalTrimmed(
+    env.A2A_HTTP_SIGNATURE_PRIVATE_KEY_JWK ?? env.WORKER_HTTP_SIGNATURE_PRIVATE_KEY_JWK,
+  );
+  const brokerId = parseBrokerIdEnv(
+    env.A2A_HTTP_SIGNATURE_BROKER_ID ?? env.WORKER_HTTP_SIGNATURE_BROKER_ID ?? homeBrokerId,
+    "A2A_HTTP_SIGNATURE_BROKER_ID",
+  );
+  const expiresInSeconds = parseOptionalPositiveInt(
+    env.A2A_HTTP_SIGNATURE_EXPIRES_SECONDS ?? env.WORKER_HTTP_SIGNATURE_EXPIRES_SECONDS,
+    "A2A_HTTP_SIGNATURE_EXPIRES_SECONDS",
+  );
+  const hasAnySigningConfig = Boolean(
+    keyid || privateKeyJwkText || optionalTrimmed(env.A2A_HTTP_SIGNATURE_BROKER_ID ?? env.WORKER_HTTP_SIGNATURE_BROKER_ID),
+  );
+  if (!hasAnySigningConfig) {
+    return undefined;
+  }
+  if (!keyid) {
+    throw new Error("A2A_HTTP_SIGNATURE_KEY_ID is required when worker HTTP Signature signing is configured");
+  }
+  if (!privateKeyJwkText) {
+    throw new Error("A2A_HTTP_SIGNATURE_PRIVATE_KEY_JWK is required when worker HTTP Signature signing is configured");
+  }
+  if (!brokerId) {
+    throw new Error("A2A_HTTP_SIGNATURE_BROKER_ID or A2A_HOME_BROKER_ID is required when worker HTTP Signature signing is configured");
+  }
+
+  let privateKeyJwk: unknown;
+  try {
+    privateKeyJwk = JSON.parse(privateKeyJwkText);
+  } catch (error) {
+    throw new Error(
+      `A2A_HTTP_SIGNATURE_PRIVATE_KEY_JWK must be valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!privateKeyJwk || typeof privateKeyJwk !== "object" || Array.isArray(privateKeyJwk)) {
+    throw new Error("A2A_HTTP_SIGNATURE_PRIVATE_KEY_JWK must be a JSON object");
+  }
+
+  return {
+    keyid,
+    privateKeyJwk: privateKeyJwk as Record<string, unknown>,
+    brokerId,
+    ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
+  };
+}
+
+function parseOptionalPositiveInt(value: string | undefined, label: string): number | undefined {
+  if (!optionalTrimmed(value)) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive number`);
+  }
+  return Math.trunc(parsed);
 }
 
 function parsePositiveInt(
