@@ -96,3 +96,77 @@ test("custom expectations override the canonical defaults", () => {
   );
   assert.equal(r.ok, true, JSON.stringify(r.violations));
 });
+
+test("task-poll readiness is fail-closed when required but the probe is missing", () => {
+  const r = evaluateWorkerReadiness(healthy(), { requireTaskPollProbe: true });
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("task_poll_unauthorized"));
+  assert.match(r.violations.find((v) => v.code === "task_poll_unauthorized")?.reason ?? "", /missing/i);
+});
+
+test("task-poll readiness passes with a matching authorized probe", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      taskPollProbe: {
+        ok: true,
+        httpStatus: 200,
+        assignedWorkerId: "sogyo",
+        brokerId: "seoseo",
+      },
+    }),
+    { requireTaskPollProbe: true },
+  );
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test("task-poll readiness rejects unauthorized or forbidden probe status", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      taskPollProbe: {
+        ok: false,
+        httpStatus: 403,
+        assignedWorkerId: "sogyo",
+        brokerId: "seoseo",
+      },
+    }),
+    { requireTaskPollProbe: true },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("task_poll_unauthorized"));
+  assert.match(r.violations.find((v) => v.code === "task_poll_unauthorized")?.reason ?? "", /403/);
+});
+
+test("task-poll readiness rejects probes collected for a different assigned worker", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      taskPollProbe: {
+        ok: true,
+        httpStatus: 200,
+        assignedWorkerId: "bangtong",
+        brokerId: "seoseo",
+      },
+    }),
+    { requireTaskPollProbe: true },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("task_poll_unauthorized"));
+  assert.match(r.violations.find((v) => v.code === "task_poll_unauthorized")?.reason ?? "", /bangtong.*sogyo|sogyo.*bangtong/);
+});
+
+test("task-poll readiness rejects raw credential material in collected probe metadata", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      taskPollProbe: {
+        ok: true,
+        httpStatus: 200,
+        assignedWorkerId: "sogyo",
+        brokerId: "seoseo",
+        authorization: "Bearer should-not-be-accepted",
+      },
+    }),
+    { requireTaskPollProbe: true },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("task_poll_unauthorized"));
+  assert.match(r.violations.find((v) => v.code === "task_poll_unauthorized")?.reason ?? "", /credential/i);
+});
