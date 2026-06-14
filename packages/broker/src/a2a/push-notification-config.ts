@@ -14,9 +14,10 @@
  * - Reads (get/list) redact delivery secrets (token, authentication
  *   credentials) via redactPushConfigSecrets — secrets are write-only.
  *
- * Durability: configs are in-memory per broker process and do not survive a
- * restart (consistent with this opt-in, registration-only surface). A future
- * durable store can replace this class without changing the method contract.
+ * Durability: configs are restored from and persisted into the broker snapshot
+ * path when the server wires this store to a BrokerStateStore. Retention prune
+ * listeners still clear configs for pruned tasks so delivery secrets do not
+ * outlive task lifecycle.
  */
 import { randomUUID } from "node:crypto";
 
@@ -33,33 +34,40 @@ export interface TaskPushNotificationConfig {
   authentication?: PushNotificationAuthenticationInfo;
 }
 
+export type PushNotificationConfigSnapshot = TaskPushNotificationConfig[];
+
 const MAX_CONFIGS_PER_TASK = 16;
 
 export class PushNotificationConfigStore {
   /** taskId -> (configId -> config), insertion-ordered. */
   private readonly byTask = new Map<string, Map<string, TaskPushNotificationConfig>>();
 
+  constructor(snapshot: PushNotificationConfigSnapshot = []) {
+    this.restore(snapshot);
+  }
+
   create(input: {
     taskId: string;
     id?: string;
     url: string;
     token?: string;
-    authentication?: PushNotificationAuthenticationInfo;
+    authentication?: unknown;
   }): TaskPushNotificationConfig {
     const taskId = input.taskId?.trim();
     if (!taskId) {
       throw new PushConfigError("bad_request", "taskId is required");
     }
     const url = input.url?.trim();
-    if (!url || !/^[Hh][Tt][Tt][Pp][Ss]?:\/\//.test(url)) {
+    if (!isHttpUrl(url)) {
       throw new PushConfigError("bad_request", "url is required and must be an http(s) URL");
     }
+    const authentication = normalizeAuthentication(input.authentication);
     const config: TaskPushNotificationConfig = {
       id: input.id?.trim() || randomUUID(),
       taskId,
       url,
       ...(input.token?.trim() ? { token: input.token.trim() } : {}),
-      ...(input.authentication ? { authentication: input.authentication } : {}),
+      ...(authentication ? { authentication } : {}),
     };
     let configs = this.byTask.get(taskId);
     if (!configs) {
@@ -99,6 +107,124 @@ export class PushNotificationConfigStore {
   clearTask(taskId: string): void {
     this.byTask.delete(taskId?.trim());
   }
+
+  retainTasks(taskIds: Iterable<string>): number {
+    const retained = new Set([...taskIds].map((taskId) => taskId.trim()).filter(Boolean));
+    let removed = 0;
+    for (const taskId of [...this.byTask.keys()]) {
+      if (!retained.has(taskId)) {
+        this.byTask.delete(taskId);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  snapshot(): PushNotificationConfigSnapshot {
+    return [...this.byTask.values()].flatMap((configs) =>
+      [...configs.values()].map((config) => clonePushConfig(config)),
+    );
+  }
+
+  restore(snapshot: PushNotificationConfigSnapshot = []): void {
+    this.byTask.clear();
+    for (const item of snapshot) {
+      const taskId = item.taskId?.trim();
+      const id = item.id?.trim();
+      const url = item.url?.trim();
+      if (!taskId || !id || !isHttpUrl(url)) {
+        continue;
+      }
+      let configs = this.byTask.get(taskId);
+      if (!configs) {
+        configs = new Map();
+        this.byTask.set(taskId, configs);
+      }
+      if (configs.size >= MAX_CONFIGS_PER_TASK && !configs.has(id)) {
+        continue;
+      }
+      let authentication: PushNotificationAuthenticationInfo | undefined;
+      try {
+        authentication = normalizeAuthentication(item.authentication);
+      } catch {
+        continue;
+      }
+      configs.set(id, clonePushConfig({
+        taskId,
+        id,
+        url,
+        ...(typeof item.token === "string" && item.token.trim() ? { token: item.token.trim() } : {}),
+        ...(authentication ? { authentication } : {}),
+      }));
+    }
+  }
+}
+
+function isHttpUrl(value: string | undefined): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeAuthentication(value: unknown): PushNotificationAuthenticationInfo | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new PushConfigError("bad_request", "authentication must be an object");
+  }
+  const normalized: PushNotificationAuthenticationInfo = {};
+  if (value.schemes !== undefined) {
+    if (!Array.isArray(value.schemes) || !value.schemes.every((scheme): scheme is string => typeof scheme === "string")) {
+      throw new PushConfigError("bad_request", "authentication.schemes must be an array of strings");
+    }
+    const schemes = value.schemes.map((scheme) => scheme.trim()).filter(Boolean);
+    if (schemes.length > 0) {
+      normalized.schemes = schemes;
+    }
+  }
+  if (value.credentials !== undefined) {
+    if (typeof value.credentials !== "string") {
+      throw new PushConfigError("bad_request", "authentication.credentials must be a string");
+    }
+    const credentials = value.credentials.trim();
+    if (credentials) {
+      normalized.credentials = credentials;
+    }
+  }
+  return normalized.schemes || normalized.credentials ? normalized : undefined;
+}
+
+function clonePushConfig(config: TaskPushNotificationConfig): TaskPushNotificationConfig {
+  const schemes = Array.isArray(config.authentication?.schemes)
+    ? config.authentication.schemes.filter((scheme): scheme is string => typeof scheme === "string")
+    : undefined;
+  const credentials = typeof config.authentication?.credentials === "string"
+    ? config.authentication.credentials
+    : undefined;
+  const authentication = schemes?.length || credentials
+    ? {
+        ...(schemes?.length ? { schemes: [...schemes] } : {}),
+        ...(credentials !== undefined ? { credentials } : {}),
+      }
+    : undefined;
+  return {
+    id: config.id,
+    taskId: config.taskId,
+    url: config.url,
+    ...(typeof config.token === "string" ? { token: config.token } : {}),
+    ...(authentication ? { authentication } : {}),
+  };
 }
 
 /**

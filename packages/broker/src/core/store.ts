@@ -34,6 +34,7 @@ import {
   DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
   type TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
+import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 
 export const CURRENT_BROKER_STATE_VERSION = 8;
 export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
@@ -52,6 +53,7 @@ export interface BrokerSnapshot {
   tombstones?: TaskTombstone[];
   terminalOutbox?: TerminalTaskOutboxEvent[];
   crossBrokerTerminalBriefs?: CrossBrokerTerminalBriefProjection[];
+  pushNotificationConfigs?: TaskPushNotificationConfig[];
 }
 
 export interface BrokerStateStore {
@@ -870,6 +872,22 @@ const crossBrokerTerminalBriefProjectionSchema = z
   })
   .passthrough();
 
+const pushNotificationConfigSchema = z
+  .object({
+    id: z.string().min(1),
+    taskId: z.string().min(1),
+    url: z.string().min(1),
+    token: z.string().optional(),
+    authentication: z
+      .object({
+        schemes: z.array(z.string()).optional(),
+        credentials: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 const brokerSnapshotSchema = z
   .object({
     version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
@@ -884,6 +902,7 @@ const brokerSnapshotSchema = z
     tombstones: z.array(tombstoneSchema).optional().default([]),
     terminalOutbox: z.array(terminalOutboxEventSchema).optional().default([]),
     crossBrokerTerminalBriefs: z.array(crossBrokerTerminalBriefProjectionSchema).optional().default([]),
+    pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
   })
   .passthrough();
 
@@ -1009,7 +1028,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   readHotRuntimeSnapshot(): BrokerSnapshot {
-    return {
+    const pushNotificationConfigs = this.readCanonicalPushNotificationConfigs();
+    const snapshot: BrokerSnapshot = {
       version: CURRENT_BROKER_STATE_VERSION,
       exchanges: this.readHotExchanges(),
       exchangeMessages: this.readHotExchangeMessages(),
@@ -1023,6 +1043,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       terminalOutbox: this.readHotTerminalOutbox({ limit: this.maxHotRuntimeTerminalOutboxEvents }),
       crossBrokerTerminalBriefs: [],
     };
+    if (pushNotificationConfigs !== undefined) {
+      snapshot.pushNotificationConfigs = pushNotificationConfigs;
+    }
+    return snapshot;
   }
 
   readHotTasks(filters: SqliteTaskHotTableFilters = {}): TaskRecord[] {
@@ -1673,10 +1697,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const auditPruneIds = pruneIdsByTable.get("broker_audit_events") ?? new Set<string>();
     const workerPruneIds = pruneIdsByTable.get("broker_workers") ?? new Set<string>();
     const terminalOutboxPruneIds = pruneIdsByTable.get("broker_terminal_outbox") ?? new Set<string>();
+    const retainedTaskIds = new Set(snapshot.tasks.filter((task) => !taskPruneIds.has(task.id)).map((task) => task.id));
     const before = canonicalSnapshotCounts(snapshot);
     const nextSnapshot: BrokerSnapshot = {
       ...snapshot,
       tasks: snapshot.tasks.filter((task) => !taskPruneIds.has(task.id)),
+      pushNotificationConfigs: snapshot.pushNotificationConfigs?.filter((config) => retainedTaskIds.has(config.taskId)),
       auditEvents: [
         ...snapshot.auditEvents.filter((event) => !auditPruneIds.has(event.id) && event.id !== auditEvent.id),
         auditEvent,
@@ -1946,6 +1972,24 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return emptySnapshot();
   }
 
+  private readCanonicalPushNotificationConfigs(): TaskPushNotificationConfig[] | undefined {
+    const row = this.db
+      .prepare("SELECT payload FROM broker_snapshots WHERE id = 1")
+      .get() as { payload?: string } | undefined;
+    if (typeof row?.payload !== "string") {
+      return undefined;
+    }
+    try {
+      return parseSnapshotPayload(row.payload, `SQLite broker snapshot at ${this.dbFile}`, this.maxBytes).pushNotificationConfigs;
+    } catch {
+      // Hot-table runtime loading must remain recoverable even when the legacy
+      // canonical snapshot is stale/corrupt/oversized. Push configs are a
+      // snapshot-only sidecar, so skip them rather than making hot-table
+      // recovery depend on parsing the entire canonical payload.
+      return undefined;
+    }
+  }
+
   private loadHotRuntimeSnapshot(): BrokerSnapshot {
     const hotSnapshot = this.readHotRuntimeSnapshot();
     if (
@@ -1975,9 +2019,11 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
       const hasHotHints = hintsHasAnyEntries(hints);
-      this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot: hasHotHints });
+      const hasSnapshotOnlySidecarState = snapshot.pushNotificationConfigs !== undefined;
+      const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
+      this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
-      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: hasHotHints });
+      this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot });
     });
   }
 

@@ -241,6 +241,8 @@ export interface InMemoryA2ABrokerOptions {
   teamId?: string;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
+  /** Optional non-core state to include in full broker snapshots. */
+  snapshotExtensions?: () => Partial<BrokerSnapshot>;
 }
 
 export interface TaskDiagnosticsOptions {
@@ -459,6 +461,7 @@ export class InMemoryA2ABroker {
   private readonly validationRepository?: ValidationRuntimeRepository;
   private readonly capabilityCards: WorkerCapabilityCardRepository;
   private readonly optionProfilingListener?: BrokerProfilingListener;
+  private readonly snapshotExtensionProviders = new Set<() => Partial<BrokerSnapshot>>();
   private readonly brokerId?: string;
   private readonly teamId?: string;
   private readonly workerHeartbeatPersistIntervalMs: number;
@@ -480,6 +483,9 @@ export class InMemoryA2ABroker {
     this.validationRepository = options.validationRepository;
     this.capabilityCards = options.capabilityCardRepository ?? new InMemoryWorkerCapabilityCardRepository();
     this.optionProfilingListener = options.profilingListener;
+    if (options.snapshotExtensions) {
+      this.snapshotExtensionProviders.add(options.snapshotExtensions);
+    }
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
@@ -606,6 +612,27 @@ export class InMemoryA2ABroker {
     return () => {
       this.taskPruneListeners.delete(listener);
     };
+  }
+
+  /**
+   * Register optional non-core state to include in future full broker
+   * snapshots. Server features that live outside the broker (for example,
+   * push-notification config secrets) use this to preserve sidecar state even
+   * when callers supply their own broker instance.
+   */
+  registerSnapshotExtension(provider: () => Partial<BrokerSnapshot>): () => void {
+    this.snapshotExtensionProviders.add(provider);
+    return () => {
+      this.snapshotExtensionProviders.delete(provider);
+    };
+  }
+
+  private snapshotExtensionFields(): Partial<BrokerSnapshot> {
+    let extensions: Partial<BrokerSnapshot> = {};
+    for (const provider of this.snapshotExtensionProviders) {
+      extensions = { ...extensions, ...provider() };
+    }
+    return extensions;
   }
 
   subscribeToTask(taskId: string, listener: TaskUpdateListener): () => void {
@@ -2611,6 +2638,7 @@ export class InMemoryA2ABroker {
       tombstones: [...this.tombstones.values()],
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
       crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
+      ...this.snapshotExtensionFields(),
     };
   }
 
