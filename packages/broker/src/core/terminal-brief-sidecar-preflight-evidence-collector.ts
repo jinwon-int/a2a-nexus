@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDryRunStartCanaryPlanPacket } from "./terminal-brief-sidecar-dry-run-start-canary-plan.js";
@@ -880,6 +881,3 @@ function isTerminalBriefSidecarDryRunStartCanaryPlanPacket(
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-dry-run-start-canary-plan.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

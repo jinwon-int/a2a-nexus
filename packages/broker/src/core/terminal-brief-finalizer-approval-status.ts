@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefApprovalDispatchAdapterPacket } from "./terminal-brief-approval-dispatch-adapter.js";
@@ -551,6 +552,3 @@ function isTerminalBriefApprovalReceiptIngestorPacket(value: unknown): value is 
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-approval-receipt-ingestor.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnExecutionRollbackEnvelopePacket } from "./terminal-brief-sidecar-default-on-execution-rollback-envelope.js";
@@ -633,6 +634,3 @@ function isTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopePacket(
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-execution-rollback-envelope.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

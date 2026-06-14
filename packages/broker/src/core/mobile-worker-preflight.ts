@@ -5,6 +5,7 @@
 // tmux, SSH tunnel, Gateway, Android, or Termux state.
 // ---------------------------------------------------------------------------
 
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 export type MobileWorkerPreflightFormat = "markdown" | "json";
@@ -901,10 +902,6 @@ function requirePositiveNumber(value: unknown, key: string): number {
     throw new Error(`${key} must be a finite non-negative number.`);
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string {

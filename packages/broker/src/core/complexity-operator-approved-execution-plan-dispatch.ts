@@ -24,6 +24,7 @@
 //            approval envelope.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type {
   ComplexityExecutionPlanDraftPacket,
@@ -1183,6 +1184,3 @@ function isOperatorApprovalRequestPacket(
     value.kind === "a2a-broker.operator-approval-request.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

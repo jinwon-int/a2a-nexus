@@ -5,6 +5,7 @@
 // worker dispatch, no DB mutation, and no provider sends.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isRecord } from "./value-guards.js";
 import {
   classifyTaskComplexity,
   COMPLEXITY_LEVELS,
@@ -162,6 +163,3 @@ function isComplexityLevel(value: unknown): value is ComplexityLevel {
   return typeof value === "string" && LEVELS.has(value as ComplexityLevel);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

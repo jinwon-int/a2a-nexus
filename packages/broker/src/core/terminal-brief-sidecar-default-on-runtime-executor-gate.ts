@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEvidenceIngestorPacket } from "./terminal-brief-sidecar-default-on-runtime-execution-approval-evidence-ingestor.js";
@@ -513,6 +514,3 @@ function isRuntimeExecutionApprovalEvidencePacket(
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-runtime-execution-approval-evidence-ingestor.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

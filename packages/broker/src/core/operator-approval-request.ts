@@ -37,6 +37,7 @@
 // Parent:    #982 Team2 — complexity execution plan draft.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type {
   ComplexityExecutionPlanDraftPacket,
@@ -1391,6 +1392,3 @@ function isComplexityExecutionPlanPreflightSealPacket(
     value.kind === "a2a-broker.complexity-execution-plan-preflight-seal.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

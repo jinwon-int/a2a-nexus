@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket } from "./terminal-brief-sidecar-default-on-final-live-execution.js";
@@ -654,10 +655,6 @@ function isFinalLiveExecutionPacket(
   value: unknown,
 ): value is TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-final-live-execution.packet";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function unique<T>(items: T[]): T[] {

@@ -27,6 +27,7 @@
 //            recommendation packet.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import type { FinalizerApprovalEnvelopeDraftPacket } from "./complexity-finalizer-approval-envelope-draft.js";
 
@@ -860,10 +861,6 @@ function stableStringify(value: unknown): string {
     .sort()
     .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
     .join(",")}}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isFinalizerApprovalEnvelopeDraftPacket(

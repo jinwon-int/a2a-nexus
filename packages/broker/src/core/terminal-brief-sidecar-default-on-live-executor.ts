@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGatePacket } from "./terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.js";
@@ -650,6 +651,3 @@ function isFinalRuntimeMutationExecutorGatePacket(value: unknown): value is Sour
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

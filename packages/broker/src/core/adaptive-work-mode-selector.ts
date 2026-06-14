@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 import { optionalString } from "./value-text.js";
 
@@ -438,6 +439,3 @@ function enumValue<T extends string>(value: unknown, allowed: readonly T[]): T |
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? value as T : undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
