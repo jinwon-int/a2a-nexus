@@ -1490,9 +1490,7 @@ export class InMemoryA2ABroker {
       assignedWorkerId: normalizedRequest.assignedWorkerId ?? normalizedRequest.target.id,
       workspace: normalizedRequest.workspace,
       message: normalizedRequest.message,
-      ...(normalizedRequest.parentRoundId ? { parentRoundId: normalizedRequest.parentRoundId } : {}),
-      ...(normalizedRequest.parentRoundTotal ? { parentRoundTotal: normalizedRequest.parentRoundTotal } : {}),
-      ...(normalizedRequest.parentRoundOrder ? { parentRoundOrder: normalizedRequest.parentRoundOrder } : {}),
+      ...hoistParentRoundFields(normalizedRequest, normalizedRequest.payload),
       proposalId: normalizedRequest.proposalId,
       artifactIds: uniqueIds(normalizedRequest.artifactIds ?? []),
       via: normalizedRequest.via,
@@ -6087,12 +6085,14 @@ function normalizeTaskWakeState(wake: TaskWakeState | undefined): TaskWakeState 
 }
 
 function normalizeTaskRecord(task: TaskRecord): TaskRecord {
+  const payload = normalizeTaskPayload(task.payload);
   return {
     ...task,
     targetNodeId: task.targetNodeId ?? task.target.id,
     assignedWorkerId: task.assignedWorkerId ?? task.targetNodeId ?? task.target.id,
     artifactIds: uniqueIds(task.artifactIds ?? []),
-    payload: normalizeTaskPayload(task.payload),
+    payload,
+    ...hoistParentRoundFields(task, payload),
     result: task.result ? normalizeTaskResult(task.result) : undefined,
     error: task.error ? normalizeTaskError(task.error) : undefined,
     attemptId: task.attemptId,
@@ -6103,6 +6103,35 @@ function normalizeTaskRecord(task: TaskRecord): TaskRecord {
       : {}),
     ...(normalizeOwnershipString(task.teamId) ? { teamId: normalizeOwnershipString(task.teamId) } : {}),
   };
+}
+
+/**
+ * Ensure parentRoundId/parentRoundTotal/parentRoundOrder are available as
+ * top-level task fields even when a dispatch path only stamped them into the
+ * payload (e.g. the A2A round-policy and GitHub-patch dispatch paths). This makes
+ * task.parentRoundId the single reliable key for round-status queries over
+ * listTasks(); the payload copy is left untouched for existing consumers.
+ */
+function hoistParentRoundFields(
+  source: { parentRoundId?: string; parentRoundTotal?: number; parentRoundOrder?: number },
+  payload: Record<string, unknown> | undefined,
+): Pick<TaskRecord, "parentRoundId" | "parentRoundTotal" | "parentRoundOrder"> {
+  const out: Pick<TaskRecord, "parentRoundId" | "parentRoundTotal" | "parentRoundOrder"> = {};
+  const id = parentRoundString(source.parentRoundId) ?? parentRoundString(payload?.["parentRoundId"]);
+  if (id !== undefined) out.parentRoundId = id;
+  const total = parentRoundNumber(source.parentRoundTotal) ?? parentRoundNumber(payload?.["parentRoundTotal"]);
+  if (total !== undefined) out.parentRoundTotal = total;
+  const order = parentRoundNumber(source.parentRoundOrder) ?? parentRoundNumber(payload?.["parentRoundOrder"]);
+  if (order !== undefined) out.parentRoundOrder = order;
+  return out;
+}
+
+function parentRoundString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function parentRoundNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeExchangeState(exchange: A2AExchangeState): A2AExchangeState {
