@@ -162,9 +162,12 @@ fuller target design. The broker currently enforces a v1 subset:
   credential-lifecycle fields `status` (`"active"`/`"revoked"`), `notBefore`,
   and `expiresAt` (ISO-8601). A `revoked` key is rejected at verification with
   `a2a_signature_key_revoked`; a key used before `notBefore` or at/after
-  `expiresAt` is rejected with `a2a_signature_key_inactive`. The remaining
-  richer fields (`roles`, the `workers` wrapper, and signed-credential chains)
-  are not parsed yet.
+  `expiresAt` is rejected with `a2a_signature_key_inactive`. An optional `roles`
+  array binds the signed `x-a2a-requester-role`: when declared, a request whose
+  role is not in the list is rejected with `a2a_signature_role_denied`, so a
+  worker credential cannot assert a hub/operator role even though that header is
+  signature-covered (omitted = no role restriction). The remaining richer fields
+  (the `workers` wrapper and signed-credential chains) are not parsed yet.
 - **Scope tokens** are the per-route capability labels enforced at the call
   sites (one token per worker route), not `:self`-qualified strings:
 

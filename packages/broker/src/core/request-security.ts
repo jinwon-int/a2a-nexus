@@ -124,6 +124,13 @@ export interface A2AHttpSignatureKeyRecord {
   notBefore?: string;
   /** ISO-8601 instant at/after which the key is expired (optional). */
   expiresAt?: string;
+  /**
+   * Roles this signing key is allowed to assert via x-a2a-requester-role. When
+   * declared, a signed request claiming any other role fails closed, so a worker
+   * credential cannot impersonate a hub/operator role even though the role header
+   * is signature-covered. Omitted = no role restriction (legacy compatibility).
+   */
+  roles?: readonly A2APartyRole[];
 }
 
 export type A2AHttpSignatureKeyRegistry = Record<string, A2AHttpSignatureKeyRecord>;
@@ -163,15 +170,39 @@ function parseA2AHttpSignatureKeyRegistry(input: unknown, source: string): A2AHt
     validateA2AHttpSignaturePublicJwk(publicKeyJwk, registryKey);
     const scopes = parseRegistryScopes(record.scopes, registryKey);
     const lifecycle = parseRegistryLifecycle(record, registryKey);
+    const roles = parseRegistryRoles(record.roles, registryKey);
     registry[registryKey] = {
       keyid,
       workerId,
       publicKeyJwk: publicKeyJwk as Record<string, unknown>,
       ...(scopes ? { scopes } : {}),
       ...lifecycle,
+      ...(roles ? { roles } : {}),
     };
   }
   return registry;
+}
+
+function parseRegistryRoles(value: unknown, keyid: string): readonly A2APartyRole[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      `A2A HTTP Signature key registry record ${keyid} roles must be a non-empty array of known roles when present`,
+    );
+  }
+  const roles = new Set<A2APartyRole>();
+  for (const entry of value) {
+    const parsed = requesterRoleSchema.safeParse(entry);
+    if (!parsed.success) {
+      throw new Error(
+        `A2A HTTP Signature key registry record ${keyid} has unknown role ${JSON.stringify(entry)}`,
+      );
+    }
+    roles.add(parsed.data);
+  }
+  return [...roles];
 }
 
 function parseRegistryLifecycle(
@@ -268,6 +299,7 @@ export type A2AHttpSignatureFailureCode =
   | "a2a_signature_unknown_key"
   | "a2a_signature_key_revoked"
   | "a2a_signature_key_inactive"
+  | "a2a_signature_role_denied"
   | "a2a_signature_identity_mismatch"
   | "a2a_signature_time_invalid"
   | "a2a_signature_invalid";
@@ -354,6 +386,12 @@ export function verifyA2AHttpSignature(
   }
   if (!brokerId) {
     return signatureFailure("a2a_signature_malformed", "x-a2a-broker-id is required by the A2A HTTP signature profile");
+  }
+  if (keyRecord.roles !== undefined) {
+    const role = normalizedHeader(request, "x-a2a-requester-role");
+    if (!role || !keyRecord.roles.includes(role as A2APartyRole)) {
+      return signatureFailure("a2a_signature_role_denied", "A2A requester role is not authorized for this signing key");
+    }
   }
 
   const nowEpochSeconds = options.nowEpochSeconds ?? Math.floor(Date.now() / 1000);
