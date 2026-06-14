@@ -19,16 +19,10 @@ import fs from "node:fs";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 
-// Canonical team ↔ home-broker invariant (the mapping recorded in #633/#630).
-export const TEAM_BROKER_INVARIANT = { team1: "seoseo", team2: "gwakga" };
+import { TEAM_BROKER_INVARIANT, hasText, normalizeUrl } from "./a2a-routing-shared.mjs";
 
-function hasText(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function normalizeUrl(value) {
-  return hasText(value) ? value.trim().replace(/\/+$/, "") : value;
-}
+// Re-exported so existing importers of this module (and its tests) keep working.
+export { TEAM_BROKER_INVARIANT };
 
 /**
  * Resolve a single node's broker routing from its declared keys + a registry.
