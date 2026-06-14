@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarExecutorInvocationRehearsalPacket } from "./terminal-brief-sidecar-executor-invocation-rehearsal.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarRuntimePreflightApprovalState =
   | "approval_packet_ready"
@@ -529,16 +530,8 @@ function titleForState(state: TerminalBriefSidecarRuntimePreflightApprovalState)
   return "Blocked: Terminal Brief sidecar runtime preflight approval";
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarExecutorInvocationRehearsalPacket(

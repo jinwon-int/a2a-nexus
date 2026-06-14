@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -463,10 +464,6 @@ function approvalSensitiveActionsExcluded(): string[] {
     "TaskFlow record creation or broker DB mutation",
     "production deploy/restart, historical replay, release, publish, or secret movement",
   ];
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarExecutorDispatchRequestDraftPacket(value: unknown): value is TerminalBriefSidecarExecutorDispatchRequestDraftPacket {

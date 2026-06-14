@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDryRunStartCanaryPlanPacket } from "./terminal-brief-sidecar-dry-run-start-canary-plan.js";
-import { optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarPreflightEvidenceCollectorState =
   | "ready_for_supervised_dry_run_preflight_review"
@@ -861,14 +862,6 @@ function isStale(observedAt: string | undefined, expiresAt: string | undefined, 
   const observedMs = Date.parse(observedAt);
   if (!Number.isFinite(observedMs)) return true;
   return nowMs - observedMs > maxAgeMs || observedMs - nowMs > maxAgeMs;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarDryRunStartCanaryPlanPacket(

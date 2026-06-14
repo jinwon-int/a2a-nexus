@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -494,10 +495,6 @@ function titleForState(state: TerminalBriefSidecarReviewDecisionState): string {
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar operator review decision evidence";
   if (state === "waiting_for_operator_review_table") return "Waiting: Terminal Brief sidecar operator review table";
   return "Blocked: Terminal Brief sidecar operator review decision ingestor";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarOperatorReviewTablePacket(

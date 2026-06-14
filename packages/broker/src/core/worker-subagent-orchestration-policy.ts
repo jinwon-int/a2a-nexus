@@ -1,6 +1,6 @@
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
-import { optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export type A2AWorkerTaskSize = "trivial" | "small" | "medium" | "large";
 export type A2AWorkerTaskCoupling = "low" | "medium" | "high";
@@ -267,11 +267,6 @@ function nextActionFor(parallelismHint: number, reducedBy: string[]): string {
 function buildPolicyId(input: A2AWorkerSubagentPolicyInput, generatedAt: string, parallelismHint: number): string {
   const base = JSON.stringify({ input, generatedAt, parallelismHint });
   return "a2a-worker-subagent-policy:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function numberValue(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return value;
 }
 
 function stringList(value: unknown): string[] | undefined {

@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -475,10 +476,6 @@ function titleForState(state: TerminalBriefSidecarApprovalGrantEvidenceState): s
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar approval grant evidence";
   if (state === "waiting_for_grant_proposal") return "Waiting: Terminal Brief sidecar approval grant proposal";
   return "Insufficient: Terminal Brief sidecar approval grant evidence";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarApprovalGrantProposalPacket(

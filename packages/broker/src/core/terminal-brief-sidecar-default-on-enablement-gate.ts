@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -448,10 +449,6 @@ function buildIdempotencyKey(
     gateReference,
   });
   return "tb-sidecar-default-on-enablement-gate:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarDefaultOnApprovalEvidenceIngestorPacket(

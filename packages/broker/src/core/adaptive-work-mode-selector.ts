@@ -1,6 +1,6 @@
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
-import { optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export type A2AAdaptiveWorkMode = "solo" | "a2a_direct" | "a2a_hybrid" | "a2a_team" | "a2ad";
 export type A2AAdaptiveEstimateSize = "small" | "medium" | "large";
@@ -425,10 +425,6 @@ function buildIdempotencyKey(input: A2AAdaptiveSelectorInput, generatedAt: strin
 function formatTask(task: A2AAdaptiveSelectorInput["task"]): string {
   const issue = task.repo && task.issueNumber !== undefined ? `${task.repo}#${task.issueNumber}` : task.taskId ?? "untracked";
   return `${issue} (${task.taskClass})`;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function enumValue<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {

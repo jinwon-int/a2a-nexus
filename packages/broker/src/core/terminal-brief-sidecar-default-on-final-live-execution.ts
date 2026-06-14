@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -560,6 +561,3 @@ function isRuntimeExecutorGatePacket(value: unknown): value is TerminalBriefSide
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-runtime-executor-gate.packet";
 }
 
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
-}

@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarStartExecutorGatePacket } from "./terminal-brief-sidecar-start-executor-gate.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarExecutorInvocationRehearsalState =
   | "ready_for_executor_invocation_rehearsal"
@@ -585,16 +586,8 @@ function titleForState(state: TerminalBriefSidecarExecutorInvocationRehearsalSta
   return "Blocked: Terminal Brief sidecar executor invocation rehearsal";
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarStartExecutorGatePacket(value: unknown): value is TerminalBriefSidecarStartExecutorGatePacket {

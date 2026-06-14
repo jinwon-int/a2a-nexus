@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -409,10 +410,6 @@ function titleForState(state: TerminalBriefSidecarExecutorDispatchRequestDraftSt
   if (state === "final_review_blocked") return "Blocked: Terminal Brief sidecar execution gate final review";
   if (state === "waiting_for_execution_gate_final_review") return "Waiting: Terminal Brief sidecar execution gate final review";
   return "Blocked: Terminal Brief sidecar executor dispatch request draft";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarExecutionGateFinalReviewPacket(
