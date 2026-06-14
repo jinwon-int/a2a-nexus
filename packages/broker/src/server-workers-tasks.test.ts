@@ -320,6 +320,35 @@ test("strict A2A HTTP Signature worker route gate accepts signed worker flow and
     const unsignedPollRes = await fetch(`${server.baseUrl}/tasks?worker=sogyo&status=pending&detail=full`);
     assert.equal(unsignedPollRes.status, 401);
 
+    const unsignedAssignedPollRes = await fetch(`${server.baseUrl}/tasks?assignedWorkerId=sogyo&status=queued`);
+    assert.equal(unsignedAssignedPollRes.status, 401);
+
+    const mismatchedQuery = "worker=sogyo&assignedWorkerId=bangtong&status=pending&detail=full";
+    const mismatchedPollRes = await fetch(`${server.baseUrl}/tasks?${mismatchedQuery}`, {
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "GET",
+        path: "/tasks",
+        query: mismatchedQuery,
+        workerId: "sogyo",
+        nonce: "route-poll-mismatched-worker-params",
+      }),
+    });
+    assert.equal(mismatchedPollRes.status, 400);
+
+    const emptyWorkerAssignedQuery = "worker=&assignedWorkerId=bangtong&status=pending&detail=full";
+    const emptyWorkerAssignedRes = await fetch(`${server.baseUrl}/tasks?${emptyWorkerAssignedQuery}`, {
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "GET",
+        path: "/tasks",
+        query: emptyWorkerAssignedQuery,
+        workerId: "sogyo",
+        nonce: "route-poll-empty-worker-assigned-victim",
+      }),
+    });
+    assert.equal(emptyWorkerAssignedRes.status, 401);
+
     const query = "worker=sogyo&status=pending&detail=full";
     const pollHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,

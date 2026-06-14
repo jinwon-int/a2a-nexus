@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { once } from "node:events";
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
 import { A2ABrokerWorker, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
+import { verifyA2AHttpSignature, type A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
   let snapshot = emptySnapshot();
@@ -46,12 +48,34 @@ async function startTestServer(options: Partial<BrokerServerOptions> = {}) {
   };
 }
 
-function createWorker(baseUrl: string, options: { edgeSecret?: string; homeBrokerId?: string; homeBrokerLeaseFile?: string } = {}) {
+const workerSignaturePrivateJwk = {
+  crv: "Ed25519",
+  d: "AaTuhLv-jaClRWi80aTnBCH7OaqKDTRI1-BhVY6n8hw",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const workerSignaturePublicJwk = {
+  crv: "Ed25519",
+  x: "5WS0NM-6IqCFjg6O1otAWtJV2H-1kdybf7nFp4PEzdY",
+  kty: "OKP",
+} as const;
+
+const workerSignatureKeyRegistry: A2AHttpSignatureKeyRegistry = {
+  "worker:worker-a:v1": {
+    keyid: "worker:worker-a:v1",
+    workerId: "worker-a",
+    publicKeyJwk: workerSignaturePublicJwk,
+  },
+};
+
+function createWorker(baseUrl: string, options: { edgeSecret?: string; homeBrokerId?: string; homeBrokerLeaseFile?: string; httpSignature?: BrokerWorkerConfig["httpSignature"] } = {}) {
   return new A2ABrokerWorker({
     brokerUrl: baseUrl,
     edgeSecret: options.edgeSecret,
     homeBrokerId: options.homeBrokerId,
     homeBrokerLeaseFile: options.homeBrokerLeaseFile,
+    httpSignature: options.httpSignature,
     requesterKind: "node",
     pollIntervalMs: 25,
     heartbeatIntervalMs: 25,
@@ -155,6 +179,251 @@ test("worker registers, heartbeats, polls queued work, and completes tasks", asy
     await worker.stop();
     await server.close();
   }
+});
+
+
+test("worker keeps legacy requester headers unsigned when HTTP Signature is not configured", async () => {
+  let capturedHeaders: Headers | undefined;
+  const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    capturedHeaders = init?.headers as Headers;
+    return new Response(JSON.stringify({
+      nodeId: "worker-a",
+      role: "analyst",
+      status: "online",
+      capabilities: { canAnalyze: true },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+    }), { status: 201, headers: { "content-type": "application/json" } });
+  };
+
+  const worker = createWorker("https://broker.test", { edgeSecret: "test-edge-secret" });
+  (worker as unknown as { fetchImpl: typeof fetchImpl }).fetchImpl = fetchImpl;
+  await worker.register();
+
+  assert.equal(capturedHeaders?.get("x-a2a-requester-id"), "worker-a");
+  assert.equal(capturedHeaders?.get("x-a2a-edge-secret"), "test-edge-secret");
+  assert.equal(capturedHeaders?.has("signature-input"), false);
+  assert.equal(capturedHeaders?.has("signature"), false);
+  assert.equal(capturedHeaders?.has("content-digest"), false);
+});
+
+test("worker signs broker requests with configured per-worker A2A HTTP Signature key", async () => {
+  let capturedUrl: URL | undefined;
+  let capturedHeaders: Headers | undefined;
+  let capturedBody = "";
+  const fetchImpl = async (url: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    capturedUrl = url instanceof URL ? url : new URL(String(url));
+    capturedHeaders = init?.headers as Headers;
+    capturedBody = String(init?.body ?? "");
+    return new Response(JSON.stringify({
+      nodeId: "worker-a",
+      role: "analyst",
+      status: "online",
+      capabilities: { canAnalyze: true },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+    }), { status: 201, headers: { "content-type": "application/json" } });
+  };
+
+  const worker = createWorker("https://broker.test", {
+    httpSignature: {
+      keyid: "worker:worker-a:v1",
+      privateKeyJwk: workerSignaturePrivateJwk,
+      brokerId: "seoseo",
+      nowEpochSeconds: () => 1770861620,
+      nonceFactory: () => "worker-sign-register-nonce",
+    },
+  });
+  (worker as unknown as { fetchImpl: typeof fetchImpl }).fetchImpl = fetchImpl;
+  await worker.register();
+
+  assert.ok(capturedUrl);
+  assert.ok(capturedHeaders);
+  assert.equal(capturedHeaders.get("x-a2a-requester-id"), "worker-a");
+  assert.equal(capturedHeaders.get("x-a2a-requester-role"), "analyst");
+  assert.equal(capturedHeaders.get("x-a2a-broker-id"), "seoseo");
+  assert.equal(
+    capturedHeaders.get("content-digest"),
+    `sha-256=:${createHash("sha256").update(capturedBody).digest("base64")}:`,
+  );
+  const signatureInput = capturedHeaders.get("signature-input");
+  assert.ok(signatureInput);
+  const requestUrl = capturedUrl;
+  assert.ok(requestUrl);
+  const verification = verifyA2AHttpSignature({
+    method: "POST",
+    authority: requestUrl.host,
+    path: requestUrl.pathname,
+    query: requestUrl.search.slice(1),
+    headers: Object.fromEntries([...capturedHeaders.entries()]),
+    signatureInput,
+    signature: capturedHeaders.get("signature") ?? undefined,
+  }, workerSignatureKeyRegistry, { nowEpochSeconds: 1770861621 });
+  assert.deepEqual(verification, {
+    ok: true,
+    keyid: "worker:worker-a:v1",
+    requesterId: "worker-a",
+    brokerId: "seoseo",
+    created: 1770861620,
+    expires: 1770861680,
+    nonce: "worker-sign-register-nonce",
+  });
+});
+
+test("worker signed requests pass strict broker route gate for register, poll, and lifecycle", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
+  });
+  const worker = createWorker(server.baseUrl, {
+    httpSignature: {
+      keyid: "worker:worker-a:v1",
+      privateKeyJwk: workerSignaturePrivateJwk,
+      brokerId: "seoseo",
+    },
+  });
+
+  try {
+    await worker.register();
+    await worker.heartbeat();
+    const task = await createTask(server.baseUrl, {
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "strict signed lifecycle",
+      taskOrigin: "api",
+    });
+
+    const queued = await worker.pollQueuedTasks();
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].id, task.id);
+    assert.equal(await worker.runOnce(), 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const completedTask = await taskResponse.json();
+    assert.equal(completedTask.status, "succeeded");
+    assert.equal(completedTask.claimedBy, "worker-a");
+  } finally {
+    await worker.stop();
+    await server.close();
+  }
+});
+
+
+test("worker signed requests cannot impersonate a different worker id in strict mode", async () => {
+  const server = await startTestServer({
+    brokerId: "seoseo",
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
+  });
+  const impersonatingWorker = new A2ABrokerWorker({
+    brokerUrl: server.baseUrl,
+    requesterKind: "node",
+    pollIntervalMs: 25,
+    heartbeatIntervalMs: 25,
+    handlerTimeoutMs: 1_000,
+    userAgent: "a2a-broker-worker-test",
+    handler: async () => ({ result: {} }),
+    httpSignature: {
+      keyid: "worker:worker-a:v1",
+      privateKeyJwk: workerSignaturePrivateJwk,
+      brokerId: "seoseo",
+    },
+    worker: {
+      nodeId: "worker-b",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => impersonatingWorker.register(),
+      (error: any) =>
+        error.status === 401 &&
+        error.code === "unauthorized" &&
+        /requester id does not match the signing key owner/i.test(error.message),
+    );
+  } finally {
+    await impersonatingWorker.stop();
+    await server.close();
+  }
+});
+
+
+test("worker HTTP Signature rejects unsafe key ids before building Signature-Input", async () => {
+  const worker = createWorker("https://broker.test", {
+    httpSignature: {
+      keyid: 'worker:worker-a:v1";created=1',
+      privateKeyJwk: workerSignaturePrivateJwk,
+      brokerId: "seoseo",
+    },
+  });
+  (worker as unknown as { fetchImpl: typeof fetch }).fetchImpl = async () => {
+    throw new Error("fetch should not run for unsafe signature params");
+  };
+
+  await assert.rejects(
+    () => worker.register(),
+    /worker key id contains characters that are not safe for Signature-Input parameters/,
+  );
+});
+
+test("worker HTTP Signature env config requires key id with private key material", () => {
+  assert.throws(
+    () => createWorkerConfigFromEnv({
+      BROKER_URL: "https://broker.test",
+      WORKER_ID: "worker-a",
+      A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
+    }),
+    /A2A_HTTP_SIGNATURE_WORKER_KEY_ID/,
+  );
+
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: "https://broker.test",
+    WORKER_ID: "worker-a",
+    A2A_HTTP_SIGNATURE_WORKER_KEY_ID: "worker:worker-a:v1",
+    A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
+    A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+  });
+  assert.equal(config.httpSignature?.keyid, "worker:worker-a:v1");
+  assert.equal(config.httpSignature?.brokerId, "seoseo");
+
+  const aliasConfig = createWorkerConfigFromEnv({
+    BROKER_URL: "https://broker.test",
+    WORKER_ID: "worker-a",
+    A2A_HTTP_SIGNATURE_WORKER_KEY_ID: "",
+    A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: "",
+    A2A_HTTP_SIGNATURE_BROKER_ID: "",
+    WORKER_HTTP_SIGNATURE_KEY_ID: "worker:worker-a:v1",
+    WORKER_HTTP_SIGNATURE_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
+    WORKER_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+  });
+  assert.equal(aliasConfig.httpSignature?.keyid, "worker:worker-a:v1");
+  assert.equal(aliasConfig.httpSignature?.brokerId, "seoseo");
+
+  assert.throws(
+    () => createWorkerConfigFromEnv({
+      BROKER_URL: "https://broker.test",
+      WORKER_ID: "worker-a",
+      A2A_HTTP_SIGNATURE_WORKER_KEY_ID: 'worker:worker-a:v1";created=1',
+      A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
+      A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+    }),
+    /A2A_HTTP_SIGNATURE_WORKER_KEY_ID contains characters that are not safe/,
+  );
 });
 
 test("worker sends full heartbeat once and empty heartbeat bodies afterward", async () => {
@@ -304,6 +573,51 @@ test("worker queued-task polls do not consume the general rate limit budget", as
     await worker.stop();
     await server.close();
   }
+});
+
+
+test("worker HTTP Signature private key env is not propagated to external handlers", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-signature-env-scrub-"));
+  const handlerPath = join(tempDir, "handler.mjs");
+  await writeFile(handlerPath, `
+const chunks = [];
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => chunks.push(chunk));
+process.stdin.on("end", () => {
+  const hasPrivateJwk = Boolean(process.env.A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK || process.env.WORKER_HTTP_SIGNATURE_PRIVATE_KEY_JWK);
+  console.log(JSON.stringify({
+    result: {
+      summary: "env scrub checked",
+      output: { hasPrivateJwk },
+    },
+  }));
+});
+`, "utf8");
+
+  const config = createWorkerConfigFromEnv({
+    BROKER_URL: "https://broker.test",
+    WORKER_ID: "worker-a",
+    WORKER_HANDLER_COMMAND: process.execPath,
+    WORKER_HANDLER_ARGS_JSON: JSON.stringify([handlerPath]),
+    A2A_HTTP_SIGNATURE_WORKER_KEY_ID: "worker:worker-a:v1",
+    A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
+    A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+  });
+
+  const outcome = await config.handler({
+    id: "env-scrub-task",
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    targetNodeId: "worker-a",
+    assignedWorkerId: "worker-a",
+    message: "check env scrub",
+    status: "running",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as any);
+
+  assert.equal((outcome as any).result.output.hasPrivateJwk, false);
 });
 
 test("worker env config prefers broker-specific edge secrets over generic ones", () => {
