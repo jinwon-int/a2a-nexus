@@ -1,6 +1,6 @@
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
-import { optionalString } from "./value-text.js";
+import { optionalBoolean, optionalString } from "./value-text.js";
 
 export type A2AWorkMode = "solo" | "team1" | "hybrid";
 export type A2AWorkModeConfidence = "high" | "medium" | "low";
@@ -475,10 +475,6 @@ function buildIdempotencyKey(input: A2AWorkModePreDispatchDecisionInput, generat
 function formatTask(task: A2AWorkModeTaskProfile): string {
   const issue = task.repo && task.issueNumber !== undefined ? `${task.repo}#${task.issueNumber}` : task.taskId ?? "untracked";
   return `${issue} (${task.workProfile})`;
-}
-
-function optionalBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

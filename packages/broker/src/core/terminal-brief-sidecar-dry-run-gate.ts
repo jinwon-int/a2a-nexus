@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 import type { TerminalBriefFinalizerApprovalStatusPacket } from "./terminal-brief-finalizer-approval-status.js";
 import type { TerminalBriefSidecarIntegrationRehearsal } from "./terminal-brief-sidecar-integration-rehearsal.js";
-import { optionalString } from "./value-text.js";
+import { optionalBoolean, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunGateState =
   | "ready_for_operator_approval"
@@ -601,10 +601,6 @@ function titleForState(state: TerminalBriefSidecarDryRunGateState): string {
   if (state === "waiting_for_operating_evidence") return "Waiting: Terminal Brief sidecar operating evidence";
   if (state === "stale") return "Stale: Terminal Brief sidecar operating evidence";
   return "Blocked: Terminal Brief sidecar always-on dry-run gate";
-}
-
-function optionalBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 function booleanValue(value: unknown): boolean {
