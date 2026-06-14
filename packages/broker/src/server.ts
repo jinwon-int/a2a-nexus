@@ -25,6 +25,7 @@ import {
   applyRateLimitHeaders,
   assertEdgeSecret,
   assertGitHubWebhookSignature,
+  assertA2AWorkerScopeAllowed,
   assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
   assertRequesterCanTouchProposalArtifacts,
@@ -36,6 +37,7 @@ import {
   verifyA2AHttpSignature,
   rateLimitKey,
   type A2AHttpSignatureKeyRegistry,
+  type A2AWorkerRouteScope,
   type RateLimitPressureSnapshot,
   type RequesterIdentity,
 } from "./core/request-security.js";
@@ -2120,6 +2122,7 @@ export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
 interface A2AHttpSignatureVerifiedWorker {
   keyid: string;
   requesterId: string;
+  scopes?: readonly string[];
 }
 
 const A2A_HTTP_SIGNATURE_REPLAY_CACHE_MAX_ENTRIES = 10_000;
@@ -2923,18 +2926,26 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
       throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
     }
-    return { keyid: result.keyid, requesterId: result.requesterId };
+    const verifiedRecord = a2aHttpSignatureKeyRegistry[result.keyid];
+    return {
+      keyid: result.keyid,
+      requesterId: result.requesterId,
+      scopes: verifiedRecord?.scopes,
+    };
   };
 
   const assertVerifiedWorkerMatches = (
     verified: A2AHttpSignatureVerifiedWorker | null,
     expectedWorkerId: string | undefined,
-    operation: string,
+    operation: A2AWorkerRouteScope,
   ): void => {
-    if (!verified || !expectedWorkerId) {
+    if (!verified) {
       return;
     }
-    if (verified.requesterId !== expectedWorkerId) {
+    // Enforce the signing key's route scope first (fail closed), independent of
+    // whether the route also carries an expected worker id to identity-match.
+    assertA2AWorkerScopeAllowed(verified.scopes, operation);
+    if (expectedWorkerId && verified.requesterId !== expectedWorkerId) {
       throw new BrokerError(
         "unauthorized",
         `a2a_signature_identity_mismatch: signed requester ${verified.requesterId} cannot authorize ${operation} for ${expectedWorkerId}`,

@@ -152,6 +152,41 @@ Signature verification proves identity. Authorization still happens per route.
 
 Hub/operator routes should use separate credentials and stronger scopes. A worker credential must not grant hub/operator mutations.
 
+### v1 implemented scope enforcement
+
+The example registry and `:self`-qualified scope vocabulary above describe the
+fuller target design. The broker currently enforces a v1 subset:
+
+- **Registry shape** is a JSON object keyed by `keyid`, each record carrying
+  `keyid`, `workerId`, `publicKeyJwk`, and an optional `scopes` array. The
+  richer fields (`roles`, `status`, `notBefore`, `expiresAt`, the `workers`
+  wrapper, and signed-credential chains) are not parsed yet.
+- **Scope tokens** are the per-route capability labels enforced at the call
+  sites (one token per worker route), not `:self`-qualified strings:
+
+  | Route | Required scope token |
+  |---|---|
+  | `POST /workers/register` | `worker.register` |
+  | `POST /workers/:id/heartbeat` | `worker.heartbeat` |
+  | `GET /a2a/workers/:id/assignment-events` | `workers.assignment-events` |
+  | `GET /tasks?assignedWorkerId=:id` (worker poll) | `tasks.list` |
+  | `POST /tasks/:id/claim` | `task.claim` |
+  | `POST /tasks/:id/start` | `task.start` |
+  | `POST /tasks/:id/heartbeat` | `task.heartbeat` |
+  | `POST /tasks/:id/checkpoint` | `task.checkpoint` |
+  | `POST /tasks/:id/complete` | `task.complete` |
+  | `POST /tasks/:id/evidence` | `task.evidence` |
+  | `POST /tasks/:id/fail` | `task.fail` |
+
+- **Self-binding** (requester id must equal the signing key owner / assigned
+  worker) is enforced separately from the scope grant, so scope tokens encode
+  capability only.
+- **Transitional compatibility:** a key record with no `scopes` field is treated
+  as an unscoped legacy credential authorized for every worker route. A record
+  that declares `scopes` is enforced strictly — unknown scope tokens are
+  rejected at registry load, and any route whose token is absent fails closed
+  with `403 a2a_signature_scope_denied`.
+
 ## Replay protection
 
 The broker should keep a per-key nonce cache for at least the maximum accepted clock window plus expiry window.

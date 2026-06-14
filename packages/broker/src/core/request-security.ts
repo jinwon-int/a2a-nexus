@@ -79,10 +79,42 @@ export interface A2AHttpSignatureRequest {
   signature?: string;
 }
 
+/**
+ * Canonical per-route scope tokens for first-party worker auth (#691). A worker
+ * key record may declare a subset of these; the broker fails closed when the
+ * declared subset does not include the scope required by the route being called.
+ * The token values intentionally match the operation labels used at the route
+ * call sites so a verified key's authorization maps 1:1 to the route surface.
+ */
+export const A2A_WORKER_ROUTE_SCOPES = [
+  "workers.assignment-events",
+  "worker.register",
+  "worker.heartbeat",
+  "tasks.list",
+  "task.claim",
+  "task.start",
+  "task.heartbeat",
+  "task.checkpoint",
+  "task.complete",
+  "task.evidence",
+  "task.fail",
+] as const;
+
+export type A2AWorkerRouteScope = (typeof A2A_WORKER_ROUTE_SCOPES)[number];
+
+const A2A_WORKER_ROUTE_SCOPE_SET: ReadonlySet<string> = new Set(A2A_WORKER_ROUTE_SCOPES);
+
 export interface A2AHttpSignatureKeyRecord {
   keyid: string;
   workerId: string;
   publicKeyJwk: Record<string, unknown>;
+  /**
+   * Server-controlled scope grant for this signing key. When omitted, the key is
+   * treated as an unscoped legacy credential authorized for every worker route
+   * (transitional dual-auth compatibility). When present, only the listed scopes
+   * are authorized and all other worker routes fail closed.
+   */
+  scopes?: readonly A2AWorkerRouteScope[];
 }
 
 export type A2AHttpSignatureKeyRegistry = Record<string, A2AHttpSignatureKeyRecord>;
@@ -120,13 +152,39 @@ function parseA2AHttpSignatureKeyRegistry(input: unknown, source: string): A2AHt
     workerIds.add(workerId);
     const publicKeyJwk = record.publicKeyJwk;
     validateA2AHttpSignaturePublicJwk(publicKeyJwk, registryKey);
+    const scopes = parseRegistryScopes(record.scopes, registryKey);
     registry[registryKey] = {
       keyid,
       workerId,
       publicKeyJwk: publicKeyJwk as Record<string, unknown>,
+      ...(scopes ? { scopes } : {}),
     };
   }
   return registry;
+}
+
+function parseRegistryScopes(
+  value: unknown,
+  keyid: string,
+): readonly A2AWorkerRouteScope[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      `A2A HTTP Signature key registry record ${keyid} scopes must be a non-empty array of known scope tokens when present`,
+    );
+  }
+  const scopes = new Set<A2AWorkerRouteScope>();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !A2A_WORKER_ROUTE_SCOPE_SET.has(entry)) {
+      throw new Error(
+        `A2A HTTP Signature key registry record ${keyid} has unknown scope token ${JSON.stringify(entry)}`,
+      );
+    }
+    scopes.add(entry as A2AWorkerRouteScope);
+  }
+  return [...scopes];
 }
 
 function stringField(record: Record<string, unknown>, field: string, keyid: string): string {
@@ -534,6 +592,27 @@ export function classifyRateLimitBucket(req: IncomingMessage, url: URL): RateLim
   }
 
   return "general";
+}
+
+/**
+ * Fail closed when a verified worker key is not authorized for the route's
+ * required scope (#691). A key with no declared scopes is an unscoped legacy
+ * credential and is allowed for every worker route; a key with declared scopes
+ * is allowed only for the listed routes.
+ */
+export function assertA2AWorkerScopeAllowed(
+  scopes: readonly string[] | undefined,
+  requiredScope: A2AWorkerRouteScope,
+): void {
+  if (scopes === undefined) {
+    return;
+  }
+  if (!scopes.includes(requiredScope)) {
+    throw new BrokerError(
+      "policy_denied",
+      `a2a_signature_scope_denied: signing key is not authorized for ${requiredScope}`,
+    );
+  }
 }
 
 export function requireRequesterIdentity(identity: RequesterIdentity | null): RequesterIdentity {

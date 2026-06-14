@@ -7,6 +7,8 @@ import { createHmac, createPrivateKey, sign } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import {
+  A2A_WORKER_ROUTE_SCOPES,
+  assertA2AWorkerScopeAllowed,
   assertGitHubWebhookSignature,
   buildA2AHttpSignatureBase,
   classifyRateLimitBucket,
@@ -291,6 +293,74 @@ test("A2A HTTP Signature key registry rejects private key material and keyid mis
   assert.throws(
     () => loadA2AHttpSignatureKeyRegistryFile(duplicateWorkerFile),
     /duplicate workerId/,
+  );
+});
+
+test("A2A HTTP Signature key registry parses a per-key scope grant", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-"));
+  const file = join(dir, "scoped-keys.json");
+  writeFileSync(file, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      scopes: ["worker.register", "worker.heartbeat", "tasks.list", "tasks.list"],
+    },
+  }));
+  const registry = loadA2AHttpSignatureKeyRegistryFile(file);
+  // Duplicates are collapsed; declared order is preserved.
+  assert.deepEqual(registry["worker:sogyo:v1"].scopes, [
+    "worker.register",
+    "worker.heartbeat",
+    "tasks.list",
+  ]);
+});
+
+test("A2A HTTP Signature key registry rejects unknown or malformed scope tokens", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-invalid-"));
+  const unknownFile = join(dir, "unknown-scope.json");
+  writeFileSync(unknownFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      scopes: ["task.claim", "tasks.delete-everything"],
+    },
+  }));
+  assert.throws(
+    () => loadA2AHttpSignatureKeyRegistryFile(unknownFile),
+    /unknown scope token/,
+  );
+
+  const emptyFile = join(dir, "empty-scope.json");
+  writeFileSync(emptyFile, JSON.stringify({
+    "worker:sogyo:v1": {
+      keyid: "worker:sogyo:v1",
+      workerId: "sogyo",
+      publicKeyJwk: testPublicJwk,
+      scopes: [],
+    },
+  }));
+  assert.throws(
+    () => loadA2AHttpSignatureKeyRegistryFile(emptyFile),
+    /scopes must be a non-empty array/,
+  );
+});
+
+test("assertA2AWorkerScopeAllowed treats an unscoped legacy key as authorized for every route", () => {
+  for (const scope of A2A_WORKER_ROUTE_SCOPES) {
+    assert.doesNotThrow(() => assertA2AWorkerScopeAllowed(undefined, scope));
+  }
+});
+
+test("assertA2AWorkerScopeAllowed authorizes only the declared scopes and fails closed otherwise", () => {
+  const granted = ["worker.register", "worker.heartbeat", "tasks.list"] as const;
+  for (const scope of granted) {
+    assert.doesNotThrow(() => assertA2AWorkerScopeAllowed(granted, scope));
+  }
+  assert.throws(
+    () => assertA2AWorkerScopeAllowed(granted, "task.complete"),
+    /a2a_signature_scope_denied: signing key is not authorized for task\.complete/,
   );
 });
 
