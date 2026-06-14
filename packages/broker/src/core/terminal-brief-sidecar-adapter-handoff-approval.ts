@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarRuntimePreflightApprovalPacket } from "./terminal-brief-sidecar-runtime-preflight-approval.js";
@@ -546,6 +547,3 @@ function isTerminalBriefSidecarRuntimePreflightApprovalPacket(
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-runtime-preflight-approval.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

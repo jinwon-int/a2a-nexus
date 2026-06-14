@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnRuntimeExecutorGatePacket } from "./terminal-brief-sidecar-default-on-runtime-executor-gate.js";
@@ -557,10 +558,6 @@ function titleForState(state: TerminalBriefSidecarDefaultOnFinalLiveExecutionSta
 
 function isRuntimeExecutorGatePacket(value: unknown): value is TerminalBriefSidecarDefaultOnRuntimeExecutorGatePacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-runtime-executor-gate.packet";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function unique<T>(items: T[]): T[] {

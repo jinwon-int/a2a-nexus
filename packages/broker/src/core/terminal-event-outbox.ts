@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
@@ -293,7 +294,6 @@ export class TerminalTaskEventOutbox {
     this.enforceRetention();
     return event;
   }
-
 
   enqueueCrossBrokerProjection(projection: CrossBrokerTerminalBriefProjection): TerminalTaskOutboxEvent | null {
     // Stable notification idempotency key:
@@ -1020,7 +1020,6 @@ export function buildTerminalTaskPayload(task: TaskRecord): TerminalTaskEventPay
   return payload;
 }
 
-
 function buildCrossBrokerHandoff(...values: unknown[]): TerminalTaskEventPayload["crossBrokerHandoff"] | undefined {
   for (const value of values) {
     if (!isRecord(value)) continue;
@@ -1071,10 +1070,6 @@ function sanitizeTaskBrief(value: unknown): string | undefined {
   const sanitized = sanitizeSummary(withoutIssuePrefix);
   if (!sanitized) return undefined;
   return sanitized.slice(0, MAX_TASK_BRIEF_CHARS);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function firstSafeHttpUrl(...values: unknown[]): string | undefined {

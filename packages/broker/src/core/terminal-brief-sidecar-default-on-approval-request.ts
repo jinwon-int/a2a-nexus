@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnCandidateFinalGatePacket } from "./terminal-brief-sidecar-default-on-candidate-final-gate.js";
@@ -361,6 +362,3 @@ function isFinalGatePacket(value: unknown): value is TerminalBriefSidecarDefault
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-candidate-final-gate.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

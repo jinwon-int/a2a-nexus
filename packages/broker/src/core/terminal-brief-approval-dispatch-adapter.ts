@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type {
@@ -416,6 +417,3 @@ function isTerminalBriefApprovalExecutorPacket(value: unknown): value is Termina
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-approval-executor.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

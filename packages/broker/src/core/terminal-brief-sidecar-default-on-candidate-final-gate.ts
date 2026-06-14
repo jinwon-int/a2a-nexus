@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 export type TerminalBriefSidecarDefaultOnCandidateFinalGateState =
@@ -372,6 +373,3 @@ function isObservationPacket(value: unknown): value is TerminalBriefSidecarBound
   return isRecord(value) && value.kind === "seoseo.terminal-brief-sidecar-bounded-dry-run-observation";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

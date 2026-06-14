@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarPreflightEvidenceCollectorPacket } from "./terminal-brief-sidecar-preflight-evidence-collector.js";
@@ -619,6 +620,3 @@ function isTerminalBriefSidecarPreflightEvidenceCollectorPacket(
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-preflight-evidence-collector.packet";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

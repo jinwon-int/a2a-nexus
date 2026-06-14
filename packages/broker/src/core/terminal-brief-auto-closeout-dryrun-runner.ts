@@ -10,6 +10,7 @@
 // dry-run evaluation. It emits typed packets containing the plan, rendered
 // markdown, actions, and safety boundary — but never executes live actions.
 
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -621,6 +622,3 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

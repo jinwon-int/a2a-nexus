@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { OIWorkerSpawnApprovalDecisionEvidencePacket } from "./orchestration-intelligence-worker-spawn-approval-decision-evidence.js";
@@ -685,6 +686,3 @@ function safetySemantics(): OIWorkerSubagentSpawnAuthorizationBridgePacket["sema
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}

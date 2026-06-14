@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { A2AWorkerSelfAssessmentCapacityPacket } from "./worker-self-assessment-capacity.js";
@@ -239,6 +240,3 @@ function sortValue(value: unknown): unknown {
   return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}

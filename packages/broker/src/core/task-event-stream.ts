@@ -1,3 +1,4 @@
+import { isRecord } from "./value-guards.js";
 import { CursorEventBuffer } from "./event-buffer.js";
 import type { AuditAction, AuditEvent, TaskRecord } from "./types.js";
 import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./terminal-event-outbox.js";
@@ -378,10 +379,6 @@ function sanitizeTaskBrief(value: unknown): string | undefined {
   const withoutIssuePrefix = value.replace(/^[-\w.]+\/[-\w.]+#\d+\s*:\s*/, "");
   const brief = sanitizeOperatorText(withoutIssuePrefix).slice(0, MAX_TASK_BRIEF_CHARS);
   return brief || undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function firstString(...values: unknown[]): string | undefined {
