@@ -88,6 +88,14 @@ export interface BrokerWorkerConfig {
   requestTimeoutMs?: number;
   /** Optional per-worker A2A HTTP Signature config for broker control-plane requests. */
   httpSignature?: WorkerA2AHttpSignatureConfig;
+  /**
+   * When not explicitly disabled (default on), the worker probes its assigned-task
+   * poll path once at startup and fails startup loudly if it is unreachable or
+   * unauthorized. This catches the failure mode where register/heartbeat succeed
+   * but `GET /tasks?assignedWorkerId=&status=queued` is blocked, leaving the
+   * worker silently idle.
+   */
+  pollReadinessProbe?: boolean;
   userAgent: string;
   handler: WorkerTaskHandler;
 }
@@ -185,6 +193,32 @@ export class A2ABrokerWorker {
     return response.items ?? [];
   }
 
+  /**
+   * Probe the assigned-task poll path once and fail loudly if it is not reachable
+   * or not authorized. register()/heartbeat() succeeding does not prove the worker
+   * can actually receive work: the poll route can be blocked by edge/auth or
+   * BROKER_URL routing while register/heartbeat still pass. Surfacing that at
+   * startup avoids a worker that looks healthy but silently processes nothing.
+   */
+  async verifyPollReadiness(): Promise<void> {
+    try {
+      await this.pollQueuedTasks();
+    } catch (error) {
+      const detail =
+        error instanceof BrokerApiError
+          ? `${error.status} ${error.code}`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      throw new Error(
+        `[worker:${this.workerId}] poll readiness probe failed: ` +
+          `GET /tasks?assignedWorkerId=${this.workerId}&status=queued is not reachable or authorized (${detail}). ` +
+          `register/heartbeat succeeded but the task-poll control-plane path is blocked; ` +
+          `check edge/auth and BROKER_URL routing for the poll endpoint.`,
+      );
+    }
+  }
+
   async runOnce(): Promise<number> {
     const tasks = await this.pollQueuedTasks();
     let processed = 0;
@@ -215,6 +249,10 @@ export class A2ABrokerWorker {
     if (this.stopping) {
       console.log(`[worker:${this.workerId}] stop requested during startup; not entering poll loop`);
       return;
+    }
+
+    if (this.config.pollReadinessProbe !== false) {
+      await this.verifyPollReadiness();
     }
 
     console.log(`[worker:${this.workerId}] registered with ${this.brokerUrl}`);
@@ -984,6 +1022,10 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
       "WORKER_REQUEST_TIMEOUT_MS",
     ),
     httpSignature: parseWorkerHttpSignatureConfig(env),
+    pollReadinessProbe: parseBooleanEnv(
+      env.WORKER_POLL_READINESS_PROBE ?? env.A2A_WORKER_POLL_READINESS_PROBE,
+      true,
+    ),
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
     handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
   };
