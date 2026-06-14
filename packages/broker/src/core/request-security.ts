@@ -39,6 +39,7 @@
  */
 
 import { createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
@@ -85,6 +86,75 @@ export interface A2AHttpSignatureKeyRecord {
 }
 
 export type A2AHttpSignatureKeyRegistry = Record<string, A2AHttpSignatureKeyRecord>;
+
+export function loadA2AHttpSignatureKeyRegistryFile(path: string): A2AHttpSignatureKeyRegistry {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`failed to read A2A HTTP Signature key registry file ${path}: ${message}`);
+  }
+  return parseA2AHttpSignatureKeyRegistry(parsed, path);
+}
+
+function parseA2AHttpSignatureKeyRegistry(input: unknown, source: string): A2AHttpSignatureKeyRegistry {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error(`A2A HTTP Signature key registry ${source} must be a JSON object keyed by keyid`);
+  }
+  const registry: A2AHttpSignatureKeyRegistry = {};
+  const workerIds = new Set<string>();
+  for (const [registryKey, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error(`A2A HTTP Signature key registry record ${registryKey} must be an object`);
+    }
+    const record = value as Record<string, unknown>;
+    const keyid = stringField(record, "keyid", registryKey);
+    const workerId = stringField(record, "workerId", registryKey);
+    if (registryKey !== keyid) {
+      throw new Error(`A2A HTTP Signature key registry key must match embedded keyid for ${registryKey}`);
+    }
+    if (workerIds.has(workerId)) {
+      throw new Error(`A2A HTTP Signature key registry duplicate workerId ${workerId}`);
+    }
+    workerIds.add(workerId);
+    const publicKeyJwk = record.publicKeyJwk;
+    validateA2AHttpSignaturePublicJwk(publicKeyJwk, registryKey);
+    registry[registryKey] = {
+      keyid,
+      workerId,
+      publicKeyJwk: publicKeyJwk as Record<string, unknown>,
+    };
+  }
+  return registry;
+}
+
+function stringField(record: Record<string, unknown>, field: string, keyid: string): string {
+  const value = record[field];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`A2A HTTP Signature key registry record ${keyid} field ${field} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function validateA2AHttpSignaturePublicJwk(input: unknown, keyid: string): void {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error(`A2A HTTP Signature key registry record ${keyid} publicKeyJwk must be an object`);
+  }
+  const jwk = input as Record<string, unknown>;
+  if ("d" in jwk) {
+    throw new Error(`A2A HTTP Signature key registry record ${keyid} must not contain private key material`);
+  }
+  if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || typeof jwk.x !== "string" || jwk.x.length === 0) {
+    throw new Error(`A2A HTTP Signature key registry record ${keyid} publicKeyJwk must be an Ed25519 public JWK`);
+  }
+  try {
+    createPublicKey({ key: jwk, format: "jwk" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`A2A HTTP Signature key registry record ${keyid} publicKeyJwk is invalid: ${message}`);
+  }
+}
 
 export type A2AHttpSignatureFailureCode =
   | "a2a_signature_malformed"
