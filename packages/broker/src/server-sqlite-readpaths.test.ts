@@ -390,6 +390,89 @@ test("server reads /tasks from SQLite hot tables for supported filters", async (
   }
 });
 
+test("server hides SQLite active task rows that are absent from the live broker mutation map by default", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-stale-active-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const snapshot: BrokerSnapshot = {
+    ...emptySnapshot(),
+    tasks: [
+      {
+        id: "stale-queued-row",
+        intent: "chat",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        assignedWorkerId: "worker-a",
+        payload: { source: "sqlite-hot-table-stale" },
+        status: "queued",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:00:00.000Z",
+        taskOrigin: "api",
+      },
+      {
+        id: "live-queued-row",
+        intent: "chat",
+        requester: { id: "requester", kind: "session", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        assignedWorkerId: "worker-a",
+        payload: { source: "sqlite-hot-table-live" },
+        status: "queued",
+        createdAt: "2026-04-27T00:01:00.000Z",
+        updatedAt: "2026-04-27T00:01:00.000Z",
+        taskOrigin: "api",
+      },
+    ],
+  };
+  store.save(snapshot);
+  const runtime = createBrokerServer({
+    host: "127.0.0.1",
+    port: 0,
+    publicBaseUrl: "https://broker.test/",
+    stateStore: store,
+    enforceRequesterIdentity: false,
+    staleReaperEnabled: false,
+  });
+  const originalGetTask = runtime.broker.getTask.bind(runtime.broker);
+  try {
+    runtime.broker.getTask = ((taskId: string) => taskId === "stale-queued-row" ? null : originalGetTask(taskId)) as typeof runtime.broker.getTask;
+    runtime.broker.listTasks = (() => {
+      throw new Error("/tasks should keep using SQLite hot read path");
+    }) as typeof runtime.broker.listTasks;
+    runtime.server.listen(0, "127.0.0.1");
+    await once(runtime.server, "listening");
+    const address = runtime.server.address();
+    if (!address || typeof address === "string") throw new Error("failed to bind test server");
+
+    const base = `http://127.0.0.1:${address.port}`;
+    const defaultRes = await fetch(`${base}/tasks?detail=full&status=queued&assignedWorkerId=worker-a`);
+    assert.equal(defaultRes.status, 200);
+    const defaultBody = await defaultRes.json();
+    assert.deepEqual(defaultBody.items.map((task: { id: string }) => task.id), ["live-queued-row"]);
+
+    const summaryRes = await fetch(`${base}/tasks?status=queued&assignedWorkerId=worker-a`);
+    assert.equal(summaryRes.status, 200);
+    const summaryBody = await summaryRes.json();
+    assert.deepEqual(summaryBody.items.map((task: { id: string }) => task.id), ["live-queued-row"]);
+
+    const diagnosticRes = await fetch(`${base}/tasks?detail=full&status=queued&assignedWorkerId=worker-a&include=stale_read_path`);
+    assert.equal(diagnosticRes.status, 200);
+    const diagnosticBody = await diagnosticRes.json();
+    assert.deepEqual(diagnosticBody.items.map((task: { id: string }) => task.id), ["live-queued-row", "stale-queued-row"]);
+
+    assert.equal((await fetch(`${base}/tasks/stale-queued-row`)).status, 404);
+    const staleDetailRes = await fetch(`${base}/tasks/stale-queued-row?include=stale_read_path`);
+    assert.equal(staleDetailRes.status, 200);
+    const staleDetail = await staleDetailRes.json();
+    assert.equal(staleDetail.id, "stale-queued-row");
+  } finally {
+    runtime.stopStaleReaper();
+    await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("server projects default /tasks summaries from SQLite without loading full task payloads", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-sqlite-task-items-"));
   const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));

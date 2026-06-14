@@ -10,12 +10,13 @@ import {
 } from "./read-path-filters.js";
 
 test("read-path filters normalize task status aliases and bounded limits", () => {
-  const filters = taskFiltersFromUrl(new URL("http://broker.local/tasks?status=pending&worker=nosuk&limit=9999"), {
+  const filters = taskFiltersFromUrl(new URL("http://broker.local/tasks?status=pending&worker=nosuk&limit=9999&include=stale_read_path"), {
     defaultLimit: 25,
   });
 
   assert.equal(filters.status, "queued");
   assert.equal(filters.assignedWorkerId, "nosuk");
+  assert.equal(filters.includeStaleReadPath, true);
   assert.equal(filters.limit, 500);
   assert.equal(filters.exchangeId, undefined);
 });

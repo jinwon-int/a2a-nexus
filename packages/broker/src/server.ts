@@ -5489,7 +5489,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && segments[0] === "tasks" && segments[1] && segments.length === 2) {
-        const task = getTaskForReadPath(stateStore, broker, segments[1]);
+        const task = getTaskForReadPath(stateStore, broker, segments[1], {
+          includeStaleReadPath: url.searchParams
+            .getAll("include")
+            .flatMap((value) => value.split(","))
+            .map((value) => value.trim())
+            .includes("stale_read_path"),
+        });
         if (!task) {
           throw new BrokerError("not_found", "task not found");
         }
@@ -6545,20 +6551,36 @@ function projectTaskListItem(task: TaskRecord): TaskListItem {
   };
 }
 
+const ACTIVE_READ_PATH_STATUSES = new Set<TaskStatus>(["queued"]);
+
+function shouldFilterSqliteActiveReadPath(filters: TaskListFilters): boolean {
+  return filters.includeStaleReadPath !== true && (!filters.status || ACTIVE_READ_PATH_STATUSES.has(filters.status));
+}
+
+function taskIsLiveInMutationMap(broker: InMemoryA2ABroker, task: { id: string; status: TaskStatus }): boolean {
+  if (!ACTIVE_READ_PATH_STATUSES.has(task.status)) return true;
+  return Boolean(broker.getTask(task.id));
+}
+
 function listTasksForReadPath(
   stateStore: BrokerStateStore,
   broker: InMemoryA2ABroker,
   filters: TaskListFilters,
 ): TaskRecord[] {
   if (stateStore instanceof SqliteBrokerStateStore && canUseSqliteTaskHotRead(filters)) {
-    return stateStore.readHotTasks({
+    const sqliteFilters = {
       status: filters.status,
       targetNodeId: filters.targetNodeId,
       intent: filters.intent,
       assignedWorkerId: filters.assignedWorkerId,
       taskOrigin: filters.taskOrigin,
-      limit: filters.limit,
-    });
+      limit: shouldFilterSqliteActiveReadPath(filters) ? undefined : filters.limit,
+    };
+    const tasks = stateStore.readHotTasks(sqliteFilters);
+    const filtered = shouldFilterSqliteActiveReadPath(filters)
+      ? tasks.filter((task) => taskIsLiveInMutationMap(broker, task))
+      : tasks;
+    return filtered.slice(0, filters.limit);
   }
   return broker.listTasks(filters);
 }
@@ -6569,14 +6591,19 @@ function listTaskItemsForReadPath(
   filters: TaskListFilters,
 ): TaskListItem[] {
   if (stateStore instanceof SqliteBrokerStateStore && canUseSqliteTaskHotRead(filters)) {
-    return stateStore.readHotTaskListItems({
+    const sqliteFilters = {
       status: filters.status,
       targetNodeId: filters.targetNodeId,
       intent: filters.intent,
       assignedWorkerId: filters.assignedWorkerId,
       taskOrigin: filters.taskOrigin,
-      limit: filters.limit,
-    }).map(projectSqliteTaskListItem);
+      limit: shouldFilterSqliteActiveReadPath(filters) ? undefined : filters.limit,
+    };
+    const items = stateStore.readHotTaskListItems(sqliteFilters);
+    const filtered = shouldFilterSqliteActiveReadPath(filters)
+      ? items.filter((task) => taskIsLiveInMutationMap(broker, task))
+      : items;
+    return filtered.slice(0, filters.limit).map(projectSqliteTaskListItem);
   }
   return broker.listTasks(filters).map(projectTaskListItem);
 }
@@ -6610,9 +6637,14 @@ function getTaskForReadPath(
   stateStore: BrokerStateStore,
   broker: InMemoryA2ABroker,
   taskId: string,
+  options: { includeStaleReadPath?: boolean } = {},
 ): TaskRecord | null {
   if (stateStore instanceof SqliteBrokerStateStore) {
-    return stateStore.readHotTasks({ id: taskId })[0] ?? null;
+    const task = stateStore.readHotTasks({ id: taskId })[0] ?? null;
+    if (task && options.includeStaleReadPath !== true && !taskIsLiveInMutationMap(broker, task)) {
+      return null;
+    }
+    return task;
   }
   return broker.getTask(taskId);
 }

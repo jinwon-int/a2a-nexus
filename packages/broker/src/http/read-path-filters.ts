@@ -97,6 +97,7 @@ export function taskFiltersFromUrl(url: URL, options: { defaultLimit?: number } 
     claimedBy: optionalString(url.searchParams.get("claimedBy")),
     assignedWorkerId: optionalString(url.searchParams.get("assignedWorkerId")) ?? optionalString(url.searchParams.get("worker")),
     taskOrigin: optionalEnum(url.searchParams.get("taskOrigin"), ["github", "api", "sessions_send", "operator", "unknown"] as TaskOrigin[]),
+    includeStaleReadPath: includeValues(url).includes("stale_read_path"),
     limit: boundedLimitQueryParam(url, "limit", MAX_TASK_LIST_LIMIT, options.defaultLimit),
   };
 }
@@ -137,8 +138,19 @@ export function taskIdsFromUrl(url: URL): string[] {
 }
 
 function optionalString(value: string | null): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized : undefined;
+}
+
+function includeValues(url: URL): string[] {
+  return url.searchParams
+    .getAll("include")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 function optionalEnum<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
