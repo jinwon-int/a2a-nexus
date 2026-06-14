@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarActivationApprovalPacket } from "./terminal-brief-sidecar-activation-approval.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarActivationReceiptEvidenceKind =
   | "provider_accepted"
@@ -656,10 +657,6 @@ function unique<T>(items: T[]): T[] {
 
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isTerminalBriefSidecarActivationApprovalPacket(value: unknown): value is TerminalBriefSidecarActivationApprovalPacket {

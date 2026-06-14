@@ -4,6 +4,7 @@ import type {
   TerminalBriefApprovalDispatchAdapterPacket,
   TerminalBriefApprovalDispatchAdapterState,
 } from "./terminal-brief-approval-dispatch-adapter.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefApprovalReceiptEvidenceKind =
   | "provider_accepted"
@@ -577,10 +578,6 @@ function unique<T>(items: T[]): T[] {
 
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isTerminalBriefApprovalDispatchAdapterPacket(value: unknown): value is TerminalBriefApprovalDispatchAdapterPacket {

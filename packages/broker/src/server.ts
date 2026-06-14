@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { loadavg, cpus } from "node:os";
-import { monitorEventLoopDelay, PerformanceObserver } from "node:perf_hooks";
-import { getHeapStatistics } from "node:v8";
+import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
+import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
@@ -31,7 +32,10 @@ import {
   classifyRateLimitBucket,
   extractRequesterIdentity,
   InMemoryRateLimiter,
+  loadA2AHttpSignatureKeyRegistryFile,
+  verifyA2AHttpSignature,
   rateLimitKey,
+  type A2AHttpSignatureKeyRegistry,
   type RateLimitPressureSnapshot,
   type RequesterIdentity,
 } from "./core/request-security.js";
@@ -412,6 +416,7 @@ import {
   parseSingleStreamingMessageRequest,
 } from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
+import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
 import {
   DEFAULT_TASK_LIST_LIMIT,
   auditFiltersFromUrl,
@@ -658,189 +663,11 @@ function normalizePersistenceQueueDiagnostics(
   };
 }
 
-function readRuntimeMemoryUsage(): Record<string, number> {
-  const memory = process.memoryUsage();
-  const heap = getHeapStatistics();
-  return {
-    rssBytes: memory.rss,
-    heapTotalBytes: memory.heapTotal,
-    heapUsedBytes: memory.heapUsed,
-    heapLimitBytes: heap.heap_size_limit,
-    externalBytes: memory.external,
-    arrayBuffersBytes: memory.arrayBuffers,
-  };
-}
-
-// Event-loop delay is a starvation metric, not total request latency. A
-// loopback probe can observe a long wall-clock delay while this histogram stays
-// low if the process was busy with CPU work, descheduled by the host, or
-// waiting on async I/O. Correlate this value with process CPU and per-request
-// duration before attributing an external /livez stall to the handler itself.
-//
-// Initialize eagerly so early /livez samples are covered instead of waiting for
-// the first diagnostic read to create the histogram.
-let _eventLoopDelayHistogram: ReturnType<typeof import("node:perf_hooks").monitorEventLoopDelay> | null = null;
-
-function _initEventLoopHistogram(): void {
-  if (_eventLoopDelayHistogram) return;
-  try {
-    _eventLoopDelayHistogram = monitorEventLoopDelay({ resolution: 20 });
-    _eventLoopDelayHistogram.enable();
-  } catch {
-    // monitorEventLoopDelay unavailable (e.g. insufficient kernel
-    // perf_event permissions or old Node version).
-    // readEventLoopDelayMs() will return null gracefully.
-  }
-}
-_initEventLoopHistogram();
-
-function readEventLoopDelayMs(): number | null {
-  try {
-    if (!_eventLoopDelayHistogram) return null;
-    const p99 = _eventLoopDelayHistogram.percentile(99) / 1e6;
-    const p50 = _eventLoopDelayHistogram.percentile(50) / 1e6;
-    // Return max(p50, p99) as a conservative estimate; reset to avoid stale accumulation.
-    _eventLoopDelayHistogram.reset();
-    return Math.round(Math.max(p50, p99) * 1000) / 1000;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Lightweight /livez attribution helpers (event-loop, GC, CPU, request timing)
-// ---------------------------------------------------------------------------
-
-// GC diagnostics via performance observer.
-// Falls back to nulls silently when --experimental-performance-gc is absent.
-let _gcObserverInitialized = false;
-let _gcTotalMs = 0;
-let _gcCount = 0;
-let _gcLastGcMs = 0;
-let _gcRecentMaxMs = 0;
-let _gcRecentWindowStart = Date.now();
-let _gcObserver: unknown = null;
-
-function _initGcObserver(): void {
-  if (_gcObserverInitialized) return;
-  _gcObserverInitialized = true;
-  try {
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        const durMs = entry.duration;
-        _gcTotalMs += durMs;
-        _gcCount += 1;
-        _gcLastGcMs = durMs;
-        // Rolling 60s window for recent extremes.
-        const now = Date.now();
-        if (now - _gcRecentWindowStart > 60_000) {
-          _gcRecentMaxMs = durMs;
-          _gcRecentWindowStart = now;
-        } else {
-          _gcRecentMaxMs = Math.max(_gcRecentMaxMs, durMs);
-        }
-      }
-    });
-    observer.observe({ entryTypes: ["gc"] });
-    _gcObserver = observer;
-  } catch {
-    // Not available; gc fields will report 0 / null.
-  }
-}
-_initGcObserver();
-
-function readGcDiagnostics(): { totalMs: number; count: number; lastMs: number; recentMax60sMs: number } {
-  return {
-    totalMs: Math.round(_gcTotalMs * 100) / 100,
-    count: _gcCount,
-    lastMs: Math.round(_gcLastGcMs * 100) / 100,
-    recentMax60sMs: Math.round(_gcRecentMaxMs * 100) / 100,
-  };
-}
-
-// CPU usage delta tracking.
-let _lastCpuUsage = process.cpuUsage();
-let _lastCpuUsageTime = Date.now();
-
-function readCpuDiagnostics(): {
-  userMicrosec: number;
-  systemMicrosec: number;
-  deltaUserMicrosec: number;
-  deltaSystemMicrosec: number;
-  deltaIntervalMs: number;
-  percentSinceLastCheck: number;
-} {
-  const now = Date.now();
-  const current = process.cpuUsage();
-  const elapsedMs = now - _lastCpuUsageTime;
-  // Handle microsecond counter wrap by clamping to zero.
-  const userDelta = current.user >= _lastCpuUsage.user ? current.user - _lastCpuUsage.user : 0;
-  const systemDelta = current.system >= _lastCpuUsage.system ? current.system - _lastCpuUsage.system : 0;
-  const totalDelta = userDelta + systemDelta;
-
-  _lastCpuUsage = current;
-  _lastCpuUsageTime = now;
-
-  return {
-    userMicrosec: current.user,
-    systemMicrosec: current.system,
-    deltaUserMicrosec: userDelta,
-    deltaSystemMicrosec: systemDelta,
-    deltaIntervalMs: elapsedMs,
-    percentSinceLastCheck:
-      elapsedMs > 0 ? Math.round(((totalDelta / 1000) / elapsedMs) * 10000) / 100 : 0,
-  };
-}
 
 /**
  * Small rolling window of request durations for a single endpoint.
  * Records the last N completion times and exposes p50/p95/p99/p999.
  */
-class RequestTimingWindow {
-  private readonly samples: number[] = [];
-  private nextIndex = 0;
-  private readonly maxSamples: number;
-
-  constructor(maxSamples = 200) {
-    this.maxSamples = maxSamples;
-  }
-
-  record(durationMs: number): void {
-    if (this.samples.length < this.maxSamples) {
-      this.samples.push(durationMs);
-    } else {
-      this.samples[this.nextIndex] = durationMs;
-    }
-    this.nextIndex = (this.nextIndex + 1) % this.maxSamples;
-  }
-
-  snapshot(): {
-    count: number;
-    minMs: number;
-    maxMs: number;
-    avgMs: number;
-    p50Ms: number;
-    p95Ms: number;
-    p99Ms: number;
-    p999Ms: number;
-  } | null {
-    const count = this.samples.length;
-    if (count === 0) return null;
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    const idx = (p: number) => Math.min(Math.floor(count * p), count - 1);
-    return {
-      count,
-      minMs: Math.round(sorted[0] * 1000) / 1000,
-      maxMs: Math.round(sorted[count - 1] * 1000) / 1000,
-      avgMs: Math.round((sum / count) * 1000) / 1000,
-      p50Ms: Math.round(sorted[idx(0.5)] * 1000) / 1000,
-      p95Ms: Math.round(sorted[idx(0.95)] * 1000) / 1000,
-      p99Ms: Math.round(sorted[idx(0.99)] * 1000) / 1000,
-      p999Ms: Math.round(sorted[idx(0.999)] * 1000) / 1000,
-    };
-  }
-}
 
 // Per-endpoint request windows for attribution.
 const _livezTiming = new RequestTimingWindow();
@@ -873,7 +700,6 @@ const ENDPOINT_GROUPS = [
 ] as const;
 
 type EndpointGroup = (typeof ENDPOINT_GROUPS)[number];
-type RequestTimingSnapshot = ReturnType<RequestTimingWindow["snapshot"]>;
 
 /** Total number of accepted HTTP requests since process start. */
 let _totalAcceptedRequests = 0;
@@ -1762,253 +1588,6 @@ function initSchedulingHook(
 // exposed only on /schedz, never on the /livez hot path.
 // ---------------------------------------------------------------------------
 
-interface CgroupCpuSnapshot {
-  usageUsec: number;
-  userUsec: number;
-  systemUsec: number;
-  /** Total number of scheduling periods observed by the CPU controller. */
-  nrPeriods: number;
-  /** Number of periods the group was throttled (descheduled by the container runtime). */
-  nrThrottled: number;
-  /** Aggregate time (usec) the group spent throttled. */
-  throttledUsec: number;
-  snapshotAtMs: number;
-}
-
-interface CgroupCpuDelta {
-  /** Δ usage_usec since the last /schedz poll. */
-  deltaUsageUsec: number;
-  /** Δ user_usec since the last /schedz poll. */
-  deltaUserUsec: number;
-  /** Δ system_usec since the last /schedz poll. */
-  deltaSystemUsec: number;
-  /** Δ nr_periods since the last /schedz poll. */
-  deltaNrPeriods: number;
-  /** Δ nr_throttled since the last /schedz poll. */
-  deltaNrThrottled: number;
-  /** Δ throttled_usec since the last /schedz poll. */
-  deltaThrottledUsec: number;
-  /** Wall-clock ms between the two snapshots. */
-  wallMs: number;
-}
-
-interface CgroupCpuLimit {
-  quotaUsec: number;
-  periodUsec: number;
-  cpus: number;
-}
-
-interface PressureStallSnapshot {
-  cpu: { some: PressureStallEntry; full: PressureStallEntry } | null;
-  memory: { some: PressureStallEntry; full: PressureStallEntry } | null;
-  io: { some: PressureStallEntry; full: PressureStallEntry } | null;
-  snapshotAtMs: number;
-}
-
-interface PressureStallEntry {
-  /** 10-second sliding-window avg, percentage × 100 (e.g. 1.94 = 1.94%). */
-  avg10: number;
-  /** 60-second moving avg. */
-  avg60: number;
-  /** 300-second moving avg. */
-  avg300: number;
-  /** Total accumulated stalled microseconds. */
-  total: number;
-}
-
-/**
- * Read cgroup v2 CPU throttling from /sys/fs/cgroup/cpu.stat.
- * Returns null when the file is unavailable or unreadable.
- *
- * Interpreting throttling:
- * - nr_throttled > 0 and throttled_usec large → container was descheduled
- *   by the kernel cgroup CPU controller.  This is the strongest signal for
- *   host/container-level scheduling vs. handler-level latency.
- * - nr_periods = quota refresh cycles (usually 100ms each).
- * - A throttled_usec / nr_throttled ratio ≫ 100ms suggests multi-period
- *   throttling (container starved across boundaries).
- * - Zero nr_throttled with high schedulingTiming p999 → cause is NOT
- *   cgroup throttling (look for host load, NUMA, or event-loop starvation).
- */
-function readCgroupCpuStats(): CgroupCpuSnapshot | null {
-  try {
-    const raw = readFileSysFs("/sys/fs/cgroup/cpu.stat");
-    if (!raw) return null;
-    const lines = raw.split("\n");
-    const kv: Record<string, number> = {};
-    for (const line of lines) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length === 2) {
-        kv[parts[0]] = Number(parts[1]);
-      }
-    }
-    return {
-      usageUsec: kv.usage_usec ?? 0,
-      userUsec: kv.user_usec ?? 0,
-      systemUsec: kv.system_usec ?? 0,
-      nrPeriods: kv.nr_periods ?? 0,
-      nrThrottled: kv.nr_throttled ?? 0,
-      throttledUsec: kv.throttled_usec ?? 0,
-      snapshotAtMs: Date.now(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read cgroup v2 CPU quota/period from /sys/fs/cgroup/cpu.max.
- * Returns null when unavailable.  A quota of "max" means no limit.
- */
-function readCgroupCpuLimit(): CgroupCpuLimit | null {
-  try {
-    const raw = readFileSysFs("/sys/fs/cgroup/cpu.max");
-    if (!raw) return null;
-    const parts = raw.trim().split(/\s+/);
-    if (parts.length !== 2) return null;
-    if (parts[0] === "max") {
-      return { quotaUsec: 0, periodUsec: Number(parts[1]) || 100000, cpus: 0 };
-    }
-    const quota = Number(parts[0]) || 0;
-    const period = Number(parts[1]) || 100000;
-    return {
-      quotaUsec: quota,
-      periodUsec: period,
-      cpus: period > 0 ? quota / period : 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// Keep /schedz cgroup/PSI reads bounded; live #1032 gates showed that
-// very frequent synchronous sysfs/procfs reads can perturb the probe on Gwakga.
-const CGROUP_PSI_CACHE_TTL_MS = 3000;
-
-// Lazily cached cgroup CPU stats refresh.
-let _cachedCgroupCpu: CgroupCpuSnapshot | null = null;
-let _cachedCgroupCpuAt = 0;
-let _cachedCgroupLimit: CgroupCpuLimit | null = null;
-let _cachedCgroupLimitAt = 0;
-let _cachedPsi: PressureStallSnapshot | null = null;
-let _cachedPsiAt = 0;
-
-/** Previous cgroup CPU snapshot used to compute per-poll deltas (#1102). */
-let _prevCgroupCpu: CgroupCpuSnapshot | null = null;
-
-function readCgroupCpuSnapshot(): { stats: CgroupCpuSnapshot | null; limit: CgroupCpuLimit | null; delta: CgroupCpuDelta | null } {
-  const now = Date.now();
-  if (_cachedCgroupCpu && now - _cachedCgroupCpuAt < CGROUP_PSI_CACHE_TTL_MS) {
-    // Reuse cached stats but still attempt a delta against the previous poll
-    // (the delta computation only happens when a fresh read occurs).
-    return { stats: _cachedCgroupCpu, limit: _cachedCgroupLimit, delta: null };
-  }
-  const stats = readCgroupCpuStats();
-  const limit = readCgroupCpuLimit();
-
-  // Compute per-poll delta against the last full read (#1102).
-  let delta: CgroupCpuDelta | null = null;
-  if (stats !== null && _prevCgroupCpu !== null) {
-    const wallMs = Math.max(1, stats.snapshotAtMs - _prevCgroupCpu.snapshotAtMs);
-    delta = {
-      deltaUsageUsec: stats.usageUsec - _prevCgroupCpu.usageUsec,
-      deltaUserUsec: stats.userUsec - _prevCgroupCpu.userUsec,
-      deltaSystemUsec: stats.systemUsec - _prevCgroupCpu.systemUsec,
-      deltaNrPeriods: stats.nrPeriods - _prevCgroupCpu.nrPeriods,
-      deltaNrThrottled: stats.nrThrottled - _prevCgroupCpu.nrThrottled,
-      deltaThrottledUsec: stats.throttledUsec - _prevCgroupCpu.throttledUsec,
-      wallMs,
-    };
-  }
-
-  _prevCgroupCpu = stats;
-  _cachedCgroupCpu = stats;
-  _cachedCgroupCpuAt = now;
-  _cachedCgroupLimit = limit;
-  _cachedCgroupLimitAt = now;
-  return { stats, limit, delta };
-}
-
-/**
- * Parse a /proc/pressure/<resource> file into a structured entry.
- */
-function parsePressureLine(line: string): PressureStallEntry | null {
-  // Format: "some avg10=0.14 avg60=1.94 avg300=0.96 total=5958939009"
-  const parts = line.trim().split(/\s+/);
-  if (parts.length < 5) return null;
-  return {
-    avg10: parseFloat(parts[1]?.split("=")[1] ?? "0"),
-    avg60: parseFloat(parts[2]?.split("=")[1] ?? "0"),
-    avg300: parseFloat(parts[3]?.split("=")[1] ?? "0"),
-    total: parseInt(parts[4]?.split("=")[1] ?? "0", 10),
-  };
-}
-
-/**
- * Read Pressure Stall Information from /proc/pressure/{cpu,memory,io}.
- * Returns null when /proc/pressure is unavailable (non-Linux, no kernel
- * support, restricted container).
- *
- * PSI metrics directly indicate resource contention:
- * - cpu.some.avg10 > 1 → tasks are waiting for CPU (run queue contention).
- * - cpu.full.avg10 > 0 → at least one task is stalled waiting for CPU
- *   while the CPU is idle (wake-up / migration delay).
- * - memory.some / memory.full → swapping or reclaim pressure.
- * - io.some / io.full → storage I/O is a bottleneck.
- */
-function readPressureStall(): PressureStallSnapshot | null {
-  try {
-    const cpuRaw = readFileSysFs("/proc/pressure/cpu");
-    const memRaw = readFileSysFs("/proc/pressure/memory");
-    const ioRaw = readFileSysFs("/proc/pressure/io");
-    if (!cpuRaw || !memRaw || !ioRaw) return null;
-
-    const cpuLines = cpuRaw.trim().split("\n");
-    const memLines = memRaw.trim().split("\n");
-    const ioLines = ioRaw.trim().split("\n");
-
-    return {
-      cpu: {
-        some: parsePressureLine(cpuLines.find((l) => l.startsWith("some")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-        full: parsePressureLine(cpuLines.find((l) => l.startsWith("full")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-      },
-      memory: {
-        some: parsePressureLine(memLines.find((l) => l.startsWith("some")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-        full: parsePressureLine(memLines.find((l) => l.startsWith("full")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-      },
-      io: {
-        some: parsePressureLine(ioLines.find((l) => l.startsWith("some")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-        full: parsePressureLine(ioLines.find((l) => l.startsWith("full")) ?? "") ?? { avg10: 0, avg60: 0, avg300: 0, total: 0 },
-      },
-      snapshotAtMs: Date.now(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function readCgroupPsiSnapshot(): PressureStallSnapshot | null {
-  const now = Date.now();
-  if (_cachedPsi && now - _cachedPsiAt < CGROUP_PSI_CACHE_TTL_MS) {
-    return _cachedPsi;
-  }
-  const psi = readPressureStall();
-  _cachedPsi = psi;
-  _cachedPsiAt = now;
-  return psi;
-}
-
-/**
- * Read a /sys or /proc file with fallback to null.
- * Prefers in-memory cached reads over direct I/O.
- */
-function readFileSysFs(filePath: string): string | null {
-  try {
-    return readFileSync(filePath, "utf8");
-  } catch {
-    return null;
-  }
-}
 
 // Connection tracking diagnostics (issue #1032)
 // O(1), bounded in-memory, off /livez hot path (exposed on /schedz).
@@ -2535,6 +2114,52 @@ class HealthDiagnosticsCache {
   }
 }
 
+export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
+export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
+
+interface A2AHttpSignatureVerifiedWorker {
+  keyid: string;
+  requesterId: string;
+}
+
+const A2A_HTTP_SIGNATURE_REPLAY_CACHE_MAX_ENTRIES = 10_000;
+
+class A2AHttpSignatureReplayCache {
+  private readonly entries = new Map<string, number>();
+
+  remember(keyid: string, nonce: string, expiresEpochSeconds: number, nowEpochSeconds = Math.floor(Date.now() / 1000)): boolean {
+    this.prune(nowEpochSeconds);
+    const cacheKey = `${keyid}\0${nonce}`;
+    const existingExpires = this.entries.get(cacheKey);
+    if (existingExpires !== undefined && existingExpires > nowEpochSeconds) {
+      return false;
+    }
+    this.entries.set(cacheKey, expiresEpochSeconds);
+    while (this.entries.size > A2A_HTTP_SIGNATURE_REPLAY_CACHE_MAX_ENTRIES) {
+      const oldest = this.entries.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    return true;
+  }
+
+  private prune(nowEpochSeconds: number): void {
+    for (const [key, expires] of this.entries) {
+      if (expires <= nowEpochSeconds) {
+        this.entries.delete(key);
+      }
+    }
+  }
+}
+
+function resolveA2AHttpSignatureWorkerAuthMode(value: string | undefined): A2AHttpSignatureWorkerAuthMode {
+  const normalized = (value ?? "off").trim().toLowerCase();
+  if (normalized === "off" || normalized === "optional" || normalized === "strict") {
+    return normalized;
+  }
+  throw new Error("A2A_HTTP_SIGNATURE_WORKER_AUTH must be one of: off, optional, strict");
+}
+
 export interface BrokerServerOptions {
   host?: string;
   port?: number;
@@ -2558,6 +2183,18 @@ export interface BrokerServerOptions {
   workerRateLimitMaxRequests?: number;
   enforceRequesterIdentity?: boolean;
   edgeSecret?: string;
+  /**
+   * Worker-plane A2A HTTP Signature rollout mode.
+   * - off: no route-level signature checks (default/backwards compatible)
+   * - optional: verify signed worker requests when signature headers are present
+   * - strict: require valid signatures for worker lifecycle/poll/mutation routes
+   * Env: `A2A_HTTP_SIGNATURE_WORKER_AUTH`.
+   */
+  a2aHttpSignatureWorkerAuth?: A2AHttpSignatureWorkerAuthMode;
+  /** In-memory key registry for worker HTTP Signature verification. */
+  a2aHttpSignatureKeyRegistry?: A2AHttpSignatureKeyRegistry;
+  /** JSON file containing public worker HTTP Signature keys. Env: `A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE`. */
+  a2aHttpSignatureKeyRegistryFile?: string;
   /**
    * Shared secret for GitHub webhook deliveries. When set, POST /github/webhook
    * requires a valid X-Hub-Signature-256 header (HMAC-SHA256 of the raw body).
@@ -2715,6 +2352,9 @@ export interface BrokerServerRuntime {
     workerRateLimitMaxRequests: number;
     enforceRequesterIdentity: boolean;
     edgeSecret?: string;
+    a2aHttpSignatureWorkerAuth: A2AHttpSignatureWorkerAuthMode;
+    a2aHttpSignatureWorkerKeyCount: number;
+    a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource;
     githubWebhookSecret?: string;
     retentionPolicy: BrokerRetentionPolicy;
     maxSnapshotBytes: number;
@@ -2773,6 +2413,22 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const enforceRequesterIdentity =
     options.enforceRequesterIdentity ?? process.env.ENFORCE_REQUESTER_IDENTITY !== "0";
   const edgeSecret = options.edgeSecret ?? process.env.EDGE_SECRET ?? process.env.A2A_EDGE_SECRET;
+  const a2aHttpSignatureWorkerAuth = resolveA2AHttpSignatureWorkerAuthMode(
+    options.a2aHttpSignatureWorkerAuth ?? process.env.A2A_HTTP_SIGNATURE_WORKER_AUTH,
+  );
+  const a2aHttpSignatureKeyRegistryFile = resolveStringOption(
+    options.a2aHttpSignatureKeyRegistryFile,
+    process.env.A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE,
+  );
+  if (options.a2aHttpSignatureKeyRegistry && a2aHttpSignatureKeyRegistryFile) {
+    throw new Error("configure either a2aHttpSignatureKeyRegistry or A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE, not both");
+  }
+  const a2aHttpSignatureKeyRegistry = options.a2aHttpSignatureKeyRegistry
+    ?? (a2aHttpSignatureKeyRegistryFile ? loadA2AHttpSignatureKeyRegistryFile(a2aHttpSignatureKeyRegistryFile) : {});
+  const a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource = options.a2aHttpSignatureKeyRegistry
+    ? "inline"
+    : (a2aHttpSignatureKeyRegistryFile ? "file" : "empty");
+  const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,
@@ -3234,6 +2890,58 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
   let httpServerForDiagnostics: Server | null = null;
 
+  const assertWorkerHttpSignatureRoute = async (req: IncomingMessage, url: URL): Promise<A2AHttpSignatureVerifiedWorker | null> => {
+    if (a2aHttpSignatureWorkerAuth === "off") {
+      return null;
+    }
+    const hasSignatureHeaders = hasA2AHttpSignatureHeaders(req);
+    if (!hasSignatureHeaders) {
+      if (a2aHttpSignatureWorkerAuth === "strict") {
+        throw new BrokerError("unauthorized", "a2a_signature_required: worker route requires A2A HTTP Signature");
+      }
+      return null;
+    }
+
+    const rawBody = await readRawBody(req);
+    assertA2AContentDigestMatches(req, rawBody);
+    const result = verifyA2AHttpSignature({
+      method: req.method ?? "GET",
+      authority: headerValue(req, "host") ?? url.host,
+      path: url.pathname,
+      query: url.search.length > 0 ? url.search.slice(1) : "",
+      headers: requestHeadersForA2AHttpSignature(req),
+      signatureInput: headerValue(req, "signature-input") ?? "",
+      signature: headerValue(req, "signature"),
+    }, a2aHttpSignatureKeyRegistry);
+
+    if (!result.ok) {
+      throw new BrokerError("unauthorized", `${result.code}: ${result.message}`);
+    }
+    if (result.brokerId !== brokerId) {
+      throw new BrokerError("unauthorized", `a2a_signature_identity_mismatch: signed broker id ${result.brokerId} does not match ${brokerId}`);
+    }
+    if (!a2aHttpSignatureReplayCache.remember(result.keyid, result.nonce, result.expires)) {
+      throw new BrokerError("unauthorized", "a2a_signature_replay: nonce has already been used for this key id");
+    }
+    return { keyid: result.keyid, requesterId: result.requesterId };
+  };
+
+  const assertVerifiedWorkerMatches = (
+    verified: A2AHttpSignatureVerifiedWorker | null,
+    expectedWorkerId: string | undefined,
+    operation: string,
+  ): void => {
+    if (!verified || !expectedWorkerId) {
+      return;
+    }
+    if (verified.requesterId !== expectedWorkerId) {
+      throw new BrokerError(
+        "unauthorized",
+        `a2a_signature_identity_mismatch: signed requester ${verified.requesterId} cannot authorize ${operation} for ${expectedWorkerId}`,
+      );
+    }
+  };
+
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
@@ -3373,6 +3081,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requestSecurity: {
             enforceRequesterIdentity,
             edgeSecretRequired: Boolean(edgeSecret),
+            a2aHttpSignatureWorkerAuth,
+            a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
+            a2aHttpSignatureWorkerKeySource,
             rateLimitWindowSec,
             rateLimitMaxRequests,
             workerRateLimitWindowSec,
@@ -3596,6 +3307,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         segments.length === 4
       ) {
         const workerId = segments[2];
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "workers.assignment-events");
         if (enforceRequesterIdentity) {
           assertRequesterCanSubscribeToWorkerAssignments(requesterIdentity, workerId);
         }
@@ -4927,6 +4640,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && path === "/workers/register") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const readJsonStartedAt = performance.now();
         const body = await readJson<RegisterWorkerRequest>(req);
         recordWorkerRegisterPhase("readJson", readJsonStartedAt);
@@ -4934,6 +4648,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           throw new BrokerError("bad_request", "request body is required");
         }
         const workerId = typeof body.nodeId === "string" ? body.nodeId : undefined;
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.register");
         if (enforceRequesterIdentity) {
           const authAssertStartedAt = performance.now();
           assertRequesterMatchesParty(
@@ -4963,7 +4678,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "workers" && segments[1] && segments[2] === "heartbeat") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const workerId = segments[1];
+        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.heartbeat");
         const readJsonStartedAt = performance.now();
         const body = await readJson<WorkerHeartbeatRequest>(req);
         recordWorkerHeartbeatPhase("readJson", readJsonStartedAt, workerId);
@@ -5179,6 +4896,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/tasks") {
+        if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
+          const workerParam = optionalString(url.searchParams.get("worker"));
+          const assignedWorkerParam = optionalString(url.searchParams.get("assignedWorkerId"));
+          if (workerParam && assignedWorkerParam && workerParam !== assignedWorkerParam) {
+            throw new BrokerError("bad_request", "worker and assignedWorkerId query parameters must match when both are provided");
+          }
+          const expectedWorkerId = assignedWorkerParam ?? workerParam;
+          if (!expectedWorkerId) {
+            throw new BrokerError("bad_request", "worker or assignedWorkerId query parameter is required");
+          }
+          const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
+          assertVerifiedWorkerMatches(verifiedWorker, expectedWorkerId, "tasks.list");
+        }
         const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
         const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
         if (includeFullTaskRecords) {
@@ -5519,10 +5249,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
 
       if (
         req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "claim") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.claim");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.claim");
         }
@@ -5532,10 +5264,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "start") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.start");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.start");
         }
@@ -5545,10 +5279,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "heartbeat") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskClaimRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.heartbeat");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.heartbeat");
         }
@@ -5558,10 +5294,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string; decisionType?: string; artifactRefs?: string[] }>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.checkpoint");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.checkpoint");
         }
@@ -5600,10 +5338,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "complete") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskCompleteRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.complete");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.complete");
         }
@@ -5613,10 +5353,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "evidence") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskEvidenceRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.evidence");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.evidence");
         }
@@ -5638,10 +5380,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "fail") {
+        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskFailRequest>(req);
         if (!body?.workerId) {
           throw new BrokerError("bad_request", "workerId is required");
         }
+        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.fail");
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.fail");
         }
@@ -6009,6 +5753,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerRateLimitMaxRequests,
       enforceRequesterIdentity,
       edgeSecret,
+      a2aHttpSignatureWorkerAuth,
+      a2aHttpSignatureWorkerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
+      a2aHttpSignatureWorkerKeySource,
       retentionPolicy,
       maxSnapshotBytes,
       maxHotRuntimeNonTerminalTasks,
@@ -6044,6 +5791,40 @@ export interface BrokerHotRuntimeLimits {
  * heartbeats and can be reused. Node.js defaults to 5000ms, which forces every
  * heartbeat to create a new TCP connection.
  */
+function hasA2AHttpSignatureHeaders(req: IncomingMessage): boolean {
+  return Boolean(headerValue(req, "signature-input") || headerValue(req, "signature"));
+}
+
+function requestHeadersForA2AHttpSignature(req: IncomingMessage): Record<string, string | undefined> {
+  const headers: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    headers[name.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+  }
+  return headers;
+}
+
+function assertA2AContentDigestMatches(req: IncomingMessage, rawBody: Buffer): void {
+  const provided = headerValue(req, "content-digest");
+  if (!provided) {
+    throw new BrokerError("unauthorized", "a2a_signature_digest_required: content-digest is required");
+  }
+  const expected = `sha-256=:${createHash("sha256").update(rawBody).digest("base64")}:`;
+  if (provided !== expected) {
+    throw new BrokerError("unauthorized", "a2a_signature_digest_mismatch: content-digest does not match request body");
+  }
+}
+
+function headerValue(req: IncomingMessage, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0]?.trim() || undefined;
+  }
+  if (typeof value === "string") {
+    return value.trim() || undefined;
+  }
+  return undefined;
+}
+
 const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
 
 /**

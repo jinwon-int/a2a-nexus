@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnEnablementGatePacket } from "./terminal-brief-sidecar-default-on-enablement-gate.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDefaultOnRuntimeMutationPlanState =
   | "ready_for_runtime_mutation_review"
@@ -502,10 +503,6 @@ function buildIdempotencyKey(
     planReference,
   });
   return "tb-sidecar-default-on-runtime-mutation-plan:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function unique<T>(items: T[]): T[] {

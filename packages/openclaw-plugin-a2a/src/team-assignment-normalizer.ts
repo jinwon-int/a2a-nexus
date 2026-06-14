@@ -11,6 +11,7 @@
  */
 
 import type { A2ATaskRequestParams } from "./gateway-schema.js";
+import { isPlainObject } from "./value-guards.js";
 
 export const TeamAssignmentModes = ["fanout", "split", "review", "swarm"] as const;
 export type TeamAssignmentMode = (typeof TeamAssignmentModes)[number];
@@ -113,9 +114,6 @@ function trimNonEmpty(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");

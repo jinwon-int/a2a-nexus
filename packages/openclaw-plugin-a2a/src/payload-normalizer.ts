@@ -9,6 +9,8 @@
  * on the plugin-local adapter shapes.
  */
 
+import { isPlainObject } from "./value-guards.js";
+
 // ── Error codes ────────────────────────────────────────────────
 
 export const PayloadNormalizerErrorCodes = {
@@ -82,9 +84,6 @@ export interface PayloadCompatibilityResult {
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];

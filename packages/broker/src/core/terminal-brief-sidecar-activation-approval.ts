@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDryRunGatePacket } from "./terminal-brief-sidecar-dry-run-gate.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarActivationApprovalState =
   | "approval_request_draft_ready"
@@ -472,10 +473,6 @@ function titleForState(state: TerminalBriefSidecarActivationApprovalState): stri
   if (state === "waiting_for_gate") return "Waiting: Terminal Brief sidecar dry-run gate";
   if (state === "stale") return "Stale: Terminal Brief sidecar activation approval source";
   return "Blocked: Terminal Brief sidecar activation approval request draft";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

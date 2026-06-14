@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarExecutorInvocationRehearsalPacket } from "./terminal-brief-sidecar-executor-invocation-rehearsal.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunStartCanaryPlanState =
   | "ready_for_dry_run_start_approval_request"
@@ -557,10 +558,6 @@ function titleForState(state: TerminalBriefSidecarDryRunStartCanaryPlanState): s
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar dry-run start canary plan source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar dry-run start canary plan source";
   return "Blocked: Terminal Brief sidecar dry-run start canary plan";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarStartExecutorGatePacket } from "./terminal-brief-sidecar-start-executor-gate.js";
+import { optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarExecutorInvocationRehearsalState =
   | "ready_for_executor_invocation_rehearsal"
@@ -581,10 +582,6 @@ function titleForState(state: TerminalBriefSidecarExecutorInvocationRehearsalSta
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar executor invocation rehearsal source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar executor invocation rehearsal source";
   return "Blocked: Terminal Brief sidecar executor invocation rehearsal";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {
