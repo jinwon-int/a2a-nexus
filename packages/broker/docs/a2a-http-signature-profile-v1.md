@@ -158,9 +158,13 @@ The example registry and `:self`-qualified scope vocabulary above describe the
 fuller target design. The broker currently enforces a v1 subset:
 
 - **Registry shape** is a JSON object keyed by `keyid`, each record carrying
-  `keyid`, `workerId`, `publicKeyJwk`, and an optional `scopes` array. The
-  richer fields (`roles`, `status`, `notBefore`, `expiresAt`, the `workers`
-  wrapper, and signed-credential chains) are not parsed yet.
+  `keyid`, `workerId`, `publicKeyJwk`, an optional `scopes` array, and optional
+  credential-lifecycle fields `status` (`"active"`/`"revoked"`), `notBefore`,
+  and `expiresAt` (ISO-8601). A `revoked` key is rejected at verification with
+  `a2a_signature_key_revoked`; a key used before `notBefore` or at/after
+  `expiresAt` is rejected with `a2a_signature_key_inactive`. The remaining
+  richer fields (`roles`, the `workers` wrapper, and signed-credential chains)
+  are not parsed yet.
 - **Scope tokens** are the per-route capability labels enforced at the call
   sites (one token per worker route), not `:self`-qualified strings:
 
