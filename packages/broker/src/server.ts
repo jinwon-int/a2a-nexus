@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { loadavg, cpus } from "node:os";
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
+import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
@@ -667,51 +668,6 @@ function normalizePersistenceQueueDiagnostics(
  * Small rolling window of request durations for a single endpoint.
  * Records the last N completion times and exposes p50/p95/p99/p999.
  */
-class RequestTimingWindow {
-  private readonly samples: number[] = [];
-  private nextIndex = 0;
-  private readonly maxSamples: number;
-
-  constructor(maxSamples = 200) {
-    this.maxSamples = maxSamples;
-  }
-
-  record(durationMs: number): void {
-    if (this.samples.length < this.maxSamples) {
-      this.samples.push(durationMs);
-    } else {
-      this.samples[this.nextIndex] = durationMs;
-    }
-    this.nextIndex = (this.nextIndex + 1) % this.maxSamples;
-  }
-
-  snapshot(): {
-    count: number;
-    minMs: number;
-    maxMs: number;
-    avgMs: number;
-    p50Ms: number;
-    p95Ms: number;
-    p99Ms: number;
-    p999Ms: number;
-  } | null {
-    const count = this.samples.length;
-    if (count === 0) return null;
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    const idx = (p: number) => Math.min(Math.floor(count * p), count - 1);
-    return {
-      count,
-      minMs: Math.round(sorted[0] * 1000) / 1000,
-      maxMs: Math.round(sorted[count - 1] * 1000) / 1000,
-      avgMs: Math.round((sum / count) * 1000) / 1000,
-      p50Ms: Math.round(sorted[idx(0.5)] * 1000) / 1000,
-      p95Ms: Math.round(sorted[idx(0.95)] * 1000) / 1000,
-      p99Ms: Math.round(sorted[idx(0.99)] * 1000) / 1000,
-      p999Ms: Math.round(sorted[idx(0.999)] * 1000) / 1000,
-    };
-  }
-}
 
 // Per-endpoint request windows for attribution.
 const _livezTiming = new RequestTimingWindow();
@@ -744,7 +700,6 @@ const ENDPOINT_GROUPS = [
 ] as const;
 
 type EndpointGroup = (typeof ENDPOINT_GROUPS)[number];
-type RequestTimingSnapshot = ReturnType<RequestTimingWindow["snapshot"]>;
 
 /** Total number of accepted HTTP requests since process start. */
 let _totalAcceptedRequests = 0;

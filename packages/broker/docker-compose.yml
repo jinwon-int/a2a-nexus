@@ -8,9 +8,10 @@ services:
         # (A2A_BROKER_REVISION) reflect the deployed commit.
         # Set these before building: export A2A_BROKER_REVISION=$(git rev-parse HEAD)
         # export A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:-unknown}
+        # Compose expansion is intentionally fail-closed for production provenance.
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION to the git SHA being built}
         A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
-        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:-}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED to an RFC3339/UTC build timestamp}
     container_name: ${SERVICE_NAME:-a2a-broker}
     hostname: ${SERVICE_NAME:-a2a-broker}
     restart: unless-stopped
@@ -21,7 +22,10 @@ services:
     ports:
       - "127.0.0.1:8787:8787"
     volumes:
-      - /var/lib/a2a-broker:/var/lib/a2a-broker
+      # Host-path default remains compatible with existing deployments. For
+      # non-root containers, ensure the host directory is writable by UID/GID
+      # 1000 or set A2A_BROKER_STATE_DIR to a pre-owned directory.
+      - ${A2A_BROKER_STATE_DIR:-/var/lib/a2a-broker}:/var/lib/a2a-broker
     networks:
       - a2a
     healthcheck:
