@@ -106,3 +106,6 @@ The mobile profile keeps the same HTTP worker contract but adds:
 - local redacted evidence manifests under `~/.hermes/a2a/artifacts/`;
 - a restart-safe loop shape for Termux:Boot, cron, or tmux;
 - no broad OpenClaw Gateway install requirement on the Android node.
+## Termux proot-distro development/testing
+
+For experimental Termux Ubuntu/proot-distro setup notes, see [`docs/termux-proot-distro-a2a-runner.md`](../../../docs/termux-proot-distro-a2a-runner.md). This is for no-live development/testing only; production worker services should use the VPS/systemd deployment path.
