@@ -606,6 +606,88 @@ describe("collectRoundResults", () => {
     equal(output.summary.substantiveEvidence, 1);
     ok(output.closeoutBundle.body.includes("Ready for finalizer closeout"));
   });
+
+  it("projects parent-round metadata and worker attribution for finalizer evidence lanes", () => {
+    const nowMs = Date.parse("2026-06-15T15:40:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-nexus-open-issues-continue-20260615T153154Z",
+      lanes: [{ workerId: "sogyo", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "a2a-nexus-open-issues-continue-20260615T153154Z-sogyo",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        targetNodeId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-15T15:35:00.000Z",
+        completedAt: "2026-06-15T15:35:00.000Z",
+        payload: {
+          parentRoundId: "a2a-nexus-open-issues-continue-20260615T153154Z",
+          parentRoundOrder: 1,
+          parentRoundTotal: 6,
+          originBrokerId: "seoseo",
+          brokerOfRecordId: "seoseo",
+        },
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["#555 PR1 is the smallest safe slice"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.parentRoundId, "a2a-nexus-open-issues-continue-20260615T153154Z");
+    equal(lane.parentRoundOrder, 1);
+    equal(lane.parentRoundTotal, 6);
+    equal(lane.originBrokerId, "seoseo");
+    equal(lane.brokerOfRecordId, "seoseo");
+    equal(lane.assignedWorkerId, "sogyo");
+    ok(output.closeoutBundle.body.includes("parent=a2a-nexus-open-issues-continue-20260615T153154Z"));
+    ok(output.closeoutBundle.body.includes("order=1/6"));
+  });
+
+  it("classifies provider/model analysis failures as handler artifact failures, not substantive evidence", () => {
+    const nowMs = Date.parse("2026-06-15T15:40:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-provider-mismatch-test",
+      lanes: [{ workerId: "dungae", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-dungae-model-mismatch",
+        intent: "analyze",
+        assignedWorkerId: "dungae",
+        targetNodeId: "dungae",
+        status: "failed",
+        updatedAt: "2026-06-15T15:34:23.000Z",
+        completedAt: "2026-06-15T15:34:23.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: "openclaw_analysis_failed",
+                message: "Hermes exited with 1: Error code: 404 - The model minimax-m3 does not exist or your team does not have access to it",
+              },
+            }),
+          },
+        },
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "failed");
+    equal(lane.evidenceClass, "handler_artifact_failure");
+    equal(output.summary.handlerArtifactFailures, 1);
+    equal(output.summary.substantiveEvidence, 0);
+    ok(lane.errorSummary?.includes("openclaw_analysis_failed"));
+  });
 });
 
 // ---------------------------------------------------------------------------
