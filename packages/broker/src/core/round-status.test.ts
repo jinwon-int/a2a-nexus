@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { summarizeRoundStatus } from "./round-status.js";
+import { buildRoundParentAggregateTaskReport, summarizeRoundStatus } from "./round-status.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 
 function task(id: string, status: TaskStatus, parentRoundId: string | undefined, extra: Partial<TaskRecord> = {}): TaskRecord {
@@ -100,4 +100,56 @@ test("expectedButMissingCount is zero when all matched lanes are present", () =>
   assert.equal(summary.matched, 2);
   assert.equal(summary.total, 2);
   assert.equal(summary.expectedButMissingCount, 0);
+});
+
+test("buildRoundParentAggregateTaskReport emits parent-comment compatible task report (#629)", () => {
+  const report = buildRoundParentAggregateTaskReport([
+    task("a", "succeeded", "r", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "sogyo" }),
+    task("b", "running", "r", { parentRoundTotal: 3, parentRoundOrder: 2, assignedWorkerId: "nosuk" }),
+    task("other", "failed", "other"),
+  ], "r", { generatedAt: "2026-06-15T10:30:00.000Z" });
+
+  assert.equal(report.generatedAt, "2026-06-15T10:30:00.000Z");
+  assert.equal(report.parentRoundId, "r");
+  assert.equal(report.total, 3);
+  assert.equal(report.terminal, 1);
+  assert.equal(report.active, 2);
+  assert.equal(report.stale, 1);
+  assert.equal(report.reportable, 3);
+  assert.equal(report.allTerminal, false);
+  assert.deepEqual(report.items.map((item) => item.taskId), ["a", "b", "r:missing:1"]);
+  assert.match(report.items[0].reportLine, /terminal: sogyo lane=1 task=a status=succeeded/);
+  assert.match(report.items[1].reportLine, /progress: nosuk lane=2 task=b status=running/);
+  assert.match(report.items[2].reportLine, /missing: expected lane 3\/3 has no task record yet/);
+});
+
+test("round report names actual missing parentRoundOrder gaps and sorts ties deterministically (#629)", () => {
+  const report = buildRoundParentAggregateTaskReport([
+    task("z-task", "running", "r", { parentRoundTotal: 3, parentRoundOrder: 3, assignedWorkerId: "z" }),
+    task("a-task", "succeeded", "r", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "a" }),
+    task("b-task", "failed", "r", { parentRoundTotal: 3, assignedWorkerId: "b" }),
+    task("a2-task", "succeeded", "r", { parentRoundTotal: 3, assignedWorkerId: "a2" }),
+  ], "r", { generatedAt: "2026-06-15T10:30:00.000Z" });
+
+  assert.deepEqual(report.items.map((item) => item.taskId), ["a-task", "z-task", "a2-task", "b-task"]);
+  assert.equal(report.stale, 0);
+
+  const gapReport = buildRoundParentAggregateTaskReport([
+    task("lane-1", "succeeded", "gap", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "sogyo" }),
+    task("lane-3", "running", "gap", { parentRoundTotal: 3, parentRoundOrder: 3, assignedWorkerId: "nosuk" }),
+  ], "gap", { generatedAt: "2026-06-15T10:30:00.000Z" });
+
+  assert.match(gapReport.items[2].reportLine, /missing: expected lane 2\/3 has no task record yet/);
+  assert.doesNotMatch(gapReport.items[2].reportLine, /lane 3\/3/);
+});
+
+test("round report caps missing lane expansion for hostile parentRoundTotal values (#629)", () => {
+  const report = buildRoundParentAggregateTaskReport([
+    task("only", "succeeded", "huge", { parentRoundTotal: 10000, assignedWorkerId: "sogyo" }),
+  ], "huge", { generatedAt: "2026-06-15T10:30:00.000Z" });
+
+  assert.equal(report.total, 10000);
+  assert.equal(report.stale, 9999);
+  assert.equal(report.items.length, 50);
+  assert.match(report.items[49].reportLine, /9951 expected lanes without task records omitted from this capped report/);
 });
