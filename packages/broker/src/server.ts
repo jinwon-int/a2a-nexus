@@ -4750,6 +4750,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         if (!body) {
           throw new BrokerError("bad_request", "request body is required");
         }
+        assertCreateTaskRequestParties(body);
         if (enforceRequesterIdentity) {
           assertRequesterMatchesParty(
             requesterIdentity,
@@ -6338,6 +6339,21 @@ function mapBrokerDiagnosticsToSnapshot(
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function assertCreateTaskRequestParties(body: CreateTaskRequest): void {
+  assertRequestParty(body.requester, "requester");
+  assertRequestParty(body.target, "target");
+}
+
+function assertRequestParty(value: unknown, field: "requester" | "target"): void {
+  if (!value || typeof value !== "object") {
+    throw new BrokerError("bad_request", `${field}.id is required`);
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || record.id.trim().length === 0) {
+    throw new BrokerError("bad_request", `${field}.id is required`);
+  }
 }
 
 function optionalEnum<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {

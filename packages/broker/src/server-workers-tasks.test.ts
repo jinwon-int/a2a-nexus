@@ -1046,6 +1046,80 @@ test("server rejects parent-owned handoff metadata for a different accepting bro
   }
 });
 
+test("POST /tasks rejects missing requester/target fields with 400 instead of 500 (#760)", async () => {
+  const server = await startTestServer();
+  try {
+    server.runtime.broker.registerWorker({
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    });
+
+    const missingRequesterRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "test-hub",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "missing-requester-task",
+        intent: "analyze",
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "worker-a",
+        message: "missing requester should be a client error",
+      }),
+    });
+    assert.equal(missingRequesterRes.status, 400);
+    const missingRequesterBody = await missingRequesterRes.json() as { error?: { code?: string; message?: string } };
+    assert.equal(missingRequesterBody.error?.code, "bad_request");
+    assert.match(missingRequesterBody.error?.message ?? "", /requester\.id/);
+
+    const missingTargetRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "test-hub",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "missing-target-task",
+        intent: "analyze",
+        requester: { id: "test-hub", kind: "node", role: "hub" },
+        message: "missing target should be a client error",
+      }),
+    });
+    assert.equal(missingTargetRes.status, 400);
+    const missingTargetBody = await missingTargetRes.json() as { error?: { code?: string; message?: string } };
+    assert.equal(missingTargetBody.error?.code, "bad_request");
+    assert.match(missingTargetBody.error?.message ?? "", /target\.id/);
+
+    const rolelessPartyRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "test-hub",
+        "x-a2a-requester-role": "hub",
+      }),
+      body: JSON.stringify({
+        id: "roleless-party-task",
+        intent: "analyze",
+        requester: { id: "test-hub", kind: "node" },
+        target: { id: "worker-a", kind: "node" },
+        assignedWorkerId: "worker-a",
+        message: "roleless parties remain accepted for compatibility",
+      }),
+    });
+    assert.equal(rolelessPartyRes.status, 201);
+  } finally {
+    await server.close();
+  }
+});
+
 test("server rejects invalid requester identity headers with 400", async () => {
   const server = await startTestServer();
   try {
