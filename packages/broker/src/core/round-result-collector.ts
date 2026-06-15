@@ -1019,11 +1019,12 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
  * logic.  Source-only: never posts/comments/merges.
  *
  * Verdict rules:
- *   FINAL    every expected lane is terminal AND every lane has evidence URLs
- *            (or is excluded).  Evidence_ids for the "cited" check are the
- *            task IDs of succeeded lanes.
- *   BLOCKED  any lane is non-terminal, or a succeeded lane has no evidence
- *            URLs.
+ *   FINAL    every expected lane succeeded and every succeeded lane has
+ *            evidence URLs. Evidence_ids for the "cited" check are the task
+ *            IDs of succeeded lanes.
+ *   BLOCKED  any lane is non-terminal, timed out, failed, blocked, or lacks
+ *            required evidence. This source-only gate must not auto-finalize a
+ *            partially failed A2A/A2AD round.
  */
 function computeGateVerdict(
   lanes: ResultLane[],
@@ -1034,21 +1035,25 @@ function computeGateVerdict(
   let pending = 0;
   const evidenceIdsCited: string[] = [];
   const missingLanes: string[] = [];
+  const failedLanes: string[] = [];
+  const missingEvidenceLanes: string[] = [];
 
   for (const lane of lanes) {
-    if (lane.laneState === "succeeded" || lane.laneState === "timeout") {
+    if (lane.laneState === "succeeded") {
       succeeded++;
       if (lane.taskIds.length > 0) evidenceIdsCited.push(lane.taskIds[0]!);
+      if (lane.evidenceUrls.length === 0) missingEvidenceLanes.push(lane.workerId);
     } else if (
       lane.laneState === "failed" ||
-      lane.laneState === "blocked"
+      lane.laneState === "blocked" ||
+      lane.laneState === "timeout"
     ) {
       failed++;
+      failedLanes.push(lane.workerId);
+      if (lane.evidenceUrls.length === 0) missingEvidenceLanes.push(lane.workerId);
     } else {
       // pending, running, stale -- all non-terminal
       pending++;
-    }
-    if (lane.laneState === "pending" || lane.laneState === "stale") {
       missingLanes.push(lane.workerId);
     }
   }
@@ -1057,28 +1062,19 @@ function computeGateVerdict(
   const evidenceIdsCitedSet = new Set(evidenceIdsCited);
   const uniqueEvidenceIds = [...evidenceIdsCitedSet];
 
-  // Check: every expected lane must be terminal
-  const everyLaneTerminal = pending === 0;
-
-  // Check: every succeeded lane has evidence URLs
-  const succeededWithEvidence = lanes.every(
-    (l) => l.laneState !== "succeeded" || l.evidenceUrls.length > 0,
-  );
-
   let verdict: "FINAL" | "BLOCKED" = "BLOCKED";
   let reason: string | undefined;
 
   if (pending > 0) {
     reason = `${pending} lane(s) still non-terminal (${missingLanes.join(", ")})`;
-  } else if (!succeededWithEvidence) {
-    reason = "One or more succeeded lanes lack evidence URLs";
-  } else if (succeeded > 0 || failed > 0) {
-    // All terminal, all succeeded have evidence → FINAL
-    // (even if some failed, the gate reports the true state so the operator
-    //  can decide whether to proceed)
+  } else if (failed > 0) {
+    reason = `${failed} lane(s) failed, blocked, or timed out (${failedLanes.join(", ")})`;
+  } else if (missingEvidenceLanes.length > 0) {
+    reason = `One or more terminal lanes lack evidence URLs (${missingEvidenceLanes.join(", ")})`;
+  } else if (succeeded === expectedTotal && succeeded > 0) {
     verdict = "FINAL";
   } else {
-    reason = "No lanes have terminal state — no work was dispatched";
+    reason = "No lanes have terminal success evidence — no work was finalized";
   }
 
   return {

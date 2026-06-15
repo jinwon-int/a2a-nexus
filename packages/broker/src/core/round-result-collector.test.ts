@@ -1147,18 +1147,32 @@ describe("gateVerdict", () => {
     ok(output.gateVerdict!.evidenceIdsCited.includes("t-bangtong-1"));
   });
 
-  it("FINAL includes mixed succeeded+failed lanes as FINAL (operator decides)", () => {
+  it("BLOCKED when a terminal lane failed even if another lane succeeded", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
-      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
+      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
     ];
     const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "nosuk" }] };
     const output = collectRoundResults(manifest, tasks, { nowMs });
-    equal(output.gateVerdict!.verdict, "FINAL");
+    equal(output.gateVerdict!.verdict, "BLOCKED");
     equal(output.gateVerdict!.succeeded, 1);
     equal(output.gateVerdict!.failed, 1);
     equal(output.gateVerdict!.missingLanes.length, 0);
+    ok(output.gateVerdict!.reason!.includes("failed"));
+  });
+
+  it("BLOCKED when a lane times out", () => {
+    const nowMs = Date.parse("2026-05-27T01:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "running", updatedAt: "2026-05-26T11:30:00.000Z" }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }], timeoutAt: "2026-05-26T23:00:00.000Z" };
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.gateVerdict!.verdict, "BLOCKED");
+    equal(output.gateVerdict!.failed, 1);
+    equal(output.gateVerdict!.succeeded, 0);
+    ok(output.gateVerdict!.reason!.includes("timed out"));
   });
 
   it("reports correct expectedTotal from manifest lane count", () => {
