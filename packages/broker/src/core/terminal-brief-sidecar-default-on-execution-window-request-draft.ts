@@ -657,4 +657,3 @@ function isFinalLiveExecutionPacket(
 ): value is TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-final-live-execution.packet";
 }
-

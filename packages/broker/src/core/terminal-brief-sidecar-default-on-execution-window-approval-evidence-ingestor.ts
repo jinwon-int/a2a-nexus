@@ -657,4 +657,3 @@ function isExecutionWindowRequestDraftPacket(
 ): value is TerminalBriefSidecarDefaultOnExecutionWindowRequestDraftPacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-execution-window-request-draft.packet";
 }
-

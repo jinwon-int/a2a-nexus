@@ -560,4 +560,3 @@ function titleForState(state: TerminalBriefSidecarDefaultOnFinalLiveExecutionSta
 function isRuntimeExecutorGatePacket(value: unknown): value is TerminalBriefSidecarDefaultOnRuntimeExecutorGatePacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-runtime-executor-gate.packet";
 }
-
