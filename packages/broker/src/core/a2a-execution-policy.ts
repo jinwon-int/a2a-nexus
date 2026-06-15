@@ -38,6 +38,8 @@ export interface A2AFinalizerDecision {
   finalizerDecisionId: string;
   finalizerOwner: string;
   parentRoundId: string;
+  parentRoundTotal: number;
+  parentRoundOrder: number;
   brokerOfRecordId: string;
   executionLane: A2AExecutionLane;
   /** Guarded actions this decision explicitly authorizes. Empty = authorize nothing. */
@@ -75,6 +77,15 @@ const REQUIRED_PROVENANCE_FIELDS = [
 ] as const;
 
 const A2A_EXECUTION_LANE_SET: ReadonlySet<string> = new Set(A2A_EXECUTION_LANES);
+const A2A_GUARDED_ACTION_SET: ReadonlySet<string> = new Set(A2A_GUARDED_ACTIONS);
+
+function guardedActionLabel(value: unknown): string {
+  return typeof value === "string" && value.length > 0 ? value : "(invalid)";
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
 
 /** A non-empty trimmed string id, or undefined for any other value. */
 function normalizeEvidenceId(value: unknown): string | undefined {
@@ -97,6 +108,11 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
 
   const blockers: string[] = [];
   const decision = input.finalizerDecision;
+  const requestedAction = guardedActionLabel(input.requestedAction);
+
+  if (!A2A_GUARDED_ACTION_SET.has(requestedAction)) {
+    blockers.push(`invalid_guarded_action:${requestedAction}`);
+  }
 
   if (!decision) {
     blockers.push("a2a_required_action_without_finalizer_decision");
@@ -110,6 +126,15 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
     }
   }
 
+  if (!isPositiveInteger(decision.parentRoundTotal)) {
+    blockers.push("missing_finalizer_provenance:parentRoundTotal");
+  }
+  if (!isPositiveInteger(decision.parentRoundOrder)) {
+    blockers.push("missing_finalizer_provenance:parentRoundOrder");
+  } else if (isPositiveInteger(decision.parentRoundTotal) && decision.parentRoundOrder > decision.parentRoundTotal) {
+    blockers.push("invalid_finalizer_provenance:parentRoundOrder");
+  }
+
   // executionLane must be a real A2A/A2AD lane, not merely a non-empty string,
   // so a decision claiming e.g. "direct" cannot authorize an A2A-required write.
   if (typeof decision.executionLane !== "string" || !A2A_EXECUTION_LANE_SET.has(decision.executionLane)) {
@@ -119,7 +144,7 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
   // Fail closed on malformed shapes rather than throwing, since the evaluator may
   // be fed runtime JSON at the wiring step.
   if (!Array.isArray(decision.allowedActions) || !decision.allowedActions.includes(input.requestedAction)) {
-    blockers.push(`action_not_in_allowed_actions:${input.requestedAction}`);
+    blockers.push(`action_not_in_allowed_actions:${requestedAction}`);
   }
 
   if (routed.requiresWorkerEvidence) {
@@ -137,4 +162,37 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
   }
 
   return { allowed: blockers.length === 0, executionContext: "a2a_required", blockers };
+}
+
+/** Thrown by runGuardedGitHubAction when the execution policy denies a guarded write. */
+export class A2AExecutionPolicyDenied extends Error {
+  readonly requestedAction: A2AGuardedAction;
+  readonly blockers: string[];
+  constructor(requestedAction: A2AGuardedAction, blockers: string[]) {
+    super(`a2a_execution_policy_denied: ${requestedAction} blocked (${blockers.join(", ") || "no reason"})`);
+    this.name = "A2AExecutionPolicyDenied";
+    this.requestedAction = requestedAction;
+    this.blockers = blockers;
+  }
+}
+
+/**
+ * Run a guarded repo/GitHub write action only if the A2A execution policy allows
+ * it (#555 item 4). Fails closed: when the policy denies the action, the `action`
+ * thunk is NOT invoked and {@link A2AExecutionPolicyDenied} is thrown with the
+ * blocker codes; when allowed, the action runs and its result is returned.
+ *
+ * This is the gating primitive callers wrap around a `gh`/GitHub-API or repo-patch
+ * operation. Adding the primitive changes no existing call site — wiring it in
+ * front of a specific live write path is a separate, behavior-changing step.
+ */
+export async function runGuardedGitHubAction<T>(
+  input: A2AExecutionPolicyInput,
+  action: () => T | Promise<T>,
+): Promise<T> {
+  const decision = evaluateA2AExecutionPolicy(input);
+  if (!decision.allowed) {
+    throw new A2AExecutionPolicyDenied(input.requestedAction, decision.blockers);
+  }
+  return action();
 }
