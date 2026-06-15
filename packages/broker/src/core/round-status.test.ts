@@ -75,4 +75,29 @@ test("declared parentRoundTotal larger than matched lanes lowers the completion 
   assert.equal(summary.matched, 1);
   assert.equal(summary.completedCount, 1);
   assert.equal(summary.completionRate, 0.25);
+  // 3 declared lanes have not reported a task yet.
+  assert.equal(summary.expectedButMissingCount, 3);
+  // pendingCount is matched-lanes-only, so completedCount + pendingCount === matched.
+  assert.equal(summary.completedCount + summary.pendingCount, summary.matched);
+});
+
+test("a claimed lane is counted (byStatus.claimed) and treated as not-yet-terminal (#743)", () => {
+  const summary = summarizeRoundStatus(
+    [task("a", "claimed", "r"), task("b", "succeeded", "r")],
+    "r",
+  );
+  assert.equal(summary.byStatus.claimed, 1);
+  assert.equal(summary.completedCount, 1);
+  assert.equal(summary.pendingCount, 1);
+  assert.deepEqual(summary.incompleteTaskIds, ["a"]);
+});
+
+test("expectedButMissingCount is zero when all matched lanes are present", () => {
+  const summary = summarizeRoundStatus(
+    [task("a", "succeeded", "r", { parentRoundTotal: 2 }), task("b", "running", "r", { parentRoundTotal: 2 })],
+    "r",
+  );
+  assert.equal(summary.matched, 2);
+  assert.equal(summary.total, 2);
+  assert.equal(summary.expectedButMissingCount, 0);
 });

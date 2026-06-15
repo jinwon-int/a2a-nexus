@@ -5,9 +5,12 @@
 
 import type { TaskRecord, TaskStatus } from "./types.js";
 
+// Must enumerate every TaskStatus: byStatus is seeded from this list, so a
+// missing state would leave its counter undefined and yield NaN on increment.
 const TASK_STATUSES: readonly TaskStatus[] = [
   "blocked",
   "queued",
+  "claimed",
   "running",
   "succeeded",
   "failed",
@@ -33,8 +36,15 @@ export interface RoundStatusSummary {
   byStatus: Record<TaskStatus, number>;
   /** Lanes in a terminal state (succeeded/failed/canceled). */
   completedCount: number;
-  /** Lanes not yet terminal (blocked/queued/running). */
+  /**
+   * Matched lanes that are not yet terminal (blocked/queued/running). This counts
+   * only tasks actually present for the round — it does NOT include declared-but-
+   * unseen lanes, so `completedCount + pendingCount === matched`, which may be less
+   * than `total`. Use `expectedButMissingCount` for declared lanes with no task yet.
+   */
   pendingCount: number;
+  /** Declared-but-unseen lanes: max(0, total - matched). */
+  expectedButMissingCount: number;
   /** completedCount / total, clamped to [0,1]; 0 when total is 0. */
   completionRate: number;
   lanes: RoundStatusLane[];
@@ -82,6 +92,7 @@ export function summarizeRoundStatus(tasks: readonly TaskRecord[], parentRoundId
     byStatus,
     completedCount,
     pendingCount: matched - completedCount,
+    expectedButMissingCount: Math.max(0, total - matched),
     completionRate,
     lanes,
     incompleteTaskIds,

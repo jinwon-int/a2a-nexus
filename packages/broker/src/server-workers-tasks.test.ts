@@ -137,6 +137,18 @@ test("GET /rounds/:id/status reports round completion progress (#629)", async ()
   }
 });
 
+test("GET /rounds/:id/status rejects a malformed percent-encoded id with 400 (#743)", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    const res = await fetch(`${server.baseUrl}/rounds/%E0%A4%A/status`, { headers: jsonHeaders() });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: { code: string } };
+    assert.equal(body.error.code, "bad_request");
+  } finally {
+    await server.close();
+  }
+});
+
 test("worker registration still records material metadata changes", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: true });
   const nodeId = "worker-a";
