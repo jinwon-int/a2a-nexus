@@ -172,7 +172,7 @@ function boundedLimitQueryParam(
   return Math.min(parsed, max);
 }
 
-function numberQueryParam(url: URL, name: string): number | undefined {
+export function numberQueryParam(url: URL, name: string): number | undefined {
   const value = url.searchParams.get(name);
   if (!value) return undefined;
   const parsed = Number(value);

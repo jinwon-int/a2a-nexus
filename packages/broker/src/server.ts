@@ -116,7 +116,6 @@ import type {
   TaskWakeDecisionRequest,
   TaskWakePlanRequest,
   WorkerHeartbeatRequest,
-  WorkerListFilters,
   WorkerRecord,
   WorkerView,
   A2AWorkerEnvironment,
@@ -419,6 +418,12 @@ import {
 } from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
+import {
+  handleWorkerByIdRequest,
+  handleWorkerCapacityRequest,
+  handleWorkersListRequest,
+  toWorkerView,
+} from "./http/workers-read.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
 import {
   DEFAULT_TASK_LIST_LIMIT,
@@ -426,7 +431,6 @@ import {
   proposalFiltersFromUrl,
   taskFiltersFromUrl,
   taskIdsFromUrl,
-  workerFiltersFromUrl,
 } from "./http/read-path-filters.js";
 
 interface ThreadedExchangeMessage extends A2AExchangeMessageRecord {
@@ -4639,16 +4643,23 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/workers") {
-        const filters = workerFiltersFromUrl(url);
-        const items = listWorkerViewsForReadPath(stateStore, broker, workerOfflineAfterSec * 1000, filters);
-        return sendJson(res, 200, { items });
+        return handleWorkersListRequest({
+          res,
+          url,
+          stateStore,
+          broker,
+          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+        });
       }
 
       if (req.method === "GET" && path === "/workers/capacity") {
-        return sendJson(res, 200, broker.getWorkerCapacitySummary({
+        return handleWorkerCapacityRequest({
+          res,
+          url,
+          stateStore,
+          broker,
           workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-          taskStaleAfterMs: numberQueryParam(url, "stale_after_ms") ?? workerOfflineAfterSec * 1000,
-        }));
+        });
       }
 
       if (req.method === "POST" && path === "/workers/register") {
@@ -4682,11 +4693,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && segments[0] === "workers" && segments[1] && segments.length === 2) {
-        const worker = getWorkerViewForReadPath(stateStore, broker, segments[1], workerOfflineAfterSec * 1000);
-        if (!worker) {
-          throw new BrokerError("not_found", "worker not found");
-        }
-        return sendJson(res, 200, worker);
+        return handleWorkerByIdRequest({
+          res,
+          url,
+          stateStore,
+          broker,
+          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+          workerId: segments[1],
+        });
       }
 
       if (req.method === "POST" && segments[0] === "workers" && segments[1] && segments[2] === "heartbeat") {
@@ -6639,69 +6653,6 @@ function collectThreadMessageIds(
   return allowedIds;
 }
 
-function listWorkerViewsForReadPath(
-  stateStore: BrokerStateStore,
-  broker: InMemoryA2ABroker,
-  offlineAfterMs: number,
-  filters: WorkerListFilters,
-): WorkerView[] {
-  if (stateStore instanceof SqliteBrokerStateStore) {
-    return stateStore
-      .readHotWorkers({ role: filters.role })
-      .filter((worker) => workerMatchesNonSqliteFilters(worker, filters))
-      .map((worker) => redactWorkerProviderCapabilities(toWorkerView(worker, offlineAfterMs)));
-  }
-  return broker.listWorkerViews(offlineAfterMs, filters).map(redactWorkerProviderCapabilities);
-}
-
-function getWorkerViewForReadPath(
-  stateStore: BrokerStateStore,
-  broker: InMemoryA2ABroker,
-  nodeId: string,
-  offlineAfterMs: number,
-): WorkerView | null {
-  if (stateStore instanceof SqliteBrokerStateStore) {
-    const worker = stateStore.readHotWorkers({ nodeId })[0];
-    return worker ? redactWorkerProviderCapabilities(toWorkerView(worker, offlineAfterMs)) : null;
-  }
-  const worker = broker.getWorkerView(nodeId, offlineAfterMs);
-  return worker ? redactWorkerProviderCapabilities(worker) : null;
-}
-
-function workerMatchesNonSqliteFilters(worker: WorkerRecord, filters: WorkerListFilters): boolean {
-  if (filters.environment && !worker.capabilities.environments.includes(filters.environment)) {
-    return false;
-  }
-  if (filters.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
-    return false;
-  }
-  return true;
-}
-
-function toWorkerView(worker: WorkerRecord, offlineAfterMs: number): WorkerView {
-  const status: WorkerView["status"] =
-    Date.now() - Date.parse(worker.lastSeenAt) <= offlineAfterMs ? "online" : "stale";
-  const workerPlane: WorkerView["workerPlane"] = status === "online" ? "online" : "unknown";
-  const managementPlane: WorkerView["managementPlane"] = worker.managementPlane ?? "unknown";
-  const updateEligible = workerPlane === "online" && managementPlane !== "disconnected";
-
-  return {
-    ...worker,
-    status,
-    workerPlane,
-    managementPlane,
-    updateEligible,
-  };
-}
-
-function redactWorkerProviderCapabilities(worker: WorkerView): WorkerView {
-  if (!worker.capabilities.providerCapabilities?.length) return worker;
-  const { providerCapabilities: _providerCapabilities, ...capabilities } = worker.capabilities;
-  return {
-    ...worker,
-    capabilities,
-  };
-}
 
 function canUseSqliteTaskHotRead(filters: TaskListFilters): boolean {
   return !(
