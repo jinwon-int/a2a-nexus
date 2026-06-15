@@ -1088,3 +1088,82 @@ describe("edge cases", () => {
     ok(output.approvalSensitiveActionsExcluded.length > 0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gate verdict (#629 phase 1)
+// ---------------------------------------------------------------------------
+
+describe("gateVerdict", () => {
+  it("BLOCKED when all lanes are pending (no tasks)", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const output = collectRoundResults(DEFAULT_MANIFEST, [], { nowMs });
+    const gv = output.gateVerdict!;
+    equal(gv.verdict, "BLOCKED");
+    equal(gv.succeeded, 0);
+    equal(gv.failed, 0);
+    equal(gv.pending, 4);
+    equal(gv.missingLanes.length, 4);
+    ok(gv.reason);
+    ok(gv.reason!.includes("non-terminal"));
+  });
+
+  it("BLOCKED when some lanes are running (not all terminal)", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-bangtong-1", assignedWorkerId: "bangtong", status: "running", updatedAt: "2026-05-26T11:50:00.000Z" }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "bangtong" }] };
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.gateVerdict!.verdict, "BLOCKED");
+    equal(output.gateVerdict!.pending, 1);
+    ok(output.gateVerdict!.reason!.includes("non-terminal"));
+  });
+
+  it("BLOCKED when succeeded lane lacks evidence URLs", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.gateVerdict!.verdict, "BLOCKED");
+    ok(output.gateVerdict!.reason!.includes("evidence URLs"));
+  });
+
+  it("FINAL when all lanes terminal with evidence", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-bangtong-1", assignedWorkerId: "bangtong", status: "succeeded", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1" } }) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "bangtong" }] };
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.gateVerdict!.verdict, "FINAL");
+    equal(output.gateVerdict!.succeeded, 2);
+    equal(output.gateVerdict!.pending, 0);
+    equal(output.gateVerdict!.evidenceIdsCitedCount, 2);
+    ok(output.gateVerdict!.evidenceIdsCited.includes("t-sogyo-1"));
+    ok(output.gateVerdict!.evidenceIdsCited.includes("t-bangtong-1"));
+  });
+
+  it("FINAL includes mixed succeeded+failed lanes as FINAL (operator decides)", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "nosuk" }] };
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    equal(output.gateVerdict!.verdict, "FINAL");
+    equal(output.gateVerdict!.succeeded, 1);
+    equal(output.gateVerdict!.failed, 1);
+    equal(output.gateVerdict!.missingLanes.length, 0);
+  });
+
+  it("reports correct expectedTotal from manifest lane count", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const output = collectRoundResults(DEFAULT_MANIFEST, [], { nowMs });
+    equal(output.gateVerdict!.expectedTotal, 4);
+  });
+});

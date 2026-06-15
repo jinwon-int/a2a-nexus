@@ -120,6 +120,7 @@ function parseArgs(argv) {
     json: hasFlag("--json"),
     markdown: hasFlag("--markdown"),
     validateOnly: hasFlag("--validate-only"),
+    gateVerdict: hasFlag("--gate-verdict"),
     help: hasFlag("--help") || hasFlag("-h"),
   };
 
@@ -373,6 +374,17 @@ async function main() {
 
   // ---- Redact any sensitive tokens from output ----
   output = redactSensitive(output);
+
+  // ---- Gate verdict mode ----
+  if (args.gateVerdict) {
+    const gv = output.gateVerdict;
+    if (!gv) {
+      console.error("Error: gate verdict not available in collector output");
+      process.exit(1);
+    }
+    console.log(JSON.stringify(gv, null, 2));
+    process.exit(0);
+  }
 
   // ---- Emit output ----
   if (args.json) {

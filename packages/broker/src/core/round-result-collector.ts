@@ -203,6 +203,23 @@ export interface RoundResultCollectorOutput {
   /** Compact finalizer-review bundle. */
   closeoutBundle: CloseoutBundle;
   approvalSensitiveActionsExcluded: string[];
+  /**
+   * Finalizer gate verdict computed from the collector's own lane
+   * classification. Mirror of the standalone a2ad-finalizer-gate.mjs logic.
+   * Source-only: never posts/comments/merges.
+   */
+  gateVerdict?: {
+    verdict: "FINAL" | "BLOCKED";
+    succeeded: number;
+    failed: number;
+    pending: number;
+    expectedTotal: number;
+    evidenceIdsCited: string[];
+    evidenceIdsCitedCount: number;
+    missingLanes: string[];
+    /** When BLOCKED, a human-readable explanation. */
+    reason?: string;
+  };
 }
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -288,6 +305,7 @@ export function collectRoundResults(
     blockedLanes,
     evidenceUrls,
     closeoutBundle,
+    gateVerdict: computeGateVerdict(lanes, manifest.lanes.length),
     approvalSensitiveActionsExcluded: [
       "GitHub PR merge, issue close, or comment post",
       "live provider/Hermes/Telegram/OpenClaw send",
@@ -994,6 +1012,86 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
   counts.evidenceUrls = seenUrls.size;
 
   return counts;
+}
+
+/**
+ * Compute a gate verdict mirroring the standalone a2ad-finalizer-gate.mjs
+ * logic.  Source-only: never posts/comments/merges.
+ *
+ * Verdict rules:
+ *   FINAL    every expected lane is terminal AND every lane has evidence URLs
+ *            (or is excluded).  Evidence_ids for the "cited" check are the
+ *            task IDs of succeeded lanes.
+ *   BLOCKED  any lane is non-terminal, or a succeeded lane has no evidence
+ *            URLs.
+ */
+function computeGateVerdict(
+  lanes: ResultLane[],
+  expectedTotal: number,
+): RoundResultCollectorOutput["gateVerdict"] {
+  let succeeded = 0;
+  let failed = 0;
+  let pending = 0;
+  const evidenceIdsCited: string[] = [];
+  const missingLanes: string[] = [];
+
+  for (const lane of lanes) {
+    if (lane.laneState === "succeeded" || lane.laneState === "timeout") {
+      succeeded++;
+      if (lane.taskIds.length > 0) evidenceIdsCited.push(lane.taskIds[0]!);
+    } else if (
+      lane.laneState === "failed" ||
+      lane.laneState === "blocked"
+    ) {
+      failed++;
+    } else {
+      // pending, running, stale -- all non-terminal
+      pending++;
+    }
+    if (lane.laneState === "pending" || lane.laneState === "stale") {
+      missingLanes.push(lane.workerId);
+    }
+  }
+
+  // Collect evidence IDs from succeeded lanes (task IDs that can be cited)
+  const evidenceIdsCitedSet = new Set(evidenceIdsCited);
+  const uniqueEvidenceIds = [...evidenceIdsCitedSet];
+
+  // Check: every expected lane must be terminal
+  const everyLaneTerminal = pending === 0;
+
+  // Check: every succeeded lane has evidence URLs
+  const succeededWithEvidence = lanes.every(
+    (l) => l.laneState !== "succeeded" || l.evidenceUrls.length > 0,
+  );
+
+  let verdict: "FINAL" | "BLOCKED" = "BLOCKED";
+  let reason: string | undefined;
+
+  if (pending > 0) {
+    reason = `${pending} lane(s) still non-terminal (${missingLanes.join(", ")})`;
+  } else if (!succeededWithEvidence) {
+    reason = "One or more succeeded lanes lack evidence URLs";
+  } else if (succeeded > 0 || failed > 0) {
+    // All terminal, all succeeded have evidence → FINAL
+    // (even if some failed, the gate reports the true state so the operator
+    //  can decide whether to proceed)
+    verdict = "FINAL";
+  } else {
+    reason = "No lanes have terminal state — no work was dispatched";
+  }
+
+  return {
+    verdict,
+    succeeded,
+    failed,
+    pending,
+    expectedTotal,
+    evidenceIdsCited: uniqueEvidenceIds,
+    evidenceIdsCitedCount: uniqueEvidenceIds.length,
+    missingLanes,
+    reason,
+  };
 }
 
 function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
