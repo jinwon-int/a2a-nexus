@@ -1,11 +1,16 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   DEFAULT_MARKER,
   buildParentAggregateMarkdown,
   findManagedComment,
   upsertManagedIssueComment,
+  upsertManagedIssueCommentGuarded,
 } from './parent-aggregate-comment.mjs';
 
 function taskReport(overrides = {}) {
@@ -91,5 +96,85 @@ describe('parent aggregate comment helper', () => {
     const managed = { id: 2, body: `${DEFAULT_MARKER}\naggregate` };
     assert.equal(findManagedComment([{ id: 1, body: 'other' }, managed]), managed);
     assert.equal(findManagedComment([{ id: 3, body: 'other' }]), undefined);
+  });
+
+  it('fails closed for A2A-required parent comments without finalizer provenance (#555)', async () => {
+    const github = mockGithub([{ id: 1, body: 'unmanaged comment' }]);
+    const body = buildParentAggregateMarkdown({ taskReport: taskReport(), repo: 'jinwon-int/a2a-nexus', issue: '753' });
+
+    await assert.rejects(
+      () => upsertManagedIssueCommentGuarded({
+        repo: 'jinwon-int/a2a-nexus',
+        issue: '753',
+        body,
+        github,
+        executionPolicyInput: {
+          intent: 'a2ad 로 넥서스 레포 오픈 이슈 피알로 구현하고 미머지 피알 검토후 머지하자',
+          requestedAction: 'issue_closeout_comment',
+        },
+      }),
+      /a2a_execution_policy_denied: issue_closeout_comment/,
+    );
+    assert.deepEqual(github.calls, []);
+  });
+
+  it('allows A2A-required parent comments only with substantive finalizer provenance (#555)', async () => {
+    const github = mockGithub([{ id: 1, body: 'unmanaged comment' }]);
+    const body = buildParentAggregateMarkdown({ taskReport: taskReport(), repo: 'jinwon-int/a2a-nexus', issue: '753' });
+
+    const result = await upsertManagedIssueCommentGuarded({
+      repo: 'jinwon-int/a2a-nexus',
+      issue: '753',
+      body,
+      github,
+      executionPolicyInput: {
+        intent: 'a2ad 로 넥서스 레포 오픈 이슈 피알로 구현하고 미머지 피알 검토후 머지하자',
+        requestedAction: 'issue_closeout_comment',
+        finalizerDecision: {
+          finalizerDecisionId: 'fd-753',
+          finalizerOwner: 'seoseo',
+          parentRoundId: 'a2ad-nexus-open-backlog-20260615T0958Z',
+          parentRoundTotal: 9,
+          parentRoundOrder: 9,
+          brokerOfRecordId: 'seoseo',
+          executionLane: 'a2ad',
+          allowedActions: ['issue_closeout_comment'],
+          workerEvidenceIds: ['bangtong', 'yukson', 'dungae'],
+        },
+      },
+    });
+
+    assert.equal(result.action, 'created');
+    assert.deepEqual(github.calls.map((call) => call[0]), ['list', 'create']);
+  });
+
+  it('CLI post mode defaults to A2A-required and fails closed without provenance (#555)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'parent-aggregate-comment-'));
+    try {
+      const reportPath = join(tmp, 'report.json');
+      const ghMarker = join(tmp, 'gh-called');
+      const fakeGh = join(tmp, 'gh');
+      writeFileSync(reportPath, JSON.stringify(taskReport()), 'utf8');
+      writeFileSync(fakeGh, `#!/usr/bin/env sh\ntouch ${JSON.stringify(ghMarker)}\nprintf '[]'\n`, { mode: 0o755 });
+
+      assert.throws(
+        () => execFileSync(process.execPath, [
+          'scripts/parent-aggregate-comment.mjs',
+          '--task-report-json', reportPath,
+          '--repo', 'jinwon-int/a2a-nexus',
+          '--issue', '753',
+          '--mode=post',
+        ], {
+          cwd: process.cwd(),
+          env: { ...process.env, PATH: `${tmp}:${process.env.PATH ?? ''}` },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        }),
+        /a2a_execution_policy_denied: issue_closeout_comment/,
+      );
+      assert.equal(existsSync(ghMarker), false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

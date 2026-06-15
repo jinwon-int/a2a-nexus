@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 
 export const DEFAULT_MARKER = '<!-- a2a-command-center-parent-aggregate:v1 -->';
+export const DEFAULT_A2A_PARENT_COMMENT_INTENT = 'A2A로 진행 parent aggregate issue closeout comment';
 const SAFE_URL_RE = /^https:\/\//;
 
 function parseArgs(argv) {
@@ -28,6 +29,12 @@ function parseArgs(argv) {
     issue: readOption('--issue'),
     mode,
     marker: readOption('--marker') ?? DEFAULT_MARKER,
+    a2aIntent: readOption('--a2a-intent'),
+    finalizerDecisionJson: readOption('--finalizer-decision-json'),
+    wrapperOnlyEvidenceIds: (readOption('--wrapper-only-evidence-ids') ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
   };
 }
 
@@ -113,6 +120,21 @@ export function upsertManagedIssueComment({ repo, issue, body, marker = DEFAULT_
   return { action: 'created', id: created?.id, url: created?.html_url };
 }
 
+export async function upsertManagedIssueCommentGuarded({
+  repo,
+  issue,
+  body,
+  marker = DEFAULT_MARKER,
+  github = defaultGithubClient(),
+  executionPolicyInput,
+}) {
+  const { runGuardedGitHubAction } = await import('../dist/core/a2a-execution-policy.js');
+  return runGuardedGitHubAction(
+    executionPolicyInput ?? { intent: 'direct parent aggregate comment', requestedAction: 'issue_closeout_comment' },
+    () => upsertManagedIssueComment({ repo, issue, body, marker, github }),
+  );
+}
+
 function defaultGithubClient() {
   return {
     listIssueComments(repo, issue) {
@@ -135,6 +157,9 @@ async function main() {
   if (!options.taskReportJson) throw new Error('usage: node scripts/parent-aggregate-comment.mjs --task-report-json report.json [--closeout-markdown closeout.md] [--repo owner/repo --issue N --mode=preview|post|update]');
   const taskReport = JSON.parse(await readFile(options.taskReportJson, 'utf8'));
   const closeoutMarkdown = options.closeoutMarkdown ? await readFile(options.closeoutMarkdown, 'utf8') : '';
+  const finalizerDecision = options.finalizerDecisionJson
+    ? JSON.parse(await readFile(options.finalizerDecisionJson, 'utf8'))
+    : undefined;
   const body = buildParentAggregateMarkdown({ taskReport, closeoutMarkdown, repo: options.repo, issue: options.issue, marker: options.marker });
 
   if (options.mode === 'preview' || !options.mode) {
@@ -142,7 +167,18 @@ async function main() {
     return;
   }
   if (!['post', 'update'].includes(options.mode)) throw new Error(`unsupported mode: ${options.mode}`);
-  const result = upsertManagedIssueComment({ repo: options.repo, issue: options.issue, body, marker: options.marker });
+  const result = await upsertManagedIssueCommentGuarded({
+    repo: options.repo,
+    issue: options.issue,
+    body,
+    marker: options.marker,
+    executionPolicyInput: {
+      intent: options.a2aIntent ?? DEFAULT_A2A_PARENT_COMMENT_INTENT,
+      requestedAction: 'issue_closeout_comment',
+      finalizerDecision,
+      wrapperOnlyEvidenceIds: options.wrapperOnlyEvidenceIds,
+    },
+  });
   console.log(JSON.stringify(result, null, 2));
 }
 
