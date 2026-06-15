@@ -73,7 +73,7 @@ export interface Team1RoundSpec {
 
 // ── Worker model policy ────────────────────────────────────────────────────
 
-export const TEAM1_DEFAULT_WORKER_MODEL = "deepseek/deepseek-v4-flash";
+export const TEAM1_DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.5";
 export const TEAM1_PRO_ESCALATION_MODEL = "deepseek/deepseek-v4-pro";
 
 export type Team1ModelEscalationReason =
@@ -94,6 +94,11 @@ export interface Team1ModelEscalationInput {
 export const TEAM1_ALLOWED_WORKER_MODELS: ReadonlySet<string> = new Set([
   TEAM1_DEFAULT_WORKER_MODEL,
   TEAM1_PRO_ESCALATION_MODEL,
+  "deepseek/deepseek-v4-flash",
+  "deepseek-v4-pro",
+  "gpt-5.5",
+  "grok-4.20",
+  "minimax-m3",
 ]);
 
 /** Default thinking level when not overridden per-task. */
@@ -120,14 +125,14 @@ export interface Team1WorkerModelPayloadOverrides {
 export interface Team1WorkerModelPolicy {
   defaultModel: typeof TEAM1_DEFAULT_WORKER_MODEL;
   proModel: typeof TEAM1_PRO_ESCALATION_MODEL;
-  selectedModel: typeof TEAM1_DEFAULT_WORKER_MODEL | typeof TEAM1_PRO_ESCALATION_MODEL;
+  selectedModel: string;
   selectedThinking: string;
   escalatedToPro: boolean;
   escalationApproved: true;
   approvalRef: "Seo Jin On 2026-05-21 per-task approval";
   reasons: Team1ModelEscalationReason[];
   env: {
-    A2A_OPENCLAW_MODEL: typeof TEAM1_DEFAULT_WORKER_MODEL | typeof TEAM1_PRO_ESCALATION_MODEL;
+    A2A_OPENCLAW_MODEL: string;
   };
   boundary: "per-task model override only; no default change, restart, deploy, or credential change";
   /** Payload override fields for the broker task payload. */
@@ -526,7 +531,7 @@ function isTruthyTagValue(value: string | undefined): boolean {
  * Priority:
  * 1. Explicit `workerModel` override in roundSpec (must be allowlisted).
  * 2. Escalation to Pro if reasons or tags demand it.
- * 3. Default Flash model.
+ * 3. Current native Hermes fleet baseline model.
  *
  * The `workerThinking` override is passed through if valid (must be in ALLOWED_THINKING_LEVELS).
  */
@@ -542,9 +547,9 @@ export function resolveTeam1WorkerModelPolicy(roundSpec: Team1RoundSpec): Team1W
   const escalatedToPro = forcePro || reasons.size > 0;
 
   // Explicit override takes priority over escalation-based selection
-  const explicitModel: typeof TEAM1_DEFAULT_WORKER_MODEL | typeof TEAM1_PRO_ESCALATION_MODEL | undefined =
+  const explicitModel: string | undefined =
     roundSpec.workerModel && TEAM1_ALLOWED_WORKER_MODELS.has(roundSpec.workerModel)
-      ? (roundSpec.workerModel as typeof TEAM1_DEFAULT_WORKER_MODEL | typeof TEAM1_PRO_ESCALATION_MODEL)
+      ? roundSpec.workerModel
       : undefined;
   const selectedModel = explicitModel ?? (escalatedToPro ? TEAM1_PRO_ESCALATION_MODEL : TEAM1_DEFAULT_WORKER_MODEL);
 

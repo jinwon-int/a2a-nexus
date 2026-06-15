@@ -383,12 +383,12 @@ test("buildTeam1DispatchPlan is deterministic: same inputs same run record", () 
 
 // ── Worker model policy ────────────────────────────────────────────────────
 
-test("resolveTeam1WorkerModelPolicy keeps Flash as the low-cost default", () => {
+test("resolveTeam1WorkerModelPolicy keeps the current fleet baseline as the default (#766)", () => {
   const policy = resolveTeam1WorkerModelPolicy(BASE_ROUND_SPEC);
 
-  assert.equal(policy.selectedModel, "deepseek/deepseek-v4-flash");
+  assert.equal(policy.selectedModel, "openai-codex/gpt-5.5");
   assert.equal(policy.escalatedToPro, false);
-  assert.equal(policy.env.A2A_OPENCLAW_MODEL, "deepseek/deepseek-v4-flash");
+  assert.equal(policy.env.A2A_OPENCLAW_MODEL, "openai-codex/gpt-5.5");
 });
 
 test("resolveTeam1WorkerModelPolicy escalates broad inspection to Pro", () => {
@@ -529,7 +529,7 @@ test("edge case: non-GitHub parent URL fails preflight", () => {
 test("resolveTeam1WorkerModelPolicy includes selectedThinking default low", () => {
   const policy = resolveTeam1WorkerModelPolicy(BASE_ROUND_SPEC);
   assert.equal(policy.selectedThinking, "low");
-  assert.equal(policy.selectedModel, "deepseek/deepseek-v4-flash");
+  assert.equal(policy.selectedModel, "openai-codex/gpt-5.5");
 });
 
 test("resolveTeam1WorkerModelPolicy respects explicit workerModel override", () => {
@@ -549,7 +549,7 @@ test("resolveTeam1WorkerModelPolicy respects explicit workerThinking override", 
   });
   assert.equal(policy.selectedThinking, "high");
   assert.equal(policy.payloadOverrides.workerThinking, "high");
-  assert.equal(policy.selectedModel, "deepseek/deepseek-v4-flash");
+  assert.equal(policy.selectedModel, "openai-codex/gpt-5.5");
 });
 
 test("resolveTeam1WorkerModelPolicy combines explicit model and thinking overrides", () => {
@@ -610,7 +610,21 @@ test("markdown renderer includes worker model and thinking", () => {
 test("ALLOWED_WORKER_MODELS accepts known models", () => {
   assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has(TEAM1_DEFAULT_WORKER_MODEL));
   assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has(TEAM1_PRO_ESCALATION_MODEL));
-  assert.equal(TEAM1_ALLOWED_WORKER_MODELS.size, 2);
+  assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has("openai-codex/gpt-5.5"));
+  assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has("gpt-5.5"));
+  assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has("grok-4.20"));
+  assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has("deepseek-v4-pro"));
+  assert.ok(TEAM1_ALLOWED_WORKER_MODELS.has("minimax-m3"));
+});
+
+test("resolveTeam1WorkerModelPolicy accepts fleet baseline explicit overrides (#766)", () => {
+  for (const workerModel of ["openai-codex/gpt-5.5", "gpt-5.5", "grok-4.20", "deepseek-v4-pro", "minimax-m3"]) {
+    const policy = resolveTeam1WorkerModelPolicy({ ...BASE_ROUND_SPEC, workerModel });
+
+    assert.equal(policy.selectedModel, workerModel);
+    assert.equal(policy.payloadOverrides.workerModel, workerModel);
+    assert.equal(policy.env.A2A_OPENCLAW_MODEL, workerModel);
+  }
 });
 
 test("ALLOWED_WORKER_THINKING_LEVELS includes known levels", () => {

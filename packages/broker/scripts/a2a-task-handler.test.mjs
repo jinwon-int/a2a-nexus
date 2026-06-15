@@ -53,6 +53,10 @@ test("unsupported workerModel fails closed before a patch attempt", () => {
   assert.deepEqual(result.error.details.allowedModels, [
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
+    "deepseek-v4-pro",
+    "openai-codex/gpt-5.5",
+    "gpt-5.5",
+    "grok-4.20",
     "minimax-m3",
   ]);
 });
@@ -67,6 +71,36 @@ test("minimax-m3 payload workerModel is allowlisted and accepted (#673)", () => 
   assert.equal(result.result.output.modelFromPayload, true);
 });
 
+const FLEET_BASELINE_WORKER_MODELS = [
+  "openai-codex/gpt-5.5",
+  "gpt-5.5",
+  "grok-4.20",
+  "deepseek-v4-pro",
+  "deepseek/deepseek-v4-pro",
+  "minimax-m3",
+];
+
+test("fleet baseline payload workerModels are allowlisted and accepted (#766)", () => {
+  for (const workerModel of FLEET_BASELINE_WORKER_MODELS) {
+    const result = handleTask(task({
+      payload: { workerModel },
+    }), {});
+
+    assert.equal(result.error, undefined, `${workerModel} should be accepted`);
+    assert.equal(result.result.output.effectiveModel, workerModel);
+    assert.equal(result.result.output.modelFromPayload, true);
+  }
+});
+
+test("fleet baseline env workerModels are accepted as Docker runner fallback (#766)", () => {
+  for (const workerModel of FLEET_BASELINE_WORKER_MODELS) {
+    const resolved = __test.resolveWorkerModel(task({}), { A2A_HERMES_DEFAULT_MODEL: workerModel });
+
+    assert.equal(resolved.model, workerModel);
+    assert.equal(resolved.fromPayload, false);
+  }
+});
+
 test("A2A_HERMES_DEFAULT_MODEL env resolves minimax-m3 as a fallback (#673)", () => {
   const viaHermesEnv = __test.resolveWorkerModel(task({}), { A2A_HERMES_DEFAULT_MODEL: "minimax-m3" });
   assert.equal(viaHermesEnv.model, "minimax-m3");
@@ -77,7 +111,7 @@ test("A2A_HERMES_DEFAULT_MODEL env resolves minimax-m3 as a fallback (#673)", ()
   assert.equal(viaOpenclawEnv.model, "minimax-m3");
 });
 
-test("normal source-only task uses Flash model and low thinking by default", () => {
+test("normal source-only task uses current fleet baseline model and low thinking by default (#766)", () => {
   const runnerTask = __test.buildRunnerTask(task({
     intent: "propose_patch",
     payload: {
@@ -88,7 +122,7 @@ test("normal source-only task uses Flash model and low thinking by default", () 
     },
   }), {});
 
-  assert.equal(runnerTask.workerModel, "deepseek/deepseek-v4-flash");
+  assert.equal(runnerTask.workerModel, "openai-codex/gpt-5.5");
   assert.equal(runnerTask.workerThinking, "low");
 });
 

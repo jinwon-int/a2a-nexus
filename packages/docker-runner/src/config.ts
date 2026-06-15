@@ -498,7 +498,7 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
 
 function buildHermesPatchCommandScript(env: NodeJS.ProcessEnv): string {
   const explicitModel = env.A2A_HERMES_MODEL || env.A2A_OPENCLAW_MODEL;
-  const defaultModel = shellSingleQuote(explicitModel || "deepseek/deepseek-v4-flash");
+  const defaultModel = shellSingleQuote(explicitModel || "openai-codex/gpt-5.5");
   const modelSource = shellSingleQuote(normalizeRunnerModelSource(env.A2A_DOCKER_RUNNER_MODEL_SOURCE));
   const defaultTimeout = shellSingleQuote(env.A2A_HERMES_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_HERMES_TIMEOUT_SEC);
   const subagents = loadContainedSubagentsConfig(env, "hermes");
