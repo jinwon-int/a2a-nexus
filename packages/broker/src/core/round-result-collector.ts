@@ -203,6 +203,23 @@ export interface RoundResultCollectorOutput {
   /** Compact finalizer-review bundle. */
   closeoutBundle: CloseoutBundle;
   approvalSensitiveActionsExcluded: string[];
+  /**
+   * Finalizer gate verdict computed from the collector's own lane
+   * classification. Mirror of the standalone a2ad-finalizer-gate.mjs logic.
+   * Source-only: never posts/comments/merges.
+   */
+  gateVerdict?: {
+    verdict: "FINAL" | "BLOCKED";
+    succeeded: number;
+    failed: number;
+    pending: number;
+    expectedTotal: number;
+    evidenceIdsCited: string[];
+    evidenceIdsCitedCount: number;
+    missingLanes: string[];
+    /** When BLOCKED, a human-readable explanation. */
+    reason?: string;
+  };
 }
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -288,6 +305,7 @@ export function collectRoundResults(
     blockedLanes,
     evidenceUrls,
     closeoutBundle,
+    gateVerdict: computeGateVerdict(lanes, manifest.lanes.length),
     approvalSensitiveActionsExcluded: [
       "GitHub PR merge, issue close, or comment post",
       "live provider/Hermes/Telegram/OpenClaw send",
@@ -994,6 +1012,82 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
   counts.evidenceUrls = seenUrls.size;
 
   return counts;
+}
+
+/**
+ * Compute a gate verdict mirroring the standalone a2ad-finalizer-gate.mjs
+ * logic.  Source-only: never posts/comments/merges.
+ *
+ * Verdict rules:
+ *   FINAL    every expected lane succeeded and every succeeded lane has
+ *            evidence URLs. Evidence_ids for the "cited" check are the task
+ *            IDs of succeeded lanes.
+ *   BLOCKED  any lane is non-terminal, timed out, failed, blocked, or lacks
+ *            required evidence. This source-only gate must not auto-finalize a
+ *            partially failed A2A/A2AD round.
+ */
+function computeGateVerdict(
+  lanes: ResultLane[],
+  expectedTotal: number,
+): RoundResultCollectorOutput["gateVerdict"] {
+  let succeeded = 0;
+  let failed = 0;
+  let pending = 0;
+  const evidenceIdsCited: string[] = [];
+  const missingLanes: string[] = [];
+  const failedLanes: string[] = [];
+  const missingEvidenceLanes: string[] = [];
+
+  for (const lane of lanes) {
+    if (lane.laneState === "succeeded") {
+      succeeded++;
+      if (lane.taskIds.length > 0) evidenceIdsCited.push(lane.taskIds[0]!);
+      if (lane.evidenceUrls.length === 0) missingEvidenceLanes.push(lane.workerId);
+    } else if (
+      lane.laneState === "failed" ||
+      lane.laneState === "blocked" ||
+      lane.laneState === "timeout"
+    ) {
+      failed++;
+      failedLanes.push(lane.workerId);
+      if (lane.evidenceUrls.length === 0) missingEvidenceLanes.push(lane.workerId);
+    } else {
+      // pending, running, stale -- all non-terminal
+      pending++;
+      missingLanes.push(lane.workerId);
+    }
+  }
+
+  // Collect evidence IDs from succeeded lanes (task IDs that can be cited)
+  const evidenceIdsCitedSet = new Set(evidenceIdsCited);
+  const uniqueEvidenceIds = [...evidenceIdsCitedSet];
+
+  let verdict: "FINAL" | "BLOCKED" = "BLOCKED";
+  let reason: string | undefined;
+
+  if (pending > 0) {
+    reason = `${pending} lane(s) still non-terminal (${missingLanes.join(", ")})`;
+  } else if (failed > 0) {
+    reason = `${failed} lane(s) failed, blocked, or timed out (${failedLanes.join(", ")})`;
+  } else if (missingEvidenceLanes.length > 0) {
+    reason = `One or more terminal lanes lack evidence URLs (${missingEvidenceLanes.join(", ")})`;
+  } else if (succeeded === expectedTotal && succeeded > 0) {
+    verdict = "FINAL";
+  } else {
+    reason = "No lanes have terminal success evidence — no work was finalized";
+  }
+
+  return {
+    verdict,
+    succeeded,
+    failed,
+    pending,
+    expectedTotal,
+    evidenceIdsCited: uniqueEvidenceIds,
+    evidenceIdsCitedCount: uniqueEvidenceIds.length,
+    missingLanes,
+    reason,
+  };
 }
 
 function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
