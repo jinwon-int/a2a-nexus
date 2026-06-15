@@ -184,6 +184,99 @@ test("broker preserves raw dispatch metadata when brokerId is not configured (no
     "terminalBrief enrichment requires a configured brokerId");
 });
 
+test("broker hoists payload-only parentRound fields onto the top-level task record (#629)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  // Dispatch paths that only stamp parentRound metadata into payload must still
+  // surface it as top-level task.parentRoundId so round-status queries over
+  // listTasks() can key on it reliably.
+  const task = broker.createTask({
+    id: "payload-only-parent-round",
+    intent: "verify",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "jingun", kind: "node", role: "analyst" },
+    assignedWorkerId: "jingun",
+    message: "round child with payload-only parent metadata",
+    payload: {
+      parentRoundId: "round-payload-only-20260614",
+      parentRoundTotal: 5,
+      parentRoundOrder: 3,
+      requestedByBroker: "seoseo",
+    },
+  });
+
+  // Hoisted at create time...
+  assert.equal(task.parentRoundId, "round-payload-only-20260614");
+  assert.equal(task.parentRoundTotal, 5);
+  assert.equal(task.parentRoundOrder, 3);
+  // ...and preserved in payload for existing consumers.
+  assert.equal(task.payload["parentRoundId"], "round-payload-only-20260614");
+
+  // ...and exposed consistently through the listTasks() query path.
+  const listed = broker.listTasks().find((t) => t.id === "payload-only-parent-round");
+  assert.equal(listed?.parentRoundId, "round-payload-only-20260614");
+  assert.equal(listed?.parentRoundTotal, 5);
+  assert.equal(listed?.parentRoundOrder, 3);
+});
+
+test("broker hoists numeric-string parentRound payload fields using Terminal Brief metadata semantics (#629)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+  registerWorker(broker, "jingun");
+
+  const task = broker.createTask({
+    id: "payload-string-parent-round",
+    intent: "verify",
+    requester: { id: "seoseo", kind: "node", role: "operator" },
+    target: { id: "jingun", kind: "node", role: "analyst" },
+    assignedWorkerId: "jingun",
+    message: "round child with string parent metadata",
+    payload: {
+      parentRoundId: " round-string-20260615 ",
+      parentRoundTotal: "5",
+      parentRoundOrder: "3",
+      requestedByBroker: "seoseo",
+    },
+  });
+
+  assert.equal(task.parentRoundId, "round-string-20260615");
+  assert.equal(task.parentRoundTotal, 5);
+  assert.equal(task.parentRoundOrder, 3);
+});
+
+test("broker ignores invalid numeric parentRound fields while falling back to valid payload values (#629)", () => {
+  const broker = new InMemoryA2ABroker(undefined, {
+    ...emptySnapshot(),
+    tasks: [{
+      id: "loaded-invalid-parent-round-number",
+      intent: "verify",
+      requester: { id: "seoseo", kind: "node", role: "operator" },
+      target: { id: "jingun", kind: "node", role: "analyst" },
+      targetNodeId: "jingun",
+      status: "queued",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+      parentRoundId: "round-loaded",
+      parentRoundTotal: 0,
+      parentRoundOrder: -1,
+      payload: {
+        parentRoundTotal: "5",
+        parentRoundOrder: "3",
+      },
+    }],
+  });
+
+  const task = broker.listTasks().find((item) => item.id === "loaded-invalid-parent-round-number");
+  assert.equal(task?.parentRoundTotal, 5);
+  assert.equal(task?.parentRoundOrder, 3);
+});
+
 test("broker idempotent createTask returns existing task with same id (duplicate handling)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
     brokerId: "gwakga",
