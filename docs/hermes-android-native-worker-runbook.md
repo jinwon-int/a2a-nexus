@@ -1,3 +1,7 @@
+## Related development/testing option
+
+For Ubuntu-like package experiments on Termux, see [Termux proot-distro A2A Runner](./termux-proot-distro-a2a-runner.md). Keep that path development/testing only; production A2A worker deployment remains the VPS/systemd lane.
+
 # Hermes / Android Native A2A Worker Runbook
 
 This runbook covers the source-only native worker path for Gongyung/Daegyo-style
