@@ -6649,9 +6649,9 @@ function listWorkerViewsForReadPath(
     return stateStore
       .readHotWorkers({ role: filters.role })
       .filter((worker) => workerMatchesNonSqliteFilters(worker, filters))
-      .map((worker) => toWorkerView(worker, offlineAfterMs));
+      .map((worker) => redactWorkerProviderCapabilities(toWorkerView(worker, offlineAfterMs)));
   }
-  return broker.listWorkerViews(offlineAfterMs, filters);
+  return broker.listWorkerViews(offlineAfterMs, filters).map(redactWorkerProviderCapabilities);
 }
 
 function getWorkerViewForReadPath(
@@ -6662,9 +6662,10 @@ function getWorkerViewForReadPath(
 ): WorkerView | null {
   if (stateStore instanceof SqliteBrokerStateStore) {
     const worker = stateStore.readHotWorkers({ nodeId })[0];
-    return worker ? toWorkerView(worker, offlineAfterMs) : null;
+    return worker ? redactWorkerProviderCapabilities(toWorkerView(worker, offlineAfterMs)) : null;
   }
-  return broker.getWorkerView(nodeId, offlineAfterMs);
+  const worker = broker.getWorkerView(nodeId, offlineAfterMs);
+  return worker ? redactWorkerProviderCapabilities(worker) : null;
 }
 
 function workerMatchesNonSqliteFilters(worker: WorkerRecord, filters: WorkerListFilters): boolean {
@@ -6690,6 +6691,15 @@ function toWorkerView(worker: WorkerRecord, offlineAfterMs: number): WorkerView 
     workerPlane,
     managementPlane,
     updateEligible,
+  };
+}
+
+function redactWorkerProviderCapabilities(worker: WorkerView): WorkerView {
+  if (!worker.capabilities.providerCapabilities?.length) return worker;
+  const { providerCapabilities: _providerCapabilities, ...capabilities } = worker.capabilities;
+  return {
+    ...worker,
+    capabilities,
   };
 }
 

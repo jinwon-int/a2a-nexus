@@ -4758,7 +4758,24 @@ function workerMatchesFilters(worker: WorkerRecord, filters?: WorkerListFilters)
   if (filters?.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
     return false;
   }
+  if (!workerProviderCapabilityMatchesFilters(worker.capabilities.providerCapabilities, filters)) {
+    return false;
+  }
   return true;
+}
+
+function workerProviderCapabilityMatchesFilters(
+  capabilities: WorkerCapabilities["providerCapabilities"] | undefined,
+  filters?: WorkerListFilters,
+): boolean {
+  if (!filters?.providerId && !filters?.modelFamily && !filters?.modelId && !filters?.providerAvailability) return true;
+  return (capabilities ?? []).some((capability) => {
+    if (filters?.providerId && capability.providerId !== filters.providerId.trim().toLowerCase()) return false;
+    if (filters?.modelFamily && capability.modelFamily !== filters.modelFamily.trim().toLowerCase()) return false;
+    if (filters?.modelId && capability.modelId !== filters.modelId.trim().toLowerCase()) return false;
+    if (filters?.providerAvailability && capability.availability !== filters.providerAvailability) return false;
+    return true;
+  });
 }
 
 function getTaskRequeueReason(
@@ -5075,6 +5092,7 @@ function normalizeCapabilities(capabilities: unknown): WorkerCapabilities {
     : {};
   const runtimeFlavor = normalizeWorkerRuntimeFlavor(capabilityRecord.runtimeFlavor);
   const gatewayRequired = normalizeOptionalBoolean(capabilityRecord.gatewayRequired);
+  const providerCapabilities = normalizeProviderCapabilities(capabilityRecord.providerCapabilities);
 
   return {
     canAnalyze: capabilityRecord.canAnalyze === true,
@@ -5083,6 +5101,7 @@ function normalizeCapabilities(capabilities: unknown): WorkerCapabilities {
     canPromoteLive: capabilityRecord.canPromoteLive === true,
     workspaceIds: uniqueStringList(capabilityRecord.workspaceIds),
     environments: uniqueEnvironmentList(capabilityRecord.environments),
+    ...(providerCapabilities.length > 0 ? { providerCapabilities } : {}),
     ...(runtimeFlavor ? { runtimeFlavor } : {}),
     ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
   };
@@ -5126,6 +5145,72 @@ function normalizeOptionalBoolean(value: unknown): boolean | undefined {
     if (normalized === "false") return false;
   }
   return undefined;
+}
+
+function normalizeProviderCapabilities(values: unknown): NonNullable<WorkerCapabilities["providerCapabilities"]> {
+  if (!Array.isArray(values)) return [];
+  const normalized: NonNullable<WorkerCapabilities["providerCapabilities"]> = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!value || typeof value !== "object") continue;
+    const record = value as Record<string, unknown>;
+    const providerId = normalizeProviderCapabilityId(record.providerId);
+    if (!providerId) continue;
+    const routeKind = normalizeProviderRouteKind(record.routeKind);
+    const availability = normalizeProviderAvailability(record.availability);
+    const capability = {
+      providerId,
+      ...(normalizeProviderCapabilityId(record.modelFamily) ? { modelFamily: normalizeProviderCapabilityId(record.modelFamily) } : {}),
+      ...(normalizeProviderCapabilityId(record.modelId) ? { modelId: normalizeProviderCapabilityId(record.modelId) } : {}),
+      routeKind,
+      availability,
+      ...(normalizeProviderEvidenceString(record.lastVerifiedAt) ? { lastVerifiedAt: normalizeProviderEvidenceString(record.lastVerifiedAt) } : {}),
+      ...(normalizeProviderEvidenceString(record.evidenceId) ? { evidenceId: normalizeProviderEvidenceString(record.evidenceId) } : {}),
+    };
+    const key = JSON.stringify([capability.providerId, capability.modelFamily, capability.modelId, capability.routeKind]);
+    if (!seen.has(key)) {
+      seen.add(key);
+      normalized.push(capability);
+    }
+  }
+  return normalized;
+}
+
+function normalizeProviderCapabilityId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._:/+-]{0,63}$/.test(normalized)) return undefined;
+  if (/(secret|token|password|credential|private[_-]?key|api[_-]?key|oauth\.json)/i.test(normalized)) return undefined;
+  return normalized;
+}
+
+function normalizeProviderEvidenceString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 128) return undefined;
+  if (/(ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|xox[baprs]-|-----BEGIN [A-Z ]*PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|secret|token|password|credential|private[_-]?key|api[_-]?key)/i.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function normalizeProviderRouteKind(value: unknown): NonNullable<WorkerCapabilities["providerCapabilities"]>[number]["routeKind"] {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (normalized === "subscription" || normalized === "oauth" || normalized === "api-key") return normalized;
+  return "unknown";
+}
+
+function normalizeProviderAvailability(value: unknown): NonNullable<WorkerCapabilities["providerCapabilities"]>[number]["availability"] {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (
+    normalized === "configured" ||
+    normalized === "canary_passed" ||
+    normalized === "entitlement_failed" ||
+    normalized === "disabled"
+  ) {
+    return normalized;
+  }
+  return "configured";
 }
 
 function uniqueStringList(values: unknown): string[] {

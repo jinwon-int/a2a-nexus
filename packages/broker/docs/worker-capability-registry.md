@@ -21,6 +21,7 @@ Required registry dimensions:
 - supported task types and environments
 - risk boundaries and `requiresApprovalForLive: true`
 - optional max/current capacity hints
+- optional team/private provider/model capability hints (`providerCapabilities`) for secret-safe assignment preflight
 - optional liveness summary
 - `visibility.scope` (`public`, `team`, `private`) plus explicit safe exposure flags
 - AgentCard-compatible discovery subset (`protocolVersion`, `capabilities`, `skills`) that intentionally omits URLs/provider metadata
@@ -43,7 +44,8 @@ For public-safe worker discovery, the registry maps the current worker read mode
 
 - Public-safe registry fields: `schemaVersion`, `worker.id`, `worker.name`, `worker.role`, `worker.mode`, `team.teamId`, `team.lane`, `team.brokerOfRecord`, `assignment.roles`, `assignment.supportedTaskTypes`, `assignment.environments`, `capabilities.canAnalyze`, `capabilities.canBackfill`, `capabilities.canPatchWorkspace`, `capabilities.canPromoteLive`, `capabilities.environments`, `skills`, `safety.canTouchLive`, `safety.requiresApprovalForLive`, `safety.boundaries`, `visibility`, optional capacity hints, and optional liveness summary when explicitly enabled.
 - AgentCard-compatible discovery fields: `agentCard.protocolVersion`, `agentCard.capabilities.streaming`, `agentCard.capabilities.pushNotifications`, `agentCard.defaultInputModes`, `agentCard.defaultOutputModes`, and `agentCard.skills`.
-- Forbidden public fields: worker `brokerUrl`, raw `metadata`, terminal/provider identifiers, private hostnames, tokens, credentials, private keys, raw provider payloads, raw session or prompt text, and `workspaceIds` unless a non-public reviewed card explicitly enables `visibility.exposeWorkspaceIds`.
+- Team/private provider-capability fields: `capabilities.providerCapabilities[].providerId`, optional `modelFamily`/`modelId`, `routeKind`, `availability`, optional `lastVerifiedAt`, and optional non-secret `evidenceId`. These fields are for broker-local assignment/preflight only and are omitted unless a non-public card sets `visibility.exposeProviderCapabilities=true` after review. Public cards must not carry provider capabilities.
+- Forbidden public fields: worker `brokerUrl`, raw `metadata`, terminal/provider identifiers, `providerCapabilities`, private hostnames, tokens, credentials, private keys, raw OAuth paths or payloads, raw provider payloads, raw session or prompt text, and `workspaceIds` unless a non-public reviewed card explicitly enables `visibility.exposeWorkspaceIds`.
 
 Assignment safety remains broker-owned and fail-closed: cards may help select candidate workers for #432 readiness lanes such as Team2/gwakga `dungae`, but they do not grant a lease, approve live work, ACK terminal receipts, or bypass operator approval. Public cards must keep `visibility.safeForDiscovery=true`, `visibility.exposeBrokerUrl=false`, `visibility.exposeWorkspaceIds=false`, and `safety.requiresApprovalForLive=true`.
 
@@ -114,6 +116,43 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
   "visibility": { "scope": "public", "safeForDiscovery": true, "exposeBrokerUrl": false, "exposeWorkspaceIds": false, "exposeCapacity": true, "exposeLiveness": false, "exposesSecrets": false }
 }
 ```
+
+### Provider/model-capable Team2 worker (`soonwook`, private/team scope only)
+
+```json
+{
+  "schemaVersion": "worker-capability-card/v1",
+  "worker": { "id": "soonwook", "name": "Soonwook Team2 model-capable worker", "role": "analyst", "mode": "persistent" },
+  "team": { "teamId": "team2", "lane": "team2", "brokerOfRecord": "gwakga" },
+  "assignment": {
+    "roles": ["implementation"],
+    "supportedTaskTypes": ["analyze", "validate_change"],
+    "environments": ["research"]
+  },
+  "capabilities": {
+    "canAnalyze": true,
+    "canBackfill": false,
+    "canPatchWorkspace": true,
+    "canPromoteLive": false,
+    "workspaceIds": [],
+    "environments": ["research"],
+    "providerCapabilities": [
+      {
+        "providerId": "xai",
+        "modelFamily": "grok",
+        "modelId": "grok-4.2",
+        "routeKind": "subscription",
+        "availability": "configured",
+        "lastVerifiedAt": "2026-06-15T01:00:00.000Z",
+        "evidenceId": "non-secret-canary-evidence-id"
+      }
+    ]
+  },
+  "visibility": { "scope": "team", "safeForDiscovery": false, "exposeBrokerUrl": false, "exposeWorkspaceIds": false, "exposeCapacity": true, "exposeLiveness": true, "exposeProviderCapabilities": true, "exposesSecrets": false }
+}
+```
+
+Provider/model-capable workers must start at `availability=configured` until a fresh, operator-approved entitlement/canary check updates the state to `canary_passed` or `entitlement_failed`. Do not store OAuth file paths, cookies, token values, subscription ids, or raw provider responses in the card.
 
 ## Implications for related work
 

@@ -23,7 +23,7 @@ test("read-path filters normalize task status aliases and bounded limits", () =>
 
 test("read-path filters ignore invalid enum values and trim optional strings", () => {
   const proposal = proposalFiltersFromUrl(new URL("http://broker.local/proposals?status=bogus&kind=patch&sourceNodeId=%20sogyo%20"));
-  const worker = workerFiltersFromUrl(new URL("http://broker.local/workers?role=bogus&environment=research&workspaceId=%20lab%20"));
+  const worker = workerFiltersFromUrl(new URL("http://broker.local/workers?role=bogus&environment=research&workspaceId=%20lab%20&providerId=%20xai%20&modelFamily=grok&modelId=grok-4.2&providerAvailability=canary_passed"));
   const audit = auditFiltersFromUrl(new URL("http://broker.local/audit?action=task.claimed&actorId=%20broker%20"));
 
   assert.deepEqual(proposal, {

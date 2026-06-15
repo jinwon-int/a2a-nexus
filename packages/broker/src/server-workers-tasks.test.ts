@@ -1206,6 +1206,58 @@ test("server rejects unauthorized reassign with 401", async () => {
   }
 });
 
+test("server redacts provider capabilities from non-SQLite worker read paths", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: jsonHeaders({
+        "x-a2a-requester-id": "soonwook",
+        "x-a2a-requester-role": "analyst",
+      }),
+      body: JSON.stringify({
+        nodeId: "soonwook",
+        role: "analyst",
+        capabilities: {
+          canAnalyze: true,
+          canBackfill: false,
+          canPatchWorkspace: true,
+          canPromoteLive: false,
+          workspaceIds: ["team2"],
+          environments: ["research"],
+          providerCapabilities: [
+            {
+              providerId: "xai",
+              modelFamily: "grok",
+              modelId: "grok-4.2",
+              routeKind: "subscription",
+              availability: "canary_passed",
+              evidenceId: "non-secret-evidence-id",
+            },
+          ],
+        },
+      }),
+    });
+    assert.equal(registerRes.status, 201);
+
+    const listRes = await fetch(`${server.baseUrl}/workers?providerId=openai&modelId=gpt-4`);
+    assert.equal(listRes.status, 200);
+    const listBody = await listRes.json();
+    assert.equal(listBody.items.length, 1);
+    assert.equal(JSON.stringify(listBody).includes("xai"), false);
+    assert.equal(JSON.stringify(listBody).includes("grok"), false);
+
+    const detailRes = await fetch(`${server.baseUrl}/workers/soonwook`);
+    assert.equal(detailRes.status, 200);
+    const detailBody = await detailRes.json();
+    assert.equal(detailBody.nodeId, "soonwook");
+    assert.equal(JSON.stringify(detailBody).includes("xai"), false);
+    assert.equal(JSON.stringify(detailBody).includes("grok"), false);
+  } finally {
+    await server.close();
+  }
+});
+
 test("server approves blocked live-impact task with operator audit metadata", async () => {
   const server = await startTestServer();
   try {

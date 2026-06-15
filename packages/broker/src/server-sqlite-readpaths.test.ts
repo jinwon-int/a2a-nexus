@@ -1055,6 +1055,16 @@ test("server reads /workers from SQLite hot tables when SQLite store is active",
           canPromoteLive: false,
           workspaceIds: ["test"],
           environments: ["research"],
+          providerCapabilities: [
+            {
+              providerId: "xai",
+              modelFamily: "grok",
+              modelId: "grok-4.2",
+              routeKind: "subscription",
+              availability: "canary_passed",
+              evidenceId: "non-secret-evidence-id",
+            },
+          ],
         },
         createdAt: "2026-04-27T00:00:00.000Z",
         updatedAt: "2026-04-27T00:00:00.000Z",
@@ -1097,11 +1107,15 @@ test("server reads /workers from SQLite hot tables when SQLite store is active",
       throw new Error("failed to bind test server");
     }
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/workers?role=analyst&environment=research&workspaceId=test`);
+    const res = await fetch(`http://127.0.0.1:${address.port}/workers?role=analyst&environment=research&workspaceId=test&providerId=openai&modelId=gpt-4`);
     assert.equal(res.status, 200);
     const body = await res.json();
+    const { providerCapabilities: _providerCapabilities, ...publicCapabilities } = snapshot.workers[0]!.capabilities;
+    assert.equal(JSON.stringify(body).includes("xai"), false);
+    assert.equal(JSON.stringify(body).includes("grok"), false);
     assert.deepEqual(body.items, [{
       ...snapshot.workers[0],
+      capabilities: publicCapabilities,
       status: "online",
       workerPlane: "online",
       managementPlane: "unknown",
