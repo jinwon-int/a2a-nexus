@@ -17,7 +17,9 @@
  * (b) handler presence + executable bit, and (c) the unified #655 taxonomy.
  *
  * Failure codes: secret_invalid | broker_route_mismatch | service_path_drift |
- *                worker_root_missing | handler_missing | task_poll_unauthorized
+ *                worker_root_missing | handler_missing | task_poll_unauthorized |
+ *                worker_role_mismatch | heartbeat_requester_role_mismatch |
+ *                broker_worker_stale
  *
  * Secret-safe: consumes only secretLength / secretPresent plus redaction-safe
  * taskPollProbe metadata — never a raw secret — and emits only lengths/categories.
@@ -64,6 +66,10 @@ function taskPollProbeStatusOf(probe) {
 function hasRawCredentialField(probe) {
   if (!probe || typeof probe !== "object") return false;
   return ["secret", "edgeSecret", "brokerEdgeSecret", "token", "authorization", "headers"].some((field) => Object.hasOwn(probe, field));
+}
+
+function serviceActiveOf(record) {
+  return record?.serviceActive === true || record?.active === true;
 }
 
 /**
@@ -147,6 +153,58 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
     if (probeBrokerId && homeBrokerId && probeBrokerId !== homeBrokerId) {
       violations.push({ code: "task_poll_unauthorized", reason: `task-poll probe brokerId '${probeBrokerId}' does not match home broker '${homeBrokerId}'` });
     }
+  }
+
+  // 7. worker role drift (#739). `systemctl is-active` plus the right artifact
+  // revision is NOT healthy if the local WORKER_ROLE no longer matches the role
+  // the broker registered/expects: the broker then rejects heartbeats with 401
+  // "worker.heartbeat requester role must match <role>", leaving the worker
+  // active-but-stale. Roles are not secret and may appear in diagnostics; raw
+  // credentials still must not.
+  const localRole = hasText(record?.role) ? record.role.trim() : null;
+  const expectedRole = hasText(record?.expectedRole) ? record.expectedRole.trim() : null;
+
+  // (a) Classify a broker heartbeat rejection explicitly as role drift rather
+  // than a generic service-active success.
+  const heartbeatProbe = record?.heartbeatProbe;
+  if (heartbeatProbe) {
+    if (hasRawCredentialField(heartbeatProbe)) {
+      violations.push({ code: "heartbeat_requester_role_mismatch", reason: "heartbeat probe must not carry raw credential fields" });
+    }
+    const hbReason = hasText(heartbeatProbe.reason)
+      ? heartbeatProbe.reason.trim()
+      : hasText(heartbeatProbe.error)
+        ? heartbeatProbe.error.trim()
+        : "";
+    const hbStatus = taskPollProbeStatusOf(heartbeatProbe);
+    const roleMatch = hbReason.match(/requester role must match(?:\s+privileged actor role)?\s+([a-z][a-z-]*)/i);
+    if (roleMatch || (hbStatus === 401 && /\brole\b/i.test(hbReason))) {
+      const brokerExpected = roleMatch?.[1] ?? expectedRole ?? "(broker-expected role)";
+      violations.push({
+        code: "heartbeat_requester_role_mismatch",
+        reason: `broker rejected heartbeat: local role '${localRole ?? "(missing)"}' must match broker-expected role '${brokerExpected}' — set WORKER_ROLE=${brokerExpected} and restart`,
+      });
+    }
+  }
+
+  // (b) Declared local vs expected role mismatch, catchable before a live probe.
+  if (localRole && expectedRole && localRole !== expectedRole) {
+    violations.push({
+      code: "worker_role_mismatch",
+      reason: `local WORKER_ROLE '${localRole}' != broker-expected role '${expectedRole}' — set WORKER_ROLE=${expectedRole} and restart`,
+    });
+  }
+
+  // (c) Post-deploy: a service reporting active is not healthy if the broker
+  // still shows the worker stale/absent. Requires broker /workers freshness, not
+  // just systemd active + artifact revision.
+  const serviceActive = serviceActiveOf(record);
+  const brokerWorkerStatus = hasText(record?.brokerWorkerStatus) ? record.brokerWorkerStatus.trim().toLowerCase() : null;
+  if (serviceActive && brokerWorkerStatus && brokerWorkerStatus !== "online") {
+    violations.push({
+      code: "broker_worker_stale",
+      reason: `service is active but broker reports worker '${name}' as '${brokerWorkerStatus}', not online`,
+    });
   }
 
   return { node: name, ok: violations.length === 0, secretLength, violations };
