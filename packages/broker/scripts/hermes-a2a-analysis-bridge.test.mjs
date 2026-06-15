@@ -412,6 +412,151 @@ test("Hermes A2A analysis bridge accepts embedded source evidence without repo-m
 });
 
 
+test("Hermes A2A analysis bridge preserves sourceBundle files under the prompt budget", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-budget-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('Read-only source bundle (3 files):')) throw new Error('source bundle header missing');",
+      "if (!prompt.includes('virtual/issue-inventory.json')) throw new Error('issue inventory missing');",
+      "if (!prompt.includes('packages/broker/src/server.ts')) throw new Error('server source path missing');",
+      "if (!prompt.includes('packages/broker/src/core/broker.ts')) throw new Error('broker source path missing');",
+      "if (!prompt.includes('server marker survived prompt budget')) throw new Error('server source content missing');",
+      "if (!prompt.includes('broker marker survived prompt budget')) throw new Error('broker source content missing');",
+      "if (prompt.includes('issue inventory filler should not crowd out source sections')) throw new Error('bulky payload sourceBundle content should be summarized before Hermes');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'source bundle files survived prompt budget',",
+      "  findings: ['all embedded sourceBundle.files reached Hermes as source sections'],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/server.ts']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const bulkyIssueInventory = "issue inventory filler should not crowd out source sections\n".repeat(1000);
+    const message = [
+      "A2A source-only task with canonical sourceBundle.files.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        sourceBundle: {
+          files: [
+            { path: "virtual/issue-inventory.json", content: bulkyIssueInventory },
+            { path: "packages/broker/src/server.ts", content: "export const serverMarker = 'server marker survived prompt budget';\n" },
+            { path: "packages/broker/src/core/broker.ts", contentText: "export const brokerMarker = 'broker marker survived prompt budget';\n" },
+          ],
+        },
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: "{}",
+        A2A_HERMES_ANALYSIS_MAX_FILES: "10",
+        A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "200000",
+        A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: "160000",
+        A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: "60000",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.ok(Buffer.byteLength(prompt, "utf8") <= 60000);
+    assert.match(prompt, /Read-only source bundle \(3 files\):/);
+    assert.match(prompt, /packages\/broker\/src\/server\.ts/);
+    assert.match(prompt, /packages\/broker\/src\/core\/broker\.ts/);
+    assert.match(prompt, /server marker survived prompt budget/);
+    assert.match(prompt, /broker marker survived prompt budget/);
+    assert.doesNotMatch(prompt, /issue inventory filler should not crowd out source sections/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+
+test("Hermes A2A analysis bridge does not leak raw payload tails in summarized messages", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-message-summary-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "const markerCount = prompt.split('SECRET_TAIL_MARKER_XYZ').length - 1;",
+      "if (markerCount !== 1) throw new Error(`expected marker exactly once in source section, got ${markerCount}`);",
+      "const originalMessageSection = prompt.split('Original worker message (source content summarized):')[1] || '';",
+      "if (originalMessageSection.includes('SECRET_TAIL_MARKER_XYZ')) throw new Error('raw source leaked in summarized original message');",
+      "if (/}ecret\s*=/.test(originalMessageSection)) throw new Error('summarized original message retained raw payload tail');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'raw payload tails were omitted from summarized message',",
+      "  findings: ['source marker appeared only in the source section'],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/server.ts']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task with whitespace before payload JSON.",
+      "Payload JSON:     \n\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        sourceBundle: {
+          files: [
+            { path: "packages/broker/src/server.ts", content: "export const secret = 'SECRET_TAIL_MARKER_XYZ';\n" },
+          ],
+        },
+      }),
+      "Trailing instruction after payload JSON should remain.",
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: "{}",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.equal(prompt.split("SECRET_TAIL_MARKER_XYZ").length - 1, 1);
+    const originalMessageSection = prompt.split("Original worker message (source content summarized):")[1] || "";
+    assert.doesNotMatch(originalMessageSection, /SECRET_TAIL_MARKER_XYZ/);
+    assert.match(originalMessageSection, /Trailing instruction after payload JSON should remain/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+
 test("Hermes A2A analysis bridge fails closed when Hermes returns non-JSON", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-bad-json-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
