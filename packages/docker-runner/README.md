@@ -620,7 +620,7 @@ export A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR=/root/.hermes
 export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:<runner-sha>
 # Optional: follow the mounted native Hermes profile model instead of pinning here.
 # export A2A_DOCKER_RUNNER_MODEL_SOURCE=native
-export A2A_HERMES_MODEL=deepseek/deepseek-v4-flash
+export A2A_HERMES_MODEL=openai-codex/gpt-5.5
 export A2A_HERMES_TIMEOUT_SEC=3600
 # Optional: enable bounded same-container helper fanout for broad A2A tasks.
 export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1

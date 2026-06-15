@@ -447,6 +447,17 @@ test("loadConfig Hermes patch profile honors custom config dir", async () => {
   assert.deepEqual(config.hermesProfile, { configDir: "/srv/hermes-profile" });
 });
 
+test("Hermes patch profile defaults to the current fleet baseline model (#766)", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+  });
+
+  assert.match(config.commandScript ?? "", /A2A_HERMES_DEFAULT_MODEL='openai-codex\/gpt-5\.5'/);
+  assert.match(config.commandScript ?? "", /export A2A_HERMES_MODEL="\$A2A_HERMES_DEFAULT_MODEL"/);
+  assert.doesNotMatch(config.commandScript ?? "", /A2A_HERMES_DEFAULT_MODEL='deepseek\/deepseek-v4-flash'/);
+});
+
 test("Hermes patch profile can opt into native model source without hardcoding Docker runner fallback", async () => {
   const config = await loadConfig({
     ...baseEnv,

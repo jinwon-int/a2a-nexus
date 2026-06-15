@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const HANDLER_VERSION = "0.2.12";
+const HANDLER_VERSION = "0.2.13";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -15,9 +15,16 @@ const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).dige
 const ALLOWED_WORKER_MODELS = new Set([
   "deepseek/deepseek-v4-flash",
   "deepseek/deepseek-v4-pro",
+  "deepseek-v4-pro",
+  // Current native Hermes fleet baseline models (#766).
+  "openai-codex/gpt-5.5",
+  "gpt-5.5",
+  "grok-4.20",
   // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
   "minimax-m3",
 ]);
+
+const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.5";
 
 const VALID_WORKER_THINKING_LEVELS = new Set([
   "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max",
@@ -254,7 +261,7 @@ function resolveWorkerModel(task, env = process.env) {
   if (envModel && ALLOWED_WORKER_MODELS.has(envModel)) {
     return { model: envModel, fromPayload: false };
   }
-  return { model: "deepseek/deepseek-v4-flash", fromPayload: false };
+  return { model: DEFAULT_WORKER_MODEL, fromPayload: false };
 }
 
 /**
