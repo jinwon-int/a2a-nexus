@@ -6,7 +6,7 @@ import type {
   A2AWorkerSubagentTaskProfile,
   A2AWorkerSubagentPolicyInput,
 } from "./worker-subagent-orchestration-policy.js";
-import { optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export interface A2AWorkerSelfAssessmentCapacityInput {
   now?: string;
@@ -219,11 +219,6 @@ function buildSelfAssessmentId(
 
 function valueOrUnknown(value: unknown): string {
   return value === undefined ? "unknown" : String(value);
-}
-
-function numberValue(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return value;
 }
 
 function stringList(value: unknown): string[] | undefined {

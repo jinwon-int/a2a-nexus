@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarExecutorInvocationRehearsalPacket } from "./terminal-brief-sidecar-executor-invocation-rehearsal.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunStartCanaryPlanState =
   | "ready_for_dry_run_start_approval_request"
@@ -561,16 +562,8 @@ function titleForState(state: TerminalBriefSidecarDryRunStartCanaryPlanState): s
   return "Blocked: Terminal Brief sidecar dry-run start canary plan";
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarExecutorInvocationRehearsalPacket(

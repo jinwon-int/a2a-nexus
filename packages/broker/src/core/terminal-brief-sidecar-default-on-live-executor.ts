@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -641,10 +642,6 @@ function titleForState(state: TerminalBriefSidecarDefaultOnLiveExecutorState): s
 
 function humanize(key: string): string {
   return key.replace(/[A-Z]/g, (letter) => " " + letter.toLowerCase());
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isFinalRuntimeMutationExecutorGatePacket(value: unknown): value is SourceGate {

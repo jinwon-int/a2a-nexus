@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -11,7 +12,7 @@ import {
   type TerminalBriefSidecarActivationReceiptIngestorState,
 } from "./terminal-brief-sidecar-activation-receipt-ingestor.js";
 import type { TerminalBriefSidecarDryRunStartApprovalRequestPacket } from "./terminal-brief-sidecar-dry-run-start-approval-request.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunStartApprovalReceiptIngestorState =
   TerminalBriefSidecarActivationReceiptIngestorState;
@@ -563,17 +564,8 @@ function titleForState(state: TerminalBriefSidecarDryRunStartApprovalReceiptInge
   return "Blocked: Terminal Brief sidecar dry-run start approval evidence";
 }
 
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
-}
-
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function numberValue(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return value;
 }
 
 function isTerminalBriefSidecarDryRunStartApprovalRequestPacket(

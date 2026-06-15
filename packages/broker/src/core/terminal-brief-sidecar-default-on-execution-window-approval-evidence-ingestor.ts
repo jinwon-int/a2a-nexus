@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -655,8 +656,4 @@ function isExecutionWindowRequestDraftPacket(
   value: unknown,
 ): value is TerminalBriefSidecarDefaultOnExecutionWindowRequestDraftPacket {
   return isRecord(value) && value.kind === "a2a-broker.terminal-brief-sidecar-default-on-execution-window-request-draft.packet";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }

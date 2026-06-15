@@ -10,6 +10,7 @@
 // dry-run evaluation. It emits typed packets containing the plan, rendered
 // markdown, actions, and safety boundary — but never executes live actions.
 
+import { numberValue } from "./value-text.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -608,10 +609,6 @@ function extractRunnerOptions(
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function stringArrayValue(value: unknown): string[] {

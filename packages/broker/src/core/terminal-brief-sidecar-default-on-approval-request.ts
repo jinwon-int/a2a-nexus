@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -352,10 +353,6 @@ function buildIdempotencyKey(finalGate: TerminalBriefSidecarDefaultOnCandidateFi
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isFinalGatePacket(value: unknown): value is TerminalBriefSidecarDefaultOnCandidateFinalGatePacket {

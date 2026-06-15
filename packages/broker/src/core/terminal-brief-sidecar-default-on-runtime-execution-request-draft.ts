@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -634,10 +635,6 @@ function titleForState(state: TerminalBriefSidecarDefaultOnRuntimeExecutionReque
   if (state === "conflicting") return "Conflicting: Terminal Brief default-on runtime execution request draft";
   if (state === "waiting_for_runtime_execution_final_gate") return "Waiting: Terminal Brief default-on runtime execution request draft";
   return "Blocked: Terminal Brief default-on runtime execution request draft";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isRuntimeExecutionFinalGatePacket(

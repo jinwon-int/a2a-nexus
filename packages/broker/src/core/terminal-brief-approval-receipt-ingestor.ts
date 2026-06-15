@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -571,10 +572,6 @@ function titleForState(state: TerminalBriefApprovalReceiptIngestorState): string
   if (state === "stale") return "Stale: Terminal Brief approval receipt evidence";
   if (state === "conflicting") return "Conflicting: Terminal Brief approval receipt evidence";
   return "Blocked: Terminal Brief approval receipt evidence";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function list(items: unknown[]): string {

@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { A2AWorkerSubagentPlannerHandoffPacket } from "./worker-subagent-planner-handoff.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type A2AWorkerSubagentSpawnAuthorizationRequestState =
   | "authorization_request_draft_ready"
@@ -471,14 +472,6 @@ function buildIdempotencyKey(
     state,
   });
   return "a2a-worker-subagent-spawn-authorization-request:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isPlannerHandoffPacket(value: unknown): value is A2AWorkerSubagentPlannerHandoffPacket {

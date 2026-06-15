@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -569,10 +570,6 @@ function titleForState(state: TerminalBriefSidecarDefaultOnFinalRuntimeMutationE
   if (state === "conflicting") return "Conflicting: Terminal Brief default-on final runtime mutation executor gate";
   if (state === "waiting_for_execution_window_approval_evidence") return "Waiting: Terminal Brief default-on final runtime mutation executor gate";
   return "Blocked: Terminal Brief default-on final runtime mutation executor gate";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isExecutionWindowApprovalEvidencePacket(

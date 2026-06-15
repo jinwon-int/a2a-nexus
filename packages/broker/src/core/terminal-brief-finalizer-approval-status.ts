@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -538,10 +539,6 @@ function titleForState(state: TerminalBriefFinalizerApprovalStatusState): string
 
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefApprovalDispatchAdapterPacket(value: unknown): value is TerminalBriefApprovalDispatchAdapterPacket {

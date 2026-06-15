@@ -12,3 +12,8 @@ export function optionalString(value: unknown): string | undefined {
 export function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
+
+/** Pass through a finite number; return undefined for non-numbers, NaN, or Infinity. */
+export function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}

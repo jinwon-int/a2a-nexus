@@ -1,3 +1,4 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -9,7 +10,7 @@ import {
   type TerminalBriefSidecarActivationReceiptIngestorState,
 } from "./terminal-brief-sidecar-activation-receipt-ingestor.js";
 import type { TerminalBriefSidecarDefaultOnApprovalRequestPacket } from "./terminal-brief-sidecar-default-on-approval-request.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDefaultOnApprovalEvidenceIngestorState =
   TerminalBriefSidecarActivationReceiptIngestorState;
@@ -642,17 +643,8 @@ function titleForState(state: TerminalBriefSidecarDefaultOnApprovalEvidenceInges
   return "Blocked: Terminal Brief default-on approval evidence";
 }
 
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
-}
-
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function numberValue(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return value;
 }
 
 function isTerminalBriefSidecarDefaultOnApprovalRequestPacket(

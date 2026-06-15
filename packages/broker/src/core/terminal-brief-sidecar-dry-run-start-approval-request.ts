@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarPreflightChainReviewPacket } from "./terminal-brief-sidecar-preflight-chain-review.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunStartApprovalRequestState =
   | "approval_request_draft_ready"
@@ -593,14 +594,6 @@ function titleForState(state: TerminalBriefSidecarDryRunStartApprovalRequestStat
   if (state === "degraded") return "Degraded: Terminal Brief sidecar supervised dry-run start approval source";
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar supervised dry-run start approval source";
   return "Blocked: Terminal Brief sidecar supervised dry-run start approval request";
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarPreflightChainReviewPacket(

@@ -1,8 +1,9 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDryRunGatePacket } from "./terminal-brief-sidecar-dry-run-gate.js";
-import { optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarActivationApprovalState =
   | "approval_request_draft_ready"
@@ -474,14 +475,6 @@ function titleForState(state: TerminalBriefSidecarActivationApprovalState): stri
   if (state === "waiting_for_gate") return "Waiting: Terminal Brief sidecar dry-run gate";
   if (state === "stale") return "Stale: Terminal Brief sidecar activation approval source";
   return "Blocked: Terminal Brief sidecar activation approval request draft";
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarDryRunGatePacket(value: unknown): value is TerminalBriefSidecarDryRunGatePacket {

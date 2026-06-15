@@ -1,3 +1,5 @@
+import { unique } from "./collections.js";
+import { numberValue } from "./value-text.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
@@ -359,14 +361,6 @@ function buildGateReference(observation: TerminalBriefSidecarBoundedDryRunObserv
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isObservationPacket(value: unknown): value is TerminalBriefSidecarBoundedDryRunObservationPacket {

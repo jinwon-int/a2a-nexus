@@ -1,9 +1,10 @@
+import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefFinalizerApprovalStatusPacket } from "./terminal-brief-finalizer-approval-status.js";
 import type { TerminalBriefSidecarIntegrationRehearsal } from "./terminal-brief-sidecar-integration-rehearsal.js";
-import { optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
 
 export type TerminalBriefSidecarDryRunGateState =
   | "ready_for_operator_approval"
@@ -607,16 +608,8 @@ function booleanValue(value: unknown): boolean {
   return value === true;
 }
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 function list(items: unknown[]): string {
   return items.length ? items.join(",") : "none";
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }
 
 function isTerminalBriefSidecarIntegrationRehearsal(value: unknown): value is TerminalBriefSidecarIntegrationRehearsal {
