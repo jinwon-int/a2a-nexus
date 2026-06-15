@@ -92,6 +92,51 @@ function workerPayload(nodeId: "sogyo" | "bangtong") {
   };
 }
 
+test("GET /rounds/:id/status reports round completion progress (#629)", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    const round = "round-http-20260614";
+    await registerTestWorker(server.baseUrl, "w1", "analyst");
+    await registerTestWorker(server.baseUrl, "w2", "analyst");
+    const make = (id: string, target: string) => ({
+      id,
+      requester: { id: "hub", kind: "node", role: "hub" },
+      target: { id: target, kind: "node", role: "analyst" },
+      targetNodeId: target,
+      intent: "analyze",
+      message: "round child",
+      payload: { parentRoundId: round },
+      taskOrigin: "api",
+    });
+    for (const [id, target] of [["r1", "w1"], ["r2", "w2"]] as const) {
+      const res = await fetch(server.baseUrl + "/tasks", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify(make(id, target)),
+      });
+      assert.equal(res.status, 201);
+    }
+
+    const statusRes = await fetch(`${server.baseUrl}/rounds/${encodeURIComponent(round)}/status`, {
+      headers: jsonHeaders(),
+    });
+    assert.equal(statusRes.status, 200);
+    const summary = await statusRes.json() as {
+      parentRoundId: string; total: number; matched: number; completedCount: number;
+      pendingCount: number; completionRate: number; incompleteTaskIds: string[];
+    };
+    assert.equal(summary.parentRoundId, round);
+    assert.equal(summary.total, 2);
+    assert.equal(summary.matched, 2);
+    assert.equal(summary.completedCount, 0); // both queued
+    assert.equal(summary.pendingCount, 2);
+    assert.equal(summary.completionRate, 0);
+    assert.deepEqual(summary.incompleteTaskIds.sort(), ["r1", "r2"]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("worker registration still records material metadata changes", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: true });
   const nodeId = "worker-a";
