@@ -63,6 +63,36 @@ export interface RoundParentAggregateTaskReportItem {
   reportLine: string;
 }
 
+export interface RoundParentAggregateSourceBundleDiagnostics {
+  quality: "missing" | "partial" | "complete";
+  lanesWithSourceBundle: number;
+  lanesMissingSourceBundle: number;
+  maxFileCount: number;
+  totalContentBytes: number;
+  emptyContentFiles: number;
+}
+
+export interface RoundParentAggregateFailureReason {
+  taskId: string;
+  worker: string;
+  status: "failed" | "canceled";
+  reasonCode: string;
+  message?: string;
+}
+
+export interface RoundParentAggregatePendingLane {
+  taskId: string;
+  worker: string;
+  status: Exclude<TaskStatus, "succeeded" | "failed" | "canceled">;
+  reasonCode: "mobile_no_live_queued" | "queued_unclaimed" | "in_progress" | "blocked" | "pending_non_terminal";
+}
+
+export interface RoundParentAggregateDiagnostics {
+  sourceBundle: RoundParentAggregateSourceBundleDiagnostics;
+  failureReasons: RoundParentAggregateFailureReason[];
+  pendingLanes: RoundParentAggregatePendingLane[];
+}
+
 export interface RoundParentAggregateTaskReport {
   generatedAt: string;
   parentRoundId: string;
@@ -73,6 +103,7 @@ export interface RoundParentAggregateTaskReport {
   reportable: number;
   allTerminal: boolean;
   items: RoundParentAggregateTaskReportItem[];
+  diagnostics: RoundParentAggregateDiagnostics;
 }
 
 /**
@@ -162,7 +193,145 @@ export function buildRoundParentAggregateTaskReport(
     reportable: items.filter((item) => item.reportable !== false).length,
     allTerminal: summary.total > 0 && summary.completedCount === summary.total,
     items,
+    diagnostics: buildRoundParentAggregateDiagnostics(tasks, parentRoundId),
   };
+}
+
+function buildRoundParentAggregateDiagnostics(
+  tasks: readonly TaskRecord[],
+  parentRoundId: string,
+): RoundParentAggregateDiagnostics {
+  const roundTasks = tasks.filter((task) => task.parentRoundId === parentRoundId);
+  return {
+    sourceBundle: summarizeSourceBundleQuality(roundTasks),
+    failureReasons: summarizeFailureReasons(roundTasks),
+    pendingLanes: summarizePendingLanes(roundTasks),
+  };
+}
+
+function summarizeSourceBundleQuality(tasks: readonly TaskRecord[]): RoundParentAggregateSourceBundleDiagnostics {
+  let lanesWithSourceBundle = 0;
+  let maxFileCount = 0;
+  let totalContentBytes = 0;
+  let emptyContentFiles = 0;
+
+  for (const task of tasks) {
+    const sourceBundle = readRecord(readRecord(task.payload)?.sourceBundle);
+    const files = Array.isArray(sourceBundle?.files) ? sourceBundle.files : [];
+    if (sourceBundle && files.length > 0) {
+      lanesWithSourceBundle += 1;
+      maxFileCount = Math.max(maxFileCount, files.length);
+      for (const file of files) {
+        const record = readRecord(file);
+        const content = typeof record?.content === "string"
+          ? record.content
+          : (typeof record?.contentText === "string" ? record.contentText : "");
+        totalContentBytes += Buffer.byteLength(content, "utf8");
+        if (content.length === 0) emptyContentFiles += 1;
+      }
+    }
+  }
+
+  const lanesMissingSourceBundle = Math.max(0, tasks.length - lanesWithSourceBundle);
+  const quality = lanesWithSourceBundle === 0
+    ? "missing"
+    : (lanesMissingSourceBundle > 0 || emptyContentFiles > 0 ? "partial" : "complete");
+
+  return {
+    quality,
+    lanesWithSourceBundle,
+    lanesMissingSourceBundle,
+    maxFileCount,
+    totalContentBytes,
+    emptyContentFiles,
+  };
+}
+
+function summarizeFailureReasons(tasks: readonly TaskRecord[]): RoundParentAggregateFailureReason[] {
+  return tasks
+    .filter((task) => task.status === "failed" || task.status === "canceled")
+    .map((task) => {
+      const error = readRecord((task as { error?: unknown }).error);
+      const reasonCode = stringValue(error?.code) ?? task.status;
+      const rawMessage = nestedHandlerErrorMessage(error)
+        ?? stringValue(error?.message)
+        ?? stringValue(readRecord(error?.details)?.message)
+        ?? stringValue(readRecord(task.result)?.summary);
+      const message = rawMessage ? redactSensitiveText(rawMessage, 240) : undefined;
+      return {
+        taskId: task.id,
+        worker: workerIdForTask(task),
+        status: task.status as "failed" | "canceled",
+        reasonCode,
+        ...(message ? { message } : {}),
+      };
+    });
+}
+
+function summarizePendingLanes(tasks: readonly TaskRecord[]): RoundParentAggregatePendingLane[] {
+  return tasks
+    .filter((task) => !TERMINAL_STATUSES.has(task.status))
+    .map((task) => {
+      const worker = workerIdForTask(task);
+      return {
+        taskId: task.id,
+        worker,
+        status: task.status as Exclude<TaskStatus, "succeeded" | "failed" | "canceled">,
+        reasonCode: pendingReasonCode(task.status, worker),
+      };
+    });
+}
+
+function pendingReasonCode(
+  status: TaskStatus,
+  worker: string,
+): RoundParentAggregatePendingLane["reasonCode"] {
+  if (status === "queued") {
+    return isMobileNoLiveWorker(worker) ? "mobile_no_live_queued" : "queued_unclaimed";
+  }
+  if (status === "claimed" || status === "running") return "in_progress";
+  if (status === "blocked") return "blocked";
+  return "pending_non_terminal";
+}
+
+function isMobileNoLiveWorker(worker: string): boolean {
+  return worker === "gongyung" || worker === "daegyo";
+}
+
+function workerIdForTask(task: TaskRecord): string {
+  return task.assignedWorkerId ?? task.targetNodeId ?? task.target?.id ?? "unassigned";
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function nestedHandlerErrorMessage(error: Record<string, unknown> | undefined): string | undefined {
+  const details = readRecord(error?.details);
+  const stdout = stringValue(details?.stdout);
+  if (!stdout) return undefined;
+  try {
+    const parsed = JSON.parse(stdout) as unknown;
+    const nestedError = readRecord(readRecord(parsed)?.error);
+    return stringValue(nestedError?.message) ?? stringValue(readRecord(nestedError?.details)?.message);
+  } catch {
+    return undefined;
+  }
+}
+
+function redactSensitiveText(value: string, limit: number): string {
+  return value
+    .replace(/(Authorization:\s*Bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/\b(TOKEN|SECRET|KEY|PASSWORD|API_KEY|APIKEY|ACCESS_TOKEN)=([^\s,;&]+)/gi, "$1=[redacted]")
+    .replace(/([?&](?:token|access_token|api_key|apikey|secret|key|password)=)[^&\s,;]+/gi, "$1[redacted]")
+    .replace(/((?:\"|')?(?:token|access_token|api_key|apikey|secret|key|password)(?:\"|')?\s*:\s*(?:\"|')?)[^\"'\s,;}]+((?:\"|')?)/gi, "$1[redacted]$2")
+    .slice(0, limit);
 }
 
 function appendMissingLaneItems(items: RoundParentAggregateTaskReportItem[], summary: RoundStatusSummary): void {
