@@ -12,6 +12,8 @@ const completeDecision: A2AFinalizerDecision = {
   finalizerDecisionId: "fd-001",
   finalizerOwner: "seoseo",
   parentRoundId: "round-42",
+  parentRoundTotal: 3,
+  parentRoundOrder: 3,
   brokerOfRecordId: "seoseo",
   executionLane: "a2ad",
   allowedActions: ["pr_merge"],
@@ -48,6 +50,16 @@ test("a2a-required action fails closed when the requested action is not in allow
   assert.deepEqual(result.blockers, ["action_not_in_allowed_actions:pr_merge"]);
 });
 
+test("a2a-required action fails closed when requestedAction is not a registered guarded action", () => {
+  const result = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "unregistered_write" as never,
+    finalizerDecision: { ...completeDecision, allowedActions: ["unregistered_write" as never] },
+  });
+  assert.equal(result.allowed, false);
+  assert.ok(result.blockers.includes("invalid_guarded_action:unregistered_write"));
+});
+
 test("a2a-required action fails closed when finalizer provenance is incomplete", () => {
   const result = evaluateA2AExecutionPolicy({
     intent: "A2A로 진행",
@@ -57,6 +69,25 @@ test("a2a-required action fails closed when finalizer provenance is incomplete",
   assert.equal(result.allowed, false);
   assert.ok(result.blockers.includes("missing_finalizer_provenance:finalizerDecisionId"));
   assert.ok(result.blockers.includes("missing_finalizer_provenance:parentRoundId"));
+});
+
+test("a2a-required action fails closed when round count/order provenance is missing or invalid", () => {
+  const missing = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "pr_merge",
+    finalizerDecision: { ...completeDecision, parentRoundTotal: undefined as never, parentRoundOrder: 0 },
+  });
+  assert.equal(missing.allowed, false);
+  assert.ok(missing.blockers.includes("missing_finalizer_provenance:parentRoundTotal"));
+  assert.ok(missing.blockers.includes("missing_finalizer_provenance:parentRoundOrder"));
+
+  const outOfRange = evaluateA2AExecutionPolicy({
+    intent: "A2A로 진행",
+    requestedAction: "pr_merge",
+    finalizerDecision: { ...completeDecision, parentRoundTotal: 2, parentRoundOrder: 3 },
+  });
+  assert.equal(outOfRange.allowed, false);
+  assert.ok(outOfRange.blockers.includes("invalid_finalizer_provenance:parentRoundOrder"));
 });
 
 test("wrapper-only evidence does not count as substantive worker evidence", () => {
