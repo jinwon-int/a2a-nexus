@@ -4820,7 +4820,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       ) {
         return handleRoundStatusRequest({
           res,
-          parentRoundId: decodeURIComponent(segments[1]),
+          rawParentRoundId: segments[1],
           getRoundStatus: (parentRoundId) => broker.getRoundStatus(parentRoundId),
         });
       }

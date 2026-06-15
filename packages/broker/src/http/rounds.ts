@@ -5,16 +5,25 @@
 
 import type { ServerResponse } from "node:http";
 
+import { BrokerError } from "../core/broker.js";
 import { sendJson } from "./response.js";
 import type { RoundStatusSummary } from "../core/round-status.js";
 
 export interface RoundStatusRouteContext {
   res: ServerResponse;
-  parentRoundId: string;
+  /** The raw (still percent-encoded) `:id` path segment. */
+  rawParentRoundId: string;
   getRoundStatus: (parentRoundId: string) => RoundStatusSummary;
 }
 
 /** GET /rounds/:id/status — report A2A/A2AD round completion progress. */
 export function handleRoundStatusRequest(ctx: RoundStatusRouteContext): void {
-  sendJson(ctx.res, 200, ctx.getRoundStatus(ctx.parentRoundId));
+  let parentRoundId: string;
+  try {
+    parentRoundId = decodeURIComponent(ctx.rawParentRoundId);
+  } catch {
+    // A malformed percent-encoded path segment is a client error, not a 500.
+    throw new BrokerError("bad_request", "round id path segment is not valid percent-encoding");
+  }
+  sendJson(ctx.res, 200, ctx.getRoundStatus(parentRoundId));
 }
