@@ -288,6 +288,8 @@ function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remaining
   if (!isSafeRelativePath(path)) return { warning: `skipped unsafe embedded source path: ${path || "<empty>"}` };
   const rawContent = typeof item.content === "string"
     ? item.content
+    : typeof item.contentText === "string"
+      ? item.contentText
     : typeof item.text === "string"
       ? item.text
       : "";
@@ -458,6 +460,7 @@ function collectSourceBundle(payload, env) {
   const maxFileBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES || DEFAULT_MAX_FILE_BYTES);
   const maxTotalBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES || DEFAULT_MAX_TOTAL_BYTES);
   const maxTreeEntries = Number(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES || DEFAULT_TREE_ENTRIES);
+  const maxPromptBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
 
   const files = [];
   const warnings = [];
@@ -468,7 +471,7 @@ function collectSourceBundle(payload, env) {
     return {
       files,
       warnings,
-      limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries },
+      limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes },
       sourceBlocked: { reason: prRef.blocked, evidenceRefs: [] },
     };
   }
@@ -479,7 +482,7 @@ function collectSourceBundle(payload, env) {
       return {
         files,
         warnings,
-        limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries },
+        limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes },
         sourceBlocked: { reason: fetched.blockedReason, evidenceRefs: [`${prRef.repo}#${prRef.pr}`] },
       };
     }
@@ -560,7 +563,7 @@ function collectSourceBundle(payload, env) {
     }
   }
 
-  return { files, warnings, limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries } };
+  return { files, warnings, limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes } };
 }
 
 function extractJsonFromLooseText(text) {
@@ -621,13 +624,90 @@ function hasUsableHermesAnalysisJson(text) {
   }
 }
 
-function buildHermesPrompt({ message, payload, sourceBundle, flags }) {
-  const sourceSections = sourceBundle.files.map((file) => [
-    `### ${file.repo}:${file.path}${file.truncated ? " (truncated)" : ""}`,
+function summarizeSourceEvidenceForPrompt(value) {
+  const files = [];
+  for (const item of toArray(value?.files ?? value)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const repo = safeText(item.repo || item.repository, "");
+    const path = safeText(item.path || item.file || item.name, "");
+    const content = typeof item.content === "string"
+      ? item.content
+      : typeof item.contentText === "string"
+        ? item.contentText
+        : typeof item.text === "string"
+          ? item.text
+          : "";
+    files.push({
+      ...(repo ? { repo } : {}),
+      ...(path ? { path } : {}),
+      bytes: Buffer.byteLength(content, "utf8"),
+      hasContent: content.length > 0,
+    });
+  }
+  return { files, fileCount: files.length };
+}
+
+function payloadForPrompt(payload) {
+  const copy = JSON.parse(JSON.stringify(payload ?? {}));
+  if (copy.sourceBundle && typeof copy.sourceBundle === "object" && !Array.isArray(copy.sourceBundle)) {
+    copy.sourceBundle = {
+      ...copy.sourceBundle,
+      files: summarizeSourceEvidenceForPrompt(copy.sourceBundle).files,
+      contentOmitted: "sourceBundle file content is shown only in the Read-only source bundle sections below",
+    };
+  }
+  if (Array.isArray(copy.embeddedSourceEvidence)) {
+    copy.embeddedSourceEvidence = summarizeSourceEvidenceForPrompt(copy.embeddedSourceEvidence).files;
+    copy.embeddedSourceEvidenceContentOmitted = "embedded source content is shown only in the Read-only source bundle sections below";
+  }
+  if (Array.isArray(copy.sourceEvidence)) {
+    copy.sourceEvidence = summarizeSourceEvidenceForPrompt(copy.sourceEvidence).files;
+    copy.sourceEvidenceContentOmitted = "source evidence content is shown only in the Read-only source bundle sections below";
+  }
+  return copy;
+}
+
+function messageForPrompt(message, payload) {
+  const text = String(message || "");
+  const marker = /Payload JSON\s*:/i.exec(text);
+  if (!marker) return text;
+  const start = marker.index + marker[0].length;
+  const jsonOffset = text.slice(start).search(/[\[{]/);
+  if (jsonOffset < 0) return text;
+  const jsonStart = start + jsonOffset;
+  const jsonText = extractBalancedJson(text, jsonStart);
+  if (!jsonText) return text;
+  return `${text.slice(0, start)}\n${JSON.stringify(payloadForPrompt(payload), null, 2)}${text.slice(jsonStart + jsonText.length)}`;
+}
+
+function sourceSectionText(file, contentBudget) {
+  const header = `### ${file.repo}:${file.path}${file.truncated ? " (truncated)" : ""}`;
+  const contentBytes = Buffer.byteLength(String(file.content || ""), "utf8");
+  let content = String(file.content || "");
+  let omitted = "";
+  if (file.path.startsWith("virtual/") && contentBytes > contentBudget) {
+    content = "";
+    omitted = `[large virtual source omitted from prompt body: bytes=${contentBytes}. Use the path/summary plus concrete repository files below.]`;
+  } else {
+    content = truncateUtf8ToBytes(content, contentBudget);
+    if (Buffer.byteLength(content, "utf8") < contentBytes) {
+      omitted = `\n[truncated source file for prompt budget: originalBytes=${contentBytes} keptBytes=${Buffer.byteLength(content, "utf8")}]`;
+    }
+  }
+  return [
+    header,
     "```text",
-    file.content,
-    "```",
-  ].join("\n"));
+    content || omitted,
+    content ? `${omitted}\n\`\`\`` : "```",
+  ].join("\n");
+}
+
+function buildHermesPrompt({ message, payload, sourceBundle, flags }) {
+  const maxPromptBytes = sourceBundle.limits?.maxPromptBytes || DEFAULT_MAX_PROMPT_BYTES;
+  const fixedBudget = Math.min(24 * 1024, Math.floor(maxPromptBytes * 0.35));
+  const sourceBudget = Math.max(4 * 1024, maxPromptBytes - fixedBudget);
+  const perFileBudget = Math.max(512, Math.floor(sourceBudget / Math.max(1, sourceBundle.files.length)));
+  const sourceSections = sourceBundle.files.map((file) => sourceSectionText(file, perFileBudget));
 
   const warningSection = sourceBundle.warnings.length
     ? `\n\nRead-only source warnings:\n${sourceBundle.warnings.map((item) => `- ${item}`).join("\n")}`
@@ -644,11 +724,11 @@ function buildHermesPrompt({ message, payload, sourceBundle, flags }) {
     `OpenClaw-shaped session id: ${safeText(flags["session-id"], "")}`,
     `Effective model requested by worker: ${safeText(flags.model, "")}`,
     `Effective thinking requested by worker: ${safeText(flags.thinking, "")}`,
-    `Task payload JSON:\n${JSON.stringify(payload, null, 2)}`,
-    `Original worker message:\n${message}`,
     `Read-only source bundle (${sourceBundle.files.length} files):`,
     sourceSections.length ? sourceSections.join("\n\n") : "<no source files available>",
     warningSection,
+    `Task payload JSON (source content summarized; inspect source sections above):\n${JSON.stringify(payloadForPrompt(payload), null, 2)}`,
+    `Original worker message (source content summarized):\n${messageForPrompt(message, payload)}`,
   ].join("\n\n");
 }
 
