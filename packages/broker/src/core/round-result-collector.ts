@@ -663,8 +663,9 @@ function classifyEvidenceClass(
       text.includes("hermes-a2a-analysis-bridge.mjs eacces") ||
       text.includes("analysis bridge") && text.includes("eacces") ||
       text.includes("model") && text.includes("does not exist") ||
-      text.includes("model is not supported") ||
-      text.includes("does not have access")
+      text.includes("model") && text.includes("is not supported") ||
+      text.includes("model") && text.includes("does not have access") ||
+      text.includes("provider") && text.includes("does not have access")
     ) {
       return "handler_artifact_failure";
     }
