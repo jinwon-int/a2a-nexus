@@ -418,6 +418,7 @@ import {
   parseSingleStreamingMessageRequest,
 } from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
+import { handleRoundStatusRequest } from "./http/rounds.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
 import {
   DEFAULT_TASK_LIST_LIMIT,
@@ -4808,6 +4809,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           throw new BrokerError("not_found", "proposal not found");
         }
         return sendJson(res, 200, details);
+      }
+
+      if (
+        req.method === "GET" &&
+        segments[0] === "rounds" &&
+        segments[1] &&
+        segments[2] === "status" &&
+        segments.length === 3
+      ) {
+        return handleRoundStatusRequest({
+          res,
+          parentRoundId: decodeURIComponent(segments[1]),
+          getRoundStatus: (parentRoundId) => broker.getRoundStatus(parentRoundId),
+        });
       }
 
       if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "artifacts") {
