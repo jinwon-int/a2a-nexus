@@ -78,10 +78,8 @@ import {
 } from "./core/sqlite-worker-thread-persistence.js";
 import type { WorkerThreadPersistenceHandle } from "./core/sqlite-worker-thread-persistence.js";
 import type {
-  A2AExchangeMessageRecord,
   A2AExchangeMessageRequest,
   A2AExchangeRequest,
-  A2AExchangeState,
   AuditAction,
   AuditEvent,
   AuditListFilters,
@@ -417,6 +415,11 @@ import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalByIdRequest, handleProposalsListRequest } from "./http/proposals-read.js";
 import {
+  handleExchangeByIdRequest,
+  handleExchangeMessagesRequest,
+  handleExchangesListRequest,
+} from "./http/exchanges-read.js";
+import {
   handleWorkerByIdRequest,
   handleWorkerCapacityRequest,
   handleWorkersListRequest,
@@ -430,9 +433,6 @@ import {
   taskIdsFromUrl,
 } from "./http/read-path-filters.js";
 
-interface ThreadedExchangeMessage extends A2AExchangeMessageRecord {
-  replies: ThreadedExchangeMessage[];
-}
 
 interface DashboardAttentionItem {
   code: string;
@@ -4731,7 +4731,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && path === "/exchanges") {
-        return sendJson(res, 200, { items: listExchangesForReadPath(stateStore, broker) });
+        return handleExchangesListRequest({ res, stateStore, broker });
       }
 
       if (req.method === "POST" && path === "/exchanges") {
@@ -4752,17 +4752,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && segments[0] === "exchanges" && segments[1] && segments[2] === "messages") {
-        const parentMessageId = optionalString(url.searchParams.get("parentMessageId"));
-        const includeDescendants = booleanQueryParam(url, "includeDescendants") ?? false;
-        const items = listExchangeMessagesForReadPath(stateStore, broker, segments[1], {
-          parentMessageId,
-          includeDescendants,
-        });
-        return sendJson(res, 200, {
+        return handleExchangeMessagesRequest({
+          res,
+          stateStore,
+          broker,
           exchangeId: segments[1],
-          parentMessageId,
-          items,
-          threads: buildMessageThreads(items),
+          parentMessageId: optionalString(url.searchParams.get("parentMessageId")),
+          includeDescendants: booleanQueryParam(url, "includeDescendants") ?? false,
         });
       }
 
@@ -4784,11 +4780,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (req.method === "GET" && segments[0] === "exchanges" && segments[1] && segments.length === 2) {
-        const exchange = getExchangeForReadPath(stateStore, broker, segments[1]);
-        if (!exchange) {
-          throw new BrokerError("not_found", "exchange not found");
-        }
-        return sendJson(res, 200, exchange);
+        return handleExchangeByIdRequest({ res, stateStore, broker, exchangeId: segments[1] });
       }
 
       if (req.method === "GET" && path === "/proposals") {
@@ -6526,78 +6518,6 @@ function latestAuditEvent(events: AuditEvent[]): AuditEvent | null {
   return latest;
 }
 
-function listExchangesForReadPath(
-  stateStore: BrokerStateStore,
-  broker: InMemoryA2ABroker,
-): A2AExchangeState[] {
-  if (stateStore instanceof SqliteBrokerStateStore) {
-    return stateStore.readHotExchanges();
-  }
-  return broker.listExchanges();
-}
-
-function getExchangeForReadPath(
-  stateStore: BrokerStateStore,
-  broker: InMemoryA2ABroker,
-  exchangeId: string,
-): A2AExchangeState | null {
-  if (stateStore instanceof SqliteBrokerStateStore) {
-    return stateStore.readHotExchanges({ id: exchangeId })[0] ?? null;
-  }
-  return broker.getExchange(exchangeId);
-}
-
-function listExchangeMessagesForReadPath(
-  stateStore: BrokerStateStore,
-  broker: InMemoryA2ABroker,
-  exchangeId: string,
-  filters: {
-    parentMessageId?: string;
-    includeDescendants?: boolean;
-  },
-): A2AExchangeMessageRecord[] {
-  if (!(stateStore instanceof SqliteBrokerStateStore)) {
-    return broker.listExchangeMessages(exchangeId, filters);
-  }
-
-  if (!stateStore.readHotExchanges({ id: exchangeId })[0]) {
-    throw new BrokerError("not_found", "exchange not found");
-  }
-
-  const items = stateStore.readHotExchangeMessages({ exchangeId });
-  if (!filters.parentMessageId) {
-    return items;
-  }
-
-  if (!items.some((message) => message.id === filters.parentMessageId)) {
-    throw new BrokerError("not_found", "exchange message not found");
-  }
-  if (filters.includeDescendants) {
-    const allowedIds = collectThreadMessageIds(items, filters.parentMessageId);
-    return items.filter((message) => allowedIds.has(message.id));
-  }
-  return items.filter((message) => message.parentMessageId === filters.parentMessageId);
-}
-
-function collectThreadMessageIds(
-  messages: A2AExchangeMessageRecord[],
-  parentMessageId: string,
-): Set<string> {
-  const allowedIds = new Set<string>([parentMessageId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const message of messages) {
-      if (message.parentMessageId && allowedIds.has(message.parentMessageId) && !allowedIds.has(message.id)) {
-        allowedIds.add(message.id);
-        changed = true;
-      }
-    }
-  }
-  return allowedIds;
-}
-
-
 function canUseSqliteTaskHotRead(filters: TaskListFilters): boolean {
   return !(
     filters.exchangeId ||
@@ -6770,31 +6690,6 @@ function stringListBodyField(body: Record<string, unknown> | null | undefined, n
   }
   const normalized = value.map((item) => item.trim()).filter(Boolean);
   return normalized.length > 0 ? [...new Set(normalized)] : undefined;
-}
-
-function buildMessageThreads(items: A2AExchangeMessageRecord[]): ThreadedExchangeMessage[] {
-  const repliesByParent = new Map<string, A2AExchangeMessageRecord[]>();
-  const itemIds = new Set(items.map((item) => item.id));
-  const roots: A2AExchangeMessageRecord[] = [];
-
-  for (const item of items) {
-    if (!item.parentMessageId || !itemIds.has(item.parentMessageId)) {
-      roots.push(item);
-      continue;
-    }
-    const siblings = repliesByParent.get(item.parentMessageId) ?? [];
-    siblings.push(item);
-    repliesByParent.set(item.parentMessageId, siblings);
-  }
-
-  const attachReplies = (
-    node: A2AExchangeMessageRecord,
-  ): ThreadedExchangeMessage => ({
-    ...node,
-    replies: (repliesByParent.get(node.id) ?? []).map(attachReplies),
-  });
-
-  return roots.map(attachReplies);
 }
 
 function buildDashboardAttention(input: {
