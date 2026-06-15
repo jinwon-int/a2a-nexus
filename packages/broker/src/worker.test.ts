@@ -181,6 +181,56 @@ test("worker registers, heartbeats, polls queued work, and completes tasks", asy
   }
 });
 
+test("worker lifecycle routes decode URL-encoded task ids containing reserved characters", async () => {
+  const server = await startTestServer();
+  const worker = createWorker(server.baseUrl);
+  try {
+    await worker.register();
+    await worker.heartbeat();
+
+    const taskId = "gh:acme/platform#42";
+    const task = await createTask(server.baseUrl, {
+      id: taskId,
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run encoded-id echo",
+      payload: { hello: "encoded id" },
+    });
+
+    const queued = await worker.pollQueuedTasks();
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].id, task.id);
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${encodeURIComponent(taskId)}`);
+    assert.equal(taskResponse.status, 200);
+    const completedTask = await taskResponse.json();
+    assert.equal(completedTask.id, taskId);
+    assert.equal(completedTask.status, "succeeded");
+    assert.equal(completedTask.claimedBy, "worker-a");
+  } finally {
+    await worker.stop();
+    await server.close();
+  }
+});
+
+test("server rejects malformed URL path encoding without crashing", async () => {
+  const server = await startTestServer();
+  try {
+    const response = await fetch(`${server.baseUrl}/tasks/%`);
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error.code, "bad_request");
+    assert.equal(body.error.message, "invalid URL path encoding");
+  } finally {
+    await server.close();
+  }
+});
+
 test("verifyPollReadiness resolves when the assigned-task poll path is reachable (#691)", async () => {
   const server = await startTestServer();
   const worker = createWorker(server.baseUrl);

@@ -2753,13 +2753,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const handler: RequestListener<typeof IncomingMessage, typeof ServerResponse> = async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
-    const segments = path.split("/").filter(Boolean);
-    // Accept-side scheduling hook: tracks active count and handler duration.
-    initSchedulingHook(req, res, classifyEndpointGroup(req.method, path, segments), classifyRequestRoute(req.method, path, segments));
-
+    const rawSegments = path.split("/").filter(Boolean);
     let requesterIdentity: RequesterIdentity | null = null;
 
     try {
+      let segments: string[];
+      try {
+        segments = rawSegments.map((segment) => decodeURIComponent(segment));
+      } catch {
+        throw new BrokerError("bad_request", "invalid URL path encoding");
+      }
+      // Accept-side scheduling hook: tracks active count and handler duration.
+      initSchedulingHook(req, res, classifyEndpointGroup(req.method, path, segments), classifyRequestRoute(req.method, path, segments));
+
       requesterIdentity = extractRequesterIdentity(req);
       const isPublicDiscoveryRoute = req.method === "GET" && path === "/.well-known/agent-card.json";
       const isPublicLivenessRoute = req.method === "GET" && path === "/livez";
