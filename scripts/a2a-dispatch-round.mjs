@@ -53,6 +53,41 @@ function isPlainObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function sourceBundleFileContent(file) {
+  if (!isPlainObject(file)) return undefined;
+  if (hasText(file.content)) return file.content;
+  if (hasText(file.contentText)) return file.contentText;
+  return undefined;
+}
+
+function validateSourceOnlyBundle(errors, tag, payload) {
+  if (!isPlainObject(payload)) return;
+  const sourceBundle = payload.sourceBundle;
+  if (sourceBundle === undefined) return;
+  if (!isPlainObject(sourceBundle)) {
+    errors.push(`${tag}.payload.sourceBundle must be an object when provided`);
+    return;
+  }
+  const files = Array.isArray(sourceBundle.files) ? sourceBundle.files : [];
+  if (files.length === 0) {
+    errors.push(`${tag}.payload.sourceBundle.files must be a non-empty array for source-only analysis lanes`);
+    return;
+  }
+  files.forEach((file, fileIndex) => {
+    const fileTag = `${tag}.payload.sourceBundle.files[${fileIndex}]`;
+    if (!isPlainObject(file)) {
+      errors.push(`${fileTag} must be an object`);
+      return;
+    }
+    if (!hasText(file.path)) {
+      errors.push(`${fileTag}.path is required`);
+    }
+    if (!hasText(sourceBundleFileContent(file))) {
+      errors.push(`${fileTag}.content or ${fileTag}.contentText is required`);
+    }
+  });
+}
+
 /**
  * Derive a deterministic lane id so re-running the same manifest is idempotent.
  */
@@ -123,6 +158,14 @@ function validateManifest(manifest) {
       errors.push(`${tag}.payload, when present, must be an object`);
     }
 
+    const lanePayload = isPlainObject(lane.payload) ? lane.payload : {};
+    const defaultPayload = isPlainObject(defaults.payload) ? defaults.payload : {};
+    const merged = {
+      ...defaultPayload,
+      ...lanePayload,
+    };
+    validateSourceOnlyBundle(errors, tag, merged);
+
     const laneId = deriveLaneId(roundId, lane, order);
     if (seenIds.has(laneId)) {
       errors.push(`${tag} duplicate lane id '${laneId}' (lane ids and derived ids must be unique)`);
@@ -131,10 +174,6 @@ function validateManifest(manifest) {
 
     // Merge defaults.payload then lane.payload (explicit values win), then
     // auto-stamp parent-round metadata for any field the manifest left unset.
-    const merged = {
-      ...(isPlainObject(defaults.payload) ? defaults.payload : {}),
-      ...(isPlainObject(lane.payload) ? lane.payload : {}),
-    };
     const payload = { ...merged };
     if (merged.parentRoundId === undefined) payload.parentRoundId = roundId;
     if (merged.parentRoundTotal === undefined) payload.parentRoundTotal = total;

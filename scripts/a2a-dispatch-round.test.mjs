@@ -154,6 +154,70 @@ test('dry-run rejects empty message', async () => {
   assert.ok(out.errors.some((e) => /message is required/.test(e)));
 });
 
+test('dry-run rejects source-only analysis lanes whose sourceBundle has no files array', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    sourceOnly: true,
+    readOnlyValidation: true,
+    sourceBundle: {
+      roundId: 'r1',
+      sourceSnippets: [{ path: 'packages/broker/src/server.ts', content: 'snippet only' }],
+    },
+  };
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /sourceBundle\.files must be a non-empty array/.test(e)));
+});
+
+test('dry-run accepts source-only analysis lanes with files carrying path and content', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    sourceOnly: true,
+    readOnlyValidation: true,
+    sourceBundle: {
+      roundId: 'r1',
+      files: [{ path: 'packages/broker/src/server.ts', content: 'export const ok = true;\n' }],
+    },
+  };
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0);
+});
+
+test('dry-run accepts source-only analysis file contentText as canonical content', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    sourceOnly: true,
+    readOnlyValidation: true,
+    sourceBundle: {
+      roundId: 'r1',
+      files: [{ path: 'packages/broker/src/server.ts', contentText: 'export const ok = true;\n' }],
+    },
+  };
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0);
+});
+
+test('dry-run rejects source-only analysis files without path or content', async () => {
+  const missingPath = makeManifest('http://unused', 1);
+  missingPath.lanes[0].payload = {
+    sourceBundle: { files: [{ content: 'const ok = true;\n' }] },
+  };
+  const missingPathOut = await runDispatch(missingPath, { dryRun: true });
+  assert.equal(missingPathOut.exitCode, 1);
+  assert.ok(missingPathOut.errors.some((e) => /sourceBundle\.files\[0\]\.path is required/.test(e)));
+
+  const missingContent = makeManifest('http://unused', 1);
+  missingContent.lanes[0].payload = {
+    sourceBundle: { files: [{ path: 'packages/broker/src/server.ts' }] },
+  };
+  const missingContentOut = await runDispatch(missingContent, { dryRun: true });
+  assert.equal(missingContentOut.exitCode, 1);
+  assert.ok(missingContentOut.errors.some((e) => /sourceBundle\.files\[0\]\.content or .*contentText is required/.test(e)));
+});
+
 // ─── runDispatch: live (mock broker) ─────────────────────────────────────────
 
 test('all lanes 201 -> exit 0, all created', async () => {
