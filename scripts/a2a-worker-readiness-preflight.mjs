@@ -68,6 +68,10 @@ function hasRawCredentialField(probe) {
   return ["secret", "edgeSecret", "brokerEdgeSecret", "token", "authorization", "headers"].some((field) => Object.hasOwn(probe, field));
 }
 
+function serviceActiveOf(record) {
+  return record?.serviceActive === true || record?.active === true;
+}
+
 /**
  * Classify one worker's readiness. Returns the worker name, ok flag, and the
  * list of {code, reason} violations (empty when ready).
@@ -173,7 +177,7 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
         ? heartbeatProbe.error.trim()
         : "";
     const hbStatus = taskPollProbeStatusOf(heartbeatProbe);
-    const roleMatch = hbReason.match(/requester role must match\s+([a-z][a-z-]*)/i);
+    const roleMatch = hbReason.match(/requester role must match(?:\s+privileged actor role)?\s+([a-z][a-z-]*)/i);
     if (roleMatch || (hbStatus === 401 && /\brole\b/i.test(hbReason))) {
       const brokerExpected = roleMatch?.[1] ?? expectedRole ?? "(broker-expected role)";
       violations.push({
@@ -194,7 +198,7 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
   // (c) Post-deploy: a service reporting active is not healthy if the broker
   // still shows the worker stale/absent. Requires broker /workers freshness, not
   // just systemd active + artifact revision.
-  const serviceActive = record?.serviceActive === true;
+  const serviceActive = serviceActiveOf(record);
   const brokerWorkerStatus = hasText(record?.brokerWorkerStatus) ? record.brokerWorkerStatus.trim().toLowerCase() : null;
   if (serviceActive && brokerWorkerStatus && brokerWorkerStatus !== "online") {
     violations.push({

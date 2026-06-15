@@ -204,6 +204,24 @@ test("a broker heartbeat role-rejection is classified heartbeat_requester_role_m
   );
 });
 
+test("privileged heartbeat role-rejection extracts the concrete expected role (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "nosuk",
+    role: "analyst",
+    heartbeatProbe: {
+      ok: false,
+      httpStatus: 401,
+      reason: "worker.heartbeat requester role must match privileged actor role hub",
+    },
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("heartbeat_requester_role_mismatch"));
+  const reason = r.violations.find((v) => v.code === "heartbeat_requester_role_mismatch")?.reason ?? "";
+  assert.match(reason, /must match broker-expected role 'hub'/);
+  assert.match(reason, /WORKER_ROLE=hub/);
+  assert.doesNotMatch(reason, /WORKER_ROLE=privileged/);
+});
+
 test("a heartbeat probe carrying raw credentials is rejected without leaking them (#739)", () => {
   const r = evaluateWorkerReadiness(healthy({
     heartbeatProbe: { ok: false, httpStatus: 401, reason: "role mismatch", authorization: "Bearer leak" },
@@ -215,7 +233,13 @@ test("a heartbeat probe carrying raw credentials is rejected without leaking the
 });
 
 test("service active but broker reports the worker stale is broker_worker_stale (#739)", () => {
-  const r = evaluateWorkerReadiness(healthy({ node: "nosuk", serviceActive: true, brokerWorkerStatus: "stale" }));
+  const r = evaluateWorkerReadiness(healthy({ node: "nosuk", brokerWorkerStatus: "stale" }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("broker_worker_stale"));
+});
+
+test("serviceActive alias also marks an active service for broker stale checks (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({ node: "nosuk", active: false, serviceActive: true, brokerWorkerStatus: "stale" }));
   assert.equal(r.ok, false);
   assert.ok(codes(r).includes("broker_worker_stale"));
 });
