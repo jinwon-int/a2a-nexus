@@ -6131,7 +6131,14 @@ function parentRoundString(value: unknown): string | undefined {
 }
 
 function parentRoundNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function normalizeExchangeState(exchange: A2AExchangeState): A2AExchangeState {
