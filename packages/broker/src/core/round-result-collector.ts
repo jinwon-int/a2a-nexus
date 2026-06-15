@@ -116,6 +116,16 @@ export interface ResultLane {
   outcomeClass?: BrokerExitCondition;
   /** Whether the lane contains substantive worker reasoning or only dispatch/infra evidence. */
   evidenceClass?: RoundLaneEvidenceClass;
+  /** Worker attribution from the broker task snapshot; kept explicit for finalizer evidence lanes. */
+  assignedWorkerId?: string;
+  claimedBy?: string;
+  targetNodeId?: string;
+  /** Parent-round projection metadata stamped on A2A/A2AD child tasks. */
+  parentRoundId?: string;
+  parentRoundTotal?: number;
+  parentRoundOrder?: number;
+  originBrokerId?: string;
+  brokerOfRecordId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +488,7 @@ function buildLaneResult(
     risk?: string;
   },
 ): ResultLane {
+  const metadata = extractLaneProjectionMetadata(state.latest);
   const lane: ResultLane = {
     workerId: laneDef.workerId,
     description: laneDef.description,
@@ -497,6 +508,10 @@ function buildLaneResult(
     expectedOutcome: laneDef.expectedOutcome,
     outcomeClass: state.outcomeClass,
     evidenceClass: state.evidenceClass ?? classifyEvidenceClass(laneDef, state.latest, state.evidence),
+    assignedWorkerId: state.latest.assignedWorkerId,
+    claimedBy: state.latest.claimedBy,
+    targetNodeId: state.latest.targetNodeId,
+    ...metadata,
   };
   return lane;
 }
@@ -604,6 +619,29 @@ function safeString(value: unknown): string | undefined {
   return undefined;
 }
 
+function safeNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function extractLaneProjectionMetadata(task: TaskRecord): Pick<
+  ResultLane,
+  "parentRoundId" | "parentRoundTotal" | "parentRoundOrder" | "originBrokerId" | "brokerOfRecordId"
+> {
+  const payload = task.payload ?? {};
+  return {
+    parentRoundId: safeString(task.parentRoundId) ?? safeString(payload["parentRoundId"]),
+    parentRoundTotal: safeNumber(task.parentRoundTotal) ?? safeNumber(payload["parentRoundTotal"]),
+    parentRoundOrder: safeNumber(task.parentRoundOrder) ?? safeNumber(payload["parentRoundOrder"]),
+    originBrokerId: safeString(payload["originBrokerId"]),
+    brokerOfRecordId: safeString(payload["brokerOfRecordId"]) ?? safeString(task.brokerOfRecord),
+  };
+}
+
 function isEvidenceRequired(laneDef: RoundManifestLane): boolean {
   return laneDef.expectedOutcome === "analysis" || laneDef.expectedOutcome === "review";
 }
@@ -621,8 +659,12 @@ function classifyEvidenceClass(
     const text = extractNestedErrorText(task.error).toLowerCase();
     if (
       text.includes("openclaw_analysis_spawn_failed") ||
+      text.includes("openclaw_analysis_failed") ||
       text.includes("hermes-a2a-analysis-bridge.mjs eacces") ||
-      text.includes("analysis bridge") && text.includes("eacces")
+      text.includes("analysis bridge") && text.includes("eacces") ||
+      text.includes("model") && text.includes("does not exist") ||
+      text.includes("model is not supported") ||
+      text.includes("does not have access")
     ) {
       return "handler_artifact_failure";
     }
@@ -902,7 +944,8 @@ function closeoutBody(context: {
               ? "stale"
               : lane.laneState;
     const evidenceClass = lane.evidenceClass ? `; ${lane.evidenceClass}` : "";
-    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs}${evidenceClass} |`);
+    const attribution = laneAttribution(lane);
+    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs}${evidenceClass}${attribution} |`);
   }
   lines.push("");
 
@@ -994,6 +1037,20 @@ function stateEmoji(state: RoundLaneState): string {
     case "timeout":
       return "⏰";
   }
+}
+
+function laneAttribution(lane: ResultLane): string {
+  const parts: string[] = [];
+  if (lane.parentRoundId) parts.push(`parent=${lane.parentRoundId}`);
+  if (lane.parentRoundOrder !== undefined && lane.parentRoundTotal !== undefined) {
+    parts.push(`order=${lane.parentRoundOrder}/${lane.parentRoundTotal}`);
+  } else if (lane.parentRoundOrder !== undefined) {
+    parts.push(`order=${lane.parentRoundOrder}`);
+  }
+  if (lane.originBrokerId) parts.push(`origin=${lane.originBrokerId}`);
+  if (lane.brokerOfRecordId) parts.push(`broker=${lane.brokerOfRecordId}`);
+  if (lane.assignedWorkerId && lane.assignedWorkerId !== lane.workerId) parts.push(`assigned=${lane.assignedWorkerId}`);
+  return parts.length > 0 ? `; ${parts.join("; ")}` : "";
 }
 
 function buildFinalizerActions(
