@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  A2AExecutionPolicyDenied,
   evaluateA2AExecutionPolicy,
+  runGuardedGitHubAction,
   type A2AFinalizerDecision,
 } from "./a2a-execution-policy.js";
 
@@ -123,4 +125,74 @@ test("substantive evidence alongside wrapper-only evidence still authorizes", ()
   });
   assert.equal(result.allowed, true);
   assert.deepEqual(result.blockers, []);
+});
+
+test("runGuardedGitHubAction fails closed and does not invoke the action when denied (#555)", async () => {
+  let invoked = false;
+  await assert.rejects(
+    () =>
+      runGuardedGitHubAction(
+        { intent: "A2A로 진행", requestedAction: "pr_merge" }, // no finalizer decision
+        () => {
+          invoked = true;
+          return "merged";
+        },
+      ),
+    (error: unknown) =>
+      error instanceof A2AExecutionPolicyDenied &&
+      error.requestedAction === "pr_merge" &&
+      error.blockers.includes("a2a_required_action_without_finalizer_decision"),
+  );
+  assert.equal(invoked, false, "the guarded action must not run when the policy denies it");
+});
+
+test("runGuardedGitHubAction blocks an action that is not in allowedActions (#555)", async () => {
+  let invoked = false;
+  await assert.rejects(
+    () =>
+      runGuardedGitHubAction(
+        {
+          intent: "A2AD로 봐줘",
+          requestedAction: "issue_close",
+          finalizerDecision: { ...completeDecision, allowedActions: ["pr_merge"] },
+        },
+        () => {
+          invoked = true;
+        },
+      ),
+    (error: unknown) =>
+      error instanceof A2AExecutionPolicyDenied &&
+      error.blockers.includes("action_not_in_allowed_actions:issue_close"),
+  );
+  assert.equal(invoked, false);
+});
+
+test("runGuardedGitHubAction runs the action in a non-A2A context (#555)", async () => {
+  let invoked = false;
+  const result = await runGuardedGitHubAction(
+    { intent: "please summarize the weekly metrics doc", requestedAction: "pr_merge" },
+    () => {
+      invoked = true;
+      return "ran";
+    },
+  );
+  assert.equal(invoked, true);
+  assert.equal(result, "ran");
+});
+
+test("runGuardedGitHubAction runs (and awaits) the action with a complete finalizer decision (#555)", async () => {
+  let calls = 0;
+  const result = await runGuardedGitHubAction(
+    {
+      intent: "A2A로 진행해서 finalizer 판단으로 머지",
+      requestedAction: "pr_merge",
+      finalizerDecision: completeDecision,
+    },
+    async () => {
+      calls += 1;
+      return 42;
+    },
+  );
+  assert.equal(calls, 1);
+  assert.equal(result, 42);
 });

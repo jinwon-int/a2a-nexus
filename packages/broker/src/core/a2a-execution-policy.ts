@@ -138,3 +138,36 @@ export function evaluateA2AExecutionPolicy(input: A2AExecutionPolicyInput): A2AE
 
   return { allowed: blockers.length === 0, executionContext: "a2a_required", blockers };
 }
+
+/** Thrown by runGuardedGitHubAction when the execution policy denies a guarded write. */
+export class A2AExecutionPolicyDenied extends Error {
+  readonly requestedAction: A2AGuardedAction;
+  readonly blockers: string[];
+  constructor(requestedAction: A2AGuardedAction, blockers: string[]) {
+    super(`a2a_execution_policy_denied: ${requestedAction} blocked (${blockers.join(", ") || "no reason"})`);
+    this.name = "A2AExecutionPolicyDenied";
+    this.requestedAction = requestedAction;
+    this.blockers = blockers;
+  }
+}
+
+/**
+ * Run a guarded repo/GitHub write action only if the A2A execution policy allows
+ * it (#555 item 4). Fails closed: when the policy denies the action, the `action`
+ * thunk is NOT invoked and {@link A2AExecutionPolicyDenied} is thrown with the
+ * blocker codes; when allowed, the action runs and its result is returned.
+ *
+ * This is the gating primitive callers wrap around a `gh`/GitHub-API or repo-patch
+ * operation. Adding the primitive changes no existing call site — wiring it in
+ * front of a specific live write path is a separate, behavior-changing step.
+ */
+export async function runGuardedGitHubAction<T>(
+  input: A2AExecutionPolicyInput,
+  action: () => T | Promise<T>,
+): Promise<T> {
+  const decision = evaluateA2AExecutionPolicy(input);
+  if (!decision.allowed) {
+    throw new A2AExecutionPolicyDenied(input.requestedAction, decision.blockers);
+  }
+  return action();
+}
