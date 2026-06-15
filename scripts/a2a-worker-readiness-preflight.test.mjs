@@ -170,3 +170,57 @@ test("task-poll readiness rejects raw credential material in collected probe met
   assert.ok(codes(r).includes("task_poll_unauthorized"));
   assert.match(r.violations.find((v) => v.code === "task_poll_unauthorized")?.reason ?? "", /credential/i);
 });
+
+test("local WORKER_ROLE that disagrees with the broker-expected role is worker_role_mismatch (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({ node: "nosuk", role: "live-trader", expectedRole: "analyst" }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("worker_role_mismatch"));
+  assert.match(
+    r.violations.find((v) => v.code === "worker_role_mismatch")?.reason ?? "",
+    /WORKER_ROLE=analyst/,
+  );
+});
+
+test("matching local/expected roles do not raise role drift (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({ role: "analyst", expectedRole: "analyst" }));
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test("a broker heartbeat role-rejection is classified heartbeat_requester_role_mismatch (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "nosuk",
+    role: "live-trader",
+    heartbeatProbe: {
+      ok: false,
+      httpStatus: 401,
+      reason: "worker.heartbeat requester role must match analyst",
+    },
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("heartbeat_requester_role_mismatch"));
+  assert.match(
+    r.violations.find((v) => v.code === "heartbeat_requester_role_mismatch")?.reason ?? "",
+    /must match broker-expected role 'analyst'/,
+  );
+});
+
+test("a heartbeat probe carrying raw credentials is rejected without leaking them (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    heartbeatProbe: { ok: false, httpStatus: 401, reason: "role mismatch", authorization: "Bearer leak" },
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("heartbeat_requester_role_mismatch"));
+  // The raw credential value must never appear in any emitted reason.
+  assert.ok(!JSON.stringify(r.violations).includes("Bearer leak"));
+});
+
+test("service active but broker reports the worker stale is broker_worker_stale (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({ node: "nosuk", serviceActive: true, brokerWorkerStatus: "stale" }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("broker_worker_stale"));
+});
+
+test("service active with broker online is healthy (#739)", () => {
+  const r = evaluateWorkerReadiness(healthy({ serviceActive: true, brokerWorkerStatus: "online" }));
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
