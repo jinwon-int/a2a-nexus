@@ -28,6 +28,8 @@ export interface WorkerVisibilityFlags {
   /** Capacity/liveness are hints only, never lease authority. */
   exposeCapacity: boolean;
   exposeLiveness: boolean;
+  /** Provider/model entitlements are team/private only; never publish on public cards. */
+  exposeProviderCapabilities: boolean;
   /** Must stay false; validation fails if a producer tries to expose secrets. */
   exposesSecrets: false;
 }
@@ -115,6 +117,10 @@ export interface WorkerCapabilityCardQuery {
   environment?: A2AWorkerEnvironment;
   skillId?: string;
   safeForDiscovery?: boolean;
+  providerId?: string;
+  modelFamily?: string;
+  modelId?: string;
+  providerAvailability?: NonNullable<WorkerCapabilities["providerCapabilities"]>[number]["availability"];
 }
 
 /**
@@ -236,6 +242,7 @@ const DEFAULT_VISIBILITY: WorkerVisibilityFlags = {
   exposeWorkspaceIds: false,
   exposeCapacity: true,
   exposeLiveness: true,
+  exposeProviderCapabilities: false,
   exposesSecrets: false,
 };
 
@@ -349,6 +356,9 @@ export function validateWorkerCapabilityCard(card: WorkerCapabilityCard): Worker
     if (card.visibility.exposeWorkspaceIds) {
       errors.push("public cards must not expose workspaceIds by default");
     }
+    if (card.visibility.exposeProviderCapabilities || (card.capabilities.providerCapabilities?.length ?? 0) > 0) {
+      errors.push("public cards must not expose providerCapabilities");
+    }
   }
   if (!card.safety?.requiresApprovalForLive) {
     errors.push("safety.requiresApprovalForLive must stay true");
@@ -377,6 +387,7 @@ export function queryWorkerCapabilityCards(
     if (query.environment && !card.assignment.environments.includes(query.environment)) return false;
     if (query.skillId && !card.skills.some((skill) => skill.id === query.skillId)) return false;
     if (query.safeForDiscovery !== undefined && card.visibility.safeForDiscovery !== query.safeForDiscovery) return false;
+    if (!workerProviderCapabilityMatches(card.capabilities.providerCapabilities, query, card.visibility)) return false;
     return true;
   });
 }
@@ -389,7 +400,40 @@ function projectCapabilities(capabilities: WorkerCapabilities, visibility: Worke
     canPromoteLive: capabilities.canPromoteLive,
     workspaceIds: visibility.exposeWorkspaceIds ? uniqueList(capabilities.workspaceIds) : [],
     environments: uniqueList(capabilities.environments),
+    ...(visibility.scope !== "public" && visibility.exposeProviderCapabilities && capabilities.providerCapabilities?.length
+      ? { providerCapabilities: capabilities.providerCapabilities.map(copyProviderCapability) }
+      : {}),
   };
+}
+
+function copyProviderCapability(
+  capability: NonNullable<WorkerCapabilities["providerCapabilities"]>[number],
+): NonNullable<WorkerCapabilities["providerCapabilities"]>[number] {
+  return {
+    providerId: capability.providerId,
+    modelFamily: capability.modelFamily,
+    modelId: capability.modelId,
+    routeKind: capability.routeKind,
+    availability: capability.availability,
+    lastVerifiedAt: capability.lastVerifiedAt,
+    evidenceId: capability.evidenceId,
+  };
+}
+
+function workerProviderCapabilityMatches(
+  capabilities: WorkerCapabilities["providerCapabilities"] | undefined,
+  query: WorkerCapabilityCardQuery,
+  visibility: WorkerVisibilityFlags,
+): boolean {
+  if (!query.providerId && !query.modelFamily && !query.modelId && !query.providerAvailability) return true;
+  if (!visibility.exposeProviderCapabilities || visibility.scope === "public") return false;
+  return (capabilities ?? []).some((capability) => {
+    if (query.providerId && capability.providerId !== query.providerId.trim().toLowerCase()) return false;
+    if (query.modelFamily && capability.modelFamily !== query.modelFamily.trim().toLowerCase()) return false;
+    if (query.modelId && capability.modelId !== query.modelId.trim().toLowerCase()) return false;
+    if (query.providerAvailability && capability.availability !== query.providerAvailability) return false;
+    return true;
+  });
 }
 
 function copySkill(skill: AgentSkill): AgentSkill {

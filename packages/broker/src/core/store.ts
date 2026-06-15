@@ -2873,7 +2873,24 @@ function workerMatchesRuntimeFilters(worker: WorkerRecord, filters: WorkerListFi
   if (filters.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
     return false;
   }
+  if (!workerProviderCapabilityMatchesRuntimeFilters(worker.capabilities.providerCapabilities, filters)) {
+    return false;
+  }
   return true;
+}
+
+function workerProviderCapabilityMatchesRuntimeFilters(
+  capabilities: WorkerRecord["capabilities"]["providerCapabilities"] | undefined,
+  filters: WorkerListFilters,
+): boolean {
+  if (!filters.providerId && !filters.modelFamily && !filters.modelId && !filters.providerAvailability) return true;
+  return (capabilities ?? []).some((capability) => {
+    if (filters.providerId && capability.providerId !== filters.providerId.trim().toLowerCase()) return false;
+    if (filters.modelFamily && capability.modelFamily !== filters.modelFamily.trim().toLowerCase()) return false;
+    if (filters.modelId && capability.modelId !== filters.modelId.trim().toLowerCase()) return false;
+    if (filters.providerAvailability && capability.availability !== filters.providerAvailability) return false;
+    return true;
+  });
 }
 
 export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {

@@ -27,6 +27,66 @@ import {
 import type { ArtifactRecord, AuditEvent, ChangeProposal, CreateTaskRequest, TaskTombstone, ValidationResult, WorkerMobileHealth, WorkerMode, WorkerRecord } from "./types.js";
 import { registerWorker, createWorkerTask, createGithubPatchTask, createOwnedTask } from "./broker-test-helpers.js";
 
+test("broker registration stores provider/model capabilities and list filters can target them without secret fields", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "gwakga",
+    teamId: "team2",
+  });
+
+  broker.registerWorker({
+    nodeId: "soonwook",
+    role: "analyst",
+    displayName: "Soonwook Grok route",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["team2"],
+      environments: ["research"],
+      providerCapabilities: [
+        {
+          providerId: "xai",
+          modelFamily: "grok",
+          modelId: "grok-4.2",
+          routeKind: "subscription",
+          availability: "configured",
+          credentialPath: "/root/.xai/oauth.json",
+        } as unknown as NonNullable<WorkerRecord["capabilities"]["providerCapabilities"]>[number],
+      ],
+    },
+  });
+
+  const soonwook = broker.getWorker("soonwook");
+  assert.equal(soonwook?.capabilities.providerCapabilities?.[0]?.providerId, "xai");
+  assert.equal(soonwook?.capabilities.providerCapabilities?.[0]?.modelId, "grok-4.2");
+  assert.equal(JSON.stringify(soonwook).includes("oauth.json"), false);
+
+  broker.heartbeatWorker("soonwook", {
+    capabilities: {
+      ...soonwook!.capabilities,
+      providerCapabilities: [
+        {
+          providerId: "xai",
+          modelFamily: "grok",
+          modelId: "grok-4.2",
+          routeKind: "subscription",
+          availability: "canary_passed",
+          lastVerifiedAt: "2026-06-15T01:00:00.000Z",
+          evidenceId: "gwakga-soonwook-grok-canary-20260615",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    broker.listWorkers({ providerId: "XAI", modelFamily: "GROK", providerAvailability: "canary_passed" })
+      .map((worker) => worker.nodeId),
+    ["soonwook"],
+  );
+  assert.deepEqual(broker.listWorkers({ providerId: "openai" }).map((worker) => worker.nodeId), []);
+});
+
 test("broker annotates tasks with owner metadata and rejects mismatched lifecycle ownership", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
     brokerId: "broker-a",

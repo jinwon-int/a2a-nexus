@@ -205,6 +205,118 @@ test("worker capability card query selects valid workers by team, role, task, en
   );
 });
 
+test("worker capability card keeps provider/model capabilities team-private and queryable", () => {
+  const soonwookWorker: WorkerView = {
+    ...BASE_WORKER,
+    nodeId: "soonwook",
+    displayName: "Soonwook Team2 Grok route",
+    capabilities: {
+      ...BASE_WORKER.capabilities,
+      providerCapabilities: [
+        {
+          providerId: "xai",
+          modelFamily: "grok",
+          modelId: "grok-4.2",
+          routeKind: "subscription",
+          availability: "canary_passed",
+          lastVerifiedAt: "2026-06-15T01:00:00.000Z",
+          evidenceId: "gwakga-soonwook-grok-canary-20260615",
+        },
+      ],
+    },
+  };
+
+  const privateCard = createWorkerCapabilityCard(soonwookWorker, {
+    teamId: "team2",
+    brokerOfRecord: "gwakga",
+    assignmentRoles: ["implementation"],
+    supportedTaskTypes: ["analyze"],
+    skills: [],
+    visibility: { scope: "team", exposeProviderCapabilities: true },
+  });
+  const publicCard = createWorkerCapabilityCard(soonwookWorker, {
+    teamId: "team2",
+    brokerOfRecord: "gwakga",
+    assignmentRoles: ["implementation"],
+    supportedTaskTypes: ["analyze"],
+    skills: [],
+    visibility: { scope: "public", safeForDiscovery: true, exposeProviderCapabilities: false },
+  });
+
+  assert.deepEqual(privateCard.capabilities.providerCapabilities?.map((capability) => capability.providerId), ["xai"]);
+  assert.equal(publicCard.capabilities.providerCapabilities, undefined);
+  assert.equal(JSON.stringify(publicCard.agentCard).includes("xai"), false);
+  assert.equal(JSON.stringify(publicCard.agentCard).includes("grok"), false);
+
+  assert.deepEqual(
+    queryWorkerCapabilityCards([privateCard, publicCard], {
+      teamId: "team2",
+      providerId: "XAI",
+      modelFamily: "GROK",
+      modelId: "grok-4.2",
+      providerAvailability: "canary_passed",
+    }).map((card) => card.worker.id),
+    ["soonwook"],
+  );
+  assert.deepEqual(validateWorkerCapabilityCard(privateCard), { ok: true, errors: [] });
+  assert.deepEqual(validateWorkerCapabilityCard(publicCard), { ok: true, errors: [] });
+});
+
+test("worker capability card validation rejects public provider capability exposure", () => {
+  const card = createWorkerCapabilityCard({
+    ...BASE_WORKER,
+    capabilities: {
+      ...BASE_WORKER.capabilities,
+      providerCapabilities: [
+        {
+          providerId: "xai",
+          modelFamily: "grok",
+          modelId: "grok-4.2",
+          routeKind: "subscription",
+          availability: "configured",
+        },
+      ],
+    },
+  }, {
+    teamId: "team2",
+    brokerOfRecord: "gwakga",
+    assignmentRoles: ["implementation"],
+    supportedTaskTypes: ["analyze"],
+    skills: [],
+    visibility: { scope: "public", safeForDiscovery: true, exposeProviderCapabilities: true },
+  });
+
+  const result = validateWorkerCapabilityCard(card);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /public cards must not expose providerCapabilities/);
+});
+
+test("worker capability card validation rejects secret-like provider capability fields", () => {
+  const card = createWorkerCapabilityCard(BASE_WORKER, {
+    teamId: "team2",
+    brokerOfRecord: "gwakga",
+    assignmentRoles: ["implementation"],
+    supportedTaskTypes: ["analyze"],
+    skills: [],
+    visibility: { scope: "team", exposeProviderCapabilities: true },
+  }) as WorkerCapabilityCard;
+  card.capabilities.providerCapabilities = [
+    {
+      providerId: "xai",
+      modelFamily: "grok",
+      routeKind: "oauth",
+      availability: "configured",
+      evidenceId: "sk-abcdefghijklmnop",
+    },
+  ];
+
+  const result = validateWorkerCapabilityCard(card);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /providerCapabilities\[0\]\.evidenceId/);
+});
+
 test("worker capability card validation fails closed for unsafe public visibility", () => {
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team2",

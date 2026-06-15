@@ -229,6 +229,26 @@ export type WorkerRuntimeFlavor =
   | "openclaw-poll-handler"
   | "unknown";
 
+export type WorkerProviderRouteKind = "subscription" | "oauth" | "api-key" | "unknown";
+export type WorkerProviderAvailability = "configured" | "canary_passed" | "entitlement_failed" | "disabled";
+
+/**
+ * Secret-safe model/provider entitlement hint for broker-local assignment.
+ *
+ * These fields identify a provider route without carrying tokens, OAuth paths,
+ * raw subscription ids, cookies, or provider payloads. Public discovery surfaces
+ * must omit the array; only team/private broker-local cards may opt in.
+ */
+export interface WorkerProviderCapability {
+  providerId: string;
+  modelFamily?: string;
+  modelId?: string;
+  routeKind: WorkerProviderRouteKind;
+  availability: WorkerProviderAvailability;
+  lastVerifiedAt?: string;
+  evidenceId?: string;
+}
+
 /**
  * Declared operating mode of a worker node.
  * - `persistent`: always-on VPS / server (default if absent).
@@ -745,6 +765,7 @@ export interface WorkerCapabilities {
   canPromoteLive: boolean;
   workspaceIds: string[];
   environments: A2AWorkerEnvironment[];
+  providerCapabilities?: WorkerProviderCapability[];
   /**
    * Runtime flavor reported by native/external workers; absent keeps legacy
    * gateway semantics. Canonical Hermes value: "termux-hermes"; canonical
@@ -807,6 +828,10 @@ export interface WorkerListFilters {
   role?: A2APartyRole;
   environment?: A2AWorkerEnvironment;
   workspaceId?: string;
+  providerId?: string;
+  modelFamily?: string;
+  modelId?: string;
+  providerAvailability?: WorkerProviderAvailability;
 }
 
 export interface WorkerView extends WorkerRecord {
