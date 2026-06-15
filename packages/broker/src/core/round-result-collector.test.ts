@@ -688,6 +688,196 @@ describe("collectRoundResults", () => {
     equal(output.summary.substantiveEvidence, 0);
     ok(lane.errorSummary?.includes("openclaw_analysis_failed"));
   });
+
+  it("projects issue #767 readiness statuses using finalizer-facing terms", () => {
+    const nowMs = Date.parse("2026-06-15T16:10:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-readiness-projection-test",
+      lanes: [
+        { workerId: "missing-worker", expectedOutcome: "analysis" },
+        { workerId: "mobile-worker", expectedOutcome: "analysis" },
+        { workerId: "claimed-worker", expectedOutcome: "analysis" },
+        { workerId: "wrapper-worker", expectedOutcome: "analysis" },
+        { workerId: "source-worker", expectedOutcome: "analysis" },
+        { workerId: "failed-worker", expectedOutcome: "analysis" },
+        { workerId: "substantive-worker", expectedOutcome: "analysis" },
+      ],
+      staleAfterMs: 30 * 60 * 1000,
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-mobile-queued",
+        assignedWorkerId: undefined,
+        claimedBy: undefined,
+        targetNodeId: "mobile-worker",
+        target: { id: "mobile-worker", kind: "node", role: "analyst" },
+        status: "queued",
+        updatedAt: "2026-06-15T16:09:00.000Z",
+      }),
+      makeTask({
+        id: "task-claimed-running",
+        assignedWorkerId: "claimed-worker",
+        claimedBy: "claimed-worker",
+        targetNodeId: "claimed-worker",
+        status: "running",
+        updatedAt: "2026-06-15T16:09:00.000Z",
+      }),
+      makeTask({
+        id: "task-wrapper-only",
+        intent: "analyze",
+        assignedWorkerId: "wrapper-worker",
+        targetNodeId: "wrapper-worker",
+        message: "Analyze the issue and return findings",
+        status: "succeeded",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        result: makeResult({
+          summary: "Analyze the issue and return findings",
+          note: "echo handled task task-wrapper-only",
+          output: { message: "Analyze the issue and return findings" },
+        }),
+      }),
+      makeTask({
+        id: "task-source-blocked",
+        intent: "analyze",
+        assignedWorkerId: "source-worker",
+        targetNodeId: "source-worker",
+        status: "failed",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: "openclaw_analysis_failed",
+                message: "analysis bridge blocked: source bundle contained 0 files",
+              },
+            }),
+          },
+        },
+      }),
+      makeTask({
+        id: "task-handler-failed",
+        intent: "analyze",
+        assignedWorkerId: "failed-worker",
+        targetNodeId: "failed-worker",
+        status: "failed",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: "openclaw_analysis_failed",
+                message: "Hermes exited with 1: Error code: 400 - The 'minimax-m3' model is not supported",
+              },
+            }),
+          },
+        },
+      }),
+      makeTask({
+        id: "task-substantive",
+        intent: "analyze",
+        assignedWorkerId: "substantive-worker",
+        targetNodeId: "substantive-worker",
+        status: "succeeded",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["#767 readiness projection should use finalizer-facing terms"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const byWorker = new Map(output.lanes.map((lane) => [lane.workerId, lane]));
+    equal(byWorker.get("missing-worker")?.readinessStatus, "missing");
+    equal(byWorker.get("mobile-worker")?.readinessStatus, "queued");
+    equal(byWorker.get("claimed-worker")?.readinessStatus, "claimed_running");
+    equal(byWorker.get("wrapper-worker")?.readinessStatus, "wrapper_only");
+    equal(byWorker.get("source-worker")?.readinessStatus, "source_blocked");
+    equal(byWorker.get("failed-worker")?.readinessStatus, "handler_artifact_failed");
+    equal(byWorker.get("substantive-worker")?.readinessStatus, "substantive");
+    equal(output.summary.readiness.missing, 1);
+    equal(output.summary.readiness.queued, 1);
+    equal(output.summary.readiness.claimedRunning, 1);
+    equal(output.summary.readiness.wrapperOnly, 1);
+    equal(output.summary.readiness.sourceBlocked, 1);
+    equal(output.summary.readiness.handlerArtifactFailed, 1);
+    equal(output.summary.readiness.substantive, 1);
+    ok(output.closeoutBundle.body.includes("readiness: missing=1 queued=1 claimed/running=1 wrapper-only=1 source-blocked=1 handler-artifact-failed=1 substantive=1"));
+  });
+
+  it("flags missing parent-round metadata in readiness projection", () => {
+    const nowMs = Date.parse("2026-06-15T16:10:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-round-metadata-test",
+      lanes: [{ workerId: "sogyo", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-no-parent-round",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        targetNodeId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        result: makeResult({ output: { analysisStatus: "done", findings: ["substantive"] } }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.readinessStatus, "substantive");
+    equal(lane.roundMetadataComplete, false);
+    equal(output.summary.roundMetadataComplete, 0);
+    equal(output.summary.roundMetadataMissing, 1);
+    ok(output.closeoutBundle.body.includes("round metadata missing: 1"));
+  });
+
+  it("does not let analysisStatus done override source-blocked evidence text", () => {
+    const nowMs = Date.parse("2026-06-15T16:10:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2a-source-blocked-success-test",
+      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-empty-source",
+        intent: "analyze",
+        assignedWorkerId: "bangtong",
+        targetNodeId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-15T16:05:00.000Z",
+        completedAt: "2026-06-15T16:05:00.000Z",
+        result: makeResult({
+          summary: "analysis bridge done: source bundle had <no source files available>",
+          output: {
+            analysisStatus: "done",
+            analysisSummary: "Source bundle contained 0 files, so no source files were available for real analysis.",
+            findings: ["Actual source was unavailable; only open issue metadata could be inspected."],
+            recommendations: ["Run a supplemental sourceBundle.files[] retry before finalizer counts this lane."],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "blocked");
+    equal(lane.evidenceClass, "source_blocked");
+    equal(lane.readinessStatus, "source_blocked");
+    equal(output.summary.sourceBlocked, 1);
+    equal(output.summary.substantiveEvidence, 0);
+  });
 });
 
 // ---------------------------------------------------------------------------

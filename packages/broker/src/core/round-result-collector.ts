@@ -89,6 +89,18 @@ export type RoundLaneEvidenceClass =
   | "stale_or_missing_worker"
   | "non_substantive";
 
+export type RoundLaneReadinessStatus =
+  | "missing"
+  | "queued"
+  | "claimed_running"
+  | "stale"
+  | "wrapper_only"
+  | "source_blocked"
+  | "handler_artifact_failed"
+  | "substantive"
+  | "terminal_failed"
+  | "non_substantive";
+
 export interface ResultLane {
   workerId: string;
   description?: string;
@@ -116,6 +128,10 @@ export interface ResultLane {
   outcomeClass?: BrokerExitCondition;
   /** Whether the lane contains substantive worker reasoning or only dispatch/infra evidence. */
   evidenceClass?: RoundLaneEvidenceClass;
+  /** Finalizer-facing readiness/status projection for A2A/A2AD evidence lanes (#767). */
+  readinessStatus: RoundLaneReadinessStatus;
+  /** True when parent-round id/order/total and broker attribution are present. */
+  roundMetadataComplete: boolean;
   /** Worker attribution from the broker task snapshot; kept explicit for finalizer evidence lanes. */
   assignedWorkerId?: string;
   claimedBy?: string;
@@ -158,6 +174,20 @@ export interface RoundResultCollectorOutput {
     queuedUnclaimed: number;
     sourceBlocked: number;
     nonSubstantive: number;
+    readiness: {
+      missing: number;
+      queued: number;
+      claimedRunning: number;
+      stale: number;
+      wrapperOnly: number;
+      sourceBlocked: number;
+      handlerArtifactFailed: number;
+      substantive: number;
+      terminalFailed: number;
+      nonSubstantive: number;
+    };
+    roundMetadataComplete: number;
+    roundMetadataMissing: number;
   };
   lanes: ResultLane[];
   /** Required lane workerIds for which no task record was found. */
@@ -318,6 +348,9 @@ function classifyLane(
       taskIds: [],
       evidenceUrls: [],
       expectedOutcome: laneDef.expectedOutcome,
+      evidenceClass: "stale_or_missing_worker",
+      readinessStatus: hasTimeout && nowMs >= timeoutAtMs ? "stale" : "missing",
+      roundMetadataComplete: false,
     };
   }
 
@@ -508,11 +541,15 @@ function buildLaneResult(
     expectedOutcome: laneDef.expectedOutcome,
     outcomeClass: state.outcomeClass,
     evidenceClass: state.evidenceClass ?? classifyEvidenceClass(laneDef, state.latest, state.evidence),
+    readinessStatus: "non_substantive",
+    roundMetadataComplete: false,
     assignedWorkerId: state.latest.assignedWorkerId,
     claimedBy: state.latest.claimedBy,
     targetNodeId: state.latest.targetNodeId,
     ...metadata,
   };
+  lane.readinessStatus = projectReadinessStatus(lane);
+  lane.roundMetadataComplete = isRoundMetadataComplete(lane);
   return lane;
 }
 
@@ -646,6 +683,28 @@ function isEvidenceRequired(laneDef: RoundManifestLane): boolean {
   return laneDef.expectedOutcome === "analysis" || laneDef.expectedOutcome === "review";
 }
 
+function isRoundMetadataComplete(lane: ResultLane): boolean {
+  return Boolean(
+    lane.parentRoundId &&
+    lane.parentRoundTotal !== undefined &&
+    lane.parentRoundOrder !== undefined &&
+    lane.brokerOfRecordId,
+  );
+}
+
+function projectReadinessStatus(lane: ResultLane): RoundLaneReadinessStatus {
+  if (lane.evidenceClass === "substantive") return "substantive";
+  if (lane.evidenceClass === "wrapper_only") return "wrapper_only";
+  if (lane.evidenceClass === "source_blocked") return "source_blocked";
+  if (lane.evidenceClass === "handler_artifact_failure") return "handler_artifact_failed";
+  if (lane.evidenceClass === "queued_unclaimed") return "queued";
+  if (lane.laneState === "pending") return "missing";
+  if (lane.laneState === "stale" || lane.laneState === "timeout") return "stale";
+  if (lane.laneState === "running") return "claimed_running";
+  if (lane.laneState === "failed" || lane.laneState === "blocked") return "terminal_failed";
+  return "non_substantive";
+}
+
 function classifyEvidenceClass(
   laneDef: RoundManifestLane,
   task: TaskRecord,
@@ -658,6 +717,15 @@ function classifyEvidenceClass(
   if (task.status === "failed" || task.status === "canceled") {
     const text = extractNestedErrorText(task.error).toLowerCase();
     if (
+      text.includes("source root") ||
+      text.includes("repo root") ||
+      text.includes("source bundle") ||
+      text.includes("0 files") ||
+      text.includes("repo mapping")
+    ) {
+      return "source_blocked";
+    }
+    if (
       text.includes("openclaw_analysis_spawn_failed") ||
       text.includes("openclaw_analysis_failed") ||
       text.includes("hermes-a2a-analysis-bridge.mjs eacces") ||
@@ -669,19 +737,11 @@ function classifyEvidenceClass(
     ) {
       return "handler_artifact_failure";
     }
-    if (
-      text.includes("source root") ||
-      text.includes("repo root") ||
-      text.includes("source bundle") ||
-      text.includes("0 files") ||
-      text.includes("repo mapping")
-    ) {
-      return "source_blocked";
-    }
     return "non_substantive";
   }
 
   if (task.status === "succeeded") {
+    if (hasSourceBlockedOutput(task)) return "source_blocked";
     if (hasSubstantiveWorkerOutput(task)) return "substantive";
     if (isWrapperOnlySuccess(task)) return "wrapper_only";
     if (!isEvidenceRequired(laneDef) && evidence.allUrls.length > 0) return "substantive";
@@ -691,6 +751,57 @@ function classifyEvidenceClass(
 
   if (task.status === "blocked") return evidence.blockUrl ? "source_blocked" : "non_substantive";
   return "non_substantive";
+}
+
+function hasSourceBlockedOutput(task: TaskRecord): boolean {
+  const text = collectResultText(task).toLowerCase();
+  return (
+    text.includes("no source files available") ||
+    text.includes("source bundle contained 0 files") ||
+    text.includes("source bundle had 0 files") ||
+    text.includes("0 files") && text.includes("source") ||
+    text.includes("analysis bridge blocked") ||
+    text.includes("repo root missing") ||
+    text.includes("source root missing") ||
+    text.includes("source was unavailable")
+  );
+}
+
+function collectResultText(task: TaskRecord): string {
+  const parts: string[] = [];
+  const add = (value: unknown): void => {
+    if (value == null) return;
+    if (typeof value === "string") {
+      parts.push(value);
+      return;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      parts.push(String(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) add(item);
+      return;
+    }
+    if (typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        if (/secret|token|authorization|password/i.test(key)) continue;
+        add(item);
+      }
+    }
+  };
+  add(task.result?.summary);
+  add(task.result?.note);
+  const output = task.result?.output ?? {};
+  add(output["summary"]);
+  add(output["analysisSummary"]);
+  add(output["analysis_summary"]);
+  add(output["findings"]);
+  add(output["risks"]);
+  add(output["recommendations"]);
+  add(output["blockerFindings"]);
+  add(output["nonBlockingFindings"]);
+  return parts.join("\n");
 }
 
 function hasSubstantiveWorkerOutput(task: TaskRecord): boolean {
@@ -782,6 +893,20 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
     queuedUnclaimed: 0,
     sourceBlocked: 0,
     nonSubstantive: 0,
+    readiness: {
+      missing: 0,
+      queued: 0,
+      claimedRunning: 0,
+      stale: 0,
+      wrapperOnly: 0,
+      sourceBlocked: 0,
+      handlerArtifactFailed: 0,
+      substantive: 0,
+      terminalFailed: 0,
+      nonSubstantive: 0,
+    },
+    roundMetadataComplete: 0,
+    roundMetadataMissing: 0,
   };
 
   const seenUrls = new Set<string>();
@@ -826,9 +951,44 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
         counts.sourceBlocked++;
         break;
       case "non_substantive":
+      case "stale_or_missing_worker":
         counts.nonSubstantive++;
         break;
     }
+    switch (lane.readinessStatus) {
+      case "missing":
+        counts.readiness.missing++;
+        break;
+      case "queued":
+        counts.readiness.queued++;
+        break;
+      case "claimed_running":
+        counts.readiness.claimedRunning++;
+        break;
+      case "stale":
+        counts.readiness.stale++;
+        break;
+      case "wrapper_only":
+        counts.readiness.wrapperOnly++;
+        break;
+      case "source_blocked":
+        counts.readiness.sourceBlocked++;
+        break;
+      case "handler_artifact_failed":
+        counts.readiness.handlerArtifactFailed++;
+        break;
+      case "substantive":
+        counts.readiness.substantive++;
+        break;
+      case "terminal_failed":
+        counts.readiness.terminalFailed++;
+        break;
+      case "non_substantive":
+        counts.readiness.nonSubstantive++;
+        break;
+    }
+    if (lane.roundMetadataComplete) counts.roundMetadataComplete++;
+    else counts.roundMetadataMissing++;
     for (const url of lane.evidenceUrls) seenUrls.add(url);
   }
   counts.evidenceUrls = seenUrls.size;
@@ -906,6 +1066,8 @@ function closeoutBody(context: {
   const timeout = summary.timeout;
   lines.push(`**${ok}/${total} lanes completed.** ${ko} blocked, ${stale} stale, ${timeout} timeout, ${waiting} active.`);
   lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
+  lines.push(`readiness: missing=${summary.readiness.missing} queued=${summary.readiness.queued} claimed/running=${summary.readiness.claimedRunning} wrapper-only=${summary.readiness.wrapperOnly} source-blocked=${summary.readiness.sourceBlocked} handler-artifact-failed=${summary.readiness.handlerArtifactFailed} substantive=${summary.readiness.substantive}`);
+  lines.push(`round metadata complete: ${summary.roundMetadataComplete}; round metadata missing: ${summary.roundMetadataMissing}`);
   lines.push("");
 
   // Quick verdict
