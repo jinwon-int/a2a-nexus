@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { loadavg, cpus } from "node:os";
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
@@ -447,6 +446,12 @@ import {
   buildOperatorDashboardSnapshot,
   type OperatorDashboardSnapshot,
 } from "./core/operator-dashboard-snapshot.js";
+import {
+  assertA2AContentDigestMatches,
+  hasA2AHttpSignatureHeaders,
+  headerValue,
+  requestHeadersForA2AHttpSignature,
+} from "./http/worker-route-auth.js";
 
 interface DashboardAttentionItem {
   code: string;
@@ -5578,40 +5583,6 @@ export interface BrokerHotRuntimeLimits {
  * heartbeats and can be reused. Node.js defaults to 5000ms, which forces every
  * heartbeat to create a new TCP connection.
  */
-function hasA2AHttpSignatureHeaders(req: IncomingMessage): boolean {
-  return Boolean(headerValue(req, "signature-input") || headerValue(req, "signature"));
-}
-
-function requestHeadersForA2AHttpSignature(req: IncomingMessage): Record<string, string | undefined> {
-  const headers: Record<string, string | undefined> = {};
-  for (const [name, value] of Object.entries(req.headers)) {
-    headers[name.toLowerCase()] = Array.isArray(value) ? value[0] : value;
-  }
-  return headers;
-}
-
-function assertA2AContentDigestMatches(req: IncomingMessage, rawBody: Buffer): void {
-  const provided = headerValue(req, "content-digest");
-  if (!provided) {
-    throw new BrokerError("unauthorized", "a2a_signature_digest_required: content-digest is required");
-  }
-  const expected = `sha-256=:${createHash("sha256").update(rawBody).digest("base64")}:`;
-  if (provided !== expected) {
-    throw new BrokerError("unauthorized", "a2a_signature_digest_mismatch: content-digest does not match request body");
-  }
-}
-
-function headerValue(req: IncomingMessage, name: string): string | undefined {
-  const value = req.headers[name.toLowerCase()];
-  if (Array.isArray(value)) {
-    return value[0]?.trim() || undefined;
-  }
-  if (typeof value === "string") {
-    return value.trim() || undefined;
-  }
-  return undefined;
-}
-
 const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
 
 /**
