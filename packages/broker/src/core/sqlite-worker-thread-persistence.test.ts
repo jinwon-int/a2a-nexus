@@ -23,6 +23,7 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import { emptySnapshot, SqliteBrokerStateStore } from "./store.js";
+import { makeTask } from "./store-test-helpers.js";
 import { createWorkerThreadPersistence, WriteQueue } from "./sqlite-worker-thread-persistence.js";
 import type { WriteQueueStats } from "./sqlite-worker-thread-persistence.js";
 
@@ -455,6 +456,38 @@ test("WorkerThreadProxyStore: enqueue failure reaches the same ACK boundary", as
         handle.stateStore.awaitDurablePersistenceAck?.(),
         /worker_crashed/,
       );
+    } finally {
+      await handle.close();
+    }
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("WorkerThreadProxyStore: loadSource=hot-tables hydrates proxy and worker reads", async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "wt-hot-load-source-"));
+  const dbPath = join(tmpDir, "test.sqlite");
+  try {
+    const seed = new SqliteBrokerStateStore(dbPath, { loadSource: "hot-tables" });
+    try {
+      seed.upsertHotTasks([makeTask("worker-thread-hot-load", "queued", "worker-thread-hot")]);
+    } finally {
+      seed.close();
+    }
+
+    const handle = createWorkerThreadPersistence({
+      dbFile: dbPath,
+      queueCapacity: 4,
+      loadSource: "hot-tables",
+    });
+    try {
+      assert.equal(handle.stateStore.getPersistenceInfo().loadSource, "hot-tables");
+      assert.deepEqual(handle.stateStore.load().tasks.map((task) => task.id), ["worker-thread-hot-load"]);
+
+      const workerInfo = await handle.workerThread.request<{ loadSource?: string }>("getPersistenceInfo");
+      assert.equal(workerInfo.loadSource, "hot-tables");
+      const workerSnapshot = await handle.workerThread.request<{ tasks: Array<{ id: string }> }>("load");
+      assert.deepEqual(workerSnapshot.tasks.map((task) => task.id), ["worker-thread-hot-load"]);
     } finally {
       await handle.close();
     }

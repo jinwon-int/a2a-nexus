@@ -170,6 +170,72 @@ test("operator Team1 round denominator uses actual dispatched workers before bro
   });
 });
 
+test("operator Team1 round rejects no-live mobile broker-claim lanes by default (#778)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "gongyung");
+
+  assert.throws(
+    () =>
+      broker.createTask({
+        id: "team1-no-live-mobile-default-excluded",
+        intent: "analyze",
+        requester: { id: "seoseo", kind: "node", role: "hub" },
+        target: { id: "gongyung", kind: "node", role: "analyst" },
+        assignedWorkerId: "gongyung",
+        message: "analysis-only Team1 canary incorrectly assigned to no-live mobile worker",
+        payload: {
+          mode: "analysis-only",
+          discussionRunId: "team1-no-live-mobile-canary",
+          parentRoundTotal: 1,
+          parentRoundOrder: 1,
+          workModeDecision: workModeDecision(),
+        },
+        taskOrigin: "operator",
+        teamId: "team1",
+        brokerOfRecord: "seoseo",
+      }),
+    {
+      name: "BrokerError",
+      code: "bad_request",
+      message: /no-live mobile worker.*excluded from broker-claimed A2A rounds by default/,
+    },
+  );
+});
+
+test("operator Team1 round can explicitly opt in no-live mobile broker-claim lanes (#778)", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, {
+    brokerId: "seoseo",
+    teamId: "team1",
+  });
+  registerWorker(broker, "gongyung");
+
+  const task = broker.createTask({
+    id: "team1-no-live-mobile-explicit-opt-in",
+    intent: "analyze",
+    requester: { id: "seoseo", kind: "node", role: "hub" },
+    target: { id: "gongyung", kind: "node", role: "analyst" },
+    assignedWorkerId: "gongyung",
+    message: "analysis-only Team1 canary explicitly opting mobile worker into broker claim",
+    payload: {
+      mode: "analysis-only",
+      discussionRunId: "team1-no-live-mobile-opt-in-canary",
+      parentRoundTotal: 1,
+      parentRoundOrder: 1,
+      allowNoLiveMobileBrokerClaim: true,
+      workModeDecision: workModeDecision(),
+    },
+    taskOrigin: "operator",
+    teamId: "team1",
+    brokerOfRecord: "seoseo",
+  });
+
+  assert.equal(task.assignedWorkerId, "gongyung");
+  assert.equal(task.payload.allowNoLiveMobileBrokerClaim, true);
+});
+
 test("operator Team1 tasks normalize discussionRunId into parent round metadata", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
     brokerId: "seoseo",

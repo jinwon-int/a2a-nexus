@@ -192,6 +192,33 @@ function patchTask(overrides = {}) {
   };
 }
 
+test("Hermes patch profile rejects deepseek flash before docker runner execution (#776)", () => {
+  const result = handleTask(patchTask({
+    payload: { workerModel: "deepseek/deepseek-v4-flash" },
+  }), {
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+  });
+
+  assert.equal(result.error.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error.details.failureCategory, "unsupported_hermes_model");
+  assert.equal(result.error.details.profile, "hermes");
+  assert.equal(result.error.details.requestedModel, "deepseek/deepseek-v4-flash");
+});
+
+test("Hermes runner image rejects env default deepseek flash before docker runner execution (#776)", () => {
+  const result = handleTask(patchTask(), {
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:5f0ff71",
+    A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+  });
+
+  assert.equal(result.error.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error.details.canonicalModel, "deepseek/deepseek-v4-flash");
+});
+
 test("github-propose-patch + allowNoChanges=true sets runnerTask.allowNoChanges", () => {
   const runnerTask = __test.buildRunnerTask(patchTask({
     payload: { allowNoChanges: true },

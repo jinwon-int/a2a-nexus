@@ -2310,6 +2310,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     workerPersistenceHandle = createWorkerThreadPersistence({
       dbFile: sqliteFile,
       ackTimeoutMs: persistenceQueueAckTimeoutMs,
+      loadSource: sqliteLoadSource,
+      maxBytes: maxSnapshotBytes,
+      maxHotRuntimeNonTerminalTasks,
+      maxHotRuntimeTerminalTasks,
+      maxHotRuntimeAuditEvents,
+      maxHotRuntimeHeartbeatAuditEvents,
+      maxHotRuntimeTerminalOutboxEvents,
     });
     stateStore = workerPersistenceHandle.stateStore;
     persistenceQueueDiagnosticsProvider = workerPersistenceHandle.diagnostics;

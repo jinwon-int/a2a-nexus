@@ -3,6 +3,7 @@ import type { CreateTaskRequest } from "./types.js";
 
 export const A2A_ROUND_TEAM1_WORKERS = ["sogyo", "nosuk", "bangtong", "gongyung", "yukson"] as const;
 export const A2A_ROUND_TEAM2_WORKERS = ["dungae", "jingun", "soonwook", "daegyo"] as const;
+export const A2A_NO_LIVE_MOBILE_WORKERS = ["gongyung", "daegyo"] as const;
 export const A2A_ROUND_MODES = ["ordinary_a2a_lite", "explicit_strong_a2ad"] as const;
 
 export type A2ARoundTeamScope = "team1" | "team2" | "cross-team";
@@ -175,6 +176,11 @@ export function validateA2ARoundTaskPolicy(
       path: "assignedWorkerId",
       message: `worker ${assignedWorkerId} is not in the ${teamScope} worker set`,
     });
+  } else if (isDefaultNoLiveMobileWorker(assignedWorkerId) && !allowNoLiveMobileBrokerClaim(payload)) {
+    issues.push({
+      path: "assignedWorkerId",
+      message: `worker ${assignedWorkerId} is a no-live mobile worker and is excluded from broker-claimed A2A rounds by default; set payload.allowNoLiveMobileBrokerClaim=true to opt in explicitly`,
+    });
   }
 
   const dispatchMetadata = extractDispatchMetadata(payload);
@@ -252,6 +258,14 @@ function workerAllowedForTeam(workerId: string, teamScope: A2ARoundTeamScope): b
     (A2A_ROUND_TEAM1_WORKERS as readonly string[]).includes(workerId) ||
     (A2A_ROUND_TEAM2_WORKERS as readonly string[]).includes(workerId)
   );
+}
+
+export function isDefaultNoLiveMobileWorker(workerId: string): boolean {
+  return (A2A_NO_LIVE_MOBILE_WORKERS as readonly string[]).includes(workerId);
+}
+
+function allowNoLiveMobileBrokerClaim(payload: Record<string, unknown>): boolean {
+  return payload["allowNoLiveMobileBrokerClaim"] === true;
 }
 
 function firstTokenSource(payload: Record<string, unknown>, keys: string[]): { key: string; value: string } | undefined {

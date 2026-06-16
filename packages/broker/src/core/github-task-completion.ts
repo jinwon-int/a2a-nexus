@@ -53,6 +53,7 @@ export function validateGithubTaskCompletionEvidence(task: TaskRecord, result?: 
             "result.output.reviewVerdict (+ result.output.reviewBodyUrl/reviewBodyRef)",
             "result.output.review.verdict (+ result.output.review.bodyUrl/bodyRef)",
           ],
+          observedEvidence: summarizeObservedCompletionEvidence(result),
         },
       };
     }
@@ -80,6 +81,7 @@ export function validateGithubTaskCompletionEvidence(task: TaskRecord, result?: 
           "result.output.doneCommentUrl",
           "result.output.blockCommentUrl",
         ],
+        observedEvidence: summarizeObservedCompletionEvidence(result),
       },
     };
   }
@@ -205,6 +207,49 @@ function hasReviewBodyRef(value: unknown): boolean {
   // A body reference can be the posted review/comment URL or a non-empty
   // evidence id/ref string. Anything empty is treated as no evidence.
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function summarizeObservedCompletionEvidence(result?: TaskResult): Record<string, unknown> {
+  const output = result?.output && typeof result.output === "object" && !Array.isArray(result.output)
+    ? result.output as Record<string, unknown>
+    : {};
+  const github = output.github && typeof output.github === "object" && !Array.isArray(output.github)
+    ? output.github as Record<string, unknown>
+    : {};
+  const runner = output.runner && typeof output.runner === "object" && !Array.isArray(output.runner)
+    ? output.runner as Record<string, unknown>
+    : {};
+
+  return compactRecord({
+    summary: safeLongDetailValue(result?.summary),
+    note: safeLongDetailValue(result?.note),
+    artifactIds: safeStringArray(result?.artifactIds),
+    outputKeys: Object.keys(output).sort().slice(0, 40),
+    startCommentUrl: safeLongDetailValue(output.startCommentUrl ?? github.startCommentUrl),
+    githubStartCommentUrl: safeLongDetailValue(github.startCommentUrl),
+    doneCommentUrl: safeLongDetailValue(output.doneCommentUrl ?? github.doneCommentUrl),
+    blockCommentUrl: safeLongDetailValue(output.blockCommentUrl ?? github.blockCommentUrl),
+    prUrl: safeLongDetailValue(output.prUrl ?? github.prUrl),
+    runnerStatus: safeLongDetailValue(runner.status ?? output.runnerStatus),
+    runnerArtifacts: safeStringArray(runner.artifacts ?? output.runnerArtifacts),
+    logPath: safeLongDetailValue(output.logPath ?? runner.logPath),
+    logUrl: safeLongDetailValue(output.logUrl ?? runner.logUrl),
+    workDir: safeLongDetailValue(output.workDir ?? runner.workDir),
+  });
+}
+
+function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function safeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 20);
+}
+
+function safeLongDetailValue(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) return undefined;
+  return value.slice(0, 500);
 }
 
 function validateCompletionReceipt(result?: TaskResult): TaskError | null {

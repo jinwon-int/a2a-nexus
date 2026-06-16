@@ -1187,15 +1187,35 @@ test("server maps GitHub completion evidence BrokerErrors to client errors", asy
       }),
       body: JSON.stringify({
         workerId: "worker-github-http",
-        result: { summary: "done without public GitHub evidence" },
+        result: {
+          summary: "done without public GitHub evidence",
+          artifactIds: ["artifact-diagnostic-1"],
+          output: {
+            startCommentUrl: "https://github.com/jinwon-int/a2a-broker/issues/1032#issuecomment-start",
+            runner: {
+              status: "completed",
+              artifacts: ["/work/artifacts/hermes-output.txt"],
+            },
+            logPath: "/work/artifacts/hermes-output.txt",
+          },
+        },
       }),
     });
     assert.equal(res.status, 400);
     const body = await res.json();
-    assert.deepEqual(body.error, {
-      code: "github_completion_evidence_missing",
-      message: "github-origin propose_patch tasks must return PR, Done-comment, or Block-comment evidence before they can succeed",
-    });
+    assert.equal(body.error.code, "github_completion_evidence_missing");
+    assert.equal(
+      body.error.message,
+      "github-origin propose_patch tasks must return PR, Done-comment, or Block-comment evidence before they can succeed",
+    );
+    assert.equal(body.error.details.taskId, "task-github-http-evidence-missing");
+    assert.equal(body.error.details.mode, "github-propose-patch");
+    assert.equal(
+      body.error.details.observedEvidence.startCommentUrl,
+      "https://github.com/jinwon-int/a2a-broker/issues/1032#issuecomment-start",
+    );
+    assert.deepEqual(body.error.details.observedEvidence.artifactIds, ["artifact-diagnostic-1"]);
+    assert.deepEqual(body.error.details.observedEvidence.runnerArtifacts, ["/work/artifacts/hermes-output.txt"]);
   } finally {
     await server.close();
   }
