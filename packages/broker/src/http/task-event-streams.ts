@@ -6,6 +6,11 @@ import type { TaskUpdate } from "../core/broker.js";
 import type { TaskStatusEvent, TerminalTaskEvent } from "../core/task-events.js";
 import type { TaskRecord, TaskStatus } from "../core/types.js";
 
+import {
+  attachSseConnectionCleanup,
+  parseSseReplayAfterId,
+  startSseHeartbeat,
+} from "./sse-stream-lifecycle.js";
 import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
 export function handleWorkerAssignmentEventStream(
@@ -24,18 +29,13 @@ export function handleWorkerAssignmentEventStream(
 
   writeSseResponseHeaders(res);
 
-  const lastEventIdHeader = req.headers["last-event-id"] as string | undefined;
-  const replayAfterId = lastEventIdHeader ? Number(lastEventIdHeader) : -1;
-  const afterId = Number.isFinite(replayAfterId) && replayAfterId >= 0 ? replayAfterId : -1;
+  const afterId = parseSseReplayAfterId(req.headers["last-event-id"] as string | undefined);
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = (): void => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
+    stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -68,13 +68,7 @@ export function handleWorkerAssignmentEventStream(
     sendAssignment(event);
   });
 
-  req.on("close", () => {
-    cleanup();
-    if (!res.writableEnded) {
-      res.end();
-    }
-  });
-  req.on("error", cleanup);
+  attachSseConnectionCleanup(req, res, cleanup);
 
   const queuedTasks = broker.listTasks({ assignedWorkerId: workerId, status: "queued" });
   writeSseEvent(res, "worker-assignment-snapshot", {
@@ -101,14 +95,7 @@ export function handleWorkerAssignmentEventStream(
   pending.length = 0;
 
   if (heartbeatMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      if (res.writableEnded) {
-        cleanup();
-        return;
-      }
-      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-    }, heartbeatMs);
-    heartbeatTimer.unref?.();
+    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
   }
 }
 
@@ -156,18 +143,13 @@ export function handleTerminalTaskEventStream(
 
   writeSseResponseHeaders(res);
 
-  const lastEventIdHeader = req.headers["last-event-id"] as string | undefined;
-  const replayAfterId = lastEventIdHeader ? Number(lastEventIdHeader) : -1;
-  const afterId = Number.isFinite(replayAfterId) && replayAfterId >= 0 ? replayAfterId : -1;
+  const afterId = parseSseReplayAfterId(req.headers["last-event-id"] as string | undefined);
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = (): void => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
+    stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -206,26 +188,13 @@ export function handleTerminalTaskEventStream(
   }
   pending.length = 0;
 
-  req.on("close", () => {
-    cleanup();
-    if (!res.writableEnded) {
-      res.end();
-    }
-  });
-  req.on("error", cleanup);
+  attachSseConnectionCleanup(req, res, cleanup);
 
   // Match the other SSE handlers: skip the heartbeat entirely when disabled
   // (heartbeatMs <= 0) — otherwise setInterval(..., 0) becomes a ~1ms
   // busy-loop — and unref the timer so it never keeps the process alive.
   if (heartbeatMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      if (res.writableEnded) {
-        cleanup();
-        return;
-      }
-      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-    }, heartbeatMs);
-    heartbeatTimer.unref?.();
+    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
   }
 }
 
@@ -268,14 +237,11 @@ export function handleTaskEventStream(
     return;
   }
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = (): void => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
+    stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -322,13 +288,7 @@ export function handleTaskEventStream(
     sendUpdate(update);
   });
 
-  req.on("close", () => {
-    cleanup();
-    if (!res.writableEnded) {
-      res.end();
-    }
-  });
-  req.on("error", cleanup);
+  attachSseConnectionCleanup(req, res, cleanup);
 
   // Replay missed events first when reconnecting with a valid Last-Event-ID.
   if (replayAfterSeq >= 0) {
@@ -378,14 +338,7 @@ export function handleTaskEventStream(
   pending.length = 0;
 
   if (heartbeatMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      if (res.writableEnded) {
-        cleanup();
-        return;
-      }
-      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-    }, heartbeatMs);
-    heartbeatTimer.unref?.();
+    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
   }
 }
 

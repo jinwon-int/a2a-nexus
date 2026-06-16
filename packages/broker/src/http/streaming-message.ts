@@ -10,6 +10,7 @@ import { InMemoryA2ABroker } from "../core/broker.js";
 import type { TaskRecord } from "../core/types.js";
 
 import { isTerminalSnapshotStatus } from "./task-event-streams.js";
+import { attachSseConnectionCleanup, startSseHeartbeat } from "./sse-stream-lifecycle.js";
 import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
 /**
@@ -106,14 +107,11 @@ export function handleStreamingMessageResponse(
     return;
   }
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = (): void => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
+    stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -143,22 +141,9 @@ export function handleStreamingMessageResponse(
     }
   });
 
-  req.on("close", () => {
-    cleanup();
-    if (!res.writableEnded) {
-      res.end();
-    }
-  });
-  req.on("error", cleanup);
+  attachSseConnectionCleanup(req, res, cleanup);
 
   if (heartbeatMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      if (res.writableEnded) {
-        cleanup();
-        return;
-      }
-      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-    }, heartbeatMs);
-    heartbeatTimer.unref?.();
+    stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
   }
 }

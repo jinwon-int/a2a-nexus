@@ -6,6 +6,7 @@ import type {
   OperatorSnapshotEvent,
 } from "../server.js";
 
+import { attachSseConnectionCleanup, startSseHeartbeat } from "./sse-stream-lifecycle.js";
 import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
 export function formatOperatorSseEventId(seq: number): string {
@@ -65,14 +66,11 @@ export function handleOperatorEventStream(
     params.replayWindow(),
   );
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
 
   const cleanup = (): void => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
+    stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -102,13 +100,7 @@ export function handleOperatorEventStream(
     sendEvent(event);
   });
 
-  req.on("close", () => {
-    cleanup();
-    if (!res.writableEnded) {
-      res.end();
-    }
-  });
-  req.on("error", cleanup);
+  attachSseConnectionCleanup(req, res, cleanup);
 
   if (replayAfterSeq !== null) {
     const missed = params.replayEvents(replayAfterSeq);
@@ -145,13 +137,6 @@ export function handleOperatorEventStream(
   pending.length = 0;
 
   if (params.heartbeatMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      if (res.writableEnded) {
-        cleanup();
-        return;
-      }
-      res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
-    }, params.heartbeatMs);
-    heartbeatTimer.unref?.();
+    stopHeartbeat = startSseHeartbeat(res, params.heartbeatMs, cleanup);
   }
 }
