@@ -43,6 +43,7 @@ map.
 - `docs/worker-poll-profile-migration.md` for the neutral `broker-poll-only` worker profile and OpenClaw-era compatibility migration guardrails
 - `docs/a2a-http-signature-profile-v1.md` for the transport-independent per-worker signed request authentication proposal, including security goals, scoped authorization, replay protection, and migration from shared edge-secret worker auth
 - `docs/npm-scripts-inventory.md` for auditing and consolidating the large npm script surface without bypassing operator gates
+- `docs/test-placement.md` for placing new broker route tests in per-surface files instead of recreating an append-only `server.test.ts` monolith
 - `docs/source-public-risk-audit-20260510.md` for the Team2 independent broker source-public risk audit and parity evidence for the 2026-05-10 gate
 - `SECURITY.md` and `CONTRIBUTING.md` for vulnerability-reporting, contribution, and release-safety boundaries
 - `docs/v1-acceptance-handoff.md` for the v1 acceptance gate, the plugin-facing contract, and the cross-repo handoff bar for `openclaw-plugin-a2a`
