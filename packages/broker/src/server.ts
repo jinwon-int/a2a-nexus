@@ -6,6 +6,7 @@ import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCp
 import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
 import { sanitizeBrokerId, sanitizeBuildToken } from "./build-metadata-sanitize.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
+import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
@@ -5836,22 +5837,6 @@ function resolveBrokerId(explicit: string | undefined, serviceName: string): str
     fallback: serviceName,
     unsafeFallback: "redacted",
   }) ?? serviceName;
-}
-
-function normalizePersistenceBackend(value: string | undefined): "json-file" | "sqlite" {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === "sqlite") {
-    return "sqlite";
-  }
-  return "json-file";
-}
-
-function normalizeSqliteLoadSource(value: string | undefined): SqliteBrokerLoadSource {
-  const normalized = value?.trim().toLowerCase().replace(/_/g, "-");
-  if (normalized === "hot-tables" || normalized === "hot-table" || normalized === "hot-runtime") {
-    return "hot-tables";
-  }
-  return "snapshot";
 }
 
 function createDefaultStateStore(params: {
