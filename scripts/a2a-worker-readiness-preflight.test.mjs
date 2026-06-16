@@ -248,3 +248,24 @@ test("service active with broker online is healthy (#739)", () => {
   const r = evaluateWorkerReadiness(healthy({ serviceActive: true, brokerWorkerStatus: "online" }));
   assert.equal(r.ok, true, JSON.stringify(r.violations));
 });
+
+test("Hermes patch profile with unsupported default model is classified before dispatch (#810)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "yukson",
+    patchProfile: "hermes",
+    workerModel: "deepseek/deepseek-v4-flash",
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("worker_model_profile_mismatch"));
+  const reason = r.violations.find((v) => v.code === "worker_model_profile_mismatch")?.reason ?? "";
+  assert.match(reason, /Hermes/i);
+  assert.match(reason, /openai-codex\/gpt-5\.5/);
+});
+
+test("Hermes patch profile accepts supported default model in readiness preflight (#810)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    patchProfile: "hermes",
+    workerModel: "openai-codex/gpt-5.5",
+  }));
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
