@@ -422,9 +422,7 @@ import {
   handleExchangesListRequest,
 } from "./http/exchanges-read.js";
 import {
-  handleWorkerByIdRequest,
-  handleWorkerCapacityRequest,
-  handleWorkersListRequest,
+  handleWorkersReadRouteIfMatched,
   toWorkerView,
 } from "./http/workers-read.js";
 import {
@@ -4407,24 +4405,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "GET" && path === "/workers") {
-        return handleWorkersListRequest({
-          res,
-          url,
-          stateStore,
-          broker,
-          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-        });
-      }
-
-      if (req.method === "GET" && path === "/workers/capacity") {
-        return handleWorkerCapacityRequest({
-          res,
-          url,
-          stateStore,
-          broker,
-          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-        });
+      if (handleWorkersReadRouteIfMatched({
+        method: req.method,
+        path,
+        segments,
+        res,
+        url,
+        stateStore,
+        broker,
+        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+      })) {
+        return;
       }
 
       if (req.method === "POST" && path === "/workers/register") {
@@ -4455,17 +4446,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         recordWorkerRegisterPhase("toWorkerView", toWorkerViewStartedAt, workerId);
         await awaitDurablePersistenceAck(stateStore);
         return sendJson(res, 201, { ...workerView, brokerId });
-      }
-
-      if (req.method === "GET" && segments[0] === "workers" && segments[1] && segments.length === 2) {
-        return handleWorkerByIdRequest({
-          res,
-          url,
-          stateStore,
-          broker,
-          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-          workerId: segments[1],
-        });
       }
 
       if (req.method === "POST" && segments[0] === "workers" && segments[1] && segments[2] === "heartbeat") {
