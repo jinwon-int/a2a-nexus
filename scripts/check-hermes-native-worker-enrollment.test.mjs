@@ -27,6 +27,7 @@ const conformanceChecklistPath = 'docs/hermes-native-worker-conformance-checklis
 const androidRunbookPath = 'docs/hermes-android-native-worker-runbook.md';
 const gongyungSpecPath = 'docs/specs/gongyung-hermes-worker-profile/spec.md';
 const hermesIntegrationSpec = 'docs/specs/hermes-worker-integration/spec.md';
+const workerCapabilityRegistryPath = 'packages/broker/docs/worker-capability-registry.md';
 
 // ── File existence checks ─────────────────────────────────────────
 
@@ -56,6 +57,23 @@ test('prerequisite gongyung spec exists', () => {
 
 test('prerequisite hermes integration spec exists', () => {
   assert.ok(existsSync(join(repoRoot, hermesIntegrationSpec)), `missing: ${hermesIntegrationSpec}`);
+});
+
+test('worker capability registry exists', () => {
+  assert.ok(existsSync(join(repoRoot, workerCapabilityRegistryPath)), `missing: ${workerCapabilityRegistryPath}`);
+});
+
+test('worker capability registry frames Gongyung and Daegyo as mobile no-live workers', () => {
+  const content = readFileSync(join(repoRoot, workerCapabilityRegistryPath), 'utf8');
+
+  assert.match(content, /gongyung/i);
+  assert.match(content, /daegyo/i);
+  assert.match(content, /mobile\s*\/\s*non-docker/i);
+  assert.match(content, /no-live, source-only `analyze` \/ `verify`/i);
+  assert.match(content, /must reject: Docker-runner, live-impact, provider-send, and generic GitHub-write\/proof-marker payloads/i);
+  assert.match(content, /termux-proot-distro-a2a-runner\.md/);
+  assert.match(content, /#805/);
+  assert.match(content, /#807/);
 });
 
 // ── Runbook structure validation ──────────────────────────────────
