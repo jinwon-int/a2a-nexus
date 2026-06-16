@@ -10,6 +10,7 @@ import {
   advisorySidecarWorkerModelPolicySnapshot,
   canonicalizeWorkerModel,
   isWorkerModelSupportedByPatchProfile,
+  resolveAdvisorySidecarFallbackDecision,
   resolveAdvisorySidecarRoutingPolicy,
   resolveWorkerModelInputs,
   resolveWorkerThinkingInput,
@@ -286,6 +287,57 @@ test("advisory sidecar routing falls back deterministically when no activation l
       finalizer: false,
     },
   });
+});
+
+test("advisory sidecar fallback decision fails closed for disabled, unavailable, timeout, schema, and bypass cases (#811)", () => {
+  const cases = [
+    { name: "null-input", input: null, reason: "sidecar_disabled" },
+    { name: "disabled", input: { enabled: false }, reason: "sidecar_disabled" },
+    { name: "unavailable", input: { enabled: true, available: false }, reason: "sidecar_unavailable" },
+    { name: "timeout", input: { enabled: true, available: true, timedOut: true }, reason: "sidecar_timeout" },
+    { name: "schema", input: { enabled: true, available: true, response: { route: "advisory_sidecar" } }, reason: "sidecar_schema_mismatch" },
+    { name: "unknown-recommendation", input: { enabled: true, available: true, response: { schemaVersion: "a2a.advisory-sidecar.response.v1", recommendation: "use_sidecar", bypasses: { allowlist: false, capabilityChecks: false, approvalGates: false, finalizer: false } } }, reason: "sidecar_schema_mismatch" },
+    { name: "missing-bypass-key", input: { enabled: true, available: true, response: { schemaVersion: "a2a.advisory-sidecar.response.v1", recommendation: "continue_default", bypasses: { finalizer: false } } }, reason: "sidecar_schema_mismatch" },
+    { name: "prototype-supplied-schema", input: { enabled: true, available: true, response: Object.create({ schemaVersion: "a2a.advisory-sidecar.response.v1", recommendation: "continue_default", bypasses: { allowlist: false, capabilityChecks: false, approvalGates: false, finalizer: false } }) }, reason: "sidecar_schema_mismatch" },
+    { name: "prototype-supplied-bypass-gates", input: { enabled: true, available: true, response: { schemaVersion: "a2a.advisory-sidecar.response.v1", recommendation: "continue_default", bypasses: Object.create({ allowlist: false, capabilityChecks: false, approvalGates: false, finalizer: false }) } }, reason: "sidecar_schema_mismatch" },
+    { name: "bypass", input: { enabled: true, available: true, response: { schemaVersion: "a2a.advisory-sidecar.response.v1", recommendation: "continue_default", bypasses: { finalizer: true } } }, reason: "sidecar_bypass_recommended:finalizer" },
+  ];
+
+  for (const { name, input, reason } of cases) {
+    const decision = resolveAdvisorySidecarFallbackDecision(input);
+    assert.equal(decision.status, "fallback", name);
+    assert.equal(decision.route, "default_worker", name);
+    assert.equal(decision.advisoryOnly, true, name);
+    assert.equal(decision.finalizerRequired, true, name);
+    assert.equal(decision.startsSidecarProcess, false, name);
+    assert.equal(decision.sendsProviderRequests, false, name);
+    assert.equal(decision.mutatesBrokerState, false, name);
+    assert.equal(decision.bypasses.finalizer, false, name);
+    assert.ok(decision.reasons.includes(reason), `${name} should include ${reason}`);
+  }
+});
+
+test("advisory sidecar fallback decision accepts only valid advisory-only schema without bypasses (#811)", () => {
+  const decision = resolveAdvisorySidecarFallbackDecision({
+    enabled: true,
+    available: true,
+    response: {
+      schemaVersion: "a2a.advisory-sidecar.response.v1",
+      recommendation: "continue_default",
+      bypasses: {
+        allowlist: false,
+        capabilityChecks: false,
+        approvalGates: false,
+        finalizer: false,
+      },
+    },
+  });
+
+  assert.equal(decision.status, "accepted_advisory");
+  assert.equal(decision.route, "default_worker");
+  assert.deepEqual(decision.reasons, []);
+  assert.equal(decision.finalizerRequired, true);
+  assert.equal(decision.advisoryOnly, true);
 });
 
 test("normal source-only task uses current fleet baseline model and low thinking by default (#766)", () => {

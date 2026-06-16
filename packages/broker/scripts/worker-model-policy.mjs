@@ -227,6 +227,59 @@ function buildAdvisoryRoutingDecision({
   };
 }
 
+export function resolveAdvisorySidecarFallbackDecision(input = {}) {
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const {
+    enabled = false,
+    available = false,
+    timedOut = false,
+    response = null,
+  } = options;
+  const reasons = [];
+
+  if (!enabled) reasons.push("sidecar_disabled");
+  if (enabled && !available) reasons.push("sidecar_unavailable");
+  if (timedOut) reasons.push("sidecar_timeout");
+
+  const responseRecord = response && typeof response === "object" && !Array.isArray(response)
+    ? response
+    : null;
+  if (enabled && available && !timedOut) {
+    const bypasses = responseRecord && Object.hasOwn(responseRecord, "bypasses") ? responseRecord.bypasses : null;
+    if (bypasses && typeof bypasses === "object" && !Array.isArray(bypasses)) {
+      for (const gate of ["allowlist", "capabilityChecks", "approvalGates", "finalizer"]) {
+        if (Object.hasOwn(bypasses, gate) && bypasses[gate] === true) reasons.push(`sidecar_bypass_recommended:${gate}`);
+      }
+    }
+    if (!isValidAdvisorySidecarResponse(responseRecord)) {
+      reasons.push("sidecar_schema_mismatch");
+    }
+  }
+
+  return {
+    status: reasons.length === 0 ? "accepted_advisory" : "fallback",
+    route: ADVISORY_SIDECAR_ROUTING_POLICY.defaultRoute,
+    advisoryOnly: true,
+    finalizerRequired: true,
+    reasons,
+    startsSidecarProcess: false,
+    sendsProviderRequests: false,
+    mutatesBrokerState: false,
+    bypasses: ADVISORY_SIDECAR_ROUTING_POLICY.bypasses,
+  };
+}
+
+function isValidAdvisorySidecarResponse(response) {
+  if (!response) return false;
+  if (!Object.hasOwn(response, "schemaVersion") || response.schemaVersion !== "a2a.advisory-sidecar.response.v1") return false;
+  if (!Object.hasOwn(response, "recommendation") || response.recommendation !== "continue_default") return false;
+  if (!Object.hasOwn(response, "bypasses") || !response.bypasses || typeof response.bypasses !== "object" || Array.isArray(response.bypasses)) return false;
+  for (const gate of ["allowlist", "capabilityChecks", "approvalGates", "finalizer"]) {
+    if (!Object.hasOwn(response.bypasses, gate) || response.bypasses[gate] !== false) return false;
+  }
+  return true;
+}
+
 function normalizeStringSet(values) {
   if (!Array.isArray(values)) {
     return new Set();
