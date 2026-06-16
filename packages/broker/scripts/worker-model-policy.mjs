@@ -27,6 +27,29 @@ export const HERMES_UNSUPPORTED_WORKER_MODELS = Object.freeze([
   "deepseek-v4-flash",
 ]);
 
+export const ADVISORY_SIDECAR_ROUTING_POLICY = Object.freeze({
+  kind: "a2a.advisory-sidecar-routing-policy.v1",
+  activationLabels: Object.freeze([
+    "advisory-sidecar",
+    "sidecar:advisory",
+    "sidecar-candidate",
+  ]),
+  requiredCapabilities: Object.freeze([
+    "advisory-sidecar",
+    "source-analysis",
+  ]),
+  advisoryOnly: true,
+  defaultRoute: "default_worker",
+  allowedRoute: "advisory_sidecar",
+  blockedRoute: "finalizer_review",
+  bypasses: Object.freeze({
+    allowlist: false,
+    capabilityChecks: false,
+    approvalGates: false,
+    finalizer: false,
+  }),
+});
+
 const ALLOWED_MODEL_SET = new Set(ALLOWED_WORKER_MODELS);
 const VALID_THINKING_SET = new Set(VALID_WORKER_THINKING_LEVELS);
 const HERMES_UNSUPPORTED_MODEL_SET = new Set(HERMES_UNSUPPORTED_WORKER_MODELS);
@@ -98,6 +121,7 @@ export function advisorySidecarWorkerModelPolicySnapshot() {
     allowedWorkerModels: ALLOWED_WORKER_MODELS,
     validThinkingLevels: VALID_WORKER_THINKING_LEVELS,
     hermesUnsupportedWorkerModels: HERMES_UNSUPPORTED_WORKER_MODELS,
+    routingPolicy: ADVISORY_SIDECAR_ROUTING_POLICY,
     sidecarRecommendationBypassesAllowlist: false,
     sidecarRecommendationBypassesCapabilityChecks: false,
     sidecarRecommendationBypassesApprovalGates: false,
@@ -107,6 +131,107 @@ export function advisorySidecarWorkerModelPolicySnapshot() {
     mutatesBrokerState: false,
     dispatchesTasks: false,
   });
+}
+
+export function resolveAdvisorySidecarRoutingPolicy({
+  taskLabels = [],
+  workerModel = "",
+  workerThinking = "",
+  patchProfile = "",
+  workerCapabilities = [],
+  requiresApproval = false,
+} = {}) {
+  const labels = normalizeStringSet(taskLabels);
+  const capabilities = normalizeStringSet(workerCapabilities);
+  const labelMatched = ADVISORY_SIDECAR_ROUTING_POLICY.activationLabels.find((label) => labels.has(label)) ?? null;
+  const modelResolution = resolveWorkerModelInputs({ payloadModel: workerModel });
+  const selectedModel = modelResolution.model ?? safeText(workerModel, "");
+  const thinkingResolution = resolveWorkerThinkingInput(workerThinking);
+  const reasons = [];
+
+  if (!labelMatched) {
+    return buildAdvisoryRoutingDecision({
+      status: "fallback",
+      route: ADVISORY_SIDECAR_ROUTING_POLICY.defaultRoute,
+      selectedModel: DEFAULT_WORKER_MODEL,
+      selectedThinking: thinkingResolution.thinking,
+      reasons: ["no_advisory_route_label"],
+      labelMatched,
+      modelAllowed: true,
+      capabilityChecksPassed: false,
+      approvalGatePassed: !requiresApproval,
+    });
+  }
+
+  if (modelResolution.error) {
+    reasons.push("worker_model_not_allowed");
+  }
+
+  const profileSupport = isWorkerModelSupportedByPatchProfile(patchProfile, selectedModel);
+  if (!profileSupport.supported) {
+    reasons.push("worker_model_not_supported_by_profile");
+  }
+
+  const missingCapabilities = ADVISORY_SIDECAR_ROUTING_POLICY.requiredCapabilities.filter(
+    (capability) => !capabilities.has(capability),
+  );
+  for (const capability of missingCapabilities) {
+    reasons.push(`missing_worker_capability:${capability}`);
+  }
+
+  if (requiresApproval) {
+    reasons.push("approval_gate_required");
+  }
+
+  return buildAdvisoryRoutingDecision({
+    status: reasons.length === 0 ? "allowed" : "blocked",
+    route: reasons.length === 0
+      ? ADVISORY_SIDECAR_ROUTING_POLICY.allowedRoute
+      : ADVISORY_SIDECAR_ROUTING_POLICY.blockedRoute,
+    selectedModel,
+    selectedThinking: thinkingResolution.thinking,
+    reasons,
+    labelMatched,
+    modelAllowed: !modelResolution.error,
+    capabilityChecksPassed: missingCapabilities.length === 0,
+    approvalGatePassed: !requiresApproval,
+  });
+}
+
+function buildAdvisoryRoutingDecision({
+  status,
+  route,
+  selectedModel,
+  selectedThinking,
+  reasons,
+  labelMatched,
+  modelAllowed,
+  capabilityChecksPassed,
+  approvalGatePassed,
+}) {
+  return {
+    status,
+    route,
+    advisoryOnly: ADVISORY_SIDECAR_ROUTING_POLICY.advisoryOnly,
+    selectedModel,
+    selectedThinking,
+    reasons,
+    evidence: {
+      labelMatched,
+      modelAllowed,
+      capabilityChecksPassed,
+      approvalGatePassed,
+      finalizerRequired: true,
+    },
+    bypasses: ADVISORY_SIDECAR_ROUTING_POLICY.bypasses,
+  };
+}
+
+function normalizeStringSet(values) {
+  if (!Array.isArray(values)) {
+    return new Set();
+  }
+  return new Set(values.map((value) => safeText(value, "")).filter(Boolean));
 }
 
 function safeText(value, fallback = "") {

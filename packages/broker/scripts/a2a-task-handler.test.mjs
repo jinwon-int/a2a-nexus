@@ -3,12 +3,14 @@ import test from "node:test";
 
 import { __test, handleTask } from "./a2a-task-handler.mjs";
 import {
+  ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
   DEFAULT_WORKER_MODEL,
   HERMES_UNSUPPORTED_WORKER_MODELS,
   advisorySidecarWorkerModelPolicySnapshot,
   canonicalizeWorkerModel,
   isWorkerModelSupportedByPatchProfile,
+  resolveAdvisorySidecarRoutingPolicy,
   resolveWorkerModelInputs,
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
@@ -179,6 +181,111 @@ test("advisory sidecar model policy snapshot is source-only and cannot bypass br
   assert.equal(snapshot.sendsProviderRequests, false);
   assert.equal(snapshot.mutatesBrokerState, false);
   assert.equal(snapshot.dispatchesTasks, false);
+});
+
+test("advisory sidecar routing policy exposes explicit deterministic data (#804)", () => {
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.kind, "a2a.advisory-sidecar-routing-policy.v1");
+  assert.deepEqual(ADVISORY_SIDECAR_ROUTING_POLICY.activationLabels, [
+    "advisory-sidecar",
+    "sidecar:advisory",
+    "sidecar-candidate",
+  ]);
+  assert.deepEqual(ADVISORY_SIDECAR_ROUTING_POLICY.requiredCapabilities, [
+    "advisory-sidecar",
+    "source-analysis",
+  ]);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.advisoryOnly, true);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.allowlist, false);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.capabilityChecks, false);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.approvalGates, false);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.finalizer, false);
+});
+
+test("advisory sidecar routing allows only allowlisted and capable candidates (#804)", () => {
+  const route = resolveAdvisorySidecarRoutingPolicy({
+    taskLabels: ["advisory-sidecar", "source-only"],
+    workerModel: "deepseek/deepseek-v4-pro",
+    patchProfile: "docker",
+    workerCapabilities: ["advisory-sidecar", "source-analysis", "github-read"],
+    requiresApproval: false,
+  });
+
+  assert.deepEqual(route, {
+    status: "allowed",
+    route: "advisory_sidecar",
+    advisoryOnly: true,
+    selectedModel: "deepseek/deepseek-v4-pro",
+    selectedThinking: "low",
+    reasons: [],
+    evidence: {
+      labelMatched: "advisory-sidecar",
+      modelAllowed: true,
+      capabilityChecksPassed: true,
+      approvalGatePassed: true,
+      finalizerRequired: true,
+    },
+    bypasses: {
+      allowlist: false,
+      capabilityChecks: false,
+      approvalGates: false,
+      finalizer: false,
+    },
+  });
+});
+
+test("advisory sidecar routing blocks unsupported model, missing capability, and approval bypass attempts (#804)", () => {
+  const route = resolveAdvisorySidecarRoutingPolicy({
+    taskLabels: ["sidecar:advisory"],
+    workerModel: "deepseek/deepseek-v4-flash",
+    patchProfile: "hermes",
+    workerCapabilities: ["source-analysis"],
+    requiresApproval: true,
+  });
+
+  assert.equal(route.status, "blocked");
+  assert.equal(route.route, "finalizer_review");
+  assert.deepEqual(route.reasons, [
+    "worker_model_not_supported_by_profile",
+    "missing_worker_capability:advisory-sidecar",
+    "approval_gate_required",
+  ]);
+  assert.equal(route.evidence.modelAllowed, true);
+  assert.equal(route.evidence.capabilityChecksPassed, false);
+  assert.equal(route.evidence.approvalGatePassed, false);
+  assert.equal(route.evidence.finalizerRequired, true);
+  assert.equal(route.bypasses.allowlist, false);
+  assert.equal(route.bypasses.capabilityChecks, false);
+  assert.equal(route.bypasses.approvalGates, false);
+  assert.equal(route.bypasses.finalizer, false);
+});
+
+test("advisory sidecar routing falls back deterministically when no activation label is present (#804)", () => {
+  const route = resolveAdvisorySidecarRoutingPolicy({
+    taskLabels: ["source-only"],
+    workerCapabilities: ["source-analysis"],
+  });
+
+  assert.deepEqual(route, {
+    status: "fallback",
+    route: "default_worker",
+    advisoryOnly: true,
+    selectedModel: DEFAULT_WORKER_MODEL,
+    selectedThinking: "low",
+    reasons: ["no_advisory_route_label"],
+    evidence: {
+      labelMatched: null,
+      modelAllowed: true,
+      capabilityChecksPassed: false,
+      approvalGatePassed: true,
+      finalizerRequired: true,
+    },
+    bypasses: {
+      allowlist: false,
+      capabilityChecks: false,
+      approvalGates: false,
+      finalizer: false,
+    },
+  });
 });
 
 test("normal source-only task uses current fleet baseline model and low thinking by default (#766)", () => {
