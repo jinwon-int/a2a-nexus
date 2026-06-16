@@ -117,6 +117,38 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 }
 ```
 
+### Mobile no-live Hermes research workers (`gongyung`, `daegyo`)
+
+`gongyung` and `daegyo` are formal A2A workers, but their registry class is **mobile / non-docker / Hermes research worker** rather than Docker-runner or production deployment target. This corrects the #805 framing captured during the #807 cleanup round and keeps the registry aligned with the Termux production boundary in [`docs/termux-proot-distro-a2a-runner.md`](../../../docs/termux-proot-distro-a2a-runner.md).
+
+Required capability framing for these nodes:
+
+- formal A2A workers: yes;
+- worker class: mobile / non-docker / Hermes research worker;
+- allowed lanes: no-live, source-only `analyze` / `verify` tasks;
+- must reject: Docker-runner, live-impact, provider-send, and generic GitHub-write/proof-marker payloads unless a separate approved proof-marker path exists;
+- no secrets, device identifiers, private Termux paths, provider tokens, or broker edge secrets are registry content.
+
+Representative public-safe card shape:
+
+```json
+{
+  "schemaVersion": "worker-capability-card/v1",
+  "worker": { "id": "gongyung", "name": "Gongyung mobile no-live researcher", "role": "researcher", "mode": "mobile" },
+  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "seoseo" },
+  "assignment": {
+    "roles": ["docs-compat"],
+    "supportedTaskTypes": ["analyze", "verify"],
+    "environments": ["research"],
+    "mobileNoLive": { "class": "mobile-non-docker-hermes-research", "dockerRunner": false, "githubWrite": false, "providerSend": false, "liveImpact": false }
+  },
+  "safety": { "canTouchLive": false, "requiresApprovalForLive": true, "boundaries": ["no Docker-runner payloads", "no live-impact payloads", "no provider sends", "no generic GitHub-write/proof-marker payloads"] },
+  "visibility": { "scope": "public", "safeForDiscovery": true, "exposeBrokerUrl": false, "exposeWorkspaceIds": false, "exposeCapacity": true, "exposeLiveness": false, "exposesSecrets": false }
+}
+```
+
+Use the same capability framing for `daegyo` on Team2/Gwakga unless a later approved registry issue records a narrower node-specific exception.
+
 ### Provider/model-capable Team2 worker (`soonwook`, private/team scope only)
 
 ```json
