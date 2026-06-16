@@ -19,7 +19,7 @@
  * Failure codes: secret_invalid | broker_route_mismatch | service_path_drift |
  *                worker_root_missing | handler_missing | task_poll_unauthorized |
  *                worker_role_mismatch | heartbeat_requester_role_mismatch |
- *                broker_worker_stale
+ *                broker_worker_stale | worker_model_profile_mismatch
  *
  * Secret-safe: consumes only secretLength / secretPresent plus redaction-safe
  * taskPollProbe metadata — never a raw secret — and emits only lengths/categories.
@@ -31,6 +31,7 @@ import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 
 import { TEAM_BROKER_INVARIANT, hasText } from "./a2a-routing-shared.mjs";
+import { isWorkerModelSupportedByPatchProfile } from "../packages/broker/scripts/worker-model-policy.mjs";
 
 // Canonical fleet expectations (#655). team↔home-broker invariant matches #633/#630.
 export const DEFAULT_EXPECTATIONS = {
@@ -70,6 +71,20 @@ function hasRawCredentialField(probe) {
 
 function serviceActiveOf(record) {
   return record?.serviceActive === true || record?.active === true;
+}
+
+function patchProfileOf(record) {
+  for (const field of ["patchProfile", "dockerRunnerPatchProfile", "dockerRunnerPatchCommandProfile", "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE"]) {
+    if (hasText(record?.[field])) return record[field].trim();
+  }
+  return null;
+}
+
+function workerModelOf(record) {
+  for (const field of ["workerModel", "defaultModel", "hermesDefaultModel", "openclawModel", "A2A_HERMES_DEFAULT_MODEL", "A2A_OPENCLAW_MODEL"]) {
+    if (hasText(record?.[field])) return record[field].trim();
+  }
+  return null;
 }
 
 /**
@@ -205,6 +220,23 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
       code: "broker_worker_stale",
       reason: `service is active but broker reports worker '${name}' as '${brokerWorkerStatus}', not online`,
     });
+  }
+
+  // 8. Worker model ↔ patch profile compatibility (#810). A service can be
+  // active and online while the external handler will fail before useful work if
+  // the configured default model is unsupported by the patch command profile
+  // (for example Hermes profile + DeepSeek Flash). Classify that drift before
+  // dispatch/claim evidence lanes are counted.
+  const patchProfile = patchProfileOf(record);
+  const workerModel = workerModelOf(record);
+  if (patchProfile && workerModel) {
+    const support = isWorkerModelSupportedByPatchProfile(patchProfile, workerModel);
+    if (!support.supported) {
+      violations.push({
+        code: "worker_model_profile_mismatch",
+        reason: `patch profile '${support.profile || patchProfile}' does not support worker model '${support.canonicalModel || workerModel}' — ${support.supportedAction || "choose a compatible worker model or patch profile"}`,
+      });
+    }
   }
 
   return { node: name, ok: violations.length === 0, secretLength, violations };
