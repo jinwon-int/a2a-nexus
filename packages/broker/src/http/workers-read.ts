@@ -86,6 +86,12 @@ export interface WorkersReadContext {
   workerOfflineAfterMs: number;
 }
 
+export interface WorkersReadRouteContext extends WorkersReadContext {
+  method: string | undefined;
+  path: string;
+  segments: readonly string[];
+}
+
 /** GET /workers — list worker views, honoring role/environment/workspace filters. */
 export function handleWorkersListRequest(ctx: WorkersReadContext): void {
   const filters = workerFiltersFromUrl(ctx.url);
@@ -112,4 +118,32 @@ export function handleWorkerByIdRequest(ctx: WorkersReadContext & { workerId: st
     throw new BrokerError("not_found", "worker not found");
   }
   sendJson(ctx.res, 200, worker);
+}
+
+
+/** Route dispatcher for worker read-path routes. Returns true only when handled. */
+export function handleWorkersReadRouteIfMatched(ctx: WorkersReadRouteContext): boolean {
+  if (ctx.method !== "GET") {
+    return false;
+  }
+
+  if (ctx.path === "/workers") {
+    handleWorkersListRequest(ctx);
+    return true;
+  }
+
+  if (ctx.path === "/workers/capacity") {
+    handleWorkerCapacityRequest(ctx);
+    return true;
+  }
+
+  if (ctx.segments[0] === "workers" && ctx.segments[1] && ctx.segments.length === 2) {
+    handleWorkerByIdRequest({
+      ...ctx,
+      workerId: ctx.segments[1],
+    });
+    return true;
+  }
+
+  return false;
 }
