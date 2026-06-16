@@ -31,6 +31,10 @@ const SOURCE_BLOCKED_PATTERNS = [
   /pull request source .*unavailable/i,
 ];
 
+const HARD_DEGRADED_PATTERNS = [
+  /^\s*(?:echo handled task|echo fallback handled task)\b/i,
+];
+
 const WRAPPER_ONLY_PATTERNS = [
   /^\s*analysis-only completed\s*$/i,
   /^\s*analysis bridge done\s*$/i,
@@ -39,6 +43,7 @@ const WRAPPER_ONLY_PATTERNS = [
   /wrapper-only/i,
   /structured wrapper/i,
   /plumbing evidence/i,
+  /echo handled task/i,
   /no substantive findings/i,
 ];
 
@@ -91,6 +96,11 @@ function collectText(value, acc = []) {
   return acc;
 }
 
+function classifyHardDegradedText(text) {
+  const normalized = asText(text).trim();
+  return HARD_DEGRADED_PATTERNS.filter((pattern) => pattern.test(normalized)).map((pattern) => pattern.source);
+}
+
 export function classifyEvidenceText(text) {
   const normalized = asText(text).trim();
   if (!normalized) {
@@ -111,6 +121,17 @@ export function classifyEvidenceText(text) {
       countsAsWorkerOpinion: false,
       blockers: ['source mapping/analysis bridge failure must be resolved or supplemented before finalizer counts worker opinion'],
       reasons: sourceBlocked,
+    };
+  }
+
+  const hardDegraded = classifyHardDegradedText(normalized);
+  if (hardDegraded.length) {
+    return {
+      classification: 'wrapper_only',
+      substantive: false,
+      countsAsWorkerOpinion: false,
+      blockers: ['wrapper/plumbing output must not be counted as substantive worker reasoning'],
+      reasons: hardDegraded,
     };
   }
 
@@ -160,6 +181,18 @@ export function classifyEvidenceText(text) {
 export function classifyEvidenceRecord(record, index = 0) {
   const workerId = record?.workerId ?? record?.assignedWorkerId ?? record?.worker?.id ?? record?.task?.assignedWorkerId ?? `record-${index + 1}`;
   const taskId = record?.taskId ?? record?.id ?? record?.task?.id ?? null;
+  const directOutputReasons = classifyHardDegradedText(record?.output ?? record?.result?.output ?? record?.result?.summary);
+  if (directOutputReasons.length) {
+    return {
+      workerId,
+      taskId,
+      classification: 'wrapper_only',
+      substantive: false,
+      countsAsWorkerOpinion: false,
+      blockers: ['wrapper/plumbing output must not be counted as substantive worker reasoning'],
+      reasons: directOutputReasons,
+    };
+  }
   const text = collectText({
     status: record?.status,
     result: record?.result,
