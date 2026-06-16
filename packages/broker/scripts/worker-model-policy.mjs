@@ -55,7 +55,7 @@ const VALID_THINKING_SET = new Set(VALID_WORKER_THINKING_LEVELS);
 const HERMES_UNSUPPORTED_MODEL_SET = new Set(HERMES_UNSUPPORTED_WORKER_MODELS);
 
 export function isAllowedWorkerModel(model) {
-  return ALLOWED_MODEL_SET.has(safeText(model, ""));
+  return ALLOWED_MODEL_SET.has(canonicalizeWorkerModel(model));
 }
 
 export function isValidWorkerThinkingLevel(thinking) {
@@ -65,14 +65,22 @@ export function isValidWorkerThinkingLevel(thinking) {
 export function resolveWorkerModelInputs({ payloadModel = "", envModel = "" } = {}) {
   const payload = safeText(payloadModel, "");
   const env = safeText(envModel, "");
-  if (payload && isAllowedWorkerModel(payload)) {
+  const canonicalPayload = canonicalizeWorkerModel(payload);
+  const canonicalEnv = canonicalizeWorkerModel(env);
+  if (payload && ALLOWED_MODEL_SET.has(payload)) {
     return { model: payload, fromPayload: true };
   }
-  if (payload && !isAllowedWorkerModel(payload)) {
+  if (payload && ALLOWED_MODEL_SET.has(canonicalPayload)) {
+    return { model: canonicalPayload, fromPayload: true };
+  }
+  if (payload) {
     return { model: null, error: `workerModel "${payload}" is not in the allowlist: [${ALLOWED_WORKER_MODELS.join(", ")}]` };
   }
-  if (env && isAllowedWorkerModel(env)) {
+  if (env && ALLOWED_MODEL_SET.has(env)) {
     return { model: env, fromPayload: false };
+  }
+  if (env && ALLOWED_MODEL_SET.has(canonicalEnv)) {
+    return { model: canonicalEnv, fromPayload: false };
   }
   return { model: DEFAULT_WORKER_MODEL, fromPayload: false };
 }
@@ -90,6 +98,7 @@ export function canonicalizeWorkerModel(model) {
   if (value === "deepseek-v4-flash") return "deepseek/deepseek-v4-flash";
   if (value === "deepseek-v4-pro") return "deepseek/deepseek-v4-pro";
   if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
+  if (value === "custom:minimax/minimax-m3") return "minimax-m3";
   return value;
 }
 
