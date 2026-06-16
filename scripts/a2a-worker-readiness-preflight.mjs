@@ -19,7 +19,8 @@
  * Failure codes: secret_invalid | broker_route_mismatch | service_path_drift |
  *                worker_root_missing | handler_missing | task_poll_unauthorized |
  *                worker_role_mismatch | heartbeat_requester_role_mismatch |
- *                broker_worker_stale | worker_model_profile_mismatch
+ *                broker_worker_stale | worker_model_profile_mismatch |
+ *                no_live_verification_missing | docker_runner_mount_invalid
  *
  * Secret-safe: consumes only secretLength / secretPresent plus redaction-safe
  * taskPollProbe metadata — never a raw secret — and emits only lengths/categories.
@@ -85,6 +86,86 @@ function workerModelOf(record) {
     if (hasText(record?.[field])) return record[field].trim();
   }
   return null;
+}
+
+function parseBooleanLike(value) {
+  if (typeof value === "boolean") return value;
+  if (!hasText(value)) return null;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return null;
+}
+
+function normalizeMountPath(value) {
+  return value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+}
+
+function isProtectedDockerRunnerMountPath(value) {
+  const normalized = normalizeMountPath(value);
+  return [
+    /^\/root\/\.openclaw(?:\/|$)/,
+    /^\/home\/[^/]+\/\.openclaw(?:\/|$)/,
+    /^\/run\/secrets\/openclaw-dir(?:\/|$)/,
+    /^\/root\/\.hermes(?:\/|$)/,
+    /^\/home\/[^/]+\/\.hermes(?:\/|$)/,
+    /^\/run\/secrets\/hermes-dir(?:\/|$)/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function dockerRunnerMountsOf(record) {
+  for (const field of ["dockerRunnerExtraMounts", "extraMounts", "mounts"]) {
+    if (Array.isArray(record?.[field])) return record[field];
+  }
+  for (const field of ["A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON", "dockerRunnerExtraMountsJson"]) {
+    if (!hasText(record?.[field])) continue;
+    try {
+      const parsed = JSON.parse(record[field]);
+      return Array.isArray(parsed) ? parsed : { malformed: `invalid ${field}: expected an array` };
+    } catch (error) {
+      return { malformed: `invalid ${field}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+  return null;
+}
+
+function profileConfigDirOf(record, profile) {
+  if (profile === "hermes") {
+    for (const field of ["hermesConfigDir", "dockerRunnerHermesConfigDir", "A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR"]) {
+      if (hasText(record?.[field])) return record[field].trim();
+    }
+  }
+  if (profile === "openclaw") {
+    for (const field of ["openclawConfigDir", "dockerRunnerOpenClawConfigDir", "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR"]) {
+      if (hasText(record?.[field])) return record[field].trim();
+    }
+  }
+  return null;
+}
+
+function noLiveEvidenceOf(record) {
+  for (const field of ["noLiveVerification", "noLiveEvidence", "noLiveProbe"]) {
+    if (record?.[field] && typeof record[field] === "object" && !Array.isArray(record[field])) return record[field];
+  }
+  if (parseBooleanLike(record?.noLive) === true) return { ok: true, mode: "no-live" };
+  return null;
+}
+
+function noLiveEvidenceAllowsLiveAction(evidence) {
+  const liveActionFields = [
+    "liveActionsAllowed",
+    "liveActionAllowed",
+    "providerSend",
+    "telegramCanary",
+    "workerRestart",
+    "brokerRestart",
+    "gatewayRestart",
+    "dbMutation",
+    "terminalAck",
+    "releasePublish",
+    "secretMovement",
+  ];
+  return liveActionFields.some((field) => parseBooleanLike(evidence?.[field]) === true);
 }
 
 /**
@@ -236,6 +317,86 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
         code: "worker_model_profile_mismatch",
         reason: `patch profile '${support.profile || patchProfile}' does not support worker model '${support.canonicalModel || workerModel}' — ${support.supportedAction || "choose a compatible worker model or patch profile"}`,
       });
+    }
+  }
+
+  // 9. Runtime-repair no-live evidence (#832). When an operator is collecting
+  // repair evidence before a live-facing closeout, require an explicit no-live
+  // marker and reject any record that claims live actions were allowed/performed.
+  const noLiveEvidence = noLiveEvidenceOf(record);
+  if (exp.requireNoLiveVerification === true) {
+    if (!noLiveEvidence || noLiveEvidence.ok !== true) {
+      violations.push({ code: "no_live_verification_missing", reason: "explicit no-live verification evidence is missing or not ok" });
+    } else if (noLiveEvidenceAllowsLiveAction(noLiveEvidence)) {
+      violations.push({ code: "no_live_verification_missing", reason: "no-live verification evidence must not allow or include a live action" });
+    }
+  } else if (noLiveEvidence && noLiveEvidenceAllowsLiveAction(noLiveEvidence)) {
+    violations.push({ code: "no_live_verification_missing", reason: "no-live evidence conflicts with a reported live action" });
+  }
+
+  // 10. Docker runner mount preflight (#832; mirrors the startup fail-closed
+  // guard from packages/broker/src/worker.ts). Offline records can now classify
+  // mount drift in the same readiness packet as handler/model/service evidence.
+  const dockerRunnerMounts = dockerRunnerMountsOf(record);
+  if (dockerRunnerMounts && !Array.isArray(dockerRunnerMounts)) {
+    violations.push({ code: "docker_runner_mount_invalid", reason: dockerRunnerMounts.malformed });
+  } else if (Array.isArray(dockerRunnerMounts)) {
+    const parsedMounts = [];
+    for (const [index, mount] of dockerRunnerMounts.entries()) {
+      if (!mount || typeof mount !== "object" || Array.isArray(mount)) {
+        violations.push({ code: "docker_runner_mount_invalid", reason: `invalid extra mount at index ${index}: expected object` });
+        continue;
+      }
+      const source = mount.source;
+      const target = mount.target;
+      const readOnly = mount.readOnly;
+      if (!hasText(source) || !source.startsWith("/")) {
+        violations.push({ code: "docker_runner_mount_invalid", reason: `invalid extra mount at index ${index}: source must be an absolute path` });
+        continue;
+      }
+      if (!hasText(target) || !target.startsWith("/")) {
+        violations.push({ code: "docker_runner_mount_invalid", reason: `invalid extra mount at index ${index}: target must be an absolute path` });
+        continue;
+      }
+      if (readOnly !== undefined && typeof readOnly !== "boolean") {
+        violations.push({ code: "docker_runner_mount_invalid", reason: `invalid extra mount at index ${index}: readOnly must be boolean` });
+        continue;
+      }
+      const parsedMount = { source, target, readOnly };
+      parsedMounts.push(parsedMount);
+      if (readOnly === false && (isProtectedDockerRunnerMountPath(source) || isProtectedDockerRunnerMountPath(target))) {
+        violations.push({
+          code: "docker_runner_mount_invalid",
+          reason: `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; keep ~/.openclaw / ~/.hermes and /run/secrets profile mounts read-only`,
+        });
+      }
+    }
+
+    const normalizedPatchProfile = patchProfile?.toLowerCase().replace(/_/g, "-");
+    const requiredProfileMount = normalizedPatchProfile === "hermes"
+      ? { target: "/run/secrets/hermes-dir", label: "Hermes", profile: "hermes" }
+      : normalizedPatchProfile === "openclaw"
+        ? { target: "/run/secrets/openclaw-dir", label: "OpenClaw", profile: "openclaw" }
+        : null;
+    if (requiredProfileMount) {
+      const matching = parsedMounts.filter((mount) => normalizeMountPath(mount.target) === requiredProfileMount.target);
+      if (matching.length === 0) {
+        violations.push({
+          code: "docker_runner_mount_invalid",
+          reason: `${requiredProfileMount.profile} patch profile requires a ${requiredProfileMount.target} mount; include the ${requiredProfileMount.label} config mount explicitly`,
+        });
+      }
+      const expectedSource = profileConfigDirOf(record, requiredProfileMount.profile);
+      if (expectedSource) {
+        const normalizedExpected = normalizeMountPath(expectedSource);
+        const conflicts = matching.filter((mount) => normalizeMountPath(mount.source) !== normalizedExpected);
+        if (conflicts.length > 0) {
+          violations.push({
+            code: "docker_runner_mount_invalid",
+            reason: `${requiredProfileMount.target} source conflicts with the configured ${requiredProfileMount.label} profile directory`,
+          });
+        }
+      }
     }
   }
 

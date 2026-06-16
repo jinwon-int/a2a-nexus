@@ -269,3 +269,73 @@ test("Hermes patch profile accepts supported default model in readiness prefligh
   }));
   assert.equal(r.ok, true, JSON.stringify(r.violations));
 });
+
+test("runtime repair readiness requires explicit no-live verification when requested (#832)", () => {
+  const r = evaluateWorkerReadiness(healthy(), { requireNoLiveVerification: true });
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("no_live_verification_missing"));
+  assert.match(r.violations.find((v) => v.code === "no_live_verification_missing")?.reason ?? "", /no-live/i);
+});
+
+test("runtime repair readiness accepts explicit no-live verification evidence (#832)", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      noLiveVerification: {
+        ok: true,
+        mode: "no-live",
+        liveActionsAllowed: false,
+        providerSend: false,
+        telegramCanary: false,
+        workerRestart: false,
+      },
+    }),
+    { requireNoLiveVerification: true },
+  );
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
+test("runtime repair readiness rejects no-live evidence that includes live actions (#832)", () => {
+  const r = evaluateWorkerReadiness(
+    healthy({
+      noLiveVerification: {
+        ok: true,
+        mode: "no-live",
+        liveActionsAllowed: true,
+        providerSend: false,
+        telegramCanary: false,
+      },
+    }),
+    { requireNoLiveVerification: true },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("no_live_verification_missing"));
+  assert.match(r.violations.find((v) => v.code === "no_live_verification_missing")?.reason ?? "", /live action/i);
+});
+
+test("runtime repair readiness classifies missing hermes profile mount before dispatch (#832)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    patchProfile: "hermes",
+    workerModel: "openai-codex/gpt-5.5",
+    hermesConfigDir: "/root/.hermes",
+    dockerRunnerExtraMounts: [
+      { source: "/tmp/a2a-scratch", target: "/workspace", readOnly: false },
+    ],
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("docker_runner_mount_invalid"));
+  assert.match(r.violations.find((v) => v.code === "docker_runner_mount_invalid")?.reason ?? "", /hermes.*\/run\/secrets\/hermes-dir/i);
+});
+
+test("runtime repair readiness rejects writable protected docker runner mounts (#832)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    patchProfile: "hermes",
+    workerModel: "openai-codex/gpt-5.5",
+    hermesConfigDir: "/root/.hermes",
+    dockerRunnerExtraMounts: [
+      { source: "/root/.hermes", target: "/run/secrets/hermes-dir", readOnly: false },
+    ],
+  }));
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("docker_runner_mount_invalid"));
+  assert.match(r.violations.find((v) => v.code === "docker_runner_mount_invalid")?.reason ?? "", /writable agent runtime\/session paths/i);
+});
