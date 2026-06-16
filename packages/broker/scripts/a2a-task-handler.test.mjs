@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { __test, handleTask } from "./a2a-task-handler.mjs";
+import {
+  ALLOWED_WORKER_MODELS,
+  DEFAULT_WORKER_MODEL,
+  HERMES_UNSUPPORTED_WORKER_MODELS,
+  advisorySidecarWorkerModelPolicySnapshot,
+  canonicalizeWorkerModel,
+  isWorkerModelSupportedByPatchProfile,
+  resolveWorkerModelInputs,
+  resolveWorkerThinkingInput,
+} from "./worker-model-policy.mjs";
 
 function task(overrides = {}) {
   return {
@@ -109,6 +119,66 @@ test("A2A_HERMES_DEFAULT_MODEL env resolves minimax-m3 as a fallback (#673)", ()
   // The legacy env name still works too.
   const viaOpenclawEnv = __test.resolveWorkerModel(task({}), { A2A_OPENCLAW_MODEL: "minimax-m3" });
   assert.equal(viaOpenclawEnv.model, "minimax-m3");
+});
+
+test("worker model policy module exposes auditable allowlist and fallbacks (#799)", () => {
+  assert.deepEqual(ALLOWED_WORKER_MODELS, [
+    "deepseek/deepseek-v4-flash",
+    "deepseek/deepseek-v4-pro",
+    "deepseek-v4-pro",
+    "openai-codex/gpt-5.5",
+    "gpt-5.5",
+    "grok-4.20",
+    "minimax-m3",
+  ]);
+  assert.equal(DEFAULT_WORKER_MODEL, "openai-codex/gpt-5.5");
+  assert.deepEqual(HERMES_UNSUPPORTED_WORKER_MODELS, [
+    "deepseek/deepseek-v4-flash",
+    "deepseek-v4-flash",
+  ]);
+
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "minimax-m3" }), {
+    model: "minimax-m3",
+    fromPayload: true,
+  });
+  assert.match(
+    resolveWorkerModelInputs({ payloadModel: "deepseek/not-allowed" }).error,
+    /not in the allowlist/,
+  );
+  assert.deepEqual(resolveWorkerModelInputs({ envModel: "not-allowed" }), {
+    model: DEFAULT_WORKER_MODEL,
+    fromPayload: false,
+  });
+  assert.deepEqual(resolveWorkerThinkingInput("max"), { thinking: "max", fromPayload: true });
+  assert.deepEqual(resolveWorkerThinkingInput("invalid"), { thinking: "low", fromPayload: false });
+});
+
+test("worker model policy prevents Hermes profile from accepting unsupported aliases (#799)", () => {
+  assert.equal(canonicalizeWorkerModel("deepseek-v4-flash"), "deepseek/deepseek-v4-flash");
+  assert.equal(canonicalizeWorkerModel("gpt-5.5"), "openai-codex/gpt-5.5");
+
+  const rejected = isWorkerModelSupportedByPatchProfile("hermes", "deepseek-v4-flash");
+  assert.equal(rejected.supported, false);
+  assert.equal(rejected.failureCategory, "unsupported_hermes_model");
+  assert.equal(rejected.canonicalModel, "deepseek/deepseek-v4-flash");
+
+  const accepted = isWorkerModelSupportedByPatchProfile("hermes", "openai-codex/gpt-5.5");
+  assert.equal(accepted.supported, true);
+});
+
+test("advisory sidecar model policy snapshot is source-only and cannot bypass broker gates (#799)", () => {
+  const snapshot = advisorySidecarWorkerModelPolicySnapshot();
+  assert.equal(snapshot.advisoryOnly, true);
+  assert.equal(snapshot.defaultWorkerModel, DEFAULT_WORKER_MODEL);
+  assert.deepEqual(snapshot.allowedWorkerModels, ALLOWED_WORKER_MODELS);
+  assert.equal(snapshot.sidecarRecommendationBypassesAllowlist, false);
+  assert.equal(snapshot.sidecarRecommendationBypassesCapabilityChecks, false);
+  assert.equal(snapshot.sidecarRecommendationBypassesApprovalGates, false);
+  assert.equal(snapshot.sidecarRecommendationBypassesFinalizer, false);
+  assert.equal(snapshot.startsSidecarProcess, false);
+  assert.equal(snapshot.sendsProviderRequests, false);
+  assert.equal(snapshot.mutatesBrokerState, false);
+  assert.equal(snapshot.dispatchesTasks, false);
 });
 
 test("normal source-only task uses current fleet baseline model and low thinking by default (#766)", () => {

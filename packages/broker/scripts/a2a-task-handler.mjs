@@ -6,31 +6,19 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import {
+  ALLOWED_WORKER_MODELS,
+  VALID_WORKER_THINKING_LEVELS,
+  isWorkerModelSupportedByPatchProfile,
+  resolveWorkerModelInputs,
+  resolveWorkerThinkingInput,
+} from "./worker-model-policy.mjs";
+
 const HANDLER_VERSION = "0.2.13";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
-// ── Allowlisted worker model / thinking constants ───────────────────────
-
-const ALLOWED_WORKER_MODELS = new Set([
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v4-pro",
-  "deepseek-v4-pro",
-  // Current native Hermes fleet baseline models (#766).
-  "openai-codex/gpt-5.5",
-  "gpt-5.5",
-  "grok-4.20",
-  // M3 fleet workers run minimax-m3 via the custom:minimax provider (#673).
-  "minimax-m3",
-]);
-
-const DEFAULT_WORKER_MODEL = "openai-codex/gpt-5.5";
-
-const VALID_WORKER_THINKING_LEVELS = new Set([
-  "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max",
-]);
-
-const DEFAULT_WORKER_THINKING = "low";
+// ── Worker execution constants ──────────────────────────────────────────
 const DEFAULT_RUNNER_TASK_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = 60 * 60;
 
@@ -251,17 +239,7 @@ function resolveWorkerModel(task, env = process.env) {
   // The host worker env file uses A2A_HERMES_DEFAULT_MODEL; accept it as a
   // fallback alongside the legacy A2A_OPENCLAW_MODEL name (#673).
   const envModel = safeText(env.A2A_OPENCLAW_MODEL, "") || safeText(env.A2A_HERMES_DEFAULT_MODEL, "");
-
-  if (payloadModel && ALLOWED_WORKER_MODELS.has(payloadModel)) {
-    return { model: payloadModel, fromPayload: true };
-  }
-  if (payloadModel && !ALLOWED_WORKER_MODELS.has(payloadModel)) {
-    return { model: null, error: `workerModel "${payloadModel}" is not in the allowlist: [${[...ALLOWED_WORKER_MODELS].join(", ")}]` };
-  }
-  if (envModel && ALLOWED_WORKER_MODELS.has(envModel)) {
-    return { model: envModel, fromPayload: false };
-  }
-  return { model: DEFAULT_WORKER_MODEL, fromPayload: false };
+  return resolveWorkerModelInputs({ payloadModel, envModel });
 }
 
 /**
@@ -269,11 +247,7 @@ function resolveWorkerModel(task, env = process.env) {
  */
 function resolveWorkerThinking(task) {
   const payload = taskPayload(task);
-  const payloadThinking = safeText(payload.workerThinking, "");
-  if (payloadThinking && VALID_WORKER_THINKING_LEVELS.has(payloadThinking)) {
-    return { thinking: payloadThinking, fromPayload: true };
-  }
-  return { thinking: DEFAULT_WORKER_THINKING, fromPayload: false };
+  return resolveWorkerThinkingInput(payload.workerThinking);
 }
 
 function normalizedPatchCommandProfile(env = process.env) {
@@ -284,36 +258,22 @@ function normalizedPatchCommandProfile(env = process.env) {
   return image.includes("hermes") ? "hermes" : "";
 }
 
-function canonicalizeWorkerModel(model) {
-  const value = safeText(model, "");
-  if (value === "deepseek-v4-flash") return "deepseek/deepseek-v4-flash";
-  if (value === "deepseek-v4-pro") return "deepseek/deepseek-v4-pro";
-  if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
-  return value;
-}
-
-const HERMES_UNSUPPORTED_WORKER_MODELS = new Set([
-  "deepseek/deepseek-v4-flash",
-  "deepseek-v4-flash",
-]);
-
 function validateWorkerModelForPatchProfile(task, model, env = process.env) {
-  const profile = normalizedPatchCommandProfile(env);
-  const canonicalModel = canonicalizeWorkerModel(model);
-  if (profile === "hermes" && HERMES_UNSUPPORTED_WORKER_MODELS.has(canonicalModel)) {
+  const support = isWorkerModelSupportedByPatchProfile(normalizedPatchCommandProfile(env), model);
+  if (!support.supported) {
     return {
       error: {
         code: "worker_model_not_supported_by_profile",
         message: `Hermes patch profile does not support workerModel "${model}"; refusing before docker runner execution`,
         details: {
-          failureCategory: "unsupported_hermes_model",
-          profile,
+          failureCategory: support.failureCategory,
+          profile: support.profile,
           requestedModel: model,
-          canonicalModel,
+          canonicalModel: support.canonicalModel,
           taskId: safeText(task.id, undefined),
           intent: safeText(task.intent, undefined),
           mode: taskMode(task),
-          supportedAction: "Use a Hermes-supported model such as openai-codex/gpt-5.5 or route this task to a non-Hermes patch profile.",
+          supportedAction: support.supportedAction,
           buildInfo: BUILD_INFO,
         },
       },
