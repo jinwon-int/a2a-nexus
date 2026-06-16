@@ -73,6 +73,7 @@
     "a2a:final-go-nogo-gate": "node scripts/a2a-source-public-final-go-nogo-gate.mjs --spec docs/final-approval/source-public-final-go-nogo-gate-schema.json",
     "a2a:final-go-nogo-gate:test": "node --test scripts/a2a-source-public-final-go-nogo-gate.test.mjs",
     "check:allhands-stability-closeout-gates": "node --test scripts/check-a2a-allhands-stability-closeout-gates.test.mjs",
+    "check:a2a-nexus-831-advisory-sidecar-boundary-cross-check": "node --test scripts/check-a2a-nexus-831-advisory-sidecar-boundary-cross-check.test.mjs",
     "check:team1-yukson-plane-gates": "node --test scripts/check-team1-yukson-plane-gates-527-497-294.test.mjs",
     "check:team1-source-parent-round-dispatch-guardrails": "node --test scripts/check-team1-source-parent-round-dispatch-guardrails-libero.test.mjs",
     "check:team1-dispatch-wrapper-runbook": "node --test scripts/check-team1-dispatch-wrapper-runbook.test.mjs",

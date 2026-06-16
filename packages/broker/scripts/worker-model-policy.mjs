@@ -39,8 +39,10 @@ export const ADVISORY_SIDECAR_ROUTING_POLICY = Object.freeze({
     "source-analysis",
   ]),
   advisoryOnly: true,
+  routingInfluencePermitted: false,
   defaultRoute: "default_worker",
-  allowedRoute: "advisory_sidecar",
+  allowedRoute: "default_worker",
+  advisoryCandidateRoute: "advisory_sidecar",
   blockedRoute: "finalizer_review",
   bypasses: Object.freeze({
     allowlist: false,
@@ -139,6 +141,7 @@ export function advisorySidecarWorkerModelPolicySnapshot() {
     sendsProviderRequests: false,
     mutatesBrokerState: false,
     dispatchesTasks: false,
+    routingInfluencePermitted: false,
   });
 }
 
@@ -195,7 +198,7 @@ export function resolveAdvisorySidecarRoutingPolicy({
   return buildAdvisoryRoutingDecision({
     status: reasons.length === 0 ? "allowed" : "blocked",
     route: reasons.length === 0
-      ? ADVISORY_SIDECAR_ROUTING_POLICY.allowedRoute
+      ? ADVISORY_SIDECAR_ROUTING_POLICY.defaultRoute
       : ADVISORY_SIDECAR_ROUTING_POLICY.blockedRoute,
     selectedModel,
     selectedThinking: thinkingResolution.thinking,
@@ -231,6 +234,9 @@ function buildAdvisoryRoutingDecision({
       capabilityChecksPassed,
       approvalGatePassed,
       finalizerRequired: true,
+      routingInfluencePermitted: ADVISORY_SIDECAR_ROUTING_POLICY.routingInfluencePermitted,
+      advisoryCandidateRoute: ADVISORY_SIDECAR_ROUTING_POLICY.advisoryCandidateRoute,
+      operationalRoutingChanged: false,
     },
     bypasses: ADVISORY_SIDECAR_ROUTING_POLICY.bypasses,
   };

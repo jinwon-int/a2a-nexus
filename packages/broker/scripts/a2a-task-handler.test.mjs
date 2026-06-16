@@ -191,6 +191,7 @@ test("advisory sidecar model policy snapshot is source-only and cannot bypass br
   assert.equal(snapshot.sendsProviderRequests, false);
   assert.equal(snapshot.mutatesBrokerState, false);
   assert.equal(snapshot.dispatchesTasks, false);
+  assert.equal(snapshot.routingInfluencePermitted, false);
 });
 
 test("advisory sidecar routing policy exposes explicit deterministic data (#804)", () => {
@@ -205,13 +206,16 @@ test("advisory sidecar routing policy exposes explicit deterministic data (#804)
     "source-analysis",
   ]);
   assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.advisoryOnly, true);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.routingInfluencePermitted, false);
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.allowedRoute, "default_worker");
+  assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.advisoryCandidateRoute, "advisory_sidecar");
   assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.allowlist, false);
   assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.capabilityChecks, false);
   assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.approvalGates, false);
   assert.equal(ADVISORY_SIDECAR_ROUTING_POLICY.bypasses.finalizer, false);
 });
 
-test("advisory sidecar routing allows only allowlisted and capable candidates (#804)", () => {
+test("advisory sidecar routing permits advisory metadata without changing operational route (#804, #831)", () => {
   const route = resolveAdvisorySidecarRoutingPolicy({
     taskLabels: ["advisory-sidecar", "source-only"],
     workerModel: "deepseek/deepseek-v4-pro",
@@ -222,7 +226,7 @@ test("advisory sidecar routing allows only allowlisted and capable candidates (#
 
   assert.deepEqual(route, {
     status: "allowed",
-    route: "advisory_sidecar",
+    route: "default_worker",
     advisoryOnly: true,
     selectedModel: "deepseek/deepseek-v4-pro",
     selectedThinking: "low",
@@ -233,6 +237,9 @@ test("advisory sidecar routing allows only allowlisted and capable candidates (#
       capabilityChecksPassed: true,
       approvalGatePassed: true,
       finalizerRequired: true,
+      routingInfluencePermitted: false,
+      advisoryCandidateRoute: "advisory_sidecar",
+      operationalRoutingChanged: false,
     },
     bypasses: {
       allowlist: false,
@@ -251,7 +258,10 @@ test("advisory sidecar routing allows only allowlisted and capable candidates (#
   });
 
   assert.equal(minimaxRoute.status, "allowed");
-  assert.equal(minimaxRoute.route, "advisory_sidecar");
+  assert.equal(minimaxRoute.route, "default_worker");
+  assert.equal(minimaxRoute.evidence.advisoryCandidateRoute, "advisory_sidecar");
+  assert.equal(minimaxRoute.evidence.routingInfluencePermitted, false);
+  assert.equal(minimaxRoute.evidence.operationalRoutingChanged, false);
   assert.equal(minimaxRoute.selectedModel, "minimax-m3");
   assert.deepEqual(minimaxRoute.reasons, []);
   assert.equal(minimaxRoute.evidence.modelAllowed, true);
@@ -302,6 +312,9 @@ test("advisory sidecar routing falls back deterministically when no activation l
       capabilityChecksPassed: false,
       approvalGatePassed: true,
       finalizerRequired: true,
+      routingInfluencePermitted: false,
+      advisoryCandidateRoute: "advisory_sidecar",
+      operationalRoutingChanged: false,
     },
     bypasses: {
       allowlist: false,
@@ -310,6 +323,42 @@ test("advisory sidecar routing falls back deterministically when no activation l
       finalizer: false,
     },
   });
+});
+
+
+
+test("advisory sidecar cannot select an operational sidecar route without a future live-routing gate (#831)", () => {
+  for (const input of [
+    {
+      taskLabels: ["advisory-sidecar"],
+      workerModel: "deepseek/deepseek-v4-pro",
+      patchProfile: "docker",
+      workerCapabilities: ["advisory-sidecar", "source-analysis"],
+      requiresApproval: false,
+    },
+    {
+      taskLabels: ["sidecar:advisory"],
+      workerModel: "minimax-m3",
+      patchProfile: "hermes",
+      workerCapabilities: ["advisory-sidecar", "source-analysis", "github-read"],
+      requiresApproval: false,
+    },
+    {
+      taskLabels: ["sidecar-candidate"],
+      workerModel: "openai-codex/gpt-5.5",
+      patchProfile: "hermes",
+      workerCapabilities: ["advisory-sidecar", "source-analysis"],
+      requiresApproval: false,
+    },
+  ]) {
+    const route = resolveAdvisorySidecarRoutingPolicy(input);
+    assert.equal(route.status, "allowed");
+    assert.equal(route.route, "default_worker");
+    assert.equal(route.evidence.advisoryCandidateRoute, "advisory_sidecar");
+    assert.equal(route.evidence.routingInfluencePermitted, false);
+    assert.equal(route.evidence.operationalRoutingChanged, false);
+    assert.equal(route.bypasses.finalizer, false);
+  }
 });
 
 test("advisory sidecar fallback decision fails closed for disabled, unavailable, timeout, schema, and bypass cases (#811)", () => {
