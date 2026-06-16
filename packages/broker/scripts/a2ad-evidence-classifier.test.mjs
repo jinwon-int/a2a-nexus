@@ -35,6 +35,84 @@ test('wrapper-only dry-run outputs are reportable but not worker reasoning', () 
   assert.match(result.blockers.join('\n'), /wrapper\/plumbing output/i);
 });
 
+test('echo-handler fallback outputs are degraded evidence, not worker reasoning (#810)', () => {
+  const result = classifyEvidenceText('echo handled task: built-in echo fallback responded without invoking external handler or analysis bridge');
+  assert.equal(result.classification, 'wrapper_only');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+  assert.match(result.blockers.join('\n'), /wrapper\/plumbing output/i);
+  assert.match(result.reasons.join('\n'), /echo/i);
+});
+
+test('echo-handler fallback remains degraded even when it echoes substantive prompt markers (#810)', () => {
+  const result = classifyEvidenceText([
+    'echo handled task: built-in echo fallback responded without invoking external handler.',
+    'Please provide Recommendation, Risk, Evidence ref, Implementation, tests, CI, rollback, and acceptance for this PR.',
+  ].join(' '));
+  assert.equal(result.classification, 'wrapper_only');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+  assert.match(result.reasons.join('\n'), /echo/i);
+});
+
+test('record classifier keeps echo fallback degraded when status metadata precedes output (#810)', () => {
+  const result = classifyEvidenceRecord({
+    workerId: 'nosuk',
+    status: 'completed',
+    output: [
+      'echo handled task: built-in echo fallback responded without invoking external handler.',
+      'Please provide Recommendation, Risk, Evidence ref, Implementation, tests, CI, rollback, and acceptance for this PR.',
+    ].join(' '),
+  });
+  assert.equal(result.classification, 'wrapper_only');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+  assert.match(result.reasons.join('\n'), /echo/i);
+});
+
+test('substantive analysis about echo fallback is not suppressed by provenance guard (#810)', () => {
+  const result = classifyEvidenceText([
+    'Recommendation: add a guardrail for the built-in echo fallback behavior in worker evidence classification.',
+    'Risk: when the external handler is not invoked, echoed prompts can masquerade as worker analysis.',
+    'Evidence ref: a2ad-evidence-classifier.mjs and worker task snapshots.',
+    'Implementation: anchor fallback provenance detection and add tests so genuine analysis about echo handlers still counts.',
+    'CI: run broker tests and rollback by reverting the classifier pattern change if needed.',
+  ].join(' '));
+  assert.equal(result.classification, 'substantive');
+  assert.equal(result.substantive, true);
+  assert.equal(result.countsAsWorkerOpinion, true);
+});
+
+test('substantive analysis lines beginning with fallback concepts still count (#810)', () => {
+  const result = classifyEvidenceText([
+    'Built-in echo fallback handling can mask missing worker analysis in task snapshots.',
+    'External handler was not invoked in the fallback path during reproduction, so the finalizer needs a degraded-evidence guard.',
+    'Recommendation: keep fallback provenance narrow and tested.',
+    'Risk: broad regexes can suppress real worker analysis.',
+    'Evidence ref: classifier tests and task record output.',
+    'Implementation: exact echo handled task provenance only.',
+    'CI: run broker tests and keep rollback by reverting this classifier change.',
+  ].join('\n'));
+  assert.equal(result.classification, 'substantive');
+  assert.equal(result.substantive, true);
+  assert.equal(result.countsAsWorkerOpinion, true);
+});
+
+test('substantive analysis can quote exact echo fallback output without being suppressed (#810)', () => {
+  const result = classifyEvidenceText([
+    'Recommendation: add classifier coverage for built-in echo fallback evidence.',
+    'Observed fallback output:',
+    'echo handled task: built-in echo fallback responded without invoking external handler.',
+    'Risk: if this quoted evidence is treated as provenance, real worker analysis is discarded.',
+    'Evidence ref: task snapshot output and classifier regression test.',
+    'Implementation: keep hard provenance detection anchored to the actual output start only.',
+    'CI: run targeted classifier tests and rollback by reverting this classifier patch.',
+  ].join('\n'));
+  assert.equal(result.classification, 'substantive');
+  assert.equal(result.substantive, true);
+  assert.equal(result.countsAsWorkerOpinion, true);
+});
+
 test('substantive outputs can count as A2AD worker opinion', () => {
   const text = [
     'Recommendation: staged GO, immediate NO-GO until source bundle mapping and CI parity are validated.',
