@@ -13,6 +13,35 @@ import type {
   RunnerExtraMount,
 } from "./types.js";
 
+/**
+ * Stable classification codes for extra-mount / profile-mount configuration
+ * errors. They let a pre-claim worker readiness preflight (see
+ * `extra-mounts-preflight.ts`) turn an otherwise-thrown config error into
+ * structured Block evidence instead of letting the task be claimed and then
+ * fail mid-run as `handler_exit_nonzero` (a2a-nexus#775).
+ */
+export type ExtraMountsConfigErrorCode =
+  | "extra_mounts_json_invalid"
+  | "extra_mounts_entry_invalid"
+  | "profile_mount_missing"
+  | "profile_mount_source_conflict"
+  | "forbidden_writable_runtime_mount";
+
+/**
+ * Configuration error for `A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON` / profile mount
+ * selection. Extends `Error` and keeps the exact same human message, so callers
+ * that match on `error.message` are unaffected, while preflight code can branch
+ * deterministically on `error.code`.
+ */
+export class ExtraMountsConfigError extends Error {
+  readonly code: ExtraMountsConfigErrorCode;
+  constructor(code: ExtraMountsConfigErrorCode, message: string) {
+    super(message);
+    this.name = "ExtraMountsConfigError";
+    this.code = code;
+  }
+}
+
 const DEFAULT_ROOT = "/var/lib/openclaw-a2a/tasks";
 const DEFAULT_IMAGE = "node:22-bookworm-slim";
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
@@ -194,7 +223,7 @@ function looksSensitiveOrHostSpecific(value: string): boolean {
   return false;
 }
 
-function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined {
+export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined {
   const raw = env.A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON;
   if (!raw) {
     const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
@@ -220,16 +249,16 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
     parsed = JSON.parse(raw);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${msg}`);
+    throw new ExtraMountsConfigError("extra_mounts_json_invalid", `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${msg}`);
   }
 
   if (!Array.isArray(parsed)) {
-    throw new Error("invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: expected an array");
+    throw new ExtraMountsConfigError("extra_mounts_json_invalid", "invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: expected an array");
   }
 
   const mounts = parsed.map((entry, index): RunnerExtraMount => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new Error(`invalid extra mount at index ${index}: expected object`);
+      throw new ExtraMountsConfigError("extra_mounts_entry_invalid", `invalid extra mount at index ${index}: expected object`);
     }
 
     const record = entry as Record<string, unknown>;
@@ -237,13 +266,13 @@ function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | undefined
     const target = record.target;
     const readOnly = record.readOnly;
     if (typeof source !== "string" || !source.startsWith("/")) {
-      throw new Error(`invalid extra mount at index ${index}: source must be an absolute path`);
+      throw new ExtraMountsConfigError("extra_mounts_entry_invalid", `invalid extra mount at index ${index}: source must be an absolute path`);
     }
     if (typeof target !== "string" || !target.startsWith("/")) {
-      throw new Error(`invalid extra mount at index ${index}: target must be an absolute path`);
+      throw new ExtraMountsConfigError("extra_mounts_entry_invalid", `invalid extra mount at index ${index}: target must be an absolute path`);
     }
     if (readOnly !== undefined && typeof readOnly !== "boolean") {
-      throw new Error(`invalid extra mount at index ${index}: readOnly must be boolean`);
+      throw new ExtraMountsConfigError("extra_mounts_entry_invalid", `invalid extra mount at index ${index}: readOnly must be boolean`);
     }
     const mount = { source, target, readOnly };
     validateOpenClawRuntimeMount(mount, index);
@@ -286,7 +315,8 @@ function validateNamedProfileMountSelection(
 ): void {
   const profileMounts = mounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.target) === target);
   if (profileMounts.length === 0) {
-    throw new Error(
+    throw new ExtraMountsConfigError(
+      "profile_mount_missing",
       `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${profile} patch profile requires a ${target} mount; ` +
       `omit A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON or include the ${label} config mount explicitly`,
     );
@@ -298,7 +328,8 @@ function validateNamedProfileMountSelection(
   const conflicts = profileMounts.filter((mount) => normalizeAbsolutePathForPolicy(mount.source) !== normalizedExpected);
   if (conflicts.length === 0) return;
 
-  throw new Error(
+  throw new ExtraMountsConfigError(
+    "profile_mount_source_conflict",
     `invalid A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: ${target} source conflicts with ` +
     `the configured ${label} profile directory; mount the configured ${label} profile directory or omit the duplicate mount`,
   );
@@ -314,7 +345,8 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const protectedHermesTarget = isProtectedHermesRuntimePath(target);
 
   if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget)) {
-    throw new Error(
+    throw new ExtraMountsConfigError(
+      "forbidden_writable_runtime_mount",
       `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
       "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes sessions read-only",
     );
@@ -450,7 +482,7 @@ function parseEnumList<T extends string>(
   return Array.from(new Set(parsed)) as T[];
 }
 
-function normalizePatchCommandProfile(value?: string): "openclaw" | "hermes" | undefined {
+export function normalizePatchCommandProfile(value?: string): "openclaw" | "hermes" | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase().replace(/_/g, "-");
   if (normalized === "openclaw") return "openclaw";
