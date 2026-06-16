@@ -144,8 +144,16 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
     model: "minimax-m3",
     fromPayload: true,
   });
+  assert.deepEqual(resolveWorkerModelInputs({ payloadModel: "custom:minimax/minimax-m3" }), {
+    model: "minimax-m3",
+    fromPayload: true,
+  });
   assert.match(
     resolveWorkerModelInputs({ payloadModel: "deepseek/not-allowed" }).error,
+    /not in the allowlist/,
+  );
+  assert.match(
+    resolveWorkerModelInputs({ payloadModel: "custom:unknown/minimax-m3" }).error,
     /not in the allowlist/,
   );
   assert.deepEqual(resolveWorkerModelInputs({ envModel: "not-allowed" }), {
@@ -159,6 +167,7 @@ test("worker model policy module exposes auditable allowlist and fallbacks (#799
 test("worker model policy prevents Hermes profile from accepting unsupported aliases (#799)", () => {
   assert.equal(canonicalizeWorkerModel("deepseek-v4-flash"), "deepseek/deepseek-v4-flash");
   assert.equal(canonicalizeWorkerModel("gpt-5.5"), "openai-codex/gpt-5.5");
+  assert.equal(canonicalizeWorkerModel("custom:minimax/minimax-m3"), "minimax-m3");
 
   const rejected = isWorkerModelSupportedByPatchProfile("hermes", "deepseek-v4-flash");
   assert.equal(rejected.supported, false);
@@ -232,6 +241,20 @@ test("advisory sidecar routing allows only allowlisted and capable candidates (#
       finalizer: false,
     },
   });
+
+  const minimaxRoute = resolveAdvisorySidecarRoutingPolicy({
+    taskLabels: ["advisory-sidecar"],
+    workerModel: "custom:minimax/minimax-m3",
+    patchProfile: "hermes",
+    workerCapabilities: ["advisory-sidecar", "source-analysis"],
+    requiresApproval: false,
+  });
+
+  assert.equal(minimaxRoute.status, "allowed");
+  assert.equal(minimaxRoute.route, "advisory_sidecar");
+  assert.equal(minimaxRoute.selectedModel, "minimax-m3");
+  assert.deepEqual(minimaxRoute.reasons, []);
+  assert.equal(minimaxRoute.evidence.modelAllowed, true);
 });
 
 test("advisory sidecar routing blocks unsupported model, missing capability, and approval bypass attempts (#804)", () => {
