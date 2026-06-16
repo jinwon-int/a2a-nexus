@@ -31,7 +31,12 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { SqliteBrokerStateStore } from "./store.js";
 import type { BrokerPersistenceQueueDiagnostics, BrokerPersistenceQueueState } from "../server.js";
-import type { BrokerSnapshot, BrokerStateSaveHints, BrokerPersistenceInfo } from "./store.js";
+import type {
+  BrokerSnapshot,
+  BrokerStateSaveHints,
+  BrokerPersistenceInfo,
+  SqliteBrokerLoadSource,
+} from "./store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,6 +226,7 @@ export class SqliteWorkerThread {
   constructor(
     private readonly dbFile: string,
     private readonly initOptions?: {
+      loadSource?: SqliteBrokerLoadSource;
       maxBytes?: number;
       maxHotRuntimeNonTerminalTasks?: number;
       maxHotRuntimeTerminalTasks?: number;
@@ -352,12 +358,21 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
     workerThread: SqliteWorkerThread,
     sqliteFile: string,
     private readonly ackTimeoutMs: number,
+    initOptions?: {
+      loadSource?: SqliteBrokerLoadSource;
+      maxBytes?: number;
+      maxHotRuntimeNonTerminalTasks?: number;
+      maxHotRuntimeTerminalTasks?: number;
+      maxHotRuntimeAuditEvents?: number;
+      maxHotRuntimeHeartbeatAuditEvents?: number;
+      maxHotRuntimeTerminalOutboxEvents?: number;
+    },
   ) {
     // Initialize the base store so all inherited read methods
     // (load, readHot*, getPersistenceInfo, upsertHot*, etc.)
     // operate on the main thread against the same physical DB.
     // This also makes instanceof SqliteBrokerStateStore pass.
-    super(sqliteFile);
+    super(sqliteFile, initOptions);
     this.queue = queue;
     this.workerThread = workerThread;
   }
@@ -463,6 +478,7 @@ export type WorkerThreadPersistenceOptions = {
   dbFile: string;
   queueCapacity?: number;
   ackTimeoutMs?: number;
+  loadSource?: SqliteBrokerLoadSource;
   maxBytes?: number;
   maxHotRuntimeNonTerminalTasks?: number;
   maxHotRuntimeTerminalTasks?: number;
@@ -486,6 +502,7 @@ export function createWorkerThreadPersistence(
     dbFile,
     queueCapacity = 16,
     ackTimeoutMs = 30_000,
+    loadSource,
     maxBytes,
     maxHotRuntimeNonTerminalTasks,
     maxHotRuntimeTerminalTasks,
@@ -495,15 +512,23 @@ export function createWorkerThreadPersistence(
   } = options;
 
   const queue = new WriteQueue(queueCapacity);
-  const workerThread = new SqliteWorkerThread(dbFile, {
+  const sqliteOptions = {
+    loadSource,
     maxBytes,
     maxHotRuntimeNonTerminalTasks,
     maxHotRuntimeTerminalTasks,
     maxHotRuntimeAuditEvents,
     maxHotRuntimeHeartbeatAuditEvents,
     maxHotRuntimeTerminalOutboxEvents,
-  });
-  const proxyStore = new WorkerThreadProxyStore(queue, workerThread, dbFile, Math.max(1, Math.trunc(ackTimeoutMs)));
+  };
+  const workerThread = new SqliteWorkerThread(dbFile, sqliteOptions);
+  const proxyStore = new WorkerThreadProxyStore(
+    queue,
+    workerThread,
+    dbFile,
+    Math.max(1, Math.trunc(ackTimeoutMs)),
+    sqliteOptions,
+  );
   const diagnostics = createPersistenceQueueDiagnostics(queue);
 
   async function close(timeoutMs = 30000): Promise<void> {

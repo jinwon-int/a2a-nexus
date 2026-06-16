@@ -276,12 +276,58 @@ function resolveWorkerThinking(task) {
   return { thinking: DEFAULT_WORKER_THINKING, fromPayload: false };
 }
 
+function normalizedPatchCommandProfile(env = process.env) {
+  const profile = safeText(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE, "").toLowerCase().replace(/_/g, "-");
+  if (profile === "hermes") return "hermes";
+  if (profile === "openclaw") return "openclaw";
+  const image = safeText(env.A2A_DOCKER_RUNNER_IMAGE, "").toLowerCase();
+  return image.includes("hermes") ? "hermes" : "";
+}
+
+function canonicalizeWorkerModel(model) {
+  const value = safeText(model, "");
+  if (value === "deepseek-v4-flash") return "deepseek/deepseek-v4-flash";
+  if (value === "deepseek-v4-pro") return "deepseek/deepseek-v4-pro";
+  if (value === "gpt-5.5") return "openai-codex/gpt-5.5";
+  return value;
+}
+
+const HERMES_UNSUPPORTED_WORKER_MODELS = new Set([
+  "deepseek/deepseek-v4-flash",
+  "deepseek-v4-flash",
+]);
+
+function validateWorkerModelForPatchProfile(task, model, env = process.env) {
+  const profile = normalizedPatchCommandProfile(env);
+  const canonicalModel = canonicalizeWorkerModel(model);
+  if (profile === "hermes" && HERMES_UNSUPPORTED_WORKER_MODELS.has(canonicalModel)) {
+    return {
+      error: {
+        code: "worker_model_not_supported_by_profile",
+        message: `Hermes patch profile does not support workerModel "${model}"; refusing before docker runner execution`,
+        details: {
+          failureCategory: "unsupported_hermes_model",
+          profile,
+          requestedModel: model,
+          canonicalModel,
+          taskId: safeText(task.id, undefined),
+          intent: safeText(task.intent, undefined),
+          mode: taskMode(task),
+          supportedAction: "Use a Hermes-supported model such as openai-codex/gpt-5.5 or route this task to a non-Hermes patch profile.",
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
+  }
+  return null;
+}
+
 /**
  * Validate that if a workerModel override is present in the task payload,
  * it is in the allowlist. Returns null on success, or an error object.
  */
-function validateWorkerOverrides(task) {
-  const modelRes = resolveWorkerModel(task);
+function validateWorkerOverrides(task, env = process.env) {
+  const modelRes = resolveWorkerModel(task, env);
   if (modelRes.error) {
     return {
       error: {
@@ -297,7 +343,7 @@ function validateWorkerOverrides(task) {
       },
     };
   }
-  return null;
+  return validateWorkerModelForPatchProfile(task, modelRes.model, env);
 }
 
 function isGithubPatchEvidenceTask(task) {
@@ -1746,7 +1792,7 @@ export function handleTask(task, env = process.env) {
 
   // Fail closed if the task requests an unsupported model override.
   // This check happens before any execution to prevent wasted patch attempts.
-  const overrideValidation = validateWorkerOverrides(task);
+  const overrideValidation = validateWorkerOverrides(task, env);
   if (overrideValidation) {
     return overrideValidation;
   }

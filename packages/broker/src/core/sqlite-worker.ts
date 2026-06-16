@@ -9,10 +9,11 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 import { SqliteBrokerStateStore } from "./store.js";
-import type { BrokerSnapshot, BrokerStateSaveHints } from "./store.js";
+import type { BrokerSnapshot, BrokerStateSaveHints, SqliteBrokerLoadSource } from "./store.js";
 
 type WorkerRequest = { id: number; method: string; args: unknown[] };
 type InitOptions = {
+  loadSource?: SqliteBrokerLoadSource;
   maxBytes?: number;
   maxHotRuntimeNonTerminalTasks?: number;
   maxHotRuntimeTerminalTasks?: number;
@@ -24,6 +25,7 @@ type InitOptions = {
 const { dbFile, options }: { dbFile: string; options?: InitOptions } = workerData;
 
 const store = new SqliteBrokerStateStore(dbFile, {
+  loadSource: options?.loadSource,
   maxBytes: options?.maxBytes,
   maxHotRuntimeNonTerminalTasks: options?.maxHotRuntimeNonTerminalTasks,
   maxHotRuntimeTerminalTasks: options?.maxHotRuntimeTerminalTasks,

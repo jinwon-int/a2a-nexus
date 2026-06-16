@@ -1201,13 +1201,27 @@ test("docker runner evidence-missing fails validateTaskCompletionEvidence (contr
       taskId: task.id,
     },
     output: {
-      runner: { status: "completed", artifacts: [] },
+      startCommentUrl: "https://github.com/owner/repo/issues/169#issuecomment-start",
+      runner: { status: "completed", artifacts: ["/work/artifacts/summary.txt"] },
+      logPath: "/work/artifacts/hermes-output.txt",
     },
   };
 
   const evidenceError = validateTaskCompletionEvidence(makeTaskRecord(task), emptyResult);
   assert.ok(evidenceError, "should reject empty result from github-propose-patch task");
   assert.equal(evidenceError!.code, "github_completion_evidence_missing");
+  assert.equal(
+    (evidenceError!.details?.observedEvidence as Record<string, unknown>).startCommentUrl,
+    "https://github.com/owner/repo/issues/169#issuecomment-start",
+  );
+  assert.deepEqual(
+    (evidenceError!.details?.observedEvidence as Record<string, unknown>).runnerArtifacts,
+    ["/work/artifacts/summary.txt"],
+  );
+  assert.equal(
+    (evidenceError!.details?.observedEvidence as Record<string, unknown>).logPath,
+    "/work/artifacts/hermes-output.txt",
+  );
 });
 
 test("GitHub read-only validation requires Done or Block evidence but not a PR", () => {

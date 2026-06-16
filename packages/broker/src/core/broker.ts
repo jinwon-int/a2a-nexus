@@ -144,6 +144,7 @@ export class BrokerError extends Error {
   constructor(
     readonly code: BrokerErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "BrokerError";
@@ -1987,6 +1988,7 @@ export class InMemoryA2ABroker {
           ? "github_completion_receipt_invalid"
           : "github_completion_evidence_missing",
         completionEvidenceError.message,
+        completionEvidenceError.details,
       );
     }
     this.applyTaskCompletion(task, workerId, normalizedResult);
