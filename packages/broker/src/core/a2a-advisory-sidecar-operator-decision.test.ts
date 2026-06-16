@@ -71,10 +71,10 @@ test("advisory sidecar operator decision packet excludes all approval-sensitive 
   assert.equal(packet.semantics.finalizerRemainsAuthoritative, true);
 });
 
-test("advisory sidecar operator decision packet records guardrail and issue references (#794)", () => {
+test("advisory sidecar operator decision packet records guardrail and issue references (#794, #837)", () => {
   const packet = createAdvisorySidecarOperatorDecisionPacket({ now: NOW });
 
-  assert.deepEqual(packet.decision.parentIssueRefs, ["#764", "#785", "#789", "#794"]);
+  assert.deepEqual(packet.decision.parentIssueRefs, ["#764", "#785", "#789", "#794", "#837"]);
   assert.deepEqual(packet.decision.guardrailRefs, [
     "a2a-advisory-sidecar-contract",
     "a2a-advisory-sidecar-resolver",
@@ -84,6 +84,63 @@ test("advisory sidecar operator decision packet records guardrail and issue refe
   assert.equal(packet.approvalSensitiveActionsExcluded.includes("task dispatch or routing influence"), true);
   assert.equal(packet.approvalSensitiveActionsExcluded.includes("broker state or database mutation"), true);
   assert.equal(packet.approvalSensitiveActionsExcluded.includes("secret or credential movement"), true);
+});
+
+test("advisory sidecar activation approval packet enumerates required evidence and gates without granting approval (#837)", () => {
+  const packet = createAdvisorySidecarOperatorDecisionPacket({ now: NOW, decisionOwner: "seoseo" });
+
+  assert.equal(packet.activationReadiness.defaultEnabled, false);
+  assert.deepEqual(packet.activationReadiness.requiredEvidenceBeforeStart, [
+    "operator_approval_record",
+    "finalizer_go_decision",
+    "default_off_resolver_evidence",
+    "sidecar_process_preflight",
+    "provider_send_preflight",
+    "routing_influence_preflight",
+    "db_mutation_preflight",
+    "dispatch_influence_preflight",
+    "rollback_abort_plan",
+  ]);
+  assert.deepEqual(packet.activationReadiness.safeTelemetryFields, [
+    "packet.kind",
+    "packet.version",
+    "packet.generatedAt",
+    "packet.state",
+    "readiness.*Permitted",
+    "activationReadiness.requiredEvidenceBeforeStart",
+    "activationReadiness.approvalGates.*.requiresFreshApproval",
+    "activationReadiness.rollbackAbortCriteria",
+  ]);
+
+  for (const gateName of [
+    "sidecarProcessStart",
+    "providerSend",
+    "routingInfluence",
+    "dbMutation",
+    "dispatchInfluence",
+    "deployRestart",
+    "releaseTag",
+    "secretMovement",
+    "manualAckReplay",
+  ] as const) {
+    const gate = packet.activationReadiness.approvalGates[gateName];
+    assert.equal(gate.requiresFreshApproval, true, gateName);
+    assert.equal(gate.grantedByThisPacket, false, gateName);
+    assert.equal(gate.finalizerRequired, true, gateName);
+  }
+
+  assert.deepEqual(packet.activationReadiness.rollbackAbortCriteria, [
+    "missing_or_stale_operator_approval",
+    "non_green_preflight_or_ci",
+    "provider_send_attempt_before_approval",
+    "routing_or_dispatch_influence_before_approval",
+    "db_mutation_or_state_change_before_approval",
+    "secret_or_release_action_before_approval",
+  ]);
+  assert.equal(packet.activationReadiness.finalizer.owner, "seoseo");
+  assert.equal(packet.activationReadiness.finalizer.nonBypassable, true);
+  assert.equal(packet.activationReadiness.finalizer.workerEvidenceAdvisoryOnly, true);
+  assert.equal(packet.activationReadiness.packetGrantsApproval, false);
 });
 
 test("advisory sidecar operator decision packet is deeply immutable (#794)", () => {

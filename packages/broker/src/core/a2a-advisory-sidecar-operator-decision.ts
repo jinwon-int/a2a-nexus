@@ -29,7 +29,7 @@ export interface AdvisorySidecarOperatorDecisionPacket {
     readonly parentRoundId?: string;
     readonly recommendation: AdvisorySidecarRecommendation;
     readonly boundary: AdvisorySidecarResolverBoundary;
-    readonly parentIssueRefs: readonly ["#764", "#785", "#789", "#794"];
+    readonly parentIssueRefs: readonly ["#764", "#785", "#789", "#794", "#837"];
     readonly guardrailRefs: readonly [
       "a2a-advisory-sidecar-contract",
       "a2a-advisory-sidecar-resolver",
@@ -50,6 +50,7 @@ export interface AdvisorySidecarOperatorDecisionPacket {
     readonly executionPermitted: false;
     readonly nextAction: string;
   };
+  readonly activationReadiness: AdvisorySidecarActivationReadiness;
   readonly approvalSensitiveActionsExcluded: readonly string[];
   readonly integrationContract: {
     readonly transport: "json";
@@ -77,7 +78,36 @@ export interface AdvisorySidecarOperatorDecisionPacket {
   };
 }
 
-const PARENT_ISSUE_REFS = ["#764", "#785", "#789", "#794"] as const;
+export interface AdvisorySidecarActivationReadiness {
+  readonly defaultEnabled: false;
+  readonly packetGrantsApproval: false;
+  readonly requiredEvidenceBeforeStart: readonly string[];
+  readonly approvalGates: Record<
+    | "sidecarProcessStart"
+    | "providerSend"
+    | "routingInfluence"
+    | "dbMutation"
+    | "dispatchInfluence"
+    | "deployRestart"
+    | "releaseTag"
+    | "secretMovement"
+    | "manualAckReplay",
+    {
+      readonly requiresFreshApproval: true;
+      readonly grantedByThisPacket: false;
+      readonly finalizerRequired: true;
+    }
+  >;
+  readonly rollbackAbortCriteria: readonly string[];
+  readonly safeTelemetryFields: readonly string[];
+  readonly finalizer: {
+    readonly owner: string;
+    readonly nonBypassable: true;
+    readonly workerEvidenceAdvisoryOnly: true;
+  };
+}
+
+const PARENT_ISSUE_REFS = ["#764", "#785", "#789", "#794", "#837"] as const;
 const GUARDRAIL_REFS = [
   "a2a-advisory-sidecar-contract",
   "a2a-advisory-sidecar-resolver",
@@ -129,6 +159,7 @@ export function createAdvisorySidecarOperatorDecisionPacket(
       executionPermitted: false,
       nextAction: "record operator-visible default-off decision evidence before proposing any separately approved live action",
     },
+    activationReadiness: buildActivationReadiness(decisionOwner),
     approvalSensitiveActionsExcluded: [
       "sidecar process startup",
       "provider or Hermes send/canary",
@@ -161,6 +192,64 @@ export function createAdvisorySidecarOperatorDecisionPacket(
       packetDoesNotDeployRestartReleaseOrMoveSecrets: true,
       separateFreshApprovalRequiredForLiveActions: true,
       finalizerRemainsAuthoritative: true,
+    },
+  });
+}
+
+function buildActivationReadiness(decisionOwner: string): AdvisorySidecarActivationReadiness {
+  const gate = Object.freeze({
+    requiresFreshApproval: true,
+    grantedByThisPacket: false,
+    finalizerRequired: true,
+  } as const);
+
+  return deepFreeze({
+    defaultEnabled: false,
+    packetGrantsApproval: false,
+    requiredEvidenceBeforeStart: [
+      "operator_approval_record",
+      "finalizer_go_decision",
+      "default_off_resolver_evidence",
+      "sidecar_process_preflight",
+      "provider_send_preflight",
+      "routing_influence_preflight",
+      "db_mutation_preflight",
+      "dispatch_influence_preflight",
+      "rollback_abort_plan",
+    ],
+    approvalGates: {
+      sidecarProcessStart: gate,
+      providerSend: gate,
+      routingInfluence: gate,
+      dbMutation: gate,
+      dispatchInfluence: gate,
+      deployRestart: gate,
+      releaseTag: gate,
+      secretMovement: gate,
+      manualAckReplay: gate,
+    },
+    rollbackAbortCriteria: [
+      "missing_or_stale_operator_approval",
+      "non_green_preflight_or_ci",
+      "provider_send_attempt_before_approval",
+      "routing_or_dispatch_influence_before_approval",
+      "db_mutation_or_state_change_before_approval",
+      "secret_or_release_action_before_approval",
+    ],
+    safeTelemetryFields: [
+      "packet.kind",
+      "packet.version",
+      "packet.generatedAt",
+      "packet.state",
+      "readiness.*Permitted",
+      "activationReadiness.requiredEvidenceBeforeStart",
+      "activationReadiness.approvalGates.*.requiresFreshApproval",
+      "activationReadiness.rollbackAbortCriteria",
+    ],
+    finalizer: {
+      owner: decisionOwner,
+      nonBypassable: true,
+      workerEvidenceAdvisoryOnly: true,
     },
   });
 }
