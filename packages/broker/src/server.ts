@@ -4,6 +4,13 @@ import { createServer, type IncomingMessage, type RequestListener, type Server, 
 import { loadavg, cpus } from "node:os";
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
 import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
+import {
+  sanitizeBrokerId,
+  sanitizeBuildSource,
+  sanitizeBuildToken,
+  sanitizeImageDigest,
+  sanitizeIsoTimestamp,
+} from "./build-metadata-sanitize.js";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
@@ -5900,59 +5907,6 @@ function readPackageVersion(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function sanitizeBrokerId(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return undefined;
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(normalized)) {
-    throw new Error("A2A_BROKER_ID must be a stable id using only letters, numbers, dots, underscores, colons, or hyphens");
-  }
-  return normalized;
-}
-
-function sanitizeBuildToken(value: string | undefined, options: { fallback: string | undefined; unsafeFallback: string | undefined }): string | undefined {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return options.fallback;
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$/.test(normalized)) {
-    return options.unsafeFallback;
-  }
-  return normalized;
-}
-
-function sanitizeBuildSource(value: string | undefined): string {
-  // a2a-nexus is the canonical source of record. Anything else — empty,
-  // overlong, credential-bearing, or the legacy split-repo a2a-broker label —
-  // normalizes to the canonical provenance instead of leaking through.
-  const canonical = "github.com/jinwon-int/a2a-nexus";
-  const normalized = value?.trim();
-  if (!normalized || normalized.length > 128) {
-    return canonical;
-  }
-  if (!/^(https:\/\/github\.com\/jinwon-int\/a2a-nexus|github\.com\/jinwon-int\/a2a-nexus)$/.test(normalized)) {
-    return canonical;
-  }
-  return normalized.replace(/^https:\/\//, "");
-}
-
-function sanitizeIsoTimestamp(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  if (!normalized || normalized.length > 32) {
-    return undefined;
-  }
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(normalized) ? normalized : undefined;
-}
-
-function sanitizeImageDigest(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return /^sha256:[a-fA-F0-9]{64}$/.test(normalized) ? normalized.toLowerCase() : undefined;
 }
 
 function normalizePersistenceBackend(value: string | undefined): "json-file" | "sqlite" {
