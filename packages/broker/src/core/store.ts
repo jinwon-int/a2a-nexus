@@ -221,6 +221,8 @@ export interface BrokerHotTableRuntimeLoadMetric {
 export interface BrokerHotTableLoadMetricEntry {
   count: number;
   maxPayloadBytes: number;
+  /** Sum of serialized payload bytes for rows in this hot table, when available. */
+  totalPayloadBytes?: number;
   runtimeLoad?: BrokerHotTableRuntimeLoadMetric;
   /** Only set for broker_terminal_outbox. */
   unackedCount?: number;
@@ -1579,7 +1581,8 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     for (const table of SQLITE_HOT_ENTITY_TABLES) {
       const count = this.readTableCount(table);
       const maxPayloadBytes = count === 0 ? 0 : this.readMaxPayloadBytes(table);
-      const entry: BrokerHotTableLoadMetricEntry = { count, maxPayloadBytes };
+      const totalPayloadBytes = count === 0 ? 0 : this.readTotalPayloadBytes(table);
+      const entry: BrokerHotTableLoadMetricEntry = { count, maxPayloadBytes, totalPayloadBytes };
       if (table === "broker_tasks") {
         const terminalCount = this.readTerminalTaskCount();
         const activeCount = count - terminalCount;
@@ -1625,6 +1628,15 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return typeof maxRow?.maxLen === "bigint"
       ? Number(maxRow.maxLen)
       : typeof maxRow?.maxLen === "number" ? maxRow.maxLen : 0;
+  }
+
+  private readTotalPayloadBytes(table: SqliteHotEntityTable): number {
+    const sumRow = this.db
+      .prepare(`SELECT COALESCE(SUM(LENGTH(payload)), 0) AS totalLen FROM ${table}`)
+      .get() as { totalLen?: number | bigint } | undefined;
+    return typeof sumRow?.totalLen === "bigint"
+      ? Number(sumRow.totalLen)
+      : typeof sumRow?.totalLen === "number" ? sumRow.totalLen : 0;
   }
 
   private readTerminalTaskCount(): number {
