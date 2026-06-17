@@ -580,3 +580,23 @@ test("existing read-only evidence task still sets readOnlyValidation", () => {
   // Non-patch tasks should NOT get allowNoChanges from this propagation
   assert.equal(runnerTask.allowNoChanges, undefined);
 });
+
+test("github-readonly-validation alias is treated as GitHub evidence and refuses generic builtin success", () => {
+  const result = handleTask({
+    id: "task-readonly-alias",
+    intent: "analyze",
+    message: "Analyze source bundle only",
+    payload: {
+      mode: "github-readonly-validation",
+      repo: "jinwon-int/a2a-nexus",
+      issue: "#645",
+      sourceOnly: true,
+      githubWriteAllowed: false,
+    },
+  }, {
+    A2A_EXECUTOR_MODE: "builtin",
+  });
+
+  assert.equal(result.error?.code, "github_executor_not_configured");
+  assert.match(result.error?.message ?? "", /refusing built-in no-op success/);
+});

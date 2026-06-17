@@ -46,6 +46,7 @@ const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.inclu
 
 const CANONICAL_HANDLER_FILENAME = 'a2a-task-handler.mjs';
 const LEGACY_HANDLER_FILENAME = '';
+const HANDLER_SUPPORT_FILENAMES = ['worker-model-policy.mjs'];
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
 const handlersRoot = resolve(
@@ -321,6 +322,30 @@ guard('handlers-compat-path', () => compareCompatFile({
   compatLabel: 'handlers compat path',
 }));
 
+// Guard 2b: Handler transitive support modules must also be deployed to handlers/.
+// The deployed handler is executed from handlers/a2a-task-handler.mjs, so relative
+// ESM imports such as ./worker-model-policy.mjs resolve against handlers/, not scripts/.
+// Missing support modules caused runtime ERR_MODULE_NOT_FOUND after a handler update.
+guard('handler-support-compat-path', () => {
+  const checks = HANDLER_SUPPORT_FILENAMES.map((filename) => compareCompatFile({
+    guardName: 'handler-support-compat-path',
+    filename,
+    sourceLabel: 'source handler support module',
+    compatLabel: 'handlers support compat path',
+  }));
+  const failed = checks.filter((check) => !check.ok);
+  if (failed.length > 0) {
+    return fail('handler-support-compat-path', 'one or more handler support modules are missing or drifted in handlers/', {
+      failed,
+      requiredFiles: HANDLER_SUPPORT_FILENAMES,
+      hint: 'copy scripts support modules to handlers/ with the handler artifact before restarting the worker',
+      runtimeCheck:
+        'A2A_WORKER_ROOT=/opt/openclaw-a2a-worker node scripts/worker-artifact-rollout-guard.mjs --deployed',
+    });
+  }
+  return ok('handler-support-compat-path', { files: checks });
+});
+
 // Guard 3: Bridge compat path exists and matches source
 guard('bridge-compat-path', () => compareCompatFile({
   guardName: 'bridge-compat-path',
@@ -341,6 +366,7 @@ guard('artifact-executable-parity', () => {
   const artifacts = [
     compareExecutableParity(CANONICAL_HANDLER_FILENAME),
     compareExecutableParity('hermes-a2a-analysis-bridge.mjs'),
+    ...HANDLER_SUPPORT_FILENAMES.map((filename) => compareExecutableParity(filename)),
   ];
   const drift = artifacts.filter((artifact) => !artifact.ok);
   if (drift.length > 0) {
@@ -525,15 +551,23 @@ guard('docker-handler-inclusion', () => {
   }
 
   const hasHandlerCopy = /COPY\s+scripts\/(?:a2a-task-handler|openclaw-a2a-task-handler)\.mjs/.test(dockerfileContent);
+  const missingSupportCopies = HANDLER_SUPPORT_FILENAMES.filter((filename) => {
+    const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return !new RegExp(`COPY\\s+scripts/${escaped}`).test(dockerfileContent)
+      && !new RegExp(`cp\\s+scripts/${escaped}\\s+\\./handlers/`).test(dockerfileContent);
+  });
   const hasHandlersDir = /handlers\//.test(dockerfileContent) || /mkdir.*handlers/i.test(dockerfileContent);
 
-  if (!hasHandlerCopy && !hasHandlersDir) {
+  if ((!hasHandlerCopy && !hasHandlersDir) || missingSupportCopies.length > 0) {
     return fail(
       'docker-handler-inclusion',
-      'Dockerfile does not copy handler scripts into the image; ' +
-        'deployed container will lack scripts/a2a-task-handler.mjs and handlers/ compat path',
+      missingSupportCopies.length > 0
+        ? 'Dockerfile does not copy handler support modules into the image/handlers compat path'
+        : 'Dockerfile does not copy handler scripts into the image; ' +
+          'deployed container will lack scripts/a2a-task-handler.mjs and handlers/ compat path',
       {
-        fix: 'add COPY scripts/a2a-task-handler.mjs ./scripts/ and populate handlers/a2a-task-handler.mjs in Dockerfile',
+        missingSupportCopies,
+        fix: 'copy scripts/a2a-task-handler.mjs and handler support modules into ./scripts/ and ./handlers/ in Dockerfile',
         dryRun: DRY_RUN,
       },
     );
@@ -541,6 +575,7 @@ guard('docker-handler-inclusion', () => {
 
   return ok('docker-handler-inclusion', {
     hasHandlerCopy,
+    supportFiles: HANDLER_SUPPORT_FILENAMES,
     hasHandlersDir,
   });
 });

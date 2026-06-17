@@ -41,9 +41,11 @@ COPY scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
 # and org.opencontainers.image.revision use the actual build-time values.
 RUN node scripts/generate-build-info.mjs --runtime docker
 COPY scripts/a2a-task-handler.mjs ./scripts/a2a-task-handler.mjs
+COPY scripts/worker-model-policy.mjs ./scripts/worker-model-policy.mjs
 COPY scripts/hermes-a2a-analysis-bridge.mjs ./scripts/hermes-a2a-analysis-bridge.mjs
 RUN mkdir -p /var/lib/a2a-broker ./handlers \
   && cp scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
+  && cp scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
   && cp scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
