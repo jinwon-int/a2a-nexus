@@ -11,6 +11,8 @@ const steps = [
   ['public-readiness', 'npm', ['run', 'scan:public-readiness']],
   ['readiness-gates', 'npm', ['run', 'scan:readiness-gates']],
   ['external-secrets', 'npm', ['run', 'scan:external-secrets']],
+  ['body-safety-scan', 'npm', ['run', 'safety:body']],
+  ['body-safety-tests', 'npm', ['run', 'safety:body:test']],
   ['compatibility-baselines', 'node', ['scripts/check-compatibility-baselines.mjs']],
   ['repo-protection-baseline', 'node', ['scripts/check-repo-protection-baseline.mjs']],
   ['split-repo-local-demo', 'npm', ['run', 'check:split-repo-local-demo']],
