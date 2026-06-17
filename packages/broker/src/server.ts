@@ -138,32 +138,6 @@ import type { Alert, AlertScanResult } from "./core/alert-projection.js";
 import { buildOperatorTaskReport } from "./core/operator-task-report.js";
 import { buildReleaseEvidenceExport } from "./core/release-evidence.js";
 import {
-  buildTerminalBriefCloseoutGate,
-  extractTerminalBriefFinalizerWorkflowPacket,
-} from "./core/terminal-brief-closeout-gate.js";
-import {
-  buildTerminalBriefApprovalRequest,
-  extractTerminalBriefCloseoutGatePacket,
-} from "./core/terminal-brief-approval-request.js";
-import {
-  buildTerminalBriefApprovalExecutor,
-  extractTerminalBriefApprovalRequestPacket,
-} from "./core/terminal-brief-approval-executor.js";
-import {
-  buildTerminalBriefApprovalDispatchAdapter,
-  extractTerminalBriefApprovalExecutorPacket,
-} from "./core/terminal-brief-approval-dispatch-adapter.js";
-import {
-  buildTerminalBriefApprovalReceiptIngestor,
-  extractTerminalBriefApprovalDispatchAdapterPacket,
-  extractTerminalBriefApprovalReceiptEvidence,
-} from "./core/terminal-brief-approval-receipt-ingestor.js";
-import {
-  buildTerminalBriefFinalizerApprovalStatus,
-  extractTerminalBriefFinalizerApprovalReceiptStatus,
-  extractTerminalBriefFinalizerApprovalStatusDispatch,
-} from "./core/terminal-brief-finalizer-approval-status.js";
-import {
   buildTerminalBriefSidecarDryRunGate,
   extractTerminalBriefSidecarDryRunGateFinalizerStatus,
   extractTerminalBriefSidecarDryRunGateRehearsal,
@@ -397,6 +371,7 @@ import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalByIdRequest, handleProposalsListRequest } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
+import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
   toWorkerView,
@@ -3292,137 +3267,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "POST" && path === "/terminal-brief/closeout/gate") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.closeout_gate.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let workflow;
-        try {
-          workflow = extractTerminalBriefFinalizerWorkflowPacket(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid closeout gate input";
-          throw new BrokerError("bad_request", message);
-        }
-        const report = buildTerminalBriefCloseoutGate(workflow, {
-          issueUrl: optionalString(url.searchParams.get("issueUrl") ?? url.searchParams.get("issue_url")),
-          prUrl: optionalString(url.searchParams.get("prUrl") ?? url.searchParams.get("pr_url")),
-        });
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/terminal-brief/closeout/approval-request") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.approval_request.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let gate;
-        try {
-          gate = extractTerminalBriefCloseoutGatePacket(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid approval request input";
-          throw new BrokerError("bad_request", message);
-        }
-        const report = buildTerminalBriefApprovalRequest(gate);
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/terminal-brief/closeout/approval-executor") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.approval_executor.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let approvalRequest;
-        try {
-          approvalRequest = extractTerminalBriefApprovalRequestPacket(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid approval executor input";
-          throw new BrokerError("bad_request", message);
-        }
-        const executorOptions = body ?? {};
-        const report = buildTerminalBriefApprovalExecutor(approvalRequest, {
-          selectedAction: optionalString(executorOptions.selectedAction ?? executorOptions.selected_action),
-          selectedTarget: optionalString(executorOptions.selectedTarget ?? executorOptions.selected_target),
-          attemptExecute: executorOptions.attemptExecute === true || executorOptions.attempt_execute === true,
-        });
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/terminal-brief/closeout/approval-dispatch") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.approval_dispatch.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let approvalExecutor;
-        try {
-          approvalExecutor = extractTerminalBriefApprovalExecutorPacket(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid approval dispatch input";
-          throw new BrokerError("bad_request", message);
-        }
-        const dispatchOptions = body ?? {};
-        const report = buildTerminalBriefApprovalDispatchAdapter(approvalExecutor, {
-          adapter: optionalString(dispatchOptions.adapter ?? dispatchOptions.adapter_type ?? dispatchOptions.adapterType),
-          target: optionalString(dispatchOptions.target),
-          channel: optionalString(dispatchOptions.channel),
-          requestedBy: optionalString(dispatchOptions.requestedBy ?? dispatchOptions.requested_by),
-          receiptId: optionalString(dispatchOptions.receiptId ?? dispatchOptions.receipt_id),
-        });
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/terminal-brief/closeout/approval-receipt") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.approval_receipt.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let approvalDispatch;
-        try {
-          approvalDispatch = extractTerminalBriefApprovalDispatchAdapterPacket(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid approval receipt input";
-          throw new BrokerError("bad_request", message);
-        }
-        const receiptOptions = body ?? {};
-        const maxAgeMsRaw = receiptOptions.maxAgeMs ?? receiptOptions.max_age_ms;
-        const maxAgeMs = typeof maxAgeMsRaw === "number" && Number.isFinite(maxAgeMsRaw) ? maxAgeMsRaw : undefined;
-        const report = buildTerminalBriefApprovalReceiptIngestor(
-          approvalDispatch,
-          extractTerminalBriefApprovalReceiptEvidence(body),
-          { maxAgeMs },
-        );
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/terminal-brief/closeout/finalizer-approval-status") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.finalizer_approval_status.read");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let approvalDispatch;
-        try {
-          approvalDispatch = extractTerminalBriefFinalizerApprovalStatusDispatch(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid finalizer approval status input";
-          throw new BrokerError("bad_request", message);
-        }
-        const report = buildTerminalBriefFinalizerApprovalStatus(
-          approvalDispatch,
-          extractTerminalBriefFinalizerApprovalReceiptStatus(body),
-        );
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
+      if (await handleTerminalBriefCloseoutRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        url,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (req.method === "POST" && path === "/terminal-brief/sidecar/dry-run-gate") {
