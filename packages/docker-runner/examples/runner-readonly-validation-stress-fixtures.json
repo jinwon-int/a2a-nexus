@@ -14,15 +14,15 @@
     "providerSendIsReceiptEvidence": false
   },
   "expectedGuards": {
-    "readOnlyBlockMarker": "error=read_only_validation_changed_repo",
+    "readOnlyBlockMarker": "error=read_only_validation_patch_mode_preflight_blocked",
     "readOnlyPassMarker": "read_only_validation=passed",
     "noChangeDoneMarker": "status=no_changes_allowed",
-    "forbiddenPrMarker": "error=new_pr_forbidden",
-    "bootstrapBlockMarker": "error=pre_pr_bootstrap_guard_blocked"
+    "forbiddenPrMarker": "new_pr_allowed=0",
+    "bootstrapBlockMarker": "patch_mode=read_only_validation"
   },
   "cases": [
     {
-      "name": "explicit readOnlyValidation patch lane allows no-change Done but blocks repo diffs before PR",
+      "name": "explicit readOnlyValidation patch lane preflight-blocks before model execution",
       "task": {
         "id": "readonly-explicit-238",
         "intent": "propose_patch",
@@ -45,23 +45,26 @@
         "forbidNewPr": false,
         "commentOnly": false,
         "mustContain": [
-          "error=read_only_validation_changed_repo",
-          "read_only_validation=passed",
-          "status=no_changes_allowed",
-          "git diff --name-only",
-          "git status --porcelain",
-          "read_only_change=",
-          "error=pre_pr_bootstrap_guard_blocked"
+          "error=read_only_validation_patch_mode_preflight_blocked",
+          "read_only_validation=blocked",
+          "model_execution=skipped_preflight",
+          "evidence_contract=blocked_patch_proposal_mode",
+          "patch_mode=read_only_validation",
+          "new_pr_allowed=0"
         ],
-        "mustOrderBefore": [
-          ["error=read_only_validation_changed_repo", "git push origin"],
-          ["error=read_only_validation_changed_repo", "gh pr create"],
-          ["BOOTSTRAP_BLOCK_PATHS", "git add -A"]
-        ]
+        "mustNotContain": [
+          "git checkout -b",
+          "git push origin",
+          "gh pr create",
+          "git commit -m",
+          "/work/patch-command.sh",
+          "A2A_PATCH_COMMAND"
+        ],
+        "mustOrderBefore": []
       }
     },
     {
-      "name": "validationOnly broker alias maps to the same read-only validation guard",
+      "name": "validationOnly broker alias preflight-blocks patch/proposal mode before model execution",
       "task": {
         "id": "readonly-alias-238",
         "intent": "propose_patch",
@@ -81,14 +84,22 @@
         "forbidNewPr": false,
         "commentOnly": false,
         "mustContain": [
-          "error=read_only_validation_changed_repo",
-          "read_only_validation=passed",
-          "status=no_changes_allowed"
+          "error=read_only_validation_patch_mode_preflight_blocked",
+          "read_only_validation=blocked",
+          "model_execution=skipped_preflight",
+          "evidence_contract=blocked_patch_proposal_mode",
+          "patch_mode=read_only_validation",
+          "new_pr_allowed=0"
         ],
-        "mustOrderBefore": [
-          ["error=read_only_validation_changed_repo", "git push origin"],
-          ["error=read_only_validation_changed_repo", "gh pr create"]
-        ]
+        "mustNotContain": [
+          "git checkout -b",
+          "git push origin",
+          "gh pr create",
+          "git commit -m",
+          "/work/patch-command.sh",
+          "A2A_PATCH_COMMAND"
+        ],
+        "mustOrderBefore": []
       }
     },
     {
@@ -113,15 +124,17 @@
         "commentOnly": false,
         "mustContain": [
           "error=read_only_validation_changed_repo",
-          "error=new_pr_forbidden",
+          "patch_mode=read_only_validation",
+          "new_pr_allowed=0",
           "status=no_changes_allowed"
         ],
         "mustNotContain": [
-          "gh pr create"
+          "git checkout -b",
+          "git push origin",
+          "gh pr create",
+          "git commit -m"
         ],
-        "mustOrderBefore": [
-          ["error=read_only_validation_changed_repo", "error=new_pr_forbidden"]
-        ]
+        "mustOrderBefore": []
       }
     }
   ]

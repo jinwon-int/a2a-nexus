@@ -92,7 +92,7 @@ test("normalizes per-task worker overrides into OpenClaw and Hermes container en
   assert.equal(task.env?.A2A_OPENCLAW_THINKING, "high");
   assert.equal(task.env?.A2A_HERMES_THINKING, "high");
   assert.equal(task.env?.A2A_RUNNER_ALLOW_NO_CHANGES, "1");
-  assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, undefined);
+  assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, "1");
 });
 
 test("normalizes read-only validation into OpenClaw no-change env guards", () => {
@@ -675,7 +675,7 @@ test("allowNoChanges: explicit commands are not overridden", () => {
 
 // github-verify mode (a2a-docker-runner#231)
 
-test("github-verify: isPatchMode recognises the mode and generates patch pipeline with no-change guard", () => {
+test("github-verify: isPatchMode recognises the mode and generates branchless read-only no-change guard", () => {
   const task = normalizeTask({
     id: "verify-lane",
     intent: "verify",
@@ -687,23 +687,22 @@ test("github-verify: isPatchMode recognises the mode and generates patch pipelin
     commands: [],
   });
 
-  // Mode is preserved.
+  // Mode is preserved and normalized as read-only evidence.
   assert.equal(task.mode, "github-verify");
+  assert.equal(task.readOnlyValidation, true);
 
-  // Should generate patch pipeline (isPatchMode returns true for github-verify).
-  assert.ok(task.commands.length >= 2, "Expected patch pipeline commands");
+  // Should generate a branchless read-only evidence pipeline.
+  assert.ok(task.commands.length >= 2, "Expected read-only evidence pipeline commands");
   const pipeline = task.commands[1] ?? "";
 
-  // allowNoChanges=true → no-changes branch uses status=no_changes_allowed, not exit 2.
+  assert.ok(pipeline.includes("patch_mode=read_only_validation"), "Expected read-only pipeline marker");
+  assert.ok(pipeline.includes("read_only_validation=passed"), "Expected read-only validation guard");
   assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no_changes_allowed for verify mode");
   assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not emit no-changes error for verify mode");
-
-  // forbidNewPr=true → changes trigger new_pr_forbidden, not PR creation.
-  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected new_pr_forbidden when verify lane produces changes");
-  assert.ok(!pipeline.includes("gh pr create"), "Must not create PR in verify lane");
-
-  // Still includes create-branch + patch command execution.
-  assert.ok(pipeline.includes("git checkout -b"), "Expected branch creation");
+  assert.ok(!pipeline.includes("git checkout -b"), "Verify lane must not create a branch");
+  assert.ok(!pipeline.includes("git commit -m"), "Verify lane must not commit");
+  assert.ok(!pipeline.includes("git push origin"), "Verify lane must not push");
+  assert.ok(!pipeline.includes("gh pr create"), "Verify lane must not create PR");
   assert.ok(
     pipeline.includes("/work/patch-command.sh") || pipeline.includes("A2A_PATCH_COMMAND"),
     "Expected patch command execution",
@@ -724,13 +723,17 @@ test("github-libero-validation: generates evidence pipeline with read-only no-ch
 
   assert.equal(task.mode, "github-libero-validation");
   assert.equal(task.allowNoChanges, true);
+  assert.equal(task.readOnlyValidation, true);
   assert.ok(task.commands.length >= 2, "Expected GitHub evidence pipeline commands");
 
   const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("patch_mode=read_only_validation"), "Expected branchless read-only pipeline marker");
   assert.ok(pipeline.includes("read_only_validation=passed"), "Expected read-only validation guard");
   assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no-change Done path");
-  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected PR creation guard");
   assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not fail no-change libero validation");
+  assert.ok(!pipeline.includes("git checkout -b"), "Libero validation must not create a branch");
+  assert.ok(!pipeline.includes("git push origin"), "Libero validation must not push");
+  assert.ok(!pipeline.includes("gh pr create"), "Libero validation must not create PR");
 });
 
 test("family-wiki-readonly-audit: permits tracked wiki AGENTS.md but remains read-only and no-PR", () => {
@@ -751,10 +754,11 @@ test("family-wiki-readonly-audit: permits tracked wiki AGENTS.md but remains rea
   assert.ok(task.commands.length >= 2, "Expected GitHub evidence pipeline commands");
 
   const pipeline = task.commands[1] ?? "";
+  assert.ok(pipeline.includes("patch_mode=read_only_validation"), "Expected branchless read-only pipeline marker");
   assert.ok(pipeline.includes("read_only_validation=passed"), "Expected read-only validation guard");
-  assert.ok(pipeline.includes("error=new_pr_forbidden"), "Expected PR creation guard");
-  assert.ok(pipeline.includes("BOOTSTRAP_ALLOWED_TRACKED_REPO_ENTRIES='.:AGENTS.md'"), "Expected canonical wiki AGENTS.md allowance");
-  assert.ok(pipeline.includes("artifacts/%s"), "Artifact bootstrap paths must remain blocked");
+  assert.ok(pipeline.includes("new_pr_allowed=0"), "Expected no-new-PR evidence marker");
+  assert.ok(!pipeline.includes("git checkout -b"), "Family Wiki audit mode must not create branches");
+  assert.ok(!pipeline.includes("git push origin"), "Family Wiki audit mode must not push branches");
   assert.ok(!pipeline.includes("gh pr create"), "Family Wiki audit mode must not create PRs");
 });
 
@@ -789,7 +793,7 @@ test("readOnlyValidation: implies allowNoChanges for Done evidence without PR", 
   assert.equal(task.allowNoChanges, true);
 });
 
-test("readOnlyValidation: default pipeline fails closed on repository changes before push or PR", () => {
+test("readOnlyValidation: patch/proposal mode fails preflight before model, branch, push, or PR", () => {
   const task = normalizeTask({
     id: "readonly-pipeline",
     intent: "propose_patch",
@@ -800,15 +804,18 @@ test("readOnlyValidation: default pipeline fails closed on repository changes be
   });
 
   const pipeline = task.commands[1] ?? "";
-  const guardIdx = pipeline.indexOf("error=read_only_validation_changed_repo");
-  const pushIdx = pipeline.indexOf("git push origin");
-  const prIdx = pipeline.indexOf("gh pr create");
-  assert.ok(guardIdx >= 0, "Expected read-only validation guard in default pipeline");
-  assert.ok(pipeline.includes("read_only_validation=passed"), "Expected pass marker for unchanged validation lanes");
-  assert.ok(pipeline.includes("read_only_change="), "Expected exact changed path evidence markers");
-  assert.ok(pushIdx > guardIdx, "Read-only guard must run before git push");
-  assert.ok(prIdx > guardIdx, "Read-only guard must run before gh pr create");
-  assert.ok(pipeline.includes("status=no_changes_allowed"), "Read-only validation must allow no-change Done evidence");
+  assert.ok(pipeline.includes("error=read_only_validation_patch_mode_preflight_blocked"), "Expected pre-model patch/proposal conflict block");
+  assert.ok(pipeline.includes("read_only_validation=blocked"), "Expected blocked read-only marker");
+  assert.ok(pipeline.includes("model_execution=skipped_preflight"), "Expected model execution skip marker");
+  assert.ok(pipeline.includes("evidence_contract=blocked_patch_proposal_mode"), "Expected evidence-contract classification");
+  assert.ok(pipeline.includes("patch_mode=read_only_validation"), "Expected branchless read-only pipeline marker");
+  assert.ok(pipeline.includes("new_pr_allowed=0"), "Expected no-new-PR evidence marker");
+  assert.ok(!pipeline.includes("/work/patch-command.sh"), "Read-only patch/proposal conflict must not invoke model command");
+  assert.ok(!pipeline.includes("A2A_PATCH_COMMAND"), "Read-only patch/proposal conflict must not expose patch command env path");
+  assert.ok(!pipeline.includes("git checkout -b"), "Read-only validation must not create a branch before checking changes");
+  assert.ok(!pipeline.includes("git commit -m"), "Read-only validation must not commit repository changes");
+  assert.ok(!pipeline.includes("git push origin"), "Read-only validation must not push branches");
+  assert.ok(!pipeline.includes("gh pr create"), "Read-only validation must not create PRs");
 });
 
 // ---------------------------------------------------------------------------
@@ -983,9 +990,9 @@ test("toolchain-detect: explicit commands override toolchain detection entirely"
   assert.deepEqual(task.commands, ["echo custom-command"]);
 });
 
-test("toolchain-detect: github-verify patch mode still generates patch pipeline, not toolchain detection", () => {
+test("toolchain-detect: github-verify generates branchless read-only evidence pipeline, not toolchain detection", () => {
   // GitHub evidence modes should NOT trigger the fallback toolchain detection
-  // path — they use the coding-agent patch pipeline.
+  // path — they use the read-only evidence command pipeline.
   const task = normalizeTask({
     id: "verify-still-patch",
     intent: "verify",
@@ -995,9 +1002,10 @@ test("toolchain-detect: github-verify patch mode still generates patch pipeline,
   });
 
   const pipeline = task.commands[1] ?? "";
-  // Must be the patch pipeline, not the toolchain detection fallback.
-  assert.ok(pipeline.includes("git checkout -b"), "Verify mode must still generate patch pipeline");
-  assert.ok(pipeline.includes("/work/patch-command.sh"), "Patch pipeline must reference patch command");
+  // Must be the branchless read-only pipeline, not the toolchain detection fallback.
+  assert.ok(pipeline.includes("patch_mode=read_only_validation"), "Verify mode must generate read-only evidence pipeline");
+  assert.ok(!pipeline.includes("git checkout -b"), "Verify mode must not generate patch branch pipeline");
+  assert.ok(pipeline.includes("/work/patch-command.sh"), "Evidence pipeline must reference patch command");
   // The first command should be writing artifacts (prompt), not toolchain detection.
   assert.ok(task.commands[0]?.includes("/work/artifacts/prompt.md"), "First command should be prompt artifact");
 });

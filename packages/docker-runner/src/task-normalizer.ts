@@ -3,12 +3,21 @@ import type { NormalizedRunnerTask, RunnerRepo, RunnerTask } from "./types.js";
 const GITHUB_REPO_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const FAMILY_WIKI_READONLY_AUDIT_MODE = "family-wiki-readonly-audit";
 const FAMILY_WIKI_REPO_SLUG = "jinwon-int/seoyoon-family-wiki";
+const READ_ONLY_VALIDATION_MODES = new Set([
+  "github-verify",
+  "github-read-only-validation",
+  "read-only-validation",
+  "github-libero-validation",
+  "libero-validation",
+  FAMILY_WIKI_READONLY_AUDIT_MODE,
+]);
+const PATCH_PROPOSAL_MODES = new Set(["github-propose-patch", "propose_patch"]);
 
 export function normalizeTask(task: RunnerTask): NormalizedRunnerTask {
   const repos = normalizeRepos(task);
   const primaryRepo = repos.find((repo) => repo.primary) ?? repos[0];
   const familyWikiReadonlyAudit = task.mode === FAMILY_WIKI_READONLY_AUDIT_MODE;
-  const readOnlyValidation = task.readOnlyValidation === true || familyWikiReadonlyAudit;
+  const readOnlyValidation = task.readOnlyValidation === true || READ_ONLY_VALIDATION_MODES.has(task.mode ?? "");
   const allowNoChanges = task.allowNoChanges === true || readOnlyValidation;
   const env = normalizeTaskEnv({ ...task, readOnlyValidation }, allowNoChanges);
   const normalizedTask = {
@@ -124,6 +133,13 @@ function defaultCommands(task: RunnerTask, primaryRepo?: RunnerRepo): string[] {
     return buildDefaultCommentOnlyCommands(task);
   }
 
+  if (isPatchMode(task.mode) && task.readOnlyValidation && primaryRepo) {
+    if (PATCH_PROPOSAL_MODES.has(task.mode ?? "")) {
+      return buildReadOnlyPatchProposalPreflightBlockCommands(task, primaryRepo);
+    }
+    return buildDefaultReadOnlyValidationCommands(task, primaryRepo);
+  }
+
   if (isPatchMode(task.mode) && primaryRepo) {
     return buildDefaultPatchCommands(task, primaryRepo);
   }
@@ -155,6 +171,103 @@ function buildDefaultCommentOnlyCommands(task: RunnerTask): string[] {
     ...(existingPrUrl ? [`printf 'existing_pr=%s\\n' ${shellSingleQuote(existingPrUrl)} | tee -a /work/artifacts/summary.txt`] : []),
     `printf 'status=comment_only_done\\n' | tee -a /work/artifacts/summary.txt`,
   ].join("\n")];
+}
+
+function buildPatchCommandBlock(): string {
+  return [
+    `# Patch command execution: safe script file (recommended).`,
+    `if [ -x /work/patch-command.sh ]; then`,
+    `  printf 'patch_mode=script\\n' | tee -a /work/artifacts/summary.txt`,
+    `  /work/patch-command.sh 2>&1 | tee /work/artifacts/patch-command.log`,
+    `elif [ -n "\${A2A_PATCH_COMMAND_JSON:-}" ]; then`,
+    `  printf 'patch_mode=json_argv_unconverted\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'error=json_argv_received_without_host_side_script_conversion\\n' >&2`,
+    `  exit 2`,
+    `elif [ -n "\${A2A_PATCH_COMMAND:-}" ]; then`,
+    `  printf 'patch_mode=legacy_eval\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'warning=deprecated_eval_path_prefer_commandScript_or_commandJson\\n' | tee -a /work/artifacts/summary.txt`,
+    `  eval "\${A2A_PATCH_COMMAND}" 2>&1 | tee /work/artifacts/patch-command.log`,
+    `else`,
+    `  printf 'error=no_patch_command_configured\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'Set A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT or A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON to inject a host-side OpenClaw/Codex coding agent.\\n' | tee /work/artifacts/patch-command.log`,
+    `  exit 2`,
+    `fi`,
+  ].join("\n");
+}
+
+function buildReadOnlyValidationGuardBlock(baseBranch: string): string {
+  return [
+    `# Read-only validation/libero lanes may inspect and test, but must not`,
+    `# produce repository changes or create patch-lane PR evidence.`,
+    `READONLY_CHANGED_PATHS="$( {`,
+    `  git status --porcelain | sed -E 's/^...//'`,
+    `  git diff --name-only "origin/${baseBranch}...HEAD"`,
+    `} | sed '/^$/d' | sort -u )"`,
+    `if [ -n "$READONLY_CHANGED_PATHS" ]; then`,
+    `  printf 'error=read_only_validation_changed_repo\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'read_only_validation=blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'Read-only validation task produced repository changes; refusing to create a PR.\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf 'Files detected (repo-relative):\\n' | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$READONLY_CHANGED_PATHS" | tee -a /work/artifacts/patch-command.log`,
+    `  printf '%s\\n' "$READONLY_CHANGED_PATHS" | sed '/^$/d; s#^#read_only_change=#' >> /work/artifacts/summary.txt`,
+    `  exit 4`,
+    `fi`,
+    `printf 'read_only_validation=passed\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+}
+
+function buildReadOnlyPatchProposalPreflightBlockCommands(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
+  const repoPath = primaryRepo.path ?? "repo";
+  const safeTitle = (task.id || "a2a-readonly-patch-proposal-block").replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const writePrompt = [
+    shellWriteTextFile(task.prompt ?? `Read-only patch/proposal conflict task ${task.id}`, "/work/artifacts/prompt.md"),
+    `printf 'patch_mode=read_only_validation\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'new_pr_allowed=0\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'task=%s\\n' ${shellSingleQuote(safeTitle)} | tee -a /work/artifacts/summary.txt`,
+    `printf 'prompt_bytes=%s\\n' "$(wc -c < /work/artifacts/prompt.md)" | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+
+  const pipeline = [
+    `set -euo pipefail`,
+    `cd /work/${repoPath}`,
+    `printf 'patch_mode=read_only_validation\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'new_pr_allowed=0\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'read_only_validation=blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'error=read_only_validation_patch_mode_preflight_blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'evidence_contract=blocked_patch_proposal_mode\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'model_execution=skipped_preflight\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'Read-only validation task selected a patch/proposal mode; refusing before model execution, branch creation, commit, push, or PR creation.\\n' | tee /work/artifacts/patch-command.log`,
+    `exit 4`,
+  ].join("\n");
+
+  return [writePrompt, pipeline];
+}
+
+function buildDefaultReadOnlyValidationCommands(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
+  const repoPath = primaryRepo.path ?? "repo";
+  const baseBranch = sanitizeGitRef(task.baseBranch ?? primaryRepo.branch ?? "main");
+  const safeTitle = (task.id || "a2a-readonly-validation").replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const writePrompt = [
+    shellWriteTextFile(task.prompt ?? `Read-only validation task ${task.id}`, "/work/artifacts/prompt.md"),
+    `printf 'patch_mode=read_only_validation\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'new_pr_allowed=0\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'task=%s\\n' ${shellSingleQuote(safeTitle)} | tee -a /work/artifacts/summary.txt`,
+    `printf 'prompt_bytes=%s\\n' "$(wc -c < /work/artifacts/prompt.md)" | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+
+  const pipeline = [
+    `set -euo pipefail`,
+    `cd /work/${repoPath}`,
+    `printf 'patch_mode=read_only_validation\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'new_pr_allowed=0\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'read_only_validation=started\\n' | tee -a /work/artifacts/summary.txt`,
+    buildPatchCommandBlock(),
+    buildReadOnlyValidationGuardBlock(baseBranch),
+    `printf 'status=no_changes_allowed\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'notice=no_code_changes_produced_evidence_only_lane\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+
+  return [writePrompt, pipeline];
 }
 
 function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): string[] {
