@@ -600,3 +600,77 @@ test("github-readonly-validation alias is treated as GitHub evidence and refuses
   assert.equal(result.error?.code, "github_executor_not_configured");
   assert.match(result.error?.message ?? "", /refusing built-in no-op success/);
 });
+
+
+test("Hermes patch profile rejects legacy OPENCLAW_MODEL deepseek flash before docker runner execution (#860)", () => {
+  const result = handleTask(patchTask(), {
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+  });
+
+  assert.equal(result.error?.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error?.details.profile, "hermes");
+  assert.equal(result.error?.details.canonicalModel, "deepseek/deepseek-v4-flash");
+});
+
+test("Hermes patch profile rejects later legacy model drift even when an earlier env model is supported (#860)", () => {
+  const result = handleTask(patchTask(), {
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_HERMES_DEFAULT_MODEL: "openai-codex/gpt-5.5",
+    OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+  });
+
+  assert.equal(result.error?.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error?.details.modelSource, "env");
+  assert.equal(result.error?.details.canonicalModel, "deepseek/deepseek-v4-flash");
+});
+
+test("Hermes plugin preset tasks reject runner env model drift before plugin execution (#860)", () => {
+  const result = handleTask(patchTask({
+    payload: {
+      repo: "jinwon-int/openclaw-plugin-a2a",
+      runnerPreset: "openclaw-plugin-a2a-dev",
+    },
+  }), {
+    A2A_EXECUTOR_MODE: "docker",
+    A2A_DOCKER_RUNNER_BIN: "this-must-not-run",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_HERMES_DEFAULT_MODEL: "openai-codex/gpt-5.5",
+    A2A_DOCKER_RUNNER_WORKER_MODEL: "deepseek/deepseek-v4-flash",
+  });
+
+  assert.equal(result.error?.code, "worker_model_not_supported_by_profile");
+  assert.equal(result.error?.details.modelSource, "env");
+  assert.equal(result.error?.details.canonicalModel, "deepseek/deepseek-v4-flash");
+});
+
+test("github-verify read-only tasks with plugin-only scope return structured Block evidence instead of executor config error (#860)", () => {
+  const result = handleTask({
+    id: "task-readonly-verify",
+    intent: "verify",
+    message: "Verify source-only advisory sidecar guardrails",
+    payload: {
+      mode: "github-verify",
+      repo: "jinwon-int/a2a-nexus",
+      issue: "#764",
+      issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/764",
+      readOnlyValidation: true,
+      forbidNewPr: true,
+      sourceOnly: true,
+      noLive: true,
+    },
+  }, {
+    A2A_EXECUTOR_MODE: "auto",
+    A2A_DOCKER_RUNNER_SCOPE: "plugin-only",
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.result.output.analysisStatus, "blocked");
+  assert.equal(result.result.output.blockReason, "github_readonly_executor_not_configured");
+  assert.equal(result.result.output.noLive, true);
+  assert.equal(result.result.output.sourceOnly, true);
+});

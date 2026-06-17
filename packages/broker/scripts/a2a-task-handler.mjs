@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   ALLOWED_WORKER_MODELS,
   VALID_WORKER_THINKING_LEVELS,
+  canonicalizeWorkerModel,
   isWorkerModelSupportedByPatchProfile,
   resolveWorkerModelInputs,
   resolveWorkerThinkingInput,
@@ -234,13 +235,38 @@ const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
  * Returns { model, fromPayload } where fromPayload=true means the model
  * came from the task payload override.
  */
+function workerModelEnvCandidates(env = process.env) {
+  return [
+    env.A2A_OPENCLAW_MODEL,
+    env.A2A_HERMES_DEFAULT_MODEL,
+    // Legacy worker/runner environments can still inject the model under the
+    // unprefixed OpenClaw/Hermes names. Include them in the same preflight so
+    // a Hermes-incompatible model is blocked before the docker runner invokes
+    // Hermes and aborts without operator-visible Block evidence (#860).
+    env.OPENCLAW_MODEL,
+    env.HERMES_DEFAULT_MODEL,
+    env.A2A_DOCKER_RUNNER_WORKER_MODEL,
+  ].map((value) => safeText(value, "")).filter(Boolean);
+}
+
+function isAllowedWorkerModelName(model) {
+  const value = safeText(model, "");
+  return ALLOWED_WORKER_MODELS.includes(value) || ALLOWED_WORKER_MODELS.includes(canonicalizeWorkerModel(value));
+}
+
 function resolveWorkerModel(task, env = process.env) {
   const payload = taskPayload(task);
   const payloadModel = safeText(payload.workerModel, "");
-  // The host worker env file uses A2A_HERMES_DEFAULT_MODEL; accept it as a
-  // fallback alongside the legacy A2A_OPENCLAW_MODEL name (#673).
-  const envModel = safeText(env.A2A_OPENCLAW_MODEL, "") || safeText(env.A2A_HERMES_DEFAULT_MODEL, "");
-  return resolveWorkerModelInputs({ payloadModel, envModel });
+  if (payloadModel) {
+    return resolveWorkerModelInputs({ payloadModel });
+  }
+  // Prefer the first configured env candidate that is actually allowlisted.
+  // If all configured env values are invalid, preserve the existing fallback
+  // behavior by passing the first candidate through resolveWorkerModelInputs,
+  // which defaults to DEFAULT_WORKER_MODEL for invalid env-only values.
+  const envCandidates = workerModelEnvCandidates(env);
+  const envModel = envCandidates.find(isAllowedWorkerModelName) || envCandidates[0] || "";
+  return resolveWorkerModelInputs({ envModel });
 }
 
 /**
@@ -259,26 +285,42 @@ function normalizedPatchCommandProfile(env = process.env) {
   return image.includes("hermes") ? "hermes" : "";
 }
 
-function validateWorkerModelForPatchProfile(task, model, env = process.env) {
+function workerModelProfileError(task, model, support, source = "effective") {
+  return {
+    error: {
+      code: "worker_model_not_supported_by_profile",
+      message: `Hermes patch profile does not support workerModel "${model}"; refusing before docker runner execution`,
+      details: {
+        failureCategory: support.failureCategory,
+        profile: support.profile,
+        requestedModel: model,
+        canonicalModel: support.canonicalModel,
+        modelSource: source,
+        taskId: safeText(task.id, undefined),
+        intent: safeText(task.intent, undefined),
+        mode: taskMode(task),
+        supportedAction: support.supportedAction,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
+}
+
+function validateWorkerModelForPatchProfile(task, model, env = process.env, source = "effective") {
   const support = isWorkerModelSupportedByPatchProfile(normalizedPatchCommandProfile(env), model);
   if (!support.supported) {
-    return {
-      error: {
-        code: "worker_model_not_supported_by_profile",
-        message: `Hermes patch profile does not support workerModel "${model}"; refusing before docker runner execution`,
-        details: {
-          failureCategory: support.failureCategory,
-          profile: support.profile,
-          requestedModel: model,
-          canonicalModel: support.canonicalModel,
-          taskId: safeText(task.id, undefined),
-          intent: safeText(task.intent, undefined),
-          mode: taskMode(task),
-          supportedAction: support.supportedAction,
-          buildInfo: BUILD_INFO,
-        },
-      },
-    };
+    return workerModelProfileError(task, model, support, source);
+  }
+  return null;
+}
+
+function validateWorkerModelEnvCandidatesForPatchProfile(task, env = process.env) {
+  for (const candidate of workerModelEnvCandidates(env)) {
+    if (!isAllowedWorkerModelName(candidate)) continue;
+    const support = isWorkerModelSupportedByPatchProfile(normalizedPatchCommandProfile(env), candidate);
+    if (!support.supported) {
+      return workerModelProfileError(task, candidate, support, "env");
+    }
   }
   return null;
 }
@@ -304,6 +346,8 @@ function validateWorkerOverrides(task, env = process.env) {
       },
     };
   }
+  const envProfileValidation = validateWorkerModelEnvCandidatesForPatchProfile(task, env);
+  if (envProfileValidation) return envProfileValidation;
   return validateWorkerModelForPatchProfile(task, modelRes.model, env);
 }
 
@@ -1579,8 +1623,60 @@ function runDockerRunner(task, env = process.env) {
   }
 }
 
+function shouldReturnReadOnlyGithubBlockEvidence(task) {
+  const payload = taskPayload(task);
+  return isGithubReadOnlyEvidenceTask(task)
+    && taskMode(task) === "github-verify"
+    && payload.readOnlyValidation === true
+    && payload.forbidNewPr === true;
+}
+
+function githubReadOnlyExecutorBlockEvidence(task, env = process.env) {
+  const payload = taskPayload(task);
+  const mode = taskMode(task);
+  const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
+  const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
+  return {
+    result: {
+      summary: "github read-only verification blocked: evidence executor is not configured",
+      note: "github-verify/readOnlyValidation tasks must not be counted as substantive worker analysis when no docker/OpenClaw evidence executor is available",
+      handler: BUILD_INFO,
+      lifecycle: {
+        intent: safeText(task.intent, "unknown"),
+        mode,
+        taskId: safeText(task.id, "unknown"),
+        proposalId: safeText(task.proposalId, undefined),
+        exchangeId: safeText(task.exchangeId, undefined),
+      },
+      output: {
+        analysisStatus: "blocked",
+        analysisKind: "github_readonly_executor_preflight",
+        blockReason: "github_readonly_executor_not_configured",
+        executorMode: normalizedExecutorMode(env),
+        dockerScope: normalizedDockerScope(env),
+        bridgeConfigured: shouldUseOpenClawBridge(task, env),
+        repo: safeText(payload.repo || payload.repository, undefined),
+        issue: safeText(payload.issue, undefined),
+        issueUrl: safeText(payload.issueUrl, undefined),
+        noLive: payload.noLive === true || payload.no_live === true || undefined,
+        sourceOnly: payload.sourceOnly === true || payload.source_only === true || undefined,
+        forbidNewPr: payload.forbidNewPr === true || payload.forbid_new_pr === true || undefined,
+        readOnlyValidation: payload.readOnlyValidation === true || undefined,
+        payloadKeys: Object.keys(payload).sort(),
+        effectiveModel,
+        effectiveThinking,
+        modelFromPayload: modelFromPayload || undefined,
+        thinkingFromPayload: thinkingFromPayload || undefined,
+      },
+    },
+  };
+}
+
 function handleBuiltinTask(task, env = process.env) {
   if (isGithubEvidenceTask(task)) {
+    if (shouldReturnReadOnlyGithubBlockEvidence(task)) {
+      return githubReadOnlyExecutorBlockEvidence(task, env);
+    }
     return githubExecutorNotConfigured(task, env);
   }
 
