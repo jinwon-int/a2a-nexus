@@ -218,7 +218,111 @@ test('dry-run rejects source-only analysis files without path or content', async
   assert.ok(missingContentOut.errors.some((e) => /sourceBundle\.files\[0\]\.content or .*contentText is required/.test(e)));
 });
 
+function makeGitHubVerifyManifest(brokerUrl) {
+  const manifest = makeManifest(brokerUrl, 1);
+  manifest.roundId = 'a2a-github-verify-r1';
+  manifest.requester = { id: 'seoseo', role: 'operator' };
+  manifest.defaults = {
+    intent: 'verify',
+    taskOrigin: 'github',
+    workspace: { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' },
+    terminalBrief: { notificationOwnership: 'parent' },
+    payload: {
+      mode: 'github-verify',
+      repo: 'jinwon-int/a2a-nexus',
+      issue: '#869',
+      readOnlyValidation: true,
+      sourceOnly: true,
+      noLive: true,
+      originBrokerId: 'seoseo',
+      brokerOfRecordId: 'seoseo',
+      operatorFacingOwner: 'parent',
+      workModeDecision: {
+        mode: 'team1',
+        idempotencyKey: 'a2a-github-verify-r1-bangtong',
+        finalizerOwner: 'seoseo',
+        generatedAt: '2026-06-17T00:00:00Z',
+        capacityState: 'healthy',
+        capacitySnapshotSource: 'fixture',
+        capacitySnapshotAt: '2026-06-17T00:00:00Z',
+        sourceOnlyDecision: true,
+        workerDispatchAllowedByThisPacket: false,
+      },
+    },
+  };
+  manifest.lanes[0] = {
+    target: { id: 'bangtong', role: 'analyst' },
+    assignedWorkerId: 'bangtong',
+    message: 'Validate issue #869 with a read-only GitHub verify lane',
+  };
+  return manifest;
+}
+
+test('dry-run rejects GitHub verify lanes missing broker-required schema fields (#869)', async () => {
+  const missingTaskOrigin = makeGitHubVerifyManifest('http://unused');
+  delete missingTaskOrigin.defaults.taskOrigin;
+  const missingTaskOriginOut = await runDispatch(missingTaskOrigin, { dryRun: true });
+  assert.equal(missingTaskOriginOut.exitCode, 1);
+  assert.ok(missingTaskOriginOut.errors.some((e) => /taskOrigin.*github/.test(e)));
+
+  const missingWorkspace = makeGitHubVerifyManifest('http://unused');
+  delete missingWorkspace.defaults.workspace.workspaceId;
+  const missingWorkspaceOut = await runDispatch(missingWorkspace, { dryRun: true });
+  assert.equal(missingWorkspaceOut.exitCode, 1);
+  assert.ok(missingWorkspaceOut.errors.some((e) => /workspace\.workspaceId/.test(e)));
+
+  const missingWorkModeDecision = makeGitHubVerifyManifest('http://unused');
+  delete missingWorkModeDecision.defaults.payload.workModeDecision;
+  const missingWorkModeDecisionOut = await runDispatch(missingWorkModeDecision, { dryRun: true });
+  assert.equal(missingWorkModeDecisionOut.exitCode, 1);
+  assert.ok(missingWorkModeDecisionOut.errors.some((e) => /workModeDecision/.test(e)));
+});
+
+test('dry-run stamps GitHub verify parent-round and ownership metadata (#869)', async () => {
+  const out = await runDispatch(makeGitHubVerifyManifest('http://unused'), { dryRun: true });
+  assert.equal(out.exitCode, 0);
+  const lane = out.lanes[0];
+  assert.equal(lane.taskOrigin, 'github');
+  assert.deepEqual(lane.workspace, { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' });
+  assert.equal(lane.parentRoundId, 'a2a-github-verify-r1');
+  assert.equal(lane.parentRoundTotal, 1);
+  assert.equal(lane.parentRoundOrder, 1);
+  assert.equal(lane.payload.parentRoundId, 'a2a-github-verify-r1');
+  assert.equal(lane.payload.parentRoundTotal, 1);
+  assert.equal(lane.payload.parentRoundOrder, 1);
+  assert.equal(lane.payload.operatorFacingOwner, 'parent');
+  assert.deepEqual(lane.terminalBrief, { notificationOwnership: 'parent' });
+});
+
 // ─── runDispatch: live (mock broker) ─────────────────────────────────────────
+
+test('GitHub verify dispatch POST includes top-level schema/readback fields (#869)', async () => {
+  const seenBodies = [];
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      seenBodies.push(body);
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    const out = await runDispatch(makeGitHubVerifyManifest(broker.url), { fetchImpl: fetch, secret: SECRET, verify: true });
+    assert.equal(out.exitCode, 0);
+    assert.equal(seenBodies.length, 1);
+    const body = seenBodies[0];
+    assert.equal(body.taskOrigin, 'github');
+    assert.deepEqual(body.workspace, { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' });
+    assert.equal(body.assignedWorkerId, 'bangtong');
+    assert.equal(body.parentRoundId, 'a2a-github-verify-r1');
+    assert.equal(body.parentRoundTotal, 1);
+    assert.equal(body.parentRoundOrder, 1);
+    assert.deepEqual(body.terminalBrief, { notificationOwnership: 'parent' });
+    assert.equal(body.payload.parentRoundId, 'a2a-github-verify-r1');
+    assert.equal(out.verify.rows[0].state, 'queued');
+  } finally {
+    await broker.close();
+  }
+});
 
 test('all lanes 201 -> exit 0, all created', async () => {
   const broker = await startMockBroker({
