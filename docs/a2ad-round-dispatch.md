@@ -56,6 +56,28 @@ appears nowhere in the tool.
 - Each lane's payload is auto-stamped with `parentRoundId` (= `roundId`),
   `parentRoundTotal` (= `lanes.length`), and `parentRoundOrder` (1-based) unless
   the manifest sets those fields explicitly.
+- Each create-task body is also auto-stamped with top-level `parentRoundId`,
+  `parentRoundTotal`, and `parentRoundOrder` so brokers that validate round
+  metadata outside `payload` see the same values.
+
+### GitHub verify / read-only validation lanes
+
+For `payload.mode` equal to `github-verify`, `github-read-only-validation`, or
+`read-only-analysis`, dry-run validates the broker-required GitHub task contract
+before any `POST /tasks` call:
+
+- `taskOrigin: "github"` at lane/defaults level;
+- `workspace.nodeId` and `workspace.workspaceId` at lane/defaults level;
+- `payload.workModeDecision` with `mode` of `team1` or `hybrid`, stable
+  `idempotencyKey`, finalizer/capacity fields, `sourceOnlyDecision: true`, and
+  `workerDispatchAllowedByThisPacket: false`;
+- `payload.originBrokerId`, `payload.brokerOfRecordId`, and
+  `payload.operatorFacingOwner`;
+- `terminalBrief.notificationOwnership` at lane/defaults level.
+
+The dispatch body passes those fields through at top level and `--verify`
+re-fetches the created task by id, giving a deterministic readback gate without
+printing secrets.
 
 ### Deterministic lane ids (idempotency)
 
@@ -70,7 +92,9 @@ For each lane the CLI issues a sequential `POST /tasks` (one at a time, to avoid
 the queue-drain stampede) with:
 
 - Body (`CreateTaskRequest`): `{ id, intent, requester:{id,kind,role},
-  target:{id,kind,role}, assignedWorkerId?, message, payload }`.
+  target:{id,kind,role}, assignedWorkerId?, message, payload,
+  parentRoundId, parentRoundTotal, parentRoundOrder, taskOrigin?, workspace?,
+  terminalBrief? }`.
 - Headers: `x-a2a-edge-secret`, `x-a2a-requester-id`, `x-a2a-requester-role`.
 
 Confirmation reads use `GET /tasks/:id` with the same auth headers.
@@ -145,9 +169,10 @@ secret is never written to stdout or stderr.
 against a local `node:http` mock broker, including: all-201 → exit 0; one-500 →
 exit 1 with the other lanes still attempted; `503 queue_drain_timeout` with and
 without a confirming `GET`; the `202 {durable:false}` shape; duplicate →
-`already-exists`; dry-run rejection of duplicate lane ids and empty messages; and
-a child-process assertion that the secret and the forbidden banner never appear in
-output.
+`already-exists`; dry-run rejection of duplicate lane ids, empty messages, invalid
+source bundles, and incomplete GitHub verify manifests; POST passthrough of
+GitHub verify top-level schema fields; and a child-process assertion that the
+secret and the forbidden banner never appear in output.
 
 ```bash
 npm run dispatch:round:test

@@ -88,6 +88,62 @@ function validateSourceOnlyBundle(errors, tag, payload) {
   });
 }
 
+const GITHUB_VERIFY_MODES = new Set([
+  'github-verify',
+  'github-read-only-validation',
+  'read-only-analysis',
+]);
+
+function isGitHubVerifyPayload(payload) {
+  if (!isPlainObject(payload)) return false;
+  return hasText(payload.mode) && GITHUB_VERIFY_MODES.has(payload.mode.trim());
+}
+
+function mergeObjectField(defaults, lane, field) {
+  const fromLane = lane?.[field];
+  const fromDefault = defaults?.[field];
+  if (fromLane !== undefined) return fromLane;
+  if (fromDefault !== undefined) return fromDefault;
+  return undefined;
+}
+
+function validateGitHubVerifyLane(errors, tag, lane, defaults, payload, derived) {
+  if (!isGitHubVerifyPayload(payload)) return;
+
+  if (derived.taskOrigin !== 'github') {
+    errors.push(`${tag}.taskOrigin must be "github" for GitHub verify/read-only validation lanes`);
+  }
+
+  if (!isPlainObject(derived.workspace)) {
+    errors.push(`${tag}.workspace.nodeId and ${tag}.workspace.workspaceId are required for GitHub verify lanes`);
+  } else {
+    if (!hasText(derived.workspace.nodeId)) errors.push(`${tag}.workspace.nodeId is required for GitHub verify lanes`);
+    if (!hasText(derived.workspace.workspaceId)) errors.push(`${tag}.workspace.workspaceId is required for GitHub verify lanes`);
+  }
+
+  const wmd = payload.workModeDecision;
+  if (!isPlainObject(wmd)) {
+    errors.push(`${tag}.payload.workModeDecision is required for GitHub verify lanes`);
+  } else {
+    if (!['team1', 'hybrid'].includes(wmd.mode)) errors.push(`${tag}.payload.workModeDecision.mode must be team1 or hybrid`);
+    for (const field of ['idempotencyKey', 'finalizerOwner', 'generatedAt', 'capacityState', 'capacitySnapshotSource', 'capacitySnapshotAt']) {
+      if (!hasText(wmd[field])) errors.push(`${tag}.payload.workModeDecision.${field} is required`);
+    }
+    if (wmd.sourceOnlyDecision !== true) errors.push(`${tag}.payload.workModeDecision.sourceOnlyDecision must be true`);
+    if (wmd.workerDispatchAllowedByThisPacket !== false) {
+      errors.push(`${tag}.payload.workModeDecision.workerDispatchAllowedByThisPacket must be false`);
+    }
+  }
+
+  for (const field of ['originBrokerId', 'brokerOfRecordId', 'operatorFacingOwner']) {
+    if (!hasText(payload[field])) errors.push(`${tag}.payload.${field} is required for GitHub verify lanes`);
+  }
+
+  if (!isPlainObject(derived.terminalBrief) || !hasText(derived.terminalBrief.notificationOwnership)) {
+    errors.push(`${tag}.terminalBrief.notificationOwnership is required for GitHub verify lanes`);
+  }
+}
+
 /**
  * Derive a deterministic lane id so re-running the same manifest is idempotent.
  */
@@ -164,13 +220,7 @@ function validateManifest(manifest) {
       ...defaultPayload,
       ...lanePayload,
     };
-    validateSourceOnlyBundle(errors, tag, merged);
-
     const laneId = deriveLaneId(roundId, lane, order);
-    if (seenIds.has(laneId)) {
-      errors.push(`${tag} duplicate lane id '${laneId}' (lane ids and derived ids must be unique)`);
-    }
-    seenIds.add(laneId);
 
     // Merge defaults.payload then lane.payload (explicit values win), then
     // auto-stamp parent-round metadata for any field the manifest left unset.
@@ -179,7 +229,22 @@ function validateManifest(manifest) {
     if (merged.parentRoundTotal === undefined) payload.parentRoundTotal = total;
     if (merged.parentRoundOrder === undefined) payload.parentRoundOrder = order;
 
-    lanes.push({
+    const taskOrigin = lane.taskOrigin ?? defaults.taskOrigin;
+    const workspace = mergeObjectField(defaults, lane, 'workspace');
+    const terminalBrief = mergeObjectField(defaults, lane, 'terminalBrief');
+    const parentRoundId = lane.parentRoundId ?? defaults.parentRoundId ?? roundId;
+    const parentRoundTotal = lane.parentRoundTotal ?? defaults.parentRoundTotal ?? total;
+    const parentRoundOrder = lane.parentRoundOrder ?? defaults.parentRoundOrder ?? order;
+
+    validateSourceOnlyBundle(errors, tag, payload);
+    validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
+
+    if (seenIds.has(laneId)) {
+      errors.push(`${tag} duplicate lane id '${laneId}' (lane ids and derived ids must be unique)`);
+    }
+    seenIds.add(laneId);
+
+    const normalized = {
       order,
       id: laneId,
       target: lane.target,
@@ -187,7 +252,14 @@ function validateManifest(manifest) {
       intent,
       message: lane.message,
       payload,
-    });
+      parentRoundId,
+      parentRoundTotal,
+      parentRoundOrder,
+    };
+    if (taskOrigin !== undefined) normalized.taskOrigin = taskOrigin;
+    if (workspace !== undefined) normalized.workspace = workspace;
+    if (terminalBrief !== undefined) normalized.terminalBrief = terminalBrief;
+    lanes.push(normalized);
   });
 
   return { errors, lanes };
@@ -203,8 +275,14 @@ function buildCreateTaskBody(manifest, lane) {
     target: { id: lane.target.id, kind: lane.target.kind ?? 'agent', role: lane.target.role },
     message: lane.message,
     payload: lane.payload,
+    parentRoundId: lane.parentRoundId,
+    parentRoundTotal: lane.parentRoundTotal,
+    parentRoundOrder: lane.parentRoundOrder,
   };
   if (hasText(lane.assignedWorkerId)) body.assignedWorkerId = lane.assignedWorkerId;
+  if (lane.taskOrigin !== undefined) body.taskOrigin = lane.taskOrigin;
+  if (lane.workspace !== undefined) body.workspace = lane.workspace;
+  if (lane.terminalBrief !== undefined) body.terminalBrief = lane.terminalBrief;
   return body;
 }
 
@@ -456,7 +534,22 @@ async function runDispatch(manifest, opts = {}) {
       exitCode: 0,
       mode: 'dry-run',
       errors: [],
-      lanes: lanes.map((l) => ({ order: l.order, id: l.id, target: l.target.id, intent: l.intent, payload: l.payload })),
+      lanes: lanes.map((l) => {
+        const planned = {
+          order: l.order,
+          id: l.id,
+          target: l.target.id,
+          intent: l.intent,
+          payload: l.payload,
+          parentRoundId: l.parentRoundId,
+          parentRoundTotal: l.parentRoundTotal,
+          parentRoundOrder: l.parentRoundOrder,
+        };
+        if (l.taskOrigin !== undefined) planned.taskOrigin = l.taskOrigin;
+        if (l.workspace !== undefined) planned.workspace = l.workspace;
+        if (l.terminalBrief !== undefined) planned.terminalBrief = l.terminalBrief;
+        return planned;
+      }),
       results: [],
       summary: null,
       verify: null,
