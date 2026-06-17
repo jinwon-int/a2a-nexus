@@ -23,7 +23,7 @@ import { hasText, normalizeUrl } from './a2a-routing-shared.mjs';
 
 // ─── Per-node fields that must match the team/fleet expectation ──────────────
 
-const CHECK_COLUMNS = ['team', 'brokerUrl', 'service', 'root', 'revision', 'auth', 'active'];
+const CHECK_COLUMNS = ['team', 'brokerUrl', 'service', 'root', 'revision', 'runnerImage', 'auth', 'active'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,9 @@ function validateExpectedInventory(expected) {
   if (!hasText(expected.expectedService)) errors.push('expected.expectedService is required');
   if (!hasText(expected.expectedRoot)) errors.push('expected.expectedRoot is required');
   if (!hasText(expected.expectedRevision)) errors.push('expected.expectedRevision is required');
+  if (expected.expectedRunnerImage != null && !hasText(expected.expectedRunnerImage)) {
+    errors.push('expected.expectedRunnerImage must be a non-empty string when provided');
+  }
   return errors;
 }
 
@@ -87,6 +90,9 @@ function validateObservedList(observed) {
     // secret on a node is real routing evidence that the auth check must flag.
     if (entry.edgeSecretSha256 != null && typeof entry.edgeSecretSha256 !== 'string') {
       errors.push(`observed[${index}].edgeSecretSha256 must be a string when present`);
+    }
+    if (entry.runnerImage != null && typeof entry.runnerImage !== 'string') {
+      errors.push(`observed[${index}].runnerImage must be a string when present`);
     }
   });
   return errors;
@@ -160,12 +166,25 @@ function evaluateFleet(expected, observed) {
       violations.push({ node, field: 'revision', reason: `revision '${obs.revision}' != expected '${expected.expectedRevision}'` });
     }
 
+    const expectedRunnerImage = expected.expectedRunnerImage;
+    checks.runnerImage = true;
+    if (hasText(expectedRunnerImage)) {
+      checks.runnerImage = obs.runnerImage === expectedRunnerImage;
+      if (!checks.runnerImage) {
+        violations.push({
+          node,
+          field: 'runnerImage',
+          reason: `Docker runner image '${obs.runnerImage || 'MISSING'}' != expected '${expectedRunnerImage}' (sync A2A_DOCKER_RUNNER_IMAGE with the intended runner artifact tag before restart)`,
+        });
+      }
+    }
+
     checks.active = obs.active === true;
     if (!checks.active) {
       violations.push({ node, field: 'active', reason: `worker is not active (active=${JSON.stringify(obs.active)})` });
     }
 
-    const rowOk = checks.brokerUrl && checks.auth && checks.service && checks.root && checks.revision && checks.active;
+    const rowOk = checks.brokerUrl && checks.auth && checks.service && checks.root && checks.revision && checks.runnerImage && checks.active;
     rows.push({
       node,
       team: nodeCfg.team,
@@ -173,6 +192,7 @@ function evaluateFleet(expected, observed) {
       service: checks.service ? 'ok' : 'MISMATCH',
       root: exemptRoot ? 'exempt' : (checks.root ? 'ok' : 'MISMATCH'),
       revision: checks.revision ? 'ok' : 'MISMATCH',
+      runnerImage: !hasText(expectedRunnerImage) ? 'not-checked' : (checks.runnerImage ? 'ok' : 'MISMATCH'),
       auth: checks.auth ? 'ok' : 'MISMATCH',
       active: checks.active ? 'yes' : 'NO',
       ok: rowOk,
@@ -194,8 +214,8 @@ function evaluateFleet(expected, observed) {
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 function renderTable(rows) {
-  const headers = ['NODE', 'TEAM', 'BROKER', 'SERVICE', 'ROOT', 'REVISION', 'AUTH', 'ACTIVE'];
-  const data = rows.map((r) => [r.node, r.team, r.brokerUrl, r.service, r.root, r.revision, r.auth, r.active]);
+  const headers = ['NODE', 'TEAM', 'BROKER', 'SERVICE', 'ROOT', 'REVISION', 'RUNNER_IMAGE', 'AUTH', 'ACTIVE'];
+  const data = rows.map((r) => [r.node, r.team, r.brokerUrl, r.service, r.root, r.revision, r.runnerImage, r.auth, r.active]);
   const widths = headers.map((h, i) => Math.max(h.length, ...data.map((d) => String(d[i]).length)));
   const fmt = (cols) => cols.map((c, i) => String(c).padEnd(widths[i])).join('  ').trimEnd();
   const lines = [fmt(headers), widths.map((w) => '-'.repeat(w)).join('  ')];
@@ -224,7 +244,7 @@ function renderTextReport(result, { forced }) {
   }
 
   if (result.ok) {
-    lines.push('VERDICT: PASS — all nodes match their team broker, auth, service, root, revision, and are active');
+    lines.push('VERDICT: PASS — all nodes match their team broker, auth, service, root, revision, optional runner image, and are active');
   } else if (forced) {
     lines.push('VERDICT: FORCED-PAST-VIOLATIONS — exiting 0 despite the violations above (--force)');
   } else {
@@ -254,12 +274,13 @@ const COLLECT_ONELINER = [
   "const env = sh('systemctl show -p Environment --value ' + unit);",
   "const pick = (k) => { const m = env.match(new RegExp(k + '=([^\\\\s]+)')); return m ? m[1] : ''; };",
   "const brokerUrl = pick('BROKER_URL');",
+  "const runnerImage = pick('A2A_DOCKER_RUNNER_IMAGE');",
   "const secret = process.env.EDGE_SECRET || pick('EDGE_SECRET');",
   "const edgeSecretSha256 = secret ? crypto.createHash('sha256').update(secret).digest('hex') : '';",
   "let revision = '';",
   "try { revision = (require(root + '/dist/build-info.json').revision) || ''; } catch {}",
   "const active = sh('systemctl is-active ' + unit) === 'active';",
-  "process.stdout.write(JSON.stringify({ node, brokerUrl, edgeSecretSha256, service: unit, root, revision, active }) + '\\n');",
+  "process.stdout.write(JSON.stringify({ node, brokerUrl, runnerImage, edgeSecretSha256, service: unit, root, revision, active }) + '\\n');",
   'NODE',
 ].join('\n');
 
