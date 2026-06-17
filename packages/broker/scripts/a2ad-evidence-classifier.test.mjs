@@ -191,3 +191,98 @@ test('CLI succeeds when minimum substantive evidence is present', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('read-only validation repo mutations are classified as evidence-contract blockers (#868)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'yukson',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      details: {
+        stdout: [
+          'read_only_validation_changed_repo',
+          'exitCode=4',
+          'A read-only github-verify lane attempted to write docs/validation/a2a.md',
+        ].join('\n'),
+      },
+    },
+  });
+  assert.equal(item.classification, 'read_only_validation_changed_repo');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.blockers.join('\n'), /read-only evidence contract/i);
+});
+
+test('docker runner missing PR/Done/Block evidence is handler artifact failure, not substantive evidence (#868)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'bangtong',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.',
+      },
+    },
+  });
+  assert.equal(item.classification, 'handler_artifact_failure');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.blockers.join('\n'), /canonical evidence/i);
+});
+
+test('GitHub comment ledger without substantive findings is classified as runner ledger only (#868)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'soonwook',
+    status: 'succeeded',
+    result: {
+      output: {
+        github: {
+          outcome: 'done',
+          commentLedger: {
+            entries: [{ kind: 'start', url: 'https://github.com/owner/repo/issues/1#issuecomment-1' }],
+            disclaimer: 'GitHub comments are evidence ledger entries, not ACK, read receipt, visibility proof, or operator approval.',
+          },
+        },
+      },
+    },
+  });
+  assert.equal(item.classification, 'runner_ledger_only');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.blockers.join('\n'), /ledger/i);
+});
+
+test('CLI can emit finalizer Markdown table for mixed evidence (#868)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'a2ad-evidence-classifier-'));
+  try {
+    const input = join(dir, 'results.json');
+    await writeFile(input, JSON.stringify([
+      { workerId: 'bangtong', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
+      { workerId: 'yukson', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
+      { workerId: 'nosuk', output: 'Recommendation: staged GO; Risk: routing drift; Evidence ref: source and tests; Implementation: add classifier test; CI: node --test.' },
+    ], null, 2));
+    const result = spawnSync(process.execPath, [script, '--input', input, '--markdown'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\| worker \| classification \| counts \| blocker \|/);
+    assert.match(result.stdout, /bangtong \| handler_artifact_failure/);
+    assert.match(result.stdout, /yukson \| read_only_validation_changed_repo/);
+    assert.match(result.stdout, /nosuk \| substantive/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('bundle classifier accepts broker polling result objects with items arrays (#868)', () => {
+  const report = classifyEvidenceBundle({
+    runId: 'a2a-skill-guards-open-issues-20260617T110315Z-866',
+    items: [
+      { worker: 'bangtong', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
+      { worker: 'yukson', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
+    ],
+  });
+  assert.equal(report.counts.handler_artifact_failure, 1);
+  assert.equal(report.counts.read_only_validation_changed_repo, 1);
+  assert.equal(report.classifications[0].workerId, 'bangtong');
+  assert.equal(report.classifications[1].workerId, 'yukson');
+});
