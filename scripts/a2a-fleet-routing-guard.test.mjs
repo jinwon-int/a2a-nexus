@@ -145,6 +145,26 @@ test('stale revision fails', () => {
   assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'revision'));
 });
 
+// ─── Docker runner image/env drift ───────────────────────────────────────────
+
+test('stale Docker runner image fails even when worker revision matches', () => {
+  const result = evaluateFleet(
+    makeExpected({ expectedRunnerImage: 'a2a-docker-runner-hermes:c0ffee1' }),
+    makeObserved({ soonwook: obs('soonwook', 'team2', { runnerImage: 'a2a-docker-runner-hermes:deadbee' }) }),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'runnerImage'));
+});
+
+test('missing Docker runner image fails when expected runner image is configured', () => {
+  const result = evaluateFleet(
+    makeExpected({ expectedRunnerImage: 'a2a-docker-runner-hermes:c0ffee1' }),
+    makeObserved({ bangtong: obs('bangtong', 'team1', { runnerImage: '' }) }),
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((v) => v.node === 'bangtong' && v.field === 'runnerImage'));
+});
+
 // ─── Active ──────────────────────────────────────────────────────────────────
 
 test('inactive worker fails', () => {
