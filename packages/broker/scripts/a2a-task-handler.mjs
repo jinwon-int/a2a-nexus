@@ -218,6 +218,7 @@ function buildRunnerTask(task, env = process.env) {
 const GITHUB_PATCH_TASK_MODES = new Set(["github-propose-patch", "github-issue-instruction"]);
 const GITHUB_READ_ONLY_VALIDATION_MODES = new Set([
   "github-verify",
+  "github-readonly-validation",
   "github-read-only-validation",
   "read-only-validation",
   "github-libero-validation",

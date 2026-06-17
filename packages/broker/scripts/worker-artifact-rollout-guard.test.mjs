@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -10,6 +10,7 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const guardPath = join(testDir, 'worker-artifact-rollout-guard.mjs');
 
 const handlerSource = `
+import { resolveWorkerModelInputs } from './worker-model-policy.mjs';
 const HANDLER_VERSION = '0.2.12';
 const sourceSha256 = 'computed';
 export const BUILD_INFO = {
@@ -23,6 +24,10 @@ export const BUILD_INFO = {
 };
 `;
 
+const workerModelPolicySource = `
+export function resolveWorkerModelInputs() { return { model: 'minimax-m3', fromPayload: false }; }
+`;
+
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
@@ -33,12 +38,16 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   const files = {
     sourceHandler: join(scripts, 'a2a-task-handler.mjs'),
     compatHandler: join(handlers, 'a2a-task-handler.mjs'),
+    sourceWorkerModelPolicy: join(scripts, 'worker-model-policy.mjs'),
+    compatWorkerModelPolicy: join(handlers, 'worker-model-policy.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
   };
 
   writeFileSync(files.sourceHandler, handlerSource);
   writeFileSync(files.compatHandler, handlerSource);
+  writeFileSync(files.sourceWorkerModelPolicy, workerModelPolicySource);
+  writeFileSync(files.compatWorkerModelPolicy, workerModelPolicySource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
 
@@ -74,4 +83,14 @@ test('deployed guard fails closed when handler executable bit drifts across scri
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, false);
   assert.equal(output.results.some((r) => r.guard === 'artifact-executable-parity' && r.ok === false), true);
+});
+
+test('deployed guard fails closed when handler transitive support module is missing from handlers compat path', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatWorkerModelPolicy);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
 });
