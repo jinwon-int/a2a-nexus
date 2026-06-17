@@ -599,38 +599,75 @@ resolve_hermes_native_model() {
   node <<'A2A_RESOLVE_HERMES_NATIVE_MODEL'
 const fs = require("node:fs");
 const candidates = [];
+function stripMatchingQuotes(value) {
+  if (value.length >= 2) {
+    const first = value.charCodeAt(0);
+    const last = value.charCodeAt(value.length - 1);
+    if ((first === 39 && last === 39) || (first === 34 && last === 34)) {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
 function add(value) {
   if (typeof value !== "string") return;
-  const compact = value.trim();
+  const compact = stripMatchingQuotes(value.trim());
   if (compact) candidates.push(compact);
+}
+function hasSecretAssignmentMarker(value) {
+  const lower = value.toLowerCase();
+  let compact = "";
+  for (const ch of lower) {
+    if (ch !== " " && ch !== String.fromCharCode(9)) compact += ch;
+  }
+  return compact.includes("token=") || compact.includes("token:")
+    || compact.includes("secret=") || compact.includes("secret:")
+    || compact.includes("password=") || compact.includes("password:")
+    || compact.includes("apikey=") || compact.includes("apikey:")
+    || compact.includes("api_key=") || compact.includes("api_key:")
+    || compact.includes("api-key=") || compact.includes("api-key:");
+}
+function safeCandidate(value) {
+  const compact = typeof value === "string" ? value.trim() : "";
+  if (!compact) return false;
+  if (compact.includes(String.fromCharCode(10)) || compact.includes(String.fromCharCode(13))) return false;
+  if (hasSecretAssignmentMarker(compact)) return false;
+  const canonical = compact === "deepseek-v4-flash" ? "deepseek/deepseek-v4-flash" : compact;
+  if (canonical === "deepseek/deepseek-v4-flash") return false;
+  return true;
 }
 try {
   const envText = fs.readFileSync("/root/.hermes/.env", "utf8");
-  for (const line of envText.split(/\r?\n/)) {
-    const match = /^\s*(?:export\s+)?(?:A2A_HERMES_MODEL|HERMES_MODEL|MODEL)=(.*)\s*$/.exec(line);
-    if (!match) continue;
-    add(match[1].trim().replace(/^['\"]|['\"]$/g, ""));
+  for (const rawLine of envText.split(String.fromCharCode(10))) {
+    const trimmed = rawLine.replace(String.fromCharCode(13), "").trim();
+    const line = trimmed.startsWith("export ") ? trimmed.slice(7).trimStart() : trimmed;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const name = line.slice(0, eq).trim();
+    if (!["A2A_HERMES_MODEL", "HERMES_MODEL", "MODEL"].includes(name)) continue;
+    add(line.slice(eq + 1));
   }
 } catch {}
 try {
   const yaml = fs.readFileSync("/root/.hermes/config.yaml", "utf8");
   let provider = "";
   let model = "";
-  for (const line of yaml.split(/\r?\n/)) {
-    const clean = line.replace(/\s+#.*$/, "");
-    let match = /^\s*model\s*:\s*['\"]?([^'\"#\s][^#]*?)['\"]?\s*$/.exec(clean);
-    if (match && !model) model = match[1].trim();
-    match = /^\s*provider\s*:\s*['\"]?([^'\"#\s][^#]*?)['\"]?\s*$/.exec(clean);
-    if (match && !provider) provider = match[1].trim();
+  for (const rawLine of yaml.split(String.fromCharCode(10))) {
+    const noComment = rawLine.split("#", 1)[0].trim();
+    const colon = noComment.indexOf(":");
+    if (colon < 0) continue;
+    const key = noComment.slice(0, colon).trim();
+    const value = stripMatchingQuotes(noComment.slice(colon + 1).trim());
+    if (key === "model" && !model) model = value;
+    if (key === "provider" && !provider) provider = value;
   }
-  if (model && provider && !model.includes("/") && !/^(openai|anthropic|google|xai|minimax|deepseek)$/i.test(model)) add(provider + "/" + model);
+  if (model && provider && !model.includes("/") && !["openai", "anthropic", "google", "xai", "minimax", "deepseek"].includes(model.toLowerCase())) add(provider + "/" + model);
   add(model);
 } catch {}
-const selected = candidates.find((value) => !/(token|secret|password|api[_-]?key)\s*[:=]/i.test(value) && !value.includes("\n"));
+const selected = candidates.find(safeCandidate);
 if (selected) process.stdout.write(selected);
 A2A_RESOLVE_HERMES_NATIVE_MODEL
 }
-
 if [ -z "\${A2A_HERMES_MODEL:-}" ] && [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" = "native" ]; then
   native_model="$(resolve_hermes_native_model || true)"
   if [ -z "$native_model" ]; then
@@ -867,11 +904,25 @@ resolve_openclaw_native_model() {
   node <<'A2A_RESOLVE_OPENCLAW_NATIVE_MODEL'
 const fs = require("node:fs");
 const configPath = "/root/.openclaw/openclaw.json";
+function hasSecretAssignmentMarker(value) {
+  const lower = value.toLowerCase();
+  let compact = "";
+  for (const ch of lower) {
+    if (ch !== " " && ch !== String.fromCharCode(9)) compact += ch;
+  }
+  return compact.includes("token=") || compact.includes("token:")
+    || compact.includes("secret=") || compact.includes("secret:")
+    || compact.includes("password=") || compact.includes("password:")
+    || compact.includes("apikey=") || compact.includes("apikey:")
+    || compact.includes("api_key=") || compact.includes("api_key:")
+    || compact.includes("api-key=") || compact.includes("api-key:");
+}
 function clean(value) {
   if (typeof value !== "string") return "";
   const compact = value.trim();
-  if (!compact || compact.includes("\n")) return "";
-  if (/(token|secret|password|api[_-]?key)\\s*[:=]/i.test(compact)) return "";
+  if (!compact) return "";
+  if (compact.includes(String.fromCharCode(10)) || compact.includes(String.fromCharCode(13))) return "";
+  if (hasSecretAssignmentMarker(compact)) return "";
   return compact;
 }
 function modelFrom(entry) {
@@ -887,7 +938,6 @@ try {
 } catch {}
 A2A_RESOLVE_OPENCLAW_NATIVE_MODEL
 }
-
 if [ -z "\${A2A_OPENCLAW_MODEL:-}" ] && [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" = "native" ]; then
   native_model="$(resolve_openclaw_native_model || true)"
   if [ -z "$native_model" ]; then

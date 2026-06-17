@@ -1,14 +1,70 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { Script } from "node:vm";
 import { loadConfig, loadEnvFile, mergeRunnerEnvFile, validateRunnerConfig } from "./config.js";
 import type { RunnerConfig } from "./types.js";
 
 const baseEnv = {
   A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT: "1",
 };
+
+function extractNodeHeredoc(script: string, marker: string): string {
+  const startMarker = `node <<'${marker}'\n`;
+  const start = script.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing ${marker} start marker`);
+  const bodyStart = start + startMarker.length;
+  const end = script.indexOf(`\n${marker}`, bodyStart);
+  assert.notEqual(end, -1, `missing ${marker} end marker`);
+  return script.slice(bodyStart, end);
+}
+
+function assertNodeScriptParses(source: string): void {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-node-check-"));
+  try {
+    const file = join(dir, "script.cjs");
+    writeFileSync(file, source);
+    execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+type ResolverFiles = Record<string, string>;
+
+function runResolverScript(source: string, files: ResolverFiles, env: Record<string, string> = {}): string {
+  let stdout = "";
+  const fakeFs = {
+    readFileSync(path: string, encoding: string) {
+      assert.equal(encoding, "utf8");
+      if (!Object.hasOwn(files, path)) {
+        const error = new Error(`ENOENT: no such file or directory, open '${path}'`) as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }
+      return files[path];
+    },
+  };
+  const script = new Script(source);
+  script.runInNewContext({
+    require(name: string) {
+      if (name === "node:fs") return fakeFs;
+      throw new Error(`unexpected require: ${name}`);
+    },
+    process: {
+      env,
+      stdout: {
+        write(value: string) {
+          stdout += value;
+        },
+      },
+    },
+  });
+  return stdout;
+}
 
 test("loadEnvFile parses service-style runner env files without shell execution", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
@@ -472,6 +528,39 @@ test("Hermes patch profile can opt into native model source without hardcoding D
   assert.doesNotMatch(config.commandScript ?? "", /export A2A_HERMES_MODEL='deepseek\/deepseek-v4-flash'/);
 });
 
+test("Hermes native model resolver heredoc parses and ignores unsupported flash model", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
+  });
+  const resolver = extractNodeHeredoc(config.commandScript ?? "", "A2A_RESOLVE_HERMES_NATIVE_MODEL");
+
+  assertNodeScriptParses(resolver);
+  assert.doesNotMatch(resolver, /split\(\/\\r\?\\n\//);
+  assert.match(resolver, /String\.fromCharCode\(10\)/);
+  assert.match(resolver, /deepseek\/deepseek-v4-flash/);
+  assert.equal(runResolverScript(resolver, {
+    "/root/.hermes/.env": [
+      "A2A_HERMES_MODEL=deepseek-v4-flash",
+      "HERMES_MODEL=token = should-not-be-a-model",
+      "MODEL=apiKey: should-not-be-a-model",
+    ].join("\n"),
+    "/root/.hermes/config.yaml": [
+      "provider: openai",
+      "model: gpt-5.5",
+    ].join("\n"),
+  }), "openai/gpt-5.5");
+  assert.equal(runResolverScript(resolver, {
+    "/root/.hermes/.env": [
+      "A2A_HERMES_MODEL=deepseek/deepseek-v4-flash",
+      "HERMES_MODEL=secret : should-not-be-a-model",
+      "MODEL=apikey=should-not-be-a-model",
+    ].join("\n"),
+    "/root/.hermes/config.yaml": "model: api-key: should-not-be-a-model\n",
+  }), "");
+});
+
 test("OpenClaw patch profile defaults command timeout to 60 minutes", async () => {
   const config = await loadConfig({
     ...baseEnv,
@@ -521,6 +610,38 @@ test("OpenClaw patch profile can opt into native model source without hardcoding
   assert.match(config.commandScript ?? "", /error=openclaw_native_model_unresolved/);
   assert.match(config.commandScript ?? "", /model_source=native/);
   assert.doesNotMatch(config.commandScript ?? "", /export A2A_OPENCLAW_MODEL='openai-codex\/gpt-5\.5'/);
+});
+
+test("OpenClaw native model resolver heredoc parses", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
+  });
+  const resolver = extractNodeHeredoc(config.commandScript ?? "", "A2A_RESOLVE_OPENCLAW_NATIVE_MODEL");
+
+  assertNodeScriptParses(resolver);
+  assert.match(resolver, /String\.fromCharCode\(10\)/);
+  assert.equal(runResolverScript(resolver, {
+    "/root/.openclaw/openclaw.json": JSON.stringify({
+      agents: {
+        list: [
+          { id: "main", model: { primary: "apiKey = should-not-be-a-model" } },
+          { id: "review", model: { primary: "deepseek/deepseek-v4-pro" } },
+        ],
+        defaults: { model: { primary: "openai-codex/gpt-5.5" } },
+      },
+    }),
+  }), "openai-codex/gpt-5.5");
+  assert.equal(runResolverScript(resolver, {
+    "/root/.openclaw/openclaw.json": JSON.stringify({
+      agents: {
+        list: [{ id: "main", model: { primary: "password : should-not-be-a-model" } }],
+        defaults: { model: { primary: "token=should-not-be-a-model" } },
+      },
+      defaults: { model: "api_key: should-not-be-a-model" },
+    }),
+  }), "");
 });
 
 test("loadConfig honors explicit Docker network override", async () => {
