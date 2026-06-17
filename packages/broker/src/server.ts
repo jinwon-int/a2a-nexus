@@ -117,7 +117,6 @@ import type {
   WorkerView,
   A2AWorkerEnvironment,
   A2APartyRole,
-  A2AExchangeIntent,
 } from "./core/types.js";
 import type { DecisionDialecticPatchV1, DecisionDialecticPhase } from "./decision-dialectic/types.js";
 import {
@@ -360,26 +359,6 @@ import {
   extractTerminalBriefSidecarDryRunStartApprovalRequestPacket,
 } from "./core/terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.js";
 import {
-  buildA2AWorkerSubagentOrchestrationPolicy,
-  extractA2AWorkerSubagentPolicyInput,
-} from "./core/worker-subagent-orchestration-policy.js";
-import {
-  classifyTaskComplexity,
-  type TaskComplexityInput as ComplexityOrchestrationTaskComplexityInput,
-} from "./core/task-complexity-classifier.js";
-import {
-  buildComplexityOrchestrationRecommendation,
-  type ComplexityOrchestrationRecommendationPacket,
-} from "./core/complexity-orchestration-recommendation.js";
-import {
-  buildFinalizerApprovalEnvelopeDraft,
-  type FinalizerApprovalEnvelopeDraftPacket,
-} from "./core/complexity-finalizer-approval-envelope-draft.js";
-import {
-  buildComplexityExecutionPlanDraft,
-  extractEnvelopeFromExecutionPlan,
-} from "./core/complexity-execution-plan-draft.js";
-import {
   buildBrokerCleanupPlan,
   executeBrokerCleanupPlan,
   validateCleanupExecution,
@@ -417,6 +396,7 @@ import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalByIdRequest, handleProposalsListRequest } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
+import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
   toWorkerView,
@@ -3002,75 +2982,15 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, response);
       }
 
-      if (req.method === "POST" && path === "/workers/subagent-orchestration/plan") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator", "analyst", "researcher", "live-trader"], "worker_subagent_orchestration.plan");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let input;
-        try {
-          input = extractA2AWorkerSubagentPolicyInput(body);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid worker subagent orchestration policy input";
-          throw new BrokerError("bad_request", message);
-        }
-        const packet = buildA2AWorkerSubagentOrchestrationPolicy(input);
-        return sendJson(res, 200, packet, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/complexity-orchestration/recommendation") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator", "analyst", "researcher", "live-trader"], "complexity_orchestration.recommendation");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let input: ComplexityOrchestrationTaskComplexityInput;
-        try {
-          const rawIntent = body?.intent;
-          if (typeof rawIntent !== "string" || rawIntent.length === 0) {
-            throw new TypeError("missing or invalid 'intent' field");
-          }
-          const intent = rawIntent as A2AExchangeIntent;
-          input = {
-            intent,
-            targetEnvironment: body?.targetEnvironment as ComplexityOrchestrationTaskComplexityInput["targetEnvironment"],
-            policyContext: body?.policyContext as ComplexityOrchestrationTaskComplexityInput["policyContext"],
-            referenceCount: typeof body?.referenceCount === "number" ? body?.referenceCount : undefined,
-            artifactCount: typeof body?.artifactCount === "number" ? body?.artifactCount : undefined,
-            turnCount: typeof body?.turnCount === "number" ? body?.turnCount : undefined,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid complexity orchestration recommendation input";
-          throw new BrokerError("bad_request", message);
-        }
-        const classification = classifyTaskComplexity(input);
-        const packet = buildComplexityOrchestrationRecommendation(classification);
-        return sendJson(res, 200, packet, {
-          "cache-control": "no-store",
-        });
-      }
-
-      if (req.method === "POST" && path === "/complexity-execution-plan/draft") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator", "analyst", "researcher", "live-trader"], "complexity_execution_plan.draft");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        let envelope: FinalizerApprovalEnvelopeDraftPacket;
-        try {
-          if (body?.kind === "a2a-broker.complexity-orchestration-recommendation-packet") {
-            envelope = buildFinalizerApprovalEnvelopeDraft(body as unknown as ComplexityOrchestrationRecommendationPacket);
-          } else {
-            envelope = extractEnvelopeFromExecutionPlan(body);
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "invalid complexity execution plan draft input";
-          throw new BrokerError("bad_request", message);
-        }
-        const packet = buildComplexityExecutionPlanDraft(envelope);
-        return sendJson(res, 200, packet, {
-          "cache-control": "no-store",
-        });
+      if (await handleComplexityOrchestrationRoutesIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (
