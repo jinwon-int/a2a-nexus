@@ -416,11 +416,7 @@ import {
 import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalByIdRequest, handleProposalsListRequest } from "./http/proposals-read.js";
-import {
-  handleExchangeByIdRequest,
-  handleExchangeMessagesRequest,
-  handleExchangesListRequest,
-} from "./http/exchanges-read.js";
+import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import {
   handleWorkersReadRouteIfMatched,
   toWorkerView,
@@ -4478,57 +4474,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, workerView);
       }
 
-      if (req.method === "GET" && path === "/exchanges") {
-        return handleExchangesListRequest({ res, stateStore, broker });
-      }
-
-      if (req.method === "POST" && path === "/exchanges") {
-        const body = await readJson<A2AExchangeRequest>(req);
-        if (!body?.requester?.id || !body?.target?.id || !body?.message) {
-          throw new BrokerError("bad_request", "requester.id, target.id, and message are required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.requester.id, role: body.requester.role },
-            "exchange.create",
-          );
-        }
-        const exchange = broker.startExchange(body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, exchange);
-      }
-
-      if (req.method === "GET" && segments[0] === "exchanges" && segments[1] && segments[2] === "messages") {
-        return handleExchangeMessagesRequest({
-          res,
-          stateStore,
-          broker,
-          exchangeId: segments[1],
-          parentMessageId: optionalString(url.searchParams.get("parentMessageId")),
-          includeDescendants: booleanQueryParam(url, "includeDescendants") ?? false,
-        });
-      }
-
-      if (req.method === "POST" && segments[0] === "exchanges" && segments[1] && segments[2] === "messages") {
-        const body = await readJson<A2AExchangeMessageRequest>(req);
-        if (!body?.actor?.id || !body?.message) {
-          throw new BrokerError("bad_request", "actor.id and message are required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "exchange.message.create",
-          );
-        }
-        const message = broker.addExchangeMessage(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, message);
-      }
-
-      if (req.method === "GET" && segments[0] === "exchanges" && segments[1] && segments.length === 2) {
-        return handleExchangeByIdRequest({ res, stateStore, broker, exchangeId: segments[1] });
+      if (await handleExchangeRoutesIfMatched({
+        method: req.method,
+        path,
+        segments,
+        req,
+        res,
+        url,
+        stateStore,
+        broker,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (req.method === "GET" && path === "/proposals") {
