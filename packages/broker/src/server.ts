@@ -3,9 +3,18 @@ import { createServer, type IncomingMessage, type RequestListener, type Server, 
 import { loadavg, cpus } from "node:os";
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
 import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
-import { sanitizeBrokerId, sanitizeBuildToken } from "./build-metadata-sanitize.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
+import {
+  resolveBrokerId,
+  resolveBrokerRetentionPolicy,
+  resolveHotRuntimeLimits,
+  resolveIntegerOption,
+  resolveStringOption,
+  resolveBooleanEnv,
+  type BrokerHotRuntimeLimits,
+  type BrokerRuntimeHotLimitOptions,
+} from "./broker-runtime-config.js";
 
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
@@ -16,7 +25,6 @@ import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, spe
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
   BrokerError,
-  DEFAULT_BROKER_RETENTION_POLICY,
   DEFAULT_MAX_REQUEUE_ATTEMPTS,
   DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
   InMemoryA2ABroker,
@@ -46,11 +54,6 @@ import {
 import {
   CURRENT_BROKER_STATE_VERSION,
   DEFAULT_BROKER_STATE_MAX_BYTES,
-  DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS,
-  DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS,
-  DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
-  DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS,
-  DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS,
   JsonFileBrokerStateStore,
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
@@ -1840,7 +1843,7 @@ function resolveA2AHttpSignatureWorkerAuthMode(value: string | undefined): A2AHt
   throw new Error("A2A_HTTP_SIGNATURE_WORKER_AUTH must be one of: off, optional, strict");
 }
 
-export interface BrokerServerOptions {
+export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   host?: string;
   port?: number;
   serviceName?: string;
@@ -1920,16 +1923,6 @@ export interface BrokerServerOptions {
   persistenceQueueAckTimeoutMs?: number;
   retentionPolicy?: Partial<BrokerRetentionPolicy>;
   maxSnapshotBytes?: number;
-  /** Max non-terminal task rows to hydrate from SQLite hot tables. Env: `BROKER_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS`. */
-  maxHotRuntimeNonTerminalTasks?: number;
-  /** Max terminal task rows to hydrate from SQLite hot tables; active tasks always hydrate. Env: `BROKER_HOT_RUNTIME_MAX_TERMINAL_TASKS`. */
-  maxHotRuntimeTerminalTasks?: number;
-  /** Max audit rows to hydrate from SQLite hot tables. Env: BROKER_HOT_RUNTIME_MAX_AUDIT_EVENTS. */
-  maxHotRuntimeAuditEvents?: number;
-  /** Max heartbeat audit rows retained in SQLite hot tables. Env: BROKER_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS. */
-  maxHotRuntimeHeartbeatAuditEvents?: number;
-  /** Max terminal outbox rows to hydrate from SQLite hot tables. Env: `BROKER_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS`. */
-  maxHotRuntimeTerminalOutboxEvents?: number;
   trustedProxy?: boolean;
   staleReaperEnabled?: boolean;
   staleReaperIntervalSec?: number;
@@ -5252,14 +5245,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   };
 }
 
-export interface BrokerHotRuntimeLimits {
-  maxNonTerminalTasks: number;
-  maxTerminalTasks: number;
-  maxAuditEvents: number;
-  maxHeartbeatAuditEvents: number;
-  maxTerminalOutboxEvents: number;
-}
-
 /**
  * Default keepAliveTimeout for the HTTP server (62s). Chosen to exceed the default
  * 30s worker heartbeat interval so that heartbeat TCP connections survive between
@@ -5273,177 +5258,6 @@ const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
  * headersTimeout > keepAliveTimeout or server.listen() throws an error.
  */
 const HEADERS_TIMEOUT_MARGIN_MS = 10000;
-
-const DEFAULT_BROKER_HOT_RUNTIME_LIMITS: BrokerHotRuntimeLimits = {
-  maxNonTerminalTasks: DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
-  maxTerminalTasks: DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS,
-  maxAuditEvents: DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS,
-  maxHeartbeatAuditEvents: DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS,
-  maxTerminalOutboxEvents: DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS,
-};
-
-function resolveHotRuntimeLimits(
-  options: BrokerServerOptions,
-): BrokerHotRuntimeLimits {
-  return {
-    maxNonTerminalTasks: Math.max(
-      0,
-      resolveIntegerOption(
-        options.maxHotRuntimeNonTerminalTasks,
-        process.env.BROKER_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
-        DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxNonTerminalTasks,
-      ),
-    ),
-    maxTerminalTasks: Math.max(
-      0,
-      resolveIntegerOption(
-        options.maxHotRuntimeTerminalTasks,
-        process.env.BROKER_HOT_RUNTIME_MAX_TERMINAL_TASKS,
-        DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxTerminalTasks,
-      ),
-    ),
-    maxAuditEvents: Math.max(
-      0,
-      resolveIntegerOption(
-        options.maxHotRuntimeAuditEvents,
-        process.env.BROKER_HOT_RUNTIME_MAX_AUDIT_EVENTS,
-        DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxAuditEvents,
-      ),
-    ),
-    maxHeartbeatAuditEvents: Math.max(
-      0,
-      resolveIntegerOption(
-        options.maxHotRuntimeHeartbeatAuditEvents,
-        process.env.BROKER_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS,
-        Math.min(
-          DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxAuditEvents,
-          DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxHeartbeatAuditEvents,
-        ),
-      ),
-    ),
-    maxTerminalOutboxEvents: Math.max(
-      0,
-      resolveIntegerOption(
-        options.maxHotRuntimeTerminalOutboxEvents,
-        process.env.BROKER_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS,
-        DEFAULT_BROKER_HOT_RUNTIME_LIMITS.maxTerminalOutboxEvents,
-      ),
-    ),
-  };
-}
-
-function resolveBrokerRetentionPolicy(
-  overrides?: Partial<BrokerRetentionPolicy>,
-): BrokerRetentionPolicy {
-  const maxAuditEvents = resolvePolicyNumber(
-    overrides?.maxAuditEvents,
-    process.env.BROKER_MAX_AUDIT_EVENTS,
-    DEFAULT_BROKER_RETENTION_POLICY.maxAuditEvents,
-  );
-  return {
-    terminalRetentionMs: resolvePolicyNumber(
-      overrides?.terminalRetentionMs,
-      process.env.BROKER_TERMINAL_RETENTION_MS,
-      DEFAULT_BROKER_RETENTION_POLICY.terminalRetentionMs,
-    ),
-    maxTerminalExchanges: resolvePolicyNumber(
-      overrides?.maxTerminalExchanges,
-      process.env.BROKER_MAX_TERMINAL_EXCHANGES,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalExchanges,
-    ),
-    maxTerminalTasks: resolvePolicyNumber(
-      overrides?.maxTerminalTasks,
-      process.env.BROKER_MAX_TERMINAL_TASKS,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTasks,
-    ),
-    maxTerminalProposals: resolvePolicyNumber(
-      overrides?.maxTerminalProposals,
-      process.env.BROKER_MAX_TERMINAL_PROPOSALS,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalProposals,
-    ),
-    inactiveWorkerRetentionMs: resolvePolicyNumber(
-      overrides?.inactiveWorkerRetentionMs,
-      process.env.BROKER_INACTIVE_WORKER_RETENTION_MS,
-      DEFAULT_BROKER_RETENTION_POLICY.inactiveWorkerRetentionMs,
-    ),
-    maxInactiveWorkers: resolvePolicyNumber(
-      overrides?.maxInactiveWorkers,
-      process.env.BROKER_MAX_INACTIVE_WORKERS,
-      DEFAULT_BROKER_RETENTION_POLICY.maxInactiveWorkers,
-    ),
-    auditRetentionMs: resolvePolicyNumber(
-      overrides?.auditRetentionMs,
-      process.env.BROKER_AUDIT_RETENTION_MS,
-      DEFAULT_BROKER_RETENTION_POLICY.auditRetentionMs,
-    ),
-    maxAuditEvents,
-    maxHeartbeatAuditEvents: resolvePolicyNumber(
-      overrides?.maxHeartbeatAuditEvents,
-      process.env.BROKER_MAX_HEARTBEAT_AUDIT_EVENTS,
-      Math.min(maxAuditEvents, DEFAULT_BROKER_RETENTION_POLICY.maxHeartbeatAuditEvents),
-    ),
-    heartbeatAuditSampleIntervalMs: resolvePolicyNumber(
-      overrides?.heartbeatAuditSampleIntervalMs,
-      process.env.BROKER_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
-      DEFAULT_BROKER_RETENTION_POLICY.heartbeatAuditSampleIntervalMs,
-    ),
-  };
-}
-
-function resolveStringOption(
-  explicit: string | undefined,
-  fromEnv: string | undefined,
-  fallback?: string,
-): string | undefined {
-  if (typeof explicit === "string" && explicit.trim()) {
-    return explicit.trim();
-  }
-  if (typeof fromEnv === "string" && fromEnv.trim()) {
-    return fromEnv.trim();
-  }
-  if (typeof fallback === "string" && fallback.trim()) {
-    return fallback.trim();
-  }
-  return undefined;
-}
-
-function resolveIntegerOption(
-  explicit: number | undefined,
-  fromEnv: string | undefined,
-  fallback: number,
-): number {
-  if (typeof explicit === "number" && Number.isFinite(explicit)) {
-    return Math.trunc(explicit);
-  }
-  if (fromEnv !== undefined) {
-    const parsed = Number(fromEnv);
-    if (Number.isFinite(parsed)) {
-      return Math.trunc(parsed);
-    }
-  }
-  return fallback;
-}
-
-function resolveBooleanEnv(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "1" || normalized === "true" || normalized === "yes") {
-    return true;
-  }
-  if (normalized === "0" || normalized === "false" || normalized === "no") {
-    return false;
-  }
-  return fallback;
-}
-
-function resolveBrokerId(explicit: string | undefined, serviceName: string): string {
-  return sanitizeBuildToken(explicit ?? process.env.A2A_BROKER_ID ?? process.env.BROKER_ID ?? serviceName, {
-    fallback: serviceName,
-    unsafeFallback: "redacted",
-  }) ?? serviceName;
-}
 
 function createDefaultStateStore(params: {
   backend: "json-file" | "sqlite";
@@ -5466,21 +5280,6 @@ function createDefaultStateStore(params: {
     });
   }
   return new JsonFileBrokerStateStore(params.stateFile, { maxBytes: params.maxSnapshotBytes });
-}
-
-function resolvePolicyNumber(
-  explicit: number | undefined,
-  fromEnv: string | undefined,
-  fallback: number,
-): number {
-  if (typeof explicit === "number" && Number.isFinite(explicit)) {
-    return Math.max(0, Math.trunc(explicit));
-  }
-  const parsed = Number(fromEnv);
-  if (Number.isFinite(parsed)) {
-    return Math.max(0, Math.trunc(parsed));
-  }
-  return fallback;
 }
 
 function resolvePublicBaseUrl(value: string | undefined): string {
