@@ -543,6 +543,12 @@ export A2A_DOCKER_RUNNER_MODEL_SOURCE=${modelSource}
 A2A_HERMES_DEFAULT_MODEL=${defaultModel}
 if [ -n "\${A2A_HERMES_MODEL:-}" ]; then
   export A2A_HERMES_MODEL
+elif [ -n "\${A2A_OPENCLAW_MODEL:-}" ]; then
+  # Backward-compatible bridge for task-level workerModel overrides. The
+  # normalizer mirrors workerModel to A2A_HERMES_MODEL, but older task payloads
+  # and hand-authored runner env may still only carry A2A_OPENCLAW_MODEL. Honor
+  # that before falling back to the host-generated legacy default (#860).
+  export A2A_HERMES_MODEL="$A2A_OPENCLAW_MODEL"
 elif [ "\${A2A_DOCKER_RUNNER_MODEL_SOURCE}" != "native" ]; then
   export A2A_HERMES_MODEL="$A2A_HERMES_DEFAULT_MODEL"
 fi

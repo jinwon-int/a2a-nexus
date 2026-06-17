@@ -31,8 +31,18 @@ function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean): Record<str
   const env = { ...(task.env ?? {}) };
   const model = normalizeWorkerOverride(task.workerModel, "workerModel");
   const thinking = normalizeWorkerOverride(task.workerThinking, "workerThinking");
-  if (model) env.A2A_OPENCLAW_MODEL = model;
-  if (thinking) env.A2A_OPENCLAW_THINKING = thinking;
+  if (model) {
+    env.A2A_OPENCLAW_MODEL = model;
+    // The Hermes patch profile runs in the same Docker runner pipeline but
+    // reads A2A_HERMES_MODEL. Mirror explicit per-task workerModel overrides
+    // so task-level evidence dispatch cannot be shadowed by stale host runner
+    // defaults such as legacy OPENCLAW_MODEL/deepseek-v4-flash (#860).
+    env.A2A_HERMES_MODEL = model;
+  }
+  if (thinking) {
+    env.A2A_OPENCLAW_THINKING = thinking;
+    env.A2A_HERMES_THINKING = thinking;
+  }
   if (allowNoChanges) env.A2A_RUNNER_ALLOW_NO_CHANGES = "1";
   if (task.readOnlyValidation === true) env.A2A_RUNNER_READ_ONLY_VALIDATION = "1";
   return Object.keys(env).length > 0 ? env : undefined;
