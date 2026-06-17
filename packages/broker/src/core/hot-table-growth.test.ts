@@ -76,6 +76,26 @@ describe("projectHotTableGrowth", () => {
     assert.ok(projection.tables.every((t) => t.severity === "ok"));
   });
 
+  it("uses measured total payload bytes instead of count times max payload for outlier-heavy tables", () => {
+    const outlierHeavy = structuredClone(smallMetrics);
+    outlierHeavy.tables.broker_tasks = {
+      count: 600,
+      maxPayloadBytes: 900_000,
+      totalPayloadBytes: 31_200_000,
+      runtimeLoad: { limit: 2000, loadedCount: 600, skippedCount: 0, activeCount: 25, terminalCount: 575 },
+    };
+
+    const projection = projectHotTableGrowth({ current: outlierHeavy, prior: outlierHeavy });
+    const tasks = projection.tables.find((t) => t.table === "broker_tasks")!;
+
+    assert.equal(tasks.maxPayloadBytes, 900_000);
+    assert.equal(tasks.totalPayloadBytes, 31_200_000);
+    assert.equal(tasks.memoryEstimateBasis, "totalPayloadBytes");
+    assert.equal(tasks.estimatedMemoryBytes, 31_200_000);
+    assert.equal(tasks.severity, "ok");
+    assert.equal(projection.overallSeverity, "ok");
+  });
+
   it("reports ok when all tables are empty", () => {
     const empty: BrokerHotTableLoadMetrics = {
       tables: {
