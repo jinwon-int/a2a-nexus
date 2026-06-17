@@ -3,11 +3,14 @@
 // explicit-context handlers (#645 phase-3 dispatcher migration; follows
 // http/workers-read.ts and http/proposals-read.ts).
 
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/request-security.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
-import type { A2AExchangeMessageRecord, A2AExchangeState } from "../core/types.js";
+import type { A2AExchangeMessageRecord, A2AExchangeMessageRequest, A2AExchangeRequest, A2AExchangeState } from "../core/types.js";
+import { readJson } from "./body.js";
+import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { sendJson } from "./response.js";
 
 interface ThreadedExchangeMessage extends A2AExchangeMessageRecord {
@@ -111,6 +114,16 @@ export interface ExchangesReadContext {
   broker: InMemoryA2ABroker;
 }
 
+export interface ExchangeRoutesContext extends ExchangesReadContext {
+  method: string | undefined;
+  path: string;
+  segments: readonly string[];
+  req: IncomingMessage;
+  url: URL;
+  enforceRequesterIdentity: boolean;
+  requesterIdentity: RequesterIdentity | null;
+}
+
 /** GET /exchanges — list all exchanges. */
 export function handleExchangesListRequest(ctx: ExchangesReadContext): void {
   sendJson(ctx.res, 200, { items: listExchangesForReadPath(ctx.stateStore, ctx.broker) });
@@ -139,4 +152,80 @@ export function handleExchangeMessagesRequest(
     items,
     threads: buildMessageThreads(items),
   });
+}
+
+/** Exchange route dispatcher. Returns true only when an exchange route was handled. */
+export async function handleExchangeRoutesIfMatched(ctx: ExchangeRoutesContext): Promise<boolean> {
+  if (ctx.method === "GET" && ctx.path === "/exchanges") {
+    handleExchangesListRequest(ctx);
+    return true;
+  }
+
+  if (ctx.method === "POST" && ctx.path === "/exchanges") {
+    const body = await readJson<A2AExchangeRequest>(ctx.req);
+    if (!body?.requester?.id || !body?.target?.id || !body?.message) {
+      throw new BrokerError("bad_request", "requester.id, target.id, and message are required");
+    }
+    if (ctx.enforceRequesterIdentity) {
+      assertRequesterMatchesParty(
+        ctx.requesterIdentity,
+        { id: body.requester.id, role: body.requester.role },
+        "exchange.create",
+      );
+    }
+    const exchange = ctx.broker.startExchange(body);
+    await awaitDurablePersistenceAck(ctx.stateStore);
+    sendJson(ctx.res, 201, exchange);
+    return true;
+  }
+
+  if (ctx.method === "GET" && ctx.segments[0] === "exchanges" && ctx.segments[1] && ctx.segments[2] === "messages") {
+    handleExchangeMessagesRequest({
+      ...ctx,
+      exchangeId: ctx.segments[1],
+      parentMessageId: optionalQueryString(ctx.url, "parentMessageId"),
+      includeDescendants: booleanQueryParam(ctx.url, "includeDescendants") ?? false,
+    });
+    return true;
+  }
+
+  if (ctx.method === "POST" && ctx.segments[0] === "exchanges" && ctx.segments[1] && ctx.segments[2] === "messages") {
+    const body = await readJson<A2AExchangeMessageRequest>(ctx.req);
+    if (!body?.actor?.id || !body?.message) {
+      throw new BrokerError("bad_request", "actor.id and message are required");
+    }
+    if (ctx.enforceRequesterIdentity) {
+      assertRequesterMatchesParty(
+        ctx.requesterIdentity,
+        { id: body.actor.id, role: body.actor.role },
+        "exchange.message.create",
+      );
+    }
+    const message = ctx.broker.addExchangeMessage(ctx.segments[1], body);
+    await awaitDurablePersistenceAck(ctx.stateStore);
+    sendJson(ctx.res, 201, message);
+    return true;
+  }
+
+  if (ctx.method === "GET" && ctx.segments[0] === "exchanges" && ctx.segments[1] && ctx.segments.length === 2) {
+    handleExchangeByIdRequest({ ...ctx, exchangeId: ctx.segments[1] });
+    return true;
+  }
+
+  return false;
+}
+
+function optionalQueryString(url: URL, name: string): string | undefined {
+  const value = url.searchParams.get(name);
+  if (!value) return undefined;
+  const normalized = value.trim();
+  return normalized ? normalized : undefined;
+}
+
+function booleanQueryParam(url: URL, name: string): boolean | undefined {
+  const value = url.searchParams.get(name);
+  if (!value) return undefined;
+  if (value === "1" || value.toLowerCase() === "true") return true;
+  if (value === "0" || value.toLowerCase() === "false") return false;
+  throw new BrokerError("bad_request", `${name} must be a boolean`);
 }
