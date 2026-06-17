@@ -36,11 +36,11 @@ export function validateGithubTaskCompletionEvidence(task: TaskRecord, result?: 
   }
 
   if (isGithubReadOnlyValidationTask(task)) {
-    if (!hasGithubNoPatchCompletionEvidence(result) && !hasGithubReviewVerdictEvidence(result)) {
+    if (!hasGithubNoPatchCompletionEvidence(result) && !hasGithubReviewVerdictEvidence(result) && !hasGithubStructuredBlockEvidence(result)) {
       return {
         code: "github_completion_evidence_missing",
         message:
-          "github-origin read-only validation/libero tasks must return Done-comment or Block-comment evidence, or a review verdict (approve/request_changes/comment) with a review body reference; PR-only evidence is reserved for propose_patch tasks",
+          "github-origin read-only validation/libero tasks must return Done-comment or Block-comment evidence, a review verdict (approve/request_changes/comment) with a review body reference, or structured preflight Block evidence; PR-only evidence is reserved for propose_patch tasks",
         details: {
           taskId: task.id,
           taskOrigin: task.taskOrigin,
@@ -52,6 +52,7 @@ export function validateGithubTaskCompletionEvidence(task: TaskRecord, result?: 
             "result.output.blockCommentUrl",
             "result.output.reviewVerdict (+ result.output.reviewBodyUrl/reviewBodyRef)",
             "result.output.review.verdict (+ result.output.review.bodyUrl/bodyRef)",
+            "result.output.analysisStatus=blocked + analysisKind=github_readonly_executor_preflight + blockReason",
           ],
           observedEvidence: summarizeObservedCompletionEvidence(result),
         },
@@ -199,6 +200,23 @@ function hasGithubReviewVerdictEvidence(result?: TaskResult): boolean {
   return isReviewVerdict(output.reviewVerdict) && hasReviewBodyRef(output.reviewBodyUrl ?? output.reviewBodyRef);
 }
 
+// Some read-only GitHub verification lanes are intentionally blocked before a
+// GitHub comment can be produced, for example when the worker has no compatible
+// read-only evidence executor. Treat the bounded preflight block packet as
+// completion evidence so the broker stores the structured Block result instead
+// of converting it into a transport-level task failure (#860).
+function hasGithubStructuredBlockEvidence(result?: TaskResult): boolean {
+  const output = result?.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return false;
+  }
+
+  return output.analysisStatus === "blocked"
+    && output.analysisKind === "github_readonly_executor_preflight"
+    && typeof output.blockReason === "string"
+    && output.blockReason.trim().length > 0;
+}
+
 function isReviewVerdict(value: unknown): boolean {
   return typeof value === "string" && REVIEW_VERDICTS.has(value);
 }
@@ -235,6 +253,9 @@ function summarizeObservedCompletionEvidence(result?: TaskResult): Record<string
     logPath: safeLongDetailValue(output.logPath ?? runner.logPath),
     logUrl: safeLongDetailValue(output.logUrl ?? runner.logUrl),
     workDir: safeLongDetailValue(output.workDir ?? runner.workDir),
+    analysisStatus: safeLongDetailValue(output.analysisStatus),
+    analysisKind: safeLongDetailValue(output.analysisKind),
+    blockReason: safeLongDetailValue(output.blockReason),
   });
 }
 

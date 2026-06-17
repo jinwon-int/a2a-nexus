@@ -70,7 +70,7 @@ test("passes through mode, issueUrl, reportLanguage, and requestedBy", () => {
   assert.ok(task.commands.length > 0);
 });
 
-test("normalizes per-task OpenClaw worker overrides into container env", () => {
+test("normalizes per-task worker overrides into OpenClaw and Hermes container env", () => {
   const task = normalizeTask({
     id: "libero-pro",
     intent: "propose_patch",
@@ -79,6 +79,7 @@ test("normalizes per-task OpenClaw worker overrides into container env", () => {
     env: {
       KEEP_ME: "1",
       A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+      A2A_HERMES_MODEL: "deepseek/deepseek-v4-flash",
     },
     allowNoChanges: true,
     workerModel: "deepseek/deepseek-v4-pro",
@@ -87,7 +88,9 @@ test("normalizes per-task OpenClaw worker overrides into container env", () => {
 
   assert.equal(task.env?.KEEP_ME, "1");
   assert.equal(task.env?.A2A_OPENCLAW_MODEL, "deepseek/deepseek-v4-pro");
+  assert.equal(task.env?.A2A_HERMES_MODEL, "deepseek/deepseek-v4-pro");
   assert.equal(task.env?.A2A_OPENCLAW_THINKING, "high");
+  assert.equal(task.env?.A2A_HERMES_THINKING, "high");
   assert.equal(task.env?.A2A_RUNNER_ALLOW_NO_CHANGES, "1");
   assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, undefined);
 });

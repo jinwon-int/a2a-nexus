@@ -514,6 +514,24 @@ test("Hermes patch profile defaults to the current fleet baseline model (#766)",
   assert.doesNotMatch(config.commandScript ?? "", /A2A_HERMES_DEFAULT_MODEL='deepseek\/deepseek-v4-flash'/);
 });
 
+test("Hermes patch profile bridges task-level OpenClaw model env before legacy default (#860)", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
+  });
+
+  const script = config.commandScript ?? "";
+  assert.match(script, /A2A_HERMES_DEFAULT_MODEL='deepseek\/deepseek-v4-flash'/);
+  assert.ok(script.includes('elif [ -n "${A2A_OPENCLAW_MODEL:-}" ]; then'));
+  assert.ok(script.includes('export A2A_HERMES_MODEL="$A2A_OPENCLAW_MODEL"'));
+  assert.ok(
+    script.indexOf('export A2A_HERMES_MODEL="$A2A_OPENCLAW_MODEL"')
+      < script.indexOf('export A2A_HERMES_MODEL="$A2A_HERMES_DEFAULT_MODEL"'),
+    "task-level A2A_OPENCLAW_MODEL bridge must precede legacy default fallback",
+  );
+});
+
 test("Hermes patch profile can opt into native model source without hardcoding Docker runner fallback", async () => {
   const config = await loadConfig({
     ...baseEnv,

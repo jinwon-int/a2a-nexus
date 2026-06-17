@@ -1249,6 +1249,21 @@ test("GitHub read-only validation requires Done or Block evidence but not a PR",
     { summary: "read-only validation completed", output: { doneCommentUrl: "https://github.com/owner/repo/issues/527#issuecomment-done" } } as any,
   );
   assert.equal(doneEvidenceError, null);
+
+  const structuredBlockError = validateTaskCompletionEvidence(
+    taskRecord,
+    {
+      summary: "github read-only verification blocked: evidence executor is not configured",
+      output: {
+        analysisStatus: "blocked",
+        analysisKind: "github_readonly_executor_preflight",
+        blockReason: "github_readonly_executor_not_configured",
+        executorMode: "auto",
+        dockerScope: "plugin-only",
+      },
+    } as any,
+  );
+  assert.equal(structuredBlockError, null);
 });
 
 test("GitHub read-only review task succeeds on a review verdict without a Done/Block marker (#654)", () => {
