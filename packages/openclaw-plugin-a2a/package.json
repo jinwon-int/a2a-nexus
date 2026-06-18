@@ -2,6 +2,7 @@
   "name": "plugin-a2a",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Standalone A2A broker adapter plugin",
   "scripts": {
@@ -72,6 +73,7 @@
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
+    "LICENSE",
     "docs/agent-card-discovery.md",
     "docs/alpha-boundaries.md",
     "docs/a2a-agent-card.local.json",
