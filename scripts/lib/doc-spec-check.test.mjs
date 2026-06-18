@@ -44,6 +44,7 @@ test('runDocSpecCheck passes a minimal registered doc spec', () => {
       assertions: [
         { path: 'schema', equals: 'demo.v1' },
         { path: 'items', arraySome: { name: 'a', ok: true } },
+        { path: 'items', lengthEquals: 1 },
         { source: 'doc', includes: 'registry' },
         { source: 'currentState', matches: 'state' }
       ],

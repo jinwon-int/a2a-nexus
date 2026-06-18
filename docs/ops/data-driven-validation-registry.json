@@ -133,6 +133,782 @@
         { "source": "currentState", "includes": "ACTIVE_PROVENANCE_MIRROR", "message": "current-state active mirror candidate" }
       ],
       "successMessage": "split repo disposition preflight ok"
-    }
+    },
+{
+      "id": "monorepo-actual-canonical-flip-execution-preflight",
+      "title": "actual canonical flip execution preflight",
+      "fixture": "fixtures/current-state/monorepo-actual-canonical-flip-execution-preflight.json",
+      "doc": "docs/monorepo-actual-canonical-flip-execution-preflight.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+            "name": "check:monorepo-actual-canonical-flip-execution-preflight",
+            "command": "node scripts/check-monorepo-actual-canonical-flip-execution-preflight.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-actual-canonical-flip-execution-preflight",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-actual-canonical-flip-execution-preflight"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-actual-canonical-flip-execution-preflight.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "tracker",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+                  "message": "tracker"
+            },
+            {
+                  "path": "sourceCommit",
+                  "equals": "551a97825697525077ce38777383298c0d775d2d",
+                  "message": "source commit"
+            },
+            {
+                  "path": "priorPackets.executionHandoff",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/568",
+                  "message": "prior execution handoff"
+            },
+            {
+                  "path": "preflightDecision",
+                  "equals": "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT",
+                  "message": "preflight decision"
+            },
+            {
+                  "path": "actualExecutionAuthorization",
+                  "equals": "NO_GO_WAITING_EXPLICIT_FINAL_APPROVAL_REQUIRED",
+                  "message": "actual execution authorization"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "includesAll": [
+                        "packages/broker",
+                        "packages/docker-runner",
+                        "packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "canonical source candidates"
+            },
+            {
+                  "path": "activeRuleset.id",
+                  "equals": 17499616,
+                  "message": "ruleset id"
+            },
+            {
+                  "path": "activeRuleset.enforcement",
+                  "equals": "active",
+                  "message": "ruleset enforcement"
+            },
+            {
+                  "path": "activeRuleset.requiredStatusChecks",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "contracts",
+                        "check"
+                  ],
+                  "message": "required status checks"
+            },
+            {
+                  "path": "a2aEvidence.primaryRound",
+                  "equals": "a2a-actualflip-preflight-20260610T135405Z",
+                  "message": "primary A2A round"
+            },
+            {
+                  "path": "a2aEvidence.supplementalRound",
+                  "equals": "a2a-actualflip-team1-retry-20260610T135812Z",
+                  "message": "supplemental A2A round"
+            },
+            {
+                  "path": "a2aEvidence.usableAnalysisCount",
+                  "min": 6,
+                  "message": "usable analysis count"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "sogyo",
+                        "status": "succeeded"
+                  },
+                  "message": "sogyo evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "nosuk",
+                        "status": "succeeded"
+                  },
+                  "message": "nosuk evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "bangtong",
+                        "status": "succeeded"
+                  },
+                  "message": "bangtong evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "dungae",
+                        "status": "succeeded"
+                  },
+                  "message": "dungae evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "jingun",
+                        "status": "succeeded"
+                  },
+                  "message": "jingun evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "soonwook",
+                        "status": "succeeded"
+                  },
+                  "message": "soonwook evidence"
+            },
+            {
+                  "path": "a2aEvidence.team1UsableWorkers",
+                  "lengthEquals": 3,
+                  "message": "Team1 usable workers"
+            },
+            {
+                  "path": "a2aEvidence.team2UsableWorkers",
+                  "lengthEquals": 3,
+                  "message": "Team2 usable workers"
+            },
+            {
+                  "path": "preflightGates.sourceCommitPinned",
+                  "equals": true,
+                  "message": "preflight gate sourceCommitPinned"
+            },
+            {
+                  "path": "preflightGates.activeRulesetPinned",
+                  "equals": true,
+                  "message": "preflight gate activeRulesetPinned"
+            },
+            {
+                  "path": "preflightGates.requiredChecksPinned",
+                  "equals": true,
+                  "message": "preflight gate requiredChecksPinned"
+            },
+            {
+                  "path": "preflightGates.requiredReviewPinned",
+                  "equals": true,
+                  "message": "preflight gate requiredReviewPinned"
+            },
+            {
+                  "path": "preflightGates.a2aEvidenceRecorded",
+                  "equals": true,
+                  "message": "preflight gate a2aEvidenceRecorded"
+            },
+            {
+                  "path": "preflightGates.rollbackAbortPolicyRecorded",
+                  "equals": true,
+                  "message": "preflight gate rollbackAbortPolicyRecorded"
+            },
+            {
+                  "path": "preflightGates.noLiveBoundaryRecorded",
+                  "equals": true,
+                  "message": "preflight gate noLiveBoundaryRecorded"
+            },
+            {
+                  "path": "preflightGates.finalExecutionApprovalPresent",
+                  "equals": false,
+                  "message": "preflight hold finalExecutionApprovalPresent"
+            },
+            {
+                  "path": "preflightGates.executionRunStarted",
+                  "equals": false,
+                  "message": "preflight hold executionRunStarted"
+            },
+            {
+                  "path": "preflightGates.stateMutationPerformed",
+                  "equals": false,
+                  "message": "preflight hold stateMutationPerformed"
+            },
+            {
+                  "path": "executionRunbook.forbiddenUntilFinalApproval",
+                  "includesAll": [
+                        "github_settings_mutation",
+                        "split_repo_archive_readonly_redirect",
+                        "package_ownership_transfer",
+                        "release_tag_or_github_release",
+                        "npm_publish",
+                        "docker_ghcr_publish",
+                        "deploy_restart",
+                        "db_mutation_or_replay",
+                        "secret_or_credential_movement",
+                        "provider_or_telegram_send",
+                        "terminal_ack_or_replay"
+                  ],
+                  "message": "forbidden until final approval"
+            },
+            {
+                  "path": "executionRunbook.finalApprovalRequiredText",
+                  "equals": "승인: actual canonical flip execution 진행",
+                  "message": "final approval text"
+            },
+            {
+                  "path": "rollbackPolicy.preExecutionRollback",
+                  "matches": "normal PR revert",
+                  "message": "pre-execution rollback"
+            },
+            {
+                  "path": "rollbackPolicy.abortIf",
+                  "minLength": 5,
+                  "message": "abort criteria"
+            },
+            {
+                  "path": "boundaries.sourceOnly",
+                  "equals": true,
+                  "message": "source-only boundary"
+            },
+            {
+                  "path": "boundaries.actualCanonicalFlipExecution",
+                  "equals": false,
+                  "message": "boundary actualCanonicalFlipExecution"
+            },
+            {
+                  "path": "boundaries.githubSettingsMutation",
+                  "equals": false,
+                  "message": "boundary githubSettingsMutation"
+            },
+            {
+                  "path": "boundaries.splitRepoArchiveReadonlyRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoArchiveReadonlyRedirect"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.secretMovement",
+                  "equals": false,
+                  "message": "boundary secretMovement"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "goNoGoFields.preflightPacketAllowed",
+                  "equals": true,
+                  "message": "preflight allowed"
+            },
+            {
+                  "path": "goNoGoFields.actualCanonicalFlipExecutionApproved",
+                  "equals": false,
+                  "message": "execution not approved"
+            },
+            {
+                  "path": "goNoGoFields.finalApprovalRequired",
+                  "equals": true,
+                  "message": "final approval required"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT__EXECUTION_NO_GO_WAITING",
+                  "message": "GO/NO-GO decision"
+            },
+            {
+                  "source": "doc",
+                  "includesAll": [
+                        "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT",
+                        "NO_GO / Waiting",
+                        "finalApprovalRequiredText",
+                        "A2A Evidence",
+                        "Forbidden Until Final Approval",
+                        "Rollback / Abort Policy",
+                        "No-live Boundary"
+                  ],
+                  "message": "doc required text"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "monorepo-actual-canonical-flip-execution-preflight\\.md",
+                  "message": "current-state link"
+            },
+            {
+                  "source": "currentState",
+                  "includes": "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT",
+                  "message": "current-state preflight decision"
+            }
+      ],
+      "successMessage": "actual canonical flip execution preflight ok"
+},
+{
+      "id": "monorepo-canonical-source-flip-execution-handoff",
+      "title": "monorepo canonical source flip execution handoff",
+      "fixture": "fixtures/current-state/monorepo-canonical-source-flip-execution-handoff.json",
+      "doc": "docs/monorepo-canonical-source-flip-execution-handoff.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+            "name": "check:monorepo-canonical-source-flip-execution-handoff",
+            "command": "node scripts/check-monorepo-canonical-source-flip-execution-handoff.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-canonical-source-flip-execution-handoff",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-canonical-source-flip-execution-handoff"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-canonical-source-flip-execution-handoff.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "tracker",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+                  "message": "tracker"
+            },
+            {
+                  "path": "repo",
+                  "equals": "jinwon-int/a2a-nexus",
+                  "message": "repo"
+            },
+            {
+                  "path": "sourceCommit",
+                  "equals": "b8e863d5a251a6603f3caf9329d1bb0dfb5c6fe0",
+                  "message": "source commit"
+            },
+            {
+                  "path": "priorPackets.finalOperatorSignoffCanonicalSourcePacket",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/567",
+                  "message": "prior final operator signoff"
+            },
+            {
+                  "path": "activeRuleset.id",
+                  "equals": 17499616,
+                  "message": "ruleset id"
+            },
+            {
+                  "path": "activeRuleset.enforcement",
+                  "equals": "active",
+                  "message": "ruleset enforcement"
+            },
+            {
+                  "path": "activeRuleset.target",
+                  "equals": "main",
+                  "message": "ruleset target"
+            },
+            {
+                  "path": "activeRuleset.requiredApprovingReviews",
+                  "equals": 1,
+                  "message": "required approving reviews"
+            },
+            {
+                  "path": "activeRuleset.requiredStatusChecks",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "contracts",
+                        "check"
+                  ],
+                  "message": "required status checks"
+            },
+            {
+                  "path": "activeRuleset.bypassActors",
+                  "lengthEquals": 0,
+                  "message": "bypass actors"
+            },
+            {
+                  "path": "handoffDecision",
+                  "equals": "GO_PR_FIRST_SOURCE_ONLY",
+                  "message": "handoff decision"
+            },
+            {
+                  "path": "actualCanonicalFlipExecution",
+                  "equals": "NO_GO_WAITING_SEPARATE_APPROVAL_REQUIRED",
+                  "message": "actual canonical flip execution"
+            },
+            {
+                  "path": "canonicalSourceDeclaration",
+                  "equals": "GO_CANDIDATE_PR_FIRST_SOURCE_ONLY",
+                  "message": "canonical source declaration"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "includesAll": [
+                        "packages/broker",
+                        "packages/docker-runner",
+                        "packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "canonical source candidates"
+            },
+            {
+                  "path": "a2aEvidence.primaryRound",
+                  "equals": "a2a-canonicalflip-20260610T131555Z",
+                  "message": "primary A2A round"
+            },
+            {
+                  "path": "a2aEvidence.supplementalRounds",
+                  "includesAll": [
+                        "a2a-canonicalflip-retry-20260610T132021Z",
+                        "a2a-canonicalflip-sogyo-retry-20260610T132313Z"
+                  ],
+                  "message": "supplemental rounds"
+            },
+            {
+                  "path": "a2aEvidence.usableAnalysisCount",
+                  "min": 5,
+                  "message": "usable analysis count"
+            },
+            {
+                  "path": "a2aEvidence.dissentRecorded",
+                  "equals": true,
+                  "message": "dissent recorded"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "sogyo"
+                  },
+                  "message": "sogyo worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "nosuk"
+                  },
+                  "message": "nosuk worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "bangtong"
+                  },
+                  "message": "bangtong worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "dungae"
+                  },
+                  "message": "dungae worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "jingun"
+                  },
+                  "message": "jingun worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "soonwook"
+                  },
+                  "message": "soonwook worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "sogyo",
+                        "dissent": true
+                  },
+                  "message": "Sogyo dissent evidence"
+            },
+            {
+                  "path": "a2aEvidence.finalizerSynthesis",
+                  "matches": "actual execution-sensitive action",
+                  "message": "finalizer synthesis hold"
+            },
+            {
+                  "path": "goNoGoFields.finalOperatorSignoffPacketMerged",
+                  "equals": true,
+                  "message": "go/no-go finalOperatorSignoffPacketMerged"
+            },
+            {
+                  "path": "goNoGoFields.a2aNexusRulesetActive",
+                  "equals": true,
+                  "message": "go/no-go a2aNexusRulesetActive"
+            },
+            {
+                  "path": "goNoGoFields.requiredReviewEnforced",
+                  "equals": true,
+                  "message": "go/no-go requiredReviewEnforced"
+            },
+            {
+                  "path": "goNoGoFields.requiredChecksNamed",
+                  "equals": true,
+                  "message": "go/no-go requiredChecksNamed"
+            },
+            {
+                  "path": "goNoGoFields.canonicalSourceCandidatesNamed",
+                  "equals": true,
+                  "message": "go/no-go canonicalSourceCandidatesNamed"
+            },
+            {
+                  "path": "goNoGoFields.rollbackAbortOwnerRecorded",
+                  "equals": true,
+                  "message": "go/no-go rollbackAbortOwnerRecorded"
+            },
+            {
+                  "path": "goNoGoFields.sourceOnlyA2aEvidenceRecorded",
+                  "equals": true,
+                  "message": "go/no-go sourceOnlyA2aEvidenceRecorded"
+            },
+            {
+                  "path": "goNoGoFields.handoffPrAllowed",
+                  "equals": true,
+                  "message": "go/no-go handoffPrAllowed"
+            },
+            {
+                  "path": "goNoGoFields.actualCanonicalFlipApproved",
+                  "equals": false,
+                  "message": "go/no-go actualCanonicalFlipApproved"
+            },
+            {
+                  "path": "goNoGoFields.packageOwnershipTransferred",
+                  "equals": false,
+                  "message": "go/no-go packageOwnershipTransferred"
+            },
+            {
+                  "path": "goNoGoFields.splitRepoDispositionExecuted",
+                  "equals": false,
+                  "message": "go/no-go splitRepoDispositionExecuted"
+            },
+            {
+                  "path": "goNoGoFields.releasePublishDeployApproved",
+                  "equals": false,
+                  "message": "go/no-go releasePublishDeployApproved"
+            },
+            {
+                  "path": "goNoGoFields.settingsMutationApproved",
+                  "equals": false,
+                  "message": "go/no-go settingsMutationApproved"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "GO_PR_FIRST_SOURCE_ONLY__EXECUTION_NO_GO_WAITING",
+                  "message": "GO/NO-GO decision"
+            },
+            {
+                  "path": "remainingSeparateApprovals",
+                  "includesAll": [
+                        "actual_canonical_flip_execution",
+                        "split_repo_archive_readonly_redirect",
+                        "package_ownership_transfer",
+                        "release_tag_github_release",
+                        "npm_publish",
+                        "docker_ghcr_publish",
+                        "deploy_restart",
+                        "db_mutation_or_replay",
+                        "secret_or_credential_movement",
+                        "provider_or_telegram_send",
+                        "terminal_ack_or_replay"
+                  ],
+                  "message": "remaining separate approvals"
+            },
+            {
+                  "path": "rollbackPolicy.beforeActualExecution",
+                  "matches": "normal PR revert",
+                  "message": "before-execution rollback"
+            },
+            {
+                  "path": "rollbackPolicy.afterActualExecution",
+                  "matches": "not_defined_here",
+                  "message": "after-execution rollback hold"
+            },
+            {
+                  "path": "rollbackPolicy.destructiveCleanupAllowed",
+                  "equals": false,
+                  "message": "destructive cleanup boundary"
+            },
+            {
+                  "path": "boundaries.sourceOnly",
+                  "equals": true,
+                  "message": "source-only boundary"
+            },
+            {
+                  "path": "boundaries.githubSettingsMutation",
+                  "equals": false,
+                  "message": "boundary githubSettingsMutation"
+            },
+            {
+                  "path": "boundaries.canonicalFlipStateMutation",
+                  "equals": false,
+                  "message": "boundary canonicalFlipStateMutation"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.splitRepoArchiveReadonlyRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoArchiveReadonlyRedirect"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.secretMovement",
+                  "equals": false,
+                  "message": "boundary secretMovement"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "source": "doc",
+                  "includesAll": [
+                        "GO_PR_FIRST_SOURCE_ONLY",
+                        "NO_GO / Waiting",
+                        "PR #567",
+                        "rulesetId = 17499616",
+                        "A2A Evidence",
+                        "Dissent / guardrail",
+                        "Remaining Separate Approvals",
+                        "No-live Boundary"
+                  ],
+                  "message": "doc required text"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "monorepo-canonical-source-flip-execution-handoff\\.md",
+                  "message": "current-state link"
+            },
+            {
+                  "source": "currentState",
+                  "includes": "GO_PR_FIRST_SOURCE_ONLY",
+                  "message": "current-state handoff decision"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "actual canonical flip execution remains separate",
+                  "message": "current-state separate execution wording"
+            }
+      ],
+      "successMessage": "monorepo canonical source flip execution handoff ok"
+}
   ]
 }

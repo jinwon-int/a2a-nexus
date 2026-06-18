@@ -83,7 +83,9 @@ bespoke script body:
    `scripts/lib/doc-spec-check.mjs`.
 4. Put repeated assertions in the registry (`equals`, `includes`, `includesAll`,
    `matches`, `min`, `arraySome`, `arrayEveryEquals`) rather than duplicating
-   `readRel` / `parseJson` / `expect` boilerplate.
+   `readRel` / `parseJson` / `expect` boilerplate. Available primitives
+   include `equals`, `includes`, `includesAll`, `matches`, `min`,
+   `minLength`, `lengthEquals`, `arraySome`, and `arrayEveryEquals`.
 
 This preserves source-backed release checks while moving the repeated validation
 shape into data. It also keeps existing release-gate entries, docs, and issue
