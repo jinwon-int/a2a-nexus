@@ -1991,6 +1991,610 @@
             }
       ],
       "successMessage": "monorepo final operator sign-off matrix ok"
+},
+{
+      "id": "monorepo-branch-protection-approval-packet",
+      "title": "monorepo branch protection approval packet",
+      "fixture": "fixtures/current-state/monorepo-branch-protection-approval-packet.json",
+      "doc": "docs/monorepo-branch-protection-approval-packet.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "readiness": "docs/monorepo-canonical-flip-readiness.md",
+            "workflow": ".github/workflows/ci.yml",
+            "releaseGate": "scripts/release-gate.mjs"
+      },
+      "packageScript": {
+            "name": "check:monorepo-branch-protection-approval-packet",
+            "command": "node scripts/check-monorepo-branch-protection-approval-packet.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-branch-protection-approval-packet",
+            "tier": "approval-gated",
+            "args": [
+                  "run",
+                  "check:monorepo-branch-protection-approval-packet"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-branch-protection-approval-packet.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+                  "message": "parent issue"
+            },
+            {
+                  "path": "operatorApprovalPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+                  "message": "operator approval PR"
+            },
+            {
+                  "path": "operatorApprovalMergeCommit",
+                  "equals": "910a796b9540cb839a8fa4a1148aa38a90694eea",
+                  "message": "operator approval merge commit"
+            },
+            {
+                  "path": "a2aDecisionRound",
+                  "equals": "a2a-branchpacket-20260610T093001Z",
+                  "message": "A2A decision round"
+            },
+            {
+                  "path": "branchProtectionDecision",
+                  "equals": "PACKET_READY_WAITING_SCOPED_APPROVAL",
+                  "message": "branch protection decision"
+            },
+            {
+                  "path": "canonicalFlipDecision",
+                  "equals": "GO_CANDIDATE_PR_FIRST_EXECUTION_SEPARATED",
+                  "message": "canonical flip decision"
+            },
+            {
+                  "path": "settingsChanged",
+                  "equals": false,
+                  "message": "settings changed boundary"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip approval boundary"
+            },
+            {
+                  "path": "packageOwnershipTransferred",
+                  "equals": false,
+                  "message": "package ownership transfer boundary"
+            },
+            {
+                  "path": "liveReadOnlyPosture.repository",
+                  "equals": "jinwon-int/a2a-nexus",
+                  "message": "posture repository"
+            },
+            {
+                  "path": "liveReadOnlyPosture.branch",
+                  "equals": "main",
+                  "message": "posture branch"
+            },
+            {
+                  "path": "liveReadOnlyPosture.branchProtectionApi",
+                  "equals": "404_branch_not_protected",
+                  "message": "branch protection API result"
+            },
+            {
+                  "path": "liveReadOnlyPosture.rulesetsApi",
+                  "equals": "empty_array",
+                  "message": "rulesets API result"
+            },
+            {
+                  "path": "liveReadOnlyPosture.branchProtectionCurrentlyAbsent",
+                  "equals": true,
+                  "message": "branch protection absent"
+            },
+            {
+                  "path": "liveReadOnlyPosture.rulesetsCurrentlyAbsent",
+                  "equals": true,
+                  "message": "rulesets absent"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.pr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+                  "message": "latest CI PR"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.runId",
+                  "equals": "27264318468",
+                  "message": "latest CI run id"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.headCommit",
+                  "equals": "784c2a7f88d55a568e14424a1798dded2963bd21",
+                  "message": "latest CI head commit"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.mergeCommit",
+                  "equals": "910a796b9540cb839a8fa4a1148aa38a90694eea",
+                  "message": "latest CI merge commit"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.passedJobs",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "broker",
+                        "plugin",
+                        "contracts",
+                        "check"
+                  ],
+                  "message": "passed CI jobs"
+            },
+            {
+                  "path": "latestMonorepoCiEvidence.skippedJobs",
+                  "includesAll": [
+                        "docker-runner",
+                        "docs"
+                  ],
+                  "message": "skipped CI jobs"
+            },
+            {
+                  "path": "workflowJobInventory.jobs",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "broker",
+                        "docker-runner",
+                        "plugin",
+                        "contracts",
+                        "docs",
+                        "check"
+                  ],
+                  "message": "workflow job inventory"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}paths-filter:",
+                  "message": "workflow job paths-filter"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}setup:",
+                  "message": "workflow job setup"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}layout:",
+                  "message": "workflow job layout"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}broker:",
+                  "message": "workflow job broker"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}docker-runner:",
+                  "message": "workflow job docker-runner"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}plugin:",
+                  "message": "workflow job plugin"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}contracts:",
+                  "message": "workflow job contracts"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}docs:",
+                  "message": "workflow job docs"
+            },
+            {
+                  "source": "workflow",
+                  "matches": "^\\s{2}check:",
+                  "message": "workflow job check"
+            },
+            {
+                  "path": "requiredCheckCandidate.alwaysRequired",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "contracts",
+                        "check"
+                  ],
+                  "message": "always required checks"
+            },
+            {
+                  "path": "requiredCheckCandidate.pathAwarePackageChecks.broker",
+                  "includes": "packages/broker/**",
+                  "message": "path-aware package check broker"
+            },
+            {
+                  "path": "requiredCheckCandidate.pathAwarePackageChecks.docker-runner",
+                  "includes": "packages/docker-runner/**",
+                  "message": "path-aware package check docker-runner"
+            },
+            {
+                  "path": "requiredCheckCandidate.pathAwarePackageChecks.plugin",
+                  "includes": "packages/openclaw-plugin-a2a/**",
+                  "message": "path-aware package check plugin"
+            },
+            {
+                  "path": "requiredCheckCandidate.docsJobPathFiltered",
+                  "equals": true,
+                  "message": "docs job path-filtered"
+            },
+            {
+                  "path": "requiredCheckCandidate.skippedPackageJobsAreNotFreshnessProof",
+                  "equals": true,
+                  "message": "skipped package jobs are not freshness proof"
+            },
+            {
+                  "path": "requiredCheckCandidate.missingRequiredCheckWouldBlockAllMerges",
+                  "equals": true,
+                  "message": "missing required check blocks merge"
+            },
+            {
+                  "path": "executionPacket.targetRepository",
+                  "equals": "jinwon-int/a2a-nexus",
+                  "message": "execution target repository"
+            },
+            {
+                  "path": "executionPacket.targetBranch",
+                  "equals": "main",
+                  "message": "execution target branch"
+            },
+            {
+                  "path": "executionPacket.settingsMutationNow",
+                  "equals": false,
+                  "message": "settings mutation now boundary"
+            },
+            {
+                  "path": "executionPacket.evaluateOnlyPhase",
+                  "matches": "evaluate",
+                  "message": "evaluate-only phase"
+            },
+            {
+                  "path": "executionPacket.enforcePhase",
+                  "matches": "scoped approval",
+                  "message": "enforce phase approval boundary"
+            },
+            {
+                  "path": "executionPacket.recommendedRulesetName",
+                  "equals": "a2a-nexus-main-required-checks",
+                  "message": "recommended ruleset name"
+            },
+            {
+                  "path": "executionPacket.recommendedRequiredReviewCount",
+                  "equals": 1,
+                  "message": "recommended review count"
+            },
+            {
+                  "path": "executionPacket.adminCoverage",
+                  "equals": "include_admins_unless_operator_explicitly_exempts",
+                  "message": "admin coverage default"
+            },
+            {
+                  "path": "executionPacket.rollbackOwner",
+                  "matches": "seoseo finalizer",
+                  "message": "rollback owner"
+            },
+            {
+                  "path": "executionPacket.criticalPathRulesets",
+                  "includesAll": [
+                        ".github/workflows/**",
+                        "scripts/**",
+                        "packages/**",
+                        "contracts/**",
+                        "fixtures/**",
+                        "scanner/**"
+                  ],
+                  "message": "critical path rulesets"
+            },
+            {
+                  "path": "executionPacket.abortConditions",
+                  "minLength": 5,
+                  "message": "abort conditions recorded"
+            },
+            {
+                  "path": "approvalRequirements",
+                  "includesAll": [
+                        "repository_and_branch_or_ruleset_target",
+                        "required_checks_and_path_aware_package_behavior",
+                        "pr_review_count_and_codeowners_choice",
+                        "stale_review_up_to_date_merge_queue_admin_coverage_choices",
+                        "settings_only_rollback_or_noop_path",
+                        "separate_from_canonical_flip_release_deploy_send_or_credentials",
+                        "fresh_scoped_operator_approval_before_settings_mutation"
+                  ],
+                  "message": "approval requirements"
+            },
+            {
+                  "path": "rollbackPolicy.declinedApproval",
+                  "matches": "no_source_rollback_required",
+                  "message": "declined approval rollback"
+            },
+            {
+                  "path": "rollbackPolicy.misappliedSettings",
+                  "matches": "settings_only_revert",
+                  "message": "misapplied settings rollback"
+            },
+            {
+                  "path": "rollbackPolicy.sourceHistoryRewriteAllowed",
+                  "equals": false,
+                  "message": "rollback sourceHistoryRewriteAllowed"
+            },
+            {
+                  "path": "rollbackPolicy.forcePushAllowed",
+                  "equals": false,
+                  "message": "rollback forcePushAllowed"
+            },
+            {
+                  "path": "rollbackPolicy.packagePublishAllowed",
+                  "equals": false,
+                  "message": "rollback packagePublishAllowed"
+            },
+            {
+                  "path": "rollbackPolicy.splitRepoArchiveAllowed",
+                  "equals": false,
+                  "message": "rollback splitRepoArchiveAllowed"
+            },
+            {
+                  "path": "rollbackPolicy.canonicalOwnershipTransferAllowed",
+                  "equals": false,
+                  "message": "rollback canonicalOwnershipTransferAllowed"
+            },
+            {
+                  "path": "goNoGoFields.latestMonorepoCiGreen",
+                  "equals": true,
+                  "message": "go/no-go latestMonorepoCiGreen"
+            },
+            {
+                  "path": "goNoGoFields.branchProtectionCurrentlyAbsent",
+                  "equals": true,
+                  "message": "go/no-go branchProtectionCurrentlyAbsent"
+            },
+            {
+                  "path": "goNoGoFields.rulesetsCurrentlyAbsent",
+                  "equals": true,
+                  "message": "go/no-go rulesetsCurrentlyAbsent"
+            },
+            {
+                  "path": "goNoGoFields.requiredCheckCandidateRecorded",
+                  "equals": true,
+                  "message": "go/no-go requiredCheckCandidateRecorded"
+            },
+            {
+                  "path": "goNoGoFields.executionPacketRecorded",
+                  "equals": true,
+                  "message": "go/no-go executionPacketRecorded"
+            },
+            {
+                  "path": "goNoGoFields.operatorBranchProtectionApproval",
+                  "equals": false,
+                  "message": "go/no-go operatorBranchProtectionApproval"
+            },
+            {
+                  "path": "goNoGoFields.settingsChanged",
+                  "equals": false,
+                  "message": "go/no-go settingsChanged"
+            },
+            {
+                  "path": "goNoGoFields.canonicalFlipApproved",
+                  "equals": false,
+                  "message": "go/no-go canonicalFlipApproved"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "PACKET_READY_WAITING_SCOPED_APPROVAL",
+                  "message": "go/no-go decision"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundary rulesetChange"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundary permissionChange"
+            },
+            {
+                  "path": "boundaries.codeownersEnforcementChange",
+                  "equals": false,
+                  "message": "boundary codeownersEnforcementChange"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundary splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.splitRepoReadOnly",
+                  "equals": false,
+                  "message": "boundary splitRepoReadOnly"
+            },
+            {
+                  "path": "boundaries.splitRepoRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoRedirect"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundary historicalReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#553",
+                  "message": "doc phrase a2a-nexus#553"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#563",
+                  "message": "doc phrase a2a-nexus#563"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-branchpacket-20260610T093001Z",
+                  "message": "doc phrase a2a-branchpacket-20260610T093001Z"
+            },
+            {
+                  "source": "doc",
+                  "matches": "PACKET_READY",
+                  "message": "doc phrase PACKET_READY"
+            },
+            {
+                  "source": "doc",
+                  "matches": "404 Branch not protected",
+                  "message": "doc phrase 404 Branch not protected"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Required-check Candidate",
+                  "message": "doc phrase Required-check Candidate"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Evaluation / Enforcement Phases",
+                  "message": "doc phrase Evaluation / Enforcement Phases"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Rollback / No-op Path",
+                  "message": "doc phrase Rollback / No-op Path"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Abort Conditions",
+                  "message": "doc phrase Abort Conditions"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc phrase No-live Boundary"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-nexus#553",
+                  "message": "current-state active #553 reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "branch protection",
+                  "message": "current-state branch protection reference"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "GO_CANDIDATE",
+                  "message": "readiness GO_CANDIDATE posture"
+            },
+            {
+                  "source": "releaseGate",
+                  "matches": "monorepo-branch-protection-approval-packet",
+                  "message": "release gate script branch protection check reference"
+            }
+      ],
+      "successMessage": "monorepo branch protection approval packet ok"
 }
   ]
 }
