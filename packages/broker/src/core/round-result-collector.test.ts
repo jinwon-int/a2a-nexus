@@ -503,6 +503,42 @@ describe("collectRoundResults", () => {
     ok(output.closeoutBundle.body.includes("not substantive"));
   });
 
+  it("does not count generic analyze handler success as substantive A2AD evidence (#884)", () => {
+    const nowMs = Date.parse("2026-06-18T05:20:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-open-issue-test",
+      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-generic-analyze",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        targetNodeId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-18T05:18:00.000Z",
+        completedAt: "2026-06-18T05:18:00.000Z",
+        result: makeResult({
+          summary: "generic analyze task accepted by versioned A2A task handler",
+          output: {
+            analysisKind: "builtin_structured",
+            message: "generic analyze task accepted by versioned A2A task handler",
+            payloadKeys: ["sourceBundle", "parentRoundId", "brokerOfRecordId"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.laneState, "blocked");
+    equal(lane.evidenceClass, "wrapper_only");
+    equal(output.summary.completed, 0);
+    equal(output.summary.substantiveEvidence, 0);
+    equal(output.summary.wrapperOnly, 1);
+    ok(output.closeoutBundle.body.includes("wrapper-only"));
+  });
+
   it("classifies analysis bridge EACCES as handler artifact failure", () => {
     const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
     const manifest: RoundManifest = {
