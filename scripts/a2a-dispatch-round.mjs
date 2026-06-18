@@ -94,9 +94,19 @@ const GITHUB_VERIFY_MODES = new Set([
   'read-only-analysis',
 ]);
 
+const GITHUB_PATCH_MODES = new Set([
+  'github-propose-patch',
+]);
+
 function isGitHubVerifyPayload(payload) {
   if (!isPlainObject(payload)) return false;
   return hasText(payload.mode) && GITHUB_VERIFY_MODES.has(payload.mode.trim());
+}
+
+function isGitHubTaskPayload(payload) {
+  if (!isPlainObject(payload) || !hasText(payload.mode)) return false;
+  const mode = payload.mode.trim();
+  return GITHUB_VERIFY_MODES.has(mode) || GITHUB_PATCH_MODES.has(mode);
 }
 
 function mergeObjectField(defaults, lane, field) {
@@ -105,6 +115,25 @@ function mergeObjectField(defaults, lane, field) {
   if (fromLane !== undefined) return fromLane;
   if (fromDefault !== undefined) return fromDefault;
   return undefined;
+}
+
+function deriveWorkspaceForLane(errors, tag, lane, defaults, payload, taskOrigin) {
+  const workspace = mergeObjectField(defaults, lane, 'workspace');
+  if (taskOrigin !== 'github' || !isGitHubTaskPayload(payload) || !isPlainObject(workspace)) {
+    return workspace;
+  }
+
+  const targetId = lane?.target?.id;
+  if (!hasText(targetId)) return workspace;
+
+  if (lane.workspace !== undefined) {
+    if (workspace.nodeId !== targetId) {
+      errors.push(`${tag}.workspace.nodeId must match target.id '${targetId}' for GitHub lanes`);
+    }
+    return workspace;
+  }
+
+  return { ...workspace, nodeId: targetId };
 }
 
 function validateGitHubVerifyLane(errors, tag, lane, defaults, payload, derived) {
@@ -230,7 +259,7 @@ function validateManifest(manifest) {
     if (merged.parentRoundOrder === undefined) payload.parentRoundOrder = order;
 
     const taskOrigin = lane.taskOrigin ?? defaults.taskOrigin;
-    const workspace = mergeObjectField(defaults, lane, 'workspace');
+    const workspace = deriveWorkspaceForLane(errors, tag, lane, defaults, payload, taskOrigin);
     const terminalBrief = mergeObjectField(defaults, lane, 'terminalBrief');
     const parentRoundId = lane.parentRoundId ?? defaults.parentRoundId ?? roundId;
     const parentRoundTotal = lane.parentRoundTotal ?? defaults.parentRoundTotal ?? total;

@@ -67,7 +67,7 @@ For `payload.mode` equal to `github-verify`, `github-read-only-validation`, or
 before any `POST /tasks` call:
 
 - `taskOrigin: "github"` at lane/defaults level;
-- `workspace.nodeId` and `workspace.workspaceId` at lane/defaults level;
+- `workspace.workspaceId` at lane/defaults level, and `workspace.nodeId` matching the target worker node for each dispatched lane. If a GitHub lane inherits `defaults.workspace` and does not set `lane.workspace`, the CLI derives the lane workspace by preserving `workspaceId` and stamping `nodeId` from `lane.target.id`; an explicit lane workspace whose `nodeId` disagrees with the target fails closed before POST.
 - `payload.workModeDecision` with `mode` of `team1` or `hybrid`, stable
   `idempotencyKey`, finalizer/capacity fields, `sourceOnlyDecision: true`, and
   `workerDispatchAllowedByThisPacket: false`;
