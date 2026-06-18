@@ -839,8 +839,10 @@ function isWrapperOnlySuccess(task: TaskRecord): boolean {
   const note = task.result?.note ?? "";
   const summary = task.result?.summary ?? "";
   const outputMessage = safeString(output["message"]);
+  const resultText = collectResultText(task).toLowerCase();
   return (
     note.includes("echo handled task") ||
+    resultText.includes("generic analyze task accepted by versioned a2a task handler") ||
     (Boolean(task.message) && summary === task.message) ||
     (Boolean(task.message) && outputMessage === task.message)
   );
