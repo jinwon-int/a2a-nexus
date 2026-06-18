@@ -5884,6 +5884,1997 @@
             }
       ],
       "successMessage": "monorepo re-entry decision ok"
+},
+{
+      "id": "split-repo-local-demo",
+      "title": "split-repo local demo conformance",
+      "fixture": "fixtures/contract/split-repo-local-demo-evidence.json",
+      "doc": "docs/demo/split-repo-local-demo.md",
+      "extraDocs": {
+            "brokerAgentCardType": "packages/broker/src/a2a/agent-card.ts",
+            "pluginConfigSchema": "packages/openclaw-plugin-a2a/openclaw.plugin.json",
+            "runnerCanonicalTask": "packages/docker-runner/examples/task.canonical.json"
+      },
+      "packageScript": {
+            "name": "check:split-repo-local-demo",
+            "command": "node scripts/check-split-repo-local-demo-conformance.mjs"
+      },
+      "releaseGateStep": {
+            "name": "split-repo-local-demo",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:split-repo-local-demo"
+            ]
+      },
+      "assertions": [
+            {
+                  "source": "doc",
+                  "matches": "Split-Repo Local Demo Quickstart",
+                  "message": "doc title"
+            },
+            {
+                  "source": "doc",
+                  "matches": "no-live public local demo",
+                  "message": "doc no-live scope"
+            },
+            {
+                  "source": "doc",
+                  "matches": "broker AgentCard\\/profile",
+                  "message": "doc broker AgentCard/profile"
+            },
+            {
+                  "source": "doc",
+                  "matches": "plugin diagnostics\\/profile visibility",
+                  "message": "doc plugin diagnostics"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane\\/issues\\/473",
+                  "message": "doc #473"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane\\/issues\\/480",
+                  "message": "doc #480"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-broker\\/issues\\/951",
+                  "message": "doc broker #951"
+            },
+            {
+                  "source": "doc",
+                  "matches": "openclaw-plugin-a2a\\/issues\\/454",
+                  "message": "doc plugin #454"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-docker-runner\\/issues\\/343",
+                  "message": "doc runner #343"
+            },
+            {
+                  "source": "doc",
+                  "matches": "loopback URLs",
+                  "message": "doc loopback URLs"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Do not point it at production",
+                  "message": "doc production warning"
+            },
+            {
+                  "source": "doc",
+                  "matches": "no production deploy",
+                  "message": "doc no deploy"
+            },
+            {
+                  "source": "doc",
+                  "matches": "live provider send",
+                  "message": "doc live provider send boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "repository visibility",
+                  "message": "doc visibility boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "history rewrite",
+                  "message": "doc history rewrite boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "well-known\\/agent-card\\.json",
+                  "message": "doc AgentCard endpoint"
+            },
+            {
+                  "source": "doc",
+                  "matches": "workers\\/capacity",
+                  "message": "doc workers capacity"
+            },
+            {
+                  "source": "doc",
+                  "matches": "openclaw\\.plugin\\.json",
+                  "message": "doc plugin config"
+            },
+            {
+                  "source": "doc",
+                  "matches": "configSchema",
+                  "message": "doc configSchema"
+            },
+            {
+                  "source": "doc",
+                  "matches": "dry-run evidence",
+                  "message": "doc dry-run evidence"
+            },
+            {
+                  "source": "doc",
+                  "matches": "task\\.canonical\\.json",
+                  "message": "doc canonical task"
+            },
+            {
+                  "source": "doc",
+                  "matches": "node dist\\/cli\\.js cleanup --ttl 24h --dry-run",
+                  "message": "doc runner CLI dry-run"
+            },
+            {
+                  "source": "doc",
+                  "matches": "--dry-run",
+                  "message": "doc dry-run flag"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Safety checklist",
+                  "message": "doc safety checklist"
+            },
+            {
+                  "source": "doc",
+                  "matches": "[Nn]o production broker",
+                  "message": "doc production broker safety"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No Gateway[\\s\\S]*restarted",
+                  "message": "doc gateway restart safety"
+            },
+            {
+                  "source": "doc",
+                  "matches": "excluded from the branch",
+                  "message": "doc bootstrap context warning"
+            },
+            {
+                  "path": "schema",
+                  "equals": "a2a.splitRepoLocalDemo.evidence.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "mode",
+                  "equals": "no-live",
+                  "message": "fixture no-live"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/473",
+                  "message": "fixture parent #473"
+            },
+            {
+                  "path": "trackingIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/480",
+                  "message": "fixture tracking #480"
+            },
+            {
+                  "path": "completedIssues.brokerAgentCardProfile",
+                  "equals": "https://github.com/jinwon-int/a2a-broker/issues/951",
+                  "message": "fixture broker #951"
+            },
+            {
+                  "path": "completedIssues.pluginDiagnosticsVisibility",
+                  "equals": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454",
+                  "message": "fixture plugin #454"
+            },
+            {
+                  "path": "completedIssues.dockerRunnerDryRunEvidence",
+                  "equals": "https://github.com/jinwon-int/a2a-docker-runner/issues/343",
+                  "message": "fixture runner #343"
+            },
+            {
+                  "path": "broker.agentCardUrl",
+                  "equals": "http://127.0.0.1:8787/.well-known/agent-card.json",
+                  "message": "broker agent card loopback"
+            },
+            {
+                  "path": "broker.healthUrl",
+                  "equals": "http://127.0.0.1:8787/health",
+                  "message": "broker health loopback"
+            },
+            {
+                  "path": "broker.workersCapacityUrl",
+                  "equals": "http://127.0.0.1:8787/workers/capacity",
+                  "message": "broker capacity loopback"
+            },
+            {
+                  "path": "broker.prod",
+                  "equals": false,
+                  "message": "broker not prod"
+            },
+            {
+                  "path": "broker.baseUrl",
+                  "equals": "http://127.0.0.1:8787",
+                  "message": "broker base loopback"
+            },
+            {
+                  "path": "plugin.prod",
+                  "equals": false,
+                  "message": "plugin not prod"
+            },
+            {
+                  "path": "plugin.configSchemaUrl",
+                  "equals": "packages/openclaw-plugin-a2a/openclaw.plugin.json",
+                  "message": "plugin schema path"
+            },
+            {
+                  "path": "dockerRunner.prod",
+                  "equals": false,
+                  "message": "runner not prod"
+            },
+            {
+                  "path": "dockerRunner.expectedEvidence.schema",
+                  "equals": "a2a.runner.dryRunState.v1",
+                  "message": "runner evidence schema"
+            },
+            {
+                  "path": "replaySafe",
+                  "equals": true,
+                  "message": "fixture replay safe"
+            },
+            {
+                  "path": "noLive",
+                  "equals": true,
+                  "message": "fixture no live"
+            },
+            {
+                  "path": "plugin.diagnostics.expectedCapabilities",
+                  "includesAll": [
+                        "baseUrl",
+                        "edgeSecret",
+                        "requester",
+                        "operatorEvents",
+                        "wakeOnTask"
+                  ],
+                  "message": "plugin expected capabilities"
+            },
+            {
+                  "path": "dockerRunner.expectedEvidence.requiredArtifacts",
+                  "includesAll": [
+                        "task.json",
+                        "run.json",
+                        "manifest.json"
+                  ],
+                  "message": "runner required artifacts"
+            },
+            {
+                  "path": "dockerRunner.taskFixtures",
+                  "minLength": 1,
+                  "message": "runner task fixtures present"
+            },
+            {
+                  "path": "expectedTerminalEvidence",
+                  "includesAll": [
+                        "Done",
+                        "Block"
+                  ],
+                  "message": "terminal evidence states"
+            },
+            {
+                  "path": "safety.historyRewrite",
+                  "equals": false,
+                  "message": "safety historyRewrite"
+            },
+            {
+                  "path": "safety.productionDeploy",
+                  "equals": false,
+                  "message": "safety productionDeploy"
+            },
+            {
+                  "path": "safety.gatewayRestart",
+                  "equals": false,
+                  "message": "safety gatewayRestart"
+            },
+            {
+                  "path": "safety.liveProviderSend",
+                  "equals": false,
+                  "message": "safety liveProviderSend"
+            },
+            {
+                  "path": "safety.dbMutation",
+                  "equals": false,
+                  "message": "safety dbMutation"
+            },
+            {
+                  "path": "safety.terminalOutboxAck",
+                  "equals": false,
+                  "message": "safety terminalOutboxAck"
+            },
+            {
+                  "path": "safety.secretExposure",
+                  "equals": false,
+                  "message": "safety secretExposure"
+            },
+            {
+                  "path": "safety.releasePublish",
+                  "equals": false,
+                  "message": "safety releasePublish"
+            },
+            {
+                  "path": "safety.historyRewrite",
+                  "equals": false,
+                  "message": "safety historyRewrite"
+            },
+            {
+                  "path": "safety.forcePush",
+                  "equals": false,
+                  "message": "safety forcePush"
+            }
+      ],
+      "successMessage": "split-repo local demo conformance ok: doc, fixture, and three-package evidence structure validated"
+},
+{
+      "id": "current-state-no-live-smoke",
+      "title": "current-state no-live integration smoke",
+      "fixture": "fixtures/current-state/no-live-integration-smoke.json",
+      "doc": "docs/current-state-no-live-integration-smoke.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+            "name": "check:current-state-no-live-smoke",
+            "command": "node scripts/check-current-state-no-live-integration-smoke.mjs"
+      },
+      "releaseGateStep": {
+            "name": "current-state-no-live-smoke",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:current-state-no-live-smoke"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.current-state.no-live-integration-smoke.v1",
+                  "message": "schema"
+            },
+            {
+                  "path": "mode",
+                  "equals": "no-live",
+                  "message": "mode no-live"
+            },
+            {
+                  "path": "sourceOnly",
+                  "equals": true,
+                  "message": "source only"
+            },
+            {
+                  "path": "finalizerRequired",
+                  "equals": true,
+                  "message": "finalizer required"
+            },
+            {
+                  "path": "replaySafe",
+                  "equals": true,
+                  "message": "replay safe"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/506",
+                  "message": "parent #506"
+            },
+            {
+                  "path": "trackingIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/508",
+                  "message": "tracking #508"
+            },
+            {
+                  "path": "route.defaultMode",
+                  "equals": "solo",
+                  "message": "default solo"
+            },
+            {
+                  "path": "route.finalizer",
+                  "equals": "seoseo",
+                  "message": "finalizer seoseo"
+            },
+            {
+                  "path": "route.workerMutationAllowed",
+                  "equals": false,
+                  "message": "workers no mutation"
+            },
+            {
+                  "path": "phases",
+                  "lengthEquals": 4,
+                  "message": "exact four phases"
+            },
+            {
+                  "path": "phases",
+                  "arraySome": {
+                        "id": "broker-work-mode-decision",
+                        "ownerRepo": "jinwon-int/a2a-broker",
+                        "liveCallsAllowed": false
+                  },
+                  "message": "phase broker-work-mode-decision"
+            },
+            {
+                  "path": "phases",
+                  "arraySome": {
+                        "id": "docker-runner-readonly-nochange",
+                        "ownerRepo": "jinwon-int/a2a-docker-runner",
+                        "liveCallsAllowed": false
+                  },
+                  "message": "phase docker-runner-readonly-nochange"
+            },
+            {
+                  "path": "phases",
+                  "arraySome": {
+                        "id": "plugin-requester-visible-status",
+                        "ownerRepo": "jinwon-int/openclaw-plugin-a2a",
+                        "liveCallsAllowed": false
+                  },
+                  "message": "phase plugin-requester-visible-status"
+            },
+            {
+                  "path": "phases",
+                  "arraySome": {
+                        "id": "single-finalizer-packet",
+                        "ownerRepo": "jinwon-int/a2a-plane",
+                        "liveCallsAllowed": false
+                  },
+                  "message": "phase single-finalizer-packet"
+            },
+            {
+                  "path": "boundary.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundary.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundary.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundary.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundary.deployRestart",
+                  "equals": false,
+                  "message": "boundary deployRestart"
+            },
+            {
+                  "path": "boundary.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundary.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundary.destructiveCheckoutCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCheckoutCleanup"
+            },
+            {
+                  "path": "requiredFinalizerPacketFields",
+                  "includesAll": [
+                        "tracker",
+                        "repoOwner",
+                        "lane",
+                        "evidenceLink",
+                        "noLiveBoundaryStatus",
+                        "finalizerDecision",
+                        "nextAction",
+                        "wikiOrRunbookFollowup"
+                  ],
+                  "message": "finalizer packet fields"
+            },
+            {
+                  "path": "owningRepoGaps",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-broker"
+                  },
+                  "message": "owning repo gap jinwon-int/a2a-broker"
+            },
+            {
+                  "path": "owningRepoGaps",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-docker-runner"
+                  },
+                  "message": "owning repo gap jinwon-int/a2a-docker-runner"
+            },
+            {
+                  "path": "owningRepoGaps",
+                  "arraySome": {
+                        "repo": "jinwon-int/openclaw-plugin-a2a"
+                  },
+                  "message": "owning repo gap jinwon-int/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "owningRepoGaps",
+                  "arrayNoneMatches": {
+                        "repo": "jinwon-int/agent-olympics"
+                  },
+                  "message": "agent olympics not owning gap"
+            },
+            {
+                  "path": "outOfScopeRepos",
+                  "arraySome": {
+                        "repo": "jinwon-int/agent-olympics"
+                  },
+                  "message": "agent olympics out of scope"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-plane\\#508",
+                  "message": "doc phrase a2a-plane#508"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-plane\\#506",
+                  "message": "doc phrase a2a-plane#506"
+            },
+            {
+                  "source": "doc",
+                  "matches": "fixtures/current\\-state/no\\-live\\-integration\\-smoke\\.json",
+                  "message": "doc phrase fixtures/current-state/no-live-integration-smoke.json"
+            },
+            {
+                  "source": "doc",
+                  "matches": "scripts/check\\-current\\-state\\-no\\-live\\-integration\\-smoke\\.mjs",
+                  "message": "doc phrase scripts/check-current-state-no-live-integration-smoke.mjs"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Workers\\ provide\\ evidence\\ only",
+                  "message": "doc phrase Workers provide evidence only"
+            },
+            {
+                  "source": "doc",
+                  "matches": "single\\ finalizer",
+                  "message": "doc phrase single finalizer"
+            },
+            {
+                  "source": "doc",
+                  "matches": "live\\ A2A\\ dispatch",
+                  "message": "doc phrase live A2A dispatch"
+            },
+            {
+                  "source": "doc",
+                  "matches": "provider\\ or\\ Telegram\\ send",
+                  "message": "doc phrase provider or Telegram send"
+            },
+            {
+                  "source": "doc",
+                  "matches": "DB\\ mutation",
+                  "message": "doc phrase DB mutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Terminal\\ ACK/replay",
+                  "message": "doc phrase Terminal ACK/replay"
+            },
+            {
+                  "source": "doc",
+                  "matches": "deploy/restart",
+                  "message": "doc phrase deploy/restart"
+            },
+            {
+                  "source": "doc",
+                  "matches": "credential\\ movement",
+                  "message": "doc phrase credential movement"
+            },
+            {
+                  "source": "doc",
+                  "matches": "worker\\-owned\\ GitHub\\ mutation",
+                  "message": "doc phrase worker-owned GitHub mutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "repo\\ visibility\\ change",
+                  "message": "doc phrase repo visibility change"
+            },
+            {
+                  "source": "doc",
+                  "matches": "release/tag/npm/Docker\\ publish",
+                  "message": "doc phrase release/tag/npm/Docker publish"
+            },
+            {
+                  "source": "doc",
+                  "matches": "force\\-push/history\\ rewrite",
+                  "message": "doc phrase force-push/history rewrite"
+            },
+            {
+                  "source": "doc",
+                  "matches": "destructive\\ checkout\\ cleanup",
+                  "message": "doc phrase destructive checkout cleanup"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#508",
+                  "message": "current-state #508"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "no-live smoke",
+                  "message": "current-state no-live smoke"
+            },
+            {
+                  "path": "phases.0.requiredAssertions",
+                  "includesAll": [
+                        "sourceOnlyDecision=true",
+                        "workerDispatchAllowedByThisPacket=false",
+                        "finalizerRequired=true",
+                        "team1-or-hybrid-execute-mode requires durable work-mode decision evidence",
+                        "solo decision blocks Team1/hybrid helper execution"
+                  ],
+                  "message": "phase 0 required assertions"
+            },
+            {
+                  "path": "phases.1.requiredAssertions",
+                  "includesAll": [
+                        "readOnlyValidation implies allowNoChanges",
+                        "status=no_changes_allowed is classified as no-change evidence",
+                        "openclaw_no_changes=allowed is classified as no-change evidence",
+                        "read-only no-change lanes do not require PR creation",
+                        "incidental PR URLs are ignored when no-change markers are present"
+                  ],
+                  "message": "phase 1 required assertions"
+            },
+            {
+                  "path": "phases.2.requiredAssertions",
+                  "includesAll": [
+                        "brokerProtocolProfile survives monitor status projection",
+                        "brokerBuildInfo coexists with brokerProtocolProfile",
+                        "Hermes runtimeFlavor and gatewayRequired are sanitized before display",
+                        "provider accepted or message-id evidence is not terminal ACK evidence",
+                        "evidence-only cross-broker projection rows do not notify or ACK",
+                        "operator-facing rows notify once and advance the cursor"
+                  ],
+                  "message": "phase 2 required assertions"
+            },
+            {
+                  "path": "phases.3.requiredAssertions",
+                  "includesAll": [
+                        "one finalizer owns the closeout decision",
+                        "worker outputs are evidence packets, not merge or close authority",
+                        "finalizer matrix lists repo, lane, evidence, risk, decision, and next action",
+                        "Wiki or runbook follow-up is explicitly classified"
+                  ],
+                  "message": "phase 3 required assertions"
+            },
+            {
+                  "path": "boundary.liveA2ADispatch",
+                  "equals": false,
+                  "message": "boundary liveA2ADispatch"
+            },
+            {
+                  "path": "boundary.issueMutationByWorker",
+                  "equals": false,
+                  "message": "boundary issueMutationByWorker"
+            },
+            {
+                  "path": "boundary.releaseTagNpmDockerPublish",
+                  "equals": false,
+                  "message": "boundary releaseTagNpmDockerPublish"
+            },
+            {
+                  "path": "boundary.forcePushOrHistoryRewrite",
+                  "equals": false,
+                  "message": "boundary forcePushOrHistoryRewrite"
+            }
+      ],
+      "successMessage": "current-state no-live integration smoke ok"
+},
+{
+      "id": "readme-canonical-surface",
+      "title": "README canonical surface",
+      "doc": "README.md",
+      "packageScript": {
+            "name": "check:readme-canonical-surface",
+            "command": "node scripts/check-readme-canonical-surface.mjs"
+      },
+      "releaseGateStep": {
+            "name": "readme-canonical-surface",
+            "tier": "public-readiness",
+            "args": [
+                  "run",
+                  "check:readme-canonical-surface"
+            ]
+      },
+      "assertions": [
+            {
+                  "source": "doc",
+                  "matches": "https://github\\.com/jinwon\\-int/a2a\\-nexus/actions/workflows/ci\\.yml/badge\\.svg",
+                  "message": "README CI badge canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*a2a\\-plane/actions/workflows/ci\\.yml/badge\\.svg)[\\s\\S]*$",
+                  "message": "README no legacy a2a-plane badge"
+            },
+            {
+                  "source": "doc",
+                  "matches": "canonical implementation source",
+                  "message": "README canonical implementation source"
+            },
+            {
+                  "source": "doc",
+                  "matches": "active provenance mirror",
+                  "message": "README active provenance mirror"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*current\\ public\\ source\\ layout\\ remains\\ split)[\\s\\S]*$",
+                  "message": "forbid stale README phrase current public source layout remains split"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*split\\ implementation\\ repositories\\ remain\\ canonical)[\\s\\S]*$",
+                  "message": "forbid stale README phrase split implementation repositories remain canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*split\\ repos\\ above\\ remain\\ the\\ public\\ implementation\\ boundaries)[\\s\\S]*$",
+                  "message": "forbid stale README phrase split repos above remain the public implementation boundaries"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*each\\ implementation\\ repository\\ remains\\ canonical\\ for\\ its\\ own)[\\s\\S]*$",
+                  "message": "forbid stale README phrase each implementation repository remains canonical for its own"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*open\\ project\\-level\\ or\\ ambiguous\\ issues\\ in\\ `a2a\\-plane`\\ first)[\\s\\S]*$",
+                  "message": "forbid stale README phrase open project-level or ambiguous issues in `a2a-plane` first"
+            }
+      ],
+      "successMessage": "README canonical surface ok"
+},
+{
+      "id": "monorepo-docs-routing",
+      "title": "monorepo docs routing",
+      "fixture": "fixtures/current-state/monorepo-docs-routing.json",
+      "doc": "docs/migration.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "operators": "docs/operators.md",
+            "developers": "docs/developers.md",
+            "issueRouting": "docs/issue-routing.md",
+            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "readme": "README.md",
+            "codeowners": ".github/CODEOWNERS"
+      },
+      "packageScript": {
+            "name": "check:monorepo-docs-routing",
+            "command": "node scripts/check-monorepo-docs-routing.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-docs-routing",
+            "tier": "public-readiness",
+            "args": [
+                  "run",
+                  "check:monorepo-docs-routing"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-docs-routing.v1",
+                  "message": "schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent #511"
+            },
+            {
+                  "path": "childIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/515",
+                  "message": "child #515"
+            },
+            {
+                  "path": "decision",
+                  "equals": "draft_docs_codeowners_issue_routing_without_canonical_flip",
+                  "message": "decision docs routing only"
+            },
+            {
+                  "path": "canonicalUntilExplicitSignoff",
+                  "equals": "split_repos",
+                  "message": "split repos until signoff"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "no canonical flip"
+            },
+            {
+                  "path": "codeownersDraftOnly",
+                  "equals": true,
+                  "message": "CODEOWNERS draft only"
+            },
+            {
+                  "path": "finalizerAuthorityMovesToWorkers",
+                  "equals": false,
+                  "message": "finalizer not workers"
+            },
+            {
+                  "path": "closedIssuePrTransfer",
+                  "equals": false,
+                  "message": "closed issues stay"
+            },
+            {
+                  "source": "fixture",
+                  "matches": "independent_repository",
+                  "message": "agent olympics independent",
+                  "path": "agentOlympicsBoundary"
+            },
+            {
+                  "path": "sourceLabels",
+                  "includesAll": [
+                        "source:a2a-plane",
+                        "source:a2a-broker",
+                        "source:a2a-docker-runner",
+                        "source:openclaw-plugin-a2a"
+                  ],
+                  "message": "source labels"
+            },
+            {
+                  "path": "forbiddenSourceLabels",
+                  "includesAll": [
+                        "source:agent-olympics"
+                  ],
+                  "message": "forbidden source label"
+            },
+            {
+                  "path": "boundaries.repositoryArchive",
+                  "equals": false,
+                  "message": "boundaries repositoryArchive"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundaries visibilityChange"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundaries releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundaries githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundaries npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundaries dockerPublish"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundaries canonicalFlip"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundaries gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundaries brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundaries dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundaries providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundaries telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundaries terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundaries credentialMovement"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundaries workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "canonical\\ flip",
+                  "message": "doc phrase canonical flip"
+            },
+            {
+                  "source": "operators",
+                  "matches": "Terminal\\ ACK",
+                  "message": "operators phrase Terminal ACK"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "Agent\\ Olympics",
+                  "message": "issueRouting phrase Agent Olympics"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "source:a2a\\-plane",
+                  "message": "issueRouting phrase source:a2a-plane"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "source:a2a\\-broker",
+                  "message": "issueRouting phrase source:a2a-broker"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "source:a2a\\-docker\\-runner",
+                  "message": "issueRouting phrase source:a2a-docker-runner"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "source:openclaw\\-plugin\\-a2a",
+                  "message": "issueRouting phrase source:openclaw-plugin-a2a"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "Do not create or use `source:agent-olympics`",
+                  "message": "issue routing forbids agent olympics"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "/packages/broker/",
+                  "message": "CODEOWNERS /packages/broker/"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "/packages/docker\\-runner/",
+                  "message": "CODEOWNERS /packages/docker-runner/"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "/packages/openclaw\\-plugin\\-a2a/",
+                  "message": "CODEOWNERS /packages/openclaw-plugin-a2a/"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "/contracts/",
+                  "message": "CODEOWNERS /contracts/"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "/fixtures/",
+                  "message": "CODEOWNERS /fixtures/"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "does not move finalizer",
+                  "message": "CODEOWNERS finalizer authority"
+            },
+            {
+                  "path": "boundaries.oldIssuePrTransfer",
+                  "equals": false,
+                  "message": "boundaries oldIssuePrTransfer"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundaries productionDeploy"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundaries branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundaries historyRewrite"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundaries destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundaries workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Package\\ publish",
+                  "message": "migration package publish"
+            },
+            {
+                  "source": "codeowners",
+                  "matches": "CODEOWNERS",
+                  "message": "codeowners file mentions CODEOWNERS"
+            },
+            {
+                  "source": "issueRouting",
+                  "matches": "keep\\ closed\\ issues\\ and\\ PRs\\ in\\ their\\ original\\ repos",
+                  "message": "issue routing closed history policy"
+            }
+      ],
+      "successMessage": "monorepo docs/routing ok"
+},
+{
+      "id": "monorepo-branch-release-policy",
+      "title": "monorepo branch release package policy",
+      "fixture": "fixtures/current-state/monorepo-branch-release-package-policy.json",
+      "doc": "docs/release/monorepo-branch-release-package-policy.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "operators": "docs/operators.md",
+            "migration": "docs/migration.md"
+      },
+      "packageScript": {
+            "name": "check:monorepo-branch-release-policy",
+            "command": "node scripts/check-monorepo-branch-release-package-policy.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-branch-release-policy",
+            "tier": "package-publication",
+            "args": [
+                  "run",
+                  "check:monorepo-branch-release-policy"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-branch-release-package-policy.v1",
+                  "message": "schema"
+            },
+            {
+                  "path": "issue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/517",
+                  "message": "issue #517"
+            },
+            {
+                  "path": "decision",
+                  "equals": "policy_documented_without_settings_or_release_changes",
+                  "message": "policy decision"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "no canonical flip"
+            },
+            {
+                  "path": "branchProtectionChanged",
+                  "equals": false,
+                  "message": "branch protection unchanged"
+            },
+            {
+                  "path": "releaseOrPackagePublished",
+                  "equals": false,
+                  "message": "no release/package publish"
+            },
+            {
+                  "path": "packageInventoryVerified",
+                  "equals": false,
+                  "message": "inventory unverified"
+            },
+            {
+                  "source": "fixture",
+                  "matches": "read:packages",
+                  "message": "package inventory blocker",
+                  "path": "packageInventoryBlocker"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-plane",
+                        "visibility": "PUBLIC",
+                        "defaultBranch": "main",
+                        "rulesets": "none",
+                        "requiredReviews": false,
+                        "historicalTag": "source-public-20260511"
+                  },
+                  "message": "repo policy jinwon-int/a2a-plane"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-broker",
+                        "visibility": "PUBLIC",
+                        "defaultBranch": "main",
+                        "rulesets": "none",
+                        "requiredReviews": false,
+                        "historicalTag": "source-public-20260511"
+                  },
+                  "message": "repo policy jinwon-int/a2a-broker"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-docker-runner",
+                        "visibility": "PUBLIC",
+                        "defaultBranch": "main",
+                        "rulesets": "none",
+                        "requiredReviews": false,
+                        "historicalTag": "source-public-20260511"
+                  },
+                  "message": "repo policy jinwon-int/a2a-docker-runner"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/openclaw-plugin-a2a",
+                        "visibility": "PUBLIC",
+                        "defaultBranch": "main",
+                        "rulesets": "none",
+                        "requiredReviews": false,
+                        "historicalTag": "source-public-20260511"
+                  },
+                  "message": "repo policy jinwon-int/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "releasePolicy.splitReposRemainCanonical",
+                  "equals": true,
+                  "message": "split repos canonical"
+            },
+            {
+                  "path": "releasePolicy.githubReleases",
+                  "equals": "no_go_without_separate_approval",
+                  "message": "releasePolicy.githubReleases"
+            },
+            {
+                  "path": "releasePolicy.npmPublish",
+                  "equals": "no_go_without_separate_approval",
+                  "message": "releasePolicy.npmPublish"
+            },
+            {
+                  "path": "releasePolicy.githubPackages",
+                  "equals": "no_go_until_inventory_verified_and_approved",
+                  "message": "releasePolicy.githubPackages"
+            },
+            {
+                  "path": "releasePolicy.dockerGhcrPublish",
+                  "equals": "no_go_without_separate_approval",
+                  "message": "releasePolicy.dockerGhcrPublish"
+            },
+            {
+                  "path": "requiredBeforeCanonicalFlip",
+                  "includesAll": [
+                        "protected_a2a_plane_main",
+                        "required_root_checks",
+                        "path_aware_package_checks_or_rulesets",
+                        "required_pr_review",
+                        "codeowners_review_enforcement",
+                        "package_inventory_verification",
+                        "operator_final_signoff"
+                  ],
+                  "message": "required before canonical flip"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundaries releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundaries githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundaries npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundaries dockerPublish"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundaries visibilityChange"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundaries canonicalFlip"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundaries gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundaries brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundaries dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundaries providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundaries telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundaries terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundaries credentialMovement"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundaries workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-plane\\#517",
+                  "message": "policy doc phrase a2a-plane#517"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Branch\\ Protection\\ Policy",
+                  "message": "policy doc phrase Branch Protection Policy"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Release\\ And\\ Package\\ Policy",
+                  "message": "policy doc phrase Release And Package Policy"
+            },
+            {
+                  "source": "doc",
+                  "matches": "read:packages",
+                  "message": "policy doc phrase read:packages"
+            },
+            {
+                  "source": "doc",
+                  "matches": "source\\-public\\-20260511",
+                  "message": "policy doc phrase source-public-20260511"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Required\\ checks",
+                  "message": "policy doc phrase Required checks"
+            },
+            {
+                  "source": "doc",
+                  "matches": "CODEOWNERS\\ review",
+                  "message": "policy doc phrase CODEOWNERS review"
+            },
+            {
+                  "source": "doc",
+                  "matches": "GitHub\\ Packages",
+                  "message": "policy doc phrase GitHub Packages"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Docker/GHCR",
+                  "message": "policy doc phrase Docker/GHCR"
+            },
+            {
+                  "source": "doc",
+                  "matches": "canonical\\ flip\\ gate\\ remains\\ closed",
+                  "message": "policy doc phrase canonical flip gate remains closed"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No\\-live\\ Boundary",
+                  "message": "policy doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-plane/main",
+                  "message": "policy doc phrase a2a-plane/main"
+            },
+            {
+                  "source": "doc",
+                  "matches": "404\\ Branch\\ not\\ protected",
+                  "message": "policy doc phrase 404 Branch not protected"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No\\ releases\\ returned",
+                  "message": "policy doc phrase No releases returned"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "#517",
+                  "message": "reentryDoc #517"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "branch protection",
+                  "message": "reentryDoc branch protection"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "release\\/package|release and package|package policy",
+                  "message": "reentryDoc release package policy"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#517",
+                  "message": "currentState #517"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "branch protection",
+                  "message": "currentState branch protection"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "release\\/package|release and package|package policy",
+                  "message": "currentState release package policy"
+            },
+            {
+                  "source": "operators",
+                  "matches": "#517",
+                  "message": "operators #517"
+            },
+            {
+                  "source": "operators",
+                  "matches": "branch protection",
+                  "message": "operators branch protection"
+            },
+            {
+                  "source": "operators",
+                  "matches": "release\\/package|release and package|package policy",
+                  "message": "operators release package policy"
+            },
+            {
+                  "source": "migration",
+                  "matches": "#517",
+                  "message": "migration #517"
+            },
+            {
+                  "source": "migration",
+                  "matches": "branch protection",
+                  "message": "migration branch protection"
+            },
+            {
+                  "source": "migration",
+                  "matches": "release\\/package|release and package|package policy",
+                  "message": "migration release package policy"
+            },
+            {
+                  "path": "boundaries.repositoryImport",
+                  "equals": false,
+                  "message": "boundaries repositoryImport"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundaries rulesetChange"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundaries permissionChange"
+            },
+            {
+                  "path": "boundaries.ghcrPublish",
+                  "equals": false,
+                  "message": "boundaries ghcrPublish"
+            },
+            {
+                  "path": "boundaries.repositoryArchive",
+                  "equals": false,
+                  "message": "boundaries repositoryArchive"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundaries productionDeploy"
+            }
+      ],
+      "successMessage": "monorepo branch/release/package policy ok"
+},
+{
+      "id": "monorepo-release-package-tag-approval",
+      "title": "monorepo release package tag approval",
+      "fixture": "fixtures/current-state/monorepo-release-package-tag-approval-packet.json",
+      "doc": "docs/monorepo-release-package-tag-approval-packet.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "releasePolicy": "docs/release/monorepo-branch-release-package-policy.md",
+            "splitDisposition": "docs/monorepo-split-repo-disposition-rollback.md",
+            "readiness": "docs/monorepo-canonical-flip-readiness.md"
+      },
+      "extraJson": {
+            "brokerPkg": "packages/broker/package.json",
+            "runnerPkg": "packages/docker-runner/package.json",
+            "pluginPkg": "packages/openclaw-plugin-a2a/package.json"
+      },
+      "packageScript": {
+            "name": "check:monorepo-release-package-tag-approval",
+            "command": "node scripts/check-monorepo-release-package-tag-approval-packet.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-release-package-tag-approval",
+            "tier": "package-publication",
+            "args": [
+                  "run",
+                  "check:monorepo-release-package-tag-approval"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-release-package-tag-approval-packet.v1",
+                  "message": "schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent #511"
+            },
+            {
+                  "path": "phase7DispositionPr",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/546",
+                  "message": "phase7 PR"
+            },
+            {
+                  "path": "phase8ReleasePacketIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/547",
+                  "message": "phase8 issue"
+            },
+            {
+                  "path": "phase7MergeCommit",
+                  "equals": "03cb496a145c130186f6d08a3fd9fd12dc04ef31",
+                  "message": "phase7 merge commit"
+            },
+            {
+                  "path": "historicalTagPreserved",
+                  "equals": "source-public-20260511",
+                  "message": "historical tag"
+            },
+            {
+                  "path": "releaseTagDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "releaseTagDecision no-go"
+            },
+            {
+                  "path": "githubReleaseDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "githubReleaseDecision no-go"
+            },
+            {
+                  "path": "npmPublishDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "npmPublishDecision no-go"
+            },
+            {
+                  "path": "dockerPublishDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "dockerPublishDecision no-go"
+            },
+            {
+                  "path": "packageOwnershipDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "packageOwnershipDecision no-go"
+            },
+            {
+                  "path": "canonicalFlipDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "canonicalFlipDecision no-go"
+            },
+            {
+                  "path": "candidatePackages",
+                  "lengthEquals": 3,
+                  "message": "three candidate package surfaces"
+            },
+            {
+                  "path": "candidatePackages",
+                  "arraySome": {
+                        "surface": "broker",
+                        "path": "packages/broker",
+                        "dryRunCommand": "npm --workspace packages/broker run build"
+                  },
+                  "message": "candidate package broker"
+            },
+            {
+                  "path": "candidatePackages",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "path": "packages/docker-runner",
+                        "dryRunCommand": "npm --workspace packages/docker-runner run verify:package"
+                  },
+                  "message": "candidate package docker-runner"
+            },
+            {
+                  "path": "candidatePackages",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "path": "packages/openclaw-plugin-a2a",
+                        "dryRunCommand": "npm --workspace packages/openclaw-plugin-a2a run prepack"
+                  },
+                  "message": "candidate package openclaw-plugin-a2a"
+            },
+            {
+                  "path": "candidatePackages.0.packageName",
+                  "equals": "a2a-broker",
+                  "message": "brokerPkg package name"
+            },
+            {
+                  "path": "candidatePackages.0.version",
+                  "equals": "0.1.0",
+                  "message": "brokerPkg version"
+            },
+            {
+                  "path": "candidatePackages.0.private",
+                  "equals": true,
+                  "message": "brokerPkg private"
+            },
+            {
+                  "path": "candidatePackages.1.packageName",
+                  "equals": "@openclaw/a2a-docker-runner",
+                  "message": "runnerPkg package name"
+            },
+            {
+                  "path": "candidatePackages.1.version",
+                  "equals": "0.1.0",
+                  "message": "runnerPkg version"
+            },
+            {
+                  "path": "candidatePackages.1.private",
+                  "equals": false,
+                  "message": "runnerPkg private"
+            },
+            {
+                  "path": "candidatePackages.2.packageName",
+                  "equals": "plugin-a2a",
+                  "message": "pluginPkg package name"
+            },
+            {
+                  "path": "candidatePackages.2.version",
+                  "equals": "0.1.0",
+                  "message": "pluginPkg version"
+            },
+            {
+                  "path": "candidatePackages.2.private",
+                  "equals": true,
+                  "message": "pluginPkg private"
+            },
+            {
+                  "path": "candidatePackages.1.binNames",
+                  "includesAll": [
+                        "a2a-docker-runner"
+                  ],
+                  "message": "runner bin names"
+            },
+            {
+                  "path": "candidatePackages.0.binNames",
+                  "lengthEquals": 0,
+                  "message": "broker no bin"
+            },
+            {
+                  "path": "candidatePackages.2.binNames",
+                  "lengthEquals": 3,
+                  "message": "plugin bin count"
+            },
+            {
+                  "path": "candidatePackages.0.dockerAssets",
+                  "includesAll": [
+                        "packages/broker/Dockerfile",
+                        "packages/broker/docker-compose.yml"
+                  ],
+                  "message": "broker docker assets"
+            },
+            {
+                  "path": "approvalFields.rollbackOwner",
+                  "equals": "unassigned",
+                  "message": "approval rollbackOwner unassigned"
+            },
+            {
+                  "path": "goNoGoFields.packageInventoryRecorded",
+                  "equals": true,
+                  "message": "go/no-go packageInventoryRecorded"
+            },
+            {
+                  "path": "goNoGoFields.approvalFieldsRecorded",
+                  "equals": true,
+                  "message": "go/no-go approvalFieldsRecorded"
+            },
+            {
+                  "path": "goNoGoFields.dryRunCommandsRecorded",
+                  "equals": true,
+                  "message": "go/no-go dryRunCommandsRecorded"
+            },
+            {
+                  "path": "goNoGoFields.tagApproved",
+                  "equals": false,
+                  "message": "go/no-go tagApproved"
+            },
+            {
+                  "path": "goNoGoFields.githubReleaseApproved",
+                  "equals": false,
+                  "message": "go/no-go githubReleaseApproved"
+            },
+            {
+                  "path": "goNoGoFields.npmPublishApproved",
+                  "equals": false,
+                  "message": "go/no-go npmPublishApproved"
+            },
+            {
+                  "path": "goNoGoFields.dockerPublishApproved",
+                  "equals": false,
+                  "message": "go/no-go dockerPublishApproved"
+            },
+            {
+                  "path": "goNoGoFields.packageOwnershipTransferApproved",
+                  "equals": false,
+                  "message": "go/no-go packageOwnershipTransferApproved"
+            },
+            {
+                  "path": "goNoGoFields.rollbackOwnerAssigned",
+                  "equals": false,
+                  "message": "go/no-go rollbackOwnerAssigned"
+            },
+            {
+                  "path": "goNoGoFields.canonicalFlipApproved",
+                  "equals": false,
+                  "message": "go/no-go canonicalFlipApproved"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "go/no-go decision"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundaries releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundaries githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundaries npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundaries dockerPublish"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundaries packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundaries canonicalFlip"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundaries deploy"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundaries dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundaries providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundaries telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundaries terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundaries credentialMovement"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundaries workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-plane\\#547",
+                  "message": "release doc phrase a2a-plane#547"
+            },
+            {
+                  "source": "doc",
+                  "matches": "NO_GO\\ /\\ Waiting",
+                  "message": "release doc phrase NO_GO / Waiting"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Candidate\\ Package\\ And\\ Artifact\\ Inventory",
+                  "message": "release doc phrase Candidate Package And Artifact Inventory"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Approval\\ Fields",
+                  "message": "release doc phrase Approval Fields"
+            },
+            {
+                  "source": "doc",
+                  "matches": "source\\-public\\-20260511",
+                  "message": "release doc phrase source-public-20260511"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Docker/GHCR",
+                  "message": "release doc phrase Docker/GHCR"
+            },
+            {
+                  "source": "doc",
+                  "matches": "package\\ ownership",
+                  "message": "release doc phrase package ownership"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No\\-live\\ Boundary",
+                  "message": "release doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a\\-broker",
+                  "message": "release doc phrase a2a-broker"
+            },
+            {
+                  "source": "doc",
+                  "matches": "@openclaw/a2a\\-docker\\-runner",
+                  "message": "release doc phrase @openclaw/a2a-docker-runner"
+            },
+            {
+                  "source": "doc",
+                  "matches": "plugin\\-a2a",
+                  "message": "release doc phrase plugin-a2a"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#547",
+                  "message": "currentState #547"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "release\\/package\\/tag|release package tag|tag\\/release|release tags",
+                  "message": "currentState release package tag"
+            },
+            {
+                  "source": "releasePolicy",
+                  "matches": "a2a-plane#547",
+                  "message": "releasePolicy #547"
+            },
+            {
+                  "source": "releasePolicy",
+                  "matches": "release\\/package\\/tag|release package tag|tag\\/release|release tags",
+                  "message": "releasePolicy release package tag"
+            },
+            {
+                  "source": "splitDisposition",
+                  "matches": "a2a-plane#547",
+                  "message": "splitDisposition #547"
+            },
+            {
+                  "source": "splitDisposition",
+                  "matches": "release\\/package\\/tag|release package tag|tag\\/release|release tags",
+                  "message": "splitDisposition release package tag"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "a2a-plane#547",
+                  "message": "readiness #547"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "release\\/package\\/tag|release package tag|tag\\/release|release tags",
+                  "message": "readiness release package tag"
+            },
+            {
+                  "path": "approvalFields.tagName",
+                  "equals": "unassigned",
+                  "message": "approval tagName unassigned"
+            },
+            {
+                  "path": "approvalFields.tagTarget",
+                  "equals": "unassigned",
+                  "message": "approval tagTarget unassigned"
+            },
+            {
+                  "path": "approvalFields.tagSigningPolicy",
+                  "equals": "unassigned",
+                  "message": "approval tagSigningPolicy unassigned"
+            },
+            {
+                  "path": "approvalFields.githubReleaseRepository",
+                  "equals": "unassigned",
+                  "message": "approval githubReleaseRepository unassigned"
+            },
+            {
+                  "path": "approvalFields.githubReleaseMode",
+                  "equals": "unassigned",
+                  "message": "approval githubReleaseMode unassigned"
+            },
+            {
+                  "path": "approvalFields.npmRegistry",
+                  "equals": "unassigned",
+                  "message": "approval npmRegistry unassigned"
+            },
+            {
+                  "path": "approvalFields.npmAccess",
+                  "equals": "unassigned",
+                  "message": "approval npmAccess unassigned"
+            },
+            {
+                  "path": "approvalFields.npmDistTag",
+                  "equals": "unassigned",
+                  "message": "approval npmDistTag unassigned"
+            },
+            {
+                  "path": "approvalFields.npmTokenOwner",
+                  "equals": "unassigned",
+                  "message": "approval npmTokenOwner unassigned"
+            },
+            {
+                  "path": "approvalFields.dockerRegistry",
+                  "equals": "unassigned",
+                  "message": "approval dockerRegistry unassigned"
+            },
+            {
+                  "path": "approvalFields.dockerImageTags",
+                  "equals": "unassigned",
+                  "message": "approval dockerImageTags unassigned"
+            },
+            {
+                  "path": "approvalFields.artifactProvenance",
+                  "equals": "unassigned",
+                  "message": "approval artifactProvenance unassigned"
+            },
+            {
+                  "path": "approvalFields.packageOwnershipOwner",
+                  "equals": "unassigned",
+                  "message": "approval packageOwnershipOwner unassigned"
+            },
+            {
+                  "path": "approvalFields.rollbackOwner",
+                  "equals": "unassigned",
+                  "message": "approval rollbackOwner unassigned"
+            },
+            {
+                  "path": "boundaries.tagMovement",
+                  "equals": false,
+                  "message": "boundaries tagMovement"
+            },
+            {
+                  "path": "boundaries.ghcrPublish",
+                  "equals": false,
+                  "message": "boundaries ghcrPublish"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundaries splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.splitRepoReadOnly",
+                  "equals": false,
+                  "message": "boundaries splitRepoReadOnly"
+            },
+            {
+                  "path": "boundaries.splitRepoRedirect",
+                  "equals": false,
+                  "message": "boundaries splitRepoRedirect"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundaries branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundaries rulesetChange"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundaries permissionChange"
+            },
+            {
+                  "path": "boundaries.codeownersEnforcementChange",
+                  "equals": false,
+                  "message": "boundaries codeownersEnforcementChange"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundaries repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundaries deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundaries restart"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundaries historicalReplay"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundaries forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundaries historyRewrite"
+            }
+      ],
+      "successMessage": "monorepo release/package/tag approval packet ok"
 }
   ]
 }

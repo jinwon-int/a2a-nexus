@@ -113,6 +113,9 @@ export function runDocSpecCheck(specId, { registryPath = 'docs/ops/data-driven-v
   const extraDocs = Object.fromEntries(
     Object.entries(spec.extraDocs ?? {}).map(([name, docPath]) => [name, readRel(docPath)]),
   );
+  const extraJson = Object.fromEntries(
+    Object.entries(spec.extraJson ?? {}).map(([name, jsonPath]) => [name, parseJson(jsonPath)]),
+  );
   const pkg = parseJson('package.json');
   const releaseGateInventory = parseJson('docs/ops/release-gate-step-inventory.json');
 
@@ -122,8 +125,11 @@ export function runDocSpecCheck(specId, { registryPath = 'docs/ops/data-driven-v
   for (const [name, content] of Object.entries(extraDocs)) {
     expect(content !== null, `${spec.id}: missing extra doc ${name}: ${spec.extraDocs[name]}`);
   }
+  for (const [name, value] of Object.entries(extraJson)) {
+    expect(value !== null, `${spec.id}: missing extra json ${name}: ${spec.extraJson[name]}`);
+  }
 
-  const roots = { fixture, doc, currentState, package: pkg, releaseGateInventory, ...extraDocs };
+  const roots = { fixture, doc, currentState, package: pkg, releaseGateInventory, ...extraDocs, ...extraJson };
   for (const assertion of spec.assertions ?? []) {
     applyAssertion(ctx, roots, assertion, spec.id);
   }
