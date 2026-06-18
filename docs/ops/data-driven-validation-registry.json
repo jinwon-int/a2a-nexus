@@ -909,6 +909,441 @@
             }
       ],
       "successMessage": "monorepo canonical source flip execution handoff ok"
+},
+{
+      "id": "monorepo-operator-approval-handoff",
+      "title": "monorepo operator approval handoff",
+      "fixture": "fixtures/current-state/monorepo-operator-approval-handoff.json",
+      "doc": "docs/monorepo-operator-approval-handoff.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "finalMatrix": "docs/monorepo-final-operator-signoff-matrix.md"
+      },
+      "packageScript": {
+            "name": "check:monorepo-operator-approval-handoff",
+            "command": "node scripts/check-monorepo-operator-approval-handoff.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-operator-approval-handoff",
+            "tier": "approval-gated",
+            "args": [
+                  "run",
+                  "check:monorepo-operator-approval-handoff"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-operator-approval-handoff.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent issue"
+            },
+            {
+                  "path": "phase9FinalSignoffIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/549",
+                  "message": "phase9 issue"
+            },
+            {
+                  "path": "phase9FinalSignoffPr",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/550",
+                  "message": "phase9 PR"
+            },
+            {
+                  "path": "phase9MergeCommit",
+                  "equals": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
+                  "message": "phase9 merge commit"
+            },
+            {
+                  "path": "phase10OperatorHandoffIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/551",
+                  "message": "phase10 issue"
+            },
+            {
+                  "path": "latestGreenCiRun",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372",
+                  "message": "historical latest green CI run"
+            },
+            {
+                  "path": "operatorHandoffDecision",
+                  "oneOf": [
+                        "NO_GO_WAITING",
+                        "GO_CANDIDATE_PR_FIRST"
+                  ],
+                  "message": "operator handoff decision"
+            },
+            {
+                  "path": "operatorResponse.status",
+                  "oneOf": [
+                        "UNANSWERED",
+                        "APPROVED"
+                  ],
+                  "message": "operator response status"
+            },
+            {
+                  "path": "operatorResponse.humanOperatorOwner",
+                  "equals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "UNANSWERED"
+                  },
+                  "message": "unanswered human operator owner"
+            },
+            {
+                  "path": "operatorResponse.rollbackOwner",
+                  "equals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "UNANSWERED"
+                  },
+                  "message": "unanswered rollback owner"
+            },
+            {
+                  "path": "operatorResponse.targetCommit",
+                  "equals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "UNANSWERED"
+                  },
+                  "message": "unanswered target commit"
+            },
+            {
+                  "path": "operatorResponse.acceptedRiskRegister",
+                  "equals": "unanswered",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "UNANSWERED"
+                  },
+                  "message": "unanswered accepted risks"
+            },
+            {
+                  "path": "operatorResponse.approvalSeparatedFromExecution",
+                  "equals": false,
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "UNANSWERED"
+                  },
+                  "message": "unanswered approval separation"
+            },
+            {
+                  "path": "questions",
+                  "lengthEquals": 7,
+                  "message": "questions area count"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "branch_protection_or_ruleset",
+                        "sourceEvidence": "docs/monorepo-branch-protection-approval-packet.md",
+                        "defaultDecision": "HOLD"
+                  },
+                  "message": "question area branch_protection_or_ruleset"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "split_repo_disposition",
+                        "sourceEvidence": "docs/monorepo-split-repo-disposition-rollback.md",
+                        "defaultDecision": "HOLD_EXECUTION_SEPARATE"
+                  },
+                  "message": "question area split_repo_disposition"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "release_tag_and_github_release",
+                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "defaultDecision": "HOLD"
+                  },
+                  "message": "question area release_tag_and_github_release"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "npm_publish",
+                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "defaultDecision": "HOLD"
+                  },
+                  "message": "question area npm_publish"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "docker_ghcr_publish",
+                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "defaultDecision": "HOLD"
+                  },
+                  "message": "question area docker_ghcr_publish"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "package_ownership_transfer",
+                        "sourceEvidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
+                  },
+                  "message": "question area package_ownership_transfer"
+            },
+            {
+                  "path": "questions",
+                  "arraySome": {
+                        "area": "canonical_flip",
+                        "sourceEvidence": "docs/monorepo-final-operator-signoff-matrix.md",
+                        "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
+                  },
+                  "message": "question area canonical_flip"
+            },
+            {
+                  "path": "approvalPreconditions",
+                  "includesAll": [
+                        "human_operator_owner_named",
+                        "rollback_owner_named",
+                        "exact_target_named",
+                        "latest_green_ci_run_recorded",
+                        "approval_separate_from_execution"
+                  ],
+                  "message": "approval preconditions"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundary rulesetChange"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundary permissionChange"
+            },
+            {
+                  "path": "boundaries.codeownersEnforcementChange",
+                  "equals": false,
+                  "message": "boundary codeownersEnforcementChange"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundary splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.splitRepoReadOnly",
+                  "equals": false,
+                  "message": "boundary splitRepoReadOnly"
+            },
+            {
+                  "path": "boundaries.splitRepoRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoRedirect"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.tagMovement",
+                  "equals": false,
+                  "message": "boundary tagMovement"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.ghcrPublish",
+                  "equals": false,
+                  "message": "boundary ghcrPublish"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundary historicalReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "path": "operatorResponse.humanOperatorOwner",
+                  "notEquals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "APPROVED"
+                  },
+                  "message": "approval human operator owner"
+            },
+            {
+                  "path": "operatorResponse.rollbackOwner",
+                  "notEquals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "APPROVED"
+                  },
+                  "message": "approval rollback owner"
+            },
+            {
+                  "path": "operatorResponse.targetCommit",
+                  "notEquals": "unassigned",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "APPROVED"
+                  },
+                  "message": "approval target commit"
+            },
+            {
+                  "path": "operatorResponse.acceptedRiskRegister",
+                  "notEquals": "unanswered",
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "APPROVED"
+                  },
+                  "message": "approval accepted risks"
+            },
+            {
+                  "path": "operatorResponse.approvalSeparatedFromExecution",
+                  "equals": true,
+                  "when": {
+                        "path": "operatorResponse.status",
+                        "equals": "APPROVED"
+                  },
+                  "message": "approval separated from execution"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#551",
+                  "message": "doc #551 reference"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#550",
+                  "message": "doc #550 reference"
+            },
+            {
+                  "source": "doc",
+                  "matches": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
+                  "message": "doc phase9 commit"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Operator Response Block",
+                  "message": "doc operator response block"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc no-live boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "UNANSWERED|APPROVED",
+                  "message": "doc operator response posture"
+            },
+            {
+                  "source": "doc",
+                  "matches": "NO_GO / Waiting|GO_CANDIDATE",
+                  "message": "doc handoff posture"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#551",
+                  "message": "current-state #551 reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#550",
+                  "message": "current-state #550 reference"
+            },
+            {
+                  "source": "finalMatrix",
+                  "matches": "a2a-plane#551",
+                  "message": "final matrix #551 handoff reference"
+            }
+      ],
+      "successMessage": "monorepo operator approval handoff ok"
 }
   ]
 }

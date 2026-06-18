@@ -32,6 +32,7 @@ test('runDocSpecCheck passes a minimal registered doc spec', () => {
     writeFileSync(join(dir, 'fixtures/f.json'), JSON.stringify({ schema: 'demo.v1', items: [{ name: 'a', ok: true }] }));
     writeFileSync(join(dir, 'doc.md'), 'hello registry');
     writeFileSync(join(dir, 'state.md'), 'state registry');
+    writeFileSync(join(dir, 'extra.md'), 'extra registry context');
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { 'check:demo': 'node scripts/check-demo.mjs' } }));
     writeFileSync(join(dir, 'docs/ops/release-gate-step-inventory.json'), JSON.stringify({ entries: [{ name: 'demo', tier: 'core', args: ['run', 'check:demo'] }] }));
     writeFileSync(join(dir, 'docs/ops/registry.json'), JSON.stringify({ checks: [{
@@ -39,13 +40,18 @@ test('runDocSpecCheck passes a minimal registered doc spec', () => {
       fixture: 'fixtures/f.json',
       doc: 'doc.md',
       currentState: 'state.md',
+      extraDocs: { extra: 'extra.md' },
       packageScript: { name: 'check:demo', command: 'node scripts/check-demo.mjs' },
       releaseGateStep: { name: 'demo', tier: 'core', args: ['run', 'check:demo'] },
       assertions: [
         { path: 'schema', equals: 'demo.v1' },
+        { path: 'schema', oneOf: ['demo.v1', 'demo.v2'] },
+        { path: 'schema', notEquals: 'bad.v1' },
         { path: 'items', arraySome: { name: 'a', ok: true } },
         { path: 'items', lengthEquals: 1 },
+        { path: 'items', lengthEquals: 999, when: { path: 'schema', equals: 'not-active' } },
         { source: 'doc', includes: 'registry' },
+        { source: 'extra', includes: 'context' },
         { source: 'currentState', matches: 'state' }
       ],
       successMessage: 'demo ok'

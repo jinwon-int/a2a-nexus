@@ -17,13 +17,32 @@ function matchesWhere(item, where) {
   return Object.entries(where).every(([path, expected]) => getPath(item, path) === expected);
 }
 
-function applyAssertion({ expect }, roots, assertion, label) {
+function assertionTarget(roots, assertion) {
   const root = roots[assertion.source ?? 'fixture'];
-  const actual = assertion.path ? getPath(root, assertion.path) : root;
+  return assertion.path ? getPath(root, assertion.path) : root;
+}
+
+function whenMatches(roots, when) {
+  if (!when) return true;
+  const actual = assertionTarget(roots, when);
+  if ('equals' in when) return actual === when.equals;
+  if ('oneOf' in when) return when.oneOf.includes(actual);
+  throw new Error(`unsupported when condition ${JSON.stringify(when)}`);
+}
+
+function applyAssertion({ expect }, roots, assertion, label) {
+  if (!whenMatches(roots, assertion.when)) return;
+  const actual = assertionTarget(roots, assertion);
   const message = assertion.message ?? `${label}: ${assertion.path ?? assertion.source ?? 'value'} assertion failed`;
 
   if ('equals' in assertion) {
     expect(actual === assertion.equals, `${message}: expected ${describe(assertion.equals)}, got ${describe(actual)}`);
+  }
+  if ('notEquals' in assertion) {
+    expect(actual !== assertion.notEquals, `${message}: expected value not to be ${describe(assertion.notEquals)}`);
+  }
+  if ('oneOf' in assertion) {
+    expect(assertion.oneOf.includes(actual), `${message}: expected one of ${describe(assertion.oneOf)}, got ${describe(actual)}`);
   }
   if ('includes' in assertion) {
     const expected = assertion.includes;
@@ -86,14 +105,20 @@ export function runDocSpecCheck(specId, { registryPath = 'docs/ops/data-driven-v
   const fixture = spec.fixture ? parseJson(spec.fixture) : null;
   const doc = spec.doc ? readRel(spec.doc) : null;
   const currentState = spec.currentState ? readRel(spec.currentState) : null;
+  const extraDocs = Object.fromEntries(
+    Object.entries(spec.extraDocs ?? {}).map(([name, docPath]) => [name, readRel(docPath)]),
+  );
   const pkg = parseJson('package.json');
   const releaseGateInventory = parseJson('docs/ops/release-gate-step-inventory.json');
 
   if (spec.fixture) expect(fixture !== null, `${spec.id}: missing fixture ${spec.fixture}`);
   if (spec.doc) expect(doc !== null, `${spec.id}: missing doc ${spec.doc}`);
   if (spec.currentState) expect(currentState !== null, `${spec.id}: missing current-state doc ${spec.currentState}`);
+  for (const [name, content] of Object.entries(extraDocs)) {
+    expect(content !== null, `${spec.id}: missing extra doc ${name}: ${spec.extraDocs[name]}`);
+  }
 
-  const roots = { fixture, doc, currentState, package: pkg, releaseGateInventory };
+  const roots = { fixture, doc, currentState, package: pkg, releaseGateInventory, ...extraDocs };
   for (const assertion of spec.assertions ?? []) {
     applyAssertion(ctx, roots, assertion, spec.id);
   }

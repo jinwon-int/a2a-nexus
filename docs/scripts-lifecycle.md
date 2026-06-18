@@ -84,8 +84,10 @@ bespoke script body:
 4. Put repeated assertions in the registry (`equals`, `includes`, `includesAll`,
    `matches`, `min`, `arraySome`, `arrayEveryEquals`) rather than duplicating
    `readRel` / `parseJson` / `expect` boilerplate. Available primitives
-   include `equals`, `includes`, `includesAll`, `matches`, `min`,
-   `minLength`, `lengthEquals`, `arraySome`, and `arrayEveryEquals`.
+   include `equals`, `notEquals`, `oneOf`, `includes`, `includesAll`,
+   `matches`, `min`, `minLength`, `lengthEquals`, `arraySome`, and
+   `arrayEveryEquals`. Use `when` for explicit conditional assertions and
+   `extraDocs` for named cross-document roots.
 
 This preserves source-backed release checks while moving the repeated validation
 shape into data. It also keeps existing release-gate entries, docs, and issue
