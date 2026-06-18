@@ -1,0 +1,138 @@
+{
+  "$schema": "https://example.invalid/a2a-nexus/data-driven-validation-registry.schema.json",
+  "purpose": "Initial #882 data-driven validation registry. Each entry drives a thin scripts/check-*.mjs wrapper through scripts/lib/doc-spec-check.mjs, keeping the historical script names stable while moving repeated doc/fixture/package/release-gate assertions into data.",
+  "checks": [
+    {
+      "id": "monorepo-active-provenance-mirror-execution-result",
+      "title": "active provenance mirror execution result",
+      "fixture": "fixtures/current-state/monorepo-active-provenance-mirror-execution-result.json",
+      "doc": "docs/monorepo-active-provenance-mirror-execution-result.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+        "name": "check:monorepo-active-provenance-mirror-execution-result",
+        "command": "node scripts/check-monorepo-active-provenance-mirror-execution-result.mjs"
+      },
+      "releaseGateStep": {
+        "name": "monorepo-active-provenance-mirror-execution-result",
+        "tier": "historical-transition",
+        "args": ["run", "check:monorepo-active-provenance-mirror-execution-result"]
+      },
+      "assertions": [
+        { "path": "schema", "equals": "a2a.monorepo-active-provenance-mirror-execution-result.v1", "message": "fixture schema" },
+        { "path": "operatorApproval", "equals": "승인: split repo active provenance mirror execution 진행", "message": "operator approval phrase" },
+        { "path": "canonicalSourceState", "equals": "MONOREPO_PACKAGES_CANONICAL", "message": "canonical source state" },
+        { "path": "targetDisposition", "equals": "ACTIVE_PROVENANCE_MIRROR", "message": "target disposition" },
+        { "path": "actualDispositionExecution", "equals": "EXECUTED_DOCS_ONLY_ACTIVE_PROVENANCE_MIRROR", "message": "actual disposition execution" },
+        { "path": "externalSettingsMutationPerformed", "equals": false, "message": "external settings mutation boundary" },
+        { "path": "repositories", "minLength": 3, "message": "split repo inventory" },
+        { "path": "repositories", "arrayEveryEquals": { "state": "ACTIVE_PROVENANCE_MIRROR", "archived": false, "readOnly": false, "redirected": false, "settingsMutated": false }, "message": "repo disposition boundaries" },
+        { "path": "a2adEvidence.primaryRound", "equals": "a2ad-active-provenance-mirror-20260610T155109Z", "message": "primary A2AD round" },
+        { "path": "a2adEvidence.focusedTeam1RetryRound", "equals": "a2ad-active-provenance-mirror-team1-retry-20260610T155535Z", "message": "focused retry round" },
+        { "path": "a2adEvidence.usableAnalysisCount", "equals": 6, "message": "usable analysis count" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "executionGates.operatorApprovalPhraseMatched", "equals": true, "message": "approval gate" },
+        { "path": "executionGates.splitRepoPrsMerged", "equals": true, "message": "split repo PR merge gate" },
+        { "path": "executionGates.externalSettingsMutationPerformed", "equals": false, "message": "settings mutation gate" },
+        { "path": "boundaries.docsOnlyMirrorNotice", "equals": true, "message": "docs-only mirror boundary" },
+        { "path": "goNoGoFields.decision", "equals": "GO_EXECUTED_DOCS_ONLY_ACTIVE_PROVENANCE_MIRROR__EXTERNAL_SURFACES_HOLD", "message": "GO/NO-GO decision" },
+        { "source": "doc", "includesAll": ["ACTIVE_PROVENANCE_MIRROR", "a2a-broker#1364", "a2a-docker-runner#373", "plugin-a2a#466", "No-live Boundary", "Rollback"], "message": "doc required text" },
+        { "source": "currentState", "matches": "monorepo-active-provenance-mirror-execution-result\\.md", "message": "current-state link" },
+        { "source": "currentState", "includes": "ACTIVE_PROVENANCE_MIRROR", "message": "current-state active mirror status" }
+      ],
+      "successMessage": "active provenance mirror execution result ok"
+    },
+    {
+      "id": "monorepo-actual-canonical-flip-execution-result",
+      "title": "actual canonical flip execution result",
+      "fixture": "fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json",
+      "doc": "docs/monorepo-actual-canonical-flip-execution-result.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+        "name": "check:monorepo-actual-canonical-flip-execution-result",
+        "command": "node scripts/check-monorepo-actual-canonical-flip-execution-result.mjs"
+      },
+      "releaseGateStep": {
+        "name": "monorepo-actual-canonical-flip-execution-result",
+        "tier": "historical-transition",
+        "args": ["run", "check:monorepo-actual-canonical-flip-execution-result"]
+      },
+      "assertions": [
+        { "path": "schema", "equals": "a2a.monorepo-actual-canonical-flip-execution-result.v1", "message": "fixture schema" },
+        { "path": "operatorApproval", "equals": "승인: actual canonical flip execution 진행", "message": "operator approval phrase" },
+        { "path": "actualCanonicalFlipExecution", "equals": "EXECUTED_SOURCE_STATE_ONLY", "message": "execution state" },
+        { "path": "canonicalSourceState", "equals": "MONOREPO_PACKAGES_CANONICAL", "message": "canonical state" },
+        { "path": "executionOwner", "equals": "seoseo finalizer/operator", "message": "execution owner" },
+        { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/broker", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "broker canonical source" },
+        { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/docker-runner", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "docker-runner canonical source" },
+        { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/openclaw-plugin-a2a", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "plugin canonical source" },
+        { "path": "a2adEvidence.primaryRound", "equals": "a2ad-actualflip-exec-retry-20260610T143021Z", "message": "primary A2AD round" },
+        { "path": "a2adEvidence.supplementalSogyoRound", "equals": "a2ad-actualflip-sogyo-retry-20260610T143538Z", "message": "supplemental A2AD round" },
+        { "path": "a2adEvidence.usableAnalysisCount", "min": 6, "message": "usable analysis count" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "executionGates.actualCanonicalFlipSourceStateExecuted", "equals": true, "message": "source-state execution gate" },
+        { "path": "executionGates.externalMutationPerformed", "equals": false, "message": "external mutation boundary" },
+        { "path": "boundaries.sourceStateCanonicalFlip", "equals": true, "message": "source-state boundary" },
+        { "path": "goNoGoFields.decision", "equals": "GO_EXECUTED_SOURCE_STATE_ONLY__EXTERNAL_SURFACES_HOLD", "message": "GO/NO-GO decision" },
+        { "source": "doc", "includesAll": ["EXECUTED_SOURCE_STATE_ONLY", "MONOREPO_PACKAGES_CANONICAL", "packages/broker", "packages/docker-runner", "packages/openclaw-plugin-a2a", "Remaining Separate Approvals", "No-live / No-external-mutation Boundary"], "message": "doc required text" },
+        { "source": "currentState", "matches": "monorepo-actual-canonical-flip-execution-result\\.md", "message": "current-state link" },
+        { "source": "currentState", "includes": "MONOREPO_PACKAGES_CANONICAL", "message": "current-state canonical source state" }
+      ],
+      "successMessage": "actual canonical flip execution result ok"
+    },
+    {
+      "id": "monorepo-split-repo-disposition-preflight",
+      "title": "split repo disposition preflight",
+      "fixture": "fixtures/current-state/monorepo-split-repo-disposition-preflight.json",
+      "doc": "docs/monorepo-split-repo-disposition-preflight.md",
+      "currentState": "docs/current-state.md",
+      "packageScript": {
+        "name": "check:monorepo-split-repo-disposition-preflight",
+        "command": "node scripts/check-monorepo-split-repo-disposition-preflight.mjs"
+      },
+      "releaseGateStep": {
+        "name": "monorepo-split-repo-disposition-preflight",
+        "tier": "historical-transition",
+        "args": ["run", "check:monorepo-split-repo-disposition-preflight"]
+      },
+      "assertions": [
+        { "path": "schema", "equals": "a2a.monorepo-split-repo-disposition-preflight.v1", "message": "fixture schema" },
+        { "path": "operatorApproval", "equals": "승인: split repo disposition preflight 진행", "message": "operator approval phrase" },
+        { "path": "preflightDecision", "equals": "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT", "message": "preflight decision" },
+        { "path": "canonicalSourceState", "equals": "MONOREPO_PACKAGES_CANONICAL", "message": "canonical source state" },
+        { "path": "actualDispositionExecution", "equals": "NO_GO_WAITING_SEPARATE_APPROVAL_REQUIRED", "message": "actual disposition hold" },
+        { "path": "futureCandidateDisposition", "equals": "ACTIVE_PROVENANCE_MIRROR", "message": "future candidate" },
+        { "path": "explicitNonCandidates", "includesAll": ["read_only_archive", "archived_redirect"], "message": "explicit non-candidates" },
+        { "path": "repositories", "arraySome": { "canonicalPath": "packages/broker", "currentExternalDisposition": "active_public_unarchived", "futureCandidateDisposition": "active_provenance_mirror", "archiveReadOnlyRedirectApproved": false, "settingsMutationApproved": false }, "message": "broker disposition" },
+        { "path": "repositories", "arraySome": { "canonicalPath": "packages/docker-runner", "currentExternalDisposition": "active_public_unarchived", "futureCandidateDisposition": "active_provenance_mirror", "archiveReadOnlyRedirectApproved": false, "settingsMutationApproved": false }, "message": "docker-runner disposition" },
+        { "path": "repositories", "arraySome": { "canonicalPath": "packages/openclaw-plugin-a2a", "currentExternalDisposition": "active_public_unarchived", "futureCandidateDisposition": "active_provenance_mirror", "archiveReadOnlyRedirectApproved": false, "settingsMutationApproved": false }, "message": "plugin disposition" },
+        { "path": "repoFactsReadOnly.deduplicationCheck", "matches": "openclaw-plugin-a2a resolves to jinwon-int/plugin-a2a", "message": "plugin alias dedupe" },
+        { "path": "a2adEvidence.primaryRound", "equals": "a2ad-splitdispo-preflight-20260610T150452Z", "message": "primary A2AD round" },
+        { "path": "a2adEvidence.usableAnalysisCount", "min": 6, "message": "usable analysis count" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "preflightGates.preflightOnly", "equals": true, "message": "preflight-only gate" },
+        { "path": "preflightGates.externalRepoMutationPerformed", "equals": false, "message": "external mutation boundary" },
+        { "path": "boundaries.sourceOnlyPreflight", "equals": true, "message": "source-only boundary" },
+        { "path": "goNoGoFields.decision", "equals": "GO_PR_FIRST_SOURCE_ONLY_PREFLIGHT__DISPOSITION_EXECUTION_HOLD", "message": "GO/NO-GO decision" },
+        { "source": "doc", "includesAll": ["ACTIVE_PROVENANCE_MIRROR", "NO_GO / Waiting", "Future Execution Requirements", "No-live Boundary", "plugin-a2a"], "message": "doc required text" },
+        { "source": "currentState", "matches": "monorepo-split-repo-disposition-preflight\\.md", "message": "current-state link" },
+        { "source": "currentState", "includes": "ACTIVE_PROVENANCE_MIRROR", "message": "current-state active mirror candidate" }
+      ],
+      "successMessage": "split repo disposition preflight ok"
+    }
+  ]
+}

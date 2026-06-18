@@ -52,7 +52,7 @@
     "check:broker-docker-hardening": "node scripts/check-broker-docker-hardening.mjs",
     "check:broker-docker-hardening:test": "node --test scripts/check-broker-docker-hardening.test.mjs",
     "check:monorepo-branch-release-policy": "node scripts/check-monorepo-branch-release-package-policy.mjs",
-    "test:doc-check-lib": "node --test scripts/lib/doc-check.test.mjs",
+    "test:doc-check-lib": "node --test scripts/lib/doc-check.test.mjs scripts/lib/doc-spec-check.test.mjs",
     "check:script-budget": "node scripts/check-script-budget.mjs",
     "check:script-budget:test": "node --test scripts/check-script-budget.test.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
