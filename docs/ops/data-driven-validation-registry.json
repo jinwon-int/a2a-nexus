@@ -5431,6 +5431,459 @@
             }
       ],
       "successMessage": "monorepo phase-3 package CI gate ok"
+},
+{
+      "id": "monorepo-reentry",
+      "title": "monorepo re-entry decision",
+      "fixture": "fixtures/current-state/monorepo-reentry-decision.json",
+      "doc": "docs/monorepo-reentry-decision.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "topologyDoc": "docs/topology-decision-record.md",
+            "readme": "README.md"
+      },
+      "packageScript": {
+            "name": "check:monorepo-reentry",
+            "command": "node scripts/check-monorepo-reentry-decision.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-reentry",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-reentry"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-reentry-decision.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "decisionIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "decision issue #511"
+            },
+            {
+                  "path": "previousDecisionIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/473",
+                  "message": "previous decision #473"
+            },
+            {
+                  "path": "priorWave",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/506",
+                  "message": "prior wave #506"
+            },
+            {
+                  "path": "decision",
+                  "equals": "staged_umbrella_workspace_first",
+                  "message": "staged umbrella workspace decision"
+            },
+            {
+                  "path": "canonicalDuringPhase0And1",
+                  "equals": "split_repos",
+                  "message": "split repos canonical during phase 0/1"
+            },
+            {
+                  "path": "operatorReentryTrigger",
+                  "equals": true,
+                  "message": "operator re-entry trigger"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip not approved"
+            },
+            {
+                  "path": "targetLayout",
+                  "lengthEquals": 9,
+                  "message": "target layout exact surface count"
+            },
+            {
+                  "path": "targetLayout",
+                  "includesAll": [
+                        "packages/broker",
+                        "packages/docker-runner",
+                        "packages/openclaw-plugin-a2a",
+                        "contracts",
+                        "fixtures",
+                        "docs",
+                        "scripts",
+                        "scanner",
+                        ".github/workflows"
+                  ],
+                  "message": "target layout entries"
+            },
+            {
+                  "path": "repos",
+                  "lengthEquals": 4,
+                  "message": "exact four A2A repos"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-plane",
+                        "visibility": "public",
+                        "phase0Role": "umbrella_decision_hub",
+                        "canonicalNow": true,
+                        "monorepoPackage": "root"
+                  },
+                  "message": "repo canonical evidence jinwon-int/a2a-plane"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-broker",
+                        "visibility": "public",
+                        "phase0Role": "canonical_split_runtime",
+                        "canonicalNow": true,
+                        "monorepoPackage": "packages/broker"
+                  },
+                  "message": "repo canonical evidence jinwon-int/a2a-broker"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/a2a-docker-runner",
+                        "visibility": "public",
+                        "phase0Role": "canonical_split_runner",
+                        "canonicalNow": true,
+                        "monorepoPackage": "packages/docker-runner"
+                  },
+                  "message": "repo canonical evidence jinwon-int/a2a-docker-runner"
+            },
+            {
+                  "path": "repos",
+                  "arraySome": {
+                        "repo": "jinwon-int/openclaw-plugin-a2a",
+                        "visibility": "public",
+                        "phase0Role": "canonical_split_plugin",
+                        "canonicalNow": true,
+                        "monorepoPackage": "packages/openclaw-plugin-a2a"
+                  },
+                  "message": "repo canonical evidence jinwon-int/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "repos",
+                  "arrayNoneMatches": {
+                        "repo": "jinwon-int/agent-olympics"
+                  },
+                  "message": "agent-olympics absent from A2A repos"
+            },
+            {
+                  "path": "outOfScopeRepos",
+                  "arraySome": {
+                        "repo": "jinwon-int/agent-olympics",
+                        "reason": "independent repository; not an A2A implementation package, monorepo import target, mirror gate, or issue-routing lane"
+                  },
+                  "message": "agent-olympics out of scope"
+            },
+            {
+                  "path": "requiredGatesBeforeCanonicalFlip",
+                  "includesAll": [
+                        "history_preserving_import_rehearsal",
+                        "ci_parity",
+                        "docs_migration",
+                        "codeowners",
+                        "a2a_plane_branch_protection_review",
+                        "release_package_policy",
+                        "operator_final_signoff"
+                  ],
+                  "message": "required gates before canonical flip"
+            },
+            {
+                  "path": "requiredGatesBeforeCanonicalFlip",
+                  "lengthEquals": 7,
+                  "message": "exact required canonical-flip gate count"
+            },
+            {
+                  "path": "phasePlan",
+                  "lengthEquals": 4,
+                  "message": "exact phase plan count"
+            },
+            {
+                  "path": "phasePlan",
+                  "arraySome": {
+                        "phase": "phase0_decision_and_rehearsal_plan",
+                        "canonicalFlip": false
+                  },
+                  "message": "phase0 no canonical flip"
+            },
+            {
+                  "path": "phasePlan",
+                  "arraySome": {
+                        "phase": "phase1_disposable_rehearsal",
+                        "canonicalFlip": false
+                  },
+                  "message": "phase1 no canonical flip"
+            },
+            {
+                  "path": "phasePlan",
+                  "arraySome": {
+                        "phase": "phase2_workspace_pr_without_canonical_flip",
+                        "canonicalFlip": false
+                  },
+                  "message": "phase2 no canonical flip"
+            },
+            {
+                  "path": "phasePlan",
+                  "arraySome": {
+                        "phase": "phase3_canonical_flip_decision",
+                        "canonicalFlip": "requires_explicit_approval"
+                  },
+                  "message": "phase3 requires explicit approval"
+            },
+            {
+                  "path": "phasePlan.0.allowed",
+                  "includesAll": [
+                        "docs",
+                        "fixtures",
+                        "validators",
+                        "issue_comments",
+                        "child_issue_creation"
+                  ],
+                  "message": "phase 0 allowed actions"
+            },
+            {
+                  "path": "phasePlan.1.allowed",
+                  "includesAll": [
+                        "additive_worktree",
+                        "clean_upstream_refs",
+                        "history_preserving_prefix_import_dry_run",
+                        "ci_parity_comparison"
+                  ],
+                  "message": "phase 1 allowed actions"
+            },
+            {
+                  "path": "phasePlan.2.allowed",
+                  "includesAll": [
+                        "workspace_docs",
+                        "layout_checks",
+                        "parity_checks",
+                        "codeowners_draft"
+                  ],
+                  "message": "phase 2 allowed actions"
+            },
+            {
+                  "path": "phasePlan.3.allowed",
+                  "includesAll": [
+                        "operator_final_signoff_only_after_green_gates"
+                  ],
+                  "message": "phase 3 allowed actions"
+            },
+            {
+                  "path": "boundaries.repositoryImport",
+                  "equals": false,
+                  "message": "boundary repositoryImport"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundary visibilityChange"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundary productionDeploy"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundary gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundary brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "staged umbrella workspace",
+                  "message": "doc staged umbrella workspace"
+            },
+            {
+                  "source": "doc",
+                  "matches": "not an immediate canonical monorepo flip",
+                  "message": "doc not immediate flip"
+            },
+            {
+                  "source": "doc",
+                  "matches": "split implementation repos remain canonical",
+                  "message": "doc split repos canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "outside the A2A monorepo",
+                  "message": "doc agent olympics out of scope"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Codex Read-Only Cross-Check Evidence",
+                  "message": "doc codex read-only evidence"
+            },
+            {
+                  "source": "doc",
+                  "matches": "not be counted as Team1\\/Team2 benchmark evidence",
+                  "message": "doc not team benchmark evidence"
+            },
+            {
+                  "source": "doc",
+                  "matches": "history-preserving",
+                  "message": "doc history preserving"
+            },
+            {
+                  "source": "doc",
+                  "matches": "CODEOWNERS",
+                  "message": "doc codeowners"
+            },
+            {
+                  "source": "doc",
+                  "matches": "operator sign-off",
+                  "message": "doc operator sign-off"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live",
+                  "message": "doc no-live boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#511",
+                  "message": "doc #511"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane\\/issues\\/473",
+                  "message": "doc #473"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane\\/issues\\/506",
+                  "message": "doc #506"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#514",
+                  "message": "current-state #514"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#515",
+                  "message": "current-state #515"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#517",
+                  "message": "current-state #517"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-broker#1320",
+                  "message": "current-state broker #1320"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-broker#1321",
+                  "message": "current-state broker #1321"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#506.*[Cc]losed|[Cc]losed.*#506",
+                  "message": "current-state #506 closed"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#511.*[Cc]losed|[Cc]losed.*#511",
+                  "message": "current-state #511 closed"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#513.*[Cc]losed|[Cc]losed.*#513",
+                  "message": "current-state #513 closed"
+            },
+            {
+                  "source": "topologyDoc",
+                  "matches": "#511",
+                  "message": "topology #511"
+            },
+            {
+                  "source": "topologyDoc",
+                  "matches": "operator-initiated re-entry",
+                  "message": "topology operator re-entry"
+            },
+            {
+                  "source": "readme",
+                  "matches": "#511",
+                  "message": "README #511"
+            },
+            {
+                  "source": "readme",
+                  "matches": "monorepo re-entry",
+                  "message": "README monorepo re-entry"
+            }
+      ],
+      "successMessage": "monorepo re-entry decision ok"
 }
   ]
 }
