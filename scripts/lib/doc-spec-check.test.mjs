@@ -48,6 +48,7 @@ test('runDocSpecCheck passes a minimal registered doc spec', () => {
         { path: 'schema', oneOf: ['demo.v1', 'demo.v2'] },
         { path: 'schema', notEquals: 'bad.v1' },
         { path: 'items', arraySome: { name: 'a', ok: true } },
+        { path: 'items', arrayNoneMatches: { name: 'b' } },
         { path: 'items', lengthEquals: 1 },
         { path: 'items', lengthEquals: 999, when: { path: 'schema', equals: 'not-active' } },
         { source: 'doc', includes: 'registry' },
@@ -63,6 +64,30 @@ test('runDocSpecCheck passes a minimal registered doc spec', () => {
     );
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /demo ok/);
+  });
+});
+
+test('runDocSpecCheck fails when arrayNoneMatches finds a matching object', () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, 'docs/ops'), { recursive: true });
+    mkdirSync(join(dir, 'fixtures'), { recursive: true });
+    writeFileSync(join(dir, 'fixtures/f.json'), JSON.stringify({ items: [{ name: 'blocked' }] }));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: {} }));
+    writeFileSync(join(dir, 'docs/ops/release-gate-step-inventory.json'), JSON.stringify({ entries: [] }));
+    writeFileSync(join(dir, 'docs/ops/registry.json'), JSON.stringify({ checks: [{
+      id: 'blocked-array',
+      fixture: 'fixtures/f.json',
+      assertions: [
+        { path: 'items', arrayNoneMatches: { name: 'blocked' }, message: 'blocked item absent' }
+      ]
+    }] }));
+    const res = runDriver(
+      `import { runDocSpecCheck } from ${JSON.stringify(RUNNER)};\n` +
+      `runDocSpecCheck('blocked-array', { registryPath: 'docs/ops/registry.json' });\n`,
+      dir,
+    );
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /blocked item absent/);
   });
 });
 

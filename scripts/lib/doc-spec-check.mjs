@@ -81,6 +81,11 @@ function applyAssertion({ expect }, roots, assertion, label) {
     expect(Array.isArray(actual), `${message}: arraySome target must be an array`);
     expect(actual?.some((item) => matchesWhere(item, assertion.arraySome)), `${message}: missing matching object ${describe(assertion.arraySome)}`);
   }
+  if ('arrayNoneMatches' in assertion) {
+    expect(Array.isArray(actual), `${message}: arrayNoneMatches target must be an array`);
+    const matching = (actual ?? []).filter((item) => matchesWhere(item, assertion.arrayNoneMatches));
+    expect(matching.length === 0, `${message}: found ${matching.length} matching object(s) ${describe(assertion.arrayNoneMatches)}`);
+  }
   if ('arrayEveryEquals' in assertion) {
     expect(Array.isArray(actual), `${message}: arrayEveryEquals target must be an array`);
     for (const [field, expected] of Object.entries(assertion.arrayEveryEquals)) {
