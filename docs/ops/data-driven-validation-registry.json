@@ -3729,6 +3729,402 @@
             }
       ],
       "successMessage": "monorepo split-repo disposition rollback ok"
+},
+{
+      "id": "monorepo-import-rehearsal",
+      "title": "monorepo import rehearsal",
+      "fixture": "fixtures/current-state/monorepo-import-rehearsal.json",
+      "doc": "docs/monorepo-import-rehearsal.md",
+      "extraDocs": {
+            "reentryDoc": "docs/monorepo-reentry-decision.md"
+      },
+      "packageScript": {
+            "name": "check:monorepo-import-rehearsal",
+            "command": "node scripts/check-monorepo-import-rehearsal.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-import-rehearsal",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-import-rehearsal"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-import-rehearsal.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent #511"
+            },
+            {
+                  "path": "childIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/513",
+                  "message": "child #513"
+            },
+            {
+                  "path": "refreshIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/528",
+                  "message": "refresh #528"
+            },
+            {
+                  "path": "phase2Issue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "message": "phase2 #530"
+            },
+            {
+                  "path": "phase4FreshImportCandidateIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "message": "phase4 #538"
+            },
+            {
+                  "path": "decision",
+                  "equals": "plan_import_rehearsal_before_canonical_flip",
+                  "message": "rehearsal-before-flip decision"
+            },
+            {
+                  "path": "canonicalDuringRehearsal",
+                  "equals": "split_repos",
+                  "message": "split repos canonical during rehearsal"
+            },
+            {
+                  "path": "rehearsalWorkspace.additiveOnly",
+                  "equals": true,
+                  "message": "additive rehearsal workspace"
+            },
+            {
+                  "path": "rehearsalWorkspace.reuseExistingA2aMonorepoCheckout",
+                  "equals": false,
+                  "message": "do not reuse existing monorepo checkout"
+            },
+            {
+                  "path": "rehearsalWorkspace.disposableUntilParityPasses",
+                  "equals": true,
+                  "message": "disposable until parity passes"
+            },
+            {
+                  "path": "phase2Rehearsal.status",
+                  "equals": "completed_source_only",
+                  "message": "phase2 source-only status"
+            },
+            {
+                  "path": "phase2Rehearsal.method",
+                  "equals": "disposable_detached_worktree_git_archive_prefix_copy",
+                  "message": "phase2 rehearsal method"
+            },
+            {
+                  "path": "phase2Rehearsal.importToMain",
+                  "equals": false,
+                  "message": "phase2 no import to main"
+            },
+            {
+                  "path": "phase2Rehearsal.canonicalFlip",
+                  "equals": false,
+                  "message": "phase2 no canonical flip"
+            },
+            {
+                  "path": "phase2Rehearsal.phase3Recommendation",
+                  "matches": "block_package_mirror_refresh",
+                  "message": "phase2 blocks mirror refresh until parity"
+            },
+            {
+                  "path": "phase4FreshImportCandidate.status",
+                  "equals": "package_ci_green_locally_canonical_flip_blocked",
+                  "message": "phase4 candidate status"
+            },
+            {
+                  "path": "phase4FreshImportCandidate.localPackageCiParityPassed",
+                  "equals": true,
+                  "message": "phase4 local package CI parity pass"
+            },
+            {
+                  "path": "phase4FreshImportCandidate.historyPreserving",
+                  "equals": false,
+                  "message": "phase4 non-history-preserving mode recorded"
+            },
+            {
+                  "path": "mirrors",
+                  "arraySome": {
+                        "surface": "broker",
+                        "sourceRepo": "jinwon-int/a2a-broker",
+                        "targetPath": "packages/broker",
+                        "splitTrackedFiles": 857,
+                        "planeTrackedFiles": 236,
+                        "freshness": "stale",
+                        "canonicalNow": "split_repo",
+                        "phase2Rehearsal.importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+                        "phase2Rehearsal.sourceRef": "fae438a4fba301c2a9a02ca7cb11282867327920",
+                        "phase2Rehearsal.statusCounts.changed": 86,
+                        "phase2Rehearsal.statusCounts.addedOrUntracked": 633,
+                        "phase2Rehearsal.manifestScriptDifferences.sourceOnlyScriptCount": 119,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.importedFromTrackedOnly": true,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.nodeModulesImported": false
+                  },
+                  "message": "mirror evidence broker"
+            },
+            {
+                  "path": "mirrors",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "sourceRepo": "jinwon-int/a2a-docker-runner",
+                        "targetPath": "packages/docker-runner",
+                        "splitTrackedFiles": 138,
+                        "planeTrackedFiles": 59,
+                        "freshness": "stale",
+                        "canonicalNow": "split_repo",
+                        "phase2Rehearsal.importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+                        "phase2Rehearsal.sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+                        "phase2Rehearsal.statusCounts.changed": 31,
+                        "phase2Rehearsal.statusCounts.addedOrUntracked": 79,
+                        "phase2Rehearsal.manifestScriptDifferences.sourceOnlyScriptCount": 5,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.importedFromTrackedOnly": true,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.nodeModulesImported": false
+                  },
+                  "message": "mirror evidence docker-runner"
+            },
+            {
+                  "path": "mirrors",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+                        "targetPath": "packages/openclaw-plugin-a2a",
+                        "splitTrackedFiles": 179,
+                        "planeTrackedFiles": 116,
+                        "freshness": "stale",
+                        "canonicalNow": "split_repo",
+                        "phase2Rehearsal.importMethod": "git_archive_tracked_files_into_prefixed_package_path",
+                        "phase2Rehearsal.sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+                        "phase2Rehearsal.statusCounts.changed": 53,
+                        "phase2Rehearsal.statusCounts.addedOrUntracked": 67,
+                        "phase2Rehearsal.manifestScriptDifferences.sourceOnlyScriptCount": 2,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.importedFromTrackedOnly": true,
+                        "phase2Rehearsal.generatedBuildArtifactExclusions.nodeModulesImported": false
+                  },
+                  "message": "mirror evidence openclaw-plugin-a2a"
+            },
+            {
+                  "path": "importStrategy.mode",
+                  "equals": "history_preserving_prefix_rehearsal",
+                  "message": "history-preserving prefix rehearsal strategy"
+            },
+            {
+                  "path": "importStrategy.squashImportDefault",
+                  "equals": false,
+                  "message": "do not squash by default"
+            },
+            {
+                  "path": "importStrategy.targetPaths",
+                  "includesAll": [
+                        "packages/broker",
+                        "packages/docker-runner",
+                        "packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "import target paths"
+            },
+            {
+                  "path": "importStrategy.tagPolicy",
+                  "matches": "document_before_import",
+                  "message": "tag policy documented before import"
+            },
+            {
+                  "path": "importStrategy.closedIssuePrPolicy",
+                  "matches": "keep_closed_history_in_original_repos",
+                  "message": "closed issue/PR provenance policy"
+            },
+            {
+                  "path": "requiredReportFields",
+                  "includesAll": [
+                        "sourceRepo",
+                        "sourceRef",
+                        "targetPath",
+                        "importMethod",
+                        "tagCollisionPolicy",
+                        "issuePrProvenancePolicy",
+                        "manifestScriptDifferences",
+                        "ciParityStatus",
+                        "scannerGateStatus",
+                        "rollbackPoint",
+                        "finalizerDecision"
+                  ],
+                  "message": "required report fields"
+            },
+            {
+                  "path": "rollbackPoints",
+                  "includesAll": [
+                        "source_ref_collection",
+                        "prefix_import_rehearsal",
+                        "manifest_script_comparison",
+                        "ci_parity_rehearsal",
+                        "workspace_pr_without_canonical_flip"
+                  ],
+                  "message": "rollback/discard points"
+            },
+            {
+                  "path": "boundaries.repositoryImportToMain",
+                  "equals": false,
+                  "message": "boundary repositoryImportToMain"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundary visibilityChange"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundary productionDeploy"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundary gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundary brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Split repos remain canonical",
+                  "message": "doc phrase Split repos remain canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "stale mirror",
+                  "message": "doc phrase stale mirror"
+            },
+            {
+                  "source": "doc",
+                  "matches": "history-preserving prefix",
+                  "message": "doc phrase history-preserving prefix"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Do not squash by default",
+                  "message": "doc phrase Do not squash by default"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Rollback / Discard Points",
+                  "message": "doc phrase Rollback / Discard Points"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Phase-2 Fresh Prefix Rehearsal",
+                  "message": "doc phrase Phase-2 Fresh Prefix Rehearsal"
+            },
+            {
+                  "source": "doc",
+                  "matches": "blocker",
+                  "message": "doc phrase blocker"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#511",
+                  "message": "doc phrase a2a-plane#511"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#513",
+                  "message": "doc phrase a2a-plane#513"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#528",
+                  "message": "doc phrase a2a-plane#528"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#530",
+                  "message": "doc phrase a2a-plane#530"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "a2a-monorepo-next",
+                  "message": "reentry doc additive workspace wording"
+            }
+      ],
+      "successMessage": "monorepo import rehearsal ok"
 }
   ]
 }
