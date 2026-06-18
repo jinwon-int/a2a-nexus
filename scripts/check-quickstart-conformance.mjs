@@ -10,25 +10,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(msg) {
-  failures.push(msg);
-}
-
-function expect(condition, msg) {
-  if (!condition) fail(msg);
-}
-
-function readRel(rel) {
-  try {
-    return fs.readFileSync(path.join(root, rel), 'utf8');
-  } catch {
-    return null;
-  }
-}
+const { root, failures, fail, expect, readRel } = createDocCheckContext();
 
 function fileExists(rel) {
   return fs.existsSync(path.join(root, rel));

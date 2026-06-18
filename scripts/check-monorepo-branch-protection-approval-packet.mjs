@@ -6,25 +6,9 @@
  * flip, release, publish, deploy, restart, credential, DB, provider send, or
  * Terminal ACK action is performed here.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(message) { failures.push(message); }
-function expect(condition, message) { if (!condition) fail(message); }
-function readRel(rel) {
-  try { return fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return null; }
-}
-function parseJson(rel) {
-  const text = readRel(rel);
-  if (text === null) { fail(`missing ${rel}`); return null; }
-  try { return JSON.parse(text); } catch (error) {
-    fail(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
-}
+const { root, failures, fail, expect, readRel, parseJson } = createDocCheckContext();
 
 const fixturePath = 'fixtures/current-state/monorepo-branch-protection-approval-packet.json';
 const docPath = 'docs/monorepo-branch-protection-approval-packet.md';

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /** Validate active provenance mirror execution result. */
-import fs from 'node:fs';
-import path from 'node:path';
-const root=process.cwd(); const failures=[];
-function fail(m){failures.push(m)} function expect(c,m){if(!c)fail(m)} function readRel(r){try{return fs.readFileSync(path.join(root,r),'utf8')}catch{return null}} function parseJson(r){const t=readRel(r); if(t===null){fail(`missing ${r}`);return null} try{return JSON.parse(t)}catch(e){fail(`${r}: invalid JSON: ${e instanceof Error?e.message:String(e)}`);return null}}
+import { createDocCheckContext } from './lib/doc-check.mjs';
+const { root, failures, fail, expect, readRel, parseJson } = createDocCheckContext();
 const fixture=parseJson('fixtures/current-state/monorepo-active-provenance-mirror-execution-result.json');
 const doc=readRel('docs/monorepo-active-provenance-mirror-execution-result.md');
 const currentState=readRel('docs/current-state.md');

@@ -5,42 +5,9 @@
  * Safety: source-only fixture/doc validation. No live broker calls,
  * provider sends, GitHub mutations, deploys, restarts, or cleanup actions.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(message) {
-  failures.push(message);
-}
-
-function expect(condition, message) {
-  if (!condition) fail(message);
-}
-
-function readRel(rel) {
-  try {
-    return fs.readFileSync(path.join(root, rel), 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-function parseJson(rel) {
-  const text = readRel(rel);
-  if (text === null) {
-    fail(`missing ${rel}`);
-    return null;
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    fail(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
-}
+const { root, failures, fail, expect, readRel, parseJson } = createDocCheckContext();
 
 const fixturePath = 'fixtures/current-state/no-live-integration-smoke.json';
 const docPath = 'docs/current-state-no-live-integration-smoke.md';
