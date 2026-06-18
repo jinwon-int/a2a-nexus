@@ -79,6 +79,21 @@ The dispatch body passes those fields through at top level and `--verify`
 re-fetches the created task by id, giving a deterministic readback gate without
 printing secrets.
 
+### GitHub patch lanes are write-capable
+
+`payload.mode: "github-propose-patch"` is a PR/patch execution lane, not a
+read-only evidence lane. It may create GitHub comments, branches, or pull
+requests even if the free-text worker prompt says "proposal only" or "do not
+mutate GitHub". Prompt text is not a safety boundary.
+
+Dry-run therefore fails closed before `POST /tasks` when
+`github-propose-patch` is paired with no-write/read-only signals such as
+`payload.readOnlyValidation: true`, `payload.noGitHubWrites: true`,
+`payload.noMutation: true`, `payload.allowGitHubWrites: false`, or
+`payload.patchIntent: false` (#889). Use `read-only-analysis` /
+`github-read-only-validation` for analysis-only evidence, and reserve
+`github-propose-patch` for an explicit PR-first patch lane.
+
 ### Deterministic lane ids (idempotency)
 
 If a lane omits `id`, the CLI derives `${roundId}:${order}` (1-based order). This
