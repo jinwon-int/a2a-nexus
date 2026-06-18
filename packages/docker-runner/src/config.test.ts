@@ -359,6 +359,28 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.equal(config.commandProfile, "openclaw");
   assert.deepEqual(config.openclawProfile, { allowNpmInstallFallback: false });
   assert.deepEqual(config.containedSubagents, {
+    enabled: true,
+    maxCount: 3,
+    outputBytes: 12000,
+    reasons: ["context_heavy", "broad_source_inspection", "validation_split"],
+    roles: ["explorer", "implementer", "verifier"],
+  });
+  assert.match(config.commandScript ?? "", /contained_subagents=enabled/);
+  assert.match(config.commandScript ?? "", /spawn up to 3 OpenClaw subagent/);
+  assert.equal(config.commandJson, undefined);
+  assert.deepEqual(config.extraMounts, [
+    { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
+  ]);
+});
+
+test("loadConfig allows OpenClaw contained subagents to opt out explicitly", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "0",
+  });
+
+  assert.deepEqual(config.containedSubagents, {
     enabled: false,
     maxCount: 0,
     outputBytes: 12000,
@@ -367,13 +389,9 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   });
   assert.match(config.commandScript ?? "", /contained_subagents=disabled/);
   assert.match(config.commandScript ?? "", /Do not spawn OpenClaw subagents/);
-  assert.equal(config.commandJson, undefined);
-  assert.deepEqual(config.extraMounts, [
-    { source: "/root/.openclaw", target: "/run/secrets/openclaw-dir", readOnly: true },
-  ]);
 });
 
-test("loadConfig enables bounded contained OpenClaw subagents only by explicit opt-in", async () => {
+test("loadConfig enables bounded contained OpenClaw subagents with explicit overrides", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
@@ -422,14 +440,14 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   assert.match(config.commandScript ?? "", /BOOTSTRAP_BANNED_DIRS="\.openclaw \.hermes memory"/);
   assert.match(config.commandScript ?? "", /error=hermes_completed_without_changes/);
   assert.deepEqual(config.containedSubagents, {
-    enabled: false,
-    maxCount: 0,
+    enabled: true,
+    maxCount: 3,
     outputBytes: 12000,
     reasons: ["context_heavy", "broad_source_inspection", "validation_split"],
     roles: ["explorer", "verifier"],
   });
-  assert.match(config.commandScript ?? "", /contained_subagents=disabled/);
-  assert.match(config.commandScript ?? "", /Do not spawn Hermes subagents/);
+  assert.match(config.commandScript ?? "", /contained_subagents=enabled/);
+  assert.match(config.commandScript ?? "", /spawn up to 3 Hermes subagent/);
   assert.deepEqual(config.hermesProfile, { configDir: "/root/.hermes" });
   assert.deepEqual(config.extraMounts, [
     { source: "/root/.hermes", target: "/run/secrets/hermes-dir", readOnly: true },

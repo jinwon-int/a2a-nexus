@@ -128,7 +128,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
       .map((value) => value.trim())
       .filter(Boolean),
     extraMounts,
-    containedSubagents: loadContainedSubagentsConfig(env, profile),
+    containedSubagents: loadContainedSubagentsConfig(env, patchCommand.commandProfile, profile),
     proofSigningKeyFile: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KEY_FILE || "").trim() || undefined,
     proofSigningKid: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KID || "").trim() || undefined,
     ...patchCommand,
@@ -413,11 +413,12 @@ function loadPatchCommandConfig(
 
 function loadContainedSubagentsConfig(
   env: NodeJS.ProcessEnv,
-  profile: RunnerCommandProfile | undefined,
+  effectiveProfile: RunnerCommandProfile | undefined,
+  selectedProfile: RunnerCommandProfile | undefined = effectiveProfile,
 ): RunnerContainedSubagentsConfig {
-  const enabled = isTruthy(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED);
+  const enabled = containedSubagentsEnabledByDefault(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED, effectiveProfile);
   const maxCount = enabled
-    ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 2, 1, 4, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
+    ? parseBoundedInteger(env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX, 3, 1, 4, "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX")
     : 0;
   const outputBytes = parseBoundedInteger(
     env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES,
@@ -435,11 +436,19 @@ function loadContainedSubagentsConfig(
   const roles = parseEnumList<RunnerContainedSubagentRole>(
     env.A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES,
     ["explorer", "implementer", "verifier"],
-    profile === "hermes" ? ["explorer", "verifier"] : ["explorer", "implementer", "verifier"],
+    (effectiveProfile ?? selectedProfile) === "hermes" ? ["explorer", "verifier"] : ["explorer", "implementer", "verifier"],
     "A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ROLES",
   );
 
   return { enabled, maxCount, outputBytes, reasons, roles };
+}
+
+function containedSubagentsEnabledByDefault(value: string | undefined, profile: RunnerCommandProfile | undefined): boolean {
+  if (value !== undefined && value.trim() !== "") {
+    if (/^(0|false|no|off)$/i.test(value.trim())) return false;
+    return /^(1|true|yes|on)$/i.test(value.trim());
+  }
+  return profile === "openclaw" || profile === "hermes";
 }
 
 function isTruthy(value?: string): boolean {

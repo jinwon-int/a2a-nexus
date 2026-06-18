@@ -141,3 +141,25 @@ test("simple non-patch work without an explicit profile stays direct (budget 0) 
   assert.equal(trivial.decision.parallelismHint, 0);
   assert.deepEqual(trivial.decision.recommendedSubagents, []);
 });
+
+
+test("shared workspace clamps multiple implementers to one and records the reduction", () => {
+  const packet = buildA2AWorkerSubagentOrchestrationPolicy({
+    now: NOW,
+    executionIsolation: "shared",
+    task: {
+      taskId: "task-shared",
+      size: "large",
+      coupling: "low",
+      hasIndependentSubtasks: true,
+      writeSets: ["packages/broker/src/a.ts", "packages/docker-runner/src/b.ts"],
+    },
+    host: { workerId: "worker-shared", cpuLoadPct: 20, memoryUsedPct: 35, workerSubagentCap: 4 },
+  });
+
+  assert.equal(packet.decision.parallelismHint, 3);
+  assert.deepEqual(packet.decision.recommendedSubagents.map((agent) => agent.role), ["explorer", "implementer", "verifier"]);
+  assert.equal(packet.decision.recommendedSubagents.filter((agent) => agent.role === "implementer").length, 1);
+  assert.ok(packet.resourceGate.reducedBy.includes("shared_workspace"));
+  assert.equal(packet.boundaries.mandatoryProductionSpawn, false);
+});
