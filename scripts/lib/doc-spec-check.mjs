@@ -54,6 +54,10 @@ function applyAssertion({ expect }, roots, assertion, label) {
     expect(Array.isArray(actual) || typeof actual === 'string', `${message}: minLength target must be array or string`);
     expect((actual?.length ?? 0) >= assertion.minLength, `${message}: length ${(actual?.length ?? 0)} < ${assertion.minLength}`);
   }
+  if ('lengthEquals' in assertion) {
+    expect(Array.isArray(actual) || typeof actual === 'string', `${message}: lengthEquals target must be array or string`);
+    expect((actual?.length ?? 0) === assertion.lengthEquals, `${message}: length ${(actual?.length ?? 0)} !== ${assertion.lengthEquals}`);
+  }
   if ('arraySome' in assertion) {
     expect(Array.isArray(actual), `${message}: arraySome target must be an array`);
     expect(actual?.some((item) => matchesWhere(item, assertion.arraySome)), `${message}: missing matching object ${describe(assertion.arraySome)}`);
