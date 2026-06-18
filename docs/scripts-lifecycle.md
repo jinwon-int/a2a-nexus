@@ -71,6 +71,24 @@ Adding a gate = add one manifest entry. Retiring one = flip `archived` (then,
 once its round is closed, move the file — see below). No more editing a giant
 `package.json` line.
 
+## Data-driven doc/fixture specs
+
+For `check-*.mjs` files that only validate a fixture, a doc, package wiring, and
+release-gate presence, prefer the data-driven path instead of adding another
+bespoke script body:
+
+1. Add an entry to `docs/ops/data-driven-validation-registry.json`.
+2. Keep the historical npm script and `scripts/check-*.mjs` filename stable.
+3. Make that script a thin wrapper around `runDocSpecCheck('<id>')` from
+   `scripts/lib/doc-spec-check.mjs`.
+4. Put repeated assertions in the registry (`equals`, `includes`, `includesAll`,
+   `matches`, `min`, `arraySome`, `arrayEveryEquals`) rather than duplicating
+   `readRel` / `parseJson` / `expect` boilerplate.
+
+This preserves source-backed release checks while moving the repeated validation
+shape into data. It also keeps existing release-gate entries, docs, and issue
+links stable during incremental migration.
+
 ## Retiring a `round` (follow-up flow)
 
 This is intentionally a **two-step**, evidence-backed flow, and it happens in
