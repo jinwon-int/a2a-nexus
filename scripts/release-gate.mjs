@@ -39,6 +39,8 @@ const steps = [
   ['broker-docker-hardening', 'npm', ['run', 'check:broker-docker-hardening']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
   ['doc-check-lib', 'npm', ['run', 'test:doc-check-lib']],
+  ['script-budget', 'npm', ['run', 'check:script-budget']],
+  ['script-budget-tests', 'npm', ['run', 'check:script-budget:test']],
 ];
 
 for (const [name, command, args] of steps) {
