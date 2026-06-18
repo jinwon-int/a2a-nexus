@@ -1,7 +1,1 @@
-# Interim owner — this is not a public maintainer roster.
-# The repository is public as of 2026-05-27. See docs/public-readiness.md
-# for the promotion-readiness gate record before promoting this to a
-# stable public maintainer assignment.
-# Replace with the approved public maintainer team before any stable-release
-# or npm/Docker publication step.
-* @jinon86
+# CODEOWNERS is maintained at .github/CODEOWNERS.

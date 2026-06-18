@@ -1,7 +1,7 @@
 {
   "name": "@jinwon-int/a2a-nexus-monorepo",
   "private": true,
-  "description": "Private A2A Nexus candidate for broker, adapter plugin, Docker runner, contracts, docs, and examples.",
+  "description": "Public-source alpha A2A Nexus monorepo workspace for broker, adapter plugin, Docker runner, contracts, docs, and examples; package publication remains approval-gated.",
   "packageManager": "npm@10.9.4",
   "workspaces": [
     "packages/*"

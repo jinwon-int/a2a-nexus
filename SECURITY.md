@@ -8,7 +8,11 @@ Broader promotion (stable release, announcements, public docs site) remains bloc
 
 ## Reporting a vulnerability
 
-For now, report security concerns in the private issue tracker or directly to the repository maintainers using the approved private channel for this organization. Keep reports concise and redacted.
+Do not open public GitHub issues for vulnerabilities. Use GitHub private vulnerability reporting for this repository when available:
+
+https://github.com/jinwon-int/a2a-nexus/security/advisories/new
+
+If private vulnerability reporting is unavailable, contact the repository maintainers through the organization-approved private contact channel listed in repository metadata or SUPPORT.md. Keep reports concise and redacted.
 
 Do not include:
 
@@ -26,11 +30,12 @@ The following actions are not authorized by normal docs, issues, PRs, or local v
 - production deploys or Gateway/broker/worker restarts
 - production database mutation
 - live provider or Telegram sends
-- terminal-outbox ACK mutation
-- secret rotation or disclosure
+- terminal-outbox ACK/replay mutation
+- creating or moving tags, GitHub Releases, npm publishes, Docker/image publication, or package publication
+- secret/credential movement, rotation, or disclosure
 - history rewrite or force push
 
-Explicit operator approval must name the action before any exception.
+Explicit operator approval must name the exact action, target repository or artifact, and rollback/no-op boundary before any exception.
 
 ## Evidence handling
 
@@ -48,4 +53,4 @@ If any of those files would enter a branch or artifact bundle, fail closed and r
 
 ## Supported versions
 
-No public/stable version is supported yet. Treat all packages in this monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.
+No stable release, npm package, Docker image, or production deployment is supported yet. Treat all packages in this public-source monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.

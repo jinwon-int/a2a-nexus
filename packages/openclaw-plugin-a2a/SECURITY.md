@@ -12,7 +12,7 @@
 
 **Do not open a public issue for security vulnerabilities.**
 
-This repository is part of a private development layout. Report vulnerabilities through the parent project's internal channels or by contacting the repository maintainers directly.
+This package is part of a public-source alpha monorepo, but vulnerability details must remain private. Report vulnerabilities through the parent project's private reporting channel or by contacting the repository maintainers directly.
 
 Include:
 - A clear description of the vulnerability
@@ -38,7 +38,7 @@ Out of scope:
 
 ## Disclosure
 
-This is a private/unpublished plugin. Do not publicly disclose vulnerabilities before the maintainers confirm a fix is available.
+This is an unpublished alpha plugin package. Do not publicly disclose vulnerabilities before the maintainers confirm a fix is available.
 
 ## Safety invariants
 
