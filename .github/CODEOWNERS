@@ -1,6 +1,6 @@
 # A2A Nexus CODEOWNERS
 #
-# Review-routing for the public alpha repository. This does not move finalizer
+# Review-routing for the public-readiness alpha repository. This does not move finalizer
 # authority to workers, is not a stable public maintainer roster, and does not
 # authorize releases, package publication, production deploys, repository
 # visibility changes, secret movement, history rewrites, or force pushes.
