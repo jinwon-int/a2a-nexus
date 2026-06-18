@@ -7,41 +7,9 @@
  * split-repo disposition actions, releases, tags, publishing, deployments,
  * restarts, credential movement, provider sends, or Terminal ACK/replay.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(message) {
-  failures.push(message);
-}
-
-function expect(condition, message) {
-  if (!condition) fail(message);
-}
-
-function readRel(rel) {
-  try {
-    return fs.readFileSync(path.join(root, rel), 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-function parseJson(rel) {
-  const text = readRel(rel);
-  if (text === null) {
-    fail(`missing ${rel}`);
-    return null;
-  }
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    fail(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
-}
+const { root, failures, fail, expect, readRel, parseJson } = createDocCheckContext();
 
 const fixture = parseJson('fixtures/current-state/monorepo-operator-approval-handoff.json');
 const doc = readRel('docs/monorepo-operator-approval-handoff.md');

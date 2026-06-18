@@ -38,6 +38,7 @@ const steps = [
   ['broker-core-dependency-isolation', 'npm', ['run', 'check:broker-core-dependency-isolation']],
   ['broker-docker-hardening', 'npm', ['run', 'check:broker-docker-hardening']],
   ['monorepo-branch-release-policy', 'npm', ['run', 'check:monorepo-branch-release-policy']],
+  ['doc-check-lib', 'npm', ['run', 'test:doc-check-lib']],
 ];
 
 for (const [name, command, args] of steps) {

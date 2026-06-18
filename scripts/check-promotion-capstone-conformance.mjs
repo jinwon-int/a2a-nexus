@@ -5,27 +5,9 @@
  * Safety: read-only validation. No deploy, no restart, no live send, no
  * provider/Telegram traffic, and no production broker assumptions.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(message) {
-  failures.push(message);
-}
-
-function expect(condition, message) {
-  if (!condition) fail(message);
-}
-
-function readRel(rel) {
-  try {
-    return fs.readFileSync(path.join(root, rel), 'utf8');
-  } catch {
-    return null;
-  }
-}
+const { root, failures, fail, expect, readRel } = createDocCheckContext();
 
 function parseJson(rel) {
   const text = readRel(rel);
