@@ -4125,6 +4125,691 @@
             }
       ],
       "successMessage": "monorepo import rehearsal ok"
+},
+{
+      "id": "monorepo-ci-parity",
+      "title": "monorepo CI parity matrix",
+      "fixture": "fixtures/current-state/monorepo-ci-parity-matrix.json",
+      "doc": "docs/monorepo-ci-parity-matrix.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "ciWorkflow": ".github/workflows/ci.yml"
+      },
+      "packageScript": {
+            "name": "check:monorepo-ci-parity",
+            "command": "node scripts/check-monorepo-ci-parity-matrix.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-ci-parity",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-ci-parity"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-ci-parity-matrix.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent #511"
+            },
+            {
+                  "path": "childIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/514",
+                  "message": "child #514"
+            },
+            {
+                  "path": "refreshIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/528",
+                  "message": "refresh #528"
+            },
+            {
+                  "path": "phase2Issue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "message": "phase2 #530"
+            },
+            {
+                  "path": "phase4FreshImportCandidateIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "message": "phase4 #538"
+            },
+            {
+                  "path": "phase2Decision",
+                  "equals": "package_ci_parity_not_equal_or_stricter_yet",
+                  "message": "phase2 keeps parity blocked"
+            },
+            {
+                  "path": "phase4CandidateDecision",
+                  "equals": "package_ci_green_locally_but_canonical_flip_not_approved",
+                  "message": "phase4 keeps canonical flip blocked"
+            },
+            {
+                  "path": "decision",
+                  "equals": "record_ci_parity_matrix_without_canonical_flip",
+                  "message": "matrix-only decision"
+            },
+            {
+                  "path": "canonicalUntilParityGreen",
+                  "equals": "split_repos",
+                  "message": "split repos canonical until parity green"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip not approved"
+            },
+            {
+                  "path": "sourceRepos",
+                  "lengthEquals": 3,
+                  "message": "exact three A2A implementation repos"
+            },
+            {
+                  "path": "sourceRepos",
+                  "arraySome": {
+                        "surface": "broker",
+                        "sourceRepo": "jinwon-int/a2a-broker",
+                        "targetPath": "packages/broker",
+                        "sourceMain": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+                        "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
+                        "sourceWorkflow.node": "22",
+                        "planeJob.node": "22",
+                        "phase2PackageParity.equalOrStricter": false,
+                        "phase2PackageParity.freshPrefixRehearsal.sourceRef": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+                        "phase2PackageParity.freshPrefixRehearsal.splitTrackedFiles": 869,
+                        "phase2PackageParity.freshPrefixRehearsal.planeTrackedFiles": 236,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.changed": 86,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.addedOrUntracked": 633
+                  },
+                  "message": "source repo parity evidence broker"
+            },
+            {
+                  "path": "sourceRepos",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "sourceRepo": "jinwon-int/a2a-docker-runner",
+                        "targetPath": "packages/docker-runner",
+                        "sourceMain": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+                        "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
+                        "sourceWorkflow.node": "22",
+                        "planeJob.node": "22",
+                        "phase2PackageParity.equalOrStricter": false,
+                        "phase2PackageParity.freshPrefixRehearsal.sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+                        "phase2PackageParity.freshPrefixRehearsal.splitTrackedFiles": 138,
+                        "phase2PackageParity.freshPrefixRehearsal.planeTrackedFiles": 59,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.changed": 31,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.addedOrUntracked": 79
+                  },
+                  "message": "source repo parity evidence docker-runner"
+            },
+            {
+                  "path": "sourceRepos",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+                        "targetPath": "packages/openclaw-plugin-a2a",
+                        "sourceMain": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+                        "parityStatus": "fresh_import_candidate_package_ci_green_canonical_flip_blocked",
+                        "sourceWorkflow.node": "22",
+                        "planeJob.node": "22",
+                        "phase2PackageParity.equalOrStricter": false,
+                        "phase2PackageParity.freshPrefixRehearsal.sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+                        "phase2PackageParity.freshPrefixRehearsal.splitTrackedFiles": 179,
+                        "phase2PackageParity.freshPrefixRehearsal.planeTrackedFiles": 116,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.changed": 53,
+                        "phase2PackageParity.freshPrefixRehearsal.statusCounts.addedOrUntracked": 67
+                  },
+                  "message": "source repo parity evidence openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.0.sourceWorkflow.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "source workflow actions broker"
+            },
+            {
+                  "path": "sourceRepos.0.planeJob.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "plane job actions broker"
+            },
+            {
+                  "path": "sourceRepos.0.sourceWorkflow.commands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source workflow npm ci broker"
+            },
+            {
+                  "path": "sourceRepos.0.planeJob.commands",
+                  "includesAll": [
+                        "npm ci --include=dev"
+                  ],
+                  "message": "plane job npm ci include dev broker"
+            },
+            {
+                  "path": "sourceRepos.0.planeJob.commands",
+                  "lengthEquals": 2,
+                  "message": "plane job does not ignore lifecycle scripts broker"
+            },
+            {
+                  "path": "sourceRepos.0.requiredBeforeAuthoritative",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_build_info_generation",
+                        "prove_script_syntax_checks_and_test_globs",
+                        "decide_actions_v4_v5_policy",
+                        "compare_npm_ci_lifecycle_behavior"
+                  ],
+                  "message": "required before authoritative broker"
+            },
+            {
+                  "path": "sourceRepos.0.knownDifferences",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+                        "source_build_generates_build_info_plane_mirror_does_not",
+                        "source_test_runs_script_syntax_checks_plane_mirror_test_is_narrower",
+                        "plane_adds_root_public_readiness_scan"
+                  ],
+                  "message": "known differences broker"
+            },
+            {
+                  "path": "sourceRepos.0.phase2PackageParity.blockingGaps",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+                        "source_build_generates_build_info_plane_mirror_does_not",
+                        "source_test_runs_script_syntax_checks_plane_mirror_test_is_narrower",
+                        "plane_adds_root_public_readiness_scan"
+                  ],
+                  "message": "phase2 blocking gaps broker"
+            },
+            {
+                  "path": "sourceRepos.0.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_build_info_generation",
+                        "prove_script_syntax_checks_and_test_globs",
+                        "decide_actions_v4_v5_policy",
+                        "compare_npm_ci_lifecycle_behavior"
+                  ],
+                  "message": "required before mirror refresh broker"
+            },
+            {
+                  "path": "sourceRepos.0.requiredBeforeAuthoritative",
+                  "minLength": 5,
+                  "message": "required list length broker"
+            },
+            {
+                  "path": "sourceRepos.0.knownDifferences",
+                  "minLength": 5,
+                  "message": "known differences length broker"
+            },
+            {
+                  "path": "sourceRepos.0.phase2PackageParity.blockingGaps",
+                  "minLength": 5,
+                  "message": "blocking gaps length broker"
+            },
+            {
+                  "path": "sourceRepos.0.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "minLength": 5,
+                  "message": "mirror refresh requirements length broker"
+            },
+            {
+                  "path": "sourceRepos.1.sourceWorkflow.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "source workflow actions docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.planeJob.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "plane job actions docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.sourceWorkflow.commands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source workflow npm ci docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.planeJob.commands",
+                  "includesAll": [
+                        "npm ci --include=dev"
+                  ],
+                  "message": "plane job npm ci include dev docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.planeJob.commands",
+                  "lengthEquals": 2,
+                  "message": "plane job does not ignore lifecycle scripts docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.requiredBeforeAuthoritative",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_cli_package_files_and_bin",
+                        "add_build_lint_test_pre_pr_bootstrap_parity",
+                        "model_release_gate_dry_run_without_publish",
+                        "decide_artifact_and_tag_policy"
+                  ],
+                  "message": "required before authoritative docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.knownDifferences",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_runs_check_build_lint_test_pre_pr_guard_plane_job_runs_check_only",
+                        "source_release_gate_has_chaos_e2e_and_release_candidate_dry_run_plane_job_does_not",
+                        "source_package_has_files_and_license_metadata_plane_mirror_is_stale",
+                        "plane_adds_root_public_readiness_scan"
+                  ],
+                  "message": "known differences docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.phase2PackageParity.blockingGaps",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_runs_check_build_lint_test_pre_pr_guard_plane_job_runs_check_only",
+                        "source_release_gate_has_chaos_e2e_and_release_candidate_dry_run_plane_job_does_not",
+                        "source_package_has_files_and_license_metadata_plane_mirror_is_stale",
+                        "plane_adds_root_public_readiness_scan"
+                  ],
+                  "message": "phase2 blocking gaps docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_cli_package_files_and_bin",
+                        "add_build_lint_test_pre_pr_bootstrap_parity",
+                        "model_release_gate_dry_run_without_publish",
+                        "decide_artifact_and_tag_policy"
+                  ],
+                  "message": "required before mirror refresh docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.requiredBeforeAuthoritative",
+                  "minLength": 5,
+                  "message": "required list length docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.knownDifferences",
+                  "minLength": 5,
+                  "message": "known differences length docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.phase2PackageParity.blockingGaps",
+                  "minLength": 5,
+                  "message": "blocking gaps length docker-runner"
+            },
+            {
+                  "path": "sourceRepos.1.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "minLength": 5,
+                  "message": "mirror refresh requirements length docker-runner"
+            },
+            {
+                  "path": "sourceRepos.2.sourceWorkflow.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "source workflow actions openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.planeJob.actions",
+                  "includesAll": [
+                        "actions/checkout@v5",
+                        "actions/setup-node@v5"
+                  ],
+                  "message": "plane job actions openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.sourceWorkflow.commands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source workflow npm ci openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.planeJob.commands",
+                  "includesAll": [
+                        "npm ci --include=dev"
+                  ],
+                  "message": "plane job npm ci include dev openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.planeJob.commands",
+                  "lengthEquals": 2,
+                  "message": "plane job does not ignore lifecycle scripts openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.requiredBeforeAuthoritative",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_openclaw_peer_boundary",
+                        "preserve_manifest_copy_and_prepack_behavior",
+                        "add_plugin_local_public_scan_and_a2a_conformance_smoke",
+                        "verify_files_bin_exports"
+                  ],
+                  "message": "required before authoritative openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.knownDifferences",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+                        "source_runs_plugin_local_public_scan_plane_runs_root_scan",
+                        "source_runs_a2a_conformance_smoke_plane_mirror_does_not",
+                        "source_package_has_bin_and_new_docs_files_plane_mirror_is_stale"
+                  ],
+                  "message": "known differences openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.phase2PackageParity.blockingGaps",
+                  "includesAll": [
+                        "source_ci_uses_actions_v5_plane_uses_actions_v4",
+                        "source_ci_uses_npm_ci_plane_uses_npm_ci_ignore_scripts",
+                        "source_runs_plugin_local_public_scan_plane_runs_root_scan",
+                        "source_runs_a2a_conformance_smoke_plane_mirror_does_not",
+                        "source_package_has_bin_and_new_docs_files_plane_mirror_is_stale"
+                  ],
+                  "message": "phase2 blocking gaps openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "includesAll": [
+                        "fresh_prefix_import_from_source_main",
+                        "preserve_openclaw_peer_boundary",
+                        "preserve_manifest_copy_and_prepack_behavior",
+                        "add_plugin_local_public_scan_and_a2a_conformance_smoke",
+                        "verify_files_bin_exports"
+                  ],
+                  "message": "required before mirror refresh openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.requiredBeforeAuthoritative",
+                  "minLength": 5,
+                  "message": "required list length openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.knownDifferences",
+                  "minLength": 5,
+                  "message": "known differences length openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.phase2PackageParity.blockingGaps",
+                  "minLength": 5,
+                  "message": "blocking gaps length openclaw-plugin-a2a"
+            },
+            {
+                  "path": "sourceRepos.2.phase2PackageParity.requiredBeforeMirrorRefresh",
+                  "minLength": 5,
+                  "message": "mirror refresh requirements length openclaw-plugin-a2a"
+            },
+            {
+                  "path": "outOfScopeRepos",
+                  "arraySome": {
+                        "repo": "jinwon-int/agent-olympics",
+                        "reason": "independent_repository_not_a2a_ci_parity_package_boundary_or_issue_routing_input"
+                  },
+                  "message": "agent-olympics explicit out-of-scope repo"
+            },
+            {
+                  "path": "sharedUmbrellaGates",
+                  "includesAll": [
+                        "test:conformance",
+                        "scan:external-secrets",
+                        "scan:readiness-gates",
+                        "check:monorepo-reentry",
+                        "check:monorepo-import-rehearsal",
+                        "check:monorepo-ci-parity"
+                  ],
+                  "message": "shared umbrella gates"
+            },
+            {
+                  "path": "boundaries.repositoryImportToMain",
+                  "equals": false,
+                  "message": "boundary repositoryImportToMain"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundary visibilityChange"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundary productionDeploy"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundary gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundary brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "CI Parity Matrix",
+                  "message": "doc phrase CI Parity Matrix"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Split repo CI remains canonical",
+                  "message": "doc phrase Split repo CI remains canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "[Nn]ot green for canonical flip",
+                  "message": "doc phrase Not green for canonical flip"
+            },
+            {
+                  "source": "doc",
+                  "matches": "package-boundary gap",
+                  "message": "doc phrase package-boundary gap"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Agent Olympics is out of scope",
+                  "message": "doc phrase Agent Olympics is out of scope"
+            },
+            {
+                  "source": "doc",
+                  "matches": "canonical flip gate remains closed",
+                  "message": "doc phrase canonical flip gate remains closed"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Phase-2 Parity Gate",
+                  "message": "doc phrase Phase-2 Parity Gate"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#530",
+                  "message": "doc phrase a2a-plane#530"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#511",
+                  "message": "doc phrase a2a-plane#511"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#514",
+                  "message": "doc phrase a2a-plane#514"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#528",
+                  "message": "doc phrase a2a-plane#528"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "CI parity matrix",
+                  "message": "reentry doc CI parity matrix"
+            },
+            {
+                  "source": "reentryDoc",
+                  "matches": "Not green",
+                  "message": "reentry doc not green gate"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#514",
+                  "message": "current-state reference a2a-plane#514"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#515",
+                  "message": "current-state reference a2a-plane#515"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#517",
+                  "message": "current-state reference a2a-plane#517"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#528",
+                  "message": "current-state reference a2a-plane#528"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#530",
+                  "message": "current-state reference a2a-plane#530"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "#531",
+                  "message": "current-state reference #531"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs broker",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs broker"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs docker-runner",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs docker-runner"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "actions\\/checkout@v5",
+                  "message": "ci workflow phrase actions/checkout@v5"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "actions\\/setup-node@v5",
+                  "message": "ci workflow phrase actions/setup-node@v5"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "npm ci --include=dev",
+                  "message": "ci workflow phrase npm ci --include=dev"
+            }
+      ],
+      "successMessage": "monorepo CI parity matrix ok"
 }
   ]
 }
