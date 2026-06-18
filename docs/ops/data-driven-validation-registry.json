@@ -3058,6 +3058,677 @@
             }
       ],
       "successMessage": "monorepo canonical flip readiness ok"
+},
+{
+      "id": "monorepo-split-repo-disposition-rollback",
+      "title": "monorepo split-repo disposition rollback",
+      "fixture": "fixtures/current-state/monorepo-split-repo-disposition-rollback.json",
+      "doc": "docs/monorepo-split-repo-disposition-rollback.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "readiness": "docs/monorepo-canonical-flip-readiness.md",
+            "branchPacket": "docs/monorepo-branch-protection-approval-packet.md",
+            "releaseGate": "scripts/release-gate.mjs"
+      },
+      "packageScript": {
+            "name": "check:monorepo-split-repo-disposition-rollback",
+            "command": "node scripts/check-monorepo-split-repo-disposition-rollback.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-split-repo-disposition-rollback",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-split-repo-disposition-rollback"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-split-repo-disposition-rollback.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "snapshotDate",
+                  "equals": "2026-06-10",
+                  "message": "snapshot date"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+                  "message": "parent issue"
+            },
+            {
+                  "path": "operatorApprovalPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+                  "message": "operator approval PR"
+            },
+            {
+                  "path": "operatorApprovalMergeCommit",
+                  "equals": "910a796b9540cb839a8fa4a1148aa38a90694eea",
+                  "message": "operator approval merge commit"
+            },
+            {
+                  "path": "branchProtectionPacketPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/564",
+                  "message": "branch protection packet PR"
+            },
+            {
+                  "path": "activeRuleset.id",
+                  "equals": 17499616,
+                  "message": "active ruleset id"
+            },
+            {
+                  "path": "activeRuleset.name",
+                  "equals": "a2a-nexus-main-required-checks",
+                  "message": "active ruleset name"
+            },
+            {
+                  "path": "activeRuleset.enforcement",
+                  "equals": "active",
+                  "message": "active ruleset enforcement"
+            },
+            {
+                  "path": "a2aDecisionRound",
+                  "matches": "^a2a-splitdisposition-20260610T\\d{6}Z$",
+                  "message": "A2A decision round"
+            },
+            {
+                  "path": "splitRepoDispositionDecision",
+                  "equals": "NO_GO_WAITING_ACTIVE_CANONICAL_REMAINS",
+                  "message": "split repo disposition decision"
+            },
+            {
+                  "path": "rollbackOwnerDecision",
+                  "equals": "NO_GO_WAITING_PARTIAL_BEFORE_FLIP_PR_REVERT_OWNER_ONLY",
+                  "message": "rollback owner decision"
+            },
+            {
+                  "path": "canonicalFlipDecision",
+                  "equals": "GO_CANDIDATE_PR_FIRST_EXECUTION_SEPARATED",
+                  "message": "canonical flip decision"
+            },
+            {
+                  "path": "splitReposRemainCanonical",
+                  "equals": true,
+                  "message": "split repos remain canonical"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip approval boundary"
+            },
+            {
+                  "path": "packageOwnershipTransferred",
+                  "equals": false,
+                  "message": "package ownership transfer boundary"
+            },
+            {
+                  "path": "repositories",
+                  "lengthEquals": 3,
+                  "message": "repository count"
+            },
+            {
+                  "path": "repositories",
+                  "arraySome": {
+                        "surface": "broker",
+                        "repo": "jinwon-int/a2a-broker",
+                        "defaultBranch": "main",
+                        "monorepoTargetPath": "packages/broker",
+                        "currentDisposition": "active_canonical",
+                        "candidateDisposition": "active_canonical"
+                  },
+                  "message": "repository disposition broker"
+            },
+            {
+                  "path": "repositories",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "repo": "jinwon-int/a2a-docker-runner",
+                        "defaultBranch": "main",
+                        "monorepoTargetPath": "packages/docker-runner",
+                        "currentDisposition": "active_canonical",
+                        "candidateDisposition": "active_canonical"
+                  },
+                  "message": "repository disposition docker-runner"
+            },
+            {
+                  "path": "repositories",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "repo": "jinwon-int/plugin-a2a",
+                        "defaultBranch": "main",
+                        "monorepoTargetPath": "packages/openclaw-plugin-a2a",
+                        "currentDisposition": "active_canonical",
+                        "candidateDisposition": "active_canonical"
+                  },
+                  "message": "repository disposition openclaw-plugin-a2a"
+            },
+            {
+                  "path": "repositories",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "legacyRepoAlias": "jinwon-int/openclaw-plugin-a2a"
+                  },
+                  "message": "plugin legacy alias"
+            },
+            {
+                  "path": "dispositionOptions",
+                  "includesAll": [
+                        "active_canonical",
+                        "active_mirrored",
+                        "read_only_archive",
+                        "archived_redirect"
+                  ],
+                  "message": "disposition options"
+            },
+            {
+                  "path": "approvedDispositionChanges",
+                  "lengthEquals": 0,
+                  "message": "approved disposition changes"
+            },
+            {
+                  "path": "candidateOnlyDisposition",
+                  "equals": "active_mirrored",
+                  "message": "candidate-only disposition"
+            },
+            {
+                  "path": "rollbackOwnerFields.beforeFlipPackageCandidateRegression",
+                  "matches": "normal_pr_revert",
+                  "message": "before-flip rollback owner"
+            },
+            {
+                  "path": "rollbackOwnerFields.activeMirroredConflict",
+                  "matches": "unassigned",
+                  "message": "active mirrored conflict owner"
+            },
+            {
+                  "path": "rollbackOwnerFields.afterFlipPackageRegression",
+                  "matches": "unassigned",
+                  "message": "after-flip package regression owner"
+            },
+            {
+                  "path": "rollbackOwnerFields.misappliedSplitRepoDisposition",
+                  "matches": "unassigned",
+                  "message": "misapplied disposition owner"
+            },
+            {
+                  "path": "rollbackOwnerFields.releasePackageRegression",
+                  "matches": "unassigned",
+                  "message": "release package regression owner"
+            },
+            {
+                  "path": "workerEvidence",
+                  "lengthEquals": 6,
+                  "message": "worker evidence count"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "sogyo",
+                        "broker": "seoseo",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-sogyo",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence sogyo"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "nosuk",
+                        "broker": "seoseo",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-nosuk",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence nosuk"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "bangtong",
+                        "broker": "seoseo",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-bangtong",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence bangtong"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "dungae",
+                        "broker": "gwakga",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-dungae",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence dungae"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "jingun",
+                        "broker": "gwakga",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-jingun",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence jingun"
+            },
+            {
+                  "path": "workerEvidence",
+                  "arraySome": {
+                        "worker": "soonwook",
+                        "broker": "gwakga",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-soonwook",
+                        "status": "succeeded"
+                  },
+                  "message": "worker evidence soonwook"
+            },
+            {
+                  "path": "workerEvidence.0.summary",
+                  "minLength": 21,
+                  "message": "worker summary length sogyo"
+            },
+            {
+                  "path": "workerEvidence.1.summary",
+                  "minLength": 21,
+                  "message": "worker summary length nosuk"
+            },
+            {
+                  "path": "workerEvidence.2.summary",
+                  "minLength": 21,
+                  "message": "worker summary length bangtong"
+            },
+            {
+                  "path": "workerEvidence.3.summary",
+                  "minLength": 21,
+                  "message": "worker summary length dungae"
+            },
+            {
+                  "path": "workerEvidence.4.summary",
+                  "minLength": 21,
+                  "message": "worker summary length jingun"
+            },
+            {
+                  "path": "workerEvidence.5.summary",
+                  "minLength": 21,
+                  "message": "worker summary length soonwook"
+            },
+            {
+                  "path": "acceptedRiskRegister.trackedTreeImportNotHistoryPreserving",
+                  "minLength": 1,
+                  "message": "accepted risk trackedTreeImportNotHistoryPreserving"
+            },
+            {
+                  "path": "acceptedRiskRegister.closedIssuesPrsRemainInSplitRepos",
+                  "minLength": 1,
+                  "message": "accepted risk closedIssuesPrsRemainInSplitRepos"
+            },
+            {
+                  "path": "acceptedRiskRegister.branchProtectionRulesetApplied",
+                  "minLength": 1,
+                  "message": "accepted risk branchProtectionRulesetApplied"
+            },
+            {
+                  "path": "acceptedRiskRegister.splitRepoDispositionUndecided",
+                  "minLength": 1,
+                  "message": "accepted risk splitRepoDispositionUndecided"
+            },
+            {
+                  "path": "acceptedRiskRegister.postFlipRollbackOwnerUnassigned",
+                  "minLength": 1,
+                  "message": "accepted risk postFlipRollbackOwnerUnassigned"
+            },
+            {
+                  "path": "acceptedRiskRegister.releasePackageTagPolicyUnapproved",
+                  "minLength": 1,
+                  "message": "accepted risk releasePackageTagPolicyUnapproved"
+            },
+            {
+                  "path": "acceptedRiskRegister.pluginRepoAliasDrift",
+                  "minLength": 1,
+                  "message": "accepted risk pluginRepoAliasDrift"
+            },
+            {
+                  "path": "goNoGoFields.splitReposRemainCanonical",
+                  "equals": true,
+                  "message": "go/no-go splitReposRemainCanonical"
+            },
+            {
+                  "path": "goNoGoFields.a2aNexusRulesetApplied",
+                  "equals": true,
+                  "message": "go/no-go a2aNexusRulesetApplied"
+            },
+            {
+                  "path": "goNoGoFields.dispositionOptionsRecorded",
+                  "equals": true,
+                  "message": "go/no-go dispositionOptionsRecorded"
+            },
+            {
+                  "path": "goNoGoFields.rollbackOwnerFieldsRecorded",
+                  "equals": true,
+                  "message": "go/no-go rollbackOwnerFieldsRecorded"
+            },
+            {
+                  "path": "goNoGoFields.acceptedRiskRegisterRecorded",
+                  "equals": true,
+                  "message": "go/no-go acceptedRiskRegisterRecorded"
+            },
+            {
+                  "path": "goNoGoFields.splitRepoDispositionApproved",
+                  "equals": false,
+                  "message": "go/no-go splitRepoDispositionApproved"
+            },
+            {
+                  "path": "goNoGoFields.activeMirroredApproved",
+                  "equals": false,
+                  "message": "go/no-go activeMirroredApproved"
+            },
+            {
+                  "path": "goNoGoFields.readOnlyArchiveApproved",
+                  "equals": false,
+                  "message": "go/no-go readOnlyArchiveApproved"
+            },
+            {
+                  "path": "goNoGoFields.archivedRedirectApproved",
+                  "equals": false,
+                  "message": "go/no-go archivedRedirectApproved"
+            },
+            {
+                  "path": "goNoGoFields.postFlipRollbackOwnerAssigned",
+                  "equals": false,
+                  "message": "go/no-go postFlipRollbackOwnerAssigned"
+            },
+            {
+                  "path": "goNoGoFields.packageOwnershipTransferred",
+                  "equals": false,
+                  "message": "go/no-go packageOwnershipTransferred"
+            },
+            {
+                  "path": "goNoGoFields.canonicalFlipApproved",
+                  "equals": false,
+                  "message": "go/no-go canonicalFlipApproved"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "NO_GO_WAITING_ACTIVE_CANONICAL_REMAINS",
+                  "message": "go/no-go decision"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundary splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.splitRepoReadOnly",
+                  "equals": false,
+                  "message": "boundary splitRepoReadOnly"
+            },
+            {
+                  "path": "boundaries.splitRepoRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoRedirect"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundary permissionChange"
+            },
+            {
+                  "path": "boundaries.codeownersEnforcementChange",
+                  "equals": false,
+                  "message": "boundary codeownersEnforcementChange"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundary historicalReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#553",
+                  "message": "doc phrase a2a-nexus#553"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#563",
+                  "message": "doc phrase a2a-nexus#563"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#564",
+                  "message": "doc phrase a2a-nexus#564"
+            },
+            {
+                  "source": "doc",
+                  "matches": "NO_GO / Waiting",
+                  "message": "doc phrase NO_GO / Waiting"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Current Source Lineage",
+                  "message": "doc phrase Current Source Lineage"
+            },
+            {
+                  "source": "doc",
+                  "matches": "A2A Review Evidence",
+                  "message": "doc phrase A2A Review Evidence"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Disposition Options",
+                  "message": "doc phrase Disposition Options"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Rollback Owner Fields",
+                  "message": "doc phrase Rollback Owner Fields"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Accepted-risk Register",
+                  "message": "doc phrase Accepted-risk Register"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Required Follow-up Before Execution",
+                  "message": "doc phrase Required Follow-up Before Execution"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "matches": "active_canonical",
+                  "message": "doc phrase active_canonical"
+            },
+            {
+                  "source": "doc",
+                  "matches": "active_mirrored",
+                  "message": "doc phrase active_mirrored"
+            },
+            {
+                  "source": "doc",
+                  "matches": "read_only_archive",
+                  "message": "doc phrase read_only_archive"
+            },
+            {
+                  "source": "doc",
+                  "matches": "archived_redirect",
+                  "message": "doc phrase archived_redirect"
+            },
+            {
+                  "source": "doc",
+                  "matches": "jinwon-int/plugin-a2a",
+                  "message": "doc phrase jinwon-int/plugin-a2a"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`sogyo`",
+                  "message": "doc worker sogyo"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`nosuk`",
+                  "message": "doc worker nosuk"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`bangtong`",
+                  "message": "doc worker bangtong"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`dungae`",
+                  "message": "doc worker dungae"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`jingun`",
+                  "message": "doc worker jingun"
+            },
+            {
+                  "source": "doc",
+                  "includes": "`soonwook`",
+                  "message": "doc worker soonwook"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*archive/read-only/redirect actions remain `GO`)[\\s\\S]*$",
+                  "message": "doc forbids archive/read-only GO wording"
+            },
+            {
+                  "source": "doc",
+                  "matches": "^(?![\\s\\S]*canonicalFlipApproved` \\| `true`)[\\s\\S]*$",
+                  "message": "doc forbids canonicalFlipApproved true wording"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-nexus#553",
+                  "message": "current-state active #553 reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "monorepo-split-repo-disposition-rollback\\.md",
+                  "message": "current-state disposition packet reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "active_canonical",
+                  "message": "current-state active_canonical posture"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "a2a-nexus#553",
+                  "message": "readiness active #553 lane"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "rollback owner",
+                  "message": "readiness rollback owner reference"
+            },
+            {
+                  "source": "branchPacket",
+                  "matches": "a2a-nexus#553",
+                  "message": "branch packet #553 reference"
+            },
+            {
+                  "source": "branchPacket",
+                  "matches": "split-repo disposition",
+                  "message": "branch packet split-repo disposition reference"
+            }
+      ],
+      "successMessage": "monorepo split-repo disposition rollback ok"
 }
   ]
 }
