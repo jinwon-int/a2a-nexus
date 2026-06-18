@@ -394,6 +394,15 @@ function isReadOnlyAnalysisTask(task) {
   const mode = taskMode(task).toLowerCase();
   // Explicit mode match: payload.mode must name a recognized analysis-only mode.
   if (intent === "analyze" && READ_ONLY_ANALYSIS_MODES.has(mode)) return true;
+  // GitHub read-only validation modes are also analysis tasks when the
+  // OpenClaw analysis bridge is explicitly enabled (#884). Without this, an
+  // enabled bridge is bypassed and the task falls through to the generic
+  // GitHub executor-not-configured path instead of producing substantive
+  // read-only analysis evidence.
+  if (
+    (intent === "analyze" || intent === "verify" || intent === "validate_change")
+    && GITHUB_READ_ONLY_VALIDATION_MODES.has(mode)
+  ) return true;
   if (isSourceOnlyAnalysisTask(task)) return true;
   return false;
 }

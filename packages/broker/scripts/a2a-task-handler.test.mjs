@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { __test, handleTask } from "./a2a-task-handler.mjs";
@@ -599,6 +602,55 @@ test("github-readonly-validation alias is treated as GitHub evidence and refuses
 
   assert.equal(result.error?.code, "github_executor_not_configured");
   assert.match(result.error?.message ?? "", /refusing built-in no-op success/);
+});
+
+test("github-read-only-validation uses the read-only analysis bridge when enabled (#884)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-openclaw-analysis-"));
+  const bin = join(dir, "fake-openclaw.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "source-backed readonly validation reached analysis bridge",
+  findings: ["bridge invoked"],
+  risks: ["none"],
+  recommendations: ["continue"],
+  evidenceRefs: ["#884"]
+};
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-readonly-bridge",
+      intent: "analyze",
+      assignedWorkerId: "sogyo",
+      message: "Analyze #884 read-only evidence",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#884",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
+      A2A_NODE_ID: "sogyo",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.match(result.result.summary, /analysis bridge done/);
+    assert.deepEqual(result.result.output.findings, ["bridge invoked"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 
