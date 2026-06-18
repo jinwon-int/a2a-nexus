@@ -128,14 +128,24 @@ expect(typeof brokerPkg.scripts?.['worker:echo'] === 'string', 'broker package.j
 expect(/127\.0\.0\.1:8787/.test(brokerPkg.scripts?.['start:local'] || ''), 'start:local must bind loopback broker URL');
 expect(/WORKER_HANDLER_BUILTIN=echo/.test(brokerPkg.scripts?.['worker:echo'] || ''), 'worker:echo must use built-in echo handler');
 
-// ── Release gate must include public-readiness scan ─────────────────────────
+// ── Release gate must keep public-readiness and package checks ──────────────
 
-const releaseGate = readRel('scripts/release-gate.mjs');
-expect(releaseGate !== null, 'missing scripts/release-gate.mjs');
-if (releaseGate) {
-  expect(/scan:public-readiness/.test(releaseGate), 'release-gate must include public-readiness scan');
-  expect(/check:layout/.test(releaseGate), 'release-gate must include layout check');
-  expect(/check:packages/.test(releaseGate), 'release-gate must include package checks');
+const releaseGateInventory = JSON.parse(readRel('docs/ops/release-gate-step-inventory.json') || '{}');
+expect(Array.isArray(releaseGateInventory.entries), 'missing release-gate step inventory entries');
+if (Array.isArray(releaseGateInventory.entries)) {
+  const byName = new Map(releaseGateInventory.entries.map((entry) => [entry.name, entry]));
+  const publicReadiness = byName.get('public-readiness');
+  const layout = byName.get('layout');
+  const packages = byName.get('packages');
+  expect(Boolean(publicReadiness), 'release-gate inventory must include public-readiness scan');
+  expect(publicReadiness?.tier === 'public-readiness', 'public-readiness scan must stay in public-readiness tier');
+  expect(JSON.stringify(publicReadiness?.args) === JSON.stringify(['run', 'scan:public-readiness']), 'public-readiness release-gate args must invoke scan:public-readiness');
+  expect(Boolean(layout), 'release-gate inventory must include layout check');
+  expect(layout?.tier === 'core', 'layout check must stay in core tier');
+  expect(JSON.stringify(layout?.args) === JSON.stringify(['run', 'check:layout']), 'layout release-gate args must invoke check:layout');
+  expect(Boolean(packages), 'release-gate inventory must include package checks');
+  expect(packages?.tier === 'core', 'package checks must stay in core tier');
+  expect(JSON.stringify(packages?.args) === JSON.stringify(['run', 'check:packages']), 'package release-gate args must invoke check:packages');
 }
 
 // ── Compatibility baseline doc ──────────────────────────────────────────────

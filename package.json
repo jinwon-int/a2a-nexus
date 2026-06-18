@@ -11,7 +11,7 @@
     "check": "npm run release-gate",
     "smoke:quickstart": "npm run build && npm run check:quickstart-conformance && npm run check:promotion-capstone && npm run check:external-harness-conformance && npm run test:release-gate",
     "release-gate": "node scripts/release-gate.mjs",
-    "check:release-gate-inventory": "node scripts/check-release-gate-step-inventory.mjs",
+    "check:release-gate-inventory": "node scripts/check-release-gate-step-inventory.mjs && node --test scripts/release-gate-tiering.test.mjs",
     "check:layout": "node scripts/check-layout.mjs",
     "review:check": "node scripts/review-worktree-check.mjs",
     "check:packages": "node scripts/check-packages.mjs",

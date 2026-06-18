@@ -101,12 +101,22 @@ test('canonical demo contains safety boundary', async () => {
 
 // ── Release gate validation ─────────────────────────────────────────────────
 
-test('release gate includes public-readiness scan', async () => {
-  const content = await readFile(join(repoRoot, 'scripts', 'release-gate.mjs'), 'utf8');
+test('release gate inventory keeps public-readiness and package checks', async () => {
+  const inventory = JSON.parse(await readFile(join(repoRoot, 'docs', 'ops', 'release-gate-step-inventory.json'), 'utf8'));
+  const byName = new Map(inventory.entries.map((entry) => [entry.name, entry]));
 
-  assert.match(content, /scan:public-readiness/);
-  assert.match(content, /check:layout/);
-  assert.match(content, /check:packages/);
+  assert.deepEqual(byName.get('public-readiness'), {
+    name: 'public-readiness',
+    command: 'npm',
+    args: ['run', 'scan:public-readiness'],
+    tier: 'public-readiness',
+    retirement: 'keep',
+    note: 'Public-readiness or visibility hygiene; do not retire as generic cleanup.',
+  });
+  assert.equal(byName.get('layout')?.tier, 'core');
+  assert.deepEqual(byName.get('layout')?.args, ['run', 'check:layout']);
+  assert.equal(byName.get('packages')?.tier, 'core');
+  assert.deepEqual(byName.get('packages')?.args, ['run', 'check:packages']);
 });
 
 // ── Root package.json validation ────────────────────────────────────────────

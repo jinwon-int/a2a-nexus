@@ -11,26 +11,41 @@ npm ci --ignore-scripts --include=dev
 npm run check
 ```
 
-`--ignore-scripts` keeps dependency installation side-effect free. Package build/test scripts run only when the explicit release gate invokes package-local `check` scripts.
+`--ignore-scripts` keeps dependency installation side-effect free. Package build/test scripts run only when the explicit release gate invokes package-local checks.
 
-## Root gate
+## Root gate tiers
 
-`npm run check` runs `scripts/release-gate.mjs`, which executes these steps in order:
+`npm run check` runs `scripts/release-gate.mjs`. The runner reads the source-backed inventory at [`docs/ops/release-gate-step-inventory.json`](ops/release-gate-step-inventory.json) and, by default, executes only the ordinary PR tiers:
 
-1. `npm run check:layout` — required monorepo paths exist.
-2. `npm run test:conformance` — contract fixtures and terminal-evidence ACK-boundary fixtures remain valid.
-3. `npm run check:packages` — every `packages/*/package.json` must define `scripts.check`, and each check must pass.
-4. `npm run check:runner-import-smoke` — the Docker runner package import surface remains usable from the monorepo.
-5. `npm run check:terminal-brief-routing` — production routing code must not bypass broker-owned delivery or treat provider acceptance as terminal ACK.
-6. `npm run check:message-id-ack-boundary` — documentation and fixtures must not describe provider message IDs or send success as ACK evidence.
-7. `npm run scan:public-readiness` — runtime/bootstrap files, token-shaped literals, and unsafe secret assignments must be absent from tracked or unignored candidate files.
-8. `npm run scan:readiness-gates` — the fail-closed readiness spec must keep the aggregate decision at `NO-GO` unless every required gate is satisfied.
-9. `npm run scan:external-secrets` — supported external secret/history scanners (`gitleaks` and/or `trufflehog`) must produce redacted clean evidence; the gate fails closed when neither scanner is installed.
-10. `node scripts/check-compatibility-baselines.mjs` — compatibility matrix rows must carry exact current baselines and must not retain unsupported baseline placeholders.
+| Tier | Default? | Purpose |
+|---|---:|---|
+| `core` | Yes | Monorepo layout, packages, contract/conformance, runtime safety, compatibility, script-budget, and release-gate self-checks. |
+| `public-readiness` | Yes | Public-readiness scanners and current-state docs guards that must stay current even while the repo is private. |
+| `historical-transition` | No | Canonical/split-repo transition evidence gates retained for audit or targeted review. |
+| `approval-gated` | No | Operator-approval handoff/signoff packets; these are explicit approval surfaces, not ordinary PR smoke. |
+| `package-publication` | No | Release/package/tag publication policy checks; these do not imply publish approval. |
+
+The default selection currently runs 22 of 41 inventoried steps (`core` + `public-readiness`). Historical transition, approval, and package-publication paths remain available but are no longer hidden inside every ordinary PR gate.
+
+Useful commands:
+
+```sh
+# Default ordinary PR gate: core + public-readiness.
+npm run check
+
+# Show the default selection without executing commands.
+npm run release-gate -- --list
+
+# Run every inventoried step, including historical/approval/publication gates.
+npm run release-gate -- --all
+
+# Add a specific opt-in tier to the default selection.
+npm run release-gate -- --tier historical-transition
+```
 
 ## External secret/history scan
 
-The integrated root gate includes the external scan wrapper:
+The default root gate keeps the external scan wrapper in the `public-readiness` tier:
 
 ```sh
 npm run scan:external-secrets
