@@ -1344,6 +1344,653 @@
             }
       ],
       "successMessage": "monorepo operator approval handoff ok"
+},
+{
+      "id": "monorepo-final-operator-signoff",
+      "title": "monorepo final operator sign-off matrix",
+      "fixture": "fixtures/current-state/monorepo-final-operator-signoff-matrix.json",
+      "doc": "docs/monorepo-final-operator-signoff-matrix.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "readiness": "docs/monorepo-canonical-flip-readiness.md",
+            "splitDisposition": "docs/monorepo-split-repo-disposition-rollback.md",
+            "releasePacket": "docs/monorepo-release-package-tag-approval-packet.md",
+            "branchPacket": "docs/monorepo-branch-protection-approval-packet.md",
+            "operatorHandoff": "docs/monorepo-operator-approval-handoff.md"
+      },
+      "packageScript": {
+            "name": "check:monorepo-final-operator-signoff",
+            "command": "node scripts/check-monorepo-final-operator-signoff-matrix.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-final-operator-signoff",
+            "tier": "approval-gated",
+            "args": [
+                  "run",
+                  "check:monorepo-final-operator-signoff"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-final-operator-signoff-matrix.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/issues/553",
+                  "message": "parent issue"
+            },
+            {
+                  "path": "historicalFinalSignoffIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/549",
+                  "message": "historical final signoff issue"
+            },
+            {
+                  "path": "a2aDecisionRound",
+                  "matches": "^a2a-finalpacket(?:-retry)?-20260610T\\d{6}Z$",
+                  "message": "A2A final packet round id"
+            },
+            {
+                  "path": "latestMainCommit",
+                  "equals": "bf36a68ab8a38c0fbea0710d979c165d4f9b07f9",
+                  "message": "latest main commit"
+            },
+            {
+                  "path": "a2aEvidence.primaryRound",
+                  "equals": "a2a-finalpacket-retry-20260610T123212Z",
+                  "message": "primary A2A round"
+            },
+            {
+                  "path": "a2aEvidence.supplementalRetryRound",
+                  "equals": "a2a-finalpacket-jingun-retry-20260610T123834Z",
+                  "message": "supplemental Jingun retry round"
+            },
+            {
+                  "path": "a2aEvidence.sourceOnly",
+                  "equals": true,
+                  "message": "A2A source-only evidence"
+            },
+            {
+                  "path": "a2aEvidence.githubCommentsByWorkers",
+                  "equals": false,
+                  "message": "worker GitHub comments disabled"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "lengthEquals": 6,
+                  "message": "A2A worker evidence count"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "sogyo",
+                        "team": "Team1",
+                        "analysisStatus": "done",
+                        "taskId": "83607748-813f-47c9-a9de-edab7e44cad2"
+                  },
+                  "message": "sogyo A2A worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "nosuk",
+                        "team": "Team1",
+                        "analysisStatus": "done",
+                        "taskId": "04f8b5b0-bf19-471b-9794-e87647f83ca9"
+                  },
+                  "message": "nosuk A2A worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "bangtong",
+                        "team": "Team1",
+                        "analysisStatus": "done",
+                        "taskId": "5fc18add-d580-4bec-940b-42c924148011"
+                  },
+                  "message": "bangtong A2A worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "dungae",
+                        "team": "Team2",
+                        "analysisStatus": "done",
+                        "taskId": "506d9d8a-d652-495c-bc7c-75da1aba6425"
+                  },
+                  "message": "dungae A2A worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "jingun",
+                        "team": "Team2",
+                        "analysisStatus": "done",
+                        "taskId": "8abf24cb-4a91-4126-8b86-98e5a252a26f"
+                  },
+                  "message": "jingun A2A worker evidence"
+            },
+            {
+                  "path": "a2aEvidence.workers",
+                  "arraySome": {
+                        "worker": "soonwook",
+                        "team": "Team2",
+                        "analysisStatus": "done",
+                        "taskId": "0c5e41be-fe6d-4d78-aaf8-a903f9ad1d9b"
+                  },
+                  "message": "soonwook A2A worker evidence"
+            },
+            {
+                  "path": "priorPackets.activeDriftCloseoutPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/562",
+                  "message": "prior packet activeDriftCloseoutPr"
+            },
+            {
+                  "path": "priorPackets.activeDriftCloseoutMergeCommit",
+                  "equals": "9669f9098459c9f17bdea0193bc428593b0ef2d5",
+                  "message": "prior packet activeDriftCloseoutMergeCommit"
+            },
+            {
+                  "path": "priorPackets.operatorHandoffPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/563",
+                  "message": "prior packet operatorHandoffPr"
+            },
+            {
+                  "path": "priorPackets.operatorHandoffMergeCommit",
+                  "equals": "910a796b9540cb839a8fa4a1148aa38a90694eea",
+                  "message": "prior packet operatorHandoffMergeCommit"
+            },
+            {
+                  "path": "priorPackets.branchProtectionRulesetPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/564",
+                  "message": "prior packet branchProtectionRulesetPr"
+            },
+            {
+                  "path": "priorPackets.branchProtectionRulesetMergeCommit",
+                  "equals": "33de5b493e4f4d156a5900ad4d924a138147329c",
+                  "message": "prior packet branchProtectionRulesetMergeCommit"
+            },
+            {
+                  "path": "priorPackets.splitRepoDispositionPr",
+                  "equals": "https://github.com/jinwon-int/a2a-nexus/pull/566",
+                  "message": "prior packet splitRepoDispositionPr"
+            },
+            {
+                  "path": "priorPackets.splitRepoDispositionMergeCommit",
+                  "equals": "bf36a68ab8a38c0fbea0710d979c165d4f9b07f9",
+                  "message": "prior packet splitRepoDispositionMergeCommit"
+            },
+            {
+                  "path": "priorPackets.historicalFinalSignoffPr",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/550",
+                  "message": "prior packet historicalFinalSignoffPr"
+            },
+            {
+                  "path": "priorPackets.historicalFinalSignoffMergeCommit",
+                  "equals": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
+                  "message": "prior packet historicalFinalSignoffMergeCommit"
+            },
+            {
+                  "path": "activeRuleset.id",
+                  "equals": 17499616,
+                  "message": "active ruleset id"
+            },
+            {
+                  "path": "activeRuleset.name",
+                  "equals": "a2a-nexus-main-required-checks",
+                  "message": "active ruleset name"
+            },
+            {
+                  "path": "activeRuleset.enforcement",
+                  "equals": "active",
+                  "message": "active ruleset enforcement"
+            },
+            {
+                  "path": "activeRuleset.target",
+                  "equals": "main",
+                  "message": "active ruleset target"
+            },
+            {
+                  "path": "activeRuleset.requiredApprovingReviews",
+                  "equals": 1,
+                  "message": "required approving reviews"
+            },
+            {
+                  "path": "activeRuleset.requiredChecks",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "layout",
+                        "contracts",
+                        "check"
+                  ],
+                  "message": "required status checks"
+            },
+            {
+                  "path": "activeRuleset.bypassActors",
+                  "lengthEquals": 0,
+                  "message": "bypass actors"
+            },
+            {
+                  "path": "operatorFinalDecision",
+                  "equals": "GO_CANDIDATE_PR_FIRST_SOURCE_ONLY",
+                  "message": "operator final decision"
+            },
+            {
+                  "path": "canonicalSourceDecision",
+                  "equals": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
+                  "message": "canonical source decision"
+            },
+            {
+                  "path": "canonicalFlipDecision",
+                  "equals": "NO_GO_EXECUTION_SEPARATE",
+                  "message": "canonical flip decision"
+            },
+            {
+                  "path": "packageOwnershipDecision",
+                  "equals": "NO_GO_EXECUTION_SEPARATE",
+                  "message": "package ownership decision"
+            },
+            {
+                  "path": "releasePackageTagDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "release/package/tag decision"
+            },
+            {
+                  "path": "branchProtectionDecision",
+                  "equals": "RECORDED_ACTIVE_NO_FURTHER_CHANGE",
+                  "message": "branch protection decision"
+            },
+            {
+                  "path": "splitRepoDispositionDecision",
+                  "equals": "RECORDED_ACTIVE_CANONICAL_REMAINS",
+                  "message": "split repo disposition decision"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "lengthEquals": 3,
+                  "message": "canonical source candidate count"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "arraySome": {
+                        "path": "packages/broker",
+                        "packetDecision": "canonical_source_candidate",
+                        "executionApproved": false
+                  },
+                  "message": "canonical source candidate packages/broker"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "arraySome": {
+                        "path": "packages/docker-runner",
+                        "packetDecision": "canonical_source_candidate",
+                        "executionApproved": false
+                  },
+                  "message": "canonical source candidate packages/docker-runner"
+            },
+            {
+                  "path": "canonicalSourceCandidates",
+                  "arraySome": {
+                        "path": "packages/openclaw-plugin-a2a",
+                        "packetDecision": "canonical_source_candidate",
+                        "executionApproved": false
+                  },
+                  "message": "canonical source candidate packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "signoffRows",
+                  "lengthEquals": 7,
+                  "message": "signoff row count"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "branch_protection_or_ruleset",
+                        "decision": "RECORDED_ACTIVE_NO_FURTHER_CHANGE",
+                        "evidence": "docs/monorepo-branch-protection-approval-packet.md",
+                        "approvedForPrFirstPacket": true,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row branch_protection_or_ruleset"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "split_repo_disposition",
+                        "decision": "RECORDED_ACTIVE_CANONICAL_REMAINS",
+                        "evidence": "docs/monorepo-split-repo-disposition-rollback.md",
+                        "approvedForPrFirstPacket": true,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row split_repo_disposition"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "release_tag_and_github_release",
+                        "decision": "NO_GO_WAITING",
+                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "approvedForPrFirstPacket": false,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row release_tag_and_github_release"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "npm_publish",
+                        "decision": "NO_GO_WAITING",
+                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "approvedForPrFirstPacket": false,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row npm_publish"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "docker_ghcr_publish",
+                        "decision": "NO_GO_WAITING",
+                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "approvedForPrFirstPacket": false,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row docker_ghcr_publish"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "package_ownership_transfer",
+                        "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
+                        "evidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "approvedForPrFirstPacket": true,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row package_ownership_transfer"
+            },
+            {
+                  "path": "signoffRows",
+                  "arraySome": {
+                        "area": "canonical_flip",
+                        "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
+                        "evidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "approvedForPrFirstPacket": true,
+                        "executionApproved": false
+                  },
+                  "message": "signoff row canonical_flip"
+            },
+            {
+                  "path": "goNoGoFields.priorPacketsRecorded",
+                  "equals": true,
+                  "message": "prior packets recorded"
+            },
+            {
+                  "path": "goNoGoFields.branchProtectionRulesetActive",
+                  "equals": true,
+                  "message": "branch protection ruleset active"
+            },
+            {
+                  "path": "goNoGoFields.splitRepoDispositionPacketRecorded",
+                  "equals": true,
+                  "message": "split repo disposition packet recorded"
+            },
+            {
+                  "path": "goNoGoFields.canonicalSourceDeclarationPrFirstApproved",
+                  "equals": true,
+                  "message": "canonical source declaration PR-first approved"
+            },
+            {
+                  "path": "goNoGoFields.releasePackageTagApproved",
+                  "equals": false,
+                  "message": "release/package/tag not approved"
+            },
+            {
+                  "path": "goNoGoFields.packageOwnershipTransferApproved",
+                  "equals": false,
+                  "message": "package ownership transfer not approved"
+            },
+            {
+                  "path": "goNoGoFields.canonicalFlipExecutionApproved",
+                  "equals": false,
+                  "message": "canonical flip execution not approved"
+            },
+            {
+                  "path": "goNoGoFields.operatorFinalExecutionApproval",
+                  "equals": false,
+                  "message": "operator final execution approval false"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "GO_CANDIDATE_PR_FIRST_SOURCE_ONLY",
+                  "message": "GO/NO-GO decision"
+            },
+            {
+                  "path": "abortConditions",
+                  "includesAll": [
+                        "latest_green_ci_missing_or_red",
+                        "ruleset_disabled_or_required_checks_removed",
+                        "split_repo_archive_readonly_redirect_bundled",
+                        "release_package_tag_publish_bundled",
+                        "deploy_restart_db_secret_provider_terminal_ack_bundled",
+                        "registry_or_package_owner_transfer_bundled",
+                        "force_push_or_history_rewrite_bundled"
+                  ],
+                  "message": "abort conditions"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundary rulesetChange"
+            },
+            {
+                  "path": "boundaries.permissionChange",
+                  "equals": false,
+                  "message": "boundary permissionChange"
+            },
+            {
+                  "path": "boundaries.codeownersEnforcementChange",
+                  "equals": false,
+                  "message": "boundary codeownersEnforcementChange"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundary splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.splitRepoReadOnly",
+                  "equals": false,
+                  "message": "boundary splitRepoReadOnly"
+            },
+            {
+                  "path": "boundaries.splitRepoRedirect",
+                  "equals": false,
+                  "message": "boundary splitRepoRedirect"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.tagMovement",
+                  "equals": false,
+                  "message": "boundary tagMovement"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.ghcrPublish",
+                  "equals": false,
+                  "message": "boundary ghcrPublish"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundary historicalReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-nexus#553",
+                  "message": "doc a2a-nexus#553"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#549",
+                  "message": "doc a2a-plane#549"
+            },
+            {
+                  "source": "doc",
+                  "matches": "a2a-plane#551",
+                  "message": "doc a2a-plane#551"
+            },
+            {
+                  "source": "doc",
+                  "matches": "GO_CANDIDATE / PR-first",
+                  "message": "doc GO_CANDIDATE PR-first"
+            },
+            {
+                  "source": "doc",
+                  "matches": "canonical source declaration",
+                  "message": "doc canonical source declaration"
+            },
+            {
+                  "source": "doc",
+                  "matches": "bf36a68ab8a38c0fbea0710d979c165d4f9b07f9",
+                  "message": "doc latest main commit"
+            },
+            {
+                  "source": "doc",
+                  "matches": "17499616",
+                  "message": "doc ruleset id"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc no-live boundary"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-nexus#553",
+                  "message": "current-state active lineage"
+            },
+            {
+                  "source": "readiness",
+                  "matches": "a2a-nexus#553",
+                  "message": "canonical readiness active lineage"
+            },
+            {
+                  "source": "splitDisposition",
+                  "matches": "a2a-nexus#553",
+                  "message": "split disposition active lineage"
+            },
+            {
+                  "source": "releasePacket",
+                  "matches": "a2a-plane#547|a2a-nexus#553",
+                  "message": "release packet lineage"
+            },
+            {
+                  "source": "branchPacket",
+                  "matches": "a2a-nexus#553",
+                  "message": "branch packet active lineage"
+            },
+            {
+                  "source": "operatorHandoff",
+                  "matches": "a2a-nexus#553",
+                  "message": "operator handoff active lineage"
+            }
+      ],
+      "successMessage": "monorepo final operator sign-off matrix ok"
 }
   ]
 }
