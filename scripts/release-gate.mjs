@@ -41,6 +41,7 @@ const steps = [
   ['doc-check-lib', 'npm', ['run', 'test:doc-check-lib']],
   ['script-budget', 'npm', ['run', 'check:script-budget']],
   ['script-budget-tests', 'npm', ['run', 'check:script-budget:test']],
+  ['release-gate-inventory', 'npm', ['run', 'check:release-gate-inventory']],
 ];
 
 for (const [name, command, args] of steps) {

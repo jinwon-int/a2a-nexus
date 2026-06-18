@@ -1,0 +1,463 @@
+{
+  "$schema": "https://example.invalid/a2a-nexus/release-gate-step-inventory.schema.json",
+  "generatedFrom": "scripts/release-gate.mjs",
+  "purpose": "Report-only classification for #880/#882. This inventory does not retire gates; it makes future retirement/tiering review source-backed.",
+  "tiers": [
+    "core",
+    "public-readiness",
+    "historical-transition",
+    "approval-gated",
+    "package-publication"
+  ],
+  "entries": [
+    {
+      "name": "layout",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:layout"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "contract-conformance-fixtures",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:conformance"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "packages",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:packages"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "runner-import-smoke",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:runner-import-smoke"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "terminal-brief-routing",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:terminal-brief-routing"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "message-id-ack-boundary",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:message-id-ack-boundary"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "external-harness-conformance",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:external-harness-conformance"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "public-readiness",
+      "command": "npm",
+      "args": [
+        "run",
+        "scan:public-readiness"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+    },
+    {
+      "name": "readiness-gates",
+      "command": "npm",
+      "args": [
+        "run",
+        "scan:readiness-gates"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+    },
+    {
+      "name": "external-secrets",
+      "command": "npm",
+      "args": [
+        "run",
+        "scan:external-secrets"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+    },
+    {
+      "name": "body-safety-scan",
+      "command": "npm",
+      "args": [
+        "run",
+        "safety:body"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "body-safety-tests",
+      "command": "npm",
+      "args": [
+        "run",
+        "safety:body:test"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "compatibility-baselines",
+      "command": "node",
+      "args": [
+        "scripts/check-compatibility-baselines.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "repo-protection-baseline",
+      "command": "node",
+      "args": [
+        "scripts/check-repo-protection-baseline.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "split-repo-local-demo",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:split-repo-local-demo"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "current-state-no-live-smoke",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:current-state-no-live-smoke"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-reentry",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-reentry"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-import-rehearsal",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-import-rehearsal"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-ci-parity",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-ci-parity"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-phase3-package-ci-gate",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-phase3-package-ci-gate"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-package-ci-parity-jobs",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-package-ci-parity-jobs"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-canonical-flip-readiness",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-canonical-flip-readiness"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-branch-protection-approval-packet",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-branch-protection-approval-packet"
+      ],
+      "tier": "approval-gated",
+      "retirement": "manual-approval-required",
+      "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
+    },
+    {
+      "name": "monorepo-split-repo-disposition-rollback",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-split-repo-disposition-rollback"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-split-repo-disposition-preflight",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-split-repo-disposition-preflight"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-active-provenance-mirror-execution-result",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-active-provenance-mirror-execution-result"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-release-package-tag-approval",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-release-package-tag-approval"
+      ],
+      "tier": "package-publication",
+      "retirement": "manual-approval-required",
+      "note": "Release/package publication approval evidence; not equivalent to source visibility."
+    },
+    {
+      "name": "monorepo-final-operator-signoff",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-final-operator-signoff"
+      ],
+      "tier": "approval-gated",
+      "retirement": "manual-approval-required",
+      "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
+    },
+    {
+      "name": "monorepo-canonical-source-flip-execution-handoff",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-canonical-source-flip-execution-handoff"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-actual-canonical-flip-execution-preflight",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-actual-canonical-flip-execution-preflight"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-actual-canonical-flip-execution-result",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-actual-canonical-flip-execution-result"
+      ],
+      "tier": "historical-transition",
+      "retirement": "candidate-after-review",
+      "note": "Canonical/split-repo transition evidence; candidate for archive only after explicit source-backed review."
+    },
+    {
+      "name": "monorepo-operator-approval-handoff",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-operator-approval-handoff"
+      ],
+      "tier": "approval-gated",
+      "retirement": "manual-approval-required",
+      "note": "Operator approval/signoff evidence; preserve until the approval boundary is retired explicitly."
+    },
+    {
+      "name": "monorepo-docs-routing",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-docs-routing"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+    },
+    {
+      "name": "readme-canonical-surface",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:readme-canonical-surface"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
+    },
+    {
+      "name": "broker-core-dependency-isolation",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:broker-core-dependency-isolation"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "broker-docker-hardening",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:broker-docker-hardening"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "monorepo-branch-release-policy",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:monorepo-branch-release-policy"
+      ],
+      "tier": "package-publication",
+      "retirement": "manual-approval-required",
+      "note": "Release/package publication approval evidence; not equivalent to source visibility."
+    },
+    {
+      "name": "doc-check-lib",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:doc-check-lib"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "script-budget",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:script-budget"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "script-budget-tests",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:script-budget:test"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
+    },
+    {
+      "name": "release-gate-inventory",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:release-gate-inventory"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Keeps this report-only inventory in lockstep with scripts/release-gate.mjs so future gate tiering stays source-backed."
+    }
+  ]
+}

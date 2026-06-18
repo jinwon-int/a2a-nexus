@@ -26,8 +26,8 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // Budgets reflect the count after this guard (and its test) were added.
 // Raising any budget is allowed but must be deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 141, // top-level scripts/*.mjs, including this guard + its test
-  rootNpmScripts: 114, // package.json "scripts" (incl. check:script-budget + :test plus current main gates)
+  scriptsMjs: 142, // top-level scripts/*.mjs, incl. script-budget guard/test and release-gate inventory guard
+  rootNpmScripts: 115, // package.json "scripts" (incl. script budget + release-gate inventory gates)
   brokerNpmScripts: 149, // packages/broker/package.json "scripts"
 };
 
