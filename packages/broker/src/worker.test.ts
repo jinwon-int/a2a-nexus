@@ -1597,7 +1597,7 @@ test("external handler injects the subagent conductor directive per task", async
   assert.equal(simple.result.output.max, "0", "simple chat runs direct — the conductor keeps it");
   assert.equal(simple.result.output.roles, "", "no subagents for simple work");
 
-  // Heavy work with an explicit profile: full four-subagent budget.
+  // Heavy work with an explicit profile: shared host clamp allows at most one implementer.
   const heavyTask = {
     ...(baseTask as Record<string, unknown>),
     id: "task-conductor-2",
@@ -1612,12 +1612,25 @@ test("external handler injects the subagent conductor directive per task", async
     },
   } as never;
   const heavy = (await handler(heavyTask)) as { result: { output: Record<string, string | null> } };
-  assert.equal(heavy.result.output.max, "4");
-  assert.equal(heavy.result.output.roles, "explorer,implementer,implementer,verifier");
+  assert.equal(heavy.result.output.max, "3");
+  assert.equal(heavy.result.output.roles, "explorer,implementer,verifier");
   const plan = JSON.parse(heavy.result.output.plan ?? "{}");
   assert.equal(plan.oneFinalizerRequired, true);
   assert.equal(plan.writeSetIsolationRequired, true);
+  assert.deepEqual(plan.reducedBy, ["shared_workspace"]);
 
+
+
+  // Patch-shaped work without an explicit profile can infer independent write sets.
+  const inferredTask = {
+    ...(baseTask as Record<string, unknown>),
+    id: "task-conductor-3",
+    intent: "propose_patch",
+    payload: { writeSets: ["packages/broker/src/a.ts", "packages/docker-runner/src/b.ts"] },
+  } as never;
+  const inferred = (await handler(inferredTask)) as { result: { output: Record<string, string | null> } };
+  assert.equal(inferred.result.output.max, "3");
+  assert.equal(inferred.result.output.roles, "explorer,implementer,verifier");
   // Opt-out keeps the env clean.
   const optedOut = createExternalWorkerHandler({
     command: process.execPath,
@@ -1677,12 +1690,12 @@ test("conductor budget is a verifiable contract: reports are annotated, overruns
       updatedAt: "2026-06-12T00:00:00Z",
     }) as never;
 
-  // Within budget (4): annotated with the budget for terminal evidence.
+  // Within shared-host budget (3): annotated with the budget for terminal evidence.
   const ok = (await handler(makeTask("budget-ok", { ...heavyProfile, reportCount: 3 }))) as {
     result: { output: { subagentReport: Record<string, unknown> } };
   };
   assert.equal(ok.result.output.subagentReport.count, 3);
-  assert.equal(ok.result.output.subagentReport.budget, 4);
+  assert.equal(ok.result.output.subagentReport.budget, 3);
   assert.equal(ok.result.output.subagentReport.withinBudget, true);
 
   // Over budget: fail closed.
@@ -1690,7 +1703,7 @@ test("conductor budget is a verifiable contract: reports are annotated, overruns
     error: { code: string; details: Record<string, unknown> };
   };
   assert.equal(over.error.code, "subagent_budget_exceeded");
-  assert.equal(over.error.details.budget, 4);
+  assert.equal(over.error.details.budget, 3);
   assert.equal(over.error.details.reported, 5);
 
   // No report: result passes through untouched.

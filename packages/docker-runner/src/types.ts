@@ -137,7 +137,7 @@ export type RunnerContainedSubagentReason =
 export type RunnerContainedSubagentRole = "explorer" | "implementer" | "verifier";
 
 export interface RunnerContainedSubagentsConfig {
-  /** Opt-in only: default runner behavior forbids subagent fanout. */
+  /** Enabled by default for trusted OpenClaw/Hermes Docker patch profiles; explicit env opt-out is preserved. */
   enabled: boolean;
   /** Hard cap advertised to the in-container OpenClaw/Hermes harness. */
   maxCount: number;

@@ -30,8 +30,11 @@ export interface A2AWorkerSubagentHostSnapshot {
   brokerSubagentCap?: number;
 }
 
+export type A2AWorkerExecutionIsolation = "isolated" | "shared";
+
 export interface A2AWorkerSubagentPolicyInput {
   now?: string;
+  executionIsolation?: A2AWorkerExecutionIsolation;
   task: A2AWorkerSubagentTaskProfile;
   host: A2AWorkerSubagentHostSnapshot;
 }
@@ -90,6 +93,7 @@ export function extractA2AWorkerSubagentPolicyInput(input: unknown): A2AWorkerSu
   const host = extractHostSnapshot(candidate.host);
   return {
     now: optionalString(candidate.now),
+    executionIsolation: enumValue(candidate.executionIsolation ?? candidate.execution_isolation, ["isolated", "shared"]),
     task,
     host,
   };
@@ -103,8 +107,14 @@ export function buildA2AWorkerSubagentOrchestrationPolicy(input: A2AWorkerSubage
   const brokerRemaining = (input.host.brokerSubagentCap ?? 12) - (input.host.brokerActiveSubagents ?? 0);
   const capCeiling = Math.max(0, Math.min(input.host.workerSubagentCap ?? 4, workerRemaining, brokerRemaining));
   const resourceCeiling = resourceGate.reducedBy.length ? resourceReducedCeiling(resourceGate.reducedBy) : 4;
-  const parallelismHint = clampParallelism(Math.min(taskCeiling, capCeiling, resourceCeiling));
+  const initialParallelismHint = clampParallelism(Math.min(taskCeiling, capCeiling, resourceCeiling));
+  const isolation = input.executionIsolation ?? "isolated";
+  const sharedClamp = isolation === "shared" && rolesFor(input.task, initialParallelismHint).filter((agent) => agent.role === "implementer").length > 1;
+  const parallelismHint = sharedClamp ? 3 : initialParallelismHint;
   const recommendedSubagents = rolesFor(input.task, parallelismHint);
+  const effectiveResourceGate = sharedClamp
+    ? { ...resourceGate, reducedBy: [...resourceGate.reducedBy, "shared_workspace"] }
+    : resourceGate;
 
   return {
     kind: "a2a-broker.worker-subagent-orchestration-policy.packet",
@@ -124,7 +134,7 @@ export function buildA2AWorkerSubagentOrchestrationPolicy(input: A2AWorkerSubage
       writeSetIsolationRequired: true,
       escapeHatchAllowed: true,
     },
-    resourceGate,
+    resourceGate: effectiveResourceGate,
     boundaries: {
       runtimeBehaviorChanged: false,
       mandatoryProductionSpawn: false,
@@ -134,7 +144,7 @@ export function buildA2AWorkerSubagentOrchestrationPolicy(input: A2AWorkerSubage
       deployOrRestart: false,
       secretMovement: false,
     },
-    nextAction: nextActionFor(parallelismHint, resourceGate.reducedBy),
+    nextAction: nextActionFor(parallelismHint, effectiveResourceGate.reducedBy),
   };
 }
 

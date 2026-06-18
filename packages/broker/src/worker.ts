@@ -72,6 +72,7 @@ export interface ExternalWorkerHandlerConfig {
   workerId?: string;
   subagentCap?: number;
   subagentDirectiveDisabled?: boolean;
+  subagentExecutionIsolation?: "isolated" | "shared";
 }
 
 export interface BrokerWorkerConfig {
@@ -697,11 +698,12 @@ export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskRe
  */
 export function buildSubagentDirectiveEnv(
   task: TaskRecord,
-  options: { workerId: string; subagentCap: number },
+  options: { workerId: string; subagentCap: number; executionIsolation?: "isolated" | "shared" },
 ): Record<string, string> {
   const profile = deriveSubagentTaskProfile(task);
   const packet = buildA2AWorkerSubagentOrchestrationPolicy({
     task: profile,
+    executionIsolation: options.executionIsolation,
     host: {
       workerId: options.workerId,
       workerSubagentCap: Math.max(0, Math.min(4, options.subagentCap)),
@@ -719,6 +721,7 @@ export function buildSubagentDirectiveEnv(
       oneFinalizerRequired: packet.decision.oneFinalizerRequired,
       writeSetIsolationRequired: packet.decision.writeSetIsolationRequired,
       directExecutionAllowed: packet.decision.directExecutionAllowed,
+      reducedBy: packet.resourceGate.reducedBy,
     }),
   };
 }
@@ -726,8 +729,8 @@ export function buildSubagentDirectiveEnv(
 /**
  * Derive a conservative task profile for the orchestration policy.
  * Explicit payload.subagentProfile wins; otherwise patch-shaped intents are
- * treated as medium independent work and everything else as small direct
- * work, so a node never fans out for trivial chatter.
+ * treated as conservative independent work with optional write-set inference
+ * and everything else as trivial direct work, so a node never fans out for chatter.
  */
 function deriveSubagentTaskProfile(task: TaskRecord): A2AWorkerSubagentTaskProfile {
   const payload = (task.payload ?? {}) as Record<string, unknown>;
@@ -759,13 +762,34 @@ function deriveSubagentTaskProfile(task: TaskRecord): A2AWorkerSubagentTaskProfi
     task.intent === "apply_local_change" ||
     task.intent === "validate_change" ||
     task.intent === "backfill";
-  // Without an explicit profile, only patch-shaped intents are treated as
-  // work that may justify fanout (medium + independent). Everything else is
-  // trivial -> budget 0: the conductor keeps simple work for itself. A task
-  // that genuinely needs helpers must opt in via payload.subagentProfile.
-  return patchShaped
-    ? { taskId: task.id, size: "medium", coupling: "low", hasIndependentSubtasks: true }
-    : { taskId: task.id, size: "trivial", coupling: "low" };
+  if (!patchShaped) return { taskId: task.id, size: "trivial", coupling: "low" };
+
+  const writeSets = inferWriteSets(payload);
+  if (writeSets.length >= 2) {
+    return { taskId: task.id, size: "large", coupling: "low", hasIndependentSubtasks: true, writeSets };
+  }
+  if (writeSets.length === 1) {
+    return { taskId: task.id, size: "medium", coupling: "low", hasIndependentSubtasks: true, writeSets };
+  }
+  // Patch-shaped work without enough structural signals stays at the existing
+  // conservative two-role explorer/verifier budget. It may investigate in
+  // parallel, but it does not infer multiple implementer lanes.
+  return { taskId: task.id, size: "medium", coupling: "low", hasIndependentSubtasks: true };
+}
+
+function inferWriteSets(payload: Record<string, unknown>): string[] {
+  const candidates = [payload.writeSets, payload.write_sets, payload.changedFiles, payload.changed_files, payload.files, payload.filePaths, payload.file_paths];
+  const out: string[] = [];
+  for (const value of candidates) {
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (typeof entry !== "string") continue;
+      const trimmed = entry.trim();
+      if (!trimmed || trimmed.includes("..")) continue;
+      out.push(trimmed);
+    }
+  }
+  return [...new Set(out)].slice(0, 4);
 }
 
 export function createBuiltinWorkerHandler(kind: BuiltinWorkerHandlerKind): WorkerTaskHandler {
@@ -829,6 +853,7 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
       : buildSubagentDirectiveEnv(task, {
           workerId: config.workerId ?? "worker",
           subagentCap: config.subagentCap ?? 4,
+          executionIsolation: config.subagentExecutionIsolation ?? "shared",
         });
     const directiveBudget = config.subagentDirectiveDisabled
       ? null
