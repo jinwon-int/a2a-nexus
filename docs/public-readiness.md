@@ -40,7 +40,7 @@ Final local validation on the candidate tree passed at `2026-05-07T14:57:00Z`:
 
 - `npm ci --ignore-scripts --include=dev`: passed.
 - `npm run check`: passed; release gate completed layout, package checks, public-readiness scan, and compatibility-baseline validation.
-- `node scripts/redacted-readiness-inventory.mjs`: passed and printed redacted metadata only; total `1` finding class remained for operator disposition (`absolute-private-path` in a test fixture path, no matched value printed).
+- `node scripts/redacted-readiness-inventory.mjs`: passed and printed redacted metadata only. This historical total is superseded by the current [Redacted Readiness Inventory Disposition](./security/redacted-readiness-inventory-disposition.md), which keeps matched values out of evidence and records current metadata counts for operator review.
 - `npm run test:release-gate`: passed `3/3`.
 - GitHub repository metadata: `jinwon-int/a2a-plane` was private at the time of this validation (now public since 2026-05-27).
 - Runtime/bootstrap hygiene: no tracked or unignored runtime/bootstrap context paths are entering this branch or evidence; root public-readiness scan reported no findings.
@@ -64,7 +64,7 @@ Final R4 local validation on the closeout refresh passed at `2026-05-07T20:19:47
 - `npm ci --ignore-scripts --include=dev`: passed.
 - `npm run scan:public-readiness`: passed with no findings.
 - `npm run check`: passed; release gate completed layout, package checks, public-readiness scan, and compatibility-baseline validation.
-- `node scripts/redacted-readiness-inventory.mjs`: passed with redacted metadata only; total `2` finding classes remained for operator disposition (`absolute-private-path`, `private-topology-term`) with no matched values printed.
+- `node scripts/redacted-readiness-inventory.mjs`: passed with redacted metadata only. This historical total is superseded by the current [Redacted Readiness Inventory Disposition](./security/redacted-readiness-inventory-disposition.md), which keeps matched values out of evidence and separates local metadata disposition from the external scanner gate.
 - `npm run test:release-gate`: passed `3/3`.
 - `npm run scan:external-secrets`: blocked because no supported external scanner (`gitleaks` or `trufflehog`) was installed in this runner; this remains fail-closed external scanner evidence, not a substitute scan.
 - Runtime/bootstrap hygiene: no tracked or unignored `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**` paths enter this branch or evidence.
@@ -302,7 +302,7 @@ See [R3 Closeout Validation](./r3-closeout-validation.md). At the time this was 
 
 ## R3 security disposition
 
-See [R3 Secret / History Scan Disposition](./security/r3-secret-history-disposition.md). The root scanner has no current token-shaped or runtime/bootstrap findings. The redacted inventory still records metadata for one absolute-path-shaped test fixture; matched values are intentionally not printed. Operator review may require an external scanner before visibility approval.
+See [R3 Secret / History Scan Disposition](./security/r3-secret-history-disposition.md) and the current [Redacted Readiness Inventory Disposition](./security/redacted-readiness-inventory-disposition.md). The root scanner has no current token-shaped or runtime/bootstrap findings. The redacted inventory records metadata only; matched values are intentionally not printed. Operator review still requires external scanner evidence before visibility approval.
 
 ## Current source repos
 
@@ -318,4 +318,4 @@ The original source repositories and histories are not approved for public expos
 
 ## License decision
 
-Operator decision for R2 gate #6: use MIT License for the A2A monorepo candidate. Public visibility was blocked at that time; granted 2026-05-27.
+Operator decision for R2 gate #6: use MIT License for the A2A monorepo candidate. Public visibility for `jinwon-int/a2a-nexus` remains blocked unless a separate operator-approved GitHub visibility action is executed and evidenced; the 2026-05-27 public state applies to the earlier split source repositories, not this canonical monorepo visibility.
