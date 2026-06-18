@@ -4810,6 +4810,627 @@
             }
       ],
       "successMessage": "monorepo CI parity matrix ok"
+},
+{
+      "id": "monorepo-phase3-package-ci-gate",
+      "title": "monorepo phase-3 package CI gate",
+      "fixture": "fixtures/current-state/monorepo-phase3-package-ci-gate.json",
+      "doc": "docs/monorepo-ci-parity-matrix.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "importRehearsalDoc": "docs/monorepo-import-rehearsal.md",
+            "ciWorkflow": ".github/workflows/ci.yml",
+            "packageCiRunner": "scripts/run-monorepo-package-ci-parity.mjs"
+      },
+      "packageScript": {
+            "name": "check:monorepo-phase3-package-ci-gate",
+            "command": "node scripts/check-monorepo-phase3-package-ci-gate.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-phase3-package-ci-gate",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-phase3-package-ci-gate"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-phase3-package-ci-gate.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "issue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/534",
+                  "message": "issue #534"
+            },
+            {
+                  "path": "implementationIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/536",
+                  "message": "implementation #536"
+            },
+            {
+                  "path": "freshImportCandidateIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "message": "fresh import candidate #538"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent #511"
+            },
+            {
+                  "path": "phase2Issue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "message": "phase2 #530"
+            },
+            {
+                  "path": "decision",
+                  "equals": "block_package_mirror_refresh_until_package_ci_is_equal_or_stricter",
+                  "message": "decision blocks mirror refresh"
+            },
+            {
+                  "path": "gateStatus",
+                  "equals": "blocked",
+                  "message": "phase3 gate blocked"
+            },
+            {
+                  "path": "canonicalUntilGateGreen",
+                  "equals": "split_repos",
+                  "message": "split repos canonical"
+            },
+            {
+                  "path": "mirrorRefreshAllowed",
+                  "equals": false,
+                  "message": "mirror refresh blocked"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip not approved"
+            },
+            {
+                  "path": "packageJobsMustBeEqualOrStricter",
+                  "equals": true,
+                  "message": "equal-or-stricter required"
+            },
+            {
+                  "path": "packageCiJobsWired",
+                  "equals": true,
+                  "message": "package CI jobs wired"
+            },
+            {
+                  "path": "freshImportCandidateStatus",
+                  "equals": "package_ci_green_locally_canonical_flip_blocked",
+                  "message": "fresh candidate status"
+            },
+            {
+                  "path": "packageCiParityJobScript",
+                  "equals": "scripts/run-monorepo-package-ci-parity.mjs",
+                  "message": "package CI runner script"
+            },
+            {
+                  "path": "requiredGlobalGates",
+                  "includesAll": [
+                        "record_actions_v4_v5_policy",
+                        "record_npm_ci_lifecycle_policy",
+                        "preserve_package_local_scanners",
+                        "preserve_release_dry_run_without_publish",
+                        "preserve_package_metadata_and_bin_exports",
+                        "prove_package_jobs_before_mirror_refresh"
+                  ],
+                  "message": "required global gates"
+            },
+            {
+                  "path": "surfaces",
+                  "lengthEquals": 3,
+                  "message": "exact three surfaces"
+            },
+            {
+                  "path": "surfaces",
+                  "arraySome": {
+                        "surface": "broker",
+                        "sourceRepo": "jinwon-int/a2a-broker",
+                        "sourceRef": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+                        "targetPath": "packages/broker",
+                        "gateStatus": "blocked",
+                        "packageCiJobStatus": "wired",
+                        "mirrorRefreshAllowed": false
+                  },
+                  "message": "surface evidence broker"
+            },
+            {
+                  "path": "surfaces.0.sourceCiCommands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source npm ci broker"
+            },
+            {
+                  "path": "surfaces.0.requiredPackageJobBeforeMirrorRefresh",
+                  "minLength": 6,
+                  "message": "required package job gates broker"
+            },
+            {
+                  "path": "surfaces.0.blockingGaps",
+                  "minLength": 1,
+                  "message": "blocking gaps broker"
+            },
+            {
+                  "path": "surfaces.0.blockingGaps",
+                  "includesAll": [
+                        "candidate_pr_and_github_actions_evidence_required_before_merge",
+                        "canonical_flip_requires_separate_operator_approval"
+                  ],
+                  "message": "blocking gap specifics broker"
+            },
+            {
+                  "path": "surfaces.0.packageCiEvidence",
+                  "includesAll": [
+                        "actions/checkout@v5 and actions/setup-node@v5",
+                        "npm ci --include=dev",
+                        "node scripts/run-monorepo-package-ci-parity.mjs broker"
+                  ],
+                  "message": "package CI evidence baseline broker"
+            },
+            {
+                  "path": "surfaces.0.packageCiEvidence",
+                  "includesAll": [
+                        "npm test -w packages/broker"
+                  ],
+                  "message": "package CI evidence broker: npm test -w packages/broker"
+            },
+            {
+                  "path": "surfaces.0.packageCiEvidence",
+                  "includesAll": [
+                        "npm run check -w packages/broker"
+                  ],
+                  "message": "package CI evidence broker: npm run check -w packages/broker"
+            },
+            {
+                  "path": "surfaces.0.packageCiEvidence",
+                  "includesAll": [
+                        "npm pack --workspace packages/broker --dry-run --json"
+                  ],
+                  "message": "package CI evidence broker: npm pack --workspace packages/broker --dry-run --json"
+            },
+            {
+                  "path": "surfaces",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "sourceRepo": "jinwon-int/a2a-docker-runner",
+                        "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+                        "targetPath": "packages/docker-runner",
+                        "gateStatus": "blocked",
+                        "packageCiJobStatus": "wired",
+                        "mirrorRefreshAllowed": false
+                  },
+                  "message": "surface evidence docker-runner"
+            },
+            {
+                  "path": "surfaces.1.sourceCiCommands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source npm ci docker-runner"
+            },
+            {
+                  "path": "surfaces.1.requiredPackageJobBeforeMirrorRefresh",
+                  "minLength": 9,
+                  "message": "required package job gates docker-runner"
+            },
+            {
+                  "path": "surfaces.1.blockingGaps",
+                  "minLength": 1,
+                  "message": "blocking gaps docker-runner"
+            },
+            {
+                  "path": "surfaces.1.blockingGaps",
+                  "includesAll": [
+                        "candidate_pr_and_github_actions_evidence_required_before_merge",
+                        "canonical_flip_requires_separate_operator_approval"
+                  ],
+                  "message": "blocking gap specifics docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "actions/checkout@v5 and actions/setup-node@v5",
+                        "npm ci --include=dev",
+                        "node scripts/run-monorepo-package-ci-parity.mjs docker-runner"
+                  ],
+                  "message": "package CI evidence baseline docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm run check -w packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: npm run check -w packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm run build -w packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: npm run build -w packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm run lint -w packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: npm run lint -w packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm test -w packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: npm test -w packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "node packages/docker-runner/scripts/pre-pr-bootstrap-guard.mjs --repo-dir packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: node packages/docker-runner/scripts/pre-pr-bootstrap-guard.mjs --repo-dir packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm run chaos:e2e -w packages/docker-runner"
+                  ],
+                  "message": "package CI evidence docker-runner: npm run chaos:e2e -w packages/docker-runner"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "cd packages/docker-runner && node scripts/release-candidate-parity-audit.mjs"
+                  ],
+                  "message": "package CI evidence docker-runner: cd packages/docker-runner && node scripts/release-candidate-parity-audit.mjs"
+            },
+            {
+                  "path": "surfaces.1.packageCiEvidence",
+                  "includesAll": [
+                        "npm pack --workspace packages/docker-runner --dry-run --json"
+                  ],
+                  "message": "package CI evidence docker-runner: npm pack --workspace packages/docker-runner --dry-run --json"
+            },
+            {
+                  "path": "surfaces",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+                        "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+                        "targetPath": "packages/openclaw-plugin-a2a",
+                        "gateStatus": "blocked",
+                        "packageCiJobStatus": "wired",
+                        "mirrorRefreshAllowed": false
+                  },
+                  "message": "surface evidence openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.sourceCiCommands",
+                  "includesAll": [
+                        "npm ci"
+                  ],
+                  "message": "source npm ci openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.requiredPackageJobBeforeMirrorRefresh",
+                  "minLength": 7,
+                  "message": "required package job gates openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.blockingGaps",
+                  "minLength": 1,
+                  "message": "blocking gaps openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.blockingGaps",
+                  "includesAll": [
+                        "candidate_pr_and_github_actions_evidence_required_before_merge",
+                        "canonical_flip_requires_separate_operator_approval"
+                  ],
+                  "message": "blocking gap specifics openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "actions/checkout@v5 and actions/setup-node@v5",
+                        "npm ci --include=dev",
+                        "node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence baseline openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm run scan:public-readiness -w packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm run scan:public-readiness -w packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm run smoke:a2a-conformance -w packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm run smoke:a2a-conformance -w packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm test -w packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm test -w packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm run check -w packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm run check -w packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm run prepack -w packages/openclaw-plugin-a2a"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm run prepack -w packages/openclaw-plugin-a2a"
+            },
+            {
+                  "path": "surfaces.2.packageCiEvidence",
+                  "includesAll": [
+                        "npm pack --workspace packages/openclaw-plugin-a2a --dry-run --json"
+                  ],
+                  "message": "package CI evidence openclaw-plugin-a2a: npm pack --workspace packages/openclaw-plugin-a2a --dry-run --json"
+            },
+            {
+                  "path": "boundaries.repositoryImportToMain",
+                  "equals": false,
+                  "message": "boundary repositoryImportToMain"
+            },
+            {
+                  "path": "boundaries.packageMirrorRefresh",
+                  "equals": false,
+                  "message": "boundary packageMirrorRefresh"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.visibilityChange",
+                  "equals": false,
+                  "message": "boundary visibilityChange"
+            },
+            {
+                  "path": "boundaries.productionDeploy",
+                  "equals": false,
+                  "message": "boundary productionDeploy"
+            },
+            {
+                  "path": "boundaries.gatewayRestart",
+                  "equals": false,
+                  "message": "boundary gatewayRestart"
+            },
+            {
+                  "path": "boundaries.brokerWorkerRestart",
+                  "equals": false,
+                  "message": "boundary brokerWorkerRestart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.destructiveCleanup",
+                  "equals": false,
+                  "message": "boundary destructiveCleanup"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "package",
+                  "path": "scripts.check:monorepo-package-ci-parity-jobs",
+                  "equals": "node scripts/run-monorepo-package-ci-parity.mjs broker && node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a && node scripts/run-monorepo-package-ci-parity.mjs docker-runner",
+                  "message": "package script package CI parity jobs"
+            },
+            {
+                  "source": "releaseGateInventory",
+                  "path": "entries",
+                  "arraySome": {
+                        "name": "monorepo-package-ci-parity-jobs",
+                        "tier": "historical-transition",
+                        "args.0": "run",
+                        "args.1": "check:monorepo-package-ci-parity-jobs"
+                  },
+                  "message": "release-gate package CI parity jobs inventory"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Phase-3 Package CI Gate",
+                  "message": "ci parity doc phase3 section"
+            },
+            {
+                  "source": "importRehearsalDoc",
+                  "matches": "Phase-3 Package CI Gate",
+                  "message": "import rehearsal doc phase3 section"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#534",
+                  "message": "current state #534"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "actions\\/checkout@v5",
+                  "message": "ci workflow phrase actions/checkout@v5"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "actions\\/setup-node@v5",
+                  "message": "ci workflow phrase actions/setup-node@v5"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs broker",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs broker"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs docker-runner",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs docker-runner"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "node scripts\\/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a",
+                  "message": "ci workflow phrase node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a"
+            },
+            {
+                  "source": "ciWorkflow",
+                  "matches": "^(?![\\s\\S]*ignore-scripts)[\\s\\S]*$",
+                  "message": "ci workflow does not suppress lifecycle scripts"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "broker",
+                  "message": "package CI runner phrase broker"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "docker-runner",
+                  "message": "package CI runner phrase docker-runner"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "openclaw-plugin-a2a",
+                  "message": "package CI runner phrase openclaw-plugin-a2a"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "run\\('npm', \\[\\s*'pack'",
+                  "message": "package CI runner phrase npm pack"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "release-candidate-parity-audit",
+                  "message": "package CI runner phrase release-candidate-parity-audit"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "pre-pr-bootstrap-guard",
+                  "message": "package CI runner phrase pre-pr-bootstrap-guard"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "scan:public-readiness",
+                  "message": "package CI runner phrase scan:public-readiness"
+            },
+            {
+                  "source": "packageCiRunner",
+                  "matches": "smoke:a2a-conformance",
+                  "message": "package CI runner phrase smoke:a2a-conformance"
+            },
+            {
+                  "path": "surfaces.0.requiredPackageJobBeforeMirrorRefresh",
+                  "includesAll": [
+                        "npm ci or documented lifecycle-equivalent install",
+                        "npm run build with scripts/generate-build-info.mjs preserved",
+                        "node --check scripts/team1-dispatch-wrapper.mjs",
+                        "node --check scripts/a2a-dispatch-helper.mjs",
+                        "node --check scripts/cross-broker-terminal-brief-receiver.mjs",
+                        "node --test dist/*.test.js dist/core/*.test.js dist/a2a/*.test.js dist/github/*.test.js dist/workers/*.test.js"
+                  ],
+                  "message": "exact required package gates broker"
+            },
+            {
+                  "path": "surfaces.1.requiredPackageJobBeforeMirrorRefresh",
+                  "includesAll": [
+                        "npm ci or documented lifecycle-equivalent install",
+                        "npm run check",
+                        "npm run build",
+                        "npm run lint",
+                        "npm test",
+                        "node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .",
+                        "npm run chaos:e2e or documented no-live equivalent",
+                        "node scripts/release-candidate-parity-audit.mjs or documented no-publish equivalent",
+                        "verify package files/license/bin metadata"
+                  ],
+                  "message": "exact required package gates docker-runner"
+            },
+            {
+                  "path": "surfaces.2.requiredPackageJobBeforeMirrorRefresh",
+                  "includesAll": [
+                        "npm ci or documented lifecycle-equivalent install",
+                        "npm run scan:public-readiness from the package",
+                        "npm run smoke:a2a-conformance",
+                        "npm test",
+                        "npm run build with openclaw.plugin.json copied to dist",
+                        "npm run prepack or documented scan-plus-build equivalent",
+                        "verify bin/files exports and openclaw peer boundary"
+                  ],
+                  "message": "exact required package gates openclaw-plugin-a2a"
+            }
+      ],
+      "successMessage": "monorepo phase-3 package CI gate ok"
 }
   ]
 }
