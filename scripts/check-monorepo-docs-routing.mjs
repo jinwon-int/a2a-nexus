@@ -14,7 +14,7 @@ const { expect, readRel, parseJson, finish } = createDocCheckContext({
 
 const fixture = parseJson('fixtures/current-state/monorepo-docs-routing.json');
 const pkg = parseJson('package.json');
-const releaseGate = readRel('scripts/release-gate.mjs') || '';
+const releaseGateInventory = parseJson('docs/ops/release-gate-step-inventory.json');
 
 const docs = new Map([
   ['docs/migration.md', readRel('docs/migration.md')],
@@ -88,6 +88,15 @@ if (pkg) {
     'package.json: missing check:monorepo-docs-routing script'
   );
 }
-expect(/monorepo-docs-routing/.test(releaseGate), 'release gate must include monorepo docs routing check');
+if (releaseGateInventory) {
+  const releaseGateStep = releaseGateInventory.entries?.find((entry) => entry.name === 'monorepo-docs-routing');
+  expect(Boolean(releaseGateStep), 'release gate inventory must include monorepo docs routing check');
+  expect(releaseGateStep?.tier === 'public-readiness', 'monorepo docs routing must stay in the public-readiness tier');
+  expect(releaseGateStep?.command === 'npm', 'monorepo docs routing release-gate command must be npm');
+  expect(
+    JSON.stringify(releaseGateStep?.args) === JSON.stringify(['run', 'check:monorepo-docs-routing']),
+    'monorepo docs routing release-gate args must invoke check:monorepo-docs-routing',
+  );
+}
 
 finish('monorepo docs/routing ok');

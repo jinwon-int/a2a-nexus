@@ -1,7 +1,7 @@
 {
   "$schema": "https://example.invalid/a2a-nexus/release-gate-step-inventory.schema.json",
   "generatedFrom": "scripts/release-gate.mjs",
-  "purpose": "Report-only classification for #880/#882. This inventory does not retire gates; it makes future retirement/tiering review source-backed.",
+  "purpose": "Executable tier classification for #880/#882. scripts/release-gate.mjs uses this inventory to run core/public-readiness gates by default while keeping historical transition, approval, and package-publication checks as explicit opt-in tiers.",
   "tiers": [
     "core",
     "public-readiness",
