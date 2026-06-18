@@ -1,8 +1,9 @@
-# A2A monorepo rehearsal ownership draft.
+# A2A Nexus CODEOWNERS
 #
-# CODEOWNERS is a review-routing draft only. It does not move finalizer
-# authority to workers, does not approve a canonical flip, and does not replace
-# the split implementation repos while phase 0/1 remains active.
+# Review-routing for the public-readiness alpha repository. This does not move finalizer
+# authority to workers, is not a stable public maintainer roster, and does not
+# authorize releases, package publication, production deploys, repository
+# visibility changes, secret movement, history rewrites, or force pushes.
 
 * @jinon86
 

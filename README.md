@@ -18,15 +18,15 @@ Start here:
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
 - [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
 
-> **Status:** public GitHub repository — alpha project, not a production deployment or release authorization. See [Current public state](#current-public-state) for what public GitHub visibility means today and what remains blocked before broader promotion.
+> **Status:** public-readiness candidate — alpha project, not a repository visibility change, production deployment, release, tag, publish, or live-action authorization. See [Current visibility-readiness state](#current-visibility-readiness-state) for what remains blocked before any future visibility change or broader promotion.
 
-## Current public state
+## Current visibility-readiness state
 
-All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visibility means:
+This repository remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. If public GitHub visibility is later approved, it would mean:
 
 - Code, docs, issues, and PRs are readable by anyone with a GitHub account.
 - The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
-- Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK remain separate approval-gated actions and are **not** authorized by this repository's public visibility.
+- Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK/replay remain separate approval-gated actions and are **not** authorized by this repository's readiness docs or any future public visibility alone.
 
 Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
 
@@ -101,7 +101,8 @@ Treat every example as local-only unless a document says otherwise.
 - production deploys or Gateway/broker/worker restarts
 - production database or terminal-outbox mutation
 - live provider, Telegram, or notification sends
-- secret rotation, secret disclosure, or raw credential evidence
+- creating or moving tags, GitHub Releases, npm publishes, Docker/image publication, or package publication
+- secret/credential movement, rotation, disclosure, or raw credential evidence
 - history rewrite or force push
 
 Use redacted evidence in issues, pull requests, logs, and artifacts.
@@ -142,7 +143,7 @@ The quickstart is designed as the external-reader path for a disposable local A2
 
 ## Promotion and release prep
 
-Draft A2A Nexus announcement text and repository metadata recommendations live in [`docs/promotion-announcement.md`](docs/promotion-announcement.md). Keep that copy alpha/feedback-welcome and do not post it until public-readiness gates are closed and an operator explicitly approves repository visibility.
+Draft A2A Nexus announcement text and repository metadata recommendations live in [`docs/promotion-announcement.md`](docs/promotion-announcement.md). Keep that copy alpha/feedback-welcome and do not post it until public-readiness gates are closed and an operator explicitly approves promotion/announcement; any future visibility transfer or visibility change remains separately approval-gated.
 
 Release decision prep:
 

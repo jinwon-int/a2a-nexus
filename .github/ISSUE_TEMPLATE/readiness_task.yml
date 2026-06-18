@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this template for private/public-readiness work. Public visibility remains blocked until every gate is complete and explicitly approved.
+        Use this template for public-readiness or promotion-readiness work. Broader promotion, stable release, package publication, production use, and any future visibility transfer/change remain blocked until every gate is complete and explicitly approved.
   - type: input
     id: gate
     attributes:
@@ -32,9 +32,9 @@ body:
     attributes:
       label: NO-GO boundary
       options:
-        - label: This task does not require changing repository visibility.
+        - label: This task does not require changing/transferring repository visibility, creating/moving tags, publishing a release/package/image, or promoting the project as stable.
           required: true
-        - label: This task does not require production deploys, service restarts, production DB/outbox mutation, live provider/Telegram sends, secret rotation/disclosure, history rewrite, or force push.
+        - label: This task does not require production deploys, service restarts, production DB/outbox mutation, live provider/Telegram/notification sends, secret/credential movement, rotation/disclosure, history rewrite, or force push.
           required: true
         - label: Evidence will be redacted and will not include OpenClaw runtime/bootstrap files.
           required: true
