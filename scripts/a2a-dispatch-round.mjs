@@ -136,6 +136,20 @@ function deriveWorkspaceForLane(errors, tag, lane, defaults, payload, taskOrigin
   return { ...workspace, nodeId: targetId };
 }
 
+function validateGitHubPatchWriteCapability(errors, tag, payload) {
+  if (!isPlainObject(payload) || payload.mode !== 'github-propose-patch') return;
+
+  const hasNoWriteSignal = payload.readOnlyValidation === true
+    || payload.noGitHubWrites === true
+    || payload.noMutation === true
+    || payload.allowGitHubWrites === false
+    || payload.patchIntent === false;
+
+  if (hasNoWriteSignal) {
+    errors.push(`${tag}.payload.mode=github-propose-patch is write-capable (#889); use read-only-analysis/github-read-only-validation for no-write evidence lanes or remove no-write flags for an explicit PR-first patch lane`);
+  }
+}
+
 function validateGitHubVerifyLane(errors, tag, lane, defaults, payload, derived) {
   if (!isGitHubVerifyPayload(payload)) return;
 
@@ -266,6 +280,7 @@ function validateManifest(manifest) {
     const parentRoundOrder = lane.parentRoundOrder ?? defaults.parentRoundOrder ?? order;
 
     validateSourceOnlyBundle(errors, tag, payload);
+    validateGitHubPatchWriteCapability(errors, tag, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
 
     if (seenIds.has(laneId)) {
