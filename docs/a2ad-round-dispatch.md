@@ -79,6 +79,13 @@ The dispatch body passes those fields through at top level and `--verify`
 re-fetches the created task by id, giving a deterministic readback gate without
 printing secrets.
 
+When the worker handler is run with the explicit analysis bridge enabled
+(`A2A_OPENCLAW_ANALYSIS_ENABLED=1` and a configured OpenClaw/analysis binary),
+these GitHub read-only validation modes route to the read-only analysis bridge
+instead of the generic GitHub patch executor path (#884). If the bridge/executor
+is not configured, the handler still fails closed rather than returning generic
+wrapper-only success.
+
 ### GitHub patch lanes are write-capable
 
 `payload.mode: "github-propose-patch"` is a PR/patch execution lane, not a
