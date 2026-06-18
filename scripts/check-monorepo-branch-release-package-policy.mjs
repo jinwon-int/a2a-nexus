@@ -6,41 +6,11 @@
  * package, image, visibility, canonical flip, live dispatch, restart,
  * credential, DB, or Terminal ACK action is performed here.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { createDocCheckContext } from './lib/doc-check.mjs';
 
-const root = process.cwd();
-const failures = [];
-
-function fail(message) {
-  failures.push(message);
-}
-
-function expect(condition, message) {
-  if (!condition) fail(message);
-}
-
-function readRel(rel) {
-  try {
-    return fs.readFileSync(path.join(root, rel), 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-function parseJson(rel) {
-  const text = readRel(rel);
-  if (text === null) {
-    fail(`missing ${rel}`);
-    return null;
-  }
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    fail(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
-}
+const { expect, readRel, parseJson, finish } = createDocCheckContext({
+  name: 'monorepo branch/release/package policy validation',
+});
 
 const fixture = parseJson('fixtures/current-state/monorepo-branch-release-package-policy.json');
 const pkg = parseJson('package.json');
@@ -144,9 +114,4 @@ if (pkg) {
 }
 expect(/monorepo-branch-release-policy/.test(releaseGate), 'release gate must include monorepo branch/release policy check');
 
-if (failures.length) {
-  console.error(`monorepo branch/release/package policy validation failed:\n- ${failures.join('\n- ')}`);
-  process.exit(1);
-}
-
-console.log('monorepo branch/release/package policy ok');
+finish('monorepo branch/release/package policy ok');
