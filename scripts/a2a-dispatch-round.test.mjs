@@ -296,6 +296,80 @@ test('dry-run stamps GitHub verify parent-round and ownership metadata (#869)', 
 
 // ─── runDispatch: live (mock broker) ─────────────────────────────────────────
 
+function makeGitHubPatchManifest(brokerUrl) {
+  const manifest = makeManifest(brokerUrl, 1);
+  manifest.roundId = 'a2a-github-patch-r1';
+  manifest.requester = { id: 'seoseo', role: 'operator' };
+  manifest.defaults = {
+    intent: 'propose_patch',
+    taskOrigin: 'github',
+    workspace: { nodeId: 'seoseo', workspaceId: 'workspace-shared' },
+    terminalBrief: { notificationOwnership: 'parent' },
+    payload: {
+      mode: 'github-propose-patch',
+      repo: 'jinwon-int/a2a-nexus',
+      issue: '#884',
+      issueNumber: 884,
+      runId: 'a2a-github-patch-r1',
+    },
+  };
+  manifest.lanes[0] = {
+    target: { id: 'yukson', role: 'analyst' },
+    assignedWorkerId: 'yukson',
+    message: 'Propose a source-only patch for issue #884',
+  };
+  return manifest;
+}
+
+test('dry-run derives GitHub workspace nodeId from target worker when defaults use orchestrator node (#884)', async () => {
+  const manifest = makeGitHubVerifyManifest('http://unused');
+  manifest.defaults.workspace = { nodeId: 'seoseo', workspaceId: 'workspace-shared' };
+  manifest.lanes[0].target = { id: 'yukson', role: 'analyst' };
+  manifest.lanes[0].assignedWorkerId = 'yukson';
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 0);
+  assert.deepEqual(out.lanes[0].workspace, { nodeId: 'yukson', workspaceId: 'workspace-shared' });
+});
+
+test('GitHub propose-patch dispatch derives worker workspace before POST (#884)', async () => {
+  const seenBodies = [];
+  const broker = await startMockBroker({
+    post: (body, ctx) => {
+      seenBodies.push(body);
+      ctx.store.set(body.id, { id: body.id, status: 'queued' });
+      return { status: 201, json: { task: { id: body.id, status: 'queued' } } };
+    },
+  });
+  try {
+    const out = await runDispatch(makeGitHubPatchManifest(broker.url), { fetchImpl: fetch, secret: SECRET, verify: true });
+    assert.equal(out.exitCode, 0);
+    assert.equal(seenBodies.length, 1);
+    const body = seenBodies[0];
+    assert.equal(body.taskOrigin, 'github');
+    assert.equal(body.intent, 'propose_patch');
+    assert.deepEqual(body.workspace, { nodeId: 'yukson', workspaceId: 'workspace-shared' });
+    assert.equal(body.assignedWorkerId, 'yukson');
+    assert.equal(body.payload.mode, 'github-propose-patch');
+    assert.equal(body.payload.parentRoundId, 'a2a-github-patch-r1');
+    assert.equal(body.payload.parentRoundTotal, 1);
+    assert.equal(body.payload.parentRoundOrder, 1);
+  } finally {
+    await broker.close();
+  }
+});
+
+test('dry-run rejects explicit GitHub lane workspace node mismatch (#884)', async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+  manifest.lanes[0].workspace = { nodeId: 'seoseo', workspaceId: 'workspace-shared' };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /workspace\.nodeId must match target\.id 'yukson'/.test(e)));
+});
+
 test('GitHub verify dispatch POST includes top-level schema/readback fields (#869)', async () => {
   const seenBodies = [];
   const broker = await startMockBroker({
