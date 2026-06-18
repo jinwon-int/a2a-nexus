@@ -59,8 +59,10 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the repository maintainers through the contact path listed in
-SUPPORT.md. Maintainers will review reports promptly and fairly.
+reported to the repository maintainers. If no private contact path is
+available, open a non-sensitive maintainer-contact request and do not include
+private details in public issues or pull requests. Maintainers will review
+reports promptly and fairly.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

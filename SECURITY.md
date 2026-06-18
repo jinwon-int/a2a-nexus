@@ -2,7 +2,7 @@
 
 ## Current status
 
-This repository is GitHub-public as of 2026-05-27. The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
+This repository is in public-readiness prep. It remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. The project is **alpha** — feedback and contributions are welcome when access is available, but no production readiness, stability guarantees, or security support are implied.
 
 Broader promotion (stable release, announcements, public docs site) remains blocked on the readiness gates recorded in [`docs/public-readiness.md`](docs/public-readiness.md).
 
@@ -12,7 +12,7 @@ Do not open public GitHub issues for vulnerabilities. Use GitHub private vulnera
 
 https://github.com/jinwon-int/a2a-nexus/security/advisories/new
 
-If private vulnerability reporting is unavailable, contact the repository maintainers through the organization-approved private contact channel listed in repository metadata or SUPPORT.md. Keep reports concise and redacted.
+If private vulnerability reporting is unavailable, do not put vulnerability details in a public issue or PR. Open a non-sensitive maintainer-contact request or use an existing organization-approved private contact path, then share only redacted details after a maintainer provides a private route.
 
 Do not include:
 
@@ -53,4 +53,4 @@ If any of those files would enter a branch or artifact bundle, fail closed and r
 
 ## Supported versions
 
-No stable release, npm package, Docker image, or production deployment is supported yet. Treat all packages in this public-source monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.
+No stable release, npm package, Docker image, repository visibility change, or production deployment is supported yet. Treat all packages in this public-readiness monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.

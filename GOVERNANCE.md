@@ -1,6 +1,6 @@
 # Governance
 
-A2A Nexus is maintained by the repository owner and the maintainers listed in CODEOWNERS.
+A2A Nexus is maintained by the repository owner and repository administrators. CODEOWNERS provides review routing for files and packages; it is not a stable public maintainer roster and does not move finalizer or operator authority.
 
 ## Decision making
 

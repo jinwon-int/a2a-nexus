@@ -18,15 +18,15 @@ Start here:
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
 - [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
 
-> **Status:** public GitHub repository — alpha project, not a production deployment or release authorization. See [Current public state](#current-public-state) for what public GitHub visibility means today and what remains blocked before broader promotion.
+> **Status:** public-readiness candidate — alpha project, not a repository visibility change, production deployment, release, tag, publish, or live-action authorization. See [Current visibility-readiness state](#current-visibility-readiness-state) for what remains blocked before any future visibility change or broader promotion.
 
-## Current public state
+## Current visibility-readiness state
 
-All four A2A repositories are GitHub-public as of 2026-05-27. Public GitHub visibility means:
+This repository remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. If public GitHub visibility is later approved, it would mean:
 
 - Code, docs, issues, and PRs are readable by anyone with a GitHub account.
 - The project is **alpha** — feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
-- Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK/replay remain separate approval-gated actions and are **not** authorized by this repository's public visibility.
+- Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, and terminal-outbox ACK/replay remain separate approval-gated actions and are **not** authorized by this repository's readiness docs or any future public visibility alone.
 
 Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
 

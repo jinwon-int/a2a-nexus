@@ -1,10 +1,10 @@
 # Contributing
 
-A2A Nexus is GitHub-public as of 2026-05-27. The project is alpha — feedback and contributions are welcome. The public contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
+A2A Nexus is in public-readiness prep and remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. The project is alpha — feedback and contributions are welcome when access is available. The contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) v2.1. By participating, you agree to uphold its standards. Report unacceptable behavior using the contact path listed in CODE_OF_CONDUCT.md or SUPPORT.md. For security vulnerabilities, do not use public issues or PRs; follow SECURITY.md.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) v2.1. By participating, you agree to uphold its standards. Report unacceptable behavior to repository maintainers. If no private contact path is available, open a non-sensitive maintainer-contact request and do not include private details in public issues or PRs. For security vulnerabilities, follow SECURITY.md.
 
 ## License
 
