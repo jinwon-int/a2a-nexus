@@ -2595,6 +2595,469 @@
             }
       ],
       "successMessage": "monorepo branch protection approval packet ok"
+},
+{
+      "id": "monorepo-canonical-flip-readiness",
+      "title": "monorepo canonical flip readiness",
+      "fixture": "fixtures/current-state/monorepo-canonical-flip-readiness.json",
+      "doc": "docs/monorepo-canonical-flip-readiness.md",
+      "currentState": "docs/current-state.md",
+      "extraDocs": {
+            "ciParity": "docs/monorepo-ci-parity-matrix.md",
+            "importDoc": "docs/monorepo-import-rehearsal.md",
+            "releaseGate": "scripts/release-gate.mjs"
+      },
+      "packageScript": {
+            "name": "check:monorepo-canonical-flip-readiness",
+            "command": "node scripts/check-monorepo-canonical-flip-readiness.mjs"
+      },
+      "releaseGateStep": {
+            "name": "monorepo-canonical-flip-readiness",
+            "tier": "historical-transition",
+            "args": [
+                  "run",
+                  "check:monorepo-canonical-flip-readiness"
+            ]
+      },
+      "assertions": [
+            {
+                  "path": "schema",
+                  "equals": "a2a.monorepo-canonical-flip-readiness.v1",
+                  "message": "fixture schema"
+            },
+            {
+                  "path": "parentIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "message": "parent issue"
+            },
+            {
+                  "path": "phase4FreshImportCandidateIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "message": "phase4 issue"
+            },
+            {
+                  "path": "phase4FreshImportPr",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/540",
+                  "message": "phase4 PR"
+            },
+            {
+                  "path": "phase5ReadinessIssue",
+                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/541",
+                  "message": "phase5 readiness issue"
+            },
+            {
+                  "path": "phase4MergeCommit",
+                  "equals": "31273ce05b7e53655e3d8847a8d77ff1cd2f6d05",
+                  "message": "phase4 merge commit"
+            },
+            {
+                  "path": "phase4HeadCommit",
+                  "equals": "a35f379840a768acf5bcb4656c0b1f26a7e05e19",
+                  "message": "phase4 head commit"
+            },
+            {
+                  "path": "canonicalFlipDecision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "canonical flip decision"
+            },
+            {
+                  "path": "canonicalImplementationSource",
+                  "equals": "split_repos",
+                  "message": "canonical implementation source"
+            },
+            {
+                  "path": "canonicalFlipApproved",
+                  "equals": false,
+                  "message": "canonical flip approval boundary"
+            },
+            {
+                  "path": "packageOwnershipTransferred",
+                  "equals": false,
+                  "message": "package ownership transfer boundary"
+            },
+            {
+                  "path": "importMode",
+                  "equals": "git_archive_tracked_tree_not_history_preserving",
+                  "message": "import mode"
+            },
+            {
+                  "path": "importedPackages",
+                  "lengthEquals": 3,
+                  "message": "imported package count"
+            },
+            {
+                  "path": "importedPackages",
+                  "arraySome": {
+                        "surface": "broker",
+                        "sourceRepo": "jinwon-int/a2a-broker",
+                        "sourceRef": "f9f4af5a76649a37b8a3d492805b6e5f410683a6",
+                        "targetPath": "packages/broker",
+                        "packageParityJob": "broker",
+                        "status": "package_ci_green_not_canonical"
+                  },
+                  "message": "imported package broker"
+            },
+            {
+                  "path": "importedPackages",
+                  "arraySome": {
+                        "surface": "docker-runner",
+                        "sourceRepo": "jinwon-int/a2a-docker-runner",
+                        "sourceRef": "269a0ef90737158b41f8da26241b9f7f4b14af5e",
+                        "targetPath": "packages/docker-runner",
+                        "packageParityJob": "docker-runner",
+                        "status": "package_ci_green_not_canonical"
+                  },
+                  "message": "imported package docker-runner"
+            },
+            {
+                  "path": "importedPackages",
+                  "arraySome": {
+                        "surface": "openclaw-plugin-a2a",
+                        "sourceRepo": "jinwon-int/openclaw-plugin-a2a",
+                        "sourceRef": "a2e521271483ef0b6a29907c8228f0a442dd2db9",
+                        "targetPath": "packages/openclaw-plugin-a2a",
+                        "packageParityJob": "plugin",
+                        "status": "package_ci_green_not_canonical"
+                  },
+                  "message": "imported package openclaw-plugin-a2a"
+            },
+            {
+                  "path": "ciEvidence.passedJobs",
+                  "includesAll": [
+                        "paths-filter",
+                        "setup",
+                        "contracts",
+                        "layout",
+                        "broker",
+                        "plugin",
+                        "docker-runner",
+                        "check"
+                  ],
+                  "message": "passed CI jobs"
+            },
+            {
+                  "path": "ciEvidence.skippedJobs",
+                  "includes": "docs",
+                  "message": "docs skip recorded"
+            },
+            {
+                  "path": "ciEvidence.runId",
+                  "equals": "27099159202",
+                  "message": "CI run id"
+            },
+            {
+                  "path": "ciEvidence.checkJobIncludes",
+                  "includesAll": [
+                        "npm run check",
+                        "npm run check:quickstart-conformance",
+                        "npm run check:external-harness-conformance",
+                        "npm run test:release-gate"
+                  ],
+                  "message": "check job steps"
+            },
+            {
+                  "path": "provenancePolicy.closedIssuePrHistory",
+                  "matches": "keep_in_split_repos",
+                  "message": "split issue/PR history policy"
+            },
+            {
+                  "path": "provenancePolicy.futureCitations",
+                  "matches": "cite_split_repo_and_source_ref",
+                  "message": "future citations policy"
+            },
+            {
+                  "path": "provenancePolicy.tagPolicy",
+                  "matches": "do_not_move_or_reuse",
+                  "message": "tag policy"
+            },
+            {
+                  "path": "provenancePolicy.historyImport",
+                  "equals": "not_performed",
+                  "message": "history import policy"
+            },
+            {
+                  "path": "rollbackPolicy.beforeFlip",
+                  "matches": "normal_pr_revert",
+                  "message": "pre-flip rollback policy"
+            },
+            {
+                  "path": "rollbackPolicy.splitRepoRollbackRequired",
+                  "equals": false,
+                  "message": "split repo rollback boundary"
+            },
+            {
+                  "path": "rollbackPolicy.destructiveCleanupAllowed",
+                  "equals": false,
+                  "message": "destructive cleanup boundary"
+            },
+            {
+                  "path": "goNoGoFields.packageParityGreen",
+                  "equals": true,
+                  "message": "go/no-go packageParityGreen"
+            },
+            {
+                  "path": "goNoGoFields.rootGateGreen",
+                  "equals": true,
+                  "message": "go/no-go rootGateGreen"
+            },
+            {
+                  "path": "goNoGoFields.provenancePolicyRecorded",
+                  "equals": true,
+                  "message": "go/no-go provenancePolicyRecorded"
+            },
+            {
+                  "path": "goNoGoFields.rollbackPathRecorded",
+                  "equals": true,
+                  "message": "go/no-go rollbackPathRecorded"
+            },
+            {
+                  "path": "goNoGoFields.branchProtectionReady",
+                  "equals": false,
+                  "message": "go/no-go branchProtectionReady"
+            },
+            {
+                  "path": "goNoGoFields.releasePackagePolicyReady",
+                  "equals": false,
+                  "message": "go/no-go releasePackagePolicyReady"
+            },
+            {
+                  "path": "goNoGoFields.splitRepoDispositionApproved",
+                  "equals": false,
+                  "message": "go/no-go splitRepoDispositionApproved"
+            },
+            {
+                  "path": "goNoGoFields.operatorCanonicalFlipApproval",
+                  "equals": false,
+                  "message": "go/no-go operatorCanonicalFlipApproval"
+            },
+            {
+                  "path": "goNoGoFields.decision",
+                  "equals": "NO_GO_WAITING",
+                  "message": "go/no-go decision"
+            },
+            {
+                  "path": "remainingGates",
+                  "includesAll": [
+                        "operator_canonical_flip_approval",
+                        "a2a_plane_main_branch_protection_or_ruleset_decision",
+                        "release_package_tag_policy_execution_approval",
+                        "split_repo_archival_or_read_only_disposition",
+                        "rollback_owner_and_post_flip_revert_path"
+                  ],
+                  "message": "remaining gates"
+            },
+            {
+                  "path": "boundaries.canonicalFlip",
+                  "equals": false,
+                  "message": "boundary canonicalFlip"
+            },
+            {
+                  "path": "boundaries.packageOwnershipTransfer",
+                  "equals": false,
+                  "message": "boundary packageOwnershipTransfer"
+            },
+            {
+                  "path": "boundaries.branchProtectionChange",
+                  "equals": false,
+                  "message": "boundary branchProtectionChange"
+            },
+            {
+                  "path": "boundaries.rulesetChange",
+                  "equals": false,
+                  "message": "boundary rulesetChange"
+            },
+            {
+                  "path": "boundaries.releaseTag",
+                  "equals": false,
+                  "message": "boundary releaseTag"
+            },
+            {
+                  "path": "boundaries.githubRelease",
+                  "equals": false,
+                  "message": "boundary githubRelease"
+            },
+            {
+                  "path": "boundaries.npmPublish",
+                  "equals": false,
+                  "message": "boundary npmPublish"
+            },
+            {
+                  "path": "boundaries.dockerPublish",
+                  "equals": false,
+                  "message": "boundary dockerPublish"
+            },
+            {
+                  "path": "boundaries.repoVisibilityChange",
+                  "equals": false,
+                  "message": "boundary repoVisibilityChange"
+            },
+            {
+                  "path": "boundaries.splitRepoArchive",
+                  "equals": false,
+                  "message": "boundary splitRepoArchive"
+            },
+            {
+                  "path": "boundaries.deploy",
+                  "equals": false,
+                  "message": "boundary deploy"
+            },
+            {
+                  "path": "boundaries.restart",
+                  "equals": false,
+                  "message": "boundary restart"
+            },
+            {
+                  "path": "boundaries.dbMutation",
+                  "equals": false,
+                  "message": "boundary dbMutation"
+            },
+            {
+                  "path": "boundaries.providerSend",
+                  "equals": false,
+                  "message": "boundary providerSend"
+            },
+            {
+                  "path": "boundaries.telegramSend",
+                  "equals": false,
+                  "message": "boundary telegramSend"
+            },
+            {
+                  "path": "boundaries.terminalAckReplay",
+                  "equals": false,
+                  "message": "boundary terminalAckReplay"
+            },
+            {
+                  "path": "boundaries.historicalReplay",
+                  "equals": false,
+                  "message": "boundary historicalReplay"
+            },
+            {
+                  "path": "boundaries.credentialMovement",
+                  "equals": false,
+                  "message": "boundary credentialMovement"
+            },
+            {
+                  "path": "boundaries.forcePush",
+                  "equals": false,
+                  "message": "boundary forcePush"
+            },
+            {
+                  "path": "boundaries.historyRewrite",
+                  "equals": false,
+                  "message": "boundary historyRewrite"
+            },
+            {
+                  "path": "boundaries.workerOwnedGithubMutation",
+                  "equals": false,
+                  "message": "boundary workerOwnedGithubMutation"
+            },
+            {
+                  "source": "doc",
+                  "matches": "NO_GO / Waiting",
+                  "message": "doc phrase NO_GO / Waiting"
+            },
+            {
+                  "source": "doc",
+                  "matches": "split_repos",
+                  "message": "doc phrase split_repos"
+            },
+            {
+                  "source": "doc",
+                  "matches": "not history-preserving",
+                  "message": "doc phrase not history-preserving"
+            },
+            {
+                  "source": "doc",
+                  "matches": "CI Evidence",
+                  "message": "doc phrase CI Evidence"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Provenance Policy",
+                  "message": "doc phrase Provenance Policy"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Rollback Path",
+                  "message": "doc phrase Rollback Path"
+            },
+            {
+                  "source": "doc",
+                  "matches": "Remaining Gates",
+                  "message": "doc phrase Remaining Gates"
+            },
+            {
+                  "source": "doc",
+                  "matches": "GO / NO-GO Fields",
+                  "message": "doc phrase GO / NO-GO Fields"
+            },
+            {
+                  "source": "doc",
+                  "matches": "No-live Boundary",
+                  "message": "doc phrase No-live Boundary"
+            },
+            {
+                  "source": "doc",
+                  "includes": "a2a-plane#538",
+                  "message": "doc ref a2a-plane#538"
+            },
+            {
+                  "source": "doc",
+                  "includes": "a2a-plane#540",
+                  "message": "doc ref a2a-plane#540"
+            },
+            {
+                  "source": "doc",
+                  "includes": "a2a-plane#541",
+                  "message": "doc ref a2a-plane#541"
+            },
+            {
+                  "source": "doc",
+                  "includes": "31273ce05b7e53655e3d8847a8d77ff1cd2f6d05",
+                  "message": "doc ref 31273ce05b7e53655e3d8847a8d77ff1cd2f6d05"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#541",
+                  "message": "current-state #541 reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "a2a-plane#540",
+                  "message": "current-state #540 reference"
+            },
+            {
+                  "source": "currentState",
+                  "matches": "canonical-flip readiness",
+                  "message": "current-state canonical readiness reference"
+            },
+            {
+                  "source": "ciParity",
+                  "matches": "Phase-5 Canonical Flip Readiness",
+                  "message": "CI parity phase-5 reference"
+            },
+            {
+                  "source": "ciParity",
+                  "matches": "NO_GO \\/ Waiting",
+                  "message": "CI parity NO_GO posture"
+            },
+            {
+                  "source": "importDoc",
+                  "matches": "Phase-5 Canonical Flip Readiness",
+                  "message": "import doc phase-5 reference"
+            },
+            {
+                  "source": "importDoc",
+                  "matches": "not history-preserving",
+                  "message": "import doc non-history-preserving reference"
+            },
+            {
+                  "source": "releaseGate",
+                  "matches": "monorepo-canonical-flip-readiness",
+                  "message": "release gate script canonical readiness reference"
+            }
+      ],
+      "successMessage": "monorepo canonical flip readiness ok"
 }
   ]
 }
