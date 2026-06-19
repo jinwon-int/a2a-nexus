@@ -38,7 +38,7 @@ test('collectReliabilitySourceBundle keeps the source-only bundle focused and bu
   assert.ok(bundle.files.every((file) => !file.path.startsWith('.openclaw/')));
 });
 
-test('buildReliabilityEvidenceManifest is a no-live openclaw bridge retry for #921/#922', () => {
+test('buildReliabilityEvidenceManifest is a no-live analysis bridge retry for #921/#922', () => {
   const sourceBundle = collectReliabilitySourceBundle(sourceFiles, { maxChars: 2_000 });
   const manifest = buildReliabilityEvidenceManifest({
     roundId: 'a2ad-nexus-runtime-reliability-921-nosuk-retry',
@@ -51,7 +51,7 @@ test('buildReliabilityEvidenceManifest is a no-live openclaw bridge retry for #9
   assert.equal(manifest.dispatch.mode, 'read-only-analysis');
   assert.equal(manifest.dispatch.noLive, true);
   assert.equal(manifest.dispatch.sourceOnly, true);
-  assert.equal(manifest.dispatch.requiredAnalysis.analysisKind, 'openclaw_bridge');
+  assert.equal(manifest.dispatch.requiredAnalysis.analysisKind, 'analysis_bridge');
   assert.equal(manifest.dispatch.requiredAnalysis.analysisStatus, 'done');
   assert.deepEqual(manifest.dispatch.prohibitedActions, [
     'broker restart/deploy',
@@ -82,7 +82,8 @@ test('classifyReliabilityLaneResult separates worker timeout and handler failure
     classifyReliabilityLaneResult({
       status: 'succeeded',
       output: {
-        analysisKind: 'openclaw_bridge',
+        analysisKind: 'analysis_bridge',
+        bridgeAdapter: 'claude_code',
         analysisStatus: 'done',
         findings: [{ title: 'durable ack ambiguity', acceptanceCriteria: ['document ack boundary'] }],
       },

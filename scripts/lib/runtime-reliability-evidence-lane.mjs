@@ -147,7 +147,7 @@ export function buildReliabilityEvidenceManifest({
       sourceOnly: true,
       targetWorkerId: workerId,
       requiredAnalysis: {
-        analysisKind: 'openclaw_bridge',
+        analysisKind: 'analysis_bridge',
         analysisStatus: 'done',
       },
       classifySeparately: ['worker_timeout', 'handler_failure', 'runtime_findings', 'no_runtime_findings'],
@@ -178,7 +178,8 @@ export function classifyReliabilityLaneResult(result) {
     return { classification: 'lane_incomplete', countsAsRuntimeFinding: false };
   }
 
-  if (output.analysisKind !== 'openclaw_bridge' || output.analysisStatus !== 'done') {
+  const substantiveBridgeKind = output.analysisKind === 'analysis_bridge' || output.analysisKind === 'openclaw_bridge';
+  if (!substantiveBridgeKind || output.analysisStatus !== 'done') {
     return { classification: 'non_substantive_evidence', countsAsRuntimeFinding: false };
   }
 
@@ -206,7 +207,7 @@ export function buildReliabilityBacklogReport({ findings = [], generatedAt = new
   ];
 
   if (findings.length === 0) {
-    lines.push('No runtime reliability backlog items proposed until a source-only openclaw_bridge lane returns analysisStatus=done with substantive findings.');
+    lines.push('No runtime reliability backlog items proposed until a source-only analysis_bridge lane returns analysisStatus=done with substantive findings.');
     return `${lines.join('\n')}\n`;
   }
 
