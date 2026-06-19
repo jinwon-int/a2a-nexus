@@ -137,6 +137,42 @@ test("GET /rounds/:id/status reports round completion progress (#629)", async ()
   }
 });
 
+test("POST /tasks fails closed when payload exceeds configured task payload budget (#932)", async () => {
+  const server = await startTestServer({
+    enforceRequesterIdentity: false,
+    maxTaskPayloadBytes: 256,
+  });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-a", "analyst");
+    const res = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        id: "task-large-source-bundle-rejected",
+        requester: { id: "hub", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        intent: "analyze",
+        message: "large source bundle should be externalized before dispatch",
+        payload: {
+          sourceBundle: {
+            files: [{ path: "large.md", content: "x".repeat(600) }],
+          },
+        },
+        taskOrigin: "api",
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: { code: string; message: string; details?: Record<string, unknown> } };
+    assert.equal(body.error.code, "bad_request");
+    assert.match(body.error.message, /task payload exceeds configured limit/i);
+    assert.equal(body.error.details?.maxTaskPayloadBytes, 256);
+    assert.equal(server.runtime.broker.getTask("task-large-source-bundle-rejected"), null);
+  } finally {
+    await server.close();
+  }
+});
+
 test("GET /rounds/:id/status rejects a malformed percent-encoded id with 400 (#743)", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
   try {
@@ -1444,7 +1480,10 @@ test("GET /tasks returns lightweight task summaries and keeps full detail opt-in
         target: { id: "worker-a", kind: "node", role: "analyst" },
         targetNodeId: "worker-a",
         intent: "chat",
-        payload: { rawLog: largeOutput },
+        payload: {
+          rawLog: largeOutput,
+          sourceBundle: { files: [{ path: "large.md", content: `sourceBundleSentinel-${largeOutput}` }] },
+        },
       }),
     });
     assert.equal(createRes.status, 201);
@@ -1479,6 +1518,7 @@ test("GET /tasks returns lightweight task summaries and keeps full detail opt-in
     assert.deepEqual(listBody.items[0].artifactIds, ["artifact-1"]);
     assert.equal("payload" in listBody.items[0], false);
     assert.equal("result" in listBody.items[0], false);
+    assert.equal(JSON.stringify(listBody).includes("sourceBundleSentinel"), false);
     assert.ok(JSON.stringify(listBody).length < 2_000);
 
     const rpcListBody = await (await fetch(`${baseUrl}/a2a/jsonrpc`, {
@@ -1488,10 +1528,12 @@ test("GET /tasks returns lightweight task summaries and keeps full detail opt-in
     })).json();
     assert.equal(rpcListBody.result.tasks[0].metadata.resultSummary, "short summary");
     assert.equal("result" in rpcListBody.result.tasks[0].metadata, false);
+    assert.equal(JSON.stringify(rpcListBody).includes("sourceBundleSentinel"), false);
     assert.ok(JSON.stringify(rpcListBody).length < 2_000);
 
     const detailBody = await (await fetch(`${baseUrl}/tasks/${task.id}`)).json();
     assert.equal(detailBody.payload.rawLog.length, largeOutput.length);
+    assert.equal(detailBody.payload.sourceBundle.files[0].content, `sourceBundleSentinel-${largeOutput}`);
     assert.equal(detailBody.result.output.rawLog.length, largeOutput.length);
 
     const fullListBody = await (await fetch(`${baseUrl}/tasks?detail=full`)).json();
