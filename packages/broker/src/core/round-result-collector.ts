@@ -87,7 +87,8 @@ export type RoundLaneEvidenceClass =
   | "source_blocked"
   | "queued_unclaimed"
   | "stale_or_missing_worker"
-  | "non_substantive";
+  | "non_substantive"
+  | "superseded_by_supplement";
 
 export type RoundLaneReadinessStatus =
   | "missing"
@@ -972,6 +973,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
         break;
       case "non_substantive":
       case "stale_or_missing_worker":
+      case "superseded_by_supplement":
         counts.nonSubstantive++;
         break;
     }
@@ -1181,13 +1183,14 @@ function closeoutBody(context: {
   // Lane-by-lane summary
   lines.push("### Lane status");
   lines.push("");
-  lines.push("| Lane | Worker | State | Evidence | Outcome |");
-  lines.push("| --- | --- | --- | --- | --- |");
+  lines.push("| Lane | Worker | State | Evidence class | Evidence | Outcome |");
+  lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const lane of lanes) {
     const workerLabel = lane.description
       ? `${lane.workerId} (${lane.description})`
       : lane.workerId;
     const stateLabel = stateEmoji(lane.laneState);
+    const evClass = lane.evidenceClass ? evidenceClassLabel(lane.evidenceClass) : "—";
     const ev = lane.evidenceUrls.length > 0
       ? lane.evidenceUrls.slice(0, 2).map((url) => `[link](${url})`).join(" ")
       : "—";
@@ -1202,9 +1205,8 @@ function closeoutBody(context: {
             : lane.laneState === "stale"
               ? "stale"
               : lane.laneState;
-    const evidenceClass = lane.evidenceClass ? `; ${lane.evidenceClass}` : "";
     const attribution = laneAttribution(lane);
-    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${ev} | ${ocs}${evidenceClass}${attribution} |`);
+    lines.push(`| ${workerLabel} | ${lane.workerId} | ${stateLabel} | ${evClass} | ${ev} | ${ocs}${attribution} |`);
   }
   lines.push("");
 
@@ -1268,6 +1270,27 @@ function closeoutBody(context: {
   const actions = buildFinalizerActions(summary, missingLanes.length, staleLanes.length, timeoutLanes.length, blockedLanes.length, summary.queuedUnclaimed);
   for (const action of actions) {
     lines.push(`- ${action}`);
+  }
+  // Add child issue links from evidence URLs that reference GitHub issues/PRs
+  const childRefs = extractChildIssueRefs(evidenceUrls);
+  if (childRefs.length > 0) {
+    lines.push("");
+    lines.push("### Child issue references");
+    lines.push("");
+    for (const ref of childRefs) {
+      lines.push(`- ${ref}`);
+    }
+    lines.push("");
+  }
+  // Preserve dissent/missing evidence from failed lanes
+  const dissentLanes = lanes.filter((l) => l.errorSummary && (l.errorSummary.includes("Dissent") || l.errorSummary.includes("dissent") || l.errorSummary.includes("Unsafe") || l.errorSummary.includes("unsafe") || l.laneState === "failed"));
+  if (dissentLanes.length > 0) {
+    lines.push("### Dissent / missing evidence");
+    lines.push("");
+    for (const lane of dissentLanes) {
+      lines.push(`- **${lane.workerId}** (${lane.laneState}): ${lane.errorSummary ?? lane.outcomeSummary ?? "No details"}`);
+    }
+    lines.push("");
   }
   lines.push("");
 
@@ -1341,6 +1364,182 @@ function buildFinalizerActions(
   actions.push("No automatic close, merge, deploy, live send, ACK, or DB mutation by this projection.");
 
   return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Evidence class label rendering
+// ---------------------------------------------------------------------------
+
+function evidenceClassLabel(cls: RoundLaneEvidenceClass): string {
+  switch (cls) {
+    case "substantive": return "✅ substantive";
+    case "wrapper_only": return "🔲 wrapper_only";
+    case "handler_artifact_failure": return "⚠️ handler_artifact_failure";
+    case "source_blocked": return "🚫 source_blocked";
+    case "queued_unclaimed": return "⏳ queued_unclaimed";
+    case "stale_or_missing_worker": return "🕐 stale_or_missing_worker";
+    case "non_substantive": return "❌ non_substantive";
+    case "superseded_by_supplement": return "🔁 superseded_by_supplement";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Child issue reference extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract child issue references (GitHub issue/PR URLs) from evidence URLs.
+ */
+function extractChildIssueRefs(urls: string[]): string[] {
+  const refs: string[] = [];
+  for (const url of urls) {
+    if (!url.startsWith("https://")) continue;
+    // Match GitHub issue/PR URLs to extract readable references
+    const issueMatch = url.match(/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/(\d+)/);
+    if (issueMatch) {
+      refs.push(`Child: ${url}`);
+    }
+  }
+  return refs;
+}
+
+// ---------------------------------------------------------------------------
+// #920: Compact evidence summary report (CLI/notification-friendly)
+// ---------------------------------------------------------------------------
+
+export interface CompactEvidenceSummaryOptions {
+  /** Parent tracker issue URL to surface in the summary. */
+  parentIssueUrl?: string;
+}
+
+/**
+ * Render a compact, one-line-per-lane evidence summary report.
+ * Intended for CLI output, GitHub tracker comments, and operator notifications.
+ *
+ * Each lane shows: workerId, classification, state, evidence URLs, and
+ * a brief outcome note. Excludes raw task output/error details, secrets,
+ * and full transcripts.
+ */
+export function renderCompactEvidenceSummary(
+  output: RoundResultCollectorOutput,
+  options: CompactEvidenceSummaryOptions = {},
+): string {
+  const lines: string[] = [];
+  const { parentIssueUrl } = options;
+
+  lines.push("## A2AD evidence summary");
+  lines.push("");
+  lines.push(`Round: ${output.roundLabel}`);
+  if (parentIssueUrl) lines.push(`Parent: ${parentIssueUrl}`);
+  lines.push(`Verdict: ${output.gateVerdict?.verdict ?? "PENDING"}`);
+  lines.push(`Generated: ${output.generatedAt}`);
+  lines.push("");
+
+  // Summary bar
+  const s = output.summary;
+  lines.push(`**${s.completed}/${s.totalLanes} lanes completed.** ${s.blocked} blocked, ${s.stale} stale, ${s.timeout} timeout, ${s.pending + s.running} active.`);
+  lines.push(`Evidence: ${s.substantiveEvidence} substantive, ${s.wrapperOnly} wrapper-only, ${s.sourceBlocked} source-blocked, ${s.handlerArtifactFailures} handler-artifact-failures, ${s.queuedUnclaimed} queued/unclaimed, ${s.nonSubstantive} non-substantive.`);
+  lines.push("");
+
+  // Per-lane summary
+  lines.push("### Lanes");
+  lines.push("");
+  lines.push("| Worker | Classification | State | Evidence refs | Outcome |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const lane of output.lanes) {
+    const cls = lane.evidenceClass ?? "unclassified";
+    const ev = lane.evidenceUrls.length > 0
+      ? lane.evidenceUrls.slice(0, 2).map((url) => `[link](${url})`).join(" ")
+      : "—";
+    const outcome = lane.outcomeSummary ?? lane.laneState;
+    lines.push(`| ${lane.workerId} | ${cls} | ${lane.laneState} | ${ev} | ${outcome} |`);
+  }
+  lines.push("");
+
+  // Non-actions disclaimer
+  if (output.approvalSensitiveActionsExcluded.length > 0) {
+    lines.push("### Non-actions");
+    lines.push("");
+    for (const action of output.approvalSensitiveActionsExcluded) {
+      lines.push(`- No ${action.toLowerCase()}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("---");
+  lines.push("");
+  lines.push("_Summary is source-only evidence. No deploy, DB mutation, provider send, or secret movement._");
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// #920: Round complete notification payload
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact notification payload for round complete or fail events.
+ *
+ * Designed for optional delivery to operator surfaces (CLI, GitHub tracker,
+ * notification handlers). Excludes raw task transcripts, secrets, and
+ * full task output/error details.
+ */
+export interface RoundCompletePayload {
+  roundLabel: string;
+  parentIssueUrl?: string;
+  verdict: "FINAL" | "BLOCKED" | "PENDING";
+  generatedAt: string;
+  lanes: Array<{
+    workerId: string;
+    description?: string;
+    state: RoundLaneState;
+    evidenceClass?: RoundLaneEvidenceClass;
+    evidenceUrls: string[];
+    prUrl?: string;
+    doneUrl?: string;
+    blockUrl?: string;
+  }>;
+  summary: {
+    totalLanes: number;
+    completed: number;
+    substantive: number;
+    blocked: number;
+    stale: number;
+    timeout: number;
+  };
+}
+
+/**
+ * Build a compact notification payload from a collector output.
+ * Strips raw task output, error details, and full transcripts.
+ */
+export function buildRoundCompletePayload(
+  output: RoundResultCollectorOutput,
+): RoundCompletePayload {
+  return {
+    roundLabel: output.roundLabel,
+    parentIssueUrl: output.parentIssueUrl,
+    verdict: output.gateVerdict?.verdict ?? "PENDING",
+    generatedAt: output.generatedAt,
+    lanes: output.lanes.map((lane) => ({
+      workerId: lane.workerId,
+      description: lane.description,
+      state: lane.laneState,
+      evidenceClass: lane.evidenceClass,
+      evidenceUrls: lane.evidenceUrls,
+      prUrl: lane.prUrl,
+      doneUrl: lane.doneUrl,
+      blockUrl: lane.blockUrl,
+    })),
+    summary: {
+      totalLanes: output.summary.totalLanes,
+      completed: output.summary.completed,
+      substantive: output.summary.substantiveEvidence,
+      blocked: output.summary.blocked,
+      stale: output.summary.stale,
+      timeout: output.summary.timeout,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
