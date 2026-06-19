@@ -1,7 +1,9 @@
 # Public-Readiness GO/NO-GO Note (#919 / #922)
 
-> **Aggregate decision: NO-GO for visibility change and promotion.**
-> Technical readiness evidence is recorded below. This note does **not** authorize
+> **Historical note:** this GO/NO-GO record was written before the public flip. Repository visibility was later approved and executed in [#953](https://github.com/jinwon-int/a2a-nexus/issues/953) at SHA `33da866af9869281605d283220b0bddd3cda11fd`. The remaining NO-GO boundary applies to stable promotion, release/tag/npm/Docker/GHCR publication, production deploy/restart, DB/outbox mutation, provider send, secret movement, history rewrite, and future ownership/visibility transfer.
+>
+> **Aggregate decision at the time: NO-GO for visibility change and promotion.**
+> Technical readiness evidence is recorded below. This note did **not** authorize
 > repository visibility change, npm/Docker publication, GitHub release/tag,
 > production deploy, broker/worker restart, database mutation, provider/Telegram
 > send, terminal ACK/replay, secret movement, history rewrite, or force-push.

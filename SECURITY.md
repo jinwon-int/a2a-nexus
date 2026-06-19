@@ -2,9 +2,9 @@
 
 ## Current status
 
-This repository is in public-readiness prep. It remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. The project is **alpha** — feedback and contributions are welcome when access is available, but no production readiness, stability guarantees, or security support are implied.
+This repository is public and remains an **alpha** project. Public visibility means the code, docs, issues, and PRs are readable by the public; it does not imply production readiness, stability guarantees, stable release support, package publication, or permission to use production infrastructure.
 
-Broader promotion (stable release, announcements, public docs site) remains blocked on the readiness gates recorded in [`docs/public-readiness.md`](docs/public-readiness.md).
+Broader promotion (stable release, announcements, public docs site, package/image publication, production deployment, and live operations) remains blocked on the readiness gates recorded in [`docs/public-readiness.md`](docs/public-readiness.md) and separate explicit operator approval.
 
 ## Reporting a vulnerability
 
@@ -26,7 +26,7 @@ If a proof of concept needs configuration, use placeholders such as `<local-dev-
 
 The following actions are not authorized by normal docs, issues, PRs, or local verification:
 
-- changing repository visibility
+- transferring repository ownership/visibility or making another visibility change
 - production deploys or Gateway/broker/worker restarts
 - production database mutation
 - live provider or Telegram sends
@@ -53,4 +53,4 @@ If any of those files would enter a branch or artifact bundle, fail closed and r
 
 ## Supported versions
 
-No stable release, npm package, Docker image, repository visibility change, or production deployment is supported yet. Treat all packages in this public-readiness monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.
+No stable release, npm package, Docker image, or production deployment is supported yet. Treat all packages in this public alpha monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.

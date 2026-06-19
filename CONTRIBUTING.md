@@ -1,6 +1,6 @@
 # Contributing
 
-A2A Nexus is in public-readiness prep and remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. The project is alpha — feedback and contributions are welcome when access is available. The contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
+A2A Nexus is a public alpha project. Feedback and contributions are welcome, but public visibility does not imply stable release support, package publication, production deployment, live operations, or relaxed safety boundaries. The contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
 
 ## Code of Conduct
 

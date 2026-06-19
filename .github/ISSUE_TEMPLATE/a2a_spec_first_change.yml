@@ -1,5 +1,6 @@
 name: A2A spec-first change
-about: Track a medium/large A2A change with spec, plan, tasks, and evidence gates
+description: Track a medium/large A2A change with spec, plan, tasks, and evidence gates
+title: "[Spec-first]: "
 labels: [enhancement, safety-gate]
 body:
   - type: markdown

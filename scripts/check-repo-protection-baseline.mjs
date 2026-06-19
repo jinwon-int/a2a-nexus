@@ -37,7 +37,21 @@ const fileChecks = [
       const dir = path.join(root, '.github/ISSUE_TEMPLATE');
       if (!fs.existsSync(dir)) return { ok: false, detail: '.github/ISSUE_TEMPLATE/ directory not found' };
       const files = fs.readdirSync(dir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml') || f.endsWith('.md'));
-      return { ok: files.length > 0, detail: `${files.length} template(s) found` };
+      const formFiles = files.filter((f) => (f.endsWith('.yml') || f.endsWith('.yaml')) && f !== 'config.yml');
+      const invalidForms = [];
+      for (const file of formFiles) {
+        const body = fs.readFileSync(path.join(dir, file), 'utf8');
+        const hasName = /^name:\s*\S/m.test(body);
+        const hasDescription = /^description:\s*\S/m.test(body);
+        const hasTitle = /^title:\s*".+"/m.test(body);
+        const hasLegacyAbout = /^about:/m.test(body);
+        const hasBody = /^body:\s*$/m.test(body);
+        if (!hasName || !hasDescription || !hasTitle || hasLegacyAbout || !hasBody) invalidForms.push(file);
+      }
+      if (invalidForms.length > 0) {
+        return { ok: false, detail: `Issue Forms missing GitHub-renderable metadata: ${invalidForms.join(', ')}` };
+      }
+      return { ok: files.length > 0, detail: `${files.length} template(s) found; ${formFiles.length} Issue Form(s) renderable` };
     },
   },
   {
