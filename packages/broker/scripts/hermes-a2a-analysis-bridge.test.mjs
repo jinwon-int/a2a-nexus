@@ -647,6 +647,7 @@ test("Hermes A2A analysis bridge accepts quiet final JSON even when Hermes abort
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "quiet JSON was emitted before Hermes aborted");
+    assert.equal(payload.recoverySource, "abort_stdout");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -690,6 +691,7 @@ test("Hermes A2A analysis bridge retries once when Hermes aborts before JSON", (
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "retry recovered after Hermes aborted before JSON");
+    assert.equal(payload.recoverySource, "retry_stdout");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -698,7 +700,7 @@ test("Hermes A2A analysis bridge retries once when Hermes aborts before JSON", (
 test("Hermes A2A analysis bridge recovers final analysis JSON from Hermes state.db after stdout-less abort", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-state-db-fallback-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
-  const hermesHome = join(tempDir, "hermes-home");
+  const hermesHome = join(tempDir, ".hermes");
   const stateDbPath = join(hermesHome, "state.db");
   try {
     mkdirSync(hermesHome, { recursive: true });
@@ -729,7 +731,8 @@ test("Hermes A2A analysis bridge recovers final analysis JSON from Hermes state.
     const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
     const result = spawnSync(process.execPath, openClawArgs(message), {
       encoding: "utf8",
-      env: { ...process.env, HERMES_BIN: fakeHermesPath, HERMES_HOME: hermesHome },
+      cwd: hermesHome,
+      env: { ...process.env, HERMES_BIN: fakeHermesPath, HERMES_HOME: "", HOME: "" },
     });
 
     assert.equal(result.status, 0, result.stderr);
@@ -737,6 +740,7 @@ test("Hermes A2A analysis bridge recovers final analysis JSON from Hermes state.
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "state db fallback recovered JSON saved before abort");
+    assert.equal(payload.recoverySource, "state_db");
     assert.deepEqual(payload.findings, ["Hermes saved the final assistant response before stdout was lost"]);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -833,6 +837,7 @@ test("Hermes A2A analysis bridge fetches GitHub PR diff and metadata into the re
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "PR source reached Hermes");
+    assert.equal(payload.recoverySource, "direct_stdout");
     const ghCalls = readFileSync(ghArgsPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     assert.deepEqual(ghCalls[0], ["pr", "diff", "627", "-R", "jinwon-int/a2a-nexus", "--color=never"]);
     assert.deepEqual(ghCalls[1].slice(0, 5), ["pr", "view", "627", "-R", "jinwon-int/a2a-nexus"]);

@@ -749,15 +749,24 @@ function hermesStateDbPath(env) {
   const hermesHome = safeText(env.HERMES_HOME, "");
   if (hermesHome) return join(resolve(hermesHome), "state.db");
   const home = safeText(env.HOME, "");
-  return home ? join(resolve(home), ".hermes", "state.db") : "";
+  if (home) return join(resolve(home), ".hermes", "state.db");
+  const cwd = resolve(process.cwd());
+  return basename(cwd) === ".hermes" ? join(cwd, "state.db") : "";
+}
+
+const RECOVERY_SOURCES = new Set(["direct_stdout", "abort_stdout", "state_db", "retry_stdout", "retry_state_db"]);
+
+function normalizeRecoverySource(value) {
+  const text = safeText(value, "");
+  return RECOVERY_SOURCES.has(text) ? text : "";
 }
 
 function recoverHermesAnalysisJsonFromStateDb(child, env) {
-  if (!isRecoverableHermesNoJsonAbort(child)) return "";
+  if (!isRecoverableHermesNoJsonAbort(child)) return { stdout: "", recoverySource: "" };
   const sessionId = extractHermesSessionId(`${child.stderr || ""}\n${child.stdout || ""}`);
-  if (!sessionId) return "";
+  if (!sessionId) return { stdout: "", recoverySource: "" };
   const stateDb = hermesStateDbPath(env);
-  if (!stateDb || !existsSync(stateDb)) return "";
+  if (!stateDb || !existsSync(stateDb)) return { stdout: "", recoverySource: "" };
 
   let db;
   try {
@@ -768,9 +777,9 @@ function recoverHermesAnalysisJsonFromStateDb(child, env) {
       "ORDER BY id DESC LIMIT 1",
     ].join(" ")).get(sessionId);
     const content = typeof row?.content === "string" ? row.content : "";
-    return hasUsableHermesAnalysisJson(content) ? content : "";
+    return hasUsableHermesAnalysisJson(content) ? { stdout: content, recoverySource: "state_db" } : { stdout: "", recoverySource: "" };
   } catch {
-    return "";
+    return { stdout: "", recoverySource: "" };
   } finally {
     try { db?.close(); } catch {}
   }
@@ -841,10 +850,12 @@ function runHermes(prompt, flags, env) {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const child = runHermesOnce(hermesBin, args, timeoutSec, env);
     lastChild = child;
-    if (child.status === 0) return child.stdout;
-    if (hasUsableHermesAnalysisJson(child.stdout)) return child.stdout;
-    const savedAnalysisJson = recoverHermesAnalysisJsonFromStateDb(child, env);
-    if (savedAnalysisJson) return savedAnalysisJson;
+    if (child.status === 0) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "direct_stdout" };
+    if (hasUsableHermesAnalysisJson(child.stdout)) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "abort_stdout" };
+    const savedAnalysis = recoverHermesAnalysisJsonFromStateDb(child, env);
+    if (savedAnalysis.stdout) {
+      return { stdout: savedAnalysis.stdout, recoverySource: attempt > 1 ? "retry_state_db" : savedAnalysis.recoverySource };
+    }
     if (attempt < maxAttempts && isRecoverableHermesNoJsonAbort(child)) continue;
     break;
   }
@@ -853,12 +864,13 @@ function runHermes(prompt, flags, env) {
   throw new Error(`Hermes exited with ${lastChild?.status}${signal}: ${output}`);
 }
 
-function normalizeResponse(parsed) {
+function normalizeResponse(parsed, diagnostics = {}) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Hermes response JSON must be an object");
   }
   const statusRaw = safeText(parsed.status, "done").toLowerCase();
   const status = ["blocked", "block", "source_blocked"].includes(statusRaw) ? "blocked" : "done";
+  const recoverySource = normalizeRecoverySource(diagnostics.recoverySource);
   return {
     status,
     summary: safeText(parsed.summary, status === "blocked" ? "analysis blocked" : "analysis complete"),
@@ -866,6 +878,7 @@ function normalizeResponse(parsed) {
     risks: normalizeStringArray(parsed.risks),
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
+    ...(recoverySource ? { recoverySource } : {}),
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),
     ...(safeText(parsed.startCommentUrl, "") ? { startCommentUrl: safeText(parsed.startCommentUrl) } : {}),
@@ -899,23 +912,23 @@ function main() {
     return;
   }
 
-  let hermesStdout;
+  let hermesResult;
   try {
-    hermesStdout = runHermes(prompt, flags, process.env);
+    hermesResult = runHermes(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
 
   let parsed;
   try {
-    parsed = extractJsonFromLooseText(hermesStdout);
+    parsed = extractJsonFromLooseText(hermesResult.stdout);
   } catch (error) {
     die(`Hermes analysis bridge response did not contain valid JSON: ${error.message}`);
   }
 
   let response;
   try {
-    response = normalizeResponse(parsed);
+    response = normalizeResponse(parsed, { recoverySource: hermesResult.recoverySource });
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }
