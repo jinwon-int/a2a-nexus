@@ -27,6 +27,7 @@ Public-safe contract skeletons for A2A protocol and task lifecycle behavior.
 ## Compatibility
 
 - [Terminal evidence ACK boundary](../compatibility/terminal-evidence-ack-boundary.md)
+- [A2A TCK and v0→v1 compatibility plan](../compatibility/a2a-tck-and-v0-to-v1-compatibility-plan.md) — TCK lane (#916 / wave #922). Maps frozen v0 contracts to executable TCK categories, defines the v0→v1 rules, and classifies fixture validators versus TCK gates.
 
 ## Fixtures
 
@@ -55,5 +56,6 @@ Machine-readable reference fixtures for broker/plugin/runner validation:
 
 - `node test/conformance/check-contract-fixtures.mjs` — validates contract v0 fixtures
 - `node test/conformance/check-terminal-evidence-ack-boundary.mjs` — validates accepted-send non-ACK fixture
+- `node test/conformance/check-a2a-tck-plan.mjs` — validates the A2A TCK and v0→v1 compatibility plan spec, fixture, gate mapping, and external-harness reference (#916)
 
 These documents intentionally avoid private endpoint names, provider identifiers, secret values, host-specific paths, and raw session evidence.
