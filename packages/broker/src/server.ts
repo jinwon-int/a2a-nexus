@@ -479,6 +479,7 @@ const DEFAULT_ALERT_STALE_AFTER_MS = 120_000;
 const DEFAULT_ALERT_LONG_RUNNING_AFTER_MS = 3_600_000;
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
 const DEFAULT_HEALTH_DIAGNOSTICS_TTL_MS = 5_000;
+const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
 type CachedHealthDiagnostics = {
   persistence: BrokerPersistenceInfo;
   auditDiagnostics: BrokerHotAuditDiagnostics | undefined;
@@ -1921,6 +1922,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   persistenceQueueDiagnostics?: BrokerPersistenceQueueDiagnosticsProvider;
   /** Max worker-thread durable write ACK wait in ms before returning retryable 503. */
   persistenceQueueAckTimeoutMs?: number;
+  /**
+   * Max bytes allowed for CreateTaskRequest.payload. Keeps large sourceBundle
+   * blobs from entering hot task rows/read paths; externalize larger bundles.
+   * Env: `BROKER_MAX_TASK_PAYLOAD_BYTES` (or legacy `A2A_MAX_TASK_PAYLOAD_BYTES`).
+   */
+  maxTaskPayloadBytes?: number;
   retentionPolicy?: Partial<BrokerRetentionPolicy>;
   maxSnapshotBytes?: number;
   trustedProxy?: boolean;
@@ -2066,6 +2073,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       options.persistenceQueueAckTimeoutMs,
       process.env.BROKER_PERSISTENCE_QUEUE_ACK_TIMEOUT_MS,
       30_000,
+    ),
+  );
+  const maxTaskPayloadBytes = Math.max(
+    1,
+    resolveIntegerOption(
+      options.maxTaskPayloadBytes,
+      process.env.BROKER_MAX_TASK_PAYLOAD_BYTES ?? process.env.A2A_MAX_TASK_PAYLOAD_BYTES,
+      DEFAULT_MAX_TASK_PAYLOAD_BYTES,
     ),
   );
   const workerOfflineAfterSec = options.workerOfflineAfterSec ?? Number(process.env.WORKER_OFFLINE_AFTER_SEC ?? 90);
@@ -4407,6 +4422,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             "task.create",
           );
         }
+        assertCreateTaskPayloadWithinLimit(body, maxTaskPayloadBytes);
         const task = broker.createTask(body);
         // Durable-ack disambiguation (a2a-nexus#636/#638): at this point the
         // task EXISTS in the broker — a persistence-queue ack timeout must
@@ -5386,6 +5402,25 @@ function listAuditEventsForReadPath(
     return stateStore.readHotAuditEvents(filters);
   }
   return broker.listAuditEvents(filters);
+}
+
+function assertCreateTaskPayloadWithinLimit(body: CreateTaskRequest, maxTaskPayloadBytes: number): void {
+  if (!body.payload) {
+    return;
+  }
+  const payloadBytes = Buffer.byteLength(JSON.stringify(body.payload), "utf8");
+  if (payloadBytes <= maxTaskPayloadBytes) {
+    return;
+  }
+  throw new BrokerError(
+    "bad_request",
+    `task payload exceeds configured limit (${payloadBytes} bytes > ${maxTaskPayloadBytes} bytes); externalize large sourceBundle content and submit only references or summaries`,
+    {
+      payloadBytes,
+      maxTaskPayloadBytes,
+      externalize: ["payload.sourceBundle", "payload.sourceEvidence", "payload.embeddedSourceEvidence"],
+    },
+  );
 }
 
 interface TaskListItem {
