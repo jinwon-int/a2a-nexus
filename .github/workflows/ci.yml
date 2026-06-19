@@ -86,6 +86,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: packages/*/dist
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: npm run check:layout
       - run: npm run check:packages
@@ -101,6 +105,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: packages/broker/dist
+          key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: node scripts/run-monorepo-package-ci-parity.mjs broker
 
@@ -115,6 +123,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: packages/docker-runner/dist
+          key: tsbuild-docker-runner-${{ runner.os }}-${{ hashFiles('packages/docker-runner/**/*.ts', 'packages/docker-runner/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: node scripts/run-monorepo-package-ci-parity.mjs docker-runner
 
@@ -129,6 +141,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: packages/openclaw-plugin-a2a/dist
+          key: tsbuild-plugin-${{ runner.os }}-${{ hashFiles('packages/openclaw-plugin-a2a/**/*.ts', 'packages/openclaw-plugin-a2a/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a
 
@@ -199,6 +215,10 @@ jobs:
           go-version: '1.24.x'
       - run: go install github.com/zricethezav/gitleaks/v8@latest
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          path: packages/*/dist
+          key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: npm run check
       - run: npm run check:quickstart-conformance
