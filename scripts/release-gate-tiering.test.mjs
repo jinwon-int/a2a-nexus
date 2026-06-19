@@ -44,7 +44,7 @@ test('--all selects every inventory entry', () => {
   assert.equal(entries.length, inventory.entries.length);
   assert.deepEqual(summarizeReleaseGateEntries(entries), {
     core: 17,
-    'public-readiness': 5,
+    'public-readiness': 6,
     'historical-transition': 14,
     'approval-gated': 3,
     'package-publication': 2,
@@ -76,7 +76,7 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, expectedDefault.length + 1);
-  assert.match(lines.at(-1), /release gate selected 22\/41 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 23\/42 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.equal(lines.some((line) => line.startsWith('monorepo-reentry\thistorical-transition\t')), false);
 });
@@ -87,7 +87,7 @@ test('release-gate --all --list prints every tier including approval-only paths'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
-  assert.match(lines.at(-1), /release gate selected 41\/41 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 42\/42 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('monorepo-final-operator-signoff\tapproval-gated\t')));
   assert.ok(lines.some((line) => line.startsWith('monorepo-release-package-tag-approval\tpackage-publication\t')));
 });
