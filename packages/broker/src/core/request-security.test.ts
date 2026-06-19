@@ -620,13 +620,15 @@ test("InMemoryNonceCache rejects a duplicate nonce (replay attack)", () => {
   assert.equal(cache.record(nonce, 1770862000), false);
 });
 
-test("InMemoryNonceCache allows the same nonce past its expires window", () => {
+test("InMemoryNonceCache rejects the same nonce with a later expiry until the old entry is pruned", () => {
   const cache = new InMemoryNonceCache(1000);
   const nonce = "nonce-expiry-check";
   // Record with expiry at epoch 1000.
   assert.equal(cache.record(nonce, 1000), true);
-  // The nonce is valid until its expiry. At or past expiry, a new record call
-  // with the same nonce but a higher expiry should succeed.
+  // Reusing the nonce with a later expiry before the old entry is pruned is still
+  // a replay/nonce-reuse hazard. The caller must prune by current time first.
+  assert.equal(cache.record(nonce, 2000), false);
+  cache.prune(1001);
   assert.equal(cache.record(nonce, 2000), true);
 });
 

@@ -381,11 +381,9 @@ export class InMemoryNonceCache implements NonceCache {
   }
 
   record(nonce: string, expiresAtEpochSeconds: number): boolean {
-    const existing = this.nonces.get(nonce);
-    if (existing !== undefined && existing >= expiresAtEpochSeconds) {
-      return false; // Duplicate within the expiry window.
+    if (this.nonces.has(nonce)) {
+      return false; // Duplicate within the retained expiry window.
     }
-    // Allow re-recording a nonce past its previous expiry (new window).
     this.nonces.set(nonce, expiresAtEpochSeconds);
     if (this.nonces.size > this.maxNonces) {
       this.prune(expiresAtEpochSeconds);
@@ -525,6 +523,7 @@ export function verifyA2AHttpSignature(
   // The nonce is covered by the HTTP signature so we know it is authentic;
   // we only need to check whether it has been seen before.
   if (options.nonceCache) {
+    options.nonceCache.prune(nowEpochSeconds);
     const fresh = options.nonceCache.record(parsed.nonce, parsed.expires);
     if (!fresh) {
       return signatureFailure(
