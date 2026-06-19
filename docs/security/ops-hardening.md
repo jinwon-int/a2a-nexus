@@ -277,6 +277,135 @@ A broker is "ready for operation" when all five dimensions are healthy simultane
 
 ---
 
+## 6. HTTP Signature Replay Protection and Transport Binding (#917)
+
+### Nonce-based replay protection
+
+Worker authentication via HTTP Signature (Ed25519, tag `a2a-worker-v1`) now includes
+transport-independent replay protection. The `nonce` parameter in the signature
+input is authenticated by the signature itself; the verifier stores seen nonces
+in a pluggable nonce cache. A replayed request (same nonce within its expiry
+window) receives a fail-closed `a2a_signature_replay_detected` error.
+
+#### Nonce cache contract
+
+The `NonceCache` interface is transport-independent:
+
+| Method | Purpose |
+|--------|---------|
+| `record(nonce, expiresAtEpochSeconds)` | Returns `true` for a fresh nonce, `false` for a replay. The expiry is the `expires` parameter from the signature input, so the cache entry lives exactly as long as the signature window. |
+| `has(nonce)` | Check whether a nonce is currently tracked. |
+| `prune(nowEpochSeconds)` | Garbage-collect entries past their expiry. |
+| `size()` | Current tracked count (diagnostics). |
+
+The in-memory implementation (`InMemoryNonceCache`) bounds at 10 000 entries by
+default and evicts oldest entries when over cap — safe for single-process broker
+deployments. Multi-process deployments can implement `NonceCache` with a shared
+Redis or SQLite backing store.
+
+#### Transport independence
+
+Replay protection does not assume any particular transport. It operates purely
+on the signature input fields (`nonce`, `created`, `expires`), which are part
+of every signed request regardless of whether the request is delivered via:
+
+- HTTP polling (`GET /tasks?worker=<id>`)
+- Server-Sent Events (`GET /a2a/tasks/:id/events`)
+- Webhooks (GitHub, etc.)
+- WebSocket upgrades
+- Future native worker transports
+
+The broker records the nonce after signature verification succeeds; a replay is
+rejected before any business logic executes. Operators must share a nonce cache
+instance across all transport handlers within a single process.
+
+#### Error shape (fail-closed)
+
+```
+HTTP 401 Unauthorized
+x-a2a-error-code: a2a_signature_replay_detected
+Body: {"error":"A2A HTTP signature nonce has already been seen — possible replay"}
+```
+
+#### Backward compatibility
+
+When no `NonceCache` is provided to `verifyA2AHttpSignature`, no replay check
+is performed. Existing callers that do not construct a nonce cache keep their
+current behavior unaffected. This is a transitional state; once all deployment
+configurations have adopted the cache, the backward-compatible path can be
+deprecated.
+
+### Scoped-key requirements (#691, #922)
+
+Each worker signing key in the registry may declare a `scopes` array listing
+the route scope tokens it is authorized for. The route scope tokens are defined
+in `request-security.ts` as `A2A_WORKER_ROUTE_SCOPES`:
+
+```
+workers.assignment-events  worker.register  worker.heartbeat
+tasks.list  task.claim  task.start  task.heartbeat
+task.checkpoint  task.complete  task.evidence  task.fail
+```
+
+#### Current behavior (dual-auth transition)
+
+- **Key with declared scopes**: The broker fails closed (`a2a_signature_scope_denied`)
+  when the route's required scope is not listed in the key's grant.
+- **Key without scopes (legacy)**: Treated as an unscoped credential authorized
+  for every worker route. This compatibility path is **explicit, measurable, and
+  temporary** — operators can audit unscoped keys by checking for the absence of
+  the `scopes` field in their registry records.
+
+#### Migration path to strict scoped keys
+
+1. All new worker keys must declare explicit `scopes` — no new unscoped keys.
+2. Existing unscoped keys operate with a warning log on each verification.
+3. A future release will remove the unscoped compatibility path; at that point,
+   all worker keys must declare scopes or be refused.
+4. Operators can track migration progress by watching the `hasUnscopedKeys`
+   metric (exposed via `/health` when available).
+
+#### Lifecycle checks (already implemented)
+
+- **Revoked keys** (`status: "revoked"`): Rejected at verification (`a2a_signature_key_revoked`).
+- **Not-before/expires-at**: Keys outside their validity window are rejected (`a2a_signature_key_inactive`).
+- **Role binding**: When `roles` are declared, the signed `x-a2a-requester-role`
+  must appear in the list; otherwise `a2a_signature_role_denied`.
+
+### Key provisioning and rotation requirements (no live secrets)
+
+Refer to `packages/broker/src/core/request-security.ts` for the `A2AHttpSignatureKeyRecord`
+schema. A key registry JSON file contains one record per `keyid`:
+
+```json
+{
+  "worker:<workerId>:v1": {
+    "keyid": "worker:<workerId>:v1",
+    "workerId": "<workerId>",
+    "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519", "x": "<base64url>" },
+    "scopes": ["worker.register", "worker.heartbeat", "task.claim", "task.complete"],
+    "status": "active",
+    "notBefore": "2026-06-01T00:00:00Z",
+    "expiresAt": "2026-12-31T23:59:59Z"
+  }
+}
+```
+
+The registry is loaded from `A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE` at broker
+startup and not hot-reloaded (same limitation as edge secret rotation). Key
+rotation requires a broker restart — operators should plan maintenance windows.
+
+### Explicit non-actions
+
+This document section and the implementation it describes do NOT:
+- Move, rotate, or create live secrets.
+- Reconstitute credentials from environment variables.
+- Restart any running broker, worker, or Gateway.
+- Mutate any database, terminal outbox, or receipt state.
+- Publish releases, tags, npm packages, or Docker images.
+
+---
+
 ## Appendix: Running the audit
 
 ```sh

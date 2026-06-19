@@ -302,7 +302,8 @@ export type A2AHttpSignatureFailureCode =
   | "a2a_signature_role_denied"
   | "a2a_signature_identity_mismatch"
   | "a2a_signature_time_invalid"
-  | "a2a_signature_invalid";
+  | "a2a_signature_invalid"
+  | "a2a_signature_replay_detected";
 
 export type A2AHttpSignatureVerificationResult =
   | {
@@ -323,6 +324,97 @@ export type A2AHttpSignatureVerificationResult =
 
 export interface A2AHttpSignatureVerifyOptions {
   nowEpochSeconds?: number;
+  /**
+   * Optional nonce cache for replay protection. When provided, the verifier
+   * rejects any request whose nonce has already been seen (and is still within
+   * its expiry window). Omitted preserves backward-compatible behavior without
+   * replay detection. Transport-independent: works with HTTP polling, SSE,
+   * webhook, websocket, and future native workers.
+   */
+  nonceCache?: NonceCache;
+}
+
+/**
+ * Transport-independent nonce cache interface for replay protection (#917).
+ * Implementations may be in-memory (single-process broker) or backed by a
+ * shared store (Redis, SQLite) for multi-process deployments. The in-memory
+ * implementation InMemoryNonceCache bounds memory and auto-prunes expired
+ * entries.
+ */
+export interface NonceCache {
+  /**
+   * Record a nonce as seen. Returns true if the nonce was freshly recorded
+   * (first use), or false if it was a duplicate (replay attack). The
+   * `expiresAtEpochSeconds` determines how long the entry is retained; after
+   * this instant the entry may be pruned.
+   */
+  record(nonce: string, expiresAtEpochSeconds: number): boolean;
+
+  /**
+   * Check whether a nonce has been recorded and not yet expired.
+   */
+  has(nonce: string): boolean;
+
+  /**
+   * Remove nonces whose expiresAt is before the given epoch-second cutoff.
+   * Called periodically (e.g. per request or on a timer) to bound memory.
+   */
+  prune(nowEpochSeconds: number): void;
+
+  /**
+   * Current number of tracked nonces (for diagnostics).
+   */
+  size(): number;
+}
+
+/**
+ * In-memory nonce cache for single-process broker deployments. Uses a Map
+ * with configurable maximum size to prevent unbounded memory growth under
+ * a nonce flood.
+ */
+export class InMemoryNonceCache implements NonceCache {
+  private readonly nonces = new Map<string, number>();
+  private readonly maxNonces: number;
+
+  constructor(maxNonces = 10_000) {
+    this.maxNonces = maxNonces;
+  }
+
+  record(nonce: string, expiresAtEpochSeconds: number): boolean {
+    if (this.nonces.has(nonce)) {
+      return false; // Duplicate within the retained expiry window.
+    }
+    this.nonces.set(nonce, expiresAtEpochSeconds);
+    if (this.nonces.size > this.maxNonces) {
+      this.prune(expiresAtEpochSeconds);
+      // If still over cap after pruning, evict oldest entries.
+      if (this.nonces.size > this.maxNonces) {
+        let over = this.nonces.size - this.maxNonces;
+        for (const key of this.nonces.keys()) {
+          if (over <= 0) break;
+          this.nonces.delete(key);
+          over -= 1;
+        }
+      }
+    }
+    return true;
+  }
+
+  has(nonce: string): boolean {
+    return this.nonces.has(nonce);
+  }
+
+  prune(nowEpochSeconds: number): void {
+    for (const [nonce, expiresAt] of this.nonces) {
+      if (expiresAt <= nowEpochSeconds) {
+        this.nonces.delete(nonce);
+      }
+    }
+  }
+
+  size(): number {
+    return this.nonces.size;
+  }
 }
 
 interface ParsedA2AHttpSignatureInput {
@@ -425,6 +517,20 @@ export function verifyA2AHttpSignature(
     }
   } catch (error) {
     return signatureFailure("a2a_signature_invalid", error instanceof Error ? error.message : "A2A HTTP signature verification failed");
+  }
+
+  // Replay protection — transport-independent nonce check (#917).
+  // The nonce is covered by the HTTP signature so we know it is authentic;
+  // we only need to check whether it has been seen before.
+  if (options.nonceCache) {
+    options.nonceCache.prune(nowEpochSeconds);
+    const fresh = options.nonceCache.record(parsed.nonce, parsed.expires);
+    if (!fresh) {
+      return signatureFailure(
+        "a2a_signature_replay_detected",
+        "A2A HTTP signature nonce has already been seen — possible replay",
+      );
+    }
   }
 
   return {
