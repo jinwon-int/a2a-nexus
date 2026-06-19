@@ -1,0 +1,337 @@
+{
+  "meta": {
+    "contract": "adapter-conformance-matrix",
+    "version": "v0-slice",
+    "issues": [
+      "https://github.com/jinwon-int/a2a-nexus/issues/918",
+      "https://github.com/jinwon-int/a2a-nexus/issues/922"
+    ],
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "redacted": true
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-06-19T00:00:00.000Z",
+    "round": "a2a-nexus-918-platform-independent-adapter-conformance-slice",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "brokerRestart": false,
+    "workerRestart": false,
+    "liveProviderSend": false,
+    "terminalOutboxAckMutation": false,
+    "databaseMutation": false,
+    "releaseOrTagPublish": false,
+    "secretMovement": false,
+    "repoVisibilityChange": false,
+    "historyRewrite": false,
+    "forcePush": false,
+    "crossBrokerMutation": false,
+    "terminalBriefAckReplay": false
+  },
+  "conformanceCategories": [
+    {
+      "id": "claim-poll",
+      "name": "Claim and poll work acquisition",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#31-a2aadapter-interface",
+      "passCriteria": [
+        "Adapter supports http-poll discovery of pending assigned tasks.",
+        "Adapter claims before task execution and can classify claim refusal without side effects.",
+        "Adapter treats duplicate delivery as at-least-once and relies on idempotency keys."
+      ]
+    },
+    {
+      "id": "report-status",
+      "name": "Report standard task status",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#24-a2ataskstatus",
+      "passCriteria": [
+        "Adapter reports claimed/running and one terminal status using the standard vocabulary.",
+        "Adapter does not infer operator ACK from status-report acceptance.",
+        "Adapter observes cancellation responses before further mutable work."
+      ]
+    },
+    {
+      "id": "heartbeat",
+      "name": "Heartbeat health signal",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#26-a2aheartbeat",
+      "passCriteria": [
+        "Adapter sends health and active task metadata through the broker heartbeat route.",
+        "Heartbeat payload is redacted and contains no runtime-specific private path material.",
+        "Heartbeat failure is classified as degraded/unavailable rather than hidden."
+      ]
+    },
+    {
+      "id": "terminal-evidence",
+      "name": "Terminal evidence shape",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#25-a2aevidence",
+      "passCriteria": [
+        "Adapter submits start, PR, Done, or Block evidence in the common evidence envelope.",
+        "Evidence acceptance is non-ACK receipt evidence only.",
+        "Evidence is compact enough for public issue/PR comments."
+      ]
+    },
+    {
+      "id": "idempotency-dedupe",
+      "name": "Idempotency and dedupe",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#32-core-contract-guarantees",
+      "passCriteria": [
+        "Repeated claim/status/evidence calls with the same key return the existing result.",
+        "Same key with conflicting payload is a conflict, not an overwrite.",
+        "Dedupe never creates duplicate terminal evidence or duplicate sends."
+      ]
+    },
+    {
+      "id": "fail-closed-redaction",
+      "name": "Fail-closed redaction",
+      "contractRef": "contracts/a2a/platform-adapter-interface.md#8-safety-boundaries",
+      "passCriteria": [
+        "Unredacted evidence is blocked before broker/provider submission.",
+        "Classified block evidence reports only safe reason codes.",
+        "Runtime bootstrap context and host-private state are excluded from evidence."
+      ]
+    }
+  ],
+  "adapterFixtures": [
+    {
+      "id": "hermes-native-http-poll-reference",
+      "platform": "hermes",
+      "harnessKind": "native-http-worker",
+      "role": "minimal-reference-path",
+      "expectedClassification": "conformant",
+      "coreDependency": {
+        "freeOfOpenClawPluginSdk": true,
+        "freeOfHermesCli": true,
+        "freeOfDockerRunner": true
+      },
+      "referencePath": {
+        "transport": "http-poll",
+        "openClawPluginSdkRequired": false,
+        "operations": ["register", "heartbeat", "pollTasks", "claimTask", "submitEvidence"],
+        "routes": [
+          "POST /workers/register",
+          "POST /workers/:nodeId/heartbeat",
+          "GET /tasks?worker=:nodeId&status=pending",
+          "POST /tasks/:id/claim",
+          "POST /tasks/:id/evidence"
+        ],
+        "terminalEvidenceKinds": ["start", "pr", "done", "block"]
+      },
+      "categoryResults": [
+        { "categoryId": "claim-poll", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "report-status", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "heartbeat", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "terminal-evidence", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "idempotency-dedupe", "status": "pass", "evidenceRef": "classifiedScenarios.duplicate-terminal-evidence-deduped" },
+        { "categoryId": "fail-closed-redaction", "status": "pass", "evidenceRef": "classifiedScenarios.unredacted-terminal-evidence-fail-closed" }
+      ]
+    },
+    {
+      "id": "openclaw-reference-integration",
+      "platform": "openclaw",
+      "harnessKind": "reference-wrapper",
+      "role": "reference-integration",
+      "substrate": false,
+      "expectedClassification": "reference_conformant",
+      "coreDependency": {
+        "freeOfOpenClawPluginSdk": true,
+        "freeOfHermesCli": true,
+        "freeOfDockerRunner": true
+      },
+      "referenceIntegrationNotes": [
+        "OpenClaw remains an optional transport/reference integration; core conformance starts from A2AAdapter categories.",
+        "Plugin-specific wake or channel behavior must be wrapped behind the platform-independent adapter surface.",
+        "Core fixtures must be satisfiable without loading OpenClaw runtime context."
+      ],
+      "categoryResults": [
+        { "categoryId": "claim-poll", "status": "pass", "evidenceRef": "classifiedScenarios.openclaw-reference-wrapper-path" },
+        { "categoryId": "report-status", "status": "pass", "evidenceRef": "classifiedScenarios.openclaw-reference-wrapper-path" },
+        { "categoryId": "heartbeat", "status": "pass", "evidenceRef": "classifiedScenarios.openclaw-reference-wrapper-path" },
+        { "categoryId": "terminal-evidence", "status": "pass", "evidenceRef": "classifiedScenarios.openclaw-reference-wrapper-path" },
+        { "categoryId": "idempotency-dedupe", "status": "pass", "evidenceRef": "classifiedScenarios.duplicate-terminal-evidence-deduped" },
+        { "categoryId": "fail-closed-redaction", "status": "pass", "evidenceRef": "classifiedScenarios.unredacted-terminal-evidence-fail-closed" }
+      ]
+    },
+    {
+      "id": "generic-http-cli-redaction-negative",
+      "platform": "http-cli",
+      "harnessKind": "fixture-negative-case",
+      "role": "intentional-failure-example",
+      "expectedClassification": "intentional_fail",
+      "coreDependency": {
+        "freeOfOpenClawPluginSdk": true,
+        "freeOfHermesCli": true,
+        "freeOfDockerRunner": true
+      },
+      "categoryResults": [
+        { "categoryId": "claim-poll", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "report-status", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "heartbeat", "status": "pass", "evidenceRef": "classifiedScenarios.hermes-http-poll-happy-path" },
+        { "categoryId": "terminal-evidence", "status": "intentional_fail", "evidenceRef": "classifiedScenarios.unredacted-terminal-evidence-fail-closed" },
+        { "categoryId": "idempotency-dedupe", "status": "pass", "evidenceRef": "classifiedScenarios.duplicate-terminal-evidence-deduped" },
+        { "categoryId": "fail-closed-redaction", "status": "intentional_fail_classified", "evidenceRef": "classifiedScenarios.unredacted-terminal-evidence-fail-closed" }
+      ]
+    }
+  ],
+  "classifiedScenarios": [
+    {
+      "id": "hermes-http-poll-happy-path",
+      "adapterId": "hermes-native-http-poll-reference",
+      "given": {
+        "transport": "http-poll",
+        "workerId": "hermes-agent-reference-worker",
+        "taskId": "task-redacted-918-001",
+        "idempotencyKey": "a2a-nexus-918:hermes-http-poll:001",
+        "openClawRequired": false,
+        "sourceOnly": true,
+        "noLive": true
+      },
+      "when": [
+        "register",
+        "heartbeat",
+        "pollTasks",
+        "claimTask",
+        "reportStatus:running",
+        "submitEvidence:done",
+        "reportStatus:succeeded"
+      ],
+      "expect": {
+        "classification": "conformant",
+        "countsAsConformance": true,
+        "receiptLevel": 1,
+        "ackSafe": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    },
+    {
+      "id": "openclaw-reference-wrapper-path",
+      "adapterId": "openclaw-reference-integration",
+      "given": {
+        "wrappedBehindA2AAdapter": true,
+        "coreContractReadsPluginState": false,
+        "transportKinds": ["http-poll", "plugin-sdk-reference"],
+        "sourceOnly": true,
+        "noLive": true
+      },
+      "expect": {
+        "classification": "reference_conformant",
+        "countsAsConformance": true,
+        "referenceIntegrationOnly": true,
+        "substrateRequirement": false,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    },
+    {
+      "id": "duplicate-terminal-evidence-deduped",
+      "adapterId": "hermes-native-http-poll-reference",
+      "given": {
+        "taskId": "task-redacted-918-002",
+        "dedupeKey": "a2a-nexus-918:terminal-evidence:done",
+        "firstPayloadSha256": "redacted-fixture-sha-001",
+        "replayPayloadSha256": "redacted-fixture-sha-001"
+      },
+      "expect": {
+        "classification": "conformant",
+        "countsAsConformance": true,
+        "status": "deduplicated",
+        "newEvidenceCreated": false,
+        "returnedExistingEvidence": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    },
+    {
+      "id": "unredacted-terminal-evidence-fail-closed",
+      "adapterId": "generic-http-cli-redaction-negative",
+      "given": {
+        "taskId": "task-redacted-918-003",
+        "evidenceRedacted": false,
+        "unsafeEvidenceCopied": false,
+        "reasonCodes": ["evidence-redaction-required", "runtime-context-excluded"]
+      },
+      "expect": {
+        "classification": "fail_closed_redaction",
+        "countsAsConformance": false,
+        "action": "reject-before-broker-send",
+        "blockEvidenceRedacted": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    },
+    {
+      "id": "harness-neutral-source-bundle-ok",
+      "adapterId": "hermes-native-http-poll-reference",
+      "given": {
+        "analysisStatus": "done",
+        "payloadFlags": {
+          "noLive": true,
+          "sourceOnly": true,
+          "readOnlyValidation": true
+        },
+        "sourceEvidenceCarrier": "payload.sourceBundle.files[]",
+        "evidenceRefs": ["contracts/a2a/harness-neutral-analysis-adapter.md"]
+      },
+      "expect": {
+        "classification": "conformant",
+        "countsAsConformance": true,
+        "countsAsWorkerOpinion": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    },
+    {
+      "id": "harness-neutral-missing-source-carrier-blocked",
+      "adapterId": "hermes-native-http-poll-reference",
+      "given": {
+        "analysisStatus": "source_blocked",
+        "payloadFlags": {
+          "noLive": true,
+          "sourceOnly": true,
+          "readOnlyValidation": true
+        },
+        "sourceEvidenceCarrier": null,
+        "reasonCodes": ["source-carrier-required"]
+      },
+      "expect": {
+        "classification": "source_blocked",
+        "countsAsConformance": false,
+        "countsAsWorkerOpinion": false,
+        "retryRecommended": true,
+        "liveProviderSend": false,
+        "terminalOutboxAckMutated": false,
+        "databaseMutation": false
+      }
+    }
+  ],
+  "harnessNeutralAnalysisBridge": {
+    "sourceOnly": true,
+    "noLive": true,
+    "readOnlyValidation": true,
+    "allowedEvidenceCarriers": [
+      "payload.repo+paths",
+      "payload.sourceBundle.files[]",
+      "payload.sourceEvidence[]",
+      "githubRefs"
+    ],
+    "nonSubstantiveClassifications": [
+      "wrapper_only",
+      "source_blocked",
+      "handler_artifact_failure",
+      "queued_unclaimed",
+      "provider_or_model_failure"
+    ],
+    "finalizerRule": "Only analysisStatus=done with source-backed findings counts as worker opinion."
+  },
+  "validationCommands": [
+    "node test/conformance/check-adapter-conformance-matrix.mjs",
+    "npm run test:conformance"
+  ]
+}
