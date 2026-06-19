@@ -68,7 +68,7 @@
     "test": "npm run check",
     "test:release-gate": "node scripts/run-release-gate.mjs",
     "test:release-gate:list": "node scripts/run-release-gate.mjs --list",
-    "test:conformance": "node test/conformance/check-contract-fixtures.mjs && node test/conformance/check-terminal-evidence-ack-boundary.mjs && node test/conformance/check-platform-adapter-interface.mjs && node test/conformance/check-adapter-conformance-matrix.mjs && node test/conformance/check-a2ad-review-mode.mjs && node test/conformance/check-canonical-progress-validation-matrix.mjs && node test/conformance/check-github-evidence-projection.mjs && node test/conformance/check-terminal-brief-canary-acceptance.mjs && node test/conformance/check-terminal-brief-core-contract.mjs && node test/conformance/check-trace-propagation.mjs",
+    "test:conformance": "node test/conformance/run-conformance.mjs",
     "round:merge-preflight": "node scripts/round-merge-preflight.mjs",
     "a2a:execution-orchestrator": "node scripts/a2a-source-public-execution-orchestrator.mjs --spec docs/execution-orchestrator/source-public-execution-orchestrator-schema.json",
     "a2a:execution-orchestrator:test": "node --test scripts/a2a-source-public-execution-orchestrator.test.mjs",
