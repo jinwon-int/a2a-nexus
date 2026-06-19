@@ -953,6 +953,85 @@ describe("buildRoundManifest", () => {
 // ---------------------------------------------------------------------------
 
 describe("closeout bundle", () => {
+  it("projects a compact operator evidence summary with finalizer decision and non-actions (#920)", () => {
+    const nowMs = Date.parse("2026-06-19T02:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-evidence-quality-test",
+      parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
+      lanes: [
+        { workerId: "nosuk", expectedOutcome: "analysis" },
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "echo", expectedOutcome: "analysis" },
+        { workerId: "failed", expectedOutcome: "analysis" },
+        { workerId: "timeout", expectedOutcome: "analysis" },
+        { workerId: "queued", expectedOutcome: "analysis" },
+        { workerId: "original", expectedOutcome: "analysis", supersededBySupplementTaskId: "task-supplement" },
+      ],
+      timeoutAt: "2026-06-19T01:59:00.000Z",
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-nosuk",
+        assignedWorkerId: "nosuk",
+        status: "succeeded",
+        updatedAt: "2026-06-19T01:50:00.000Z",
+        completedAt: "2026-06-19T01:50:00.000Z",
+        payload: { parentRoundId: "round-920", parentRoundOrder: 1, parentRoundTotal: 7, brokerOfRecordId: "seoseo" },
+        result: makeResult({ output: { analysisStatus: "done", findings: ["substantive"], doneCommentUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920#issuecomment-1" } }),
+      }),
+      makeTask({
+        id: "task-bangtong-source-blocked",
+        assignedWorkerId: "bangtong",
+        status: "failed",
+        updatedAt: "2026-06-19T01:51:00.000Z",
+        completedAt: "2026-06-19T01:51:00.000Z",
+        error: { code: "handler_exit_nonzero", message: "handler exited", details: { stdout: "analysis bridge blocked: source bundle contained 0 files" } },
+      }),
+      makeTask({
+        id: "task-echo-wrapper",
+        assignedWorkerId: "echo",
+        status: "succeeded",
+        updatedAt: "2026-06-19T01:52:00.000Z",
+        completedAt: "2026-06-19T01:52:00.000Z",
+        message: "Analyze issue #920",
+        result: makeResult({ summary: "Analyze issue #920", note: "echo handled task task-echo-wrapper", output: { message: "Analyze issue #920" } }),
+      }),
+      makeTask({
+        id: "task-failed",
+        assignedWorkerId: "failed",
+        status: "failed",
+        updatedAt: "2026-06-19T01:53:00.000Z",
+        completedAt: "2026-06-19T01:53:00.000Z",
+        error: { code: "github_executor_not_configured", message: "github executor not configured" },
+      }),
+      makeTask({ id: "task-timeout", assignedWorkerId: "timeout", status: "running", updatedAt: "2026-06-19T01:40:00.000Z" }),
+      makeTask({ id: "task-queued", assignedWorkerId: undefined, claimedBy: undefined, targetNodeId: "queued", target: { id: "queued", kind: "node" }, status: "queued", updatedAt: "2026-06-19T01:58:30.000Z" }),
+      makeTask({ id: "task-original", assignedWorkerId: "original", status: "running", updatedAt: "2026-06-19T01:55:00.000Z" }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const byWorker = new Map(output.evidenceSummary.lanes.map((lane) => [lane.workerId, lane]));
+
+    equal(byWorker.get("nosuk")?.category, "substantive");
+    equal(byWorker.get("bangtong")?.category, "source-blocked");
+    equal(byWorker.get("echo")?.category, "wrapper-only");
+    equal(byWorker.get("failed")?.category, "failed");
+    equal(byWorker.get("timeout")?.category, "timeout");
+    equal(byWorker.get("queued")?.category, "queued/stuck");
+    equal(byWorker.get("original")?.category, "superseded-by-supplement");
+    equal(byWorker.get("nosuk")?.taskIds[0], "task-nosuk");
+    equal(byWorker.get("nosuk")?.evidenceRefs[0], "https://github.com/jinwon-int/a2a-nexus/issues/920#issuecomment-1");
+    equal(byWorker.get("nosuk")?.workerAttribution.assignedWorkerId, "nosuk");
+    equal(output.evidenceSummary.finalizerDecision.verdict, "BLOCKED");
+    ok(output.evidenceSummary.nonActions.includes("No Telegram/provider send"));
+    equal(output.operatorNotificationPayload.kind, "a2ad.round.evidence_summary.v1");
+    equal(output.operatorNotificationPayload.roundLabel, "a2ad-evidence-quality-test");
+    equal(output.operatorNotificationPayload.finalizerDecision.verdict, "BLOCKED");
+    equal(output.operatorNotificationPayload.lanes.some((lane) => "rawTranscript" in lane), false);
+    ok(output.closeoutBundle.body.includes("### Compact evidence summary"));
+    ok(output.closeoutBundle.body.includes("superseded-by-supplement"));
+  });
+
   it("renders all-complete bundle with ✅ emoji", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [

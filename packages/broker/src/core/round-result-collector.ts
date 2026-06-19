@@ -22,6 +22,15 @@ import type { TaskRecord, TaskResult, TaskStatus, BrokerExitCondition } from "./
 
 export type RoundLaneExpectedOutcome = "patch" | "evidence-only" | "analysis" | "review";
 
+export type RoundEvidenceSummaryCategory =
+  | "substantive"
+  | "source-blocked"
+  | "wrapper-only"
+  | "failed"
+  | "timeout"
+  | "queued/stuck"
+  | "superseded-by-supplement";
+
 export interface RoundManifestLane {
   /** Worker identifier, e.g. "sogyo", "bangtong", "nosuk". */
   workerId: string;
@@ -30,6 +39,45 @@ export interface RoundManifestLane {
   /** Expected outcome kind. Lanes whose manifest outcome does not match the
    *  task evidence are surfaced as a risk in the closeout bundle. */
   expectedOutcome?: RoundLaneExpectedOutcome;
+  /** Optional operator assertion that this stale/original lane was replaced by a supplement lane. */
+  supersededBySupplementTaskId?: string;
+}
+
+export interface RoundEvidenceSummaryLane {
+  workerId: string;
+  category: RoundEvidenceSummaryCategory;
+  taskIds: string[];
+  evidenceRefs: string[];
+  finalizerDecision: "count" | "do-not-count";
+  workerAttribution: {
+    assignedWorkerId?: string;
+    claimedBy?: string;
+    targetNodeId?: string;
+    brokerOfRecordId?: string;
+    originBrokerId?: string;
+    parentRoundId?: string;
+    parentRoundOrder?: number;
+    parentRoundTotal?: number;
+  };
+  supersededBySupplementTaskId?: string;
+}
+
+export interface RoundEvidenceSummary {
+  lanes: RoundEvidenceSummaryLane[];
+  counts: Record<RoundEvidenceSummaryCategory, number>;
+  finalizerDecision: NonNullable<RoundResultCollectorOutput["gateVerdict"]>;
+  nonActions: string[];
+}
+
+export interface RoundOperatorNotificationPayload {
+  kind: "a2ad.round.evidence_summary.v1";
+  roundLabel: string;
+  parentIssueUrl?: string;
+  generatedAt: string;
+  finalizerDecision: RoundEvidenceSummary["finalizerDecision"];
+  laneCounts: RoundEvidenceSummary["counts"];
+  lanes: Array<Pick<RoundEvidenceSummaryLane, "workerId" | "category" | "taskIds" | "evidenceRefs" | "finalizerDecision">>;
+  nonActions: string[];
 }
 
 export interface RoundManifest {
@@ -142,6 +190,8 @@ export interface ResultLane {
   parentRoundOrder?: number;
   originBrokerId?: string;
   brokerOfRecordId?: string;
+  /** Original/nonterminal lane superseded by a supplemental task. */
+  supersededBySupplementTaskId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +252,10 @@ export interface RoundResultCollectorOutput {
   evidenceUrls: string[];
   /** Compact finalizer-review bundle. */
   closeoutBundle: CloseoutBundle;
+  /** Compact lane evidence dashboard for operator closeout UX. */
+  evidenceSummary: RoundEvidenceSummary;
+  /** Optional sanitized notification payload for round complete/fail surfaces. */
+  operatorNotificationPayload: RoundOperatorNotificationPayload;
   approvalSensitiveActionsExcluded: string[];
   /**
    * Finalizer gate verdict computed from the collector's own lane
@@ -225,6 +279,17 @@ export interface RoundResultCollectorOutput {
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
 const EVIDENCE_KEY_RE = /^(prUrl|doneUrl|doneCommentUrl|blockUrl|blockCommentUrl)$/;
+const APPROVAL_SENSITIVE_ACTIONS_EXCLUDED = [
+  "No GitHub PR merge, issue close, or comment post",
+  "No Telegram/provider send",
+  "No live provider/Hermes/OpenClaw send",
+  "No terminal ACK/replay",
+  "No Gateway/broker/worker/sidecar restart or deploy",
+  "No broker DB mutation/prune/migration",
+  "No historical outbox replay",
+  "No release/tag/npm publish",
+  "No secret or credential movement",
+];
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -278,6 +343,15 @@ export function collectRoundResults(
     .filter((l) => l.laneState === "blocked")
     .map((l) => l.workerId);
   const evidenceUrls = extractAllEvidenceUrls(lanes);
+  const generatedAt = new Date(nowMs).toISOString();
+  const gateVerdict: NonNullable<RoundResultCollectorOutput["gateVerdict"]> = computeGateVerdict(lanes, manifest.lanes.length);
+  const evidenceSummary = buildEvidenceSummary(lanes, gateVerdict, APPROVAL_SENSITIVE_ACTIONS_EXCLUDED);
+  const operatorNotificationPayload = buildOperatorNotificationPayload({
+    roundLabel: manifest.roundLabel,
+    parentIssueUrl: manifest.parentIssueUrl,
+    generatedAt,
+    evidenceSummary,
+  });
   const closeoutBundle = buildCloseoutBundle({
     roundLabel: manifest.roundLabel,
     parentIssueUrl: manifest.parentIssueUrl,
@@ -288,13 +362,14 @@ export function collectRoundResults(
     timeoutLanes,
     blockedLanes,
     evidenceUrls,
-    generatedAt: new Date(nowMs).toISOString(),
+    generatedAt,
+    evidenceSummary,
   });
 
   return {
     kind: "a2a-broker.round-result-collector.projection",
     version: 1,
-    generatedAt: new Date(nowMs).toISOString(),
+    generatedAt,
     roundLabel: manifest.roundLabel,
     parentIssueUrl: manifest.parentIssueUrl,
     summary,
@@ -305,17 +380,10 @@ export function collectRoundResults(
     blockedLanes,
     evidenceUrls,
     closeoutBundle,
-    gateVerdict: computeGateVerdict(lanes, manifest.lanes.length),
-    approvalSensitiveActionsExcluded: [
-      "GitHub PR merge, issue close, or comment post",
-      "live provider/Hermes/Telegram/OpenClaw send",
-      "terminal ACK/replay",
-      "Gateway/broker/worker/sidecar restart or deploy",
-      "broker DB mutation/prune/migration",
-      "historical outbox replay",
-      "release/tag/npm publish",
-      "secret or credential movement",
-    ],
+    evidenceSummary,
+    operatorNotificationPayload,
+    gateVerdict,
+    approvalSensitiveActionsExcluded: APPROVAL_SENSITIVE_ACTIONS_EXCLUDED,
   };
 }
 
@@ -369,6 +437,7 @@ function classifyLane(
       evidenceClass: "stale_or_missing_worker",
       readinessStatus: hasTimeout && nowMs >= timeoutAtMs ? "stale" : "missing",
       roundMetadataComplete: false,
+      supersededBySupplementTaskId: laneDef.supersededBySupplementTaskId,
     };
   }
 
@@ -564,6 +633,8 @@ function buildLaneResult(
     assignedWorkerId: state.latest.assignedWorkerId,
     claimedBy: state.latest.claimedBy,
     targetNodeId: state.latest.targetNodeId,
+    brokerOfRecordId: state.latest.brokerOfRecord,
+    supersededBySupplementTaskId: laneDef.supersededBySupplementTaskId,
     ...metadata,
   };
   lane.readinessStatus = projectReadinessStatus(lane);
@@ -1031,7 +1102,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
 function computeGateVerdict(
   lanes: ResultLane[],
   expectedTotal: number,
-): RoundResultCollectorOutput["gateVerdict"] {
+): NonNullable<RoundResultCollectorOutput["gateVerdict"]> {
   let succeeded = 0;
   let failed = 0;
   let pending = 0;
@@ -1100,6 +1171,84 @@ function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
   return [...seen];
 }
 
+function emptyEvidenceSummaryCounts(): Record<RoundEvidenceSummaryCategory, number> {
+  return {
+    substantive: 0,
+    "source-blocked": 0,
+    "wrapper-only": 0,
+    failed: 0,
+    timeout: 0,
+    "queued/stuck": 0,
+    "superseded-by-supplement": 0,
+  };
+}
+
+function evidenceSummaryCategory(lane: ResultLane): RoundEvidenceSummaryCategory {
+  if (lane.supersededBySupplementTaskId) return "superseded-by-supplement";
+  if (lane.evidenceClass === "queued_unclaimed") return "queued/stuck";
+  if (lane.laneState === "timeout") return "timeout";
+  if (lane.evidenceClass === "source_blocked") return "source-blocked";
+  if (lane.evidenceClass === "wrapper_only") return "wrapper-only";
+  if (lane.evidenceClass === "substantive") return "substantive";
+  if (lane.laneState === "pending" || lane.laneState === "running" || lane.laneState === "stale") return "queued/stuck";
+  return "failed";
+}
+
+function buildEvidenceSummary(
+  lanes: ResultLane[],
+  finalizerDecision: NonNullable<RoundResultCollectorOutput["gateVerdict"]>,
+  nonActions: string[],
+): RoundEvidenceSummary {
+  const counts = emptyEvidenceSummaryCounts();
+  const summaryLanes = lanes.map((lane): RoundEvidenceSummaryLane => {
+    const category = evidenceSummaryCategory(lane);
+    counts[category] += 1;
+    return {
+      workerId: lane.workerId,
+      category,
+      taskIds: lane.taskIds,
+      evidenceRefs: lane.evidenceUrls,
+      finalizerDecision: category === "substantive" ? "count" : "do-not-count",
+      workerAttribution: {
+        assignedWorkerId: lane.assignedWorkerId,
+        claimedBy: lane.claimedBy,
+        targetNodeId: lane.targetNodeId,
+        brokerOfRecordId: lane.brokerOfRecordId,
+        originBrokerId: lane.originBrokerId,
+        parentRoundId: lane.parentRoundId,
+        parentRoundOrder: lane.parentRoundOrder,
+        parentRoundTotal: lane.parentRoundTotal,
+      },
+      supersededBySupplementTaskId: lane.supersededBySupplementTaskId,
+    };
+  });
+  return { lanes: summaryLanes, counts, finalizerDecision, nonActions };
+}
+
+function buildOperatorNotificationPayload(context: {
+  roundLabel: string;
+  parentIssueUrl?: string;
+  generatedAt: string;
+  evidenceSummary: RoundEvidenceSummary;
+}): RoundOperatorNotificationPayload {
+  return {
+    kind: "a2ad.round.evidence_summary.v1",
+    roundLabel: context.roundLabel,
+    parentIssueUrl: context.parentIssueUrl,
+    generatedAt: context.generatedAt,
+    finalizerDecision: context.evidenceSummary.finalizerDecision,
+    laneCounts: context.evidenceSummary.counts,
+    lanes: context.evidenceSummary.lanes.map((lane) => ({
+      workerId: lane.workerId,
+      category: lane.category,
+      taskIds: lane.taskIds,
+      evidenceRefs: lane.evidenceRefs,
+      finalizerDecision: lane.finalizerDecision,
+    })),
+    nonActions: context.evidenceSummary.nonActions,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Closeout bundle rendering
 // ---------------------------------------------------------------------------
@@ -1115,6 +1264,7 @@ function buildCloseoutBundle(context: {
   blockedLanes: string[];
   evidenceUrls: string[];
   generatedAt: string;
+  evidenceSummary: RoundEvidenceSummary;
 }): CloseoutBundle {
   const title = closeoutTitle(context);
   const body = closeoutBody(context);
@@ -1142,8 +1292,9 @@ function closeoutBody(context: {
   blockedLanes: string[];
   evidenceUrls: string[];
   generatedAt: string;
+  evidenceSummary: RoundEvidenceSummary;
 }): string {
-  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, generatedAt, parentIssueUrl } = context;
+  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, generatedAt, parentIssueUrl, evidenceSummary } = context;
   const lines: string[] = [];
 
   // Header
@@ -1177,6 +1328,20 @@ function closeoutBody(context: {
     lines.push("> ✅  All lanes completed with evidence. Ready for finalizer closeout.");
     lines.push("");
   }
+
+  // Compact evidence summary
+  lines.push("### Compact evidence summary");
+  lines.push("");
+  lines.push(`Finalizer decision: ${evidenceSummary.finalizerDecision.verdict}${evidenceSummary.finalizerDecision.reason ? ` — ${evidenceSummary.finalizerDecision.reason}` : ""}`);
+  lines.push(`Categories: substantive=${evidenceSummary.counts.substantive} source-blocked=${evidenceSummary.counts["source-blocked"]} wrapper-only=${evidenceSummary.counts["wrapper-only"]} failed=${evidenceSummary.counts.failed} timeout=${evidenceSummary.counts.timeout} queued/stuck=${evidenceSummary.counts["queued/stuck"]} superseded-by-supplement=${evidenceSummary.counts["superseded-by-supplement"]}`);
+  lines.push("| Worker | Category | Task IDs | Evidence refs | Finalizer |");
+  lines.push("| --- | --- | --- | --- | --- |");
+  for (const item of evidenceSummary.lanes) {
+    lines.push(`| ${item.workerId} | ${item.category} | ${item.taskIds.length ? item.taskIds.join(", ") : "—"} | ${item.evidenceRefs.length ? item.evidenceRefs.join("<br>") : "—"} | ${item.finalizerDecision} |`);
+  }
+  lines.push("");
+  lines.push(`Non-actions: ${evidenceSummary.nonActions.join("; ")}.`);
+  lines.push("");
 
   // Lane-by-lane summary
   lines.push("### Lane status");
