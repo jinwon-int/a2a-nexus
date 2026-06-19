@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
 const bridgePath = new URL("./hermes-a2a-analysis-bridge.mjs", import.meta.url).pathname;
@@ -689,6 +690,54 @@ test("Hermes A2A analysis bridge retries once when Hermes aborts before JSON", (
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "retry recovered after Hermes aborted before JSON");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge recovers final analysis JSON from Hermes state.db after stdout-less abort", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-state-db-fallback-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const hermesHome = join(tempDir, "hermes-home");
+  const stateDbPath = join(hermesHome, "state.db");
+  try {
+    mkdirSync(hermesHome, { recursive: true });
+    const db = new DatabaseSync(stateDbPath);
+    db.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL)");
+    db.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)").run(
+      "fake-saved-session",
+      "assistant",
+      JSON.stringify({
+        status: "done",
+        summary: "state db fallback recovered JSON saved before abort",
+        findings: ["Hermes saved the final assistant response before stdout was lost"],
+        risks: ["stdout-only evidence recovery would discard valid worker analysis"],
+        recommendations: ["read the saved session response in read-only mode when SIGABRT reports a session_id"],
+        evidenceRefs: ["/root/.hermes/state.db:messages"],
+      }),
+    );
+    db.close();
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "console.error('session_id: fake-saved-session');",
+      "process.kill(process.pid, 'SIGABRT');",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath, HERMES_HOME: hermesHome },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "state db fallback recovered JSON saved before abort");
+    assert.deepEqual(payload.findings, ["Hermes saved the final assistant response before stdout was lost"]);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

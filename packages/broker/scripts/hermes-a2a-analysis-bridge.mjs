@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -737,6 +738,44 @@ function isRecoverableHermesNoJsonAbort(child) {
   return child.signal === "SIGABRT" || child.status === 134;
 }
 
+function extractHermesSessionId(text) {
+  const match = /(?:^|\n)\s*session_id:\s*([A-Za-z0-9_-]+)/.exec(String(text || ""));
+  return match ? match[1] : "";
+}
+
+function hermesStateDbPath(env) {
+  const explicit = safeText(env.HERMES_STATE_DB || env.HERMES_STATE_DB_PATH, "");
+  if (explicit) return resolve(explicit);
+  const hermesHome = safeText(env.HERMES_HOME, "");
+  if (hermesHome) return join(resolve(hermesHome), "state.db");
+  const home = safeText(env.HOME, "");
+  return home ? join(resolve(home), ".hermes", "state.db") : "";
+}
+
+function recoverHermesAnalysisJsonFromStateDb(child, env) {
+  if (!isRecoverableHermesNoJsonAbort(child)) return "";
+  const sessionId = extractHermesSessionId(`${child.stderr || ""}\n${child.stdout || ""}`);
+  if (!sessionId) return "";
+  const stateDb = hermesStateDbPath(env);
+  if (!stateDb || !existsSync(stateDb)) return "";
+
+  let db;
+  try {
+    db = new DatabaseSync(stateDb, { readOnly: true });
+    const row = db.prepare([
+      "SELECT content FROM messages",
+      "WHERE session_id = ? AND role = 'assistant'",
+      "ORDER BY id DESC LIMIT 1",
+    ].join(" ")).get(sessionId);
+    const content = typeof row?.content === "string" ? row.content : "";
+    return hasUsableHermesAnalysisJson(content) ? content : "";
+  } catch {
+    return "";
+  } finally {
+    try { db?.close(); } catch {}
+  }
+}
+
 function positiveIntegerEnv(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -804,6 +843,8 @@ function runHermes(prompt, flags, env) {
     lastChild = child;
     if (child.status === 0) return child.stdout;
     if (hasUsableHermesAnalysisJson(child.stdout)) return child.stdout;
+    const savedAnalysisJson = recoverHermesAnalysisJsonFromStateDb(child, env);
+    if (savedAnalysisJson) return savedAnalysisJson;
     if (attempt < maxAttempts && isRecoverableHermesNoJsonAbort(child)) continue;
     break;
   }
