@@ -422,13 +422,14 @@ Non-conformance behaviors:
 
 ---
 
-## 7. Fixture
+## 7. Fixtures
 
-A machine-readable fixture for adapter interface conformance is maintained at:
+Machine-readable fixtures for adapter interface conformance are maintained at:
 
-- `fixtures/contract/platform-adapter-interface.json`
+- `fixtures/contract/platform-adapter-interface.json` — type/envelope fixture for the base interface.
+- `fixtures/contract/adapter-conformance-matrix.json` — PR-first conformance matrix for #918/#922.
 
-The fixture validates:
+The base fixture validates:
 - `A2AAdapterId` schema conformance
 - `A2AAdapterCapabilities` schema conformance
 - `A2ATaskRequest` envelope parsing
@@ -436,9 +437,24 @@ The fixture validates:
 - Receipt level mapping correctness
 - HTTP-poll transport flow (poll → claim → execute → evidence)
 
+The conformance matrix adds harness-neutral categories that any adapter can satisfy or intentionally
+fail with classified evidence:
+- claim/poll
+- report status
+- heartbeat
+- terminal evidence
+- idempotency/dedupe
+- fail-closed redaction
+
+It also freezes the minimal Hermes/native reference path for `http-poll + heartbeat + terminal
+evidence` using the worker HTTP contract, without requiring the OpenClaw plugin SDK, Hermes CLI,
+Docker runner, or any single harness. OpenClaw remains a reference integration that can be wrapped
+behind `A2AAdapter`; it is not a substrate requirement for the core fixtures.
+
 Validated via:
 ```sh
 node test/conformance/check-platform-adapter-interface.mjs
+node test/conformance/check-adapter-conformance-matrix.mjs
 ```
 
 ---

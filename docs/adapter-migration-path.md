@@ -82,6 +82,23 @@ creating two parallel maintenance surfaces.
 | Conformance test | ~1 day |
 | Ecosystem guide update | ~0.5 day |
 
+### #918/#922 PR-first conformance slice
+
+Before adapter implementations move in Phase 2/3, the source-only matrix at
+`fixtures/contract/adapter-conformance-matrix.json` defines the reviewable conformance substrate:
+claim/poll, report status, heartbeat, terminal evidence, idempotency/dedupe, and fail-closed
+redaction. The matrix includes at least two harness paths: a Hermes/native HTTP-poll reference path
+and an OpenClaw reference-wrapper path. It also includes an intentional redaction failure case so
+non-conforming adapters produce classified Block evidence instead of unsafe terminal evidence.
+
+This slice is intentionally harness-neutral:
+- The Hermes/native path uses the worker HTTP routes from `docs/specs/hermes-worker-integration/spec.md`.
+- OpenClaw-specific behavior is allowed only as a wrapped reference integration.
+- Core fixture validation must not require OpenClaw plugin SDK loading, Hermes CLI invocation,
+  Docker runner context, live broker access, or provider sends.
+- Harness-neutral analysis evidence carriers remain source-only/read-only and classify missing
+  source as `source_blocked`, not as a worker opinion.
+
 ---
 
 ## Phase 2: Hermes Native Adapter
