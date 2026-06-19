@@ -2535,8 +2535,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     operatorAlertsById = nextAlertsById;
   };
 
-  const unsubscribeBrokerState = broker.subscribeToState(() => {
+  const unsubscribeBrokerState = broker.subscribeToState((change) => {
     if (suppressOperatorStateBroadcast) {
+      return;
+    }
+    if (change.kind === "worker.heartbeat" && !change.materialChange) {
       return;
     }
     publishOperatorEvents();
