@@ -1,0 +1,304 @@
+{
+  "fixtureId": "a2a-nexus.compatibility.tck-and-v0-to-v1-plan.v1",
+  "contract": "contracts/compatibility/a2a-tck-and-v0-to-v1-compatibility-plan.md",
+  "description": "Machine-readable companion to the A2A TCK and v0→v1 compatibility plan spec. Maps frozen v0 contracts to TCK categories, defines the v0→v1 rules, and classifies existing checks as fixture-validator or tck-gate.",
+  "issue": 916,
+  "waveIssue": 922,
+  "parentIssue": 915,
+  "v0Freeze": {
+    "frozenAt": "2026-05-09",
+    "round": "a2a-vnext-contract-smoke-crossbroker-20260510",
+    "note": "v0 frozen contracts are the Contract v0 baseline. No new lifecycle states, receipt levels, capability labels, or result types before a v1 freeze issue."
+  },
+  "tckCategories": [
+    {
+      "id": "task-lifecycle",
+      "title": "Task lifecycle states and transitions",
+      "frozenContracts": [
+        "contracts/a2a/task-lifecycle.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/task-lifecycle.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "worker-registration",
+      "title": "Worker registration fields and capability labels",
+      "frozenContracts": [
+        "contracts/a2a/worker-registration.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/worker-registration-capabilities.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "cancellation-idempotency",
+      "title": "Cancellation and idempotency scenarios",
+      "frozenContracts": [
+        "contracts/a2a/cancellation-idempotency.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/cancellation-idempotency.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "terminal-evidence",
+      "title": "Terminal evidence result types, receipt levels, accepted-send non-ACK boundary",
+      "frozenContracts": [
+        "contracts/a2a/terminal-semantics.md",
+        "contracts/compatibility/terminal-evidence-ack-boundary.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/terminal-evidence.json",
+        "fixtures/terminal-evidence/accepted-send-non-ack.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-terminal-evidence-ack-boundary.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "worker-capability-profile",
+      "title": "R31 worker capability profile schema and freshness handling",
+      "frozenContracts": [
+        "contracts/a2a/worker-capability-profile.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/worker-capability-profile.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "embedded-execution-stability",
+      "title": "Embedded OpenClaw execution stability policy",
+      "frozenContracts": [
+        "contracts/a2a/embedded-execution-stability-policy.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/embedded-execution-stability-policy.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "adapter-receipt-capability",
+      "title": "Adapter receipt capability levels C1-C6",
+      "frozenContracts": [
+        "contracts/a2a/adapter-receipt-capability.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/adapter-receipt-capability.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "harness-neutral-analysis-adapter",
+      "title": "Harness-neutral analysis evidence classes",
+      "frozenContracts": [
+        "contracts/a2a/harness-neutral-analysis-adapter.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/harness-neutral-analysis-adapter.json"
+      ],
+      "gateType": "fixture-validator",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "cross-broker-handoff",
+      "title": "Cross-broker handoff protocol",
+      "frozenContracts": [
+        "contracts/a2a/broker-handoff-protocol.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/gwakga-cross-broker-handoff.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "github-evidence-projection",
+      "title": "GitHub comment evidence ledger extension",
+      "frozenContracts": [
+        "contracts/a2a/github-evidence-projection.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/github-evidence-projection.json"
+      ],
+      "gateType": "fixture-validator",
+      "checkCommand": "node test/conformance/check-github-evidence-projection.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "public-compatibility-policy",
+      "title": "Public compatibility policy invariants",
+      "frozenContracts": [
+        "contracts/compatibility/README.md",
+        "contracts/compatibility/matrix.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/contract/public-compatibility-policy.json"
+      ],
+      "gateType": "fixture-validator",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "v0FrozenAt": "2026-05-09"
+    },
+    {
+      "id": "external-harness-no-live",
+      "title": "External harness no-live conformance",
+      "frozenContracts": [
+        "docs/external-harness-quickstart.md"
+      ],
+      "frozenFixtures": [
+        "fixtures/external-harness/no-live-conformance.json"
+      ],
+      "gateType": "tck-gate",
+      "checkCommand": "npm run check:external-harness-conformance",
+      "v0FrozenAt": "2026-05-09"
+    }
+  ],
+  "v0ToV1Rules": [
+    {
+      "id": "additive",
+      "title": "Additive only",
+      "policy": "v0→v1 may add new optional fields, new lifecycle states that do not change existing transitions, new optional capability labels, or new harness-neutral evidence classes. Additive changes never remove or rename frozen fields, and default behaviour must not change.",
+      "evidenceContracts": [
+        "contracts/compatibility/a2a-tck-and-v0-to-v1-compatibility-plan.md"
+      ]
+    },
+    {
+      "id": "deprecation",
+      "title": "Deprecations are explicit and time-bounded",
+      "policy": "Deprecated fields must remain parsable and emit a documented warning for at least one minor version cycle before removal. A removal PR must include a deprecation commit and a migration note listing every consumer. Deprecation entries land in contracts/compatibility/matrix.md with a removal gate version.",
+      "evidenceContract": "contracts/compatibility/matrix.md"
+    },
+    {
+      "id": "schema-versioning",
+      "title": "Schema versioning requires a major version bump for breaking changes",
+      "policy": "Breaking changes require a major version bump even within a 0.x release train. Frozen contracts carry an explicit v0Freeze.frozenAt marker. New schemas add a new fixture with a distinct fixtureId and keep the v0 fixture unchanged until deprecation closes.",
+      "evidenceContracts": [
+        "contracts/compatibility/a2a-tck-and-v0-to-v1-compatibility-plan.md",
+        "contracts/compatibility/matrix.md"
+      ]
+    },
+    {
+      "id": "worker-capability",
+      "title": "Worker capability evolution stays additive and public-safe",
+      "policy": "New workloadStrengths labels are additive and may land in a minor version. Removing or renaming a label is a breaking change and triggers the schema versioning rule. The freshnessTimestamp field and stale-profile handling are frozen; any change ships with a new fixture. Profiles must remain public-safe (no host names, private paths, provider tokens, raw session dumps, or runtime/bootstrap context file names).",
+      "evidenceContract": "contracts/a2a/worker-capability-profile.md"
+    },
+    {
+      "id": "terminal-evidence",
+      "title": "Terminal evidence semantics lock the accepted-send non-ACK boundary",
+      "policy": "The four receipt levels (accepted-send, requester-visible, operator-visible, terminal ACK) and the three result types (Done, PR, Block) are frozen. providerMessageId, providerAccepted, sendStatus: accepted, sendStatus: sent, queue_accepted, and spool_produced are never terminal ACK evidence. Only manual_operator_receipt and current_session_visible are ACK-safe receipt proofs. Terminal ACK is not derivable from provider delivery responses.",
+      "evidenceContracts": [
+        "contracts/a2a/terminal-semantics.md",
+        "contracts/compatibility/terminal-evidence-ack-boundary.md"
+      ]
+    }
+  ],
+  "gateMapping": [
+    {
+      "kind": "fixture-validator",
+      "checkCommand": "node test/conformance/check-contract-fixtures.mjs",
+      "note": "Validates fixture JSON shape, schema, and forbidden-content rules. Internal integrity check; not a public v0 compatibility claim."
+    },
+    {
+      "kind": "tck-gate",
+      "checkCommand": "node test/conformance/check-terminal-evidence-ack-boundary.mjs",
+      "note": "Locks the accepted-send non-ACK boundary. Any v0 claim must keep this green."
+    },
+    {
+      "kind": "fixture-validator",
+      "checkCommand": "node test/conformance/check-github-evidence-projection.mjs",
+      "note": "Validates the GitHub comment evidence projection fixture. Internal integrity."
+    },
+    {
+      "kind": "tck-gate",
+      "checkCommand": "node test/conformance/check-a2a-tck-plan.mjs",
+      "note": "Validates the TCK plan spec, fixture, gate mapping, and external-harness reference. Required for v0 TCK lane claims."
+    },
+    {
+      "kind": "tck-gate",
+      "checkCommand": "npm run check:external-harness-conformance",
+      "note": "Validates docs/external-harness-quickstart.md and fixtures/external-harness/no-live-conformance.json. External brokers must satisfy this gate to claim a no-live integration."
+    },
+    {
+      "kind": "fixture-validator",
+      "checkCommand": "npm run check:quickstart-conformance",
+      "note": "Internal quickstart integrity check; not a public v0 compatibility claim."
+    },
+    {
+      "kind": "fixture-validator",
+      "checkCommand": "npm run check:promotion-capstone",
+      "note": "Internal promotion capstone integrity check; not a public v0 compatibility claim."
+    },
+    {
+      "kind": "fixture-validator",
+      "checkCommand": "npm run check:terminal-brief-routing",
+      "note": "Internal Terminal Brief routing integrity check."
+    },
+    {
+      "kind": "tck-gate",
+      "checkCommand": "npm run check:message-id-ack-boundary",
+      "note": "Locks provider message-id evidence as non-ACK. Required for v0 ACK boundary claims."
+    }
+  ],
+  "externalHarnessFixture": {
+    "path": "fixtures/external-harness/no-live-conformance.json",
+    "schema": "a2a.externalHarness.noLiveConformance.v1",
+    "mode": "no-live",
+    "broker": {
+      "baseUrl": "http://127.0.0.1:8787",
+      "production": false
+    },
+    "usesOpenClawCli": false,
+    "expectedTerminalEvidence": ["Done", "Block"],
+    "ackEligibleConfirmationSources": [
+      "current_session_visible",
+      "manual_operator_receipt"
+    ],
+    "nonAckEvidence": [
+      "provider_accepted",
+      "provider_sent",
+      "queue_accepted",
+      "spool_produced"
+    ],
+    "conformanceCommand": "npm run check:external-harness-conformance"
+  },
+  "contractCitation": {
+    "nonBlocking": true,
+    "optionalForAdditiveOnly": true,
+    "requiredForBreakingChange": true,
+    "format": "Refs: <contract-path>#<section-id> (<additive|breaking>)",
+    "examples": [
+      "Refs: contracts/a2a/task-lifecycle.md#lifecycle-states (additive)",
+      "Refs: contracts/compatibility/terminal-evidence-ack-boundary.md#rules (breaking)"
+    ],
+    "note": "Missing or stale citations never block a small task. Reviewers parse them with a regex over the PR body; no tool is required."
+  },
+  "safety": {
+    "liveProviderSend": false,
+    "terminalAckReplay": false,
+    "gatewayRestart": false,
+    "brokerRestart": false,
+    "databaseMutation": false,
+    "releaseOrPublish": false,
+    "secretMovement": false,
+    "runtimeBootstrapPathLeakage": false
+  }
+}
