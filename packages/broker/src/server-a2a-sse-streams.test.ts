@@ -1217,6 +1217,69 @@ test("stale reaper no-op sweeps do not publish expensive operator summary update
   }
 });
 
+test("worker heartbeat-only persistence does not publish expensive operator summary updates", async () => {
+  const server = await startTestServer({
+    edgeSecret: "test-edge-secret",
+    workerHeartbeatPersistIntervalMs: 0,
+  });
+  const liveController = new AbortController();
+  try {
+    await registerTestWorker(server.baseUrl, "worker-a", "analyst", "test-edge-secret");
+
+    const liveRes = await fetch(`${server.baseUrl}/a2a/operator/events`, {
+      signal: liveController.signal,
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "ops",
+        "x-a2a-requester-role": "operator",
+        accept: "text/event-stream",
+      },
+    });
+    assert.equal(liveRes.status, 200);
+    await readSseEventsUntil(
+      liveRes,
+      (seen) => seen.some((event) => event.event === "operator-snapshot"),
+    );
+
+    for (let i = 0; i < 3; i += 1) {
+      const heartbeatRes = await fetch(`${server.baseUrl}/workers/worker-a/heartbeat`, {
+        method: "POST",
+        headers: jsonHeaders({
+          "x-a2a-edge-secret": "test-edge-secret",
+          "x-a2a-requester-id": "worker-a",
+          "x-a2a-requester-role": "analyst",
+        }),
+        body: JSON.stringify({}),
+      });
+      assert.equal(heartbeatRes.status, 200);
+    }
+    liveController.abort();
+
+    const replayController = new AbortController();
+    const replayRes = await fetch(`${server.baseUrl}/a2a/operator/events`, {
+      signal: replayController.signal,
+      headers: {
+        "x-a2a-edge-secret": "test-edge-secret",
+        "x-a2a-requester-id": "ops",
+        "x-a2a-requester-role": "operator",
+        accept: "text/event-stream",
+        "Last-Event-ID": "operator:0",
+      },
+    });
+    assert.equal(replayRes.status, 200);
+    const replayEvents = await readSseEventsUntil(
+      replayRes,
+      (seen) => seen.some((event) => event.event === "operator-snapshot"),
+    );
+    replayController.abort();
+
+    assert.deepEqual(replayEvents.map((event) => event.event), ["operator-snapshot"]);
+  } finally {
+    liveController.abort();
+    await server.close();
+  }
+});
+
 test("SSE /a2a/operator/events falls back to a fresh snapshot when Last-Event-ID is outside the replay buffer", async () => {
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",

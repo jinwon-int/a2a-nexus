@@ -359,7 +359,11 @@ export interface BufferedTaskEvent {
 }
 
 export type TaskUpdateListener = (update: TaskUpdate) => void;
-export type BrokerStateListener = () => void;
+export type BrokerStateChange =
+  | { kind: "state.persisted" }
+  | { kind: "worker.heartbeat"; workerId: string; materialChange: boolean };
+
+export type BrokerStateListener = (change: BrokerStateChange) => void;
 
 export type BrokerProfilingOperation = "persistState";
 
@@ -1072,7 +1076,11 @@ export class InMemoryA2ABroker {
       targetId: worker.nodeId,
       note: "heartbeat",
     });
-    this.persistState();
+    this.persistState({
+      kind: "worker.heartbeat",
+      workerId: worker.nodeId,
+      materialChange,
+    });
     this.lastPersistedWorkerHeartbeatAtMs.set(worker.nodeId, nowMs);
     return worker;
   }
@@ -2933,7 +2941,7 @@ export class InMemoryA2ABroker {
     this.applyRetentionPolicy();
   }
 
-  private persistState(): void {
+  private persistState(change: BrokerStateChange = { kind: "state.persisted" }): void {
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const hotSave = this.stateStore?.saveHotEntities;
@@ -2945,7 +2953,7 @@ export class InMemoryA2ABroker {
       const hints = this.consumeStateSaveHintsWithoutSnapshot();
       if (hints) {
         hotSave.call(this.stateStore, hints);
-        this.emitStateChange();
+        this.emitStateChange(change);
         this.emitProfilingSample({
           operation: "persistState",
           startedAt,
@@ -2964,7 +2972,7 @@ export class InMemoryA2ABroker {
     const snapshot = this.exportSnapshot();
     const hints = this.consumeStateSaveHints(snapshot);
     this.stateStore?.save(snapshot, hints);
-    this.emitStateChange();
+    this.emitStateChange(change);
     this.emitProfilingSample({
       operation: "persistState",
       startedAt,
@@ -3138,10 +3146,10 @@ export class InMemoryA2ABroker {
     };
   }
 
-  private emitStateChange(): void {
+  private emitStateChange(change: BrokerStateChange): void {
     for (const listener of [...this.stateListeners]) {
       try {
-        listener();
+        listener(change);
       } catch (error) {
         console.error(
           `[a2a-broker] broker state listener threw: ${
