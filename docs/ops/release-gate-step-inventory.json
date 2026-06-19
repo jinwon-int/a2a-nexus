@@ -110,6 +110,17 @@
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
+      "name": "public-readiness-go-nogo-note",
+      "command": "node",
+      "args": [
+        "--test",
+        "test/conformance/public-readiness-go-nogo.test.mjs"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public-readiness GO/NO-GO closeout note for #919/#922; keeps approval-gated promotion separate from technical readiness evidence."
+    },
+    {
       "name": "external-secrets",
       "command": "npm",
       "args": [

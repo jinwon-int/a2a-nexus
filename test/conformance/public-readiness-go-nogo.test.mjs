@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
-const REPO_ROOT = resolve(import.meta.dirname ?? '.', '..');
+const REPO_ROOT = resolve(import.meta.dirname ?? '.', '../..');
 const NOTE_PATH = join(REPO_ROOT, 'docs/public-readiness-go-nogo.md');
 
 function readNote() {
