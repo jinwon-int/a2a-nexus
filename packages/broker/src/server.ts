@@ -2377,7 +2377,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             .join(", ")}`,
         );
       }
-      publishOperatorEvents();
+      if (requeued.length > 0 || deadLettered.length > 0) {
+        publishOperatorEvents();
+      }
       return requeued.length;
     } catch (error) {
       staleReaperLastRunAt = new Date().toISOString();
