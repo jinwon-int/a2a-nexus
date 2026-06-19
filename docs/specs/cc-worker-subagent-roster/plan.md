@@ -19,7 +19,7 @@ Reason: Adds a normative role→agent mapping plus worker-side reference definit
 - `a2a-broker`: `packages/broker/docs/worker-subagent-orchestration-policy.md` — optional additive cross-reference to the roster (Roles section).
 - `a2a-docker-runner`: none (conductor cap/roles already defined; roster reuses them).
 - `openclaw-plugin-a2a`: none.
-- worker/node config: the CC worker harness ships `a2a-explorer` / `a2a-implementer` / `a2a-verifier` agent definitions (out of this repo).
+- worker/node config: the CC worker harness ships `a2a-explorer` / `a2a-implementer` / `a2a-verifier` agent definitions, plus the `a2a-researcher` explorer variant (web research via MCP), out of this repo.
 - Wiki/runbooks: node CC page records the roster + adaptive-selection procedure.
 - other: `docs/specs/cc-worker-subagent-roster/` (this spec/plan).
 

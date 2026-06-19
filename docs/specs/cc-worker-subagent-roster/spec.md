@@ -20,6 +20,10 @@ This spec defines a small, normative **roster**: a stable mapping from the polic
 ### In scope
 
 - A normative role→agent mapping documenting how the policy's `explorer` / `implementer` / `verifier` roles are realized as CC sub-agent definitions (role intent, tool scope, output contract).
+- **Role realizations (variants).** A policy role may have more than one concrete realization, as long as it stays within the role's contract. The `explorer` role has two realizations:
+  - a **code/log explorer** — bounded investigation of code, issues, and logs (read-only); and
+  - a **web-research explorer** (`a2a-researcher`) — bounded external research over web search and page fetch/scrape and library docs (read-only), via the worker's web-search/fetch MCP tools.
+  Both are read-only, evidence-only, redaction-mandatory `explorer`-role agents — they add **no new top-level role vocabulary**; they are specializations of `explorer`. (Future `implementer`/`verifier` variants follow the same rule.)
 - Selection guidance that reuses the existing adaptive budget table (0 / 1 / 2 / 3, hard cap 4) and the Escape Hatch.
 - The invariants each roster agent must carry: Finalizer Rule, Write-Set Rule, redaction, bounded evidence-only output, host-pressure-only shrink.
 - A reference example: budget table → roster selection for a small / medium / large task with redacted sample output.
@@ -36,8 +40,8 @@ This spec defines a small, normative **roster**: a stable mapping from the polic
 
 ## Success criteria
 
-- [ ] The mapping names exactly the three policy roles plus the worker-as-finalizer, with no new role vocabulary.
-- [ ] Each roster agent's tool scope matches its role: explorer = read-only; implementer = read + write within a declared disjoint write set + build/test; verifier = read + run tests/CI, no write.
+- [ ] The mapping names exactly the three policy roles plus the worker-as-finalizer, with no new top-level role vocabulary. Role *variants/specializations* (e.g. a web-research `explorer`) are allowed only if they stay within an existing role's contract.
+- [ ] Each roster agent's tool scope matches its role: explorer = read-only (the `a2a-researcher` variant additionally gets web-search/fetch/docs MCP tools, still read-only); implementer = read + write within a declared disjoint write set + build/test; verifier = read + run tests/CI, no write.
 - [ ] Selection guidance references the existing 0–3 budget table and hard cap 4 verbatim, and states the Escape Hatch (0 is always valid).
 - [ ] The doc restates Finalizer Rule and Write-Set Rule and the redaction / evidence-only / bounded-output contract.
 - [ ] `npm run scan:public-readiness` and `npm run scan:external-secrets` stay clean for the added files.
