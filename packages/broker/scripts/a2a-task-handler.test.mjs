@@ -614,7 +614,8 @@ const response = {
   findings: ["bridge invoked"],
   risks: ["none"],
   recommendations: ["continue"],
-  evidenceRefs: ["#884"]
+  evidenceRefs: ["#884"],
+  recoverySource: "state_db"
 };
 process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
 `);
@@ -646,6 +647,7 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
     assert.equal(result.error, undefined);
     assert.equal(result.result.output.analysisKind, "openclaw_bridge");
     assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.recoverySource, "state_db");
     assert.match(result.result.summary, /analysis bridge done/);
     assert.deepEqual(result.result.output.findings, ["bridge invoked"]);
   } finally {

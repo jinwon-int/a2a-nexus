@@ -458,6 +458,13 @@ function normalizedBridgeAnalysisStatus(value) {
   return ["blocked", "block", "source_blocked"].includes(status) ? "blocked" : "done";
 }
 
+const ANALYSIS_RECOVERY_SOURCES = new Set(["direct_stdout", "abort_stdout", "state_db", "retry_stdout", "retry_state_db"]);
+
+function normalizedAnalysisRecoverySource(value) {
+  const text = safeText(value, "");
+  return ANALYSIS_RECOVERY_SOURCES.has(text) ? text : undefined;
+}
+
 function githubIssueTargetFromTask(task) {
   const payload = taskPayload(task);
   const candidates = [
@@ -700,6 +707,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),
+    recoverySource: normalizedAnalysisRecoverySource(response.recoverySource),
     doneCommentUrl: postGithubComment ? undefined : safeText(response.doneCommentUrl, undefined),
     blockCommentUrl: postGithubComment ? undefined : safeText(response.blockCommentUrl, undefined),
     startCommentUrl: postGithubComment ? undefined : safeText(response.startCommentUrl, undefined),
