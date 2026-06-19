@@ -232,7 +232,7 @@ export function readReliabilitySourceFiles(repoRoot, paths = DEFAULT_RELIABILITY
 }
 
 function runCli() {
-  const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
   const sourceFiles = readReliabilitySourceFiles(repoRoot);
   const sourceBundle = collectReliabilitySourceBundle(sourceFiles);
   const manifest = buildReliabilityEvidenceManifest({
