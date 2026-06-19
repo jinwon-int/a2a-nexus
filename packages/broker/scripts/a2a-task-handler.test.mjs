@@ -645,11 +645,63 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
     });
 
     assert.equal(result.error, undefined);
-    assert.equal(result.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(result.result.output.analysisKind, "analysis_bridge");
+    assert.equal(result.result.output.bridgeAdapter, "openclaw");
     assert.equal(result.result.output.analysisStatus, "done");
     assert.equal(result.result.output.recoverySource, "state_db");
     assert.match(result.result.summary, /analysis bridge done/);
+    assert.equal(result.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.deepEqual(result.result.output.findings, ["bridge invoked"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude bridge env is attributed as claude_code without OpenClaw success labels (#948)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-telemetry-"));
+  const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "Claude bridge telemetry reached analysis bridge",
+  findings: ["claude bridge invoked"],
+  risks: ["none"],
+  recommendations: ["continue"],
+  evidenceRefs: ["#948"],
+  recoverySource: "direct_stdout"
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-claude-telemetry",
+      intent: "analyze",
+      assignedWorkerId: "nosuk",
+      message: "Analyze Claude bridge sourceOnly evidence",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        noLive: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
+      A2A_NODE_ID: "nosuk",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.analysisKind, "analysis_bridge");
+    assert.equal(result.result.output.bridgeAdapter, "claude_code");
+    assert.equal(result.result.output.bridgeCommand, "claude-a2a-analysis-bridge.mjs");
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.recoverySource, "direct_stdout");
+    assert.equal(result.result.note, "read-only A2A analysis completed through analysis bridge");
+    assert.doesNotMatch(result.result.note, /OpenClaw/);
+    assert.doesNotMatch(JSON.stringify(result.result.output), /openclaw_bridge/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

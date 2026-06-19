@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -465,6 +465,25 @@ function normalizedAnalysisRecoverySource(value) {
   return ANALYSIS_RECOVERY_SOURCES.has(text) ? text : undefined;
 }
 
+function analysisBridgeTelemetry(command, env = process.env) {
+  const commandText = safeText(command, "");
+  const commandName = basename(commandText || "analysis-bridge");
+  const combined = [
+    commandText,
+    commandName,
+    safeText(env.A2A_CLAUDE_CODE_BIN, ""),
+    safeText(env.CLAUDE_BIN, ""),
+  ].join("\n").toLowerCase();
+  let bridgeAdapter = "openclaw";
+  if (combined.includes("claude")) bridgeAdapter = "claude_code";
+  else if (combined.includes("hermes")) bridgeAdapter = "hermes";
+  return {
+    analysisKind: "analysis_bridge",
+    bridgeAdapter,
+    bridgeCommand: commandName,
+  };
+}
+
 function githubIssueTargetFromTask(task) {
   const payload = taskPayload(task);
   const candidates = [
@@ -699,9 +718,10 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   const status = normalizedBridgeAnalysisStatus(response.status);
   const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
   const postGithubComment = shouldPostAnalysisEvidenceComment(task, env);
+  const bridgeTelemetry = analysisBridgeTelemetry(command, env);
   const output = {
     analysisSummary,
-    analysisKind: "openclaw_bridge",
+    ...bridgeTelemetry,
     analysisStatus: status,
     findings: normalizeStringArray(response.findings),
     risks: normalizeStringArray(response.risks),
@@ -741,7 +761,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   return {
     result: {
       summary: `analysis bridge ${status}: ${analysisSummary}`,
-      note: "read-only A2A analysis completed through OpenClaw bridge",
+      note: "read-only A2A analysis completed through analysis bridge",
       handler: BUILD_INFO,
       lifecycle: {
         intent: "analyze",

@@ -2033,7 +2033,10 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
     assert.match(payload.result.summary, /analysis bridge done/);
-    assert.equal(payload.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(payload.result.output.analysisKind, "analysis_bridge");
+    assert.equal(payload.result.output.bridgeAdapter, "openclaw");
+    assert.equal(payload.result.output.bridgeCommand, "fake-openclaw-analysis.mjs");
+    assert.equal(payload.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.equal(payload.result.output.analysisSummary, "bridge analysis complete");
     assert.deepEqual(payload.result.output.findings, ["worker produced substantive analysis"]);
     assert.deepEqual(payload.result.output.recommendations, ["keep generic fallback explicit"]);
@@ -2224,7 +2227,10 @@ test("analysis-only task can use Hermes-backed OpenClaw-compatible analysis brid
     assert.equal(result.status, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
     assert.match(payload.result.summary, /analysis bridge done/);
-    assert.equal(payload.result.output.analysisKind, "openclaw_bridge");
+    assert.equal(payload.result.output.analysisKind, "analysis_bridge");
+    assert.equal(payload.result.output.bridgeAdapter, "hermes");
+    assert.equal(payload.result.output.bridgeCommand, "hermes-a2a-analysis-bridge.mjs");
+    assert.equal(payload.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.equal(payload.result.output.analysisSummary, "Hermes가 실제 소스 근거를 읽고 레이아웃 판단을 완료했다");
     assert.deepEqual(payload.result.output.findings, ["runtime/app-src/app_chat.py의 st.columns([7, 3])가 파일 패널을 채팅 레이아웃에 묶는다"]);
     assert.deepEqual(payload.result.output.evidenceRefs, ["jinwon-int/seo-web-bridge:runtime/app-src/app_chat.py"]);
