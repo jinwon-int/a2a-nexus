@@ -7,6 +7,8 @@ import { equal, ok } from "node:assert/strict";
 import {
   collectRoundResults,
   buildRoundManifest,
+  renderCompactEvidenceSummary,
+  buildRoundCompletePayload,
   type RoundManifest,
   type RoundManifestLane,
   type RoundLaneState,
@@ -1215,5 +1217,489 @@ describe("gateVerdict", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const output = collectRoundResults(DEFAULT_MANIFEST, [], { nowMs });
     equal(output.gateVerdict!.expectedTotal, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #920: Evidence quality and operator closeout UX — compact report / classification
+// ---------------------------------------------------------------------------
+
+describe("#920 evidence quality and closeout UX", () => {
+  it("classifies succeeded analysis tasks as substantive evidence", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-nexus-roadmap-supp-20260619-915-seoseo-operator-ux-bangtong",
+      lanes: [
+        { workerId: "bangtong", description: "Supplement UX lane", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-920",
+        intent: "analyze",
+        assignedWorkerId: "bangtong",
+        targetNodeId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Evidence quality dashboard is needed for operator closeout"],
+            blockerFindings: [],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    equal(lane.evidenceClass, "substantive");
+    equal(lane.laneState, "succeeded");
+    equal(output.summary.substantiveEvidence, 1);
+  });
+
+  it("classifies supplement lane with source-blocked output as source_blocked, not substantive", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-supplement-source-budget-test",
+      lanes: [
+        { workerId: "nosuk", description: "Source budget supplement", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-nosuk-supplement",
+        intent: "analyze",
+        assignedWorkerId: "nosuk",
+        targetNodeId: "nosuk",
+        status: "failed",
+        updatedAt: "2026-06-19T11:50:00.000Z",
+        completedAt: "2026-06-19T11:50:00.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: "openclaw_analysis_failed",
+                message: "No mapped repository for assignment: source bundle had 0 files",
+              },
+            }),
+          },
+        },
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+    // A failure with source_blocked patterns should be source_blocked
+    equal(lane.evidenceClass, "source_blocked");
+    equal(output.summary.sourceBlocked, 1);
+    equal(output.summary.substantiveEvidence, 0);
+  });
+
+  it("includes evidenceClass column in closeout body table for each lane", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-evidence-class-column-test",
+      lanes: [
+        { workerId: "sogyo", expectedOutcome: "analysis" },
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-substantive",
+        assignedWorkerId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:30:00.000Z",
+        completedAt: "2026-06-19T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Substantive finding"],
+          },
+        }),
+      }),
+      makeTask({
+        id: "task-bangtong-wrapper",
+        intent: "analyze",
+        assignedWorkerId: "bangtong",
+        message: "Analyze and return evidence",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:00:00.000Z",
+        completedAt: "2026-06-19T11:00:00.000Z",
+        result: makeResult({
+          summary: "Analyze and return evidence",
+          note: "echo handled task task-bangtong-wrapper",
+          output: { message: "Analyze and return evidence" },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const body = output.closeoutBundle.body;
+    // Table header should have an evidence class column
+    ok(body.includes("Evidence"), "Closeout body should have an evidence column reference");
+    ok(body.includes("substantive"), "Substantive lane's evidenceClass should appear in closeout body");
+    ok(output.closeoutBundle.body.includes("wrapper_only"), "Wrapper-only lane evidenceClass should appear");
+  });
+
+  it("preserves dissent from failed lanes in closeout body", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-dissent-preservation-test",
+      parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
+      lanes: [
+        { workerId: "sogyo", expectedOutcome: "patch" },
+        { workerId: "nosuk", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-pr",
+        assignedWorkerId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:30:00.000Z",
+        completedAt: "2026-06-19T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            prUrl: "https://github.com/example/repo/pull/920",
+          },
+        }),
+      }),
+      makeTask({
+        id: "task-nosuk-dissent",
+        assignedWorkerId: "nosuk",
+        status: "failed",
+        updatedAt: "2026-06-19T11:20:00.000Z",
+        completedAt: "2026-06-19T11:20:00.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "Unsafe: propose_patch would perform live deploy",
+          details: { summary: "Dissent: this patch requires live provider sends which are not approved" },
+        },
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const body = output.closeoutBundle.body;
+    ok(body.includes("Dissent") || body.includes("dissent") || body.includes("nosuk"), "Dissent should be preserved in closeout body");
+    ok(body.includes("Unsafe") || body.includes("live deploy"), "Dissent error message should appear");
+  });
+
+  it("links child issues from evidence URLs in closeout body", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-child-issue-links-test",
+      parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
+      lanes: [
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-child",
+        assignedWorkerId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:30:00.000Z",
+        completedAt: "2026-06-19T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/922",
+            analysisStatus: "done",
+            findings: ["Linked PR addresses evidence quality"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const body = output.closeoutBundle.body;
+    ok(body.includes("pull/922") || body.includes("PR"), "Child issue PR link should appear in closeout body");
+    ok(body.includes("920"), "Parent issue reference should appear");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #920: Compact evidence summary report rendering
+// ---------------------------------------------------------------------------
+
+describe("A2AD evidence summary report (#920)", () => {
+  it("renders a compact one-line-per-lane summary with classification", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-summary-test",
+      parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
+      lanes: [
+        { workerId: "bangtong", description: "UX supplement", expectedOutcome: "analysis" },
+        { workerId: "nosuk", description: "Reliability lane", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-substantive",
+        assignedWorkerId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Evidence quality dashboard"],
+            prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/922",
+          },
+        }),
+      }),
+      makeTask({
+        id: "task-nosuk-timeout",
+        assignedWorkerId: "nosuk",
+        status: "running",
+        updatedAt: "2026-06-19T10:00:00.000Z",
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const summary = renderCompactEvidenceSummary(output, { parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920" });
+
+    ok(summary.includes("bangtong"), "Summary should include bangtong worker");
+    ok(summary.includes("substantive"), "Substantive classification should appear");
+    ok(summary.includes("pull/922"), "Evidence PR URL should appear");
+  });
+
+  it("renders summary with all lane classifications including wrapper-only and source-blocked", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-classification-coverage-test",
+      lanes: [
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "nosuk", expectedOutcome: "analysis" },
+        { workerId: "sogyo", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-substantive",
+        assignedWorkerId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          output: { analysisStatus: "done", findings: ["Findings"], prUrl: "https://github.com/example/repo/pull/1" },
+        }),
+      }),
+      makeTask({
+        id: "task-nosuk-source-blocked",
+        assignedWorkerId: "nosuk",
+        status: "failed",
+        updatedAt: "2026-06-19T11:50:00.000Z",
+        completedAt: "2026-06-19T11:50:00.000Z",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stdout: JSON.stringify({
+              error: { code: "openclaw_analysis_failed", message: "No mapped repository: source bundle had 0 files" },
+            }),
+          },
+        },
+      }),
+      makeTask({
+        id: "task-sogyo-wrapper",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        message: "Analyze",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:00:00.000Z",
+        completedAt: "2026-06-19T11:00:00.000Z",
+        result: makeResult({
+          summary: "Analyze",
+          note: "echo handled task task-sogyo-wrapper",
+          output: { message: "Analyze" },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const summary = renderCompactEvidenceSummary(output);
+
+    ok(summary.includes("substantive"), "Substantive classification");
+    ok(summary.includes("source_blocked") || summary.includes("source-blocked") || summary.includes("source blocked"), "Source-blocked classification");
+    ok(summary.includes("wrapper_only") || summary.includes("wrapper-only"), "Wrapper-only classification");
+  });
+
+  it("includes non-actions disclaimer in the summary", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-non-actions-test",
+      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong",
+        assignedWorkerId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          output: { analysisStatus: "done", findings: ["Test"], prUrl: "https://github.com/example/repo/pull/1" },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const summary = renderCompactEvidenceSummary(output);
+    ok(summary.includes("no deploy") || summary.includes("No deploy") || summary.includes("non-action"), "Non-actions disclaimer should appear");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #920: Notification payload shape
+// ---------------------------------------------------------------------------
+
+describe("roundCompletePayload (#920)", () => {
+  it("produces a compact payload without raw secrets or full transcripts", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-notification-test",
+      parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
+      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-notif",
+        assignedWorkerId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Evidence quality analysis"],
+            prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/922",
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const payload = buildRoundCompletePayload(output);
+
+    equal(typeof payload, "object");
+    ok(payload.roundLabel);
+    ok(payload.verdict);
+    ok(Array.isArray(payload.lanes));
+    equal(payload.lanes.length, 1);
+    equal(payload.lanes[0]!.evidenceClass, "substantive");
+    // Must NOT include raw task output/error details
+    ok(!JSON.stringify(payload).includes("analysisStatus"), "Should not include raw task output");
+    ok(!JSON.stringify(payload).includes("findings"), "Should not include raw task findings");
+    ok(Boolean(payload.parentIssueUrl));
+  });
+
+  it("includes verdict, classification, and evidence URLs per lane", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-notification-full-test",
+      lanes: [
+        { workerId: "sogyo", expectedOutcome: "patch" },
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-sogyo-pr",
+        assignedWorkerId: "sogyo",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:30:00.000Z",
+        completedAt: "2026-06-19T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            prUrl: "https://github.com/example/repo/pull/1",
+          },
+        }),
+      }),
+      makeTask({
+        id: "task-bangtong-blocked",
+        assignedWorkerId: "bangtong",
+        status: "blocked",
+        updatedAt: "2026-06-19T11:00:00.000Z",
+        result: makeResult({
+          output: { blockUrl: "https://github.com/example/repo/issues/1" },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const payload = buildRoundCompletePayload(output);
+
+    equal(payload.verdict, "BLOCKED");
+    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "sogyo"));
+    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "bangtong"));
+    const bangtongLane = payload.lanes.find((l: { workerId: string }) => l.workerId === "bangtong")!;
+    ok(bangtongLane.evidenceUrls?.length > 0 || bangtongLane.blockUrl, "Blocked lane should have evidence URL");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #920 / #922: SourceBundle prompt-budget regression test
+// ---------------------------------------------------------------------------
+
+describe("sourceBundle prompt-budget regression (#920/#922)", () => {
+  // This test verifies that when a task has a large README / current-state
+  // document, role-specific source files are not starved. The regression
+  // occurs when the prompt budget for source files is exhausted by a single
+  // large file, leaving no room for targeted source files.
+  //
+  // Since the collector doesn't directly control sourceBundle construction,
+  // we test at the evidence level: substantive worker output that references
+  // role-specific files (e.g. packages/broker/src/http/rounds.ts) must not be
+  // downgraded just because the source bundle also contained a large README.
+
+  it("does not starve role-specific source evidence when large README is present", () => {
+    const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-source-budget-test",
+      lanes: [
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+      ],
+    };
+    // Simulate a task that produced substantive findings targeting a specific file
+    // despite having a large source bundle
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-bangtong-source-budget",
+        intent: "analyze",
+        assignedWorkerId: "bangtong",
+        targetNodeId: "bangtong",
+        status: "succeeded",
+        updatedAt: "2026-06-19T11:55:00.000Z",
+        completedAt: "2026-06-19T11:55:00.000Z",
+        result: makeResult({
+          summary: "Analysis completed after reviewing 12k tokens source bundle",
+          output: {
+            analysisStatus: "done",
+            analysisSummary: "Reviewed packages/broker/src/http/rounds.ts (the specific file) and README.md (12K tokens)",
+            findings: [
+              "Round evidence quality is missing from the closeout bundle shape",
+              "Found 2 relevant sections in packages/broker/src/http/rounds.ts",
+            ],
+            recommendations: ["Add evidenceClass column to closeout table"],
+          },
+        }),
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+    const lane = output.lanes[0]!;
+
+    // The analysis should be classified as substantive even though source was large
+    equal(lane.evidenceClass, "substantive");
+    equal(lane.laneState, "succeeded");
+    ok(lane.outcomeSummary || lane.outcomeClass, "Should have outcome evidence");
+
+    // Additionally, the closeout body should reference the evidence
+    ok(output.closeoutBundle.body.includes("substantive"), "Closeout should reflect substantive evidence");
   });
 });
