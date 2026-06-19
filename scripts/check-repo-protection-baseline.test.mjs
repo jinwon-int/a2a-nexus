@@ -8,9 +8,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const scriptPath = './scripts/check-repo-protection-baseline.mjs';
+const issueTemplateDir = './.github/ISSUE_TEMPLATE';
 
 describe('repo-protection-baseline check', () => {
   it('should run without throwing', () => {
@@ -56,5 +58,39 @@ describe('repo-protection-baseline check', () => {
   it('should reference the baseline doc', () => {
     const docExists = existsSync('./docs/release/repo-protection-baseline.md');
     assert.ok(docExists, 'docs/release/repo-protection-baseline.md should exist');
+  });
+
+  it('issue forms should use GitHub-renderable metadata', () => {
+    const files = readdirSync(issueTemplateDir)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .filter((f) => f !== 'config.yml');
+    assert.ok(files.length > 0, 'should have issue form YAML files');
+
+    for (const file of files) {
+      const body = readFileSync(join(issueTemplateDir, file), 'utf8');
+      assert.match(body, /^name:\s*\S/m, `${file} should define name`);
+      assert.match(body, /^description:\s*\S/m, `${file} should define description for GitHub Issue Forms`);
+      assert.match(body, /^title:\s*".+"/m, `${file} should define a default title`);
+      assert.doesNotMatch(body, /^about:/m, `${file} should not use legacy about metadata`);
+      assert.match(body, /^body:\s*$/m, `${file} should define an Issue Form body`);
+    }
+  });
+
+  it('current public-facing docs should not claim the repo remains private', () => {
+    const currentDocs = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md'];
+    const stalePatterns = [
+      /remains private/i,
+      /public-readiness prep/i,
+      /when access is available/i,
+      /not a repository visibility change/i,
+      /before any future visibility change/i,
+    ];
+
+    for (const doc of currentDocs) {
+      const text = readFileSync(doc, 'utf8');
+      for (const pattern of stalePatterns) {
+        assert.doesNotMatch(text, pattern, `${doc} should be updated for the public repository state`);
+      }
+    }
   });
 });

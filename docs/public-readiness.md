@@ -2,9 +2,9 @@
 
 ## Current state
 
-> **Public-readiness state.** `jinwon-int/a2a-nexus` remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. This document records readiness evidence and blockers; it does **not** authorize a repository visibility change.
+> **Historical readiness record.** `jinwon-int/a2a-nexus` is now public. The actual visibility flip was separately approved and executed in [#953](https://github.com/jinwon-int/a2a-nexus/issues/953) at SHA `33da866af9869281605d283220b0bddd3cda11fd`.
 >
-> Remaining **NO-GO** items below are visibility/promotion blockers until explicitly dispositioned by the operator. Stable release, announcements, public docs site, npm/Docker publication, and repository visibility changes remain separate approval-gated actions.
+> This document records earlier readiness evidence and blockers. It does **not** authorize stable release, announcements, public docs site launch, npm/Docker publication, production deployment, live operations, secret movement, history rewrite, or future ownership/visibility transfer.
 >
 > Current active A2A coordination has moved to [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md). Historical issues such as `#75` and `a2a-broker#294` are closed and should not be cited as active blockers.
 >
@@ -16,14 +16,14 @@ Updated for run `team1-a2a-public-p0-20260507T221151Z` at `2026-05-07T22:16:10Z`
 
 | Decision surface | Current state | Operator decision impact | Evidence |
 |---|---|---|---|
-| Repository visibility | **Private / not changed by this document** | **NO-GO** until explicit operator approval names the visibility action | GitHub metadata must be rechecked before any visibility execution; historical readiness docs remain gate records |
+| Repository visibility | **Public since #953 / SHA `33da866af9869281605d283220b0bddd3cda11fd`** | Historical gate resolved for visibility; promotion/stable-release actions remain separately approval-gated | This table is a pre-public readiness record; recheck GitHub metadata before any future ownership/visibility transfer |
 | R4 closeout lanes | Closed and merged | Candidate evidence is available for operator review, but does not override the external scanner blocker | R4 lane table below |
 | External secret/history scanner | **Blocked/Waiting**: `npm run scan:external-secrets` failed closed because no supported external scanner was installed in this runner | **NO-GO/Waiting** for promotion/stable-release; install `gitleaks` or `trufflehog` in the operator environment and rerun before promotion approval | `docs/security/r4-external-scan-and-freeze.md`; local command output is redacted and contains no findings payload |
 | Local public-readiness/release gate | Passed in this run | Supports operator review, but is not a substitute for the external scanner lane | `npm ci --ignore-scripts --include=dev`, `npm run check`, `npm run scan:public-readiness`, `node scripts/redacted-readiness-inventory.mjs`, and `npm run test:release-gate` |
 | Runtime/bootstrap hygiene | Clear for this branch/evidence when only tracked diff files are included | Fail closed if any runtime/bootstrap path enters the branch or evidence | Guard paths: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**` |
 | Public docs/SECURITY/templates/CODEOWNERS/README decision surface | Updated for public-readiness review; historical private-candidate boundaries are archived | Ready for operator review; visibility and promotion remain separately approval-gated | `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/*`, `.github/pull_request_template.md`, `CODEOWNERS`, this page |
 
-Explicit state split: the documentation surface is **ready for operator review**. The repository remains **private unless a separate visibility action is approved and evidenced**. Remaining NO-GO items include visibility and promotion/stable-release blockers (external scanner, terminal evidence, operator approval for visibility/promotion).
+Explicit state split: the documentation surface was **ready for operator review** at the time this historical table was written. The repository is now public via #953; remaining NO-GO items apply to promotion/stable-release, package/image publication, production operations, secret movement, history rewrite, and any future ownership/visibility transfer.
 
 ## R3 operator review state
 
