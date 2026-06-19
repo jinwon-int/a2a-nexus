@@ -46,6 +46,30 @@ This spec defines a small, normative **roster**: a stable mapping from the polic
 - [ ] The doc restates Finalizer Rule and Write-Set Rule and the redaction / evidence-only / bounded-output contract.
 - [ ] `npm run scan:public-readiness` and `npm run scan:external-secrets` stay clean for the added files.
 
+## Reference example
+
+A worked example of mapping the adaptive budget table (`0` / `1` / `2` / `3`, hard cap `4` including the worker) to roster selection. The worker always owns the terminal result (Finalizer Rule), and `0` is always a valid choice (Escape Hatch). All sample output below is coarse and redacted — no node identities, endpoints, host paths, provider/Telegram IDs, or production data.
+
+| Task profile | Budget | Roster selection | Rationale |
+|---|---|---|---|
+| Small / trivial, or anything touching sensitive surfaces | `0` | none — the worker investigates and finalizes directly | Spawning adds redaction/merge overhead with no decomposition benefit; sensitive scope stays with a single finalizer. |
+| Medium, separable into one investigation or one check | `1` | one `explorer` (code/log or the `a2a-researcher` web variant) **or** one `verifier`, plus the worker as finalizer | A single read-only helper covers the separable slice; the worker still owns the patch and the terminal evidence. |
+| Large, with independent lanes and healthy host capacity | up to `3` (hard cap `4` incl. the worker) | one `explorer` + up to two `implementer`s on **disjoint write sets** + one `verifier`; the worker finalizes | Independent lanes parallelize safely only when write sets do not overlap; under host pressure the budget shrinks back toward `0`. |
+
+Redacted sample output from a spawned `explorer` (illustrative shape, not real data):
+
+```text
+agent: explorer (read-only)
+scope: <redacted: subsystem under investigation>
+findings:
+  - <redacted finding> (evidence: <redacted path>:<line>)
+  - <redacted finding>
+recommendation: <redacted>
+bytes: <bounded>
+```
+
+Every spawned agent's output is redaction-mandatory and byte-bounded; only the worker/finalizer assembles the terminal evidence packet.
+
 ## Safety and approval boundaries
 
 ### Secrets and private data
