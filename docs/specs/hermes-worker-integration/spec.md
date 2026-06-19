@@ -107,6 +107,25 @@ Terminal evidence request:
 
 outcome=done and outcome=pr succeed the task. outcome=blocked and outcome=failed fail the task with redacted error evidence.
 
+## Minimal A2AAdapter conformance path
+
+For #918/#922, the smallest Hermes/native adapter path is the HTTP worker sequence above mapped to
+`A2AAdapter` operations:
+
+| A2AAdapter category | Hermes/native HTTP operation | Notes |
+| --- | --- | --- |
+| claim/poll | `GET /tasks?worker=<nodeId>&status=pending`, then `POST /tasks/:id/claim` | Polling and claiming happen before any mutable work. |
+| report status | `POST /tasks/:id/start`, then terminal evidence outcome mapping | Status acceptance is not an operator ACK. |
+| heartbeat | `POST /workers/:nodeId/heartbeat` | Uses redacted runtime/health metadata only. |
+| terminal evidence | `POST /tasks/:id/evidence` | Evidence is compact, redacted, and non-ACK. |
+| idempotency/dedupe | broker idempotency key / terminal evidence dedupe key | Replays return existing evidence or conflict. |
+| fail-closed redaction | local evidence redaction gate before broker submission | Unsafe evidence becomes classified Block evidence. |
+
+This path does not require the OpenClaw plugin SDK, Hermes CLI internals, Docker runner state, live
+provider sends, database mutation, or terminal-outbox ACK/replay. The contract fixture is
+`fixtures/contract/adapter-conformance-matrix.json` and is validated with
+`node test/conformance/check-adapter-conformance-matrix.mjs`.
+
 ## Success criteria
 
 - [x] Existing registerWorker/heartbeatWorker fields can represent a non-OpenClaw worker.
