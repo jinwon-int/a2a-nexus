@@ -23,6 +23,7 @@ const fixtureFiles = {
   embeddedExecutionStability: 'embedded-execution-stability-policy.json',
   adapterReceiptCapability: 'adapter-receipt-capability.json',
   harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
+  terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 
 const forbiddenRuntimePaths = [
@@ -95,6 +96,7 @@ const {
   embeddedExecutionStability,
   adapterReceiptCapability,
   harnessNeutralAnalysisAdapter,
+  terminalEvidenceStateMachine,
 } = fixtures;
 
 assert.deepEqual(lifecycle.terminalStates.sort(), ['blocked', 'cancelled', 'done', 'pr']);
@@ -147,6 +149,44 @@ const v0Assertions = new Set(lifecycle.assertions);
 assert.ok(v0Assertions.has('cancelling is a non-terminal transitory state; only cancelled is terminal'));
 assert.ok(v0Assertions.has('cancellation from queued or claimed goes directly to cancelled (no cancelling intermediary)'));
 assert.ok(v0Assertions.has('all terminal states (done, pr, blocked, cancelled) have empty allowedTransitions'));
+
+
+// Terminal Evidence State Machine (#965)
+const terminalEvidenceStateNames = new Set(terminalEvidenceStateMachine.states.map((state) => state.name));
+assert.deepEqual(
+  [...terminalEvidenceStateNames].sort(),
+  ['accepted', 'acknowledged', 'blocked', 'claimed', 'done', 'failed', 'operator_visible', 'provider_accepted', 'started'],
+);
+assert.equal(terminalEvidenceStateMachine.contract, 'contracts/a2a/terminal-evidence.schema.json');
+assert.equal(terminalEvidenceStateMachine.docs, 'docs/specs/terminal-evidence-state-machine.md');
+assert.ok(Array.isArray(terminalEvidenceStateMachine.examples), 'state machine must include examples');
+assert.deepEqual(
+  terminalEvidenceStateMachine.examples.map((example) => example.kind).sort(),
+  ['acknowledged', 'blocked', 'done', 'operator_visible', 'pr', 'provider_accepted'],
+);
+for (const state of terminalEvidenceStateMachine.states) {
+  assert.ok(Array.isArray(state.allowedNext), `${state.name} must declare allowedNext`);
+  assert.ok(Array.isArray(state.requiredEvidence), `${state.name} must declare requiredEvidence`);
+  for (const previous of state.allowedPrevious) {
+    assert.ok(terminalEvidenceStateNames.has(previous), `${state.name} references unknown previous state ${previous}`);
+  }
+  for (const next of state.allowedNext) {
+    assert.ok(terminalEvidenceStateNames.has(next), `${state.name} references unknown next state ${next}`);
+  }
+}
+const stateByName = new Map(terminalEvidenceStateMachine.states.map((state) => [state.name, state]));
+assert.equal(stateByName.get('provider_accepted').terminalForCloseout, false);
+assert.equal(stateByName.get('provider_accepted').operatorVisible, false);
+assert.equal(stateByName.get('operator_visible').terminalForCloseout, false);
+assert.equal(stateByName.get('operator_visible').operatorVisible, true);
+assert.equal(stateByName.get('acknowledged').terminalForCloseout, true);
+assert.equal(stateByName.get('acknowledged').owner, 'operator');
+assert.equal(terminalEvidenceStateMachine.finalizer.ownerField, 'finalizerOwner');
+assert.equal(terminalEvidenceStateMachine.finalizer.ackOwner, 'operator');
+assert.equal(terminalEvidenceStateMachine.safety.providerAcceptedIsTerminalAck, false);
+assert.equal(terminalEvidenceStateMachine.safety.providerAcceptedCountsForCloseout, false);
+assert.equal(terminalEvidenceStateMachine.safety.operatorVisibleCountsAsTerminalAck, false);
+assert.equal(terminalEvidenceStateMachine.safety.acknowledgedRequiresOperatorEvidence, true);
 
 const workerNamePattern = /^[a-z0-9][a-z0-9-]{2,63}$/;
 for (const worker of workers.workers) {

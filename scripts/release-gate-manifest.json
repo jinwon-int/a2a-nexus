@@ -52,6 +52,7 @@
     { "file": "scripts/check-team1-dispatch-wrapper-runbook.test.mjs", "class": "gate", "round": null, "note": "Team1 dispatch wrapper runbook; no round id, kept as gate (conservative)." },
     { "file": "scripts/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs", "class": "gate", "round": null, "note": "Team1 nosuk residue cleanup go/no-go; no round id, kept as gate (conservative)." },
     { "file": "scripts/check-team1-yukson-go-nogo-evidence-pack.test.mjs", "class": "gate", "round": null, "note": "Team1 yukson go/no-go evidence pack; no round id, kept as gate (conservative)." },
-    { "file": "scripts/a2a-worker-readiness-preflight.test.mjs", "class": "gate", "round": null, "note": "Worker readiness preflight evaluator (#655/#739): secret/route/handler + role-drift and broker-freshness classification. Was previously ungated." }
+    { "file": "scripts/a2a-worker-readiness-preflight.test.mjs", "class": "gate", "round": null, "note": "Worker readiness preflight evaluator (#655/#739): secret/route/handler + role-drift and broker-freshness classification. Was previously ungated." },
+    { "file": "test/conformance/check-terminal-evidence-state-machine.mjs", "class": "gate", "round": null, "note": "Terminal Evidence State Machine schema/docs/fixture boundary (#965): provider_accepted and operator_visible are non-ACK; acknowledged is operator-owned terminal ACK." }
   ]
 }

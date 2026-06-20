@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2a-nexus.local/contracts/terminal-evidence.schema.json",
+  "title": "A2A Nexus Terminal Evidence State Machine v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "fixtureId",
+    "version",
+    "contract",
+    "docs",
+    "v0Freeze",
+    "states",
+    "examples",
+    "finalizer",
+    "safety"
+  ],
+  "properties": {
+    "fixtureId": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "contract": { "const": "contracts/a2a/terminal-evidence.schema.json" },
+    "docs": { "const": "docs/specs/terminal-evidence-state-machine.md" },
+    "v0Freeze": {
+      "type": "object",
+      "required": ["frozenAt", "round", "sourceOnly", "noLive"],
+      "properties": {
+        "frozenAt": { "type": "string", "minLength": 1 },
+        "round": { "type": "string", "minLength": 1 },
+        "sourceOnly": { "const": true },
+        "noLive": { "const": true }
+      },
+      "additionalProperties": true
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/state" }
+    },
+    "examples": {
+      "type": "array",
+      "minItems": 6,
+      "items": { "$ref": "#/$defs/example" }
+    },
+    "finalizer": {
+      "type": "object",
+      "required": ["ownerField", "ackOwner", "operatorFacingOwnerField"],
+      "properties": {
+        "ownerField": { "const": "finalizerOwner" },
+        "ackOwner": { "const": "operator" },
+        "operatorFacingOwnerField": { "const": "operatorFacingOwner" }
+      },
+      "additionalProperties": true
+    },
+    "safety": {
+      "type": "object",
+      "required": [
+        "providerAcceptedIsTerminalAck",
+        "providerAcceptedCountsForCloseout",
+        "operatorVisibleCountsAsTerminalAck",
+        "acknowledgedRequiresOperatorEvidence"
+      ],
+      "properties": {
+        "providerAcceptedIsTerminalAck": { "const": false },
+        "providerAcceptedCountsForCloseout": { "const": false },
+        "operatorVisibleCountsAsTerminalAck": { "const": false },
+        "acknowledgedRequiresOperatorEvidence": { "const": true }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "terminalEvidenceState": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "claimed",
+        "started",
+        "provider_accepted",
+        "operator_visible",
+        "done",
+        "blocked",
+        "failed",
+        "acknowledged"
+      ]
+    },
+    "terminalEvidenceOwner": {
+      "type": "string",
+      "enum": ["broker", "worker", "runner", "plugin", "provider", "finalizer", "operator"]
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "owner",
+        "terminalForCloseout",
+        "operatorVisible",
+        "allowedPrevious",
+        "allowedNext",
+        "requiredEvidence"
+      ],
+      "properties": {
+        "name": { "$ref": "#/$defs/terminalEvidenceState" },
+        "owner": { "$ref": "#/$defs/terminalEvidenceOwner" },
+        "terminalForCloseout": { "type": "boolean" },
+        "operatorVisible": { "type": "boolean" },
+        "allowedPrevious": { "type": "array", "items": { "$ref": "#/$defs/terminalEvidenceState" } },
+        "allowedNext": { "type": "array", "items": { "$ref": "#/$defs/terminalEvidenceState" } },
+        "requiredEvidence": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "state", "isTerminalAck", "countsForCloseout"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "state": { "$ref": "#/$defs/terminalEvidenceState" },
+        "terminalEvidenceKind": { "type": "string", "minLength": 1 },
+        "isTerminalAck": { "type": "boolean" },
+        "countsForCloseout": { "type": "boolean" }
+      }
+    }
+  }
+}
