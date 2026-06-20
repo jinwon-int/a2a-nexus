@@ -121,12 +121,11 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
     network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" || profile === "hermes" ? "host" : "bridge"),
+    trustedOperator: isTruthy(env.A2A_DOCKER_RUNNER_TRUSTED_OPERATOR),
     pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
     noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
-    capDrop: (env.A2A_DOCKER_RUNNER_CAP_DROP ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
+    capDrop: parseCommaList(env.A2A_DOCKER_RUNNER_CAP_DROP),
+    capAdd: parseCommaList(env.A2A_DOCKER_RUNNER_CAP_ADD),
     extraMounts,
     containedSubagents: loadContainedSubagentsConfig(env, patchCommand.commandProfile, profile),
     proofSigningKeyFile: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KEY_FILE || "").trim() || undefined,
@@ -171,6 +170,18 @@ export function validateRunnerConfig(config: RunnerConfig): void {
 
   if (config.cpus && !/^\d+(\.\d+)?$/.test(config.cpus)) {
     errors.push(`invalid cpus: ${JSON.stringify(config.cpus)} (expected format like "2" or "1.5")`);
+  }
+
+  if (!config.trustedOperator) {
+    if (config.network === "host") {
+      errors.push("public safe-default policy rejects host network; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for trusted-operator lanes");
+    }
+    if (config.noNewPrivileges === false) {
+      errors.push("public safe-default policy requires no-new-privileges; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for privilege-escalation lanes");
+    }
+    if ((config.capAdd ?? []).length > 0) {
+      errors.push("public safe-default policy rejects added capabilities; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for capability-add lanes");
+    }
   }
 
   if (!Number.isFinite(config.defaultTimeoutMs) || config.defaultTimeoutMs <= 0) {
@@ -454,6 +465,13 @@ function containedSubagentsEnabledByDefault(value: string | undefined, profile: 
 function isTruthy(value?: string): boolean {
   if (!value) return false;
   return /^(1|true|yes|on)$/i.test(value.trim());
+}
+
+function parseCommaList(value?: string): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function parseBoundedInteger(

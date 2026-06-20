@@ -393,15 +393,17 @@ test("same task id gets unique traceable container names for retries", () => {
 
 test("buildRunArgs hardening can be tuned through config", () => {
   const hardened = buildRunArgs(
-    { ...config, pidsLimit: "128", capDrop: ["ALL"] },
+    { ...config, pidsLimit: "128", capDrop: ["ALL"], capAdd: ["SYS_ADMIN"] },
     task,
     "/tmp/a2a-work",
     "ci-run-2",
   );
   const pidsIndex = hardened.indexOf("--pids-limit");
   assert.equal(hardened[pidsIndex + 1], "128");
-  const capIndex = hardened.indexOf("--cap-drop");
-  assert.equal(hardened[capIndex + 1], "ALL");
+  const capDropIndex = hardened.indexOf("--cap-drop");
+  assert.equal(hardened[capDropIndex + 1], "ALL");
+  const capAddIndex = hardened.indexOf("--cap-add");
+  assert.equal(hardened[capAddIndex + 1], "SYS_ADMIN");
 
   const optedOut = buildRunArgs(
     { ...config, noNewPrivileges: false },

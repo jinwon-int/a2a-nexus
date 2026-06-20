@@ -66,6 +66,99 @@ function runResolverScript(source: string, files: ResolverFiles, env: Record<str
   return stdout;
 }
 
+
+test("public safe-default policy rejects host network unless trusted operator mode is explicit", () => {
+  assert.throws(
+    () => validateRunnerConfig({
+      rootDir: "/tmp/a2a-runner",
+      image: "node:22-bookworm-slim",
+      defaultTimeoutMs: 1000,
+      network: "host",
+      noNewPrivileges: true,
+      capDrop: [],
+      trustedOperator: false,
+    }),
+    /public safe-default policy rejects host network; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1/,
+  );
+
+  assert.doesNotThrow(() => validateRunnerConfig({
+    rootDir: "/tmp/a2a-runner",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    network: "host",
+    noNewPrivileges: true,
+    capDrop: [],
+    trustedOperator: true,
+  }));
+});
+
+test("public safe-default policy rejects privilege escalation and capability additions", () => {
+  assert.throws(
+    () => validateRunnerConfig({
+      rootDir: "/tmp/a2a-runner",
+      image: "node:22-bookworm-slim",
+      defaultTimeoutMs: 1000,
+      network: "bridge",
+      noNewPrivileges: false,
+      capDrop: [],
+      trustedOperator: false,
+    }),
+    /public safe-default policy requires no-new-privileges/,
+  );
+
+  assert.throws(
+    () => validateRunnerConfig({
+      rootDir: "/tmp/a2a-runner",
+      image: "node:22-bookworm-slim",
+      defaultTimeoutMs: 1000,
+      network: "bridge",
+      noNewPrivileges: true,
+      capDrop: [],
+      capAdd: ["SYS_ADMIN"],
+      trustedOperator: false,
+    }),
+    /public safe-default policy rejects added capabilities/,
+  );
+});
+
+test("loadConfig keeps public safe defaults unless trusted operator mode is set", async () => {
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_NETWORK: "host",
+    }),
+    /public safe-default policy rejects host network/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION: "1",
+    }),
+    /public safe-default policy requires no-new-privileges/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_CAP_ADD: "SYS_ADMIN,NET_ADMIN",
+    }),
+    /public safe-default policy rejects added capabilities/,
+  );
+
+  const trusted = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_NETWORK: "host",
+    A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION: "1",
+    A2A_DOCKER_RUNNER_CAP_ADD: "SYS_ADMIN",
+  });
+  assert.equal(trusted.trustedOperator, true);
+  assert.equal(trusted.network, "host");
+  assert.equal(trusted.noNewPrivileges, false);
+  assert.deepEqual(trusted.capAdd, ["SYS_ADMIN"]);
+});
+
 test("loadEnvFile parses service-style runner env files without shell execution", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
   try {
@@ -97,6 +190,7 @@ test("mergeRunnerEnvFile lets direct doctor inherit worker service GitHub patch 
     const file = join(dir, "worker.env");
     writeFileSync(file, [
       "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw",
+      "A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1",
       "A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR=/srv/openclaw-profile",
       "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-openclaw:latest",
     ].join("\n"));
@@ -125,6 +219,7 @@ test("mergeRunnerEnvFile supports Hermes patch profile", async () => {
     const file = join(dir, "worker.env");
     writeFileSync(file, [
       "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes",
+      "A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1",
       "A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR=/srv/hermes-profile",
       "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-hermes:latest",
     ].join("\n"));
@@ -176,6 +271,7 @@ test("loadConfig enforces expected patch command profile", async () => {
     ...baseEnv,
     A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "hermes",
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:d9d7d64",
   });
 
@@ -187,6 +283,7 @@ test("loadConfig enforces expected patch command profile", async () => {
       ...baseEnv,
       A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "hermes",
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-openclaw:latest",
     }),
     /EXPECTED_PATCH_COMMAND_PROFILE=hermes requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes/,
@@ -206,6 +303,7 @@ test("loadConfig rejects known runner image/profile family mismatches", async ()
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-openclaw:269a0ef",
     }),
     /image\/profile mismatch.*openclaw runner image.*PROFILE=hermes/,
@@ -215,6 +313,7 @@ test("loadConfig rejects known runner image/profile family mismatches", async ()
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:d9d7d64",
     }),
     /image\/profile mismatch.*hermes runner image.*PROFILE=openclaw/,
@@ -282,6 +381,7 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_OPENCLAW_AGENT_ID: "main",
     A2A_OPENCLAW_THINKING: "medium",
     A2A_OPENCLAW_TIMEOUT_SEC: "3600",
@@ -377,6 +477,7 @@ test("loadConfig allows OpenClaw contained subagents to opt out explicitly", asy
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "0",
   });
 
@@ -395,6 +496,7 @@ test("loadConfig enables bounded contained OpenClaw subagents with explicit over
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "3",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_OUTPUT_BYTES: "20000",
@@ -420,6 +522,7 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_HERMES_MODEL: "deepseek/deepseek-v4-flash",
     A2A_HERMES_TIMEOUT_SEC: "3600",
   });
@@ -458,6 +561,7 @@ test("loadConfig enables bounded contained Hermes subagents with safe enum input
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "true",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "2",
     A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "broad_source_inspection,context_overflow_retry",
@@ -491,6 +595,7 @@ test("loadConfig rejects unsupported contained subagent values before prompt gen
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX: "9",
     }),
@@ -501,6 +606,7 @@ test("loadConfig rejects unsupported contained subagent values before prompt gen
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED: "1",
       A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_REASONS: "raw_transcript_dump",
     }),
@@ -512,6 +618,7 @@ test("loadConfig Hermes patch profile honors custom config dir", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR: "/srv/hermes-profile",
   });
 
@@ -525,6 +632,7 @@ test("Hermes patch profile defaults to the current fleet baseline model (#766)",
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
   });
 
   assert.match(config.commandScript ?? "", /A2A_HERMES_DEFAULT_MODEL='openai-codex\/gpt-5\.5'/);
@@ -536,6 +644,7 @@ test("Hermes patch profile bridges task-level OpenClaw model env before legacy d
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_OPENCLAW_MODEL: "deepseek/deepseek-v4-flash",
   });
 
@@ -554,6 +663,7 @@ test("Hermes patch profile can opt into native model source without hardcoding D
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
   });
 
@@ -568,6 +678,7 @@ test("Hermes native model resolver heredoc parses and ignores unsupported flash 
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
   });
   const resolver = extractNodeHeredoc(config.commandScript ?? "", "A2A_RESOLVE_HERMES_NATIVE_MODEL");
@@ -601,6 +712,7 @@ test("OpenClaw patch profile defaults command timeout to 60 minutes", async () =
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
   });
 
   assert.match(config.commandScript ?? "", /export A2A_OPENCLAW_TIMEOUT_SEC='3600'/);
@@ -610,6 +722,7 @@ test("loadConfig OpenClaw patch profile requires explicit opt-in for npm CLI fal
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_OPENCLAW_ALLOW_NPM_INSTALL_FALLBACK: "1",
   });
 
@@ -624,6 +737,7 @@ test("loadConfig OpenClaw patch profile honors custom model", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_OPENCLAW_MODEL: "zai/glm-5.1",
   });
 
@@ -638,6 +752,7 @@ test("OpenClaw patch profile can opt into native model source without hardcoding
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
   });
 
@@ -652,6 +767,7 @@ test("OpenClaw native model resolver heredoc parses", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_MODEL_SOURCE: "native",
   });
   const resolver = extractNodeHeredoc(config.commandScript ?? "", "A2A_RESOLVE_OPENCLAW_NATIVE_MODEL");
@@ -684,6 +800,7 @@ test("loadConfig honors explicit Docker network override", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_NETWORK: "bridge",
   });
 
@@ -694,6 +811,7 @@ test("loadConfig OpenClaw patch profile honors custom config dir", async () => {
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/srv/openclaw-profile",
   });
 
@@ -735,6 +853,7 @@ test("loadConfig patch command precedence is script > json > template", async ()
   const scriptConfig = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "codex exec script",
     A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["codex", "exec", "json"] }),
     A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE: "openclaw agent --help",
@@ -773,6 +892,7 @@ test("loadConfig rejects openclaw profile extra mounts without the profile mount
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
         { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
       ]),
@@ -786,6 +906,7 @@ test("loadConfig rejects conflicting openclaw profile mount source", async () =>
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/root/.openclaw-a2a-deepseek-config",
       A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
         { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
@@ -801,6 +922,7 @@ test("loadConfig rejects hermes profile extra mounts without the profile mount",
     () => loadConfig({
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
       A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
         { source: "/var/tmp/a2a", target: "/scratch", readOnly: false },
       ]),
@@ -813,6 +935,7 @@ test("loadConfig accepts explicit openclaw profile mount source matching config 
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "openclaw",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
     A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR: "/root/.openclaw-a2a-deepseek-config",
     A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
       { source: "/usr/lib/node_modules/openclaw", target: "/usr/lib/node_modules/openclaw", readOnly: true },
@@ -962,7 +1085,7 @@ function validConfig(overrides?: Partial<RunnerConfig>): RunnerConfig {
 test("validateRunnerConfig accepts valid config", () => {
   assert.doesNotThrow(() => validateRunnerConfig(validConfig()));
   assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "bridge" })));
-  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "host" })));
+  assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "host", trustedOperator: true })));
   assert.doesNotThrow(() => validateRunnerConfig(validConfig({ network: "none" })));
   assert.doesNotThrow(() => validateRunnerConfig(validConfig({ memory: "4g" })));
   assert.doesNotThrow(() => validateRunnerConfig(validConfig({ memory: "512m" })));

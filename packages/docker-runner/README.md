@@ -124,8 +124,12 @@ Public/demo setups should start from the least-privilege path:
 
 - Use a GitHub token limited to the target repository and required PR/comment scopes; do not reuse an operator's broad personal token.
 - Keep tokens and agent auth in environment variables or read-only secret mounts. Do not put token values in task payloads, examples, prompts, artifacts, or GitHub comments.
-- Treat `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` or `hermes`, host agent config mounts, and any host-network Docker/Podman mode as operator-only trusted-worker features, not casual public defaults.
+- Leave `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR` unset for public/default workers. In this mode, pre-deploy validation rejects host networking, privilege-escalation opt-outs, and added Linux capabilities before a task container starts.
+- Treat `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` or `hermes`, host agent config mounts, and any host-network Docker/Podman mode as operator-only trusted-worker features. Internal workers that intentionally need those features must set `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` explicitly.
+- Writable extra mounts that target/source protected OpenClaw or Hermes runtime/session paths remain blocked in both public-safe and trusted-operator modes.
 - Use neutral placeholder paths in docs and fixtures, for example `/secure/operator/openclaw-config`, instead of real workstation or server home directories.
+
+See [`docs/safe-default-threat-model.md`](docs/safe-default-threat-model.md) for the code-enforced public safe-default vs trusted-operator boundary.
 
 ## Canonical A2A Task Format
 
