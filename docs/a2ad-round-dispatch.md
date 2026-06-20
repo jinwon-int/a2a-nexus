@@ -86,6 +86,25 @@ instead of the generic GitHub patch executor path (#884). If the bridge/executor
 is not configured, the handler still fails closed rather than returning generic
 wrapper-only success.
 
+### Pure A2AD source-only/no-live analysis lanes
+
+For `intent: "analyze"` + `payload.mode: "analysis-only"` lanes with
+`payload.roundMode: "a2ad"`, `payload.sourceOnly: true`, and
+`payload.noLive: true`, dry-run also validates the live-broker ownership packet
+before any `POST /tasks` call (#963):
+
+- `payload.originBrokerId` identifies the originating broker for the parent round;
+- `payload.brokerOfRecordId` identifies the broker responsible for recording the lane;
+- `payload.operatorFacingOwner` identifies who owns operator-visible closeout;
+- `terminalBrief.notificationOwnership` lives at lane/defaults level and declares
+  notification/finalizer ownership for Terminal Brief handling.
+
+A valid source-only/no-live A2AD manifest should put shared values under
+`defaults.payload` and `defaults.terminalBrief`, then let lane-specific payload
+fields such as `focus` or `parentRoundOrder` override only the narrow per-lane
+parts. Missing ownership metadata fails closed in `--dry-run`, so the live broker
+is not the first place the operator sees the error.
+
 ### GitHub patch lanes are write-capable
 
 `payload.mode: "github-propose-patch"` is a PR/patch execution lane, not a

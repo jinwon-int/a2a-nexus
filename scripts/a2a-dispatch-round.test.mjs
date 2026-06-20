@@ -207,6 +207,12 @@ test('dry-run accepts the #960 canonical sourceBundle projection contract fixtur
   const m = makeManifest('http://unused', fixture.lanes.length);
   m.roundId = fixture.roundId;
   m.defaults.intent = 'analyze';
+  m.defaults.terminalBrief = { notificationOwnership: 'parent' };
+  m.defaults.payload = {
+    originBrokerId: 'seoseo',
+    brokerOfRecordId: 'seoseo',
+    operatorFacingOwner: 'parent',
+  };
   m.lanes = fixture.lanes.map((lane) => ({
     id: lane.id,
     target: lane.target,
@@ -259,21 +265,67 @@ test('dry-run rejects legacy a2ad-review intent without explicit analysis bridge
   assert.ok(out.errors.some((e) => /intent=analyze.*payload\.mode=analysis-only/i.test(e)), out.errors.join('\n'));
 });
 
-test('dry-run accepts A2AD opinion lanes only as analyze + analysis-only (#958)', async () => {
-  const m = makeManifest('http://unused', 1);
+function makeA2adAnalysisManifest(brokerUrl) {
+  const m = makeManifest(brokerUrl, 1);
   m.defaults.intent = 'analyze';
-  m.lanes[0].payload = {
+  m.defaults.terminalBrief = { notificationOwnership: 'parent' };
+  m.defaults.payload = {
     mode: 'analysis-only',
     roundMode: 'a2ad',
     sourceOnly: true,
     noLive: true,
+    originBrokerId: 'seoseo',
+    brokerOfRecordId: 'seoseo',
+    operatorFacingOwner: 'parent',
     sourceBundle: { files: [{ path: 'README.md', content: '# A2A Nexus\n' }] },
   };
+  return m;
+}
+
+test('dry-run accepts A2AD opinion lanes only as analyze + analysis-only (#958)', async () => {
+  const m = makeA2adAnalysisManifest('http://unused');
 
   const out = await runDispatch(m, { dryRun: true });
   assert.equal(out.exitCode, 0, out.errors.join('\n'));
   assert.equal(out.lanes[0].intent, 'analyze');
   assert.equal(out.lanes[0].payload.mode, 'analysis-only');
+});
+
+test('dry-run rejects A2AD analysis lanes missing live broker Terminal Brief ownership metadata (#963)', async () => {
+  const cases = [
+    ['payload.originBrokerId', (m) => { delete m.defaults.payload.originBrokerId; }, /payload\.originBrokerId is required for A2AD analysis lanes/],
+    ['payload.brokerOfRecordId', (m) => { delete m.defaults.payload.brokerOfRecordId; }, /payload\.brokerOfRecordId is required for A2AD analysis lanes/],
+    ['payload.operatorFacingOwner', (m) => { delete m.defaults.payload.operatorFacingOwner; }, /payload\.operatorFacingOwner is required for A2AD analysis lanes/],
+    ['terminalBrief.notificationOwnership', (m) => { delete m.defaults.terminalBrief.notificationOwnership; }, /terminalBrief\.notificationOwnership is required for A2AD analysis lanes/],
+  ];
+
+  for (const [name, mutate, pattern] of cases) {
+    const m = makeA2adAnalysisManifest('http://unused');
+    mutate(m);
+    const out = await runDispatch(m, { dryRun: true });
+    assert.equal(out.exitCode, 1, `${name} should fail dry-run`);
+    assert.ok(out.errors.some((e) => pattern.test(e)), `${name} error not found in: ${out.errors.join('\n')}`);
+  }
+});
+
+test('dry-run requires A2AD ownership metadata even when a source-only workModeDecision is present (#963)', async () => {
+  const m = makeA2adAnalysisManifest('http://unused');
+  m.defaults.payload.workModeDecision = {
+    mode: 'team1',
+    idempotencyKey: 'a2ad-analysis-r1',
+    finalizerOwner: 'seoseo',
+    generatedAt: '2026-06-21T00:00:00Z',
+    capacityState: 'healthy',
+    capacitySnapshotSource: 'fixture',
+    capacitySnapshotAt: '2026-06-21T00:00:00Z',
+    sourceOnlyDecision: true,
+    workerDispatchAllowedByThisPacket: false,
+  };
+  delete m.defaults.payload.originBrokerId;
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /payload\.originBrokerId is required for A2AD analysis lanes/.test(e)), out.errors.join('\n'));
 });
 
 test('dry-run rejects pure A2AD opinion lanes routed through GitHub evidence modes (#958)', async () => {
