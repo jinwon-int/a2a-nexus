@@ -82,6 +82,7 @@ export type RoundLaneState =
 
 export type RoundLaneEvidenceClass =
   | "substantive"
+  | "oracle_mismatch"
   | "wrapper_only"
   | "handler_artifact_failure"
   | "source_blocked"
@@ -95,6 +96,7 @@ export type RoundLaneReadinessStatus =
   | "queued"
   | "claimed_running"
   | "stale"
+  | "oracle_mismatch"
   | "wrapper_only"
   | "source_blocked"
   | "handler_artifact_failed"
@@ -170,6 +172,7 @@ export interface RoundResultCollectorOutput {
     blocked: number;
     evidenceUrls: number;
     substantiveEvidence: number;
+    oracleMismatches: number;
     wrapperOnly: number;
     handlerArtifactFailures: number;
     queuedUnclaimed: number;
@@ -180,6 +183,7 @@ export interface RoundResultCollectorOutput {
       queued: number;
       claimedRunning: number;
       stale: number;
+      oracleMismatch: number;
       wrapperOnly: number;
       sourceBlocked: number;
       handlerArtifactFailed: number;
@@ -203,6 +207,12 @@ export interface RoundResultCollectorOutput {
   evidenceUrls: string[];
   /** Compact finalizer-review bundle. */
   closeoutBundle: CloseoutBundle;
+  /**
+   * Source-only next-action projection for a finalizer/orchestrator. This never
+   * mutates broker state by itself; external dispatch/requeue code must consume
+   * it explicitly.
+   */
+  verdictActionPlan: RoundVerdictActionPlan;
   approvalSensitiveActionsExcluded: string[];
   /**
    * Finalizer gate verdict computed from the collector's own lane
@@ -233,6 +243,32 @@ export interface RoundResultCollectorOutput {
     reason?: string;
   };
 }
+
+export interface RoundVerdictRequeueLane {
+  workerId: string;
+  taskId?: string;
+  evidenceClass?: RoundLaneEvidenceClass;
+  readinessStatus: RoundLaneReadinessStatus;
+  laneState: RoundLaneState;
+  rejectionReason: string;
+  priorAttemptEvidenceRef: string;
+}
+
+export type RoundVerdictActionPlan =
+  | {
+      kind: "finalizer_review";
+      sourceOnly: true;
+      requiresExternalDispatcher: false;
+      reason?: string;
+      lanes: [];
+    }
+  | {
+      kind: "reject_feedback_requeue";
+      sourceOnly: true;
+      requiresExternalDispatcher: true;
+      reason: string;
+      lanes: RoundVerdictRequeueLane[];
+    };
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
@@ -290,6 +326,8 @@ export function collectRoundResults(
     .filter((l) => l.laneState === "blocked")
     .map((l) => l.workerId);
   const evidenceUrls = extractAllEvidenceUrls(lanes);
+  const gateVerdict = computeGateVerdict(lanes, manifest.lanes.length);
+  const verdictActionPlan = buildVerdictActionPlan(lanes, gateVerdict);
   const closeoutBundle = buildCloseoutBundle({
     roundLabel: manifest.roundLabel,
     parentIssueUrl: manifest.parentIssueUrl,
@@ -300,6 +338,7 @@ export function collectRoundResults(
     timeoutLanes,
     blockedLanes,
     evidenceUrls,
+    verdictActionPlan,
     generatedAt: new Date(nowMs).toISOString(),
   });
 
@@ -317,7 +356,8 @@ export function collectRoundResults(
     blockedLanes,
     evidenceUrls,
     closeoutBundle,
-    gateVerdict: computeGateVerdict(lanes, manifest.lanes.length),
+    verdictActionPlan,
+    gateVerdict,
     approvalSensitiveActionsExcluded: [
       "GitHub PR merge, issue close, or comment post",
       "live provider/Hermes/Telegram/OpenClaw send",
@@ -724,6 +764,7 @@ function isRoundMetadataComplete(lane: ResultLane): boolean {
 
 function projectReadinessStatus(lane: ResultLane): RoundLaneReadinessStatus {
   if (lane.evidenceClass === "substantive") return "substantive";
+  if (lane.evidenceClass === "oracle_mismatch") return "oracle_mismatch";
   if (lane.evidenceClass === "wrapper_only") return "wrapper_only";
   if (lane.evidenceClass === "source_blocked") return "source_blocked";
   if (lane.evidenceClass === "handler_artifact_failure") return "handler_artifact_failed";
@@ -771,6 +812,7 @@ function classifyEvidenceClass(
   }
 
   if (task.status === "succeeded") {
+    if (hasOracleMismatchOutput(task)) return "oracle_mismatch";
     if (hasSourceBlockedOutput(task)) return "source_blocked";
     if (hasSubstantiveWorkerOutput(task)) return "substantive";
     if (isWrapperOnlySuccess(task)) return "wrapper_only";
@@ -781,6 +823,24 @@ function classifyEvidenceClass(
 
   if (task.status === "blocked") return evidence.blockUrl ? "source_blocked" : "non_substantive";
   return "non_substantive";
+}
+
+function hasOracleMismatchOutput(task: TaskRecord): boolean {
+  const output = task.result?.output ?? {};
+  if (containsOracleMismatch(output["oracleVerdict"]) || containsOracleMismatch(output["oracleVerdicts"])) {
+    return true;
+  }
+  const blockFlags = output["blockFlags"];
+  if (Array.isArray(blockFlags) && blockFlags.some((flag) => typeof flag === "string" && flag === "factual_error")) {
+    return true;
+  }
+  return false;
+}
+
+function containsOracleMismatch(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsOracleMismatch);
+  if (!value || typeof value !== "object") return false;
+  return (value as { match?: unknown }).match === false;
 }
 
 function hasSourceBlockedOutput(task: TaskRecord): boolean {
@@ -920,6 +980,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
     blocked: 0,
     evidenceUrls: 0,
     substantiveEvidence: 0,
+    oracleMismatches: 0,
     wrapperOnly: 0,
     handlerArtifactFailures: 0,
     queuedUnclaimed: 0,
@@ -930,6 +991,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       queued: 0,
       claimedRunning: 0,
       stale: 0,
+      oracleMismatch: 0,
       wrapperOnly: 0,
       sourceBlocked: 0,
       handlerArtifactFailed: 0,
@@ -970,6 +1032,9 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       case "substantive":
         counts.substantiveEvidence++;
         break;
+      case "oracle_mismatch":
+        counts.oracleMismatches++;
+        break;
       case "wrapper_only":
         counts.wrapperOnly++;
         break;
@@ -1000,6 +1065,9 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
         break;
       case "stale":
         counts.readiness.stale++;
+        break;
+      case "oracle_mismatch":
+        counts.readiness.oracleMismatch++;
         break;
       case "wrapper_only":
         counts.readiness.wrapperOnly++;
@@ -1107,6 +1175,75 @@ function computeGateVerdict(
   };
 }
 
+function buildVerdictActionPlan(
+  lanes: ResultLane[],
+  gateVerdict: RoundResultCollectorOutput["gateVerdict"],
+): RoundVerdictActionPlan {
+  if (gateVerdict?.verdict === "FINAL") {
+    return {
+      kind: "finalizer_review",
+      sourceOnly: true,
+      requiresExternalDispatcher: false,
+      lanes: [],
+    };
+  }
+
+  const requeueLanes = lanes
+    .filter(isRejectFeedbackRequeueCandidate)
+    .map((lane) => ({
+      workerId: lane.workerId,
+      taskId: lane.taskIds[0],
+      evidenceClass: lane.evidenceClass,
+      readinessStatus: lane.readinessStatus,
+      laneState: lane.laneState,
+      rejectionReason: rejectionReasonForLane(lane),
+      priorAttemptEvidenceRef: priorAttemptEvidenceRef(lane),
+    }));
+
+  if (requeueLanes.length === 0) {
+    return {
+      kind: "finalizer_review",
+      sourceOnly: true,
+      requiresExternalDispatcher: false,
+      reason: gateVerdict?.reason,
+      lanes: [],
+    };
+  }
+
+  return {
+    kind: "reject_feedback_requeue",
+    sourceOnly: true,
+    requiresExternalDispatcher: true,
+    reason: gateVerdict?.reason ?? "verify verdict BLOCKED; retry eligible lanes with reject feedback",
+    lanes: requeueLanes,
+  };
+}
+
+function isRejectFeedbackRequeueCandidate(lane: ResultLane): boolean {
+  if (lane.laneState === "succeeded") return false;
+  if (lane.evidenceClass === "substantive") return false;
+  if (lane.evidenceClass === "superseded_by_supplement") return false;
+  return lane.laneState === "blocked"
+    || lane.laneState === "failed"
+    || lane.laneState === "timeout"
+    || lane.laneState === "stale"
+    || lane.laneState === "pending";
+}
+
+function rejectionReasonForLane(lane: ResultLane): string {
+  const classification = lane.readinessStatus === "terminal_failed"
+    ? "terminal_failed"
+    : lane.evidenceClass ?? lane.readinessStatus;
+  const detail = lane.errorSummary ?? lane.outcomeSummary ?? lane.testSummary ?? "no substantive terminal evidence";
+  return `${classification}: ${detail}`;
+}
+
+function priorAttemptEvidenceRef(lane: ResultLane): string {
+  if (lane.evidenceUrls.length > 0) return lane.evidenceUrls[0]!;
+  if (lane.taskIds.length > 0) return `task:${lane.taskIds[0]}`;
+  return `lane:${lane.workerId}`;
+}
+
 function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
   const seen = new Set<string>();
   for (const lane of lanes) {
@@ -1129,6 +1266,7 @@ function buildCloseoutBundle(context: {
   timeoutLanes: string[];
   blockedLanes: string[];
   evidenceUrls: string[];
+  verdictActionPlan: RoundVerdictActionPlan;
   generatedAt: string;
 }): CloseoutBundle {
   const title = closeoutTitle(context);
@@ -1156,9 +1294,10 @@ function closeoutBody(context: {
   timeoutLanes: string[];
   blockedLanes: string[];
   evidenceUrls: string[];
+  verdictActionPlan: RoundVerdictActionPlan;
   generatedAt: string;
 }): string {
-  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, generatedAt, parentIssueUrl } = context;
+  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, verdictActionPlan, generatedAt, parentIssueUrl } = context;
   const lines: string[] = [];
 
   // Header
@@ -1176,8 +1315,8 @@ function closeoutBody(context: {
   const stale = summary.stale;
   const timeout = summary.timeout;
   lines.push(`**${ok}/${total} lanes completed.** ${ko} blocked, ${stale} stale, ${timeout} timeout, ${waiting} active.`);
-  lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
-  lines.push(`readiness: missing=${summary.readiness.missing} queued=${summary.readiness.queued} claimed/running=${summary.readiness.claimedRunning} wrapper-only=${summary.readiness.wrapperOnly} source-blocked=${summary.readiness.sourceBlocked} handler-artifact-failed=${summary.readiness.handlerArtifactFailed} substantive=${summary.readiness.substantive}`);
+  lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.oracleMismatches} oracle-mismatch, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
+  lines.push(`readiness: missing=${summary.readiness.missing} queued=${summary.readiness.queued} claimed/running=${summary.readiness.claimedRunning} wrapper-only=${summary.readiness.wrapperOnly} source-blocked=${summary.readiness.sourceBlocked} handler-artifact-failed=${summary.readiness.handlerArtifactFailed} substantive=${summary.readiness.substantive} oracle-mismatch=${summary.readiness.oracleMismatch}`);
   lines.push(`round metadata complete: ${summary.roundMetadataComplete}; round metadata missing: ${summary.roundMetadataMissing}`);
   lines.push("");
 
@@ -1273,6 +1412,18 @@ function closeoutBody(context: {
     lines.push("");
     for (const url of evidenceUrls) {
       lines.push(`- ${url}`);
+    }
+    lines.push("");
+  }
+
+  // Finalizer next actions
+  if (verdictActionPlan.kind === "reject_feedback_requeue") {
+    lines.push("### Reject-feedback requeue plan");
+    lines.push("");
+    lines.push("This projection is source-only and does not requeue tasks by itself; an external dispatcher/finalizer must consume the plan explicitly.");
+    lines.push("");
+    for (const lane of verdictActionPlan.lanes) {
+      lines.push(`- ${lane.workerId}: ${lane.rejectionReason}; prior=${lane.priorAttemptEvidenceRef}`);
     }
     lines.push("");
   }
@@ -1386,6 +1537,7 @@ function buildFinalizerActions(
 function evidenceClassLabel(cls: RoundLaneEvidenceClass): string {
   switch (cls) {
     case "substantive": return "✅ substantive";
+    case "oracle_mismatch": return "🚫 oracle_mismatch";
     case "wrapper_only": return "🔲 wrapper_only";
     case "handler_artifact_failure": return "⚠️ handler_artifact_failure";
     case "source_blocked": return "🚫 source_blocked";
