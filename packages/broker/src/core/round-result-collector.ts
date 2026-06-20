@@ -203,6 +203,12 @@ export interface RoundResultCollectorOutput {
   evidenceUrls: string[];
   /** Compact finalizer-review bundle. */
   closeoutBundle: CloseoutBundle;
+  /**
+   * Source-only next-action projection for a finalizer/orchestrator. This never
+   * mutates broker state by itself; external dispatch/requeue code must consume
+   * it explicitly.
+   */
+  verdictActionPlan: RoundVerdictActionPlan;
   approvalSensitiveActionsExcluded: string[];
   /**
    * Finalizer gate verdict computed from the collector's own lane
@@ -222,6 +228,32 @@ export interface RoundResultCollectorOutput {
     reason?: string;
   };
 }
+
+export interface RoundVerdictRequeueLane {
+  workerId: string;
+  taskId?: string;
+  evidenceClass?: RoundLaneEvidenceClass;
+  readinessStatus: RoundLaneReadinessStatus;
+  laneState: RoundLaneState;
+  rejectionReason: string;
+  priorAttemptEvidenceRef: string;
+}
+
+export type RoundVerdictActionPlan =
+  | {
+      kind: "finalizer_review";
+      sourceOnly: true;
+      requiresExternalDispatcher: false;
+      reason?: string;
+      lanes: [];
+    }
+  | {
+      kind: "reject_feedback_requeue";
+      sourceOnly: true;
+      requiresExternalDispatcher: true;
+      reason: string;
+      lanes: RoundVerdictRequeueLane[];
+    };
 
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 const TERMINAL_STATUSES = new Set<TaskStatus>(["succeeded", "failed", "canceled", "blocked"]);
@@ -279,6 +311,8 @@ export function collectRoundResults(
     .filter((l) => l.laneState === "blocked")
     .map((l) => l.workerId);
   const evidenceUrls = extractAllEvidenceUrls(lanes);
+  const gateVerdict = computeGateVerdict(lanes, manifest.lanes.length);
+  const verdictActionPlan = buildVerdictActionPlan(lanes, gateVerdict);
   const closeoutBundle = buildCloseoutBundle({
     roundLabel: manifest.roundLabel,
     parentIssueUrl: manifest.parentIssueUrl,
@@ -289,6 +323,7 @@ export function collectRoundResults(
     timeoutLanes,
     blockedLanes,
     evidenceUrls,
+    verdictActionPlan,
     generatedAt: new Date(nowMs).toISOString(),
   });
 
@@ -306,7 +341,8 @@ export function collectRoundResults(
     blockedLanes,
     evidenceUrls,
     closeoutBundle,
-    gateVerdict: computeGateVerdict(lanes, manifest.lanes.length),
+    verdictActionPlan,
+    gateVerdict,
     approvalSensitiveActionsExcluded: [
       "GitHub PR merge, issue close, or comment post",
       "live provider/Hermes/Telegram/OpenClaw send",
@@ -1094,6 +1130,75 @@ function computeGateVerdict(
   };
 }
 
+function buildVerdictActionPlan(
+  lanes: ResultLane[],
+  gateVerdict: RoundResultCollectorOutput["gateVerdict"],
+): RoundVerdictActionPlan {
+  if (gateVerdict?.verdict === "FINAL") {
+    return {
+      kind: "finalizer_review",
+      sourceOnly: true,
+      requiresExternalDispatcher: false,
+      lanes: [],
+    };
+  }
+
+  const requeueLanes = lanes
+    .filter(isRejectFeedbackRequeueCandidate)
+    .map((lane) => ({
+      workerId: lane.workerId,
+      taskId: lane.taskIds[0],
+      evidenceClass: lane.evidenceClass,
+      readinessStatus: lane.readinessStatus,
+      laneState: lane.laneState,
+      rejectionReason: rejectionReasonForLane(lane),
+      priorAttemptEvidenceRef: priorAttemptEvidenceRef(lane),
+    }));
+
+  if (requeueLanes.length === 0) {
+    return {
+      kind: "finalizer_review",
+      sourceOnly: true,
+      requiresExternalDispatcher: false,
+      reason: gateVerdict?.reason,
+      lanes: [],
+    };
+  }
+
+  return {
+    kind: "reject_feedback_requeue",
+    sourceOnly: true,
+    requiresExternalDispatcher: true,
+    reason: gateVerdict?.reason ?? "verify verdict BLOCKED; retry eligible lanes with reject feedback",
+    lanes: requeueLanes,
+  };
+}
+
+function isRejectFeedbackRequeueCandidate(lane: ResultLane): boolean {
+  if (lane.laneState === "succeeded") return false;
+  if (lane.evidenceClass === "substantive") return false;
+  if (lane.evidenceClass === "superseded_by_supplement") return false;
+  return lane.laneState === "blocked"
+    || lane.laneState === "failed"
+    || lane.laneState === "timeout"
+    || lane.laneState === "stale"
+    || lane.laneState === "pending";
+}
+
+function rejectionReasonForLane(lane: ResultLane): string {
+  const classification = lane.readinessStatus === "terminal_failed"
+    ? "terminal_failed"
+    : lane.evidenceClass ?? lane.readinessStatus;
+  const detail = lane.errorSummary ?? lane.outcomeSummary ?? lane.testSummary ?? "no substantive terminal evidence";
+  return `${classification}: ${detail}`;
+}
+
+function priorAttemptEvidenceRef(lane: ResultLane): string {
+  if (lane.evidenceUrls.length > 0) return lane.evidenceUrls[0]!;
+  if (lane.taskIds.length > 0) return `task:${lane.taskIds[0]}`;
+  return `lane:${lane.workerId}`;
+}
+
 function extractAllEvidenceUrls(lanes: ResultLane[]): string[] {
   const seen = new Set<string>();
   for (const lane of lanes) {
@@ -1116,6 +1221,7 @@ function buildCloseoutBundle(context: {
   timeoutLanes: string[];
   blockedLanes: string[];
   evidenceUrls: string[];
+  verdictActionPlan: RoundVerdictActionPlan;
   generatedAt: string;
 }): CloseoutBundle {
   const title = closeoutTitle(context);
@@ -1143,9 +1249,10 @@ function closeoutBody(context: {
   timeoutLanes: string[];
   blockedLanes: string[];
   evidenceUrls: string[];
+  verdictActionPlan: RoundVerdictActionPlan;
   generatedAt: string;
 }): string {
-  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, generatedAt, parentIssueUrl } = context;
+  const { summary, lanes, missingLanes, staleLanes, timeoutLanes, blockedLanes, evidenceUrls, verdictActionPlan, generatedAt, parentIssueUrl } = context;
   const lines: string[] = [];
 
   // Header
@@ -1260,6 +1367,18 @@ function closeoutBody(context: {
     lines.push("");
     for (const url of evidenceUrls) {
       lines.push(`- ${url}`);
+    }
+    lines.push("");
+  }
+
+  // Finalizer next actions
+  if (verdictActionPlan.kind === "reject_feedback_requeue") {
+    lines.push("### Reject-feedback requeue plan");
+    lines.push("");
+    lines.push("This projection is source-only and does not requeue tasks by itself; an external dispatcher/finalizer must consume the plan explicitly.");
+    lines.push("");
+    for (const lane of verdictActionPlan.lanes) {
+      lines.push(`- ${lane.workerId}: ${lane.rejectionReason}; prior=${lane.priorAttemptEvidenceRef}`);
     }
     lines.push("");
   }

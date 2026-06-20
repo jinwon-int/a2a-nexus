@@ -3,7 +3,7 @@
  */
 
 import { describe, it } from "node:test";
-import { equal, ok } from "node:assert/strict";
+import { deepEqual, equal, ok } from "node:assert/strict";
 import {
   collectRoundResults,
   buildRoundManifest,
@@ -1419,6 +1419,97 @@ describe("#920 evidence quality and closeout UX", () => {
     const body = output.closeoutBundle.body;
     ok(body.includes("pull/922") || body.includes("PR"), "Child issue PR link should appear in closeout body");
     ok(body.includes("920"), "Parent issue reference should appear");
+  });
+
+  it("projects BLOCKED verdict lanes into a source-only reject-feedback requeue action plan", () => {
+    const nowMs = Date.parse("2026-06-21T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-requeue-action-plan-test",
+      lanes: [
+        { workerId: "nosuk", expectedOutcome: "analysis" },
+        { workerId: "sogyo", expectedOutcome: "analysis" },
+        { workerId: "bangtong", expectedOutcome: "analysis" },
+      ],
+    };
+    const tasks: TaskRecord[] = [
+      makeTask({
+        id: "task-nosuk-substantive",
+        assignedWorkerId: "nosuk",
+        status: "succeeded",
+        updatedAt: "2026-06-21T11:30:00.000Z",
+        completedAt: "2026-06-21T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Substantive finding"],
+            doneCommentUrl: "https://github.com/jinwon-int/a2a-nexus/issues/970#issuecomment-1",
+          },
+        }),
+      }),
+      makeTask({
+        id: "task-sogyo-wrapper",
+        intent: "analyze",
+        assignedWorkerId: "sogyo",
+        message: "Analyze #970",
+        status: "succeeded",
+        updatedAt: "2026-06-21T11:20:00.000Z",
+        completedAt: "2026-06-21T11:20:00.000Z",
+        result: makeResult({
+          summary: "Analyze #970",
+          note: "echo handled task task-sogyo-wrapper",
+          output: { message: "Analyze #970" },
+        }),
+      }),
+      makeTask({
+        id: "task-bangtong-failed",
+        assignedWorkerId: "bangtong",
+        status: "failed",
+        updatedAt: "2026-06-21T11:10:00.000Z",
+        completedAt: "2026-06-21T11:10:00.000Z",
+        error: { code: "handler_exit_nonzero", message: "Hermes analysis bridge returned invalid JSON" },
+      }),
+    ];
+
+    const output = collectRoundResults(manifest, tasks, { nowMs });
+
+    equal(output.gateVerdict?.verdict, "BLOCKED");
+    equal(output.verdictActionPlan.kind, "reject_feedback_requeue");
+    equal(output.verdictActionPlan.sourceOnly, true);
+    equal(output.verdictActionPlan.requiresExternalDispatcher, true);
+    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.workerId), ["sogyo", "bangtong"]);
+    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.taskId), ["task-sogyo-wrapper", "task-bangtong-failed"]);
+    ok(output.verdictActionPlan.lanes[0]!.rejectionReason.includes("wrapper_only"));
+    ok(output.verdictActionPlan.lanes[0]!.priorAttemptEvidenceRef.includes("task-sogyo-wrapper"));
+    ok(output.verdictActionPlan.lanes[1]!.rejectionReason.includes("terminal_failed"));
+    ok(output.closeoutBundle.body.includes("Reject-feedback requeue plan"));
+  });
+
+  it("projects FINAL verdicts as finalizer-review actions without requeue lanes", () => {
+    const nowMs = Date.parse("2026-06-21T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-final-action-plan-test",
+      lanes: [{ workerId: "nosuk", expectedOutcome: "analysis" }],
+    };
+    const output = collectRoundResults(manifest, [
+      makeTask({
+        id: "task-nosuk-substantive",
+        assignedWorkerId: "nosuk",
+        status: "succeeded",
+        updatedAt: "2026-06-21T11:30:00.000Z",
+        completedAt: "2026-06-21T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["Substantive finding"],
+            doneCommentUrl: "https://github.com/jinwon-int/a2a-nexus/issues/970#issuecomment-2",
+          },
+        }),
+      }),
+    ], { nowMs });
+
+    equal(output.gateVerdict?.verdict, "FINAL");
+    equal(output.verdictActionPlan.kind, "finalizer_review");
+    deepEqual(output.verdictActionPlan.lanes, []);
   });
 });
 
