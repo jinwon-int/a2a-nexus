@@ -495,6 +495,9 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   for (const cap of config.capDrop ?? []) {
     args.push("--cap-drop", cap);
   }
+  for (const cap of config.capAdd ?? []) {
+    args.push("--cap-add", cap);
+  }
 
   if (config.githubTokenFile) {
     args.push("-v", `${config.githubTokenFile}:/run/secrets/gh-hosts.yml:ro`);

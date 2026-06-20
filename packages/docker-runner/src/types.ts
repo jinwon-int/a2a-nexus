@@ -159,23 +159,25 @@ export interface RunnerConfig {
   defaultTimeoutMs: number;
   memory?: string;
   cpus?: string;
-  /** Container network mode. Defaults to bridge; OpenClaw profile uses host to reach the local gateway. */
+  /** Container network mode. Defaults to bridge; trusted OpenClaw/Hermes profiles may opt into host. */
   network?: string;
+  /** Explicit trusted-operator mode. Public safe-default mode is used when false/absent. */
+  trustedOperator?: boolean;
   /** Max PIDs inside the task container (fork-bomb guard). Default 512. */
   pidsLimit?: string;
   /**
    * When true, setuid/setgid binaries inside the container cannot gain
    * privileges (--security-opt no-new-privileges). Default true; opt out via
-   * A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1 only for images that
-   * genuinely need privilege escalation.
+   * A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION=1 only for explicitly trusted
+   * operator lanes.
    */
   noNewPrivileges?: boolean;
   /**
    * Optional capability drop list passed as --cap-drop entries, e.g. ["ALL"].
-   * Opt-in (A2A_DOCKER_RUNNER_CAP_DROP) because root-based task images may
-   * rely on default capabilities (chown/setuid during package installs).
    */
   capDrop?: string[];
+  /** Optional capability add list passed as --cap-add entries. Trusted-operator only. */
+  capAdd?: string[];
   /** Additional host paths to mount into the runner container. */
   extraMounts?: RunnerExtraMount[];
   /** First-class patch command profile selected by loadConfig. */
