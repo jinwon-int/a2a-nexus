@@ -1511,6 +1511,45 @@ describe("#920 evidence quality and closeout UX", () => {
     equal(output.verdictActionPlan.kind, "finalizer_review");
     deepEqual(output.verdictActionPlan.lanes, []);
   });
+
+  it("treats oracle mismatches as hard-block evidence and requeue feedback", () => {
+    const nowMs = Date.parse("2026-06-21T12:00:00.000Z");
+    const manifest: RoundManifest = {
+      roundLabel: "a2ad-oracle-mismatch-test",
+      lanes: [{ workerId: "nosuk", expectedOutcome: "analysis" }],
+    };
+    const output = collectRoundResults(manifest, [
+      makeTask({
+        id: "task-nosuk-oracle-mismatch",
+        assignedWorkerId: "nosuk",
+        status: "succeeded",
+        updatedAt: "2026-06-21T11:30:00.000Z",
+        completedAt: "2026-06-21T11:30:00.000Z",
+        result: makeResult({
+          output: {
+            analysisStatus: "done",
+            findings: ["PR #974 is merged"],
+            oracleVerdicts: [{
+              sourceKind: "github",
+              evidenceRef: "https://github.com/jinwon-int/a2a-nexus/pull/974",
+              match: false,
+              actualValue: false,
+              detail: "github.merged mismatch: claimed=true actual=false",
+            }],
+            blockFlags: ["factual_error"],
+          },
+        }),
+      }),
+    ], { nowMs });
+
+    equal(output.gateVerdict?.verdict, "BLOCKED");
+    equal(output.lanes[0]!.laneState, "blocked");
+    equal(output.lanes[0]!.evidenceClass, "oracle_mismatch");
+    equal(output.lanes[0]!.readinessStatus, "oracle_mismatch");
+    equal(output.summary.oracleMismatches, 1);
+    equal(output.verdictActionPlan.kind, "reject_feedback_requeue");
+    ok(output.verdictActionPlan.lanes[0]!.rejectionReason.includes("oracle_mismatch"));
+  });
 });
 
 // ---------------------------------------------------------------------------

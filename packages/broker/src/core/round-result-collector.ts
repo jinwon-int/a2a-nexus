@@ -82,6 +82,7 @@ export type RoundLaneState =
 
 export type RoundLaneEvidenceClass =
   | "substantive"
+  | "oracle_mismatch"
   | "wrapper_only"
   | "handler_artifact_failure"
   | "source_blocked"
@@ -95,6 +96,7 @@ export type RoundLaneReadinessStatus =
   | "queued"
   | "claimed_running"
   | "stale"
+  | "oracle_mismatch"
   | "wrapper_only"
   | "source_blocked"
   | "handler_artifact_failed"
@@ -170,6 +172,7 @@ export interface RoundResultCollectorOutput {
     blocked: number;
     evidenceUrls: number;
     substantiveEvidence: number;
+    oracleMismatches: number;
     wrapperOnly: number;
     handlerArtifactFailures: number;
     queuedUnclaimed: number;
@@ -180,6 +183,7 @@ export interface RoundResultCollectorOutput {
       queued: number;
       claimedRunning: number;
       stale: number;
+      oracleMismatch: number;
       wrapperOnly: number;
       sourceBlocked: number;
       handlerArtifactFailed: number;
@@ -749,6 +753,7 @@ function isRoundMetadataComplete(lane: ResultLane): boolean {
 
 function projectReadinessStatus(lane: ResultLane): RoundLaneReadinessStatus {
   if (lane.evidenceClass === "substantive") return "substantive";
+  if (lane.evidenceClass === "oracle_mismatch") return "oracle_mismatch";
   if (lane.evidenceClass === "wrapper_only") return "wrapper_only";
   if (lane.evidenceClass === "source_blocked") return "source_blocked";
   if (lane.evidenceClass === "handler_artifact_failure") return "handler_artifact_failed";
@@ -796,6 +801,7 @@ function classifyEvidenceClass(
   }
 
   if (task.status === "succeeded") {
+    if (hasOracleMismatchOutput(task)) return "oracle_mismatch";
     if (hasSourceBlockedOutput(task)) return "source_blocked";
     if (hasSubstantiveWorkerOutput(task)) return "substantive";
     if (isWrapperOnlySuccess(task)) return "wrapper_only";
@@ -806,6 +812,24 @@ function classifyEvidenceClass(
 
   if (task.status === "blocked") return evidence.blockUrl ? "source_blocked" : "non_substantive";
   return "non_substantive";
+}
+
+function hasOracleMismatchOutput(task: TaskRecord): boolean {
+  const output = task.result?.output ?? {};
+  if (containsOracleMismatch(output["oracleVerdict"]) || containsOracleMismatch(output["oracleVerdicts"])) {
+    return true;
+  }
+  const blockFlags = output["blockFlags"];
+  if (Array.isArray(blockFlags) && blockFlags.some((flag) => typeof flag === "string" && flag === "factual_error")) {
+    return true;
+  }
+  return false;
+}
+
+function containsOracleMismatch(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsOracleMismatch);
+  if (!value || typeof value !== "object") return false;
+  return (value as { match?: unknown }).match === false;
 }
 
 function hasSourceBlockedOutput(task: TaskRecord): boolean {
@@ -945,6 +969,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
     blocked: 0,
     evidenceUrls: 0,
     substantiveEvidence: 0,
+    oracleMismatches: 0,
     wrapperOnly: 0,
     handlerArtifactFailures: 0,
     queuedUnclaimed: 0,
@@ -955,6 +980,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       queued: 0,
       claimedRunning: 0,
       stale: 0,
+      oracleMismatch: 0,
       wrapperOnly: 0,
       sourceBlocked: 0,
       handlerArtifactFailed: 0,
@@ -995,6 +1021,9 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       case "substantive":
         counts.substantiveEvidence++;
         break;
+      case "oracle_mismatch":
+        counts.oracleMismatches++;
+        break;
       case "wrapper_only":
         counts.wrapperOnly++;
         break;
@@ -1025,6 +1054,9 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
         break;
       case "stale":
         counts.readiness.stale++;
+        break;
+      case "oracle_mismatch":
+        counts.readiness.oracleMismatch++;
         break;
       case "wrapper_only":
         counts.readiness.wrapperOnly++;
@@ -1270,8 +1302,8 @@ function closeoutBody(context: {
   const stale = summary.stale;
   const timeout = summary.timeout;
   lines.push(`**${ok}/${total} lanes completed.** ${ko} blocked, ${stale} stale, ${timeout} timeout, ${waiting} active.`);
-  lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
-  lines.push(`readiness: missing=${summary.readiness.missing} queued=${summary.readiness.queued} claimed/running=${summary.readiness.claimedRunning} wrapper-only=${summary.readiness.wrapperOnly} source-blocked=${summary.readiness.sourceBlocked} handler-artifact-failed=${summary.readiness.handlerArtifactFailed} substantive=${summary.readiness.substantive}`);
+  lines.push(`Evidence classes: ${summary.substantiveEvidence} substantive, ${summary.oracleMismatches} oracle-mismatch, ${summary.wrapperOnly} wrapper-only, ${summary.handlerArtifactFailures} handler artifact failure(s), ${summary.queuedUnclaimed} queued/unclaimed, ${summary.sourceBlocked} source-blocked, ${summary.nonSubstantive} non-substantive.`);
+  lines.push(`readiness: missing=${summary.readiness.missing} queued=${summary.readiness.queued} claimed/running=${summary.readiness.claimedRunning} wrapper-only=${summary.readiness.wrapperOnly} source-blocked=${summary.readiness.sourceBlocked} handler-artifact-failed=${summary.readiness.handlerArtifactFailed} substantive=${summary.readiness.substantive} oracle-mismatch=${summary.readiness.oracleMismatch}`);
   lines.push(`round metadata complete: ${summary.roundMetadataComplete}; round metadata missing: ${summary.roundMetadataMissing}`);
   lines.push("");
 
@@ -1492,6 +1524,7 @@ function buildFinalizerActions(
 function evidenceClassLabel(cls: RoundLaneEvidenceClass): string {
   switch (cls) {
     case "substantive": return "✅ substantive";
+    case "oracle_mismatch": return "🚫 oracle_mismatch";
     case "wrapper_only": return "🔲 wrapper_only";
     case "handler_artifact_failure": return "⚠️ handler_artifact_failure";
     case "source_blocked": return "🚫 source_blocked";
