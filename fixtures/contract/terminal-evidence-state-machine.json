@@ -1,69 +1,191 @@
 {
   "fixtureId": "a2a-nexus.contract.terminal-evidence-state-machine.v1",
   "version": 1,
+  "contract": "contracts/a2a/terminal-evidence.schema.json",
+  "docs": "docs/specs/terminal-evidence-state-machine.md",
+  "description": "Source-only/no-live Terminal Evidence State Machine contract for provider acceptance, operator visibility, and operator-owned ACK boundaries.",
+  "v0Freeze": {
+    "frozenAt": "2026-06-21",
+    "round": "a2a-965-terminal-state-20260621-r1",
+    "sourceOnly": true,
+    "noLive": true,
+    "note": "Provider accepted-send and message-id evidence are explicitly non-ACK; operator_visible is visible but non-ACK; acknowledged requires operator-owned evidence."
+  },
   "states": [
     {
       "name": "accepted",
       "owner": "broker",
       "terminalForCloseout": false,
       "operatorVisible": false,
-      "allowedPrevious": []
+      "allowedPrevious": [],
+      "allowedNext": ["claimed"],
+      "requiredEvidence": ["taskId", "brokerOfRecordId", "acceptedAt"]
     },
     {
       "name": "claimed",
       "owner": "worker",
       "terminalForCloseout": false,
       "operatorVisible": false,
-      "allowedPrevious": ["accepted"]
+      "allowedPrevious": ["accepted"],
+      "allowedNext": ["started", "blocked", "failed"],
+      "requiredEvidence": ["taskId", "workerId", "claimedAt"]
     },
     {
       "name": "started",
       "owner": "worker",
       "terminalForCloseout": false,
       "operatorVisible": false,
-      "allowedPrevious": ["claimed"]
+      "allowedPrevious": ["claimed"],
+      "allowedNext": ["provider_accepted", "done", "blocked", "failed"],
+      "requiredEvidence": ["taskId", "workerId", "startedAt"]
     },
     {
       "name": "provider_accepted",
       "owner": "provider",
       "terminalForCloseout": false,
       "operatorVisible": false,
-      "allowedPrevious": ["started"]
+      "allowedPrevious": ["started"],
+      "allowedNext": ["operator_visible", "done", "blocked", "failed"],
+      "requiredEvidence": ["providerName", "providerMessageId"]
     },
     {
       "name": "operator_visible",
       "owner": "broker",
       "terminalForCloseout": false,
       "operatorVisible": true,
-      "allowedPrevious": ["provider_accepted", "done", "blocked", "failed"]
+      "allowedPrevious": ["provider_accepted", "done", "blocked", "failed"],
+      "allowedNext": ["acknowledged"],
+      "requiredEvidence": ["operatorFacingOwner", "terminalBriefId"]
     },
     {
       "name": "done",
       "owner": "worker",
       "terminalForCloseout": true,
       "operatorVisible": true,
-      "allowedPrevious": ["started", "provider_accepted"]
+      "allowedPrevious": ["started", "provider_accepted"],
+      "allowedNext": ["operator_visible", "acknowledged"],
+      "requiredEvidence": ["taskId", "workerId", "summary"]
     },
     {
       "name": "blocked",
       "owner": "worker",
       "terminalForCloseout": true,
       "operatorVisible": true,
-      "allowedPrevious": ["started", "provider_accepted"]
+      "allowedPrevious": ["claimed", "started", "provider_accepted"],
+      "allowedNext": ["operator_visible", "acknowledged"],
+      "requiredEvidence": ["taskId", "workerId", "blockerCategory", "reason"]
     },
     {
       "name": "failed",
       "owner": "worker",
       "terminalForCloseout": true,
       "operatorVisible": true,
-      "allowedPrevious": ["started", "provider_accepted"]
+      "allowedPrevious": ["claimed", "started", "provider_accepted"],
+      "allowedNext": ["operator_visible", "acknowledged"],
+      "requiredEvidence": ["taskId", "workerId", "errorCode", "reason"]
     },
     {
       "name": "acknowledged",
       "owner": "operator",
       "terminalForCloseout": true,
       "operatorVisible": true,
-      "allowedPrevious": ["operator_visible", "done", "blocked", "failed"]
+      "allowedPrevious": ["operator_visible", "done", "blocked", "failed"],
+      "allowedNext": [],
+      "requiredEvidence": ["ackOwner", "ackEvidence"]
     }
-  ]
+  ],
+  "examples": [
+    {
+      "kind": "done",
+      "state": "done",
+      "from": "started",
+      "summary": "Worker completed source-only validation and emitted redacted done evidence.",
+      "isTerminalAck": false,
+      "countsForCloseout": true,
+      "terminalEvidenceKind": "done",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    },
+    {
+      "kind": "blocked",
+      "state": "blocked",
+      "from": "started",
+      "summary": "Worker supplied a concrete blocker without synthesizing unsupported recommendations.",
+      "isTerminalAck": false,
+      "countsForCloseout": true,
+      "terminalEvidenceKind": "blocked",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    },
+    {
+      "kind": "pr",
+      "state": "done",
+      "from": "started",
+      "summary": "PR evidence is represented as worker-owned done evidence with terminalEvidenceKind=pr, not as ACK.",
+      "isTerminalAck": false,
+      "countsForCloseout": true,
+      "terminalEvidenceKind": "pr",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    },
+    {
+      "kind": "provider_accepted",
+      "state": "provider_accepted",
+      "from": "started",
+      "summary": "Provider returned accepted-send/message-id evidence. This is not terminal ACK and does not count for closeout.",
+      "isTerminalAck": false,
+      "countsForCloseout": false,
+      "terminalEvidenceKind": "provider_accepted",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    },
+    {
+      "kind": "operator_visible",
+      "state": "operator_visible",
+      "from": "provider_accepted",
+      "summary": "Broker/finalizer projected a terminal brief into an operator-facing surface. Visible is not ACK.",
+      "isTerminalAck": false,
+      "countsForCloseout": false,
+      "terminalEvidenceKind": "operator_visible",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    },
+    {
+      "kind": "acknowledged",
+      "state": "acknowledged",
+      "from": "operator_visible",
+      "summary": "Operator-owned receipt evidence exists. This is the terminal ACK boundary.",
+      "isTerminalAck": true,
+      "countsForCloseout": true,
+      "terminalEvidenceKind": "acknowledged",
+      "redacted": true,
+      "liveProviderSend": false,
+      "terminalOutboxAckMutated": false
+    }
+  ],
+  "finalizer": {
+    "ownerField": "finalizerOwner",
+    "ackOwner": "operator",
+    "operatorFacingOwnerField": "operatorFacingOwner",
+    "workerMayEmit": ["done", "blocked", "failed"],
+    "brokerMayPromote": ["operator_visible"],
+    "operatorMayEmit": ["acknowledged"]
+  },
+  "safety": {
+    "providerAcceptedIsTerminalAck": false,
+    "providerAcceptedCountsForCloseout": false,
+    "operatorVisibleCountsAsTerminalAck": false,
+    "acknowledgedRequiresOperatorEvidence": true,
+    "noPublicVisibilityChange": true,
+    "noProductionDeployOrRestart": true,
+    "noProductionDatabaseMutation": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noSecretRotationOrDisclosure": true
+  }
 }

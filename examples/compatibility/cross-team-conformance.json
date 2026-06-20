@@ -26,7 +26,8 @@
     "fixtures/contract/worker-capability-profile.json",
     "fixtures/contract/embedded-execution-stability-policy.json",
     "fixtures/contract/adapter-receipt-capability.json",
-    "fixtures/contract/harness-neutral-analysis-adapter.json"
+    "fixtures/contract/harness-neutral-analysis-adapter.json",
+    "fixtures/contract/terminal-evidence-state-machine.json"
   ],
   "validationCommand": "node test/conformance/check-contract-fixtures.mjs",
   "intentionallyExcluded": [
