@@ -217,7 +217,18 @@ export interface RoundResultCollectorOutput {
     expectedTotal: number;
     evidenceIdsCited: string[];
     evidenceIdsCitedCount: number;
+    /** Worker ids of non-terminal (pending/running/stale) lanes. */
     missingLanes: string[];
+    /** Worker ids of lanes that reached a failed/blocked/timeout terminal state. */
+    failedLanes: string[];
+    /**
+     * Worker ids of terminal lanes that lack any evidence URL — the
+     * "succeeded but no substantive evidence" downgrade that drives BLOCKED.
+     * Exposed structurally (not just inside `reason`) so downstream
+     * reject-feedback requeue / closeout barriers can target lanes without
+     * parsing the human-readable reason string. See a2a-nexus#970.
+     */
+    missingEvidenceLanes: string[];
     /** When BLOCKED, a human-readable explanation. */
     reason?: string;
   };
@@ -1090,6 +1101,8 @@ function computeGateVerdict(
     evidenceIdsCited: uniqueEvidenceIds,
     evidenceIdsCitedCount: uniqueEvidenceIds.length,
     missingLanes,
+    failedLanes,
+    missingEvidenceLanes: [...new Set(missingEvidenceLanes)],
     reason,
   };
 }

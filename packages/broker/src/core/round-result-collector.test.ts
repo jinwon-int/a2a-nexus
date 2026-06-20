@@ -3,7 +3,7 @@
  */
 
 import { describe, it } from "node:test";
-import { equal, ok } from "node:assert/strict";
+import { deepEqual, equal, ok } from "node:assert/strict";
 import {
   collectRoundResults,
   buildRoundManifest,
@@ -1217,6 +1217,45 @@ describe("gateVerdict", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const output = collectRoundResults(DEFAULT_MANIFEST, [], { nowMs });
     equal(output.gateVerdict!.expectedTotal, 4);
+  });
+
+  // a2a-nexus#970: structured lane lists so reject-feedback requeue / closeout
+  // barriers can target lanes without parsing the human-readable `reason`.
+  it("exposes failedLanes (worker ids) for failed/blocked/timeout lanes", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "nosuk" }] };
+    const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
+    equal(gv.verdict, "BLOCKED");
+    deepEqual(gv.failedLanes, ["nosuk"]);
+    deepEqual(gv.missingEvidenceLanes, []);
+  });
+
+  it("exposes missingEvidenceLanes for terminal-success lanes lacking evidence", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
+    equal(gv.verdict, "BLOCKED");
+    deepEqual(gv.missingEvidenceLanes, ["sogyo"]);
+    deepEqual(gv.failedLanes, []);
+  });
+
+  it("FINAL verdict has empty failedLanes and missingEvidenceLanes", () => {
+    const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
+    const tasks: TaskRecord[] = [
+      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+    ];
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
+    equal(gv.verdict, "FINAL");
+    deepEqual(gv.failedLanes, []);
+    deepEqual(gv.missingEvidenceLanes, []);
   });
 });
 
