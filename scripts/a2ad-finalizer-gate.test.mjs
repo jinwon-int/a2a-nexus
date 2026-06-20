@@ -331,6 +331,66 @@ test('classifier ignores wrapper phrases embedded inside sourceBundle payload co
   assert.deepEqual(result.missingLanes, []);
 });
 
+
+test('compact supplement supersedes a source-projection blocked lane without hiding it (#960)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      worker: 'nosuk',
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'primary source reviewed' } },
+    }),
+    lane('t2', 'succeeded', {
+      worker: 'bangtong',
+      top: {
+        output: {
+          analysisStatus: 'blocked',
+          analysisKind: 'analysis_bridge',
+          summary: 'analysis bridge blocked: source projection failed: sourceBundle.files could not fit prompt budget',
+          risks: ['source projection prompt budget exhausted'],
+        },
+      },
+    }),
+    lane('t3', 'succeeded', {
+      worker: 'sogyo',
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'primary source reviewed' } },
+    }),
+    lane('t2-supplement', 'succeeded', {
+      worker: 'bangtong',
+      payload: {
+        parentRoundOrder: 4,
+        supplementOf: 't2',
+        sourceBundle: {
+          kind: 'a2a-nexus.sourceBundleProjection.compactSupplement.v1',
+          files: [
+            { path: 'packages/broker/scripts/hermes-a2a-analysis-bridge.mjs', contentText: 'compact bridge source' },
+            { path: 'scripts/a2ad-finalizer-gate.mjs', contentText: 'compact finalizer source' },
+          ],
+        },
+      },
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'compact supplement reviewed' } },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 3,
+    perTarget: null,
+    draft: 'Consensus cites t1 t3 t2-supplement.',
+  });
+
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+  assert.deepEqual(result.missingLanes, []);
+  assert.deepEqual(result.supersededLanes, [{
+    taskId: 't2',
+    status: 'succeeded',
+    worker: 'bangtong',
+    evidenceClass: 'superseded_by_supplement',
+    reason: 'source_projection_blocked superseded by compact supplement t2-supplement',
+    supersededBy: 't2-supplement',
+  }]);
+});
+
 // ─── CLI-level behavior ──────────────────────────────────────────────────────
 
 test('CLI exits 0 with FINAL when quorum satisfied', () => {

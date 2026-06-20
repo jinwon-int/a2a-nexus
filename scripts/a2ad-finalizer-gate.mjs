@@ -93,6 +93,12 @@ function workerOf(lane) {
   return lane.assignedWorkerId || lane.targetNodeId || lane.target?.id || null;
 }
 
+function supplementOf(lane) {
+  const payload = lane.payload || {};
+  const value = payload.supplementOf || payload.supersedesTaskId || payload.compactSupplementOf;
+  return hasText(value) ? String(value).trim() : '';
+}
+
 function classifyLaneEvidence(lane) {
   const output = lane.output ?? lane.result?.output ?? {};
   const error = lane.error ?? lane.result?.error ?? {};
@@ -191,10 +197,31 @@ function computeVerdict(tasks, options) {
   const failedLanes = [];
   const pendingLanes = [];
   const nonSubstantiveLanes = [];
+  const supersededLanes = [];
+
   for (const lane of lanes) {
-    const bucket = classify(lane.status);
-    const evidence = classifyLaneEvidence(lane);
-    lane.__evidence = evidence;
+    lane.__bucket = classify(lane.status);
+    lane.__evidence = classifyLaneEvidence(lane);
+  }
+
+  const substantiveSupplementsByOriginalId = new Map();
+  for (const lane of lanes) {
+    const originalId = supplementOf(lane);
+    if (!originalId) continue;
+    if (lane.__bucket === 'succeeded' && lane.__evidence?.countsTowardQuorum) {
+      substantiveSupplementsByOriginalId.set(originalId, lane);
+    }
+  }
+
+  for (const lane of lanes) {
+    const bucket = lane.__bucket;
+    const evidence = lane.__evidence;
+    const supplement = substantiveSupplementsByOriginalId.get(lane.id);
+    if (supplement && evidence?.countsTowardQuorum === false) {
+      lane.__supersededBy = supplement.id;
+      supersededLanes.push(lane);
+      continue;
+    }
     if (bucket === 'succeeded' && evidence.countsTowardQuorum) succeededLanes.push(lane);
     else if (bucket === 'succeeded') nonSubstantiveLanes.push(lane);
     else if (bucket === 'failed') failedLanes.push(lane);
@@ -261,6 +288,14 @@ function computeVerdict(tasks, options) {
     evidenceClass: l.__evidence?.evidenceClass ?? classifyLaneEvidence(l).evidenceClass,
     reason: l.__evidence?.reason ?? classifyLaneEvidence(l).reason,
   }));
+  const supersededLaneRecords = supersededLanes.map((l) => ({
+    taskId: l.id,
+    status: String(l.status || '').trim().toLowerCase() || 'unknown',
+    worker: workerOf(l),
+    evidenceClass: 'superseded_by_supplement',
+    reason: `${l.__evidence?.evidenceClass || 'non_substantive'} superseded by compact supplement ${l.__supersededBy}`,
+    supersededBy: l.__supersededBy,
+  }));
 
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
 
@@ -276,6 +311,7 @@ function computeVerdict(tasks, options) {
     laneCount: lanes.length,
     succeededIds,
     missingLanes,
+    supersededLanes: supersededLaneRecords,
     perTarget: perTarget != null ? perTargetReport : undefined,
     evidenceIdsCitedInDraft,
     reasons,
@@ -312,6 +348,12 @@ function renderMissing(result) {
   } else {
     for (const lane of result.missingLanes) {
       lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''}${lane.evidenceClass ? ` class=${lane.evidenceClass}` : ''}${lane.reason ? ` reason=${lane.reason}` : ''}`);
+    }
+  }
+  if (result.supersededLanes?.length) {
+    lines.push('Superseded evidence lanes:');
+    for (const lane of result.supersededLanes) {
+      lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''} class=${lane.evidenceClass} supersededBy=${lane.supersededBy}${lane.reason ? ` reason=${lane.reason}` : ''}`);
     }
   }
   if (result.expectedTotal != null && result.laneCount < result.expectedTotal) {
@@ -484,6 +526,7 @@ function toJson(result) {
     pending: result.pending,
     nonSubstantive: result.nonSubstantive,
     missingLanes: result.missingLanes,
+    supersededLanes: result.supersededLanes,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
   };
 }
