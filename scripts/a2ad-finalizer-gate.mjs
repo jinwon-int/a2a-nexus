@@ -94,15 +94,20 @@ function workerOf(lane) {
 }
 
 function classifyLaneEvidence(lane) {
-  const text = nestedText({
+  const output = lane.output ?? lane.result?.output ?? {};
+  const error = lane.error ?? lane.result?.error ?? {};
+  // Evidence-class regexes must not scan payload.sourceBundle content: source
+  // files often quote historical wrapper/error phrases and would otherwise
+  // poison classification for real analysis lanes (#960).
+  const evidenceText = nestedText({
     intent: lane.intent,
-    payload: lane.payload,
-    output: lane.output ?? lane.result?.output,
-    error: lane.error,
+    output,
+    error,
     message: lane.message,
   });
   const worker = String(workerOf(lane) || '').toLowerCase();
   const statusBucket = classify(lane.status);
+  const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
 
   if (statusBucket === 'pending' && worker === 'daegyo') {
     return {
@@ -111,21 +116,33 @@ function classifyLaneEvidence(lane) {
       reason: 'Daegyo lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
     };
   }
-  if (/generic\s+a2ad-review\s+task\s+accepted/i.test(text)) {
+  if (analysisStatus === 'blocked' || analysisStatus === 'block' || analysisStatus === 'source_blocked') {
+    const reason = /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
+      ? 'source projection / source bundle prompt-budget block'
+      : 'analysis bridge returned blocked status';
+    return {
+      evidenceClass: /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
+        ? 'source_projection_blocked'
+        : 'analysis_blocked',
+      countsTowardQuorum: false,
+      reason,
+    };
+  }
+  if (/generic\s+a2ad-review\s+task\s+accepted/i.test(evidenceText)) {
     return {
       evidenceClass: 'wrapper_only',
       countsTowardQuorum: false,
       reason: 'generic a2ad-review task accepted by versioned A2A task handler',
     };
   }
-  if (/\b(wrapper_only|analysis-only completed|echo handled task|prompt echo)\b/i.test(text)) {
+  if (/\b(wrapper_only|analysis-only completed|echo handled task|prompt echo)\b/i.test(evidenceText)) {
     return {
       evidenceClass: 'wrapper_only',
       countsTowardQuorum: false,
       reason: 'wrapper/echo output is not substantive worker analysis',
     };
   }
-  if (/docker_runner_failed|without\s+PR\/Done\/Block\s+evidence|PR\/Done\/Block evidence/i.test(text)) {
+  if (/docker_runner_failed|without\s+PR\/Done\/Block\s+evidence|PR\/Done\/Block evidence/i.test(evidenceText)) {
     return {
       evidenceClass: 'evidence_contract_failure',
       countsTowardQuorum: false,

@@ -444,12 +444,19 @@ function buildSourceBlockedResponse(sourceBlocked) {
         status: "blocked",
         summary,
         findings: [],
-        risks: ["Worker did not inspect the requested GitHub PR diff/source."],
-        recommendations: ["Retry with GitHub CLI auth/network available or embed payload.sourceBundle.files with the PR diff."],
+        risks: [
+          "Worker did not inspect the requested source evidence.",
+          `source projection blocked: ${sourceBlocked.reason}`,
+        ],
+        recommendations: ["Retry with a compact canonical payload.sourceBundle.files[] packet or make the referenced source available to the analysis bridge."],
         evidenceRefs: sourceBlocked.evidenceRefs || [],
       }),
     }],
   };
+}
+
+function hasExplicitSourceEvidence(payload) {
+  return collectEmbeddedSourceEvidence(payload).length > 0;
 }
 
 function collectSourceBundle(payload, env) {
@@ -511,6 +518,22 @@ function collectSourceBundle(payload, env) {
       files.push(normalized.file);
       totalBytes += Math.min(normalized.file.bytes, maxFileBytes, remaining);
     }
+  }
+
+  const explicitSourceEvidence = hasExplicitSourceEvidence(payload);
+  if (explicitSourceEvidence && files.length === 0) {
+    return {
+      files,
+      warnings,
+      limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes },
+      sourceBlocked: {
+        reason: `source projection failed: explicit sourceBundle.files / embedded source evidence could not be projected into the model prompt budget or source sections (${warnings.join('; ') || 'no usable source files'})`,
+        evidenceRefs: ["payload.sourceBundle.files"],
+      },
+    };
+  }
+  if (explicitSourceEvidence) {
+    return { files, warnings, limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes } };
   }
 
   for (const repo of repos) {

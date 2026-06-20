@@ -260,6 +260,77 @@ test('citedEvidenceIds returns only ids present in the draft', () => {
   assert.deepEqual(citedEvidenceIds('text', []), []);
 });
 
+
+test('analysis bridge blocked source-projection lane is non-substantive and listed with reason (#960)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      worker: 'nosuk',
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'source reviewed' } },
+    }),
+    lane('t2', 'succeeded', {
+      worker: 'bangtong',
+      top: {
+        output: {
+          analysisStatus: 'blocked',
+          analysisKind: 'analysis_bridge',
+          summary: 'analysis bridge blocked: source projection failed: explicit sourceBundle.files could not be projected into the model prompt budget',
+          risks: ['source projection budget exhausted'],
+        },
+      },
+    }),
+    lane('t3', 'succeeded', {
+      worker: 'sogyo',
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'source reviewed' } },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 3,
+    perTarget: null,
+    draft: 'Cites t1 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.nonSubstantive, 1);
+  const blocked = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(blocked?.worker, 'bangtong');
+  assert.equal(blocked?.status, 'succeeded');
+  assert.equal(blocked?.evidenceClass, 'source_projection_blocked');
+  assert.match(blocked?.reason ?? '', /source projection.*budget/i);
+});
+
+test('classifier ignores wrapper phrases embedded inside sourceBundle payload content (#960)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'real source analysis' } },
+      payload: {
+        sourceBundle: {
+          files: [{
+            path: 'virtual/issues/960.md',
+            contentText: 'Historical incident text: generic a2ad-review task accepted by versioned A2A task handler. This is source evidence, not this lane output.',
+          }],
+        },
+      },
+    }),
+    lane('t2', 'succeeded', { top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'real source analysis' } } }),
+    lane('t3', 'succeeded', { top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'real source analysis' } } }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Consensus cites t1 t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+  assert.deepEqual(result.missingLanes, []);
+});
+
 // ─── CLI-level behavior ──────────────────────────────────────────────────────
 
 test('CLI exits 0 with FINAL when quorum satisfied', () => {

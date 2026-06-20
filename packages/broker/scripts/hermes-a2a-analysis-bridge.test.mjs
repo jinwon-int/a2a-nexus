@@ -599,6 +599,53 @@ test("Hermes A2A analysis bridge does not leak raw payload tails in summarized m
 });
 
 
+
+
+test("Hermes A2A analysis bridge blocks when explicit sourceBundle files cannot be projected (#960)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-projection-block-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    writeFileSync(fakeHermesPath, "#!/usr/bin/env node\nthrow new Error('Hermes should not run when explicit source projection fails');\n");
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task with explicit but unusable sourceBundle.files.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        sourceBundle: {
+          files: [
+            { path: "../unsafe.ts", contentText: "export const unsafe = true;\n" },
+            { path: "packages/broker/src/empty.ts", contentText: "" },
+          ],
+        },
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: "{}",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "blocked");
+    assert.match(payload.summary, /source projection/i);
+    assert.match(payload.summary, /sourceBundle\.files/i);
+    assert.ok(payload.risks.some((risk) => /source projection/i.test(risk)));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge fails closed when Hermes returns non-JSON", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-bad-json-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
