@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { spawnSync, spawn } from 'node:child_process';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,6 +198,32 @@ test('dry-run accepts source-only analysis file contentText as canonical content
   };
   const out = await runDispatch(m, { dryRun: true });
   assert.equal(out.exitCode, 0);
+});
+
+
+test('dry-run accepts the #960 canonical sourceBundle projection contract fixture', async () => {
+  const fixtureUrl = new URL('../fixtures/contract/source-bundle-projection-guard.json', import.meta.url);
+  const fixture = JSON.parse(readFileSync(fixtureUrl, 'utf8'));
+  const m = makeManifest('http://unused', fixture.lanes.length);
+  m.roundId = fixture.roundId;
+  m.defaults.intent = 'analyze';
+  m.lanes = fixture.lanes.map((lane) => ({
+    id: lane.id,
+    target: lane.target,
+    intent: lane.intent,
+    message: `Validate source bundle projection fixture lane ${lane.id}`,
+    payload: lane.payload,
+  }));
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+  assert.equal(out.lanes.length, 2);
+  assert.equal(out.lanes[0].payload.sourceBundle.files.length, 2);
+  assert.equal(out.lanes[1].payload.supplementOf, 'a2a-960-sourcebundle-contract-fixture-2-blocked');
+  assert.ok(out.lanes.every((lane) => lane.intent === 'analyze'));
+  assert.ok(out.lanes.every((lane) => lane.payload.mode === 'analysis-only'));
+  assert.ok(out.lanes.every((lane) => lane.payload.sourceOnly === true));
+  assert.ok(out.lanes.every((lane) => lane.payload.noLive === true));
 });
 
 test('dry-run rejects source-only analysis files without path or content', async () => {

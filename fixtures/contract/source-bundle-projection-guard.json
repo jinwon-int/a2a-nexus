@@ -1,0 +1,86 @@
+{
+  "fixtureId": "a2a-nexus.contract.source-bundle-projection-guard.v1",
+  "description": "Canonical sourceBundle.files[] projection guard for source-only/no-live A2AD lanes, including compact supplement supersession of a source-projection-blocked lane.",
+  "v0Freeze": {
+    "frozenAt": "2026-06-21T00:00:00Z",
+    "round": "a2a-960-sourcebundle-contract-fixture"
+  },
+  "issue": "https://github.com/jinwon-int/a2a-nexus/issues/960",
+  "roundId": "a2a-960-sourcebundle-contract-fixture",
+  "safety": {
+    "sourceOnly": true,
+    "noLive": true,
+    "providerSend": false,
+    "dbMutation": false,
+    "terminalAckMutation": false,
+    "deployOrRestart": false
+  },
+  "lanes": [
+    {
+      "id": "a2a-960-sourcebundle-contract-fixture-1-primary",
+      "intent": "analyze",
+      "target": { "id": "nosuk", "role": "analyst" },
+      "payload": {
+        "mode": "analysis-only",
+        "roundMode": "a2ad",
+        "sourceOnly": true,
+        "noLive": true,
+        "parentRoundId": "a2a-960-sourcebundle-contract-fixture",
+        "parentRoundTotal": 3,
+        "parentRoundOrder": 1,
+        "sourceBundle": {
+          "kind": "a2a-nexus.sourceBundleProjection.primary.v1",
+          "files": [
+            {
+              "repo": "jinwon-int/a2a-nexus",
+              "path": "packages/broker/scripts/hermes-a2a-analysis-bridge.mjs",
+              "contentText": "export function bridgeProjectionMarker() { return 'contentText source reached bridge prompt'; }\n"
+            },
+            {
+              "repo": "jinwon-int/a2a-nexus",
+              "path": "scripts/a2ad-finalizer-gate.mjs",
+              "content": "export function finalizerProjectionMarker() { return 'content source reached bridge prompt'; }\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a2a-960-sourcebundle-contract-fixture-2-supplement",
+      "intent": "analyze",
+      "target": { "id": "bangtong", "role": "analyst" },
+      "payload": {
+        "mode": "analysis-only",
+        "roundMode": "a2ad",
+        "sourceOnly": true,
+        "noLive": true,
+        "parentRoundId": "a2a-960-sourcebundle-contract-fixture",
+        "parentRoundTotal": 3,
+        "parentRoundOrder": 4,
+        "supplementOf": "a2a-960-sourcebundle-contract-fixture-2-blocked",
+        "sourceBundle": {
+          "kind": "a2a-nexus.sourceBundleProjection.compactSupplement.v1",
+          "files": [
+            {
+              "repo": "jinwon-int/a2a-nexus",
+              "path": "packages/broker/scripts/hermes-a2a-analysis-bridge.mjs",
+              "contentText": "compact supplement bridge source\n"
+            },
+            {
+              "repo": "jinwon-int/a2a-nexus",
+              "path": "scripts/a2ad-finalizer-gate.mjs",
+              "contentText": "compact supplement finalizer source\n"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "assertions": [
+    "canonical sourceBundle.files[] is a non-empty array",
+    "each file has repo-relative path and content or contentText",
+    "content and contentText are both supported",
+    "explicit source bundles are source-only/no-live",
+    "compact supplement lanes carry supplementOf to distinguish them from superseded blocked lanes"
+  ]
+}
