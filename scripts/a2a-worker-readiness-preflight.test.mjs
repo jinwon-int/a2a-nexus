@@ -249,6 +249,52 @@ test("service active with broker online is healthy (#739)", () => {
   assert.equal(r.ok, true, JSON.stringify(r.violations));
 });
 
+test("mobile worker that lacks analysis-only support is classified before A2AD dispatch (#958)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "daegyo",
+    teamId: "team2",
+    homeBrokerId: "gwakga",
+    workerPlane: "mobile",
+    supportedModes: ["hermes-reference-dry-run", "local-hermes-smoke"],
+    requiredModes: ["analysis-only"],
+  }));
+
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("worker_mode_unsupported"));
+  assert.match(r.violations.find((v) => v.code === "worker_mode_unsupported")?.reason ?? "", /daegyo.*analysis-only/i);
+});
+
+test("analysis repo map missing canonical a2a-nexus is degraded for repo-root analysis (#958)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "dungae",
+    teamId: "team2",
+    homeBrokerId: "gwakga",
+    analysisRepoMap: { "jinwon-int/a2a-broker": "/opt/a2a-broker-worker" },
+    requiredAnalysisRepos: ["jinwon-int/a2a-nexus"],
+  }));
+
+  assert.equal(r.ok, false);
+  assert.ok(codes(r).includes("analysis_repo_map_missing"));
+  assert.match(r.violations.find((v) => v.code === "analysis_repo_map_missing")?.reason ?? "", /jinwon-int\/a2a-nexus/);
+});
+
+test("worker with analysis-only support and canonical repo map stays healthy (#958)", () => {
+  const r = evaluateWorkerReadiness(healthy({
+    node: "dungae",
+    teamId: "team2",
+    homeBrokerId: "gwakga",
+    supportedModes: ["analysis-only", "github-verify"],
+    requiredModes: ["analysis-only"],
+    analysisRepoMap: {
+      "jinwon-int/a2a-nexus": "/opt/a2a-broker-worker",
+      "jinwon-int/a2a-broker": "/opt/a2a-broker-worker",
+    },
+    requiredAnalysisRepos: ["jinwon-int/a2a-nexus"],
+  }));
+
+  assert.equal(r.ok, true, JSON.stringify(r.violations));
+});
+
 test("Hermes patch profile with unsupported default model is classified before dispatch (#810)", () => {
   const r = evaluateWorkerReadiness(healthy({
     node: "yukson",

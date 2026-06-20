@@ -1,0 +1,21 @@
+{
+  "fixtureId": "a2a-nexus.contract.worker-card-team2-analysis.v1",
+  "workerId": "dungae",
+  "teamId": "team2",
+  "homeBrokerId": "gwakga",
+  "workerPlane": "docker-runner",
+  "supportedModes": [
+    "analysis-only",
+    "github-verify",
+    "github-propose-patch"
+  ],
+  "analysisRepoMap": {
+    "jinwon-int/a2a-nexus": "/opt/a2a-broker-worker",
+    "jinwon-int/a2a-broker": "/opt/a2a-broker-worker"
+  },
+  "terminalEvidence": {
+    "canEmit": true,
+    "states": ["done", "blocked", "failed"],
+    "ackOwner": "operator"
+  }
+}

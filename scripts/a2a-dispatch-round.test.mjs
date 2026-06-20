@@ -218,6 +218,54 @@ test('dry-run rejects source-only analysis files without path or content', async
   assert.ok(missingContentOut.errors.some((e) => /sourceBundle\.files\[0\]\.content or .*contentText is required/.test(e)));
 });
 
+test('dry-run rejects legacy a2ad-review intent without explicit analysis bridge mode (#958)', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.defaults.intent = 'a2ad-review';
+  m.lanes[0].payload = {
+    roundMode: 'a2ad',
+    sourceOnly: true,
+    noLive: true,
+    sourceBundle: { files: [{ path: 'README.md', content: '# A2A Nexus\n' }] },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /intent=analyze.*payload\.mode=analysis-only/i.test(e)), out.errors.join('\n'));
+});
+
+test('dry-run accepts A2AD opinion lanes only as analyze + analysis-only (#958)', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.defaults.intent = 'analyze';
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    roundMode: 'a2ad',
+    sourceOnly: true,
+    noLive: true,
+    sourceBundle: { files: [{ path: 'README.md', content: '# A2A Nexus\n' }] },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+  assert.equal(out.lanes[0].intent, 'analyze');
+  assert.equal(out.lanes[0].payload.mode, 'analysis-only');
+});
+
+test('dry-run rejects pure A2AD opinion lanes routed through GitHub evidence modes (#958)', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.defaults.intent = 'analyze';
+  m.lanes[0].payload = {
+    mode: 'github-verify',
+    roundMode: 'a2ad',
+    sourceOnly: true,
+    noLive: true,
+    sourceBundle: { files: [{ path: 'README.md', content: '# A2A Nexus\n' }] },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /pure A2AD opinion.*analysis-only.*GitHub evidence/i.test(e)), out.errors.join('\n'));
+});
+
 function makeGitHubVerifyManifest(brokerUrl) {
   const manifest = makeManifest(brokerUrl, 1);
   manifest.roundId = 'a2a-github-verify-r1';

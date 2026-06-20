@@ -140,6 +140,87 @@ test('worker timeout/failed lanes are enumerated and never counted toward quorum
   assert.ok(result.reasons.some((r) => /succeeded lanes 1 < required quorum 3/.test(r)));
 });
 
+test('generic a2ad-review wrapper success is non-substantive and blocks quorum (#958)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      payload: { mode: 'a2ad-review' },
+      top: {
+        intent: 'a2ad-review',
+        output: {
+          summary: 'generic a2ad-review task accepted by versioned A2A task handler',
+          artifactIds: [],
+        },
+      },
+    }),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.nonSubstantive, 1);
+  const t1 = result.missingLanes.find((l) => l.taskId === 't1');
+  assert.equal(t1?.evidenceClass, 'wrapper_only');
+  assert.match(t1?.reason ?? '', /generic a2ad-review/i);
+});
+
+test('docker-runner evidence-contract failure is classified separately from A2AD opinion evidence (#958)', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'failed', {
+      payload: { mode: 'github-propose-patch' },
+      top: {
+        error: {
+          code: 'handler_exit_nonzero',
+          details: {
+            error: {
+              code: 'docker_runner_failed',
+              message: 'GitHub patch task completed without PR/Done/Block evidence. Treating as failed closed until canonical evidence is available.',
+            },
+          },
+        },
+      },
+    }),
+    lane('t3', 'succeeded'),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t2 = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(t2?.evidenceClass, 'evidence_contract_failure');
+  assert.match(t2?.reason ?? '', /PR\/Done\/Block|docker_runner_failed/);
+});
+
+test('queued Daegyo lane is labeled mobile_limited and cannot satisfy quorum (#958)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'dungae' }),
+    lane('t2', 'succeeded', { worker: 'jingun' }),
+    lane('t3', 'queued', { worker: 'daegyo', payload: { mode: 'analysis-only' } }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t3 = result.missingLanes.find((l) => l.taskId === 't3');
+  assert.equal(t3?.worker, 'daegyo');
+  assert.equal(t3?.evidenceClass, 'mobile_limited');
+});
+
 test('FINAL refused when draft cites no succeeded-lane task ids', () => {
   const tasks = [
     lane('t1', 'succeeded'),

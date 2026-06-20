@@ -150,6 +150,30 @@ function validateGitHubPatchWriteCapability(errors, tag, payload) {
   }
 }
 
+function isA2adOpinionLane(intent, payload) {
+  if (!isPlainObject(payload)) return false;
+  return payload.roundMode === 'a2ad' && payload.sourceOnly === true && payload.noLive === true
+    && !isPlainObject(payload.workModeDecision)
+    && payload.patchIntent !== true
+    && payload.allowGitHubWrites !== true;
+}
+
+function validateA2adOpinionLane(errors, tag, intent, payload) {
+  if (!isA2adOpinionLane(intent, payload)) return;
+  const mode = hasText(payload.mode) ? payload.mode.trim() : '';
+  if (intent === 'a2ad-review' || mode === 'a2ad-review') {
+    errors.push(`${tag}: pure A2AD opinion lanes must use intent=analyze with payload.mode=analysis-only; intent=a2ad-review can fall through to wrapper-only generic success (#958)`);
+    return;
+  }
+  if (isGitHubTaskPayload(payload)) {
+    errors.push(`${tag}: pure A2AD opinion lanes must use payload.mode=analysis-only, not GitHub evidence modes such as '${mode}' (#958); reserve GitHub evidence lanes for PR/Done/Block contracts`);
+    return;
+  }
+  if (intent !== 'analyze' || mode !== 'analysis-only') {
+    errors.push(`${tag}: pure A2AD opinion lanes must use intent=analyze with payload.mode=analysis-only (#958)`);
+  }
+}
+
 function validateGitHubVerifyLane(errors, tag, lane, defaults, payload, derived) {
   if (!isGitHubVerifyPayload(payload)) return;
 
@@ -280,6 +304,7 @@ function validateManifest(manifest) {
     const parentRoundOrder = lane.parentRoundOrder ?? defaults.parentRoundOrder ?? order;
 
     validateSourceOnlyBundle(errors, tag, payload);
+    validateA2adOpinionLane(errors, tag, intent, payload);
     validateGitHubPatchWriteCapability(errors, tag, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
 
