@@ -88,6 +88,17 @@
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
+      "name": "a2a-nexus-profile-p0",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/a2a-nexus-profile-p0.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Protocol profile v0.1 worker-card and terminal-evidence contract for #957/#958; local/read-only."
+    },
+    {
       "name": "public-readiness",
       "command": "npm",
       "args": [

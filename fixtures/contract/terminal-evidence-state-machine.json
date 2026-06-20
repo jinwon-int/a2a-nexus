@@ -1,0 +1,69 @@
+{
+  "fixtureId": "a2a-nexus.contract.terminal-evidence-state-machine.v1",
+  "version": 1,
+  "states": [
+    {
+      "name": "accepted",
+      "owner": "broker",
+      "terminalForCloseout": false,
+      "operatorVisible": false,
+      "allowedPrevious": []
+    },
+    {
+      "name": "claimed",
+      "owner": "worker",
+      "terminalForCloseout": false,
+      "operatorVisible": false,
+      "allowedPrevious": ["accepted"]
+    },
+    {
+      "name": "started",
+      "owner": "worker",
+      "terminalForCloseout": false,
+      "operatorVisible": false,
+      "allowedPrevious": ["claimed"]
+    },
+    {
+      "name": "provider_accepted",
+      "owner": "provider",
+      "terminalForCloseout": false,
+      "operatorVisible": false,
+      "allowedPrevious": ["started"]
+    },
+    {
+      "name": "operator_visible",
+      "owner": "broker",
+      "terminalForCloseout": false,
+      "operatorVisible": true,
+      "allowedPrevious": ["provider_accepted", "done", "blocked", "failed"]
+    },
+    {
+      "name": "done",
+      "owner": "worker",
+      "terminalForCloseout": true,
+      "operatorVisible": true,
+      "allowedPrevious": ["started", "provider_accepted"]
+    },
+    {
+      "name": "blocked",
+      "owner": "worker",
+      "terminalForCloseout": true,
+      "operatorVisible": true,
+      "allowedPrevious": ["started", "provider_accepted"]
+    },
+    {
+      "name": "failed",
+      "owner": "worker",
+      "terminalForCloseout": true,
+      "operatorVisible": true,
+      "allowedPrevious": ["started", "provider_accepted"]
+    },
+    {
+      "name": "acknowledged",
+      "owner": "operator",
+      "terminalForCloseout": true,
+      "operatorVisible": true,
+      "allowedPrevious": ["operator_visible", "done", "blocked", "failed"]
+    }
+  ]
+}

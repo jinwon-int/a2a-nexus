@@ -20,6 +20,7 @@
  *                worker_root_missing | handler_missing | task_poll_unauthorized |
  *                worker_role_mismatch | heartbeat_requester_role_mismatch |
  *                broker_worker_stale | worker_model_profile_mismatch |
+ *                worker_mode_unsupported | analysis_repo_map_missing |
  *                no_live_verification_missing | docker_runner_mount_invalid
  *
  * Secret-safe: consumes only secretLength / secretPresent plus redaction-safe
@@ -168,6 +169,50 @@ function noLiveEvidenceAllowsLiveAction(evidence) {
   return liveActionFields.some((field) => parseBooleanLike(evidence?.[field]) === true);
 }
 
+function arrayOfText(record, fields) {
+  for (const field of fields) {
+    if (Array.isArray(record?.[field])) {
+      return record[field].filter(hasText).map((value) => value.trim());
+    }
+    if (hasText(record?.[field])) {
+      return record[field].split(',').map((value) => value.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function supportedModesOf(record) {
+  return arrayOfText(record, ["supportedModes", "workerSupportedModes", "A2A_WORKER_SUPPORTED_MODES"]);
+}
+
+function requiredModesOf(record, expectations) {
+  const explicit = arrayOfText(record, ["requiredModes", "dispatchRequiredModes"]);
+  if (explicit.length > 0) return explicit;
+  return arrayOfText(expectations, ["requiredModes", "dispatchRequiredModes"]);
+}
+
+function analysisRepoMapOf(record) {
+  if (record?.analysisRepoMap && typeof record.analysisRepoMap === "object" && !Array.isArray(record.analysisRepoMap)) {
+    return record.analysisRepoMap;
+  }
+  for (const field of ["analysisRepoMapJson", "A2A_ANALYSIS_REPO_MAP_JSON"]) {
+    if (!hasText(record?.[field])) continue;
+    try {
+      const parsed = JSON.parse(record[field]);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function requiredAnalysisReposOf(record, expectations) {
+  const explicit = arrayOfText(record, ["requiredAnalysisRepos", "dispatchRequiredAnalysisRepos"]);
+  if (explicit.length > 0) return explicit;
+  return arrayOfText(expectations, ["requiredAnalysisRepos", "dispatchRequiredAnalysisRepos"]);
+}
+
 /**
  * Classify one worker's readiness. Returns the worker name, ok flag, and the
  * list of {code, reason} violations (empty when ready).
@@ -206,6 +251,31 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
   // 4. worker root (legacy /opt/openclaw-a2a-worker → fail).
   if (hasText(exp.root) && record?.root !== exp.root) {
     violations.push({ code: "worker_root_missing", reason: `worker root '${record?.root ?? "(missing)"}' != canonical '${exp.root}'` });
+  }
+
+  // 4b. dispatch capability — a worker can be "online" but still unsuitable
+  // for a given A2AD lane. Classify unsupported modes and missing repo roots
+  // before broker dispatch so mobile/policy-limited workers (notably Daegyo)
+  // cannot create queued-but-non-actionable evidence lanes (#958).
+  const supportedModes = supportedModesOf(record);
+  const requiredModes = requiredModesOf(record, exp);
+  for (const mode of requiredModes) {
+    if (supportedModes.length === 0 || !supportedModes.includes(mode)) {
+      violations.push({
+        code: "worker_mode_unsupported",
+        reason: `${name} does not advertise required dispatch mode '${mode}'${supportedModes.length ? ` (supported: ${supportedModes.join(', ')})` : ''}`,
+      });
+    }
+  }
+
+  const analysisRepoMap = analysisRepoMapOf(record);
+  for (const repo of requiredAnalysisReposOf(record, exp)) {
+    if (!analysisRepoMap || !hasText(analysisRepoMap[repo])) {
+      violations.push({
+        code: "analysis_repo_map_missing",
+        reason: `${name} analysis repo map does not include required canonical repo '${repo}'`,
+      });
+    }
   }
 
   // 5. handler artifacts present AND executable (covers the #659 EACCES class).

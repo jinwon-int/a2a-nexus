@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2a-nexus.local/contracts/worker-card.schema.json",
+  "title": "A2A Nexus Worker Card v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "workerId",
+    "teamId",
+    "homeBrokerId",
+    "workerPlane",
+    "supportedModes",
+    "analysisRepoMap",
+    "terminalEvidence"
+  ],
+  "properties": {
+    "workerId": { "type": "string", "minLength": 1 },
+    "teamId": { "type": "string", "minLength": 1 },
+    "homeBrokerId": { "type": "string", "minLength": 1 },
+    "workerPlane": { "type": "string", "minLength": 1 },
+    "supportedModes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "analysisRepoMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "terminalEvidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["canEmit", "states", "ackOwner"],
+      "properties": {
+        "canEmit": { "type": "boolean" },
+        "states": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "ackOwner": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

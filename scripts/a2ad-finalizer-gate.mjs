@@ -80,6 +80,63 @@ function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function nestedText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(nestedText).join(' ');
+  if (typeof value === 'object') return Object.values(value).map(nestedText).join(' ');
+  return '';
+}
+
+function workerOf(lane) {
+  return lane.assignedWorkerId || lane.targetNodeId || lane.target?.id || null;
+}
+
+function classifyLaneEvidence(lane) {
+  const text = nestedText({
+    intent: lane.intent,
+    payload: lane.payload,
+    output: lane.output ?? lane.result?.output,
+    error: lane.error,
+    message: lane.message,
+  });
+  const worker = String(workerOf(lane) || '').toLowerCase();
+  const statusBucket = classify(lane.status);
+
+  if (statusBucket === 'pending' && worker === 'daegyo') {
+    return {
+      evidenceClass: 'mobile_limited',
+      countsTowardQuorum: false,
+      reason: 'Daegyo lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
+    };
+  }
+  if (/generic\s+a2ad-review\s+task\s+accepted/i.test(text)) {
+    return {
+      evidenceClass: 'wrapper_only',
+      countsTowardQuorum: false,
+      reason: 'generic a2ad-review task accepted by versioned A2A task handler',
+    };
+  }
+  if (/\b(wrapper_only|analysis-only completed|echo handled task|prompt echo)\b/i.test(text)) {
+    return {
+      evidenceClass: 'wrapper_only',
+      countsTowardQuorum: false,
+      reason: 'wrapper/echo output is not substantive worker analysis',
+    };
+  }
+  if (/docker_runner_failed|without\s+PR\/Done\/Block\s+evidence|PR\/Done\/Block evidence/i.test(text)) {
+    return {
+      evidenceClass: 'evidence_contract_failure',
+      countsTowardQuorum: false,
+      reason: 'docker_runner_failed / missing PR/Done/Block evidence contract',
+    };
+  }
+  if (statusBucket === 'succeeded') return { evidenceClass: 'substantive', countsTowardQuorum: true, reason: '' };
+  if (statusBucket === 'failed') return { evidenceClass: 'failed', countsTowardQuorum: false, reason: 'lane failed or blocked' };
+  return { evidenceClass: 'missing_evidence', countsTowardQuorum: false, reason: 'lane is non-terminal' };
+}
+
 // Derive the per-target key for --per-target accounting.
 function targetKey(task) {
   const payload = task.payload || {};
@@ -116,9 +173,13 @@ function computeVerdict(tasks, options) {
   const succeededLanes = [];
   const failedLanes = [];
   const pendingLanes = [];
+  const nonSubstantiveLanes = [];
   for (const lane of lanes) {
     const bucket = classify(lane.status);
-    if (bucket === 'succeeded') succeededLanes.push(lane);
+    const evidence = classifyLaneEvidence(lane);
+    lane.__evidence = evidence;
+    if (bucket === 'succeeded' && evidence.countsTowardQuorum) succeededLanes.push(lane);
+    else if (bucket === 'succeeded') nonSubstantiveLanes.push(lane);
     else if (bucket === 'failed') failedLanes.push(lane);
     else pendingLanes.push(lane);
   }
@@ -146,6 +207,9 @@ function computeVerdict(tasks, options) {
   if (pendingLanes.length > 0) {
     reasons.push(`${pendingLanes.length} lane(s) still pending (non-terminal); finality blocked`);
   }
+  if (nonSubstantiveLanes.length > 0) {
+    reasons.push(`${nonSubstantiveLanes.length} succeeded lane(s) were wrapper-only/non-substantive and excluded from quorum`);
+  }
 
   // 3) Per-target quorum (optional).
   const perTargetReport = {};
@@ -156,7 +220,7 @@ function computeVerdict(tasks, options) {
       if (!byTarget.has(key)) byTarget.set(key, { succeeded: 0, total: 0 });
       const entry = byTarget.get(key);
       entry.total += 1;
-      if (classify(lane.status) === 'succeeded') entry.succeeded += 1;
+      if (classify(lane.status) === 'succeeded' && classifyLaneEvidence(lane).countsTowardQuorum) entry.succeeded += 1;
     }
     for (const [key, entry] of byTarget.entries()) {
       perTargetReport[key] = entry;
@@ -173,10 +237,12 @@ function computeVerdict(tasks, options) {
     reasons.push('draft cites no succeeded-lane evidence id (fail-closed, evidence-first)');
   }
 
-  const missingLanes = [...failedLanes, ...pendingLanes].map((l) => ({
+  const missingLanes = [...failedLanes, ...pendingLanes, ...nonSubstantiveLanes].map((l) => ({
     taskId: l.id,
     status: String(l.status || '').trim().toLowerCase() || 'unknown',
-    worker: l.assignedWorkerId || l.targetNodeId || null,
+    worker: workerOf(l),
+    evidenceClass: l.__evidence?.evidenceClass ?? classifyLaneEvidence(l).evidenceClass,
+    reason: l.__evidence?.reason ?? classifyLaneEvidence(l).reason,
   }));
 
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
@@ -189,6 +255,7 @@ function computeVerdict(tasks, options) {
     succeeded: succeededLanes.length,
     failed: failedLanes.length,
     pending: pendingLanes.length,
+    nonSubstantive: nonSubstantiveLanes.length,
     laneCount: lanes.length,
     succeededIds,
     missingLanes,
@@ -227,7 +294,7 @@ function renderMissing(result) {
     lines.push('  (none)');
   } else {
     for (const lane of result.missingLanes) {
-      lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''}`);
+      lines.push(`  - ${lane.taskId} [${lane.status}]${lane.worker ? ` worker=${lane.worker}` : ''}${lane.evidenceClass ? ` class=${lane.evidenceClass}` : ''}${lane.reason ? ` reason=${lane.reason}` : ''}`);
     }
   }
   if (result.expectedTotal != null && result.laneCount < result.expectedTotal) {
@@ -398,6 +465,7 @@ function toJson(result) {
     succeeded: result.succeeded,
     failed: result.failed,
     pending: result.pending,
+    nonSubstantive: result.nonSubstantive,
     missingLanes: result.missingLanes,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
   };
