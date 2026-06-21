@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const scriptPath = 'examples/workers/hermes-reference-worker/a2a_worker.py';
 const fixturePath = 'examples/workers/hermes-reference-worker/hermes-local-smoke-task.json';
@@ -69,6 +71,94 @@ test('Hermes reference worker persists local mobile-safe evidence manifests', ()
   assert.match(script, /termux-hermes/);
   assert.match(script, /os\.replace/);
   assert.doesNotMatch(script, /api\.telegram\.org|provider send/i);
+});
+
+test('Hermes reference worker can produce opt-in model-backed analysis JSON', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-'));
+  const fakeBridge = join(dir, 'fake-mobile-analysis.py');
+  const capturePath = join(dir, 'stdin.json');
+  writeFileSync(fakeBridge, String.raw`#!/usr/bin/env python3
+import json, os, sys
+payload = json.load(sys.stdin)
+open(os.environ['CAPTURE_PATH'], 'w', encoding='utf-8').write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+print(json.dumps({
+  'analysisStatus': 'done',
+  'summary': 'mobile model bridge produced substantive analysis',
+  'findings': ['mobile worker inspected the no-live task context'],
+  'recommendations': ['count this lane only when analysisStatus=done'],
+  'evidenceRefs': [payload['task']['id']],
+}, ensure_ascii=False))
+`);
+  chmodSync(fakeBridge, 0o755);
+
+  const program = String.raw`
+import json, os, runpy
+m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
+task = {
+    'id': 'mobile-model-task-1',
+    'intent': 'analyze',
+    'payload': {'mode': 'analysis-only', 'noLive': True, 'sourceOnly': True},
+    'policyContext': {'liveImpact': False, 'targetEnvironment': 'research'},
+}
+result = m['mobile_model_analysis_output'](task)
+print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+`;
+  const result = spawnSync('python3', ['-c', program], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      A2A_HERMES_REFERENCE_ANALYSIS_ENABLED: '1',
+      A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON: JSON.stringify(['python3', fakeBridge]),
+      A2A_WORKER_ID: 'gongyung',
+      A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
+      CAPTURE_PATH: capturePath,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.analysisKind, 'mobile_model_bridge');
+  assert.equal(output.analysisStatus, 'done');
+  assert.equal(output.evidenceClass, 'substantive');
+  assert.equal(output.bridgeAdapter, 'hermes-reference-mobile');
+  assert.deepEqual(output.findings, ['mobile worker inspected the no-live task context']);
+  const captured = JSON.parse(readFileSync(capturePath, 'utf8'));
+  assert.equal(captured.task.id, 'mobile-model-task-1');
+  assert.equal(captured.workerId, 'gongyung');
+  assert.equal(captured.runtimeFlavor, 'termux-hermes');
+});
+
+test('Hermes reference worker fails closed when opt-in model bridge emits invalid JSON', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-bad-'));
+  const fakeBridge = join(dir, 'fake-bad-mobile-analysis.py');
+  writeFileSync(fakeBridge, '#!/usr/bin/env python3\nprint("[Roadmap] prose is not JSON")\n');
+  chmodSync(fakeBridge, 0o755);
+
+  const program = String.raw`
+import json, runpy
+m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
+task = {
+    'id': 'mobile-model-task-bad-json',
+    'intent': 'analyze',
+    'payload': {'mode': 'analysis-only', 'noLive': True, 'sourceOnly': True},
+    'policyContext': {'liveImpact': False, 'targetEnvironment': 'research'},
+}
+result = m['mobile_model_analysis_output'](task)
+print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+`;
+  const result = spawnSync('python3', ['-c', program], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      A2A_HERMES_REFERENCE_ANALYSIS_ENABLED: '1',
+      A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON: JSON.stringify(['python3', fakeBridge]),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.analysisKind, 'mobile_model_bridge');
+  assert.equal(output.analysisStatus, 'provider_or_model_failure');
+  assert.equal(output.evidenceClass, 'provider_or_model_failure');
+  assert.match(output.summary, /invalid JSON/i);
 });
 
 test('Hermes Android native runbook documents no-Gateway boot and reconnect path', () => {

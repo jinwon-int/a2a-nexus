@@ -39,6 +39,37 @@ Safe modes are `analysis-only`, `readonly-analysis`, `read-only-analysis`,
 reference worker still refuses Docker-runner, GitHub write/proof-marker, live
 mutation, provider-send, Telegram-send, and Terminal Brief ACK/replay surfaces.
 
+### Optional model-backed mobile analysis
+
+By default, `analysis-only` still produces local/reference evidence only. To let a
+Gongyung/Daegyo-style mobile worker contribute substantive A2AD analysis, an
+operator may opt in to a strict JSON model bridge:
+
+```bash
+export A2A_HERMES_REFERENCE_ANALYSIS_ENABLED=1
+export A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON='["python3","/path/to/mobile-analysis-bridge.py"]'
+```
+
+The command receives a single JSON request on stdin and must emit a single JSON
+object on stdout. Substantive output requires:
+
+```json
+{
+  "analysisStatus": "done",
+  "summary": "short result",
+  "findings": ["source-backed finding"],
+  "recommendations": ["next action"],
+  "evidenceRefs": ["task/file/issue ref"]
+}
+```
+
+Invalid JSON, non-zero exit, timeout, missing command, or `done` without findings
+or recommendations fails closed as non-substantive `provider_or_model_failure`,
+`handler_artifact_failure`, or `wrapper_only`. The worker still posts redacted
+local evidence and keeps `liveProviderSend=false` / `productionMutation=false`; the
+model bridge does not permit Telegram send, Terminal Brief ACK/replay, GitHub
+write, Docker runner, or live mutation.
+
 It refuses non-loopback broker URLs unless
 `A2A_HERMES_REFERENCE_ALLOW_NON_LOOPBACK=1` is set. That override is for a
 separately approved live canary only; do not use it for routine local smoke tests.

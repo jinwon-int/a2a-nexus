@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -51,6 +52,16 @@ def env_json_object(name: str) -> dict[str, Any]:
     return parsed
 
 
+def env_json_array(name: str) -> list[Any]:
+    raw = os.environ.get(name)
+    if not raw:
+        return []
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        raise ValueError(f"{name} must be a JSON array")
+    return parsed
+
+
 def broker_url() -> str:
     return env("A2A_BROKER_URL", "http://127.0.0.1:18787").rstrip("/")
 
@@ -69,6 +80,20 @@ def artifact_root() -> Path:
 
 def runtime_flavor() -> str:
     return env("A2A_HERMES_RUNTIME_FLAVOR", "termux-hermes")
+
+
+def mobile_model_analysis_enabled() -> bool:
+    return env_bool("A2A_HERMES_REFERENCE_ANALYSIS_ENABLED")
+
+
+def mobile_model_analysis_command() -> list[str]:
+    values = env_json_array("A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON")
+    if not values:
+        return []
+    command = [str(value) for value in values]
+    if not command or any(part == "" for part in command):
+        raise ValueError("A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON must contain non-empty argv strings")
+    return command
 
 
 def utc_now_iso() -> str:
@@ -256,6 +281,127 @@ def payload_requests_forbidden_surface(payload: dict[str, Any]) -> bool:
     return mode in {"github-propose-patch", "propose_patch", "docker-runner", "docker_runner"}
 
 
+def is_no_live_analysis_task(task: dict[str, Any]) -> bool:
+    return str(task_payload(task).get("mode", "")).strip() in NO_LIVE_ANALYSIS_MODES
+
+
+def non_substantive_mobile_model_output(status: str, summary: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "analysisKind": "mobile_model_bridge",
+        "analysisStatus": status,
+        "evidenceClass": status,
+        "bridgeAdapter": "hermes-reference-mobile",
+        "summary": summary,
+        "findings": [],
+        "recommendations": [],
+        "risks": [],
+        "evidenceRefs": [],
+        "details": details or {},
+    }
+
+
+def normalize_string_list(value: Any) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def normalize_mobile_model_output(parsed: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    status = str(parsed.get("analysisStatus") or parsed.get("status") or "").strip().lower()
+    if status != "done":
+        return non_substantive_mobile_model_output(
+            "provider_or_model_failure",
+            "mobile model bridge did not return analysisStatus=done",
+            {"returnedStatus": status or None},
+        )
+    findings = normalize_string_list(parsed.get("findings"))
+    recommendations = normalize_string_list(parsed.get("recommendations"))
+    evidence_refs = normalize_string_list(parsed.get("evidenceRefs"))
+    risks = normalize_string_list(parsed.get("risks"))
+    summary = str(parsed.get("summary") or "mobile model bridge produced analysis")
+    if not findings and not recommendations:
+        return non_substantive_mobile_model_output(
+            "wrapper_only",
+            "mobile model bridge returned done without findings or recommendations",
+            {"taskId": task.get("id")},
+        )
+    return {
+        "analysisKind": "mobile_model_bridge",
+        "analysisStatus": "done",
+        "evidenceClass": "substantive",
+        "bridgeAdapter": "hermes-reference-mobile",
+        "summary": summary,
+        "findings": findings,
+        "recommendations": recommendations,
+        "risks": risks,
+        "evidenceRefs": evidence_refs,
+        "nodeId": worker_id(),
+        "runtimeFlavor": runtime_flavor(),
+    }
+
+
+def mobile_model_analysis_output(task: dict[str, Any]) -> dict[str, Any]:
+    if not mobile_model_analysis_enabled():
+        return non_substantive_mobile_model_output(
+            "wrapper_only",
+            "mobile model bridge is not enabled; reference worker will emit local evidence only",
+            {"enabled": False},
+        )
+    command = mobile_model_analysis_command()
+    if not command:
+        return non_substantive_mobile_model_output(
+            "handler_artifact_failure",
+            "mobile model bridge command is not configured",
+            {"env": "A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON"},
+        )
+    bridge_input = {
+        "schema": "a2a.hermesWorker.mobileModelAnalysisRequest.v1",
+        "workerId": worker_id(),
+        "runtimeFlavor": runtime_flavor(),
+        "task": task,
+        "safety": {
+            "noLive": True,
+            "sourceOnly": bool(task_payload(task).get("sourceOnly")),
+            "providerOrModelUse": "operator-approved-analysis-only",
+            "forbiddenSurfaces": ["telegram", "terminal_ack", "github_write", "docker_runner", "live_mutation"],
+        },
+    }
+    try:
+        completed = subprocess.run(
+            command,
+            input=json.dumps(bridge_input, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=float(env("A2A_HERMES_REFERENCE_ANALYSIS_TIMEOUT_SEC", "120")),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return non_substantive_mobile_model_output(
+            "handler_artifact_failure",
+            f"mobile model bridge execution failed: {type(exc).__name__}",
+            {"error": str(exc), "command": command[0] if command else None},
+        )
+    if completed.returncode != 0:
+        return non_substantive_mobile_model_output(
+            "provider_or_model_failure",
+            f"mobile model bridge exited non-zero: {completed.returncode}",
+            {"stderrTail": completed.stderr[-500:], "stdoutTail": completed.stdout[-500:]},
+        )
+    try:
+        parsed = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return non_substantive_mobile_model_output(
+            "provider_or_model_failure",
+            "mobile model bridge emitted invalid JSON",
+            {"error": str(exc), "stdoutHead": completed.stdout[:200]},
+        )
+    if not isinstance(parsed, dict):
+        return non_substantive_mobile_model_output(
+            "provider_or_model_failure",
+            "mobile model bridge JSON must be an object",
+            {"type": type(parsed).__name__},
+        )
+    return normalize_mobile_model_output(parsed, task)
+
+
 def is_safe_local_task(task: dict[str, Any]) -> bool:
     payload = task_payload(task)
     mode = str(payload.get("mode", "")).strip()
@@ -325,21 +471,32 @@ def run_once() -> dict[str, Any]:
     body = {"workerId": worker_id()}
     request_json("POST", f"/tasks/{encoded_task_id}/claim", body)
     request_json("POST", f"/tasks/{encoded_task_id}/start", body)
+    output = {
+        "referenceWorker": "hermes-agent",
+        "gongyungProfile": "hermes-worker",
+        "mode": task_payload(task).get("mode"),
+        "openClawRequired": False,
+        "runtimeFlavor": runtime_flavor(),
+        "profileVersion": 1,
+        "liveProviderSend": False,
+        "productionMutation": False,
+    }
+    summary = "Hermes reference worker completed local dry-run evidence"
+    limitations: list[str] = []
+    if is_no_live_analysis_task(task) and mobile_model_analysis_enabled():
+        model_output = mobile_model_analysis_output(task)
+        output.update(model_output)
+        if model_output.get("analysisStatus") == "done":
+            summary = str(model_output.get("summary") or "Hermes reference worker completed mobile model-backed analysis")
+        else:
+            summary = str(model_output.get("summary") or "Hermes reference worker mobile model bridge failed closed")
+            limitations.append("Mobile model bridge did not produce substantive analysisStatus=done evidence.")
     evidence = {
         "workerId": worker_id(),
         "outcome": "done",
         "result": {
-            "summary": "Hermes reference worker completed local dry-run evidence",
-            "output": {
-                "referenceWorker": "hermes-agent",
-                "gongyungProfile": "hermes-worker",
-                "mode": task_payload(task).get("mode"),
-                "openClawRequired": False,
-                "runtimeFlavor": runtime_flavor(),
-                "profileVersion": 1,
-                "liveProviderSend": False,
-                "productionMutation": False,
-            },
+            "summary": summary,
+            "output": output,
             "artifacts": [
                 {
                     "path": local_manifest_public_path(task_id),
@@ -349,7 +506,7 @@ def run_once() -> dict[str, Any]:
             ],
         },
     }
-    manifest_path = write_local_evidence_manifest(task_id, "accepted", evidence)
+    manifest_path = write_local_evidence_manifest(task_id, "accepted", evidence, limitations)
     completed = request_json("POST", f"/tasks/{encoded_task_id}/evidence", evidence)
     return {
         "status": "processed",
