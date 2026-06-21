@@ -20,8 +20,6 @@ const SOURCE_BLOCKED_PATTERNS = [
   /missing mapped repo(?:sitory)?/i,
   /unable to read source/i,
   /source bundle .*failed/i,
-  /openclaw_analysis_failed/i,
-  /Hermes analysis bridge response did not contain valid JSON/i,
   /Hermes exited with null/i,
   /handler_exit_nonzero/i,
   /source_blocked/i,
@@ -51,6 +49,12 @@ const READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS = [
   /read_only_validation_changed_repo/i,
   /read[- ]only .*repo(?:sitory)? .*changed/i,
   /read[- ]only .*github-verify .*write/i,
+];
+
+const ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS = [
+  /openclaw_analysis_failed/i,
+  /Hermes analysis bridge response did not contain valid JSON/i,
+  /not valid JSON/i,
 ];
 
 const HANDLER_ARTIFACT_FAILURE_PATTERNS = [
@@ -131,6 +135,15 @@ function nonSubstantiveClassification(classification, blocker, reasons) {
 
 function classifyEvidenceContractFailure(text) {
   const normalized = asText(text).trim();
+  const invalidJson = matchPatternSources(ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS, normalized);
+  if (invalidJson.length) {
+    return nonSubstantiveClassification(
+      'analysis_bridge_invalid_json',
+      'analysis bridge failed to project strict JSON evidence; report as transport/contract blocker, not worker opinion',
+      invalidJson,
+    );
+  }
+
   const readOnlyRepoMutation = matchPatternSources(READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS, normalized);
   if (readOnlyRepoMutation.length) {
     return nonSubstantiveClassification(
@@ -172,6 +185,11 @@ export function classifyEvidenceText(text) {
       blockers: ['empty worker output'],
       reasons: ['no output text'],
     };
+  }
+
+  const contractFailure = classifyEvidenceContractFailure(normalized);
+  if (contractFailure) {
+    return contractFailure;
   }
 
   const sourceBlocked = SOURCE_BLOCKED_PATTERNS.filter((pattern) => pattern.test(normalized)).map((pattern) => pattern.source);

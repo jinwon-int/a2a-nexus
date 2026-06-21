@@ -17,15 +17,27 @@ The reference proves that a non-OpenClaw runtime can:
 
 ## Safety boundary
 
-By default, the script only targets loopback brokers and only executes tasks whose
-payload contains:
+By default, the script only targets loopback brokers and only executes tasks that
+are explicitly no-live and local/research safe:
 
 ```json
 {
-  "mode": "hermes-reference-dry-run",
-  "noLive": true
+  "intent": "analyze",
+  "payload": {
+    "mode": "analysis-only",
+    "noLive": true
+  },
+  "policyContext": {
+    "liveImpact": false,
+    "targetEnvironment": "research"
+  }
 }
 ```
+
+Safe modes are `analysis-only`, `readonly-analysis`, `read-only-analysis`,
+`a2ad-analysis`, `hermes-reference-dry-run`, and `local-hermes-smoke`. The
+reference worker still refuses Docker-runner, GitHub write/proof-marker, live
+mutation, provider-send, Telegram-send, and Terminal Brief ACK/replay surfaces.
 
 It refuses non-loopback broker URLs unless
 `A2A_HERMES_REFERENCE_ALLOW_NON_LOOPBACK=1` is set. That override is for a
