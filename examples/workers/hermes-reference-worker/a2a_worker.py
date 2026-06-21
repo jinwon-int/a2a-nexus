@@ -78,6 +78,17 @@ def artifact_root() -> Path:
     return Path(env("A2A_HERMES_ARTIFACT_ROOT", "~/.hermes/a2a/artifacts")).expanduser()
 
 
+def mobile_work_root() -> Path | None:
+    configured = os.environ.get("A2A_MOBILE_WORK_ROOT")
+    if not configured:
+        return None
+    return Path(configured).expanduser()
+
+
+def home_broker_id() -> str:
+    return safe_task_dir_name(env("A2A_HOME_BROKER_ID", "local"))
+
+
 def runtime_flavor() -> str:
     return env("A2A_HERMES_RUNTIME_FLAVOR", "termux-hermes")
 
@@ -105,8 +116,25 @@ def safe_task_dir_name(task_id: str) -> str:
     return cleaned[:160] if cleaned else "unknown-task"
 
 
+def local_manifest_locations(task_id: str) -> tuple[Path, str]:
+    safe_task = safe_task_dir_name(task_id)
+    work_root = mobile_work_root()
+    if work_root is not None:
+        broker_id = home_broker_id()
+        task_dir = work_root / broker_id / safe_task
+        for name in ("repo", "artifacts", "evidence", "tmp"):
+            (task_dir / name).mkdir(parents=True, exist_ok=True)
+        manifest_path = task_dir / "evidence" / "evidence.json"
+        public_path = f"~/.hermes/a2a-workspaces/{broker_id}/{safe_task}/evidence/evidence.json"
+        return manifest_path, public_path
+
+    task_dir = artifact_root() / safe_task
+    task_dir.mkdir(parents=True, exist_ok=True)
+    return task_dir / "evidence.json", f"~/.hermes/a2a/artifacts/{safe_task}/evidence.json"
+
+
 def local_manifest_public_path(task_id: str) -> str:
-    return f"~/.hermes/a2a/artifacts/{safe_task_dir_name(task_id)}/evidence.json"
+    return local_manifest_locations(task_id)[1]
 
 
 def write_local_evidence_manifest(
@@ -116,9 +144,7 @@ def write_local_evidence_manifest(
     limitations: list[str] | None = None,
 ) -> str:
     """Persist redacted receipt/evidence locally before relying on network state."""
-    task_dir = artifact_root() / safe_task_dir_name(task_id)
-    task_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = task_dir / "evidence.json"
+    manifest_path, _public_path = local_manifest_locations(task_id)
     manifest = {
         "schema": LOCAL_EVIDENCE_SCHEMA,
         "taskId": task_id,
