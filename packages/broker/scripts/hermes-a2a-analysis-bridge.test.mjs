@@ -646,6 +646,82 @@ test("Hermes A2A analysis bridge blocks when explicit sourceBundle files cannot 
   }
 });
 
+test("Hermes A2A analysis bridge recovers JS-object-ish analysis JSON from Hermes", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-js-object-json-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  try {
+    const hermesResponse = [
+      "[Roadmap] 방통 analysis follows",
+      "",
+      "```js",
+      "{",
+      "  status: 'done',",
+      "  summary: '방통 strict JSON 투사 보정 완료',",
+      "  findings: ['unquoted keys and single-quoted strings are recovered'],",
+      "  risks: ['generic bracket prose before the object must not mask the JSON candidate'],",
+      "  recommendations: ['normalize object-ish model output before fail-closed classification'],",
+      "  evidenceRefs: ['jinwon-int/a2a-broker:scripts/a2a-task-handler.mjs'],",
+      "}",
+      "```",
+      "",
+    ].join("\n");
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      `process.stdout.write(${JSON.stringify(hermesResponse)});`,
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "방통 strict JSON 투사 보정 완료");
+    assert.deepEqual(payload.findings, ["unquoted keys and single-quoted strings are recovered"]);
+    assert.equal(payload.recoverySource, "direct_stdout");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge skips non-JSON bracket prose before a later strict JSON object", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-bracket-prose-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "console.log('[Roadmap] analysis packet below');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'later strict JSON object was selected',",
+      "  findings: ['leading bracket prose was ignored'],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-broker:scripts/a2a-task-handler.mjs']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.summary, "later strict JSON object was selected");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge fails closed when Hermes returns non-JSON", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-bad-json-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");

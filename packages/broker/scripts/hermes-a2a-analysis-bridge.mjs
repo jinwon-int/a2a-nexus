@@ -590,17 +590,65 @@ function collectSourceBundle(payload, env) {
   return { files, warnings, limits: { maxFiles, maxFileBytes, maxTotalBytes, maxTreeEntries, maxPromptBytes } };
 }
 
+function repairLooseJsonObjectCandidate(text) {
+  let repaired = String(text || "").trim();
+  if (!/^[\[{]/.test(repaired)) return "";
+
+  // Some models emit JavaScript-ish object literals despite a JSON-only prompt:
+  // { status: 'done', findings: ['...'], }.  Do not eval it; only apply small
+  // textual repairs, then require JSON.parse + the analysis schema downstream.
+  repaired = repaired.replace(/([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g, '$1"$2"$3');
+  repaired = repaired.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, body) => {
+    const normalized = String(body).replace(/\\'/g, "'");
+    return JSON.stringify(normalized);
+  });
+  repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+  return repaired;
+}
+
+function parseJsonCandidate(candidate) {
+  const text = String(candidate || "").trim();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch {}
+  const repaired = repairLooseJsonObjectCandidate(text);
+  if (repaired && repaired !== text) {
+    try { return JSON.parse(repaired); } catch {}
+  }
+  return null;
+}
+
+function collectLooseJsonCandidates(text) {
+  const trimmed = String(text || "").trim();
+  const candidates = [];
+  if (!trimmed) return candidates;
+  candidates.push(trimmed);
+
+  for (const match of trimmed.matchAll(/```(?:json|js|javascript)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{" && trimmed[index] !== "[") continue;
+    const candidate = extractBalancedJson(trimmed, index);
+    if (!candidate) continue;
+    candidates.push(candidate);
+    index += Math.max(0, candidate.length - 1);
+  }
+
+  return candidates;
+}
+
 function extractJsonFromLooseText(text) {
   const trimmed = String(text || "").trim();
   if (!trimmed) throw new Error("empty response");
-  try { return JSON.parse(trimmed); } catch {}
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
-  if (fenced) {
-    try { return JSON.parse(fenced[1].trim()); } catch {}
+
+  let lastError = null;
+  for (const candidate of collectLooseJsonCandidates(trimmed)) {
+    const parsed = parseJsonCandidate(candidate);
+    if (parsed !== null) return parsed;
+    lastError = `candidate was not valid JSON: ${candidate.slice(0, 120)}`;
   }
-  const objectText = extractBalancedJson(trimmed, 0);
-  if (objectText) return JSON.parse(objectText);
-  throw new Error("response did not contain valid JSON");
+  throw new Error(lastError || "response did not contain valid JSON");
 }
 
 function normalizeStringArray(value) {
