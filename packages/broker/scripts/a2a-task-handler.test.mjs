@@ -707,6 +707,52 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
   }
 });
 
+test("Claude bridge prose recovery source is preserved through task handler", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-claude-prose-recovery-"));
+  const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "Claude prose was recovered as analysis",
+  findings: ["recovered Claude Code prose opinion"],
+  risks: ["strict JSON was not emitted"],
+  recommendations: ["preserve recovery source"],
+  evidenceRefs: ["claude-code:result"],
+  recoverySource: "claude_result_text"
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-claude-prose-recovery",
+      intent: "analyze",
+      assignedWorkerId: "soonwook",
+      message: "Analyze Claude Code prose recovery evidence",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        noLive: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
+      A2A_NODE_ID: "soonwook",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.bridgeAdapter, "claude_code");
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.recoverySource, "claude_result_text");
+    assert.deepEqual(result.result.output.findings, ["recovered Claude Code prose opinion"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 test("Hermes patch profile rejects legacy OPENCLAW_MODEL deepseek flash before docker runner execution (#860)", () => {
   const result = handleTask(patchTask(), {

@@ -104,50 +104,110 @@ function parseJsonCandidate(text) {
   }
 }
 
-function extractAnalysisJsonFromClaudeOutput(stdout) {
-  const outer = parseJsonCandidate(stdout);
-  if (hasExplicitAnalysisJsonShape(outer)) return outer;
+function looksJsonLikeText(value) {
+  const trimmed = safeText(value).trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[") || /^```json\b/i.test(trimmed);
+}
 
-  const possiblePayloads = [
-    outer?.result,
-    outer?.content,
-    outer?.message,
-    outer?.text,
-    outer?.response,
-    outer?.output,
+function firstSentence(text, max = 240) {
+  const compact = safeText(text).replace(/\s+/g, " ").trim();
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, max - 1).trim()}…`;
+}
+
+function isProbablyClaudeErrorText(text) {
+  return /\b(error|failed|failure|auth|authentication|permission denied|unauthorized|cancelled|canceled|timeout|rate limit)\b/i.test(safeText(text));
+}
+
+function collectClaudeTextPayloads(value, source = "stdout", depth = 0) {
+  if (depth > 8 || value === undefined || value === null) return [];
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? [{ source, text }] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => collectClaudeTextPayloads(entry, `${source}[${index}]`, depth + 1));
+  }
+  if (typeof value !== "object") return [];
+
+  const prioritized = [
+    ["result", value.result],
+    ["text", value.text],
+    ["content", value.content],
+    ["message", value.message],
+    ["response", value.response],
+    ["output", value.output],
+    ["value", value.value],
   ];
+  return prioritized.flatMap(([key, child]) => collectClaudeTextPayloads(child, source === "stdout" ? key : `${source}.${key}`, depth + 1));
+}
 
-  for (const candidate of possiblePayloads) {
-    if (hasExplicitAnalysisJsonShape(candidate)) return candidate;
-    if (Array.isArray(candidate)) {
-      const joined = candidate
-        .map((entry) => {
-          if (typeof entry === "string") return entry;
-          if (entry && typeof entry === "object") return safeText(entry.text ?? entry.content ?? entry.value, "");
-          return "";
-        })
-        .join("\n");
-      if (joined.trim()) {
-        const parsed = parseJsonCandidate(joined);
-        if (hasExplicitAnalysisJsonShape(parsed)) return parsed;
-      }
-    }
-    if (typeof candidate === "string" && candidate.trim()) {
-      const parsed = parseJsonCandidate(candidate);
-      if (hasExplicitAnalysisJsonShape(parsed)) return parsed;
+function findAnalysisJson(value, depth = 0) {
+  if (depth > 8 || value === undefined || value === null) return null;
+  if (hasExplicitAnalysisJsonShape(value)) return value;
+  if (typeof value === "string") {
+    if (!value.trim()) return null;
+    try {
+      const parsed = parseJsonCandidate(value);
+      return findAnalysisJson(parsed, depth + 1);
+    } catch {
+      return null;
     }
   }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findAnalysisJson(entry, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    for (const key of ["result", "content", "message", "text", "response", "output", "value", "payloads", "messages"]) {
+      const found = findAnalysisJson(value[key], depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
-  // Last resort: scan the full stdout for the last explicit analysis-shaped JSON.
+function proseAnalysisFromClaudeText(outer) {
+  for (const { source, text } of collectClaudeTextPayloads(outer)) {
+    const trimmed = text.trim();
+    if (trimmed.length < 20) continue;
+    if (looksJsonLikeText(trimmed)) continue;
+    if (isProbablyClaudeErrorText(trimmed)) continue;
+    return {
+      status: "done",
+      summary: firstSentence(trimmed),
+      findings: [trimmed],
+      risks: ["Claude Code CLI returned natural-language analysis instead of strict JSON; the bridge recovered it as prose so a substantive lane is not dropped."],
+      recommendations: ["Tighten the Claude Code worker prompt/output contract so future lanes emit strict analysis JSON directly."],
+      evidenceRefs: [`claude-code:${source.split(".")[0]}`],
+      recoverySource: "claude_result_text",
+    };
+  }
+  return null;
+}
+
+function extractAnalysisJsonFromClaudeOutput(stdout) {
+  const outer = parseJsonCandidate(stdout);
+  const found = findAnalysisJson(outer);
+  if (found) return found;
+
+  // Last resort before prose recovery: scan stdout for the last explicit analysis-shaped JSON.
   const candidates = extractBalancedJsonObjects(safeText(stdout));
   for (let i = candidates.length - 1; i >= 0; i -= 1) {
     try {
       const parsed = JSON.parse(candidates[i]);
-      if (hasExplicitAnalysisJsonShape(parsed)) return parsed;
+      const candidate = findAnalysisJson(parsed);
+      if (candidate) return candidate;
     } catch {
       // keep scanning
     }
   }
+
+  const proseRecovered = proseAnalysisFromClaudeText(outer);
+  if (proseRecovered) return proseRecovered;
 
   throw new Error("Claude output did not contain valid analysis JSON");
 }
@@ -165,7 +225,7 @@ function normalizeResponse(parsed) {
     risks: normalizeStringArray(parsed.risks),
     recommendations: normalizeStringArray(parsed.recommendations),
     evidenceRefs: normalizeStringArray(parsed.evidenceRefs),
-    recoverySource: "direct_stdout",
+    recoverySource: safeText(parsed.recoverySource, "direct_stdout"),
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),
     ...(safeText(parsed.startCommentUrl, "") ? { startCommentUrl: safeText(parsed.startCommentUrl) } : {}),

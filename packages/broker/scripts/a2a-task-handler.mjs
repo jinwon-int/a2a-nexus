@@ -458,7 +458,7 @@ function normalizedBridgeAnalysisStatus(value) {
   return ["blocked", "block", "source_blocked"].includes(status) ? "blocked" : "done";
 }
 
-const ANALYSIS_RECOVERY_SOURCES = new Set(["direct_stdout", "abort_stdout", "state_db", "retry_stdout", "retry_state_db"]);
+const ANALYSIS_RECOVERY_SOURCES = new Set(["direct_stdout", "abort_stdout", "state_db", "retry_stdout", "retry_state_db", "claude_result_text"]);
 
 function normalizedAnalysisRecoverySource(value) {
   const text = safeText(value, "");
