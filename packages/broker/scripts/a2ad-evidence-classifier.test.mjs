@@ -145,7 +145,7 @@ test('bundle summary exposes finalizer blockers for mixed evidence', () => {
   assert.match(report.finalizerBlockers.join('\n'), /gongyung: wrapper\/plumbing/i);
 });
 
-test('record classifier extracts nested error stdout/stderr without leaking secret-like keys', () => {
+test('record classifier extracts nested invalid-JSON bridge failures without leaking secret-like keys', () => {
   const item = classifyEvidenceRecord({
     workerId: 'bangtong',
     token: 'should-not-matter',
@@ -157,7 +157,9 @@ test('record classifier extracts nested error stdout/stderr without leaking secr
     },
   });
   assert.equal(item.workerId, 'bangtong');
-  assert.equal(item.classification, 'source_blocked');
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
 });
 
 test('CLI exits non-zero when required substantive evidence is absent', async () => {

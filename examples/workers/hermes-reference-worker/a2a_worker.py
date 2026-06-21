@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Any
 
 
-SAFE_LOCAL_MODES = {"hermes-reference-dry-run", "local-hermes-smoke"}
+LOCAL_DRY_RUN_MODES = {"hermes-reference-dry-run", "local-hermes-smoke"}
+NO_LIVE_ANALYSIS_MODES = {"analysis-only", "readonly-analysis", "read-only-analysis", "a2ad-analysis"}
+SAFE_LOCAL_MODES = LOCAL_DRY_RUN_MODES | NO_LIVE_ANALYSIS_MODES
+SUPPORTED_NO_LIVE_INTENTS = {"analyze", "verify"}
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 LOCAL_EVIDENCE_SCHEMA = "a2a.hermesWorker.localEvidence.v1"
 
@@ -221,9 +224,59 @@ def task_payload(task: dict[str, Any]) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def task_policy_context(task: dict[str, Any]) -> dict[str, Any]:
+    policy_context = task.get("policyContext")
+    return policy_context if isinstance(policy_context, dict) else {}
+
+
+def normalized_task_intent(task: dict[str, Any]) -> str:
+    payload = task_payload(task)
+    value = task.get("intent") or payload.get("intent") or ""
+    return str(value).strip().lower()
+
+
+def payload_requests_forbidden_surface(payload: dict[str, Any]) -> bool:
+    """Fail closed on surfaces the mobile/reference worker must never execute."""
+    forbidden_boolean_keys = {
+        "providerSend",
+        "sendProviderRequest",
+        "telegramSend",
+        "terminalAck",
+        "terminalReplay",
+        "requiresDocker",
+        "dockerRunnerRequired",
+        "githubWrite",
+        "writeGitHub",
+        "proofMarker",
+        "liveMutation",
+    }
+    if any(payload.get(key) is True for key in forbidden_boolean_keys):
+        return True
+    mode = str(payload.get("mode", "")).strip().lower()
+    return mode in {"github-propose-patch", "propose_patch", "docker-runner", "docker_runner"}
+
+
 def is_safe_local_task(task: dict[str, Any]) -> bool:
     payload = task_payload(task)
-    return payload.get("noLive") is True and str(payload.get("mode", "")) in SAFE_LOCAL_MODES
+    mode = str(payload.get("mode", "")).strip()
+    policy_context = task_policy_context(task)
+    target_environment = str(policy_context.get("targetEnvironment", "")).strip().lower()
+    intent = normalized_task_intent(task)
+    if payload.get("noLive") is not True:
+        return False
+    if mode not in SAFE_LOCAL_MODES:
+        return False
+    if intent and intent not in SUPPORTED_NO_LIVE_INTENTS:
+        return False
+    if policy_context.get("liveImpact") is True:
+        return False
+    if payload_requests_forbidden_surface(payload):
+        return False
+    if mode in NO_LIVE_ANALYSIS_MODES and target_environment not in {"", "research"}:
+        return False
+    if mode in LOCAL_DRY_RUN_MODES and target_environment not in {"", "local", "research"}:
+        return False
+    return True
 
 
 def run_once() -> dict[str, Any]:

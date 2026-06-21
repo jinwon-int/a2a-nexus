@@ -202,6 +202,44 @@ test('docker-runner evidence-contract failure is classified separately from A2AD
   assert.match(t2?.reason ?? '', /PR\/Done\/Block|docker_runner_failed/);
 });
 
+test('analysis bridge invalid JSON failure is classified separately from worker opinion evidence', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'nosuk' }),
+    lane('t2', 'failed', {
+      worker: 'bangtong',
+      payload: { mode: 'analysis-only' },
+      top: {
+        error: {
+          code: 'handler_exit_nonzero',
+          message: 'handler exited with code 1',
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: 'openclaw_analysis_failed',
+                message: 'Hermes analysis bridge response did not contain valid JSON: Unexpected token "[", "[Roadmap]" is not valid JSON',
+              },
+            }),
+          },
+        },
+      },
+    }),
+    lane('t3', 'succeeded', { worker: 'sogyo' }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t2 = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(t2?.worker, 'bangtong');
+  assert.equal(t2?.evidenceClass, 'analysis_bridge_invalid_json');
+  assert.match(t2?.reason ?? '', /valid JSON|analysis bridge/i);
+});
+
 test('queued Daegyo lane is labeled mobile_limited and cannot satisfy quorum (#958)', () => {
   const tasks = [
     lane('t1', 'succeeded', { worker: 'dungae' }),

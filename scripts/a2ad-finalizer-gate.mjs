@@ -148,6 +148,13 @@ function classifyLaneEvidence(lane) {
       reason: 'wrapper/echo output is not substantive worker analysis',
     };
   }
+  if (/openclaw_analysis_failed|Hermes analysis bridge response did not contain valid JSON|not valid JSON/i.test(evidenceText)) {
+    return {
+      evidenceClass: 'analysis_bridge_invalid_json',
+      countsTowardQuorum: false,
+      reason: 'analysis bridge failed to project strict JSON evidence; treat as transport/contract failure, not worker opinion',
+    };
+  }
   if (/docker_runner_failed|without\s+PR\/Done\/Block\s+evidence|PR\/Done\/Block evidence/i.test(evidenceText)) {
     return {
       evidenceClass: 'evidence_contract_failure',
