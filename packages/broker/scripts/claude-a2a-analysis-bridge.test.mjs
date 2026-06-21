@@ -93,6 +93,73 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
   }
 });
 
+test("Claude Code A2A analysis bridge extracts analysis JSON from Claude message.content text", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-message-content-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "const analysis = {",
+      "  status: 'done',",
+      "  summary: 'Claude nested message content carried strict JSON',",
+      "  findings: ['nested content parsed'],",
+      "  risks: [],",
+      "  recommendations: ['keep Claude Code output traversal recursive'],",
+      "  evidenceRefs: ['claude-code:message.content']",
+      "};",
+      "console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: JSON.stringify(analysis) }] } }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(bridgePath, bridgeArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "Claude nested message content carried strict JSON");
+    assert.deepEqual(payload.findings, ["nested content parsed"]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge recovers substantive Claude prose result", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-prose-result-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "const prose = '서윤패밀리는 내부 운영 커널로 수렴하고 진원인터내셔널은 HUG 신용관리 증거 패킷부터 제품화해야 합니다. 근거: A2A evidence lane과 승인 경계가 이미 강점입니다.';",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: prose, session_id: 'claude-session-123' }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(bridgePath, bridgeArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.match(payload.summary, /서윤패밀리/);
+    assert.deepEqual(payload.findings, [
+      "서윤패밀리는 내부 운영 커널로 수렴하고 진원인터내셔널은 HUG 신용관리 증거 패킷부터 제품화해야 합니다. 근거: A2A evidence lane과 승인 경계가 이미 강점입니다.",
+    ]);
+    assert.equal(payload.recoverySource, "claude_result_text");
+    assert.deepEqual(payload.evidenceRefs, ["claude-code:result"]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Claude Code A2A analysis bridge fails closed on generic Claude JSON", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-generic-json-"));
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
