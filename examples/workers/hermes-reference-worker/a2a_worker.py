@@ -491,15 +491,17 @@ def run_once() -> dict[str, Any]:
         else:
             summary = str(model_output.get("summary") or "Hermes reference worker mobile model bridge failed closed")
             limitations.append("Mobile model bridge did not produce substantive analysisStatus=done evidence.")
+    manifest_ref = local_manifest_public_path(task_id)
     evidence = {
         "workerId": worker_id(),
         "outcome": "done",
         "result": {
             "summary": summary,
+            "artifactIds": [manifest_ref],
             "output": output,
             "artifacts": [
                 {
-                    "path": local_manifest_public_path(task_id),
+                    "path": manifest_ref,
                     "kind": "manifest",
                     "redacted": True,
                 }
