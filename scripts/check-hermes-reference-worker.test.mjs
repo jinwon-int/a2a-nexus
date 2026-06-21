@@ -73,6 +73,53 @@ test('Hermes reference worker persists local mobile-safe evidence manifests', ()
   assert.doesNotMatch(script, /api\.telegram\.org|provider send/i);
 });
 
+test('Hermes reference worker posts local evidence manifest as broker artifactIds', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-artifact-ids-'));
+  const program = String.raw`
+import json, os, runpy
+m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
+requests = []
+task = {
+    'id': 'mobile-artifact-task-1',
+    'intent': 'analyze',
+    'payload': {'mode': 'analysis-only', 'noLive': True, 'sourceOnly': True},
+    'policyContext': {'liveImpact': False, 'targetEnvironment': 'research'},
+}
+def fake_request_json(method, path, body=None):
+    requests.append({'method': method, 'path': path, 'body': body})
+    if method == 'GET' and path.startswith('/tasks?'):
+        return {'items': [task]}
+    if path.endswith('/evidence'):
+        return {'id': task['id'], 'status': 'succeeded', 'result': body['result'], 'artifactIds': body['result'].get('artifactIds', [])}
+    return {}
+globals_ = m['run_once'].__globals__
+globals_['request_json'] = fake_request_json
+globals_['register'] = lambda: {}
+globals_['heartbeat'] = lambda: {}
+globals_['poll'] = lambda: [task]
+result = m['run_once']()
+evidence_calls = [item for item in requests if item['path'].endswith('/evidence')]
+assert len(evidence_calls) == 1, evidence_calls
+body = evidence_calls[0]['body']
+print(json.dumps({'runOnce': result, 'evidenceBody': body}, ensure_ascii=False, sort_keys=True))
+`;
+  const result = spawnSync('python3', ['-c', program], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      A2A_HERMES_ARTIFACT_ROOT: dir,
+      A2A_WORKER_ID: 'gongyung',
+      A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const artifactIds = output.evidenceBody.result.artifactIds;
+  assert.ok(Array.isArray(artifactIds), 'result.artifactIds must be an array for broker promotion');
+  assert.deepEqual(artifactIds, ['~/.hermes/a2a/artifacts/mobile-artifact-task-1/evidence.json']);
+  assert.equal(output.evidenceBody.result.artifacts[0].kind, 'manifest');
+});
+
 test('Hermes reference worker can produce opt-in model-backed analysis JSON', () => {
   const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-'));
   const fakeBridge = join(dir, 'fake-mobile-analysis.py');
