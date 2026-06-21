@@ -120,6 +120,64 @@ print(json.dumps({'runOnce': result, 'evidenceBody': body}, ensure_ascii=False, 
   assert.equal(output.evidenceBody.result.artifacts[0].kind, 'manifest');
 });
 
+test('Hermes reference worker uses isolated mobile workspace root when configured', () => {
+  const workRoot = mkdtempSync(join(tmpdir(), 'a2a-mobile-work-root-'));
+  const fallbackArtifactRoot = mkdtempSync(join(tmpdir(), 'a2a-mobile-fallback-artifacts-'));
+  const program = String.raw`
+import json, os, pathlib, runpy
+m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
+requests = []
+task = {
+    'id': 'mobile workspace/task:1',
+    'intent': 'analyze',
+    'payload': {'mode': 'analysis-only', 'noLive': True, 'sourceOnly': True},
+    'policyContext': {'liveImpact': False, 'targetEnvironment': 'research'},
+}
+def fake_request_json(method, path, body=None):
+    requests.append({'method': method, 'path': path, 'body': body})
+    if method == 'GET' and path.startswith('/tasks?'):
+        return {'items': [task]}
+    if path.endswith('/evidence'):
+        return {'id': task['id'], 'status': 'succeeded', 'result': body['result'], 'artifactIds': body['result'].get('artifactIds', [])}
+    return {}
+globals_ = m['run_once'].__globals__
+globals_['request_json'] = fake_request_json
+globals_['register'] = lambda: {}
+globals_['heartbeat'] = lambda: {}
+globals_['poll'] = lambda: [task]
+result = m['run_once']()
+evidence_body = [item['body'] for item in requests if item['path'].endswith('/evidence')][0]
+safe_task = 'mobile_workspace_task_1'
+workspace = pathlib.Path(os.environ['A2A_MOBILE_WORK_ROOT']) / os.environ['A2A_HOME_BROKER_ID'] / safe_task
+print(json.dumps({
+  'runOnce': result,
+  'artifactIds': evidence_body['result'].get('artifactIds'),
+  'artifactPath': evidence_body['result']['artifacts'][0]['path'],
+  'workspaceExists': workspace.exists(),
+  'subdirs': {name: (workspace / name).is_dir() for name in ['repo', 'artifacts', 'evidence', 'tmp']},
+  'manifestExists': (workspace / 'evidence' / 'evidence.json').is_file(),
+}, ensure_ascii=False, sort_keys=True))
+`;
+  const result = spawnSync('python3', ['-c', program], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      A2A_HERMES_ARTIFACT_ROOT: fallbackArtifactRoot,
+      A2A_MOBILE_WORK_ROOT: workRoot,
+      A2A_HOME_BROKER_ID: 'gwakga',
+      A2A_WORKER_ID: 'daegyo',
+      A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output.artifactIds, ['~/.hermes/a2a-workspaces/gwakga/mobile_workspace_task_1/evidence/evidence.json']);
+  assert.equal(output.artifactPath, '~/.hermes/a2a-workspaces/gwakga/mobile_workspace_task_1/evidence/evidence.json');
+  assert.equal(output.workspaceExists, true);
+  assert.deepEqual(output.subdirs, { repo: true, artifacts: true, evidence: true, tmp: true });
+  assert.equal(output.manifestExists, true);
+});
+
 test('Hermes reference worker can produce opt-in model-backed analysis JSON', () => {
   const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-analysis-'));
   const fakeBridge = join(dir, 'fake-mobile-analysis.py');
