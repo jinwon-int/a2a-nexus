@@ -24,6 +24,7 @@ const fixtureFiles = {
   adapterReceiptCapability: 'adapter-receipt-capability.json',
   harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
+  claimLeaseStaleClassification: 'claim-lease-stale-classification.json',
 };
 
 const forbiddenRuntimePaths = [
@@ -1759,6 +1760,48 @@ for (const pattern of secretLikePatterns) {
   );
 }
 
+
+const claimLeaseStaleClassification = fixtures.claimLeaseStaleClassification;
+assert.equal(claimLeaseStaleClassification.fixtureId, 'a2a-nexus.contract.claim-lease-stale-classification.v1');
+assert.equal(claimLeaseStaleClassification.contract, 'contracts/a2a/terminal-evidence.schema.json');
+assert.ok(claimLeaseStaleClassification.v0Freeze.sourceOnly);
+assert.ok(claimLeaseStaleClassification.v0Freeze.noLive);
+assert.ok(claimLeaseStaleClassification.staleClaimThresholdMs > 0);
+assert.ok(Array.isArray(claimLeaseStaleClassification.evidenceClasses) && claimLeaseStaleClassification.evidenceClasses.length >= 4);
+assert.ok(Array.isArray(claimLeaseStaleClassification.scenarios) && claimLeaseStaleClassification.scenarios.length >= 5);
+assert.equal(claimLeaseStaleClassification.safety.sourceOnly, true);
+assert.equal(claimLeaseStaleClassification.safety.noLive, true);
+assert.equal(claimLeaseStaleClassification.safety.providerSend, false);
+assert.equal(claimLeaseStaleClassification.safety.dbMutation, false);
+assert.ok(Array.isArray(claimLeaseStaleClassification.finalizerAssertions) && claimLeaseStaleClassification.finalizerAssertions.length >= 4);
+
+// Verify all scenarios have required structure
+for (const scenario of claimLeaseStaleClassification.scenarios) {
+  assert.ok(scenario.id, `scenario must have id`);
+  assert.ok(scenario.name, `scenario ${scenario.id} must have name`);
+  assert.ok(scenario.given, `scenario ${scenario.id} must have given`);
+  assert.ok(scenario.then, `scenario ${scenario.id} must have then`);
+}
+
+// Verify evidenceClasses are all present in classificationRules
+for (const ec of claimLeaseStaleClassification.evidenceClasses) {
+  assert.ok(claimLeaseStaleClassification.classificationRules[ec],
+    `classificationRules missing ${ec}`);
+}
+
+// Validate claim-lease-stale-classification fixture text hygiene
+const claimLeaseText = fs.readFileSync(
+  path.join(fixtureDir, 'claim-lease-stale-classification.json'),
+  'utf8',
+);
+for (const forbiddenPath of forbiddenRuntimePaths) {
+  assert.ok(!claimLeaseText.includes(forbiddenPath),
+    'claim-lease-stale-classification must not reference ' + forbiddenPath);
+}
+for (const pattern of secretLikePatterns) {
+  assert.ok(!pattern.test(claimLeaseText),
+    'claim-lease-stale-classification matched forbidden pattern ' + pattern);
+}
 
 console.log(JSON.stringify({
   ok: true,

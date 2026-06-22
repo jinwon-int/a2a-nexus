@@ -23,8 +23,8 @@ A provider accepting a send, returning a message id, or reporting transport acce
 | State | Owner | Terminal for closeout | Operator visible | Meaning |
 |---|---|---:|---:|---|
 | `accepted` | broker | false | false | Broker accepted task/evidence envelope. |
-| `claimed` | worker | false | false | Worker claimed the lane. |
-| `started` | worker | false | false | Worker began execution. |
+| `claimed` | worker | false | false | Worker claimed the lane. Must carry `claimedAt` and `lastProgressAt`. `lastProgressAt` is set to `claimedAt` on claim and updated on each progress heartbeat. |
+| `started` | worker | false | false | Worker began execution. Must carry `startedAt` and `lastProgressAt`. |
 | `provider_accepted` | provider | false | false | Provider accepted a send/transport request; not ACK. |
 | `operator_visible` | broker | false | true | Broker/plugin produced an operator-facing projection; not ACK. |
 | `done` | worker | true | true | Worker completed without a PR/blocker. |

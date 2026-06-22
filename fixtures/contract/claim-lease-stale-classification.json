@@ -1,0 +1,230 @@
+{
+  "fixtureId": "a2a-nexus.contract.claim-lease-stale-classification.v1",
+  "contract": "contracts/a2a/terminal-evidence.schema.json",
+  "docs": "docs/specs/terminal-evidence-state-machine.md",
+  "description": "Claim lease / lastProgress design: stale claim classification fixture. Covers claimedAt/lastProgressAt detection, nonterminal claimed-missing-evidence (Daegyo-style), and normal fresh-claim with progress. Source-only/no-live; does not mutate live broker/DB/workers.",
+  "issues": [
+    "https://github.com/jinwon-int/a2a-nexus/issues/982",
+    "https://github.com/jinwon-int/a2a-nexus/issues/983",
+    "https://github.com/jinwon-int/a2a-nexus/issues/984",
+    "https://github.com/jinwon-int/a2a-nexus/issues/985"
+  ],
+  "v0Freeze": {
+    "frozenAt": "2026-06-22T14:00:00Z",
+    "round": "a2a-nexus-r32-claim-lease-stale-fixture",
+    "sourceOnly": true,
+    "noLive": true,
+    "note": "Stale claim detection is contract-only; no live broker/DB mutation. Default staleClaimThresholdMs is 300000 (5 minutes)."
+  },
+  "safety": {
+    "sourceOnly": true,
+    "noLive": true,
+    "providerSend": false,
+    "dbMutation": false,
+    "terminalAckMutation": false,
+    "deployOrRestart": false,
+    "workerRestart": false,
+    "brokerRestart": false,
+    "gatewayRestart": false
+  },
+  "staleClaimThresholdMs": 300000,
+  "evidenceClasses": [
+    "fresh_claim",
+    "stale_claim_no_progress",
+    "stale_claim_last_progress_present",
+    "nonterminal_claimed_missing_evidence",
+    "nonterminal_running_missing_evidence"
+  ],
+  "classificationRules": {
+    "fresh_claim": {
+      "state": "claimed",
+      "hasClaimedAt": true,
+      "hasLastProgressAt": false,
+      "staleDeltaMs": "<= staleClaimThresholdMs",
+      "countsAsSubstantive": false,
+      "countsForCloseout": false,
+      "finalizerAction": "wait_or_poll",
+      "description": "Task was claimed recently with no lastProgressAt; worker may still be starting."
+    },
+    "stale_claim_no_progress": {
+      "state": "claimed",
+      "hasClaimedAt": true,
+      "hasLastProgressAt": false,
+      "staleDeltaMs": "> staleClaimThresholdMs",
+      "countsAsSubstantive": false,
+      "countsForCloseout": false,
+      "finalizerAction": "record_nonterminal_stale_claim",
+      "description": "Task was claimed but no lastProgressAt posted past the threshold. Worker may be stuck or not processing. Finalizer should record as nonterminal_missing_evidence and consider cancel/retry."
+    },
+    "stale_claim_last_progress_present": {
+      "state": "claimed",
+      "hasClaimedAt": true,
+      "hasLastProgressAt": true,
+      "staleDeltaMs": "claimedAt > staleClaimThresholdMs but lastProgressAt within threshold",
+      "countsAsSubstantive": false,
+      "countsForCloseout": false,
+      "finalizerAction": "wait_or_poll",
+      "description": "Task was claimed long ago but lastProgressAt is recent; worker is making progress. Do not classify as stale."
+    },
+    "nonterminal_claimed_missing_evidence": {
+      "state": "claimed",
+      "hasClaimedAt": true,
+      "completedAt": null,
+      "result": null,
+      "error": null,
+      "countsAsSubstantive": false,
+      "countsForCloseout": false,
+      "finalizerAction": "record_missing_evidence",
+      "suggestedNextAction": ["cancel", "retry", "supplement"],
+      "description": "Task remains claimed past bounded poll with no terminal result/error. Daegyo-style failure mode. Finalizer must exclude from quorum and record as missing evidence."
+    },
+    "nonterminal_running_missing_evidence": {
+      "state": "running",
+      "hasStartedAt": true,
+      "hasLastProgressAt": false,
+      "staleDeltaMs": "> staleClaimThresholdMs since startedAt",
+      "countsAsSubstantive": false,
+      "countsForCloseout": false,
+      "finalizerAction": "record_missing_evidence",
+      "suggestedNextAction": ["cancel", "retry", "record missing evidence"],
+      "description": "Task was started but no terminal result or lastProgress within threshold. Finalizer should exclude from quorum."
+    }
+  },
+  "scenarios": [
+    {
+      "id": "S01",
+      "name": "fresh-claim-within-threshold",
+      "description": "Task just claimed, within threshold, no lastProgressAt yet.",
+      "given": {
+        "state": "claimed",
+        "claimedAt": "2026-06-22T15:00:00.000Z",
+        "lastProgressAt": null,
+        "now": "2026-06-22T15:02:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "evidenceClass": "fresh_claim",
+        "stale": false,
+        "finalizerAction": "wait_or_poll",
+        "deltaMs": 120000
+      }
+    },
+    {
+      "id": "S02",
+      "name": "stale-claim-no-progress-past-threshold",
+      "description": "Task claimed long past threshold with no lastProgressAt. Daegyo-style claimed-stuck pattern.",
+      "given": {
+        "state": "claimed",
+        "claimedAt": "2026-06-22T14:00:00.000Z",
+        "lastProgressAt": null,
+        "now": "2026-06-22T14:10:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "evidenceClass": "stale_claim_no_progress",
+        "stale": true,
+        "finalizerAction": "record_nonterminal_stale_claim",
+        "deltaMs": 600000,
+        "suggestedNextAction": ["cancel", "retry", "record missing evidence"]
+      }
+    },
+    {
+      "id": "S03",
+      "name": "claim-old-but-last-progress-recent",
+      "description": "Task claimed long ago but lastProgressAt is recent. Worker is making progress.",
+      "given": {
+        "state": "claimed",
+        "claimedAt": "2026-06-22T14:00:00.000Z",
+        "lastProgressAt": "2026-06-22T14:08:00.000Z",
+        "now": "2026-06-22T14:10:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "evidenceClass": "stale_claim_last_progress_present",
+        "stale": false,
+        "finalizerAction": "wait_or_poll",
+        "deltaSinceClaimedMs": 600000,
+        "deltaSinceLastProgressMs": 120000
+      }
+    },
+    {
+      "id": "S04",
+      "name": "nonterminal-claimed-missing-evidence-daegyo",
+      "description": "Daegyo-style: task claimed through bounded poll, online worker heartbeat, no terminal result. Refs #985.",
+      "given": {
+        "taskId": "ccc-open-issues-r9-20260622T020621Z-team2-daegyo-issues88-52-55-74-76-77-78-79-82-83-84-85-86",
+        "state": "claimed",
+        "assignedWorkerId": "daegyo",
+        "claimedBy": "daegyo",
+        "createdAt": "2026-06-22T02:12:02.024Z",
+        "updatedAt": "2026-06-22T02:12:47.541Z",
+        "completedAt": null,
+        "result": null,
+        "error": null,
+        "workerLiveness": {
+          "workerMode": "mobile",
+          "transport": "http-poll",
+          "status": "online",
+          "workerPlane": "online",
+          "lastSeenAt": "2026-06-22T02:42:00.000Z"
+        },
+        "pollEndTime": "2026-06-22T02:42:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "evidenceClass": "nonterminal_claimed_missing_evidence",
+        "stale": true,
+        "countsAsSubstantive": false,
+        "countsForCloseout": false,
+        "finalizerAction": "record_missing_evidence",
+        "suggestedNextAction": ["cancel", "retry", "record missing evidence"],
+        "reason": "Worker daegyo claimed task at 02:12Z but through poll end at 02:42Z (30 min) no terminal result posted despite online heartbeat."
+      }
+    },
+    {
+      "id": "S05",
+      "name": "running-no-progress-stale",
+      "description": "Task started but no terminal result or lastProgress within threshold.",
+      "given": {
+        "state": "running",
+        "startedAt": "2026-06-22T14:00:00.000Z",
+        "lastProgressAt": null,
+        "completedAt": null,
+        "now": "2026-06-22T14:15:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "evidenceClass": "nonterminal_running_missing_evidence",
+        "stale": true,
+        "finalizerAction": "record_missing_evidence",
+        "deltaMs": 900000,
+        "suggestedNextAction": ["cancel", "retry", "record missing evidence"]
+      }
+    },
+    {
+      "id": "S06",
+      "name": "running-with-recent-progress-not-stale",
+      "description": "Task started long ago but lastProgressAt is recent. Not stale.",
+      "given": {
+        "state": "running",
+        "startedAt": "2026-06-22T14:00:00.000Z",
+        "lastProgressAt": "2026-06-22T14:13:00.000Z",
+        "now": "2026-06-22T14:15:00.000Z",
+        "staleClaimThresholdMs": 300000
+      },
+      "then": {
+        "stale": false,
+        "finalizerAction": "wait_or_poll",
+        "deltaSinceLastProgressMs": 120000
+      }
+    }
+  ],
+  "finalizerAssertions": [
+    "ClaimedAt must be present for every claimed task for classification to work.",
+    "LastProgressAt, when present, resets the stale clock even if claimedAt is old.",
+    "Nonterminal claimed tasks with stale claim with no progress must not count as substantive evidence.",
+    "Finalizer must record nonterminal_claimed_missing_evidence for tasks past bounded poll with no result.",
+    "Online worker heartbeat does not excuse missing terminal result; finalizer still excludes from quorum.",
+    "Stale claim classification is a finalizer-only evidence contract; workers must not self-classify."
+  ]
+}

@@ -28,7 +28,7 @@
       "operatorVisible": false,
       "allowedPrevious": ["accepted"],
       "allowedNext": ["started", "blocked", "failed"],
-      "requiredEvidence": ["taskId", "workerId", "claimedAt"]
+      "requiredEvidence": ["taskId", "workerId", "claimedAt", "lastProgressAt"]
     },
     {
       "name": "started",
@@ -37,7 +37,7 @@
       "operatorVisible": false,
       "allowedPrevious": ["claimed"],
       "allowedNext": ["provider_accepted", "done", "blocked", "failed"],
-      "requiredEvidence": ["taskId", "workerId", "startedAt"]
+      "requiredEvidence": ["taskId", "workerId", "startedAt", "lastProgressAt"]
     },
     {
       "name": "provider_accepted",

@@ -35,6 +35,10 @@ for (const state of fixture.states) {
   for (const next of state.allowedNext) assert.ok(stateByName.has(next), `${state.name} unknown next ${next}`);
 }
 
+assert.deepEqual(stateByName.get('claimed').requiredEvidence.sort(), ['claimedAt', 'lastProgressAt', 'taskId', 'workerId'].sort());
+assert.equal(stateByName.get('claimed').terminalForCloseout, false);
+assert.equal(stateByName.get('claimed').operatorVisible, false);
+assert.deepEqual(stateByName.get('started').requiredEvidence.sort(), ['lastProgressAt', 'startedAt', 'taskId', 'workerId'].sort());
 assert.equal(stateByName.get('provider_accepted').terminalForCloseout, false);
 assert.equal(stateByName.get('provider_accepted').operatorVisible, false);
 assert.deepEqual(stateByName.get('provider_accepted').requiredEvidence.sort(), ['providerMessageId', 'providerName'].sort());
