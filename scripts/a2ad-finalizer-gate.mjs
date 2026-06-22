@@ -99,6 +99,34 @@ function supplementOf(lane) {
   return hasText(value) ? String(value).trim() : '';
 }
 
+function classifySourceProjectionEvidence(text) {
+  if (/manifest\s+(?:missing|lacked)|sourceBundle\.files\[\]|files\s+array\s+missing/i.test(text)) {
+    return { evidenceClass: 'source_projection_manifest_missing', reason: 'source bundle manifest was missing files before projection' };
+  }
+  if (/payload\s+(?:dropped|lost)\s+files|bridge\s+dropped\s+files|worker\s+saw\s+0\s+files|0\s+files/i.test(text)) {
+    return { evidenceClass: 'source_projection_payload_dropped', reason: 'source bundle files were present upstream but dropped before worker/model visibility' };
+  }
+  if (/prompt\s+budget|token\s+budget|truncat(?:ed|ion)|too\s+large|exceed(?:ed|s)/i.test(text)) {
+    return { evidenceClass: 'source_projection_prompt_budget_truncated', reason: 'source bundle likely exceeded prompt/model-visible budget and was truncated' };
+  }
+  if (/worker\s+(?:reported|classified).*insufficient|source\s+(?:insufficient|unusable)|missing\s+source\s+evidence/i.test(text)) {
+    return { evidenceClass: 'source_projection_worker_insufficient', reason: 'worker reported source as insufficient even though the lane reached analysis' };
+  }
+  if (/source\s+projection|sourceBundle\.files|source\s+bundle/i.test(text)) {
+    return { evidenceClass: 'source_projection_blocked', reason: 'source projection / source bundle block' };
+  }
+  return null;
+}
+
+function hasEmptySubstantiveOutput(output) {
+  const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
+  if (analysisStatus !== 'done') return false;
+  const arrayFields = ['findings', 'risks', 'recommendations', 'evidenceRefs', 'blockerFindings', 'nonBlockingFindings'];
+  const allArraysEmpty = arrayFields.every((key) => !Array.isArray(output[key]) || output[key].length === 0);
+  const summary = String(output.analysisSummary ?? output.summary ?? '').trim().toLowerCase();
+  return allArraysEmpty && (!summary || summary === 'analysis complete' || summary === 'analysis-only completed');
+}
+
 function classifyLaneEvidence(lane) {
   const output = lane.output ?? lane.result?.output ?? {};
   const error = lane.error ?? lane.result?.error ?? {};
@@ -116,22 +144,47 @@ function classifyLaneEvidence(lane) {
   const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
 
   if (statusBucket === 'pending' && worker === 'daegyo') {
+    const laneStatus = String(lane.status || '').trim().toLowerCase();
+    if (laneStatus === 'claimed' || laneStatus === 'running') {
+      return {
+        evidenceClass: 'nonterminal_claimed_missing_evidence',
+        countsTowardQuorum: false,
+        reason: 'Daegyo/mobile lane is claimed or running without terminal result; classify as missing evidence rather than waiting indefinitely.',
+      };
+    }
     return {
       evidenceClass: 'mobile_limited',
       countsTowardQuorum: false,
       reason: 'Daegyo lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
     };
   }
-  if (analysisStatus === 'blocked' || analysisStatus === 'block' || analysisStatus === 'source_blocked') {
-    const reason = /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
-      ? 'source projection / source bundle prompt-budget block'
-      : 'analysis bridge returned blocked status';
+  if (analysisStatus === 'provider_or_model_failure' || /provider_or_model_failure|provider\s+failure|model\s+failure/i.test(evidenceText)) {
     return {
-      evidenceClass: /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
-        ? 'source_projection_blocked'
-        : 'analysis_blocked',
+      evidenceClass: 'provider_or_model_failure',
       countsTowardQuorum: false,
-      reason,
+      reason: 'provider/model failure is reportable infrastructure evidence, not substantive worker opinion',
+    };
+  }
+  if (statusBucket === 'succeeded' && hasEmptySubstantiveOutput(output)) {
+    return {
+      evidenceClass: 'empty_substantive_output',
+      countsTowardQuorum: false,
+      reason: 'analysisStatus=done with empty findings/recommendations/evidenceRefs is not substantive worker evidence',
+    };
+  }
+  if (analysisStatus === 'blocked' || analysisStatus === 'block' || analysisStatus === 'source_blocked') {
+    const sourceProjection = classifySourceProjectionEvidence(evidenceText);
+    if (sourceProjection) {
+      return {
+        evidenceClass: sourceProjection.evidenceClass,
+        countsTowardQuorum: false,
+        reason: sourceProjection.reason,
+      };
+    }
+    return {
+      evidenceClass: 'analysis_blocked',
+      countsTowardQuorum: false,
+      reason: 'analysis bridge returned blocked status',
     };
   }
   if (/generic\s+a2ad-review\s+task\s+accepted/i.test(evidenceText)) {
@@ -148,7 +201,7 @@ function classifyLaneEvidence(lane) {
       reason: 'wrapper/echo output is not substantive worker analysis',
     };
   }
-  if (/openclaw_analysis_failed|Hermes analysis bridge response did not contain valid JSON|not valid JSON/i.test(evidenceText)) {
+  if (/openclaw_analysis_failed|Hermes analysis bridge response did not contain valid JSON|invalid Hermes analysis JSON schema|Hermes response JSON must be an object|JSON must be an object|candidate was not valid JSON|not valid JSON/i.test(evidenceText)) {
     return {
       evidenceClass: 'analysis_bridge_invalid_json',
       countsTowardQuorum: false,
