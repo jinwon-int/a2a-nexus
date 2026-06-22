@@ -1,0 +1,322 @@
+{
+  "meta": {
+    "contract": "excluded-lane-aggregate-conformance",
+    "version": "v0",
+    "issueRefs": [
+      "https://github.com/jinwon-int/a2a-nexus/issues/982",
+      "https://github.com/jinwon-int/a2a-nexus/issues/983",
+      "https://github.com/jinwon-int/a2a-nexus/issues/984",
+      "https://github.com/jinwon-int/a2a-nexus/issues/985",
+      "https://github.com/jinwon-int/a2a-nexus/issues/986"
+    ],
+    "focus": "Aggregate source-only conformance fixture for r8/r9/r11 excluded and substantive A2A lanes.",
+    "updatedAt": "2026-06-22T04:00:00.000Z",
+    "redacted": true
+  },
+  "v0Freeze": {
+    "frozenAt": "2026-06-22T04:00:00.000Z",
+    "round": "ccc-open-issues-r8-r9-r11-aggregate",
+    "sourceOnly": true,
+    "noLive": true
+  },
+  "safety": {
+    "noLiveBrokerOrWorkerMutation": true,
+    "noProviderSend": true,
+    "noDatabaseMutation": true,
+    "noRestart": true,
+    "noAckReplay": true,
+    "redactedDiagnosticsOnly": true
+  },
+  "requiredEvidenceClasses": [
+    "empty_substantive_output",
+    "source_projection_blocked",
+    "provider_or_model_failure",
+    "analysis_bridge_invalid_json",
+    "nonterminal_missing_evidence",
+    "substantive"
+  ],
+  "rounds": [
+    {
+      "id": "ccc-open-issues-r8-20260622T013131Z",
+      "coveredIssues": ["#983"],
+      "laneNames": ["sogyo", "bangtong", "yukson", "gongyung", "daegyo", "nosuk", "dungae", "soonwook"]
+    },
+    {
+      "id": "ccc-open-issues-r9-20260622T020621Z",
+      "coveredIssues": ["#982", "#984", "#985"],
+      "laneNames": ["sogyo", "bangtong", "daegyo", "dungae", "nosuk", "yukson", "jingun", "soonwook", "gongyung"]
+    },
+    {
+      "id": "ccc-open-issues-r11-20260622T030249Z",
+      "coveredIssues": ["#986"],
+      "laneNames": ["nosuk", "yukson", "daegyo", "sogyo", "bangtong", "dungae", "gongyung", "jingun", "soonwook"]
+    }
+  ],
+  "classificationRules": {
+    "empty_substantive_output": {
+      "countsAsWorkerOpinion": false,
+      "match": "analysisStatus=done with empty findings, recommendations, risks, and evidenceRefs",
+      "finalizerAction": "report non-substantive empty success and request compact supplemental evidence"
+    },
+    "source_projection_blocked": {
+      "countsAsWorkerOpinion": false,
+      "match": "worker says source bundle was missing, empty, insufficient, or truncated despite canonical sourceBundle.files in dispatch",
+      "diagnosticFields": ["payloadSourceFileCount", "payloadSourceBytes", "workerReportedVisibleFiles", "projectionFailureMode"],
+      "finalizerAction": "distinguish manifest missing, payload dropped, prompt budget truncated, and worker reported source insufficient"
+    },
+    "provider_or_model_failure": {
+      "countsAsWorkerOpinion": false,
+      "match": "provider/model bridge failure projected in worker output or broker task status",
+      "finalizerAction": "count separately from broker success and do not synthesize as worker opinion"
+    },
+    "analysis_bridge_invalid_json": {
+      "countsAsWorkerOpinion": false,
+      "match": "handler_exit_nonzero with openclaw_analysis_failed or model output lacking valid analysis JSON",
+      "finalizerAction": "inspect redacted nested stdout and worker logs/state recovery before excluding from quorum"
+    },
+    "nonterminal_missing_evidence": {
+      "countsAsWorkerOpinion": false,
+      "match": "mobile lane claimed or running after bounded poll with no result, error, or completedAt",
+      "finalizerAction": "record missing evidence and suggest retry, compact supplement, cancel, or timeout terminalization"
+    },
+    "substantive": {
+      "countsAsWorkerOpinion": true,
+      "match": "analysisStatus=done with source-backed findings, recommendations, and evidence refs",
+      "finalizerAction": "eligible for quorum synthesis"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "AEL-01",
+      "name": "empty-success",
+      "roundId": "ccc-open-issues-r8-20260622T013131Z",
+      "worker": "sogyo",
+      "taskId": "ccc-open-issues-r8-20260622T013131Z-team1-sogyo-issues74-75",
+      "task": {
+        "state": "succeeded",
+        "analysisStatus": "done"
+      },
+      "output": {
+        "analysisStatus": "done",
+        "evidenceClass": "empty_substantive_output",
+        "summary": "analysis complete",
+        "findings": [],
+        "risks": [],
+        "recommendations": [],
+        "evidenceRefs": []
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "stableClassification": "empty_substantive_output",
+        "suggestedNextAction": "supplement"
+      }
+    },
+    {
+      "id": "AEL-02",
+      "name": "source-projection-blocked",
+      "roundId": "ccc-open-issues-r11-20260622T030249Z",
+      "worker": "yukson",
+      "taskId": "ccc-open-issues-r11-20260622T030249Z-team1-yukson-issues76-79",
+      "task": {
+        "state": "succeeded",
+        "analysisStatus": "blocked"
+      },
+      "dispatchPayload": {
+        "sourceBundle": {
+          "files": [
+            {
+              "path": "issues/open-982-986.md",
+              "contentSha256": "redacted-fixture-sha",
+              "contentTextIncluded": true
+            }
+          ],
+          "approxBytes": 19012
+        }
+      },
+      "diagnostics": {
+        "payloadSourceFileCount": 1,
+        "payloadSourceBytes": 19012,
+        "workerReportedVisibleFiles": 0,
+        "projectionFailureMode": "worker_reported_source_insufficient",
+        "failureModes": [
+          "manifest_missing_files",
+          "payload_dropped_files",
+          "prompt_budget_truncated_files",
+          "worker_reported_source_insufficient"
+        ]
+      },
+      "output": {
+        "analysisStatus": "blocked",
+        "evidenceClass": "source_projection_blocked",
+        "summary": "Worker reported a zero-file or insufficient source view despite a canonical source bundle in dispatch.",
+        "findings": [],
+        "risks": ["Finalizer cannot treat source-insufficient output as repository-backed analysis."],
+        "recommendations": ["Retry with a compact single-issue source bundle and include source byte/file diagnostics."],
+        "evidenceRefs": ["#983", "#984", "#986"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "stableClassification": "source_projection_blocked",
+        "suggestedNextAction": "compact_supplement"
+      }
+    },
+    {
+      "id": "AEL-03",
+      "name": "provider-failure",
+      "roundId": "ccc-open-issues-r8-20260622T013131Z",
+      "worker": "gongyung",
+      "taskId": "ccc-open-issues-r8-20260622T013131Z-team1-gongyung-issues82-83",
+      "task": {
+        "state": "succeeded",
+        "analysisStatus": "provider_or_model_failure"
+      },
+      "output": {
+        "analysisStatus": "provider_or_model_failure",
+        "evidenceClass": "provider_or_model_failure",
+        "summary": "Mobile provider/model failure was projected as a terminal broker success but produced no findings.",
+        "findings": [],
+        "risks": ["Broker success alone is not substantive evidence."],
+        "recommendations": ["Classify as provider/model failure and retry only after bridge readiness is proven."],
+        "evidenceRefs": ["#983"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "stableClassification": "provider_or_model_failure",
+        "suggestedNextAction": "retry_after_readiness"
+      }
+    },
+    {
+      "id": "AEL-04",
+      "name": "invalid-json",
+      "roundId": "ccc-open-issues-r9-20260622T020621Z",
+      "worker": "sogyo",
+      "taskId": "ccc-open-issues-r9-20260622T020621Z-team1-sogyo-issues88",
+      "task": {
+        "state": "failed",
+        "errorCode": "handler_exit_nonzero"
+      },
+      "error": {
+        "code": "handler_exit_nonzero",
+        "nestedCode": "openclaw_analysis_failed",
+        "stdoutHeadRedacted": "openclaw_analysis_failed: Hermes analysis bridge response did not contain valid analysis JSON; candidate head redacted"
+      },
+      "bridgeCandidates": [
+        {
+          "kind": "json-array",
+          "validJson": true,
+          "shape": "array",
+          "acceptAsSubstantive": false
+        },
+        {
+          "kind": "generic-error-wrapper",
+          "validJson": true,
+          "shape": "object-with-error-only",
+          "acceptAsSubstantive": false
+        },
+        {
+          "kind": "truncated-object-prefix",
+          "validJson": false,
+          "shape": "partial-object",
+          "acceptAsSubstantive": false
+        }
+      ],
+      "output": {
+        "analysisStatus": "failed",
+        "evidenceClass": "analysis_bridge_invalid_json",
+        "summary": "Handler rejected non-projectable model output even though the nested stdout hinted at partial analysis.",
+        "findings": [],
+        "risks": ["Partial human-readable stdout must not be counted as machine-projectable worker evidence."],
+        "recommendations": ["Inspect redacted nested stdout and state recovery for an explicit analysis object before retrying."],
+        "evidenceRefs": ["#982", "#984", "#985", "#986"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "stableClassification": "analysis_bridge_invalid_json",
+        "inspectDiagnostics": ["error.details.stdout", "worker logs", "state recovery"]
+      }
+    },
+    {
+      "id": "AEL-05",
+      "name": "nonterminal-mobile",
+      "roundId": "ccc-open-issues-r11-20260622T030249Z",
+      "worker": "daegyo",
+      "taskId": "ccc-open-issues-r11-20260622T030249Z-team2-daegyo-issues74",
+      "task": {
+        "state": "running",
+        "assignedWorkerId": "daegyo",
+        "claimedBy": "daegyo",
+        "completedAt": null,
+        "result": null,
+        "error": null
+      },
+      "workerLiveness": {
+        "workerMode": "mobile",
+        "transport": "http-poll",
+        "status": "online",
+        "heartbeatFresh": true
+      },
+      "output": {
+        "analysisStatus": "nonterminal_missing_evidence",
+        "evidenceClass": "nonterminal_missing_evidence",
+        "summary": "Mobile worker heartbeat stayed fresh but the claimed task had no terminal result after bounded poll.",
+        "findings": [],
+        "risks": ["Fresh worker heartbeat is not terminal task evidence."],
+        "recommendations": ["Record missing evidence and choose retry, compact supplement, cancel, or timeout terminalization."],
+        "evidenceRefs": ["#983", "#984", "#985", "#986"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "stableClassification": "nonterminal_missing_evidence",
+        "suggestedNextActions": ["retry", "supplement", "cancel", "record_missing_evidence"]
+      }
+    },
+    {
+      "id": "AEL-06",
+      "name": "substantive-lane",
+      "roundId": "ccc-open-issues-r9-20260622T020621Z",
+      "worker": "soonwook",
+      "taskId": "ccc-open-issues-r9-20260622T020621Z-team2-soonwook-issue52",
+      "task": {
+        "state": "succeeded",
+        "analysisStatus": "done"
+      },
+      "output": {
+        "analysisStatus": "done",
+        "evidenceClass": "substantive",
+        "summary": "Source-backed lane produced a keep-open recommendation with cited issue evidence.",
+        "findings": [
+          {
+            "severity": "medium",
+            "title": "Doctor file rollback issue should remain open",
+            "evidenceRefs": ["#52"],
+            "recommendation": "Keep open until a focused PR-first fix is available."
+          }
+        ],
+        "risks": [],
+        "recommendations": ["Use this as quorum-eligible source-backed worker opinion."],
+        "evidenceRefs": ["#52", "#984"]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": true,
+        "finalizerMayUseForSynthesis": true,
+        "stableClassification": "substantive"
+      }
+    }
+  ],
+  "finalizerAssertions": [
+    "Only substantive lanes count as worker opinions or quorum evidence.",
+    "Empty-success, source-projection blocked, provider/model failure, invalid JSON, and nonterminal mobile lanes are operational evidence-quality classes.",
+    "Invalid JSON troubleshooting inspects redacted nested stdout and worker/state recovery before any lane is counted.",
+    "Source-projection troubleshooting records payload file count, source bytes, worker-visible file count, and projection failure mode.",
+    "Nonterminal mobile lanes require retry, compact supplement, cancel, or missing-evidence recording; fresh heartbeat alone is not terminal evidence."
+  ],
+  "validationCommands": [
+    "node test/conformance/check-contract-fixtures.mjs",
+    "npm run test:conformance"
+  ]
+}

@@ -23,6 +23,7 @@ const fixtureFiles = {
   embeddedExecutionStability: 'embedded-execution-stability-policy.json',
   adapterReceiptCapability: 'adapter-receipt-capability.json',
   harnessNeutralAnalysisAdapter: 'harness-neutral-analysis-adapter.json',
+  excludedLaneAggregate: 'excluded-lane-aggregate-conformance.json',
   terminalEvidenceStateMachine: 'terminal-evidence-state-machine.json',
 };
 
@@ -96,6 +97,7 @@ const {
   embeddedExecutionStability,
   adapterReceiptCapability,
   harnessNeutralAnalysisAdapter,
+  excludedLaneAggregate,
   terminalEvidenceStateMachine,
 } = fixtures;
 
@@ -1759,6 +1761,118 @@ for (const pattern of secretLikePatterns) {
   );
 }
 
+// Aggregate excluded-lane conformance fixture (#982-#986)
+assert.equal(excludedLaneAggregate.meta.contract, 'excluded-lane-aggregate-conformance');
+assert.deepEqual(
+  excludedLaneAggregate.meta.issueRefs,
+  [
+    'https://github.com/jinwon-int/a2a-nexus/issues/982',
+    'https://github.com/jinwon-int/a2a-nexus/issues/983',
+    'https://github.com/jinwon-int/a2a-nexus/issues/984',
+    'https://github.com/jinwon-int/a2a-nexus/issues/985',
+    'https://github.com/jinwon-int/a2a-nexus/issues/986',
+  ],
+  'aggregate excluded-lane fixture must cover issues #982-#986',
+);
+assert.deepEqual(
+  [...excludedLaneAggregate.requiredEvidenceClasses].sort(),
+  [
+    'analysis_bridge_invalid_json',
+    'empty_substantive_output',
+    'nonterminal_missing_evidence',
+    'provider_or_model_failure',
+    'source_projection_blocked',
+    'substantive',
+  ],
+  'aggregate excluded-lane fixture must close over the r8/r9/r11 evidence classes',
+);
+const aggregateRounds = new Set(excludedLaneAggregate.rounds.map((round) => round.id));
+for (const roundId of [
+  'ccc-open-issues-r8-20260622T013131Z',
+  'ccc-open-issues-r9-20260622T020621Z',
+  'ccc-open-issues-r11-20260622T030249Z',
+]) {
+  assert.ok(aggregateRounds.has(roundId), 'aggregate fixture missing round ' + roundId);
+}
+const aggregateScenarios = new Map(excludedLaneAggregate.scenarios.map((scenario) => [scenario.name, scenario]));
+for (const name of [
+  'empty-success',
+  'source-projection-blocked',
+  'provider-failure',
+  'invalid-json',
+  'nonterminal-mobile',
+  'substantive-lane',
+]) {
+  assert.ok(aggregateScenarios.has(name), 'missing aggregate excluded-lane scenario ' + name);
+}
+assert.equal(
+  aggregateScenarios.get('substantive-lane').expect.countsAsWorkerOpinion,
+  true,
+  'substantive aggregate lane must count as worker opinion',
+);
+for (const name of [
+  'empty-success',
+  'source-projection-blocked',
+  'provider-failure',
+  'invalid-json',
+  'nonterminal-mobile',
+]) {
+  const scenario = aggregateScenarios.get(name);
+  assert.equal(scenario.expect.countsAsWorkerOpinion, false, name + ' must not count as worker opinion');
+  assert.equal(scenario.expect.finalizerMayUseForSynthesis, false, name + ' must not be synthesis evidence');
+}
+assert.equal(
+  aggregateScenarios.get('invalid-json').expect.inspectDiagnostics.includes('error.details.stdout'),
+  true,
+  'invalid-json diagnostics must point finalizers to nested stdout',
+);
+assert.deepEqual(
+  aggregateScenarios.get('invalid-json').bridgeCandidates.map((candidate) => candidate.kind).sort(),
+  ['generic-error-wrapper', 'json-array', 'truncated-object-prefix'],
+  'invalid-json fixture must include non-analysis JSON and malformed projection candidates',
+);
+for (const candidate of aggregateScenarios.get('invalid-json').bridgeCandidates) {
+  assert.equal(candidate.acceptAsSubstantive, false, candidate.kind + ' must fail closed');
+}
+assert.deepEqual(
+  aggregateScenarios.get('source-projection-blocked').diagnostics.failureModes.sort(),
+  [
+    'manifest_missing_files',
+    'payload_dropped_files',
+    'prompt_budget_truncated_files',
+    'worker_reported_source_insufficient',
+  ],
+  'source-projection fixture must enumerate stable projection failure modes',
+);
+assert.equal(
+  aggregateScenarios.get('source-projection-blocked').diagnostics.workerReportedVisibleFiles,
+  0,
+  'source-projection fixture must preserve worker-visible zero-file report',
+);
+assert.equal(
+  aggregateScenarios.get('nonterminal-mobile').task.completedAt,
+  null,
+  'nonterminal mobile fixture must preserve missing terminal completion',
+);
+assert.equal(excludedLaneAggregate.safety.noLiveBrokerOrWorkerMutation, true);
+assert.equal(excludedLaneAggregate.safety.noProviderSend, true);
+assert.equal(excludedLaneAggregate.safety.noDatabaseMutation, true);
+const aggregateFixtureText = fs.readFileSync(
+  path.join(fixtureDir, 'excluded-lane-aggregate-conformance.json'),
+  'utf8',
+);
+for (const forbiddenPath of forbiddenRuntimePaths) {
+  assert.ok(
+    !aggregateFixtureText.includes(forbiddenPath),
+    'excluded-lane aggregate fixture must not reference OpenClaw runtime/bootstrap path ' + forbiddenPath,
+  );
+}
+for (const pattern of secretLikePatterns) {
+  assert.ok(
+    !pattern.test(aggregateFixtureText),
+    'excluded-lane aggregate fixture matched forbidden secret pattern ' + pattern,
+  );
+}
 
 console.log(JSON.stringify({
   ok: true,
