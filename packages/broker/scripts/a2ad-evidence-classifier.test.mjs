@@ -288,3 +288,73 @@ test('bundle classifier accepts broker polling result objects with items arrays 
   assert.equal(report.classifications[0].workerId, 'bangtong');
   assert.equal(report.classifications[1].workerId, 'yukson');
 });
+
+test('worker_task_timeout marker is classified separately from worker opinion (#985)', () => {
+  const result = classifyEvidenceText('worker_task_timeout: heartbeat_stale after bounded-poll window for lane r9-daegyo');
+  assert.equal(result.classification, 'worker_task_timeout');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+  assert.match(result.blockers.join('\n'), /worker-runtime blocker/i);
+  assert.match(result.reasons.join('\n'), /worker_task_timeout|heartbeat_stale/i);
+});
+
+test('nonterminal_claimed_missing_evidence marker is classified as bounded-poll nonterminal (#985)', () => {
+  const result = classifyEvidenceText('lane reported as nonterminal_claimed_missing_evidence: claimed with no result/no error after bounded-poll window');
+  assert.equal(result.classification, 'nonterminal_claimed_missing_evidence');
+  assert.equal(result.substantive, false);
+  assert.equal(result.countsAsWorkerOpinion, false);
+  assert.match(result.blockers.join('\n'), /bounded-poll nonterminal|record missing evidence/i);
+  assert.match(result.reasons.join('\n'), /nonterminal_claimed_missing_evidence/i);
+});
+
+test('record classifier surfaces worker_task_timeout and nonterminal_claimed_missing_evidence from nested stdout (#985)', () => {
+  const timeoutItem = classifyEvidenceRecord({
+    workerId: 'daegyo',
+    error: {
+      details: {
+        stdout: 'worker_task_timeout: heartbeat_stale=true on lane r9-daegyo-issues88',
+      },
+    },
+  });
+  assert.equal(timeoutItem.classification, 'worker_task_timeout');
+  assert.equal(timeoutItem.substantive, false);
+  assert.equal(timeoutItem.countsAsWorkerOpinion, false);
+
+  const nonterminalItem = classifyEvidenceRecord({
+    workerId: 'daegyo',
+    status: 'claimed',
+    completedAt: null,
+    result: null,
+    error: null,
+    message: 'bounded-poll nonterminal; lane is claimed/running with no result/error/output',
+  });
+  assert.equal(nonterminalItem.classification, 'nonterminal_claimed_missing_evidence');
+  assert.equal(nonterminalItem.substantive, false);
+  assert.equal(nonterminalItem.countsAsWorkerOpinion, false);
+});
+
+test('CLI exposes worker_task_timeout and nonterminal_claimed_missing_evidence in mixed-evidence markdown report (#985)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'a2ad-evidence-classifier-'));
+  try {
+    const input = join(dir, 'results.json');
+    await writeFile(input, JSON.stringify([
+      {
+        workerId: 'daegyo',
+        status: 'claimed',
+        completedAt: null,
+        result: null,
+        error: null,
+        message: 'bounded-poll nonterminal; lane is claimed/running with no result/error/output',
+      },
+      { workerId: 'sogyo', error: { details: { stdout: 'openclaw_analysis_failed: Hermes analysis bridge response did not contain valid JSON' } } },
+      { workerId: 'gongyung', error: { details: { stdout: 'worker_task_timeout: heartbeat_stale=true' } } },
+    ], null, 2));
+    const result = spawnSync(process.execPath, [script, '--input', input, '--markdown'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /daegyo \| nonterminal_claimed_missing_evidence/);
+    assert.match(result.stdout, /sogyo \| analysis_bridge_invalid_json/);
+    assert.match(result.stdout, /gongyung \| worker_task_timeout/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

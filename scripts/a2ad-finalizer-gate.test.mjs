@@ -560,3 +560,225 @@ test('missing required flags fail loudly', () => {
   assert.equal(noRound.status, 2);
   assert.match(noRound.stderr, /--round/);
 });
+
+// ─── Bounded-poll nonterminal lanes (#982, #983, #984, #985, #986) ────────────
+
+test('claimed/running no-result lane is nonterminal_claimed_missing_evidence, not worker opinion (#985)', () => {
+  // Canonical r9 Daegyo shape: state=claimed, completedAt=null, result=null,
+  // error=null, worker still online at readback. Finalizer must report a stable
+  // bounded-poll class with a record_missing_evidence next action.
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'nosuk' }),
+    lane('t2', 'succeeded', { worker: 'sogyo' }),
+    lane('t3', 'claimed', {
+      worker: 'daegyo',
+      payload: { mode: 'analysis-only' },
+      top: {
+        completedAt: null,
+        result: null,
+        error: null,
+        workers: {
+          daegyo: { status: 'online', lastSeenAt: '2026-06-22T03:00:00Z' },
+        },
+      },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.nonterminal, 1);
+  assert.equal(result.timeout, 0);
+  assert.equal(result.pending, 1); // nonterminal counts toward pending (backward compat)
+  const t3 = result.missingLanes.find((l) => l.taskId === 't3');
+  assert.equal(t3?.worker, 'daegyo');
+  assert.equal(t3?.status, 'claimed');
+  assert.equal(t3?.evidenceClass, 'nonterminal_claimed_missing_evidence');
+  assert.equal(t3?.suggestedNextAction, 'record_missing_evidence');
+  assert.equal(t3?.workerLiveness, 'online');
+  assert.match(t3?.reason ?? '', /bounded-poll nonterminal|record missing evidence/i);
+  assert.ok(result.reasons.some((r) => /bounded-poll nonterminal/i.test(r)));
+});
+
+test('running no-result lane with no worker liveness map still classifies as nonterminal_claimed_missing_evidence', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'running', { worker: 'daegyo', top: { completedAt: null, result: null, error: null } }),
+    lane('t3', 'succeeded'),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t2 = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(t2?.evidenceClass, 'nonterminal_claimed_missing_evidence');
+  assert.equal(t2?.workerLiveness, 'unknown');
+  assert.equal(t2?.suggestedNextAction, 'record_missing_evidence');
+});
+
+test('claimed lane with heartbeatStale=true classifies as worker_task_timeout (#985)', () => {
+  // When the broker has flagged heartbeat_stale / worker_task_timeout, the lane
+  // should be reported with cancel_or_retry as the next action, distinct from
+  // the generic bounded-poll nonterminal class.
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'claimed', {
+      worker: 'daegyo',
+      top: {
+        completedAt: null,
+        result: null,
+        error: null,
+        heartbeatStale: true,
+      },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.nonterminal, 0);
+  assert.equal(result.timeout, 1);
+  const t3 = result.missingLanes.find((l) => l.taskId === 't3');
+  assert.equal(t3?.evidenceClass, 'worker_task_timeout');
+  assert.equal(t3?.suggestedNextAction, 'cancel_or_retry');
+  assert.match(t3?.reason ?? '', /worker_task_timeout|cancel or retry/i);
+  assert.ok(result.reasons.some((r) => /worker_task_timeout|cancel\/retry/i.test(r)));
+});
+
+test('claimed lane with error.code=worker_task_timeout classifies as worker_task_timeout', () => {
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'succeeded'),
+    lane('t3', 'claimed', {
+      worker: 'gongyung',
+      top: {
+        completedAt: null,
+        error: { code: 'worker_task_timeout', message: 'worker heartbeat stale after 10 min' },
+      },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t3 = result.missingLanes.find((l) => l.taskId === 't3');
+  assert.equal(t3?.evidenceClass, 'worker_task_timeout');
+  assert.equal(t3?.suggestedNextAction, 'cancel_or_retry');
+});
+
+test('queued Daegyo lane without claim still maps to mobile_limited, not nonterminal (#958/#985 split)', () => {
+  // A queued-only Daegyo lane (never claimed, no worker-side heartbeat to
+  // reason about) must keep its existing mobile_limited classification so the
+  // #958 contract stays intact. Only claimed/running lanes feed the new
+  // nonterminal_claimed_missing_evidence class.
+  const tasks = [
+    lane('t1', 'succeeded'),
+    lane('t2', 'queued', { worker: 'daegyo', payload: { mode: 'analysis-only' } }),
+    lane('t3', 'succeeded'),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 t3.',
+  });
+
+  const t2 = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(t2?.evidenceClass, 'mobile_limited');
+  assert.equal(result.nonterminal, 0);
+  assert.equal(result.timeout, 0);
+});
+
+test('r9 #985 dual-lane shape: claimed Daegyo + invalid-JSON Sogyo both block quorum with distinct classes', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'dungae' }),
+    lane('t2', 'succeeded', { worker: 'jingun' }),
+    lane('t3', 'claimed', {
+      worker: 'daegyo',
+      top: {
+        completedAt: null,
+        result: null,
+        error: null,
+        workers: { daegyo: { status: 'online', lastSeenAt: '2026-06-22T03:00:00Z' } },
+      },
+    }),
+    lane('t4', 'failed', {
+      worker: 'sogyo',
+      top: {
+        error: {
+          code: 'handler_exit_nonzero',
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: 'openclaw_analysis_failed',
+                message: 'Hermes analysis bridge response did not contain valid JSON: candidate was not valid JSON',
+              },
+            }),
+          },
+        },
+      },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 3,
+    perTarget: null,
+    draft: 'Cites t1 t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.nonterminal, 1);
+  assert.equal(result.failed, 1);
+  const daegyoLane = result.missingLanes.find((l) => l.taskId === 't3');
+  const sogyoLane = result.missingLanes.find((l) => l.taskId === 't4');
+  assert.equal(daegyoLane?.evidenceClass, 'nonterminal_claimed_missing_evidence');
+  assert.equal(sogyoLane?.evidenceClass, 'analysis_bridge_invalid_json');
+  // Both classes must surface in reasons so finalizers can see distinct failures.
+  assert.ok(result.reasons.some((r) => /bounded-poll nonterminal/i.test(r)));
+  assert.ok(result.reasons.some((r) => /succeeded lanes 2 < required quorum 3/.test(r)));
+});
+
+test('--json verdict exposes nonterminal and timeout counts alongside pending (#985)', () => {
+  const tasksFile = writeTasks([
+    lane('t1', 'succeeded'),
+    lane('t2', 'failed'),
+    lane('t3', 'claimed', { worker: 'daegyo', top: { completedAt: null, result: null, error: null } }),
+    lane('t4', 'claimed', { worker: 'gongyung', top: { completedAt: null, result: null, error: null, heartbeatStale: true } }),
+  ]);
+  const result = runGate(['--tasks', tasksFile, '--round', ROUND, '--json'], 'Cites t1.');
+  assert.equal(result.status, 1);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.verdict, 'BLOCKED');
+  assert.equal(parsed.succeeded, 1);
+  assert.equal(parsed.failed, 1);
+  assert.equal(parsed.nonterminal, 1);
+  assert.equal(parsed.timeout, 1);
+  assert.equal(parsed.pending, 2); // nonterminal + timeout = pending; failed is counted separately
+  const classes = parsed.missingLanes.map((l) => l.evidenceClass).sort();
+  assert.deepEqual(classes, ['failed', 'nonterminal_claimed_missing_evidence', 'worker_task_timeout']);
+});

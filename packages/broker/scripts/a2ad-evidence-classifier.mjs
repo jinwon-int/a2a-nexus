@@ -57,6 +57,20 @@ const ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS = [
   /not valid JSON/i,
 ];
 
+const NONTERMINAL_CLAIMED_MISSING_EVIDENCE_PATTERNS = [
+  /nonterminal_claimed_missing_evidence/i,
+  /non[- ]terminal claimed.*missing evidence/i,
+  /bounded[- ]poll nonterminal/i,
+  /claimed.*no result.*no error.*bounded[- ]poll/i,
+];
+
+const WORKER_TASK_TIMEOUT_PATTERNS = [
+  /worker_task_timeout/i,
+  /heartbeat_stale/i,
+  /timeout_phase/i,
+  /worker.*heartbeat.*stale/i,
+];
+
 const HANDLER_ARTIFACT_FAILURE_PATTERNS = [
   /handler_artifact_failure/i,
   /docker_runner_failed/i,
@@ -141,6 +155,24 @@ function classifyEvidenceContractFailure(text) {
       'analysis_bridge_invalid_json',
       'analysis bridge failed to project strict JSON evidence; report as transport/contract blocker, not worker opinion',
       invalidJson,
+    );
+  }
+
+  const workerTimeout = matchPatternSources(WORKER_TASK_TIMEOUT_PATTERNS, normalized);
+  if (workerTimeout.length) {
+    return nonSubstantiveClassification(
+      'worker_task_timeout',
+      'lane is bounded-poll nonterminal with worker_task_timeout / heartbeat_stale signal; report as worker-runtime blocker, not worker opinion',
+      workerTimeout,
+    );
+  }
+
+  const nonterminalClaimed = matchPatternSources(NONTERMINAL_CLAIMED_MISSING_EVIDENCE_PATTERNS, normalized);
+  if (nonterminalClaimed.length) {
+    return nonSubstantiveClassification(
+      'nonterminal_claimed_missing_evidence',
+      'lane is claimed/running with no result/error/output; bounded-poll nonterminal — record missing evidence, not worker opinion',
+      nonterminalClaimed,
     );
   }
 
@@ -274,12 +306,17 @@ export function classifyEvidenceRecord(record, index = 0) {
   }
   const text = collectText({
     status: record?.status,
+    state: record?.state,
     result: record?.result,
     output: record?.output,
     body: record?.body,
     summary: record?.summary,
     analysis: record?.analysis,
     error: record?.error,
+    message: record?.message,
+    detail: record?.detail,
+    details: record?.details,
+    notes: record?.notes,
   }).join('\n');
 
   const contractFailure = classifyEvidenceContractFailure(text);
@@ -373,7 +410,7 @@ export function renderMarkdownReport(report) {
 }
 
 function usage() {
-  return `Usage: node scripts/a2ad-evidence-classifier.mjs --input results.json [--require-substantive] [--min-substantive N] [--markdown]\n       node scripts/a2ad-evidence-classifier.mjs --text "worker output" --require-substantive\n\nClassifies A2A/A2AD worker evidence as substantive, source_blocked, wrapper_only, read_only_validation_changed_repo, handler_artifact_failure, runner_ledger_only, thin, or empty.\nsource_blocked/wrapper_only/read_only_validation_changed_repo/handler_artifact_failure/runner_ledger_only/thin/empty evidence is reportable but must not be counted as a worker opinion.\n`;
+  return `Usage: node scripts/a2ad-evidence-classifier.mjs --input results.json [--require-substantive] [--min-substantive N] [--markdown]\n       node scripts/a2ad-evidence-classifier.mjs --text "worker output" --require-substantive\n\nClassifies A2A/A2AD worker evidence as substantive, source_blocked, wrapper_only, analysis_bridge_invalid_json, worker_task_timeout, nonterminal_claimed_missing_evidence, read_only_validation_changed_repo, handler_artifact_failure, runner_ledger_only, thin, or empty.\nsource_blocked/wrapper_only/analysis_bridge_invalid_json/worker_task_timeout/nonterminal_claimed_missing_evidence/read_only_validation_changed_repo/handler_artifact_failure/runner_ledger_only/thin/empty evidence is reportable but must not be counted as a worker opinion.\n`;
 }
 
 async function main() {

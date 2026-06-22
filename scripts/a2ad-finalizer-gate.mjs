@@ -99,6 +99,73 @@ function supplementOf(lane) {
   return hasText(value) ? String(value).trim() : '';
 }
 
+// Lane is "nonterminal" when the broker has no terminal signal yet AND the
+// lane has already been claimed/running (not merely queued). This matches the
+// canonical r9 Daegyo shape (#985): claimed by an online worker that never
+// posted done/failed/blocked, completedAt null, result null, error null,
+// output null. Queued-only lanes fall through to the legacy worker-specific
+// heuristics (e.g. mobile_limited) so the existing #958 contract is preserved.
+function isNonterminalNoResult(lane) {
+  const status = String(lane.status || '').trim().toLowerCase();
+  if (status !== 'claimed' && status !== 'running') return false;
+  if (lane.completedAt != null) return false;
+  if (lane.result != null) return false;
+  if (lane.error != null) return false;
+  const output = lane.output ?? lane.result?.output ?? null;
+  if (output && (typeof output !== 'object' || Array.isArray(output) || Object.keys(output).length > 0)) {
+    return false;
+  }
+  return true;
+}
+
+// Detect explicit timeout / heartbeat-stale signals. Sources:
+//   - lane.heartbeatStale === true (broker diagnostics flag)
+//   - lane.timeoutAt / lane.timedOutAt set
+//   - payload.timeoutPhase or payload.workerTaskTimeout markers
+//   - error.code === 'worker_task_timeout'
+// When true we want a stable `worker_task_timeout` evidence class rather than
+// the generic `nonterminal_claimed_missing_evidence` class so finalizers can
+// distinguish "still waiting, online heartbeat" vs "broker gave up".
+function hasTimeoutSignal(lane) {
+  if (lane.heartbeatStale === true) return true;
+  if (lane.timeoutAt != null || lane.timedOutAt != null) return true;
+  const payload = lane.payload || {};
+  if (payload.timeoutPhase === true || payload.workerTaskTimeout === true) return true;
+  const error = lane.error ?? lane.result?.error ?? null;
+  if (error && typeof error === 'object' && /worker_task_timeout|heartbeat_stale|timeout_phase/i.test(String(error.code ?? ''))) {
+    return true;
+  }
+  return false;
+}
+
+// Light-weight worker liveness probe over an optional worker-registry map
+// (e.g. { workers: { daegyo: { status: 'online', lastSeenAt: ... }}}). Returns
+// 'online' | 'offline' | 'unknown'. Does NOT fail closed on missing input.
+function workerLiveness(lane) {
+  const registry = lane.workers && typeof lane.workers === 'object' ? lane.workers : null;
+  if (!registry) return 'unknown';
+  const workerId = String(workerOf(lane) || '').toLowerCase();
+  if (!workerId) return 'unknown';
+  for (const [key, info] of Object.entries(registry)) {
+    if (String(key).toLowerCase() !== workerId) continue;
+    if (!info || typeof info !== 'object') return 'unknown';
+    const status = String(info.status ?? info.workerPlane ?? '').trim().toLowerCase();
+    if (status === 'online' || status === 'active') return 'online';
+    if (status === 'offline' || status === 'dead' || status === 'expired') return 'offline';
+    return 'unknown';
+  }
+  return 'unknown';
+}
+
+const NONTERMINAL_SUGGESTED_ACTIONS = {
+  nonterminal_claimed_missing_evidence: 'record_missing_evidence',
+  worker_task_timeout: 'cancel_or_retry',
+};
+
+function suggestedNextAction(evidenceClass) {
+  return NONTERMINAL_SUGGESTED_ACTIONS[evidenceClass] || null;
+}
+
 function classifyLaneEvidence(lane) {
   const output = lane.output ?? lane.result?.output ?? {};
   const error = lane.error ?? lane.result?.error ?? {};
@@ -114,6 +181,42 @@ function classifyLaneEvidence(lane) {
   const worker = String(workerOf(lane) || '').toLowerCase();
   const statusBucket = classify(lane.status);
   const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
+
+  // ─── Claimed/running nonterminal lanes (#982, #983, #984, #985, #986) ──────
+  // Detect bounded-poll nonterminal lanes BEFORE the Daegyo-mobile shortcut
+  // so we never collapse a generic "claimed-stuck" lane into a worker-specific
+  // heuristic. The order matters:
+  //   1. Explicit timeout signal (incl. error.code===worker_task_timeout) →
+  //      `worker_task_timeout` — the broker has given up on the lane and we
+  //      want a stable class distinct from a still-online waiting lane.
+  //   2. Pending lane with no terminal signal → `nonterminal_claimed_missing_evidence`.
+  //   3. Daegyo pending (mobile-policy) → legacy `mobile_limited`.
+  if (statusBucket === 'pending') {
+    if (hasTimeoutSignal(lane)) {
+      const live = workerLiveness(lane);
+      return {
+        evidenceClass: 'worker_task_timeout',
+        countsTowardQuorum: false,
+        reason: live === 'offline'
+          ? 'lane is non-terminal with worker_task_timeout signal and worker reported offline; cancel or retry per lane policy'
+          : 'lane is non-terminal with worker_task_timeout signal; cancel or retry per lane policy',
+        workerLiveness: live,
+        suggestedNextAction: suggestedNextAction('worker_task_timeout'),
+      };
+    }
+    if (isNonterminalNoResult(lane)) {
+      const live = workerLiveness(lane);
+      return {
+        evidenceClass: 'nonterminal_claimed_missing_evidence',
+        countsTowardQuorum: false,
+        reason: live === 'online'
+          ? 'lane is claimed/running with no result/error/output; worker heartbeat online — bounded-poll nonterminal, record missing evidence'
+          : 'lane is claimed/running with no result/error/output and worker liveness unknown — bounded-poll nonterminal, record missing evidence',
+        workerLiveness: live,
+        suggestedNextAction: suggestedNextAction('nonterminal_claimed_missing_evidence'),
+      };
+    }
+  }
 
   if (statusBucket === 'pending' && worker === 'daegyo') {
     return {
@@ -205,6 +308,8 @@ function computeVerdict(tasks, options) {
   const pendingLanes = [];
   const nonSubstantiveLanes = [];
   const supersededLanes = [];
+  const nonterminalLanes = [];
+  const timeoutLanes = [];
 
   for (const lane of lanes) {
     lane.__bucket = classify(lane.status);
@@ -232,6 +337,14 @@ function computeVerdict(tasks, options) {
     if (bucket === 'succeeded' && evidence.countsTowardQuorum) succeededLanes.push(lane);
     else if (bucket === 'succeeded') nonSubstantiveLanes.push(lane);
     else if (bucket === 'failed') failedLanes.push(lane);
+    else if (evidence.evidenceClass === 'worker_task_timeout') {
+      timeoutLanes.push(lane);
+      pendingLanes.push(lane);
+    }
+    else if (evidence.evidenceClass === 'nonterminal_claimed_missing_evidence') {
+      nonterminalLanes.push(lane);
+      pendingLanes.push(lane);
+    }
     else pendingLanes.push(lane);
   }
 
@@ -257,6 +370,12 @@ function computeVerdict(tasks, options) {
   }
   if (pendingLanes.length > 0) {
     reasons.push(`${pendingLanes.length} lane(s) still pending (non-terminal); finality blocked`);
+  }
+  if (nonterminalLanes.length > 0) {
+    reasons.push(`${nonterminalLanes.length} lane(s) bounded-poll nonterminal (claimed/running, no result/error); finality blocked pending record_missing_evidence or retry`);
+  }
+  if (timeoutLanes.length > 0) {
+    reasons.push(`${timeoutLanes.length} lane(s) bounded-poll nonterminal with worker_task_timeout signal; finality blocked pending cancel/retry per lane policy`);
   }
   if (nonSubstantiveLanes.length > 0) {
     reasons.push(`${nonSubstantiveLanes.length} succeeded lane(s) were wrapper-only/non-substantive and excluded from quorum`);
@@ -288,13 +407,18 @@ function computeVerdict(tasks, options) {
     reasons.push('draft cites no succeeded-lane evidence id (fail-closed, evidence-first)');
   }
 
-  const missingLanes = [...failedLanes, ...pendingLanes, ...nonSubstantiveLanes].map((l) => ({
-    taskId: l.id,
-    status: String(l.status || '').trim().toLowerCase() || 'unknown',
-    worker: workerOf(l),
-    evidenceClass: l.__evidence?.evidenceClass ?? classifyLaneEvidence(l).evidenceClass,
-    reason: l.__evidence?.reason ?? classifyLaneEvidence(l).reason,
-  }));
+  const missingLanes = [...failedLanes, ...pendingLanes, ...nonSubstantiveLanes].map((l) => {
+    const evidence = l.__evidence ?? classifyLaneEvidence(l);
+    return {
+      taskId: l.id,
+      status: String(l.status || '').trim().toLowerCase() || 'unknown',
+      worker: workerOf(l),
+      evidenceClass: evidence.evidenceClass,
+      reason: evidence.reason,
+      ...(evidence.workerLiveness ? { workerLiveness: evidence.workerLiveness } : {}),
+      ...(evidence.suggestedNextAction ? { suggestedNextAction: evidence.suggestedNextAction } : {}),
+    };
+  });
   const supersededLaneRecords = supersededLanes.map((l) => ({
     taskId: l.id,
     status: String(l.status || '').trim().toLowerCase() || 'unknown',
@@ -315,6 +439,8 @@ function computeVerdict(tasks, options) {
     failed: failedLanes.length,
     pending: pendingLanes.length,
     nonSubstantive: nonSubstantiveLanes.length,
+    nonterminal: nonterminalLanes.length,
+    timeout: timeoutLanes.length,
     laneCount: lanes.length,
     succeededIds,
     missingLanes,
@@ -532,6 +658,8 @@ function toJson(result) {
     failed: result.failed,
     pending: result.pending,
     nonSubstantive: result.nonSubstantive,
+    nonterminal: result.nonterminal,
+    timeout: result.timeout,
     missingLanes: result.missingLanes,
     supersededLanes: result.supersededLanes,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
@@ -550,6 +678,11 @@ export {
   targetKey,
   citedEvidenceIds,
   preliminaryBanner,
+  classifyLaneEvidence,
+  isNonterminalNoResult,
+  hasTimeoutSignal,
+  workerLiveness,
+  suggestedNextAction,
   SUCCEEDED_STATUSES,
   FAILED_STATUSES,
   PENDING_STATUSES,
