@@ -436,7 +436,122 @@ function fetchGithubPrSourceBundle(prRef, env, limits, remainingBytes) {
   return { files, warnings };
 }
 
-function buildSourceBlockedResponse(sourceBlocked) {
+// ─── Source projection diagnostics ──────────────────────────────────────────
+// Issue: https://github.com/jinwon-int/a2a-nexus/issues/983
+// Distinguishes: missing manifest, payload dropped, prompt-budget truncation,
+// worker-reported insufficient source.
+// The finalizer uses these diagnostic classes to exclude lanes from substantive
+// quorum with a precise reason rather than a generic "source blocked" marker.
+
+const DIAGNOSTIC_CLASSES = {
+  CLEAN: "clean",
+  MISSING_MANIFEST: "missing_manifest",
+  PAYLOAD_DROPPED: "payload_dropped",
+  BUDGET_TRUNCATED: "budget_truncated",
+  WORKER_REPORTED_INSUFFICIENT: "worker_reported_insufficient_source",
+};
+
+function computeSourceDiagnostics(sourceBundle, manifestFiles, payload) {
+  const hasManifest = manifestFiles && manifestFiles.length > 0;
+  const hasSourceBundle = !!(
+    (payload.sourceBundle && typeof payload.sourceBundle === "object" && !Array.isArray(payload.sourceBundle) && Array.isArray(payload.sourceBundle.files) && payload.sourceBundle.files.length > 0)
+    || (Array.isArray(payload.embeddedSourceEvidence) && payload.embeddedSourceEvidence.length > 0)
+    || (Array.isArray(payload.sourceEvidence) && payload.sourceEvidence.length > 0)
+  );
+
+  const projectedFiles = sourceBundle.files || [];
+  const truncatedFiles = projectedFiles.filter((f) => f.truncated).map((f) => ({
+    path: `${f.repo}:${f.path}`,
+    originalBytes: f.bytes || 0,
+    reason: "content truncated by maxFileBytes or maxTotalBytes budget",
+  }));
+
+  // Files in the manifest that didn't make it into the projection
+  const projectedPaths = new Set(projectedFiles.map((f) => `${f.repo}:${f.path}`));
+  const droppedFiles = (manifestFiles || [])
+    .filter((mf) => !projectedPaths.has(`${mf.repo}:${mf.path}`))
+    .map((mf) => ({ path: `${mf.repo}:${mf.path}`, reason: mf.reason || "not projected (budget exhausted, empty content, or unsafe path)" }));
+
+  const manifestFileCount = manifestFiles ? manifestFiles.length : 0;
+  const projectedFileCount = projectedFiles.length;
+  const totalSourceBytesRequested = projectedFiles.reduce((sum, f) => sum + (f.bytes || 0), 0);
+  const totalSourceBytesProjected = projectedFiles.reduce((sum, f) => sum + Buffer.byteLength(f.content || "", "utf8"), 0);
+  const budgetExhausted = sourceBundle.warnings
+    ? sourceBundle.warnings.some((w) => /budget|limit|max/i.test(w))
+    : false;
+
+  // Determine projectionClass
+  let projectionClass = DIAGNOSTIC_CLASSES.CLEAN;
+  if (sourceBundle.sourceBlocked) {
+    // If the bridge itself blocked on source, classify more precisely
+    if (!hasSourceBundle) {
+      projectionClass = DIAGNOSTIC_CLASSES.MISSING_MANIFEST;
+    } else if (projectedFileCount === 0) {
+      projectionClass = DIAGNOSTIC_CLASSES.PAYLOAD_DROPPED;
+    } else if (budgetExhausted || truncatedFiles.length > 0) {
+      projectionClass = DIAGNOSTIC_CLASSES.BUDGET_TRUNCATED;
+    } else {
+      projectionClass = DIAGNOSTIC_CLASSES.PAYLOAD_DROPPED;
+    }
+  } else if (!hasManifest && projectedFileCount === 0) {
+    projectionClass = DIAGNOSTIC_CLASSES.MISSING_MANIFEST;
+  } else if (hasManifest && projectedFileCount === 0) {
+    projectionClass = DIAGNOSTIC_CLASSES.PAYLOAD_DROPPED;
+  } else if (budgetExhausted || truncatedFiles.length > 0) {
+    projectionClass = DIAGNOSTIC_CLASSES.BUDGET_TRUNCATED;
+  }
+
+  return {
+    manifestPresent: hasManifest,
+    manifestFileCount,
+    projectedFileCount,
+    droppedFiles,
+    truncatedFiles,
+    budgetExhausted,
+    totalSourceBytesRequested,
+    totalSourceBytesProjected,
+    projectionClass,
+  };
+}
+
+function extractManifestFiles(payload) {
+  const candidates = [];
+  const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
+
+  // From sourceBundle.files[]
+  const sourceBundle = payload.sourceBundle;
+  if (sourceBundle && typeof sourceBundle === "object" && !Array.isArray(sourceBundle)) {
+    for (const item of toArray(sourceBundle.files)) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const repo = safeText(item.repo || item.repository || fallbackRepo, fallbackRepo);
+      const path = safeText(item.path || item.file || item.name, "");
+      if (!path) continue;
+      candidates.push({ repo, path });
+    }
+  }
+
+  // From embeddedSourceEvidence
+  for (const item of toArray(payload.embeddedSourceEvidence)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const repo = safeText(item.repo || item.repository || fallbackRepo, fallbackRepo);
+    const path = safeText(item.path || item.file || item.name, "");
+    if (!path) continue;
+    candidates.push({ repo, path });
+  }
+
+  // From sourceEvidence
+  for (const item of toArray(payload.sourceEvidence)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const repo = safeText(item.repo || item.repository || fallbackRepo, fallbackRepo);
+    const path = safeText(item.path || item.file || item.name, "");
+    if (!path) continue;
+    candidates.push({ repo, path });
+  }
+
+  return candidates;
+}
+
+function buildSourceBlockedResponse(sourceBlocked, sourceDiagnostics) {
   const summary = `analysis bridge blocked: ${sourceBlocked.reason}`;
   return {
     payloads: [{
@@ -450,6 +565,7 @@ function buildSourceBlockedResponse(sourceBlocked) {
         ],
         recommendations: ["Retry with a compact canonical payload.sourceBundle.files[] packet or make the referenced source available to the analysis bridge."],
         evidenceRefs: sourceBlocked.evidenceRefs || [],
+        sourceProjectionDiagnostics: sourceDiagnostics,
       }),
     }],
   };
@@ -971,15 +1087,18 @@ function main() {
   }
 
   let sourceBundle;
+  let manifestFiles;
   try {
     sourceBundle = collectSourceBundle(payload, process.env);
+    manifestFiles = extractManifestFiles(payload);
   } catch (error) {
     die(`failed to collect read-only source bundle: ${error.message}`);
   }
 
+  const sourceDiagnostics = computeSourceDiagnostics(sourceBundle, manifestFiles, payload);
   const prompt = buildHermesPrompt({ message, payload, sourceBundle, flags });
   if (sourceBundle.sourceBlocked) {
-    process.stdout.write(JSON.stringify(buildSourceBlockedResponse(sourceBundle.sourceBlocked)));
+    process.stdout.write(JSON.stringify(buildSourceBlockedResponse(sourceBundle.sourceBlocked, sourceDiagnostics)));
     return;
   }
 
@@ -1000,6 +1119,10 @@ function main() {
   let response;
   try {
     response = normalizeResponse(parsed, { recoverySource: hermesResult.recoverySource });
+    // Attach source projection diagnostics for finalizer consumption
+    if (sourceDiagnostics.projectionClass !== DIAGNOSTIC_CLASSES.CLEAN) {
+      response.sourceProjectionDiagnostics = sourceDiagnostics;
+    }
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

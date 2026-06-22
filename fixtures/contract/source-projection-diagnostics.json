@@ -1,0 +1,231 @@
+{
+  "fixtureId": "a2a-nexus.contract.source-projection-diagnostics.v1",
+  "description": "Source projection diagnostics contract: classifies source-projection-blocked lanes into missing_manifest, payload_dropped, budget_truncated, and worker_reported_insufficient_source so finalizers can exclude lanes from substantive quorum with a precise reason.",
+  "v0Freeze": {
+    "frozenAt": "2026-06-22T00:00:00Z",
+    "round": "a2a-nexus-source-projection-diagnostics-fixture"
+  },
+  "contract": "contracts/a2a/source-projection-diagnostics.md",
+  "issue": "https://github.com/jinwon-int/a2a-nexus/issues/983",
+  "parentIssues": [
+    "https://github.com/jinwon-int/a2a-nexus/issues/982",
+    "https://github.com/jinwon-int/a2a-nexus/issues/984"
+  ],
+  "team": "team1-bangtong",
+  "brokerOfRecord": "seoseo",
+  "safety": {
+    "sourceOnly": true,
+    "noLive": true,
+    "providerSend": false,
+    "dbMutation": false,
+    "terminalAckMutation": false,
+    "deployOrRestart": false
+  },
+  "diagnosticClasses": {
+    "missing_manifest": {
+      "description": "Broker payload lacked sourceBundle.files[], embeddedSourceEvidence, and sourceEvidence. The manifest was absent entirely.",
+      "finalizerAction": "Exclude from quorum. Check dispatch payload — did the broker omit sourceBundle.files[]?",
+      "troubleshooting": "Inspect error.details.stdout and broker dispatch manifest. Verify sourceBundle was included in the task payload."
+    },
+    "payload_dropped": {
+      "description": "Manifest had files[] but the bridge could not project any of them (empty content, unsafe paths, budget exhausted before any file was loaded).",
+      "finalizerAction": "Exclude from quorum. The manifest existed but no usable source reached the model.",
+      "troubleshooting": "Review droppedFiles[] in diagnostics for per-file reasons. Check maxFileBytes/maxTotalBytes limits."
+    },
+    "budget_truncated": {
+      "description": "One or more source files were loaded but truncated by maxFileBytes or maxTotalBytes limits, or the overall prompt was truncated before invoking Hermes.",
+      "finalizerAction": "Evaluate whether truncated content was still sufficient. If yes, include in quorum; if no, exclude and note truncation.",
+      "troubleshooting": "Check truncatedFiles[] for per-file original vs kept byte counts. Verify totalSourceBytesRequested vs totalSourceBytesProjected."
+    },
+    "worker_reported_insufficient_source": {
+      "description": "Worker model received source files but classified them as insufficient for substantive analysis.",
+      "finalizerAction": "Exclude from quorum. Worker explicitly reported source insufficiency.",
+      "troubleshooting": "Read worker analysis summary for missing evidence details. Consider supplement task with compact sourceBundle."
+    }
+  },
+  "sourceProjectionDiagnosticsSchema": {
+    "type": "object",
+    "properties": {
+      "manifestPresent": { "type": "boolean", "description": "Whether the payload included sourceBundle.files[], embeddedSourceEvidence, or sourceEvidence" },
+      "manifestFileCount": { "type": "number", "description": "Number of files in the manifest before projection" },
+      "projectedFileCount": { "type": "number", "description": "Number of files that made it into the model prompt" },
+      "droppedFiles": { "type": "array", "description": "Files in the manifest that could not be projected, with reasons" },
+      "truncatedFiles": { "type": "array", "description": "Files that were projected but truncated, with original/kept byte counts" },
+      "budgetExhausted": { "type": "boolean", "description": "Whether the prompt budget or file/total byte limits were hit" },
+      "totalSourceBytesRequested": { "type": "number", "description": "Total bytes of all source content before truncation" },
+      "totalSourceBytesProjected": { "type": "number", "description": "Total bytes that made it into the prompt" },
+      "projectionClass": {
+        "type": "string",
+        "enum": ["clean", "missing_manifest", "payload_dropped", "budget_truncated", "worker_reported_insufficient_source"],
+        "description": "Classification of the source projection result"
+      }
+    },
+    "required": ["manifestPresent", "manifestFileCount", "projectedFileCount", "droppedFiles", "truncatedFiles", "budgetExhausted", "projectionClass"]
+  },
+  "scenarios": [
+    {
+      "name": "missing-manifest-no-source-bundle",
+      "given": {
+        "payload": {
+          "mode": "analysis-only",
+          "noLive": true,
+          "sourceOnly": true,
+          "repo": "jinwon-int/a2a-nexus",
+          "assignment": "analyze without source files"
+        },
+        "sourceBundle": null,
+        "embeddedSourceEvidence": null,
+        "sourceEvidence": null
+      },
+      "then": {
+        "sourceProjectionDiagnostics": {
+          "manifestPresent": false,
+          "manifestFileCount": 0,
+          "projectedFileCount": 0,
+          "droppedFiles": [],
+          "truncatedFiles": [],
+          "budgetExhausted": false,
+          "projectionClass": "missing_manifest"
+        }
+      }
+    },
+    {
+      "name": "payload-dropped-unsafe-and-empty-files",
+      "given": {
+        "payload": {
+          "mode": "analysis-only",
+          "sourceBundle": {
+            "files": [
+              { "path": "../unsafe.ts", "contentText": "export const unsafe = true;\n" },
+              { "path": "packages/empty.ts", "contentText": "" }
+            ]
+          }
+        }
+      },
+      "then": {
+        "sourceProjectionDiagnostics": {
+          "manifestPresent": true,
+          "manifestFileCount": 2,
+          "projectedFileCount": 0,
+          "projectionClass": "payload_dropped",
+          "droppedFiles": [
+            { "path": "embedded:../unsafe.ts", "reason": "skipped unsafe embedded source path: ../unsafe.ts" },
+            { "path": "embedded:packages/empty.ts", "reason": "skipped empty embedded source file: embedded:packages/empty.ts" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "budget-truncated-large-file",
+      "given": {
+        "payload": {
+          "mode": "analysis-only",
+          "repo": "jinwon-int/a2a-broker",
+          "path": "src/large.ts"
+        },
+        "env": {
+          "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES": "16000",
+          "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES": "20000"
+        },
+        "sourceFileSize": 80000
+      },
+      "then": {
+        "sourceProjectionDiagnostics": {
+          "projectedFileCount": 1,
+          "projectionClass": "budget_truncated",
+          "truncatedFiles": [
+            { "path": "jinwon-int/a2a-broker:src/large.ts", "reason": "content truncated by maxFileBytes or maxTotalBytes budget" }
+          ],
+          "budgetExhausted": true
+        }
+      }
+    },
+    {
+      "name": "worker-reported-insufficient-source",
+      "given": {
+        "payload": {
+          "mode": "analysis-only",
+          "sourceBundle": {
+            "files": [
+              { "path": "minimal.ts", "contentText": "// minimal stub\n" }
+            ]
+          }
+        },
+        "workerOutput": {
+          "status": "blocked",
+          "summary": "source evidence insufficient for analysis of #74",
+          "findings": [],
+          "risks": ["missing #75 test evidence makes #74 evaluation impossible"],
+          "recommendations": ["supplement with compact sourceBundle including test files"]
+        }
+      },
+      "then": {
+        "finalizerClassification": "worker_reported_insufficient_source",
+        "sourceProjectionDiagnostics": {
+          "projectionClass": "worker_reported_insufficient_source",
+          "manifestPresent": true,
+          "projectedFileCount": 1
+        }
+      }
+    },
+    {
+      "name": "clean-projection-with-truncation",
+      "given": {
+        "payload": {
+          "mode": "analysis-only",
+          "sourceBundle": {
+            "files": [
+              { "path": "packages/small.ts", "contentText": "small file content\n" },
+              { "path": "packages/large.ts", "contentText": "<200KB of source>" }
+            ]
+          }
+        }
+      },
+      "then": {
+        "sourceProjectionDiagnostics": {
+          "manifestPresent": true,
+          "manifestFileCount": 2,
+          "projectedFileCount": 2,
+          "projectionClass": "budget_truncated",
+          "truncatedFiles": [
+            { "path": "embedded:packages/large.ts", "reason": "content truncated by maxFileBytes or maxTotalBytes budget" }
+          ],
+          "budgetExhausted": true
+        }
+      }
+    }
+  ],
+  "conformanceTest": {
+    "command": "node --test --test-name-pattern='missing_manifest|payload_dropped|budget_truncated|manifest.*fallback' packages/broker/scripts/hermes-a2a-analysis-bridge.test.mjs",
+    "expectedTests": 4,
+    "expectedPass": 4
+  },
+  "safetyConfirmations": {
+    "noProductionDeployOrRestart": true,
+    "noGatewayRestart": true,
+    "noBrokerRestart": true,
+    "noWorkerRestart": true,
+    "noLiveProviderSend": true,
+    "noTerminalOutboxAckMutation": true,
+    "noProductionDatabaseMutation": true,
+    "noSecretRotationOrDisclosure": true,
+    "noHistoryRewrite": true,
+    "noForcePush": true,
+    "noReleasePublication": true,
+    "noCommunityPost": true,
+    "noAutomaticMergeOrApproval": true,
+    "noRepositoryVisibilityChange": true,
+    "redacted": true,
+    "syntheticFixtureOnly": true
+  },
+  "assertions": [
+    "sourceProjectionDiagnostics is attached to blocked and non-clean analysis responses",
+    "manifestPresent distinguishes missing manifest from payload dropped",
+    "droppedFiles[] lists every manifest file that failed projection with a reason",
+    "truncatedFiles[] lists every projected file that was truncated with original vs kept bytes",
+    "projectionClass is one of clean, missing_manifest, payload_dropped, budget_truncated, worker_reported_insufficient_source",
+    "budgetExhausted is true when any budget limit was hit",
+    "totalSourceBytesRequested and totalSourceBytesProjected allow finalizers to estimate truncation loss",
+    "finalizers can exclude missing_manifest and payload_dropped lanes automatically without manual JSON spelunking"
+  ]
+}

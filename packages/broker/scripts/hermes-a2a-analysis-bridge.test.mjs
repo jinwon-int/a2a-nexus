@@ -1017,3 +1017,210 @@ test("Hermes A2A analysis bridge blocks without invoking Hermes when explicit PR
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ─── Source projection diagnostics tests (#982-#986) ───────────────────────
+
+test("Hermes A2A analysis bridge emits source diagnostics with missing_manifest classification", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-diag-missing-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    writeFileSync(fakeHermesPath, "#!/usr/bin/env node\nthrow new Error('Hermes should not run for source-blocked tasks');\n");
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task without any source evidence.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        assignment: "analyze something without source files",
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath, A2A_ANALYSIS_REPO_MAP_JSON: "{}" },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Hermes exited/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge emits source diagnostics with payload_dropped classification", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-diag-dropped-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    writeFileSync(fakeHermesPath, "#!/usr/bin/env node\nthrow new Error('Hermes should not run for source-blocked tasks');\n");
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task with unusable sourceBundle.files.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-nexus",
+        sourceBundle: {
+          files: [
+            { path: "../unsafe.ts", contentText: "export const unsafe = true;\n" },
+            { path: "packages/empty.ts", contentText: "" },
+          ],
+        },
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath, A2A_ANALYSIS_REPO_MAP_JSON: "{}" },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "blocked");
+    const diag = payload.sourceProjectionDiagnostics;
+    assert.ok(diag, "sourceProjectionDiagnostics must be present");
+    assert.equal(diag.manifestPresent, true);
+    assert.equal(diag.manifestFileCount, 2);
+    assert.equal(diag.projectedFileCount, 0);
+    assert.equal(diag.projectionClass, "payload_dropped");
+    assert.ok(diag.droppedFiles.length > 0, "must list dropped files");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge emits source diagnostics with budget_truncated classification", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-diag-budget-"));
+  const repoDir = join(tempDir, "a2a-broker");
+  const srcDir = join(repoDir, "src");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    mkdirSync(srcDir, { recursive: true });
+    const largeContent = "export const budgetMarker = 'prompt budget truncation test';\n" + "x".repeat(80_000);
+    writeFileSync(join(srcDir, "large.ts"), largeContent);
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('truncated source file')) throw new Error('expected truncation marker');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'budget truncation test passed',",
+      "  findings: ['file was truncated by budget'],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-broker:src/large.ts']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task with a large source file that should be truncated.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-broker",
+        path: "src/large.ts",
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }),
+        A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: "20000",
+        A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "200000",
+        A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: "16000",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const responsePayload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(responsePayload.status, "done");
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.match(prompt, /truncated/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge source diagnostics distinguishes manifest from repo-map fallback", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-diag-manifest-vs-fallback-"));
+  const repoDir = join(tempDir, "a2a-broker");
+  const scriptsDir = join(repoDir, "scripts");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    mkdirSync(scriptsDir, { recursive: true });
+    writeFileSync(join(scriptsDir, "helper.ts"), "// helper marker\n");
+    writeFileSync(join(repoDir, "package.json"), '{"name":"a2a-broker"}\n');
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('scripts/helper.ts')) throw new Error('fallback source path missing');",
+      "console.log(JSON.stringify({",
+      "  status: 'done',",
+      "  summary: 'fallback repo-map source reached Hermes',",
+      "  findings: [],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: ['jinwon-int/a2a-broker:scripts/helper.ts']",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2A source-only task with repo-map fallback (no manifest).",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-broker",
+        path: "scripts/helper.ts",
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }),
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const responsePayload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(responsePayload.status, "done");
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.match(prompt, /scripts\/helper\.ts/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
