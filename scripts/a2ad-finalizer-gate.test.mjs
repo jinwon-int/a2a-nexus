@@ -259,6 +259,103 @@ test('queued Daegyo lane is labeled mobile_limited and cannot satisfy quorum (#9
   assert.equal(t3?.evidenceClass, 'mobile_limited');
 });
 
+
+test('claimed/running Daegyo lane is classified as nonterminal missing evidence (#985 #986)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'dungae' }),
+    lane('t2', 'succeeded', { worker: 'jingun' }),
+    lane('t3', 'claimed', { worker: 'daegyo', payload: { mode: 'analysis-only' } }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t1 and t2.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t3 = result.missingLanes.find((l) => l.taskId === 't3');
+  assert.equal(t3?.worker, 'daegyo');
+  assert.equal(t3?.evidenceClass, 'nonterminal_claimed_missing_evidence');
+  assert.match(t3?.reason ?? '', /claimed|missing evidence/i);
+});
+
+test('empty analysisStatus=done success is non-substantive (#983)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'sogyo', top: { output: {
+      analysisStatus: 'done',
+      summary: 'analysis complete',
+      findings: [],
+      risks: [],
+      recommendations: [],
+      evidenceRefs: [],
+    } } }),
+    lane('t2', 'succeeded', { worker: 'dungae' }),
+    lane('t3', 'succeeded', { worker: 'soonwook' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t2 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t1 = result.missingLanes.find((l) => l.taskId === 't1');
+  assert.equal(t1?.evidenceClass, 'empty_substantive_output');
+});
+
+test('provider/model failure success is non-substantive (#983 #984)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', { worker: 'gongyung', top: { output: {
+      analysisStatus: 'provider_or_model_failure',
+      evidenceClass: 'provider_or_model_failure',
+      summary: 'provider_or_model_failure: model failure before usable findings',
+      findings: [],
+      recommendations: [],
+    } } }),
+    lane('t2', 'succeeded', { worker: 'dungae' }),
+    lane('t3', 'succeeded', { worker: 'soonwook' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t2 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const t1 = result.missingLanes.find((l) => l.taskId === 't1');
+  assert.equal(t1?.evidenceClass, 'provider_or_model_failure');
+});
+
+test('source projection blocked lanes expose detailed source bundle classes (#984 #986)', () => {
+  const cases = [
+    ['manifest', 'manifest missing sourceBundle.files[] before projection', 'source_projection_manifest_missing'],
+    ['dropped', 'payload dropped files: worker saw 0 files despite manifest', 'source_projection_payload_dropped'],
+    ['budget', 'prompt budget truncated source bundle before model visibility', 'source_projection_prompt_budget_truncated'],
+    ['worker', 'worker reported source insufficient for review', 'source_projection_worker_insufficient'],
+  ];
+  for (const [suffix, summary, expected] of cases) {
+    const tasks = [
+      lane(`t-${suffix}`, 'succeeded', { worker: 'bangtong', top: { output: {
+        analysisStatus: 'blocked',
+        summary,
+      } } }),
+      lane(`ok-${suffix}-1`, 'succeeded', { worker: 'dungae' }),
+      lane(`ok-${suffix}-2`, 'succeeded', { worker: 'soonwook' }),
+    ];
+    const result = computeVerdict(tasks, {
+      round: ROUND,
+      quorum: null,
+      perTarget: null,
+      draft: `Cites ok-${suffix}-1 ok-${suffix}-2.`,
+    });
+    const blocked = result.missingLanes.find((l) => l.taskId === `t-${suffix}`);
+    assert.equal(blocked?.evidenceClass, expected);
+  }
+});
+
 test('FINAL refused when draft cites no succeeded-lane task ids', () => {
   const tasks = [
     lane('t1', 'succeeded'),
@@ -335,8 +432,8 @@ test('analysis bridge blocked source-projection lane is non-substantive and list
   const blocked = result.missingLanes.find((l) => l.taskId === 't2');
   assert.equal(blocked?.worker, 'bangtong');
   assert.equal(blocked?.status, 'succeeded');
-  assert.equal(blocked?.evidenceClass, 'source_projection_blocked');
-  assert.match(blocked?.reason ?? '', /source projection.*budget/i);
+  assert.equal(blocked?.evidenceClass, 'source_projection_prompt_budget_truncated');
+  assert.match(blocked?.reason ?? '', /prompt.*budget|budget.*truncated/i);
 });
 
 test('classifier ignores wrapper phrases embedded inside sourceBundle payload content (#960)', () => {
@@ -424,7 +521,7 @@ test('compact supplement supersedes a source-projection blocked lane without hid
     status: 'succeeded',
     worker: 'bangtong',
     evidenceClass: 'superseded_by_supplement',
-    reason: 'source_projection_blocked superseded by compact supplement t2-supplement',
+    reason: 'source_projection_prompt_budget_truncated superseded by compact supplement t2-supplement',
     supersededBy: 't2-supplement',
   }]);
 });

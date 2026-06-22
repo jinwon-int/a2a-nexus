@@ -162,6 +162,103 @@ test('record classifier extracts nested invalid-JSON bridge failures without lea
   assert.equal(item.countsAsWorkerOpinion, false);
 });
 
+
+test('record classifier marks empty successful analysis as non-substantive (#983)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'sogyo',
+    status: 'succeeded',
+    output: {
+      analysisStatus: 'done',
+      summary: 'analysis complete',
+      findings: [],
+      risks: [],
+      recommendations: [],
+      evidenceRefs: [],
+    },
+  });
+  assert.equal(item.classification, 'empty_substantive_output');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+});
+
+test('record classifier exposes provider/model failures as infrastructure evidence (#983 #984)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'gongyung',
+    status: 'succeeded',
+    output: {
+      analysisStatus: 'provider_or_model_failure',
+      summary: 'provider_or_model_failure: model failure before usable findings',
+    },
+  });
+  assert.equal(item.classification, 'provider_or_model_failure');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+});
+
+
+test('invalid Hermes analysis schema object/array errors classify as analysis_bridge_invalid_json (#982)', () => {
+  for (const message of [
+    'invalid Hermes analysis JSON schema: Hermes response JSON must be an object',
+    'Hermes response JSON must be an object (got array)',
+    'Hermes analysis bridge response did not contain valid JSON: candidate was not valid JSON: {"status":"done"',
+  ]) {
+    const item = classifyEvidenceRecord({
+      workerId: 'sogyo',
+      status: 'failed',
+      error: {
+        code: 'handler_exit_nonzero',
+        details: { stdout: JSON.stringify({ error: { code: 'openclaw_analysis_failed', message } }) },
+      },
+    });
+    assert.equal(item.classification, 'analysis_bridge_invalid_json');
+    assert.equal(item.substantive, false);
+    assert.equal(item.countsAsWorkerOpinion, false);
+  }
+});
+
+test('explicit recovered analysis object stays substantive despite diagnostic error stdout (#982)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'nosuk',
+    status: 'succeeded',
+    result: {
+      output: {
+        analysisStatus: 'done',
+        analysisKind: 'analysis_bridge',
+        recoverySource: 'state_db',
+        summary: 'Recovered analysis object from state DB.',
+        findings: ['Recovered finding'],
+        risks: ['Recovered risk'],
+        recommendations: ['Recovered recommendation'],
+        evidenceRefs: ['state-db-record'],
+      },
+    },
+    error: {
+      details: {
+        stdout: 'openclaw_analysis_failed: stale diagnostic not valid JSON',
+      },
+    },
+  });
+  assert.equal(item.classification, 'substantive');
+  assert.equal(item.substantive, true);
+  assert.equal(item.countsAsWorkerOpinion, true);
+  assert.match(item.reasons.join('\n'), /recovered/i);
+});
+
+test('record classifier distinguishes source projection failure shapes (#984 #986)', () => {
+  const cases = [
+    ['source_projection_manifest_missing', 'manifest missing sourceBundle.files[] before projection'],
+    ['source_projection_payload_dropped', 'payload dropped files: worker saw 0 files despite canonical files'],
+    ['source_projection_prompt_budget_truncated', 'prompt budget truncated source bundle before model visibility'],
+    ['source_projection_worker_insufficient', 'worker reported source insufficient for review'],
+  ];
+  for (const [expected, output] of cases) {
+    const item = classifyEvidenceRecord({ workerId: 'bangtong', output });
+    assert.equal(item.classification, expected);
+    assert.equal(item.substantive, false);
+    assert.equal(item.countsAsWorkerOpinion, false);
+  }
+});
+
 test('CLI exits non-zero when required substantive evidence is absent', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'a2ad-evidence-classifier-'));
   try {

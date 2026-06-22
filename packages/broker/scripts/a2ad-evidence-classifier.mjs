@@ -54,7 +54,26 @@ const READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS = [
 const ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS = [
   /openclaw_analysis_failed/i,
   /Hermes analysis bridge response did not contain valid JSON/i,
+  /invalid Hermes analysis JSON schema/i,
+  /Hermes response JSON must be an object/i,
+  /JSON must be an object/i,
+  /candidate was not valid JSON/i,
   /not valid JSON/i,
+];
+
+const PROVIDER_OR_MODEL_FAILURE_PATTERNS = [
+  /provider_or_model_failure/i,
+  /provider\s+failure/i,
+  /model\s+failure/i,
+  /model\s+(?:does not exist|is not supported|does not have access)/i,
+  /provider\s+does not have access/i,
+];
+
+const SOURCE_PROJECTION_DETAIL_PATTERNS = [
+  ['source_projection_manifest_missing', /manifest\s+(?:missing|lacked)|sourceBundle\.files\[\]|files\s+array\s+missing/i],
+  ['source_projection_payload_dropped', /payload\s+(?:dropped|lost)\s+files|bridge\s+dropped\s+files|worker\s+saw\s+0\s+files|0\s+files/i],
+  ['source_projection_prompt_budget_truncated', /prompt\s+budget|token\s+budget|truncat(?:ed|ion)|too\s+large|exceed(?:ed|s)/i],
+  ['source_projection_worker_insufficient', /worker\s+(?:reported|classified).*insufficient|source\s+(?:insufficient|unusable)|missing\s+source\s+evidence/i],
 ];
 
 const HANDLER_ARTIFACT_FAILURE_PATTERNS = [
@@ -142,6 +161,25 @@ function classifyEvidenceContractFailure(text) {
       'analysis bridge failed to project strict JSON evidence; report as transport/contract blocker, not worker opinion',
       invalidJson,
     );
+  }
+
+  const providerOrModelFailure = matchPatternSources(PROVIDER_OR_MODEL_FAILURE_PATTERNS, normalized);
+  if (providerOrModelFailure.length) {
+    return nonSubstantiveClassification(
+      'provider_or_model_failure',
+      'provider/model failure is reportable infrastructure evidence, not substantive worker opinion',
+      providerOrModelFailure,
+    );
+  }
+
+  for (const [classification, pattern] of SOURCE_PROJECTION_DETAIL_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return nonSubstantiveClassification(
+        classification,
+        'source projection/source bundle evidence is reportable but not substantive worker opinion',
+        [pattern.source],
+      );
+    }
   }
 
   const readOnlyRepoMutation = matchPatternSources(READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS, normalized);
@@ -257,9 +295,48 @@ export function classifyEvidenceText(text) {
   };
 }
 
+function hasEmptySubstantiveOutput(output) {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return false;
+  const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
+  if (analysisStatus !== 'done') return false;
+  const arrayFields = ['findings', 'risks', 'recommendations', 'evidenceRefs', 'blockerFindings', 'nonBlockingFindings'];
+  const allArraysEmpty = arrayFields.every((key) => !Array.isArray(output[key]) || output[key].length === 0);
+  const summary = String(output.analysisSummary ?? output.summary ?? '').trim().toLowerCase();
+  return allArraysEmpty && (!summary || summary === 'analysis complete' || summary === 'analysis-only completed');
+}
+
+function hasExplicitAnalysisRecovery(record) {
+  const output = record?.result?.output ?? record?.output;
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return false;
+
+  const status = asText(output.analysisStatus ?? output.status).toLowerCase().trim();
+  const summary = asText(output.analysisSummary ?? output.summary).trim();
+  if (!summary) return false;
+
+  if (output.recoverySource) return true;
+  if (output.analysisKind) return true;
+  if (!['done', 'blocked', 'source_blocked', 'block'].includes(status)) return false;
+
+  const arrays = [output.findings, output.risks, output.recommendations, output.evidenceRefs];
+  return arrays.some((arr) => Array.isArray(arr) && arr.some((item) => typeof item === 'string' && item.trim()));
+}
+
 export function classifyEvidenceRecord(record, index = 0) {
   const workerId = record?.workerId ?? record?.assignedWorkerId ?? record?.worker?.id ?? record?.worker ?? record?.task?.assignedWorkerId ?? `record-${index + 1}`;
   const taskId = record?.taskId ?? record?.id ?? record?.task?.id ?? null;
+  const structuredOutput = record?.output ?? record?.result?.output ?? record?.result;
+  const status = String(record?.status ?? '').trim().toLowerCase();
+  if ((status === 'succeeded' || status === 'completed') && hasEmptySubstantiveOutput(structuredOutput)) {
+    return {
+      workerId,
+      taskId,
+      ...nonSubstantiveClassification(
+        'empty_substantive_output',
+        'analysisStatus=done with empty findings/recommendations/evidenceRefs is not substantive worker evidence',
+        ['empty analysis evidence arrays'],
+      ),
+    };
+  }
   const directOutputReasons = classifyHardDegradedText(record?.output ?? record?.result?.output ?? record?.result?.summary);
   if (directOutputReasons.length) {
     return {
@@ -272,6 +349,24 @@ export function classifyEvidenceRecord(record, index = 0) {
       reasons: directOutputReasons,
     };
   }
+  if (hasExplicitAnalysisRecovery(record)) {
+    const output = record?.result?.output ?? record?.output ?? {};
+    const recoveryHints = [];
+    if (output.recoverySource) recoveryHints.push(`recoverySource=${asText(output.recoverySource)}`);
+    if (output.analysisKind) recoveryHints.push(`analysisKind=${asText(output.analysisKind)}`);
+    return {
+      workerId,
+      taskId,
+      classification: 'substantive',
+      substantive: true,
+      countsAsWorkerOpinion: true,
+      blockers: [],
+      reasons: recoveryHints.length
+        ? ['explicit analysis object recovered', ...recoveryHints]
+        : ['explicit analysis object recovered'],
+    };
+  }
+
   const text = collectText({
     status: record?.status,
     result: record?.result,
