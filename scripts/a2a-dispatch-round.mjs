@@ -38,6 +38,13 @@ const CLASS_ALREADY_EXISTS = 'already-exists';
 const CLASS_FAILED = 'failed';
 const CLASS_PREFLIGHT_EXCLUDED = 'preflight-excluded';
 
+const DEFAULT_SOURCE_BUNDLE_BUDGET = Object.freeze({
+  warnBytes: 96 * 1024,
+  failBytes: 180 * 1024,
+  warnFiles: 8,
+  failFiles: 15,
+});
+
 // A lane that counts toward a clean round. `preflight-excluded` is cleanly
 // accounted for because no broker task should be created for an ineligible
 // worker; it is reported separately from created/failed lanes (#659).
@@ -60,7 +67,55 @@ function sourceBundleFileContent(file) {
   return undefined;
 }
 
-function validateSourceOnlyBundle(errors, tag, payload) {
+function positiveInteger(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function sourceBundleBudget(payload) {
+  const policy = isPlainObject(payload?.sourceBundleBudget)
+    ? payload.sourceBundleBudget
+    : (isPlainObject(payload?.sourceBundle?.budget) ? payload.sourceBundle.budget : {});
+  return {
+    warnBytes: positiveInteger(policy.warnBytes) ?? DEFAULT_SOURCE_BUNDLE_BUDGET.warnBytes,
+    failBytes: positiveInteger(policy.failBytes) ?? DEFAULT_SOURCE_BUNDLE_BUDGET.failBytes,
+    warnFiles: positiveInteger(policy.warnFiles) ?? DEFAULT_SOURCE_BUNDLE_BUDGET.warnFiles,
+    failFiles: positiveInteger(policy.failFiles) ?? DEFAULT_SOURCE_BUNDLE_BUDGET.failFiles,
+  };
+}
+
+function sourceBundleDiagnostics(payload) {
+  if (!isPlainObject(payload) || !isPlainObject(payload.sourceBundle)) return null;
+  const files = Array.isArray(payload.sourceBundle.files) ? payload.sourceBundle.files : [];
+  const fileRows = files.map((file) => {
+    const content = sourceBundleFileContent(file);
+    return {
+      path: hasText(file?.path) ? file.path : '(missing path)',
+      bytes: hasText(content) ? Buffer.byteLength(content, 'utf8') : 0,
+    };
+  });
+  const sourceBytes = fileRows.reduce((sum, row) => sum + row.bytes, 0);
+  const budget = sourceBundleBudget(payload);
+  const warnings = [];
+  const failures = [];
+  if (files.length > budget.warnFiles) warnings.push(`fileCount ${files.length} exceeds warning budget ${budget.warnFiles}`);
+  if (sourceBytes > budget.warnBytes) warnings.push(`sourceBytes ${sourceBytes} exceeds warning budget ${budget.warnBytes}`);
+  if (files.length > budget.failFiles) failures.push(`fileCount ${files.length} exceeds fail-closed budget ${budget.failFiles}`);
+  if (sourceBytes > budget.failBytes) failures.push(`sourceBytes ${sourceBytes} exceeds fail-closed budget ${budget.failBytes}`);
+  return {
+    fileCount: files.length,
+    sourceBytes,
+    budget,
+    warnings,
+    failures,
+    largestFiles: [...fileRows].sort((a, b) => b.bytes - a.bytes).slice(0, 5),
+    recommendation: warnings.length || failures.length
+      ? 'Use one-issue compact supplements or reduce sourceBundle.files before dispatching broad umbrella lanes.'
+      : undefined,
+  };
+}
+
+function validateSourceOnlyBundle(errors, warnings, tag, payload) {
   if (!isPlainObject(payload)) return;
   const sourceBundle = payload.sourceBundle;
   if (sourceBundle === undefined) return;
@@ -86,6 +141,16 @@ function validateSourceOnlyBundle(errors, tag, payload) {
       errors.push(`${fileTag}.content or ${fileTag}.contentText is required`);
     }
   });
+
+  const diagnostics = sourceBundleDiagnostics(payload);
+  if (diagnostics) {
+    for (const warning of diagnostics.warnings) {
+      warnings.push(`${tag}.payload.sourceBundle broad bundle warning: ${warning}; fileCount=${diagnostics.fileCount} sourceBytes=${diagnostics.sourceBytes}; ${diagnostics.recommendation}`);
+    }
+    for (const failure of diagnostics.failures) {
+      errors.push(`${tag}.payload.sourceBundle broad bundle fail-closed: ${failure}; fileCount=${diagnostics.fileCount} sourceBytes=${diagnostics.sourceBytes}; ${diagnostics.recommendation}`);
+    }
+  }
 }
 
 const GITHUB_VERIFY_MODES = new Set([
@@ -233,9 +298,10 @@ function deriveLaneId(roundId, lane, order) {
  */
 function validateManifest(manifest) {
   const errors = [];
+  const warnings = [];
 
   if (!isPlainObject(manifest)) {
-    return { errors: ['manifest must be a JSON object'], lanes: [] };
+    return { errors: ['manifest must be a JSON object'], warnings, lanes: [] };
   }
 
   if (!hasText(manifest.roundId)) {
@@ -254,7 +320,7 @@ function validateManifest(manifest) {
   const lanesInput = Array.isArray(manifest.lanes) ? manifest.lanes : null;
   if (!lanesInput || lanesInput.length === 0) {
     errors.push('lanes must be a non-empty array');
-    return { errors, lanes: [] };
+    return { errors, warnings, lanes: [] };
   }
 
   const roundId = hasText(manifest.roundId) ? manifest.roundId : '(invalid-roundId)';
@@ -309,7 +375,8 @@ function validateManifest(manifest) {
     const parentRoundTotal = lane.parentRoundTotal ?? defaults.parentRoundTotal ?? total;
     const parentRoundOrder = lane.parentRoundOrder ?? defaults.parentRoundOrder ?? order;
 
-    validateSourceOnlyBundle(errors, tag, payload);
+    const diagnostics = sourceBundleDiagnostics(payload);
+    validateSourceOnlyBundle(errors, warnings, tag, payload);
     validateA2adOpinionLane(errors, tag, intent, payload, { terminalBrief });
     validateGitHubPatchWriteCapability(errors, tag, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
@@ -334,10 +401,11 @@ function validateManifest(manifest) {
     if (taskOrigin !== undefined) normalized.taskOrigin = taskOrigin;
     if (workspace !== undefined) normalized.workspace = workspace;
     if (terminalBrief !== undefined) normalized.terminalBrief = terminalBrief;
+    if (diagnostics) normalized.sourceBundleDiagnostics = diagnostics;
     lanes.push(normalized);
   });
 
-  return { errors, lanes };
+  return { errors, warnings, lanes };
 }
 
 // ─── Request building ───────────────────────────────────────────────────────
@@ -359,6 +427,10 @@ function buildCreateTaskBody(manifest, lane) {
   if (lane.workspace !== undefined) body.workspace = lane.workspace;
   if (lane.terminalBrief !== undefined) body.terminalBrief = lane.terminalBrief;
   return body;
+}
+
+function laneSourceBundleDiagnostics(lane) {
+  return lane.sourceBundleDiagnostics ?? sourceBundleDiagnostics(lane.payload);
 }
 
 function authHeaders(manifest, secret) {
@@ -410,6 +482,8 @@ async function fetchTask(fetchImpl, manifest, secret, laneId) {
 async function dispatchLane(fetchImpl, manifest, secret, lane) {
   const url = joinUrl(manifest.brokerUrl, '/tasks');
   const base = { order: lane.order, id: lane.id, target: lane.target.id };
+  const diagnostics = laneSourceBundleDiagnostics(lane);
+  if (diagnostics) base.sourceBundleDiagnostics = diagnostics;
 
   let res;
   let body;
@@ -568,6 +642,8 @@ function renderDispatchTable(results) {
     { header: 'target', get: (r) => r.target },
     { header: 'classification', get: (r) => r.classification },
     { header: 'taskId', get: (r) => r.taskId ?? '-' },
+    { header: 'files', get: (r) => r.sourceBundleDiagnostics?.fileCount ?? '-' },
+    { header: 'sourceBytes', get: (r) => r.sourceBundleDiagnostics?.sourceBytes ?? '-' },
   ]);
 }
 
@@ -597,10 +673,10 @@ function renderVerifyTable(verify) {
  */
 async function runDispatch(manifest, opts = {}) {
   const { fetchImpl, secret, dryRun = false, verify = false } = opts;
-  const { errors, lanes } = validateManifest(manifest);
+  const { errors, warnings, lanes } = validateManifest(manifest);
 
   if (errors.length > 0) {
-    return { ok: false, exitCode: 1, mode: dryRun ? 'dry-run' : 'dispatch', errors, lanes: [], results: [], summary: null, verify: null };
+    return { ok: false, exitCode: 1, mode: dryRun ? 'dry-run' : 'dispatch', errors, warnings, lanes: [], results: [], summary: null, verify: null };
   }
 
   if (dryRun) {
@@ -609,6 +685,7 @@ async function runDispatch(manifest, opts = {}) {
       exitCode: 0,
       mode: 'dry-run',
       errors: [],
+      warnings,
       lanes: lanes.map((l) => {
         const planned = {
           order: l.order,
@@ -623,6 +700,7 @@ async function runDispatch(manifest, opts = {}) {
         if (l.taskOrigin !== undefined) planned.taskOrigin = l.taskOrigin;
         if (l.workspace !== undefined) planned.workspace = l.workspace;
         if (l.terminalBrief !== undefined) planned.terminalBrief = l.terminalBrief;
+        if (l.sourceBundleDiagnostics !== undefined) planned.sourceBundleDiagnostics = l.sourceBundleDiagnostics;
         return planned;
       }),
       results: [],
@@ -632,10 +710,10 @@ async function runDispatch(manifest, opts = {}) {
   }
 
   if (!hasText(secret)) {
-    return { ok: false, exitCode: 1, mode: 'dispatch', errors: ['A2A_EDGE_SECRET is not set; refusing to dispatch'], lanes: [], results: [], summary: null, verify: null };
+    return { ok: false, exitCode: 1, mode: 'dispatch', errors: ['A2A_EDGE_SECRET is not set; refusing to dispatch'], warnings, lanes: [], results: [], summary: null, verify: null };
   }
   if (typeof fetchImpl !== 'function') {
-    return { ok: false, exitCode: 1, mode: 'dispatch', errors: ['no fetch implementation available'], lanes: [], results: [], summary: null, verify: null };
+    return { ok: false, exitCode: 1, mode: 'dispatch', errors: ['no fetch implementation available'], warnings, lanes: [], results: [], summary: null, verify: null };
   }
 
   // Sequential dispatch — avoid the queue-drain stampede. Worker-readiness
@@ -663,6 +741,7 @@ async function runDispatch(manifest, opts = {}) {
     exitCode: summary.allOk ? 0 : 1,
     mode: 'dispatch',
     errors: [],
+    warnings,
     lanes,
     results,
     summary,
@@ -682,8 +761,11 @@ function printHuman(outcome, { json }) {
   if (outcome.errors.length > 0) {
     process.stderr.write('manifest validation failed:\n');
     for (const e of outcome.errors) process.stderr.write(`  - ${e}\n`);
+    for (const w of outcome.warnings ?? []) process.stderr.write(`  warning: ${w}\n`);
     return;
   }
+
+  for (const w of outcome.warnings ?? []) process.stderr.write(`warning: ${w}\n`);
 
   if (outcome.mode === 'dry-run') {
     process.stdout.write('dry-run: manifest valid. Would create the following lanes:\n\n');
@@ -692,6 +774,8 @@ function printHuman(outcome, { json }) {
       { header: 'lane id', get: (r) => r.id },
       { header: 'target', get: (r) => r.target },
       { header: 'intent', get: (r) => r.intent },
+      { header: 'files', get: (r) => r.sourceBundleDiagnostics?.fileCount ?? '-' },
+      { header: 'sourceBytes', get: (r) => r.sourceBundleDiagnostics?.sourceBytes ?? '-' },
     ]);
     process.stdout.write(`${table}\n\n`);
     process.stdout.write(`dry-run ok: ${outcome.lanes.length} lane(s) validated, no network performed.\n`);
@@ -738,6 +822,7 @@ function serializeOutcome(outcome) {
     exitCode: outcome.exitCode,
     mode: outcome.mode,
     errors: outcome.errors,
+    warnings: outcome.warnings ?? [],
     summary: outcome.summary,
     results: outcome.results,
     plannedLanes: outcome.mode === 'dry-run' ? outcome.lanes : undefined,
@@ -838,6 +923,7 @@ export {
   fetchTask,
   verifyRound,
   deriveLaneId,
+  sourceBundleDiagnostics,
   summarize,
   CLASS_CREATED,
   CLASS_ACCEPTED_UNCONFIRMED,

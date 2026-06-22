@@ -200,6 +200,49 @@ test('dry-run accepts source-only analysis file contentText as canonical content
   assert.equal(out.exitCode, 0);
 });
 
+test('dry-run reports per-lane source bytes/file count and warns before fail-closed budget', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    sourceOnly: true,
+    readOnlyValidation: true,
+    sourceBundleBudget: { warnBytes: 10, failBytes: 100, warnFiles: 1, failFiles: 10 },
+    sourceBundle: {
+      roundId: 'r1',
+      files: [
+        { path: 'README.md', contentText: '12345678901' },
+        { path: 'docs/quickstart.md', contentText: 'abc' },
+      ],
+    },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+  assert.equal(out.lanes[0].sourceBundleDiagnostics.fileCount, 2);
+  assert.equal(out.lanes[0].sourceBundleDiagnostics.sourceBytes, 14);
+  assert.ok(out.warnings.some((warning) => /broad bundle warning.*fileCount=2 sourceBytes=14/.test(warning)), out.warnings.join('\n'));
+});
+
+test('dry-run fail-closes source bundles that exceed hard broad-bundle budget', async () => {
+  const m = makeManifest('http://unused', 1);
+  m.lanes[0].payload = {
+    mode: 'analysis-only',
+    sourceOnly: true,
+    readOnlyValidation: true,
+    sourceBundleBudget: { warnBytes: 10, failBytes: 12, warnFiles: 5, failFiles: 10 },
+    sourceBundle: {
+      roundId: 'r1',
+      files: [{ path: 'README.md', contentText: '1234567890123' }],
+    },
+  };
+
+  const out = await runDispatch(m, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((error) => /broad bundle fail-closed.*sourceBytes 13.*compact supplements/.test(error)), out.errors.join('\n'));
+});
+
 
 test('dry-run accepts the #960 canonical sourceBundle projection contract fixture', async () => {
   const fixtureUrl = new URL('../fixtures/contract/source-bundle-projection-guard.json', import.meta.url);

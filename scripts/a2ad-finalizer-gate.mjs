@@ -93,6 +93,59 @@ function workerOf(lane) {
   return lane.assignedWorkerId || lane.targetNodeId || lane.target?.id || null;
 }
 
+function sourceBundleFileContent(file) {
+  if (!file || typeof file !== 'object' || Array.isArray(file)) return undefined;
+  if (hasText(file.content)) return file.content;
+  if (hasText(file.contentText)) return file.contentText;
+  return undefined;
+}
+
+function sourceBundleDiagnosticsOf(lane) {
+  const payload = lane?.payload || {};
+  const sourceBundle = payload.sourceBundle;
+  if (!sourceBundle || typeof sourceBundle !== 'object' || Array.isArray(sourceBundle)) {
+    return { fileCount: 0, sourceBytes: 0, present: false };
+  }
+  const files = Array.isArray(sourceBundle.files) ? sourceBundle.files : [];
+  const fileRows = files.map((file) => {
+    const content = sourceBundleFileContent(file);
+    return {
+      path: hasText(file?.path) ? file.path : '(missing path)',
+      bytes: hasText(content) ? Buffer.byteLength(content, 'utf8') : 0,
+    };
+  });
+  return {
+    fileCount: files.length,
+    sourceBytes: fileRows.reduce((sum, row) => sum + row.bytes, 0),
+    present: true,
+    largestFiles: [...fileRows].sort((a, b) => b.bytes - a.bytes).slice(0, 5),
+  };
+}
+
+function summarizeSourceBundleDiagnostics(lanes) {
+  const laneRows = lanes
+    .map((lane) => ({ taskId: lane.id, worker: workerOf(lane), ...sourceBundleDiagnosticsOf(lane) }))
+    .filter((row) => row.present || row.fileCount > 0 || row.sourceBytes > 0);
+  return {
+    laneCount: laneRows.length,
+    totalFiles: laneRows.reduce((sum, row) => sum + row.fileCount, 0),
+    totalSourceBytes: laneRows.reduce((sum, row) => sum + row.sourceBytes, 0),
+    lanes: laneRows,
+  };
+}
+
+function classifySourceProjection(lane, evidenceText) {
+  const diagnostics = sourceBundleDiagnosticsOf(lane);
+  const hasPayloadFiles = diagnostics.fileCount > 0;
+  if (!hasPayloadFiles) return 'manifest_missing_files';
+  if (/prompt\s+budget|budget\s+exhausted|truncat/i.test(evidenceText)) return 'prompt_budget_truncated_files';
+  if (/0\s+files|empty\s+(task\s+)?payload|sourceBundle\.files\s*(?:was|were)?\s*(?:empty|missing)|no\s+usable\s+source/i.test(evidenceText)) {
+    return 'payload_dropped_files';
+  }
+  if (/insufficient|missing\s+(?:source|file)|source\s+visibility|source\s+projection/i.test(evidenceText)) return 'worker_reported_source_insufficient';
+  return 'worker_reported_source_insufficient';
+}
+
 function supplementOf(lane) {
   const payload = lane.payload || {};
   const value = payload.supplementOf || payload.supersedesTaskId || payload.compactSupplementOf;
@@ -123,15 +176,22 @@ function classifyLaneEvidence(lane) {
     };
   }
   if (analysisStatus === 'blocked' || analysisStatus === 'block' || analysisStatus === 'source_blocked') {
-    const reason = /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
-      ? 'source projection / source bundle prompt-budget block'
-      : 'analysis bridge returned blocked status';
+    const sourceLike = /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files|empty\s+(task\s+)?payload|truncat|insufficient/i.test(evidenceText);
+    if (sourceLike) {
+      const evidenceClass = classifySourceProjection(lane, evidenceText);
+      const diagnostics = sourceBundleDiagnosticsOf(lane);
+      return {
+        evidenceClass,
+        countsTowardQuorum: false,
+        reason: `${evidenceClass}: source bundle diagnostics fileCount=${diagnostics.fileCount} sourceBytes=${diagnostics.sourceBytes}`,
+        sourceBundleDiagnostics: diagnostics,
+      };
+    }
     return {
-      evidenceClass: /source\s+projection|sourceBundle\.files|prompt\s+budget|source\s+bundle|0\s+files/i.test(evidenceText)
-        ? 'source_projection_blocked'
-        : 'analysis_blocked',
+      evidenceClass: 'analysis_blocked',
       countsTowardQuorum: false,
-      reason,
+      reason: 'analysis bridge returned blocked status',
+      sourceBundleDiagnostics: sourceBundleDiagnosticsOf(lane),
     };
   }
   if (/generic\s+a2ad-review\s+task\s+accepted/i.test(evidenceText)) {
@@ -294,6 +354,7 @@ function computeVerdict(tasks, options) {
     worker: workerOf(l),
     evidenceClass: l.__evidence?.evidenceClass ?? classifyLaneEvidence(l).evidenceClass,
     reason: l.__evidence?.reason ?? classifyLaneEvidence(l).reason,
+    sourceBundleDiagnostics: l.__evidence?.sourceBundleDiagnostics ?? sourceBundleDiagnosticsOf(l),
   }));
   const supersededLaneRecords = supersededLanes.map((l) => ({
     taskId: l.id,
@@ -305,6 +366,7 @@ function computeVerdict(tasks, options) {
   }));
 
   const verdict = reasons.length === 0 ? 'FINAL' : 'BLOCKED';
+  const sourceBundleDiagnostics = summarizeSourceBundleDiagnostics(lanes);
 
   return {
     verdict,
@@ -319,6 +381,7 @@ function computeVerdict(tasks, options) {
     succeededIds,
     missingLanes,
     supersededLanes: supersededLaneRecords,
+    sourceBundleDiagnostics,
     perTarget: perTarget != null ? perTargetReport : undefined,
     evidenceIdsCitedInDraft,
     reasons,
@@ -365,6 +428,13 @@ function renderMissing(result) {
   }
   if (result.expectedTotal != null && result.laneCount < result.expectedTotal) {
     lines.push(`  ! dispatch gap: ${result.laneCount}/${result.expectedTotal} expected lanes present`);
+  }
+  if (result.sourceBundleDiagnostics?.laneCount) {
+    const d = result.sourceBundleDiagnostics;
+    lines.push(`Source bundle diagnostics: lanes=${d.laneCount} files=${d.totalFiles} sourceBytes=${d.totalSourceBytes}`);
+    for (const lane of d.lanes) {
+      lines.push(`  - ${lane.taskId}${lane.worker ? ` worker=${lane.worker}` : ''} files=${lane.fileCount} sourceBytes=${lane.sourceBytes}`);
+    }
   }
   return lines.join('\n');
 }
@@ -534,6 +604,7 @@ function toJson(result) {
     nonSubstantive: result.nonSubstantive,
     missingLanes: result.missingLanes,
     supersededLanes: result.supersededLanes,
+    sourceBundleDiagnostics: result.sourceBundleDiagnostics,
     evidenceIdsCitedInDraft: result.evidenceIdsCitedInDraft,
   };
 }
@@ -548,6 +619,8 @@ export {
   classify,
   readTasks,
   targetKey,
+  sourceBundleDiagnosticsOf,
+  summarizeSourceBundleDiagnostics,
   citedEvidenceIds,
   preliminaryBanner,
   SUCCEEDED_STATUSES,

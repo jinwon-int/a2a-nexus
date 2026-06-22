@@ -307,6 +307,14 @@ test('analysis bridge blocked source-projection lane is non-substantive and list
     }),
     lane('t2', 'succeeded', {
       worker: 'bangtong',
+      payload: {
+        sourceBundle: {
+          files: [
+            { path: 'scripts/a2ad-finalizer-gate.mjs', contentText: 'finalizer source' },
+            { path: 'scripts/a2a-dispatch-round.mjs', contentText: 'dispatch source' },
+          ],
+        },
+      },
       top: {
         output: {
           analysisStatus: 'blocked',
@@ -335,8 +343,61 @@ test('analysis bridge blocked source-projection lane is non-substantive and list
   const blocked = result.missingLanes.find((l) => l.taskId === 't2');
   assert.equal(blocked?.worker, 'bangtong');
   assert.equal(blocked?.status, 'succeeded');
-  assert.equal(blocked?.evidenceClass, 'source_projection_blocked');
-  assert.match(blocked?.reason ?? '', /source projection.*budget/i);
+  assert.equal(blocked?.evidenceClass, 'prompt_budget_truncated_files');
+  assert.match(blocked?.reason ?? '', /fileCount=2 sourceBytes=31/);
+  assert.equal(blocked?.sourceBundleDiagnostics.fileCount, 2);
+});
+
+test('finalizer distinguishes payload-dropped source files from manifest-missing source files (#986)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      worker: 'yukson',
+      payload: {
+        sourceBundle: {
+          files: [
+            { path: 'issues/open-982-986.md', contentText: '1234567890' },
+            { path: 'scripts/a2a-dispatch-round.mjs', contentText: 'abcde' },
+          ],
+        },
+      },
+      top: {
+        output: {
+          analysisStatus: 'blocked',
+          analysisKind: 'analysis_bridge',
+          summary: 'worker-visible source bundle was 0 files / empty task payload, so source evaluation was blocked',
+        },
+      },
+    }),
+    lane('t2', 'succeeded', {
+      worker: 'bangtong',
+      top: {
+        output: {
+          analysisStatus: 'blocked',
+          analysisKind: 'analysis_bridge',
+          summary: 'sourceBundle.files missing from manifest; source bundle unavailable',
+        },
+      },
+    }),
+    lane('t3', 'succeeded', {
+      top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'substantive' } },
+    }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: 3,
+    perTarget: null,
+    draft: 'Cites t3.',
+  });
+
+  const dropped = result.missingLanes.find((l) => l.taskId === 't1');
+  assert.equal(dropped?.evidenceClass, 'payload_dropped_files');
+  assert.equal(dropped?.sourceBundleDiagnostics.fileCount, 2);
+  assert.equal(dropped?.sourceBundleDiagnostics.sourceBytes, 28);
+  const missing = result.missingLanes.find((l) => l.taskId === 't2');
+  assert.equal(missing?.evidenceClass, 'manifest_missing_files');
+  assert.equal(result.sourceBundleDiagnostics.totalFiles, 2);
+  assert.equal(result.sourceBundleDiagnostics.totalSourceBytes, 28);
 });
 
 test('classifier ignores wrapper phrases embedded inside sourceBundle payload content (#960)', () => {
