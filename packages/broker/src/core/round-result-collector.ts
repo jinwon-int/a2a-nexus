@@ -85,6 +85,7 @@ export type RoundLaneEvidenceClass =
   | "oracle_mismatch"
   | "wrapper_only"
   | "handler_artifact_failure"
+  | "analysis_bridge_invalid_json"
   | "source_blocked"
   | "queued_unclaimed"
   | "stale_or_missing_worker"
@@ -100,6 +101,7 @@ export type RoundLaneReadinessStatus =
   | "wrapper_only"
   | "source_blocked"
   | "handler_artifact_failed"
+  | "analysis_bridge_invalid_json"
   | "substantive"
   | "terminal_failed"
   | "non_substantive";
@@ -175,6 +177,7 @@ export interface RoundResultCollectorOutput {
     oracleMismatches: number;
     wrapperOnly: number;
     handlerArtifactFailures: number;
+    analysisBridgeInvalidJson: number;
     queuedUnclaimed: number;
     sourceBlocked: number;
     nonSubstantive: number;
@@ -187,6 +190,7 @@ export interface RoundResultCollectorOutput {
       wrapperOnly: number;
       sourceBlocked: number;
       handlerArtifactFailed: number;
+      analysisBridgeInvalidJson: number;
       substantive: number;
       terminalFailed: number;
       nonSubstantive: number;
@@ -983,6 +987,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
     oracleMismatches: 0,
     wrapperOnly: 0,
     handlerArtifactFailures: 0,
+    analysisBridgeInvalidJson: 0,
     queuedUnclaimed: 0,
     sourceBlocked: 0,
     nonSubstantive: 0,
@@ -995,6 +1000,7 @@ function buildSummary(lanes: ResultLane[]): RoundResultCollectorOutput["summary"
       wrapperOnly: 0,
       sourceBlocked: 0,
       handlerArtifactFailed: 0,
+      analysisBridgeInvalidJson: 0,
       substantive: 0,
       terminalFailed: 0,
       nonSubstantive: 0,
@@ -1540,6 +1546,7 @@ function evidenceClassLabel(cls: RoundLaneEvidenceClass): string {
     case "oracle_mismatch": return "🚫 oracle_mismatch";
     case "wrapper_only": return "🔲 wrapper_only";
     case "handler_artifact_failure": return "⚠️ handler_artifact_failure";
+    case "analysis_bridge_invalid_json": return "🚫 analysis_bridge_invalid_json";
     case "source_blocked": return "🚫 source_blocked";
     case "queued_unclaimed": return "⏳ queued_unclaimed";
     case "stale_or_missing_worker": return "🕐 stale_or_missing_worker";

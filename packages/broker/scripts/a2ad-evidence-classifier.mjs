@@ -54,6 +54,10 @@ const READ_ONLY_VALIDATION_CHANGED_REPO_PATTERNS = [
 const ANALYSIS_BRIDGE_INVALID_JSON_PATTERNS = [
   /openclaw_analysis_failed/i,
   /Hermes analysis bridge response did not contain valid JSON/i,
+  /invalid Hermes analysis JSON schema/i,
+  /Hermes response JSON must be an object/i,
+  /JSON must be an object/i,
+  /candidate was not valid JSON/i,
   /not valid JSON/i,
 ];
 
@@ -139,7 +143,7 @@ function classifyEvidenceContractFailure(text) {
   if (invalidJson.length) {
     return nonSubstantiveClassification(
       'analysis_bridge_invalid_json',
-      'analysis bridge failed to project strict JSON evidence; report as transport/contract blocker, not worker opinion',
+      'analysis bridge failed to project strict JSON evidence; report as transport/contract blocker, not worker opinion. Inspect task.error.details.stdout and worker logs/state DB before counting the lane as substantive.',
       invalidJson,
     );
   }
@@ -257,6 +261,30 @@ export function classifyEvidenceText(text) {
   };
 }
 
+function hasExplicitAnalysisRecovery(record) {
+  const output = record?.result?.output ?? record?.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) return false;
+
+  const status = asText(output.analysisStatus ?? output.status).toLowerCase().trim();
+  const summary = asText(output.analysisSummary ?? output.summary).trim();
+  if (!summary) return false;
+
+  // recoverySource on the bridge response is only populated when the bridge
+  // recovered a real analysis object from state DB or stdout (#982). Treat it
+  // as an explicit recovery signal even when status is missing/different.
+  if (output.recoverySource) return true;
+  if (output.analysisKind) return true;
+
+  if (!["done", "blocked", "source_blocked", "block"].includes(status)) return false;
+
+  // At least one of findings/risks/recommendations/evidenceRefs must be a
+  // non-empty string array for the output to count as an explicit analysis
+  // object — anything less is an empty success and the wrapper_only / thin
+  // guards downstream will catch it.
+  const arrays = [output.findings, output.risks, output.recommendations, output.evidenceRefs];
+  return arrays.some((arr) => Array.isArray(arr) && arr.some((item) => typeof item === "string" && item.trim()));
+}
+
 export function classifyEvidenceRecord(record, index = 0) {
   const workerId = record?.workerId ?? record?.assignedWorkerId ?? record?.worker?.id ?? record?.worker ?? record?.task?.assignedWorkerId ?? `record-${index + 1}`;
   const taskId = record?.taskId ?? record?.id ?? record?.task?.id ?? null;
@@ -272,6 +300,30 @@ export function classifyEvidenceRecord(record, index = 0) {
       reasons: directOutputReasons,
     };
   }
+
+  // Preserve explicit analysis recovery from state DB / direct stdout before
+  // applying transport/contract failure detection on task.error.details.stdout.
+  // A failed-task handler stdout that mentions "openclaw_analysis_failed" is
+  // diagnostic noise when result.output carries an explicit recovered analysis
+  // object (#982 acceptance criteria: do not invalidate state-DB recovery).
+  if (hasExplicitAnalysisRecovery(record)) {
+    const output = record?.result?.output ?? record?.output ?? {};
+    const recoveryHints = [];
+    if (output.recoverySource) recoveryHints.push(`recoverySource=${asText(output.recoverySource)}`);
+    if (output.analysisKind) recoveryHints.push(`analysisKind=${asText(output.analysisKind)}`);
+    return {
+      workerId,
+      taskId,
+      classification: 'substantive',
+      substantive: true,
+      countsAsWorkerOpinion: true,
+      blockers: [],
+      reasons: recoveryHints.length
+        ? ['explicit analysis object recovered', ...recoveryHints]
+        : ['explicit analysis object recovered'],
+    };
+  }
+
   const text = collectText({
     status: record?.status,
     result: record?.result,
@@ -373,7 +425,7 @@ export function renderMarkdownReport(report) {
 }
 
 function usage() {
-  return `Usage: node scripts/a2ad-evidence-classifier.mjs --input results.json [--require-substantive] [--min-substantive N] [--markdown]\n       node scripts/a2ad-evidence-classifier.mjs --text "worker output" --require-substantive\n\nClassifies A2A/A2AD worker evidence as substantive, source_blocked, wrapper_only, read_only_validation_changed_repo, handler_artifact_failure, runner_ledger_only, thin, or empty.\nsource_blocked/wrapper_only/read_only_validation_changed_repo/handler_artifact_failure/runner_ledger_only/thin/empty evidence is reportable but must not be counted as a worker opinion.\n`;
+  return `Usage: node scripts/a2ad-evidence-classifier.mjs --input results.json [--require-substantive] [--min-substantive N] [--markdown]\n       node scripts/a2ad-evidence-classifier.mjs --text "worker output" --require-substantive\n\nClassifies A2A/A2AD worker evidence as substantive, source_blocked, wrapper_only, analysis_bridge_invalid_json, read_only_validation_changed_repo, handler_artifact_failure, runner_ledger_only, thin, or empty.\nsource_blocked/wrapper_only/analysis_bridge_invalid_json/read_only_validation_changed_repo/handler_artifact_failure/runner_ledger_only/thin/empty evidence is reportable but must not be counted as a worker opinion.\n\nanalysis_bridge_invalid_json specifically covers handler_exit_nonzero/openclaw_analysis_failed where the Hermes analysis bridge output is not a valid analysis object (extracted JSON was malformed, or parsed but not an object/array, or generic wrapper shape). For failed-lanes, inspect task.error.details.stdout before counting the lane: a human-readable analysis summary in stdout is human hint evidence, never a machine-projectable worker opinion.\n`;
 }
 
 async function main() {

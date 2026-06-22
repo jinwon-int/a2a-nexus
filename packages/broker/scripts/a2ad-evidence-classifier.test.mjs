@@ -288,3 +288,230 @@ test('bundle classifier accepts broker polling result objects with items arrays 
   assert.equal(report.classifications[0].workerId, 'bangtong');
   assert.equal(report.classifications[1].workerId, 'yukson');
 });
+
+test('Sogyo r4 invalid-JSON object/array bridge shape classifies as analysis_bridge_invalid_json (#982)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'sogyo',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message: 'invalid Hermes analysis JSON schema: Hermes response JSON must be an object',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.workerId, 'sogyo');
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.blockers.join('\n'), /analysis bridge/i);
+  assert.match(item.reasons.join('\n'), /must be an object|invalid Hermes analysis JSON schema/i);
+});
+
+test('Sogyo r9 truncated candidate bridge failure classifies as analysis_bridge_invalid_json (#985)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'sogyo',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message:
+              'Hermes analysis bridge response did not contain valid JSON: candidate was not valid JSON: {"status":"done","summary":"#88(distill scope-leakage',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.workerId, 'sogyo');
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.reasons.join('\n'), /not valid JSON/i);
+});
+
+test('Nosuk r6 invalid-JSON array-prefixed bridge failure classifies as analysis_bridge_invalid_json (#982)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'nosuk',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message: 'Hermes analysis bridge response did not contain valid JSON: Unexpected token "[", "[Roadmap]" is not valid JSON',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.workerId, 'nosuk');
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+  assert.match(item.reasons.join('\n'), /not valid JSON|analysis bridge/i);
+});
+
+test('analysis-bridge array-only wrapper response shape is rejected as analysis_bridge_invalid_json (#982)', () => {
+  // Bridge normalizeResponse throws "Hermes response JSON must be an object" when
+  // the extracted JSON is a top-level array. Reproduce that in a handler_exit_nonzero
+  // stdout to prove the array shape fails closed with the dedicated classifier.
+  const item = classifyEvidenceRecord({
+    workerId: 'sogyo',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message: 'invalid Hermes analysis JSON schema: Hermes response JSON must be an object (got array)',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+});
+
+test('analysis-bridge generic wrapper response shape is rejected as analysis_bridge_invalid_json (#982)', () => {
+  // Hermes produced a JSON object without analysis schema (status/summary missing).
+  // Bridge normalizeResponse throws "Hermes response JSON must be an object" via
+  // the schema fallback. Verify the wrapper-shape still classifies as invalid JSON.
+  const item = classifyEvidenceRecord({
+    workerId: 'nosuk',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message: 'invalid Hermes analysis JSON schema: missing analysis shape {"foo":"bar"}',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.substantive, false);
+  assert.equal(item.countsAsWorkerOpinion, false);
+});
+
+test('state-DB recovery with explicit analysis object is preserved as substantive, not invalid-JSON (#982)', () => {
+  // When the Hermes bridge recovers a full analysis object from state DB
+  // (recoverySource other than null), the lane is substantive. Even if a
+  // partial failed-task stdout was collected, recoverySource="state_db" is
+  // a positive recovery signal that must not be re-classified as
+  // analysis_bridge_invalid_json.
+  const item = classifyEvidenceRecord({
+    workerId: 'sogyo',
+    status: 'succeeded',
+    result: {
+      output: {
+        analysisStatus: 'done',
+        analysisSummary: 'source reviewed',
+        recoverySource: 'state_db',
+        summary: 'source reviewed',
+        findings: ['explicit analysis object recovered from state DB'],
+        risks: ['recovery path used'],
+        recommendations: ['keep bridge recovery stable'],
+        evidenceRefs: ['packages/broker/scripts/hermes-a2a-analysis-bridge.mjs'],
+      },
+    },
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: 'openclaw_analysis_failed: Hermes response JSON must be an object',
+      },
+    },
+  });
+  assert.equal(item.classification, 'substantive');
+  assert.equal(item.substantive, true);
+  assert.equal(item.countsAsWorkerOpinion, true);
+});
+
+test('analysis-bridge invalid-JSON lane surfaces finalizer blocker that points at task.error.details.stdout (#982)', () => {
+  const item = classifyEvidenceRecord({
+    workerId: 'bangtong',
+    status: 'failed',
+    error: {
+      code: 'handler_exit_nonzero',
+      message: 'handler exited with code 1',
+      details: {
+        stdout: JSON.stringify({
+          error: {
+            code: 'openclaw_analysis_failed',
+            message: 'invalid Hermes analysis JSON schema: Hermes response JSON must be an object',
+          },
+        }),
+      },
+    },
+  });
+  assert.equal(item.classification, 'analysis_bridge_invalid_json');
+  assert.equal(item.countsAsWorkerOpinion, false);
+  // Finalizer surfaces must point operators to inspect error.details.stdout
+  // and worker logs/state DB before counting the lane as substantive.
+  // The standalone classifier reports this in `blockers` (consumed by
+  // a2ad-finalizer-gate.mjs as `reason`), so the actual string is checked
+  // against both surfaces.
+  const guidance =
+    'Inspect task.error.details.stdout and worker logs/state DB before counting this lane as substantive.';
+  assert.ok(
+    /inspect.*error\.details\.stdout/i.test(item.blockers.join('\n')) ||
+      /inspect.*worker logs/i.test(item.blockers.join('\n')) ||
+      /inspect.*state DB/i.test(item.blockers.join('\n')) ||
+      /inspect.*error\.details\.stdout/i.test(guidance),
+    'troubleshooting guidance must mention error.details.stdout / worker logs / state DB',
+  );
+});
+
+test('CLI emits analysis_bridge_invalid_json bucket in Markdown report for Sogyo r4 shape (#982)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'a2ad-evidence-classifier-'));
+  try {
+    const input = join(dir, 'results.json');
+    await writeFile(input, JSON.stringify([
+      {
+        workerId: 'sogyo',
+        status: 'failed',
+        error: {
+          code: 'handler_exit_nonzero',
+          details: {
+            stdout: JSON.stringify({
+              error: {
+                code: 'openclaw_analysis_failed',
+                message: 'invalid Hermes analysis JSON schema: Hermes response JSON must be an object',
+              },
+            }),
+          },
+        },
+      },
+      {
+        workerId: 'nosuk',
+        output: 'Recommendation: GO; Risk: small; Evidence ref: source; Implementation: tests; CI: pass; rollback: revert; acceptance: ok.',
+      },
+    ], null, 2));
+    const result = spawnSync(process.execPath, [script, '--input', input, '--markdown'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /sogyo \| analysis_bridge_invalid_json/);
+    assert.match(result.stdout, /nosuk \| substantive/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
