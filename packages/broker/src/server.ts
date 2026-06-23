@@ -1867,6 +1867,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   workerRateLimitMaxRequests?: number;
   enforceRequesterIdentity?: boolean;
   edgeSecret?: string;
+  /** Explicit dev-only opt-in for unauthenticated local broker startup. Env: `A2A_ALLOW_INSECURE_DEV=1`. */
+  allowInsecureDev?: boolean;
   /**
    * Worker-plane A2A HTTP Signature rollout mode.
    * - off: no route-level signature checks (default/backwards compatible)
@@ -2056,6 +2058,43 @@ export interface BrokerServerRuntime {
   };
 }
 
+
+function isLoopbackBindHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost"
+    || normalized === "::1"
+    || normalized === "0:0:0:0:0:0:0:1"
+    || normalized.startsWith("127.");
+}
+
+function validateBrokerStartupSecurity(options: {
+  host: string;
+  edgeSecret?: string;
+  workerAuth: A2AHttpSignatureWorkerAuthMode;
+  workerKeyCount: number;
+  allowInsecureDev: boolean;
+}): void {
+  if (options.allowInsecureDev) {
+    return;
+  }
+  const protectedByEdgeSecret = Boolean(options.edgeSecret);
+  const protectedByStrictWorkerSignatures = options.workerAuth === "strict" && options.workerKeyCount > 0;
+  if (protectedByEdgeSecret || protectedByStrictWorkerSignatures) {
+    return;
+  }
+
+  const requiresFailClosed = !isLoopbackBindHost(options.host)
+    || process.env.NODE_ENV === "production"
+    || resolveBooleanEnv(process.env.A2A_BROKER_DOCKER_RUNTIME, false);
+  if (!requiresFailClosed) {
+    return;
+  }
+
+  throw new Error(
+    "insecure broker bind rejected: configure EDGE_SECRET/A2A_EDGE_SECRET or strict A2A_HTTP_SIGNATURE_WORKER_AUTH with a key registry, or set A2A_ALLOW_INSECURE_DEV=1 for local-only development",
+  );
+}
+
 export function createBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
   const port = options.port ?? Number(process.env.PORT ?? 8787);
@@ -2117,6 +2156,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     ? "inline"
     : (a2aHttpSignatureKeyRegistryFile ? "file" : "empty");
   const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
+  const allowInsecureDev = options.allowInsecureDev ?? resolveBooleanEnv(process.env.A2A_ALLOW_INSECURE_DEV, false);
+  validateBrokerStartupSecurity({
+    host,
+    edgeSecret,
+    workerAuth: a2aHttpSignatureWorkerAuth,
+    workerKeyCount: Object.keys(a2aHttpSignatureKeyRegistry).length,
+    allowInsecureDev,
+  });
   const githubWebhookSecret = firstNonEmpty(
     options.githubWebhookSecret,
     process.env.GITHUB_WEBHOOK_SECRET,
@@ -2669,7 +2716,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       requesterIdentity = extractRequesterIdentity(req);
       const isPublicDiscoveryRoute = req.method === "GET" && path === "/.well-known/agent-card.json";
       const isPublicLivenessRoute = req.method === "GET" && path === "/livez";
-      if (path !== "/health" && !isPublicLivenessRoute && !isPublicDiscoveryRoute) {
+      if (!isPublicLivenessRoute && !isPublicDiscoveryRoute) {
         assertEdgeSecret(req, edgeSecret);
 
         const bucket = classifyRateLimitBucket(req, url);

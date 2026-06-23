@@ -499,7 +499,7 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
     args.push("--cap-add", cap);
   }
 
-  if (config.githubTokenFile) {
+  if (config.githubTokenFile && config.trustedOperator) {
     args.push("-v", `${config.githubTokenFile}:/run/secrets/gh-hosts.yml:ro`);
     args.push("-e", "GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml");
   }
@@ -551,6 +551,12 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   // Reserved conductor keys are policy-controlled: a task-supplied env must
   // never override the opt-in flag or the hard-cap budget injected above.
   const reservedSubagentEnv = new Set([
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_CONFIG_HOSTS",
+    "GH_CONFIG_DIR",
+    "GIT_ASKPASS",
+    "GIT_TERMINAL_PROMPT",
     "A2A_CONTAINED_SUBAGENTS_ENABLED",
     "A2A_CONTAINED_SUBAGENTS_MAX",
     "A2A_CONTAINED_SUBAGENTS_ROLES",

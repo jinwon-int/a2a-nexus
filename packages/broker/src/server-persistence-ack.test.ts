@@ -279,7 +279,7 @@ test("server surfaces persistence queue diagnostics on health, schedz, and dashb
   try {
     const headers = { "x-a2a-edge-secret": "test-edge-secret" };
 
-    const health = await (await fetch(`${server.baseUrl}/health`)).json();
+    const health = await (await fetch(`${server.baseUrl}/health`, { headers })).json();
     assert.deepEqual(health.persistenceQueue, persistenceQueue);
 
     const schedz = await (await fetch(`${server.baseUrl}/schedz`, { headers })).json();
@@ -316,7 +316,7 @@ test("server wires worker-thread persistence queue through HTTP ACK and diagnost
     try {
       await registerTestWorker(server.baseUrl, "worker-thread-http", "operator", "test-edge-secret");
 
-      const health = await (await fetch(`${server.baseUrl}/health`)).json() as {
+      const health = await (await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } })).json() as {
         persistenceQueue: BrokerPersistenceQueueDiagnostics;
       };
       assert.equal(health.persistenceQueue.enabled, true);

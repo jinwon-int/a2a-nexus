@@ -12,6 +12,7 @@ const config: RunnerConfig = {
   image: "example/image:ci",
   githubTokenFile: "/tmp/hosts.yml",
   defaultTimeoutMs: 1000,
+  trustedOperator: true,
   memory: "256m",
   cpus: "0.5",
 };
@@ -55,8 +56,18 @@ test("builds a Docker/Podman-compatible invocation contract without requiring an
   assert.ok(args.includes("/tmp/hosts.yml:/run/secrets/gh-hosts.yml:ro"));
   assert.ok(args.includes("GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml"));
   assert.ok(args.includes("SAFE_VALUE=ok"));
-  assert.ok(args.includes(`GH_TOKEN=${classicGitHubToken}`));
+  assert.ok(!args.some((arg) => arg.startsWith("GH_TOKEN=")), "runner-controlled credential env must not be injected into task commands");
   assert.deepEqual(args.slice(-3), ["example/image:ci", "bash", "/work/run.sh"]);
+});
+
+
+
+test("buildRunArgs does not expose GitHub token file or credential env to untrusted task commands", () => {
+  const args = buildRunArgs({ ...config, trustedOperator: false }, task, "/tmp/a2a-work", "ci-run-untrusted");
+
+  assert.ok(!args.includes("/tmp/hosts.yml:/run/secrets/gh-hosts.yml:ro"));
+  assert.ok(!args.includes("GH_CONFIG_HOSTS=/run/secrets/gh-hosts.yml"));
+  assert.ok(!args.some((arg) => arg.startsWith("GH_TOKEN=")));
 });
 
 test("buildRunArgs injects safe runner build metadata env", () => {

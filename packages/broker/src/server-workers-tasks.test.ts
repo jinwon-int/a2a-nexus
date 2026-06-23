@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
-import { createInMemoryStateStore, startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
+import { createInMemoryStateStore, startTestServer, jsonHeaders, registerTestWorker, withEnv } from "./server-test-helpers.js";
 
 
 // Synthetic test-only Ed25519 fixture generated locally for deterministic verifier
@@ -842,6 +842,59 @@ test("strict A2A HTTP Signature worker route gate loads worker public keys from 
       body,
     });
     assert.equal(res.status, 201);
+  } finally {
+    await server.close();
+  }
+});
+
+
+
+test("public broker bind fails closed without edge secret, strict worker signatures, or explicit insecure-dev opt-in", async () => {
+  await withEnv({ A2A_ALLOW_INSECURE_DEV: undefined, NODE_ENV: undefined }, async () => {
+    assert.throws(
+      () => createBrokerServer({
+        host: "0.0.0.0",
+        port: 0,
+        publicBaseUrl: "https://broker.test/",
+        stateStore: createInMemoryStateStore(),
+      }),
+      /insecure broker bind rejected/,
+    );
+
+    assert.doesNotThrow(() => createBrokerServer({
+      host: "0.0.0.0",
+      port: 0,
+      publicBaseUrl: "https://broker.test/",
+      edgeSecret: "test-edge-secret",
+      stateStore: createInMemoryStateStore(),
+    }).server.close());
+
+    assert.doesNotThrow(() => createBrokerServer({
+      host: "0.0.0.0",
+      port: 0,
+      publicBaseUrl: "https://broker.test/",
+      a2aHttpSignatureWorkerAuth: "strict",
+      a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+      stateStore: createInMemoryStateStore(),
+    }).server.close());
+  });
+});
+
+test("/health requires edge secret while /livez remains public liveness", async () => {
+  const server = await startTestServer({ edgeSecret: "test-edge-secret" });
+  try {
+    const livez = await fetch(`${server.baseUrl}/livez`);
+    assert.equal(livez.status, 200);
+
+    const unauthHealth = await fetch(`${server.baseUrl}/health`);
+    assert.equal(unauthHealth.status, 401);
+
+    const health = await fetch(`${server.baseUrl}/health`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
+    assert.equal(health.status, 200);
+    const body = await health.json() as { requestSecurity?: unknown };
+    assert.ok(body.requestSecurity, "authenticated /health keeps detailed diagnostics");
   } finally {
     await server.close();
   }

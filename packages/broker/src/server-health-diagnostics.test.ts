@@ -31,7 +31,7 @@ test("server surfaces env-injected broker version/build revision on health and d
       assert.equal(server.runtime.config.version, "0.2.3");
       assert.equal(server.runtime.config.build.revision, "78b2b42fca6e");
 
-      const healthRes = await fetch(`${server.baseUrl}/health`);
+      const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
       assert.equal(healthRes.status, 200);
       assert.equal(healthRes.headers.get("cache-control"), "no-store");
       const health = await healthRes.json();
@@ -644,7 +644,7 @@ test("server uses unknown build revision fallback instead of null", async () => 
   await withEnv({ A2A_BROKER_REVISION: undefined, BROKER_RELEASE_REVISION: undefined, RELEASE_REVISION: undefined }, async () => {
     const server = await startTestServer({ buildInfoFile: "/dev/null" });
     try {
-      const healthRes = await fetch(`${server.baseUrl}/health`);
+      const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
       assert.equal(healthRes.status, 200);
       const health = await healthRes.json();
       assert.equal(typeof health.version, "string");
@@ -666,7 +666,7 @@ test("server redacts unsafe build metadata from health", async () => {
   }, async () => {
     const server = await startTestServer();
     try {
-      const healthRes = await fetch(`${server.baseUrl}/health`);
+      const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
       assert.equal(healthRes.status, 200);
       const healthText = await healthRes.text();
       assert.doesNotMatch(healthText, /credential\.example\.invalid|unsafe-revision|secret-path|private\.registry/);
@@ -686,7 +686,7 @@ test("server normalizes legacy a2a-broker provenance to canonical a2a-nexus sour
   }, async () => {
     const server = await startTestServer();
     try {
-      const healthRes = await fetch(`${server.baseUrl}/health`);
+      const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
       assert.equal(healthRes.status, 200);
       const health = await healthRes.json();
       assert.equal(health.build.source, "github.com/jinwon-int/a2a-nexus");
@@ -696,7 +696,7 @@ test("server normalizes legacy a2a-broker provenance to canonical a2a-nexus sour
   });
 });
 
-test("server requires x-a2a-edge-secret on non-health routes when configured", async () => {
+test("server requires x-a2a-edge-secret on protected routes while /livez stays public", async () => {
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",
     rateLimitMaxRequests: 1,
@@ -704,7 +704,12 @@ test("server requires x-a2a-edge-secret on non-health routes when configured", a
   });
 
   try {
-    const healthRes = await fetch(`${server.baseUrl}/health`);
+    const healthWithoutSecretRes = await fetch(`${server.baseUrl}/health`);
+    assert.equal(healthWithoutSecretRes.status, 401);
+
+    const healthRes = await fetch(`${server.baseUrl}/health`, {
+      headers: { "x-a2a-edge-secret": "test-edge-secret" },
+    });
     assert.equal(healthRes.status, 200);
 
     const livezRes = await fetch(`${server.baseUrl}/livez`);
@@ -1161,7 +1166,7 @@ test("stale reaper dead-letters tasks exceeding maxRequeueAttempts and exposes t
       ...extra,
     });
 
-    const health = await (await fetch(`${server.baseUrl}/health`)).json();
+    const health = await (await fetch(`${server.baseUrl}/health`, { headers: h() })).json();
     assert.equal(health.staleReaper.maxRequeueAttempts, 1);
     assert.equal(health.staleReaper.totalDeadLettered, 0);
 
@@ -1224,7 +1229,7 @@ test("stale reaper dead-letters tasks exceeding maxRequeueAttempts and exposes t
     assert.equal(status.lastDeadLettered, 1);
     assert.equal(status.totalDeadLettered, 1);
 
-    const healthAfter = await (await fetch(`${server.baseUrl}/health`)).json();
+    const healthAfter = await (await fetch(`${server.baseUrl}/health`, { headers: h() })).json();
     assert.equal(healthAfter.staleReaper.totalDeadLettered, 1);
     assert.equal(healthAfter.staleReaper.lastDeadLettered, 1);
 
