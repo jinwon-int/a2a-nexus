@@ -43,8 +43,8 @@ jobs:
       scripts: ${{ steps.filter.outputs.scripts }}
       root: ${{ steps.filter.outputs.root }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: |
@@ -81,8 +81,8 @@ jobs:
     outputs:
       cache-key: ${{ steps.npm-cache.outputs.cache-key }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -95,12 +95,12 @@ jobs:
     needs: [setup, paths-filter]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
@@ -114,12 +114,12 @@ jobs:
     if: ${{ needs.paths-filter.outputs.broker == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: packages/broker/dist
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
@@ -132,12 +132,12 @@ jobs:
     if: ${{ needs.paths-filter.outputs.docker-runner == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: packages/docker-runner/dist
           key: tsbuild-docker-runner-${{ runner.os }}-${{ hashFiles('packages/docker-runner/**/*.ts', 'packages/docker-runner/tsconfig.json') }}
@@ -150,12 +150,12 @@ jobs:
     if: ${{ needs.paths-filter.outputs.plugin == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: packages/openclaw-plugin-a2a/dist
           key: tsbuild-plugin-${{ runner.os }}-${{ hashFiles('packages/openclaw-plugin-a2a/**/*.ts', 'packages/openclaw-plugin-a2a/tsconfig.json') }}
@@ -168,12 +168,12 @@ jobs:
     if: ${{ needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
@@ -189,12 +189,12 @@ jobs:
     if: ${{ needs.paths-filter.outputs.docs == 'true' && needs.paths-filter.outputs.broker != 'true' && needs.paths-filter.outputs.docker-runner != 'true' && needs.paths-filter.outputs.plugin != 'true' && needs.paths-filter.outputs.contracts != 'true' && needs.paths-filter.outputs.scripts != 'true' && needs.paths-filter.outputs.root != 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
@@ -211,8 +211,8 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' || needs.paths-filter.outputs.docs == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -226,17 +226,17 @@ jobs:
     needs: [setup, paths-filter]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
