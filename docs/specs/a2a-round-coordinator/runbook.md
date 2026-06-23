@@ -536,7 +536,7 @@ unless fed from synthetic fixture data.
 
 Since `scripts/a2a-round-coordinator-collect.mjs` is not yet implemented, the
 dry-run closeout flow can be validated via the existing libero validation
-checklist at [`docs/validation/team1-nosuk-round-coordinator-libero.md`](../validation/team1-nosuk-round-coordinator-libero.md)
+checklist at [`docs/validation/team1-nosuk-round-coordinator-libero.md`](../../validation/team1-nosuk-round-coordinator-libero.md)
 and via the parent-round closeout go/no-go matrix:
 
 ```bash

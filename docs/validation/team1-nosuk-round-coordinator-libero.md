@@ -153,9 +153,9 @@ finalizer authority).
 
 ## Related documents
 
-- [Round coordinator spec](../docs/specs/a2a-round-coordinator/spec.md)
-- [Round coordinator runbook](../docs/specs/a2a-round-coordinator/runbook.md)
-- [Round coordinator schema](../docs/specs/a2a-round-coordinator/schema.json)
-- [Parent-round closeout go/no-go schema](../docs/specs/a2a-parent-round-closeout-go-nogo/schema.json)
-- [Team1 dispatch-wrapper runbook](../docs/specs/a2a-team1-dispatch-wrapper/runbook.md)
+- [Round coordinator spec](../specs/a2a-round-coordinator/spec.md)
+- [Round coordinator runbook](../specs/a2a-round-coordinator/runbook.md)
+- [Round coordinator schema](../specs/a2a-round-coordinator/schema.json)
+- [Parent-round closeout go/no-go schema](../specs/a2a-parent-round-closeout-go-nogo/schema.json)
+- [Team1 dispatch-wrapper runbook](../specs/a2a-team1-dispatch-wrapper/runbook.md)
 - [Round closeout reconciler source](../../packages/broker/src/github/round-closeout-reconcile.ts)

@@ -203,4 +203,4 @@ for full request/response patterns.
 
 - [`SECURITY.md`](./SECURITY.md) — vulnerability reporting and safety invariants
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — development setup, safety gates, and PR checklist
-- [Issue templates](./.github/ISSUE_TEMPLATE/) — bug report template and issue tracker configuration
+- [Issue templates](https://github.com/jinwon-int/a2a-nexus/issues) — bug report template and issue tracker configuration

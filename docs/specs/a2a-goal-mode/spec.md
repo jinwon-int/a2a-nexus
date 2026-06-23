@@ -154,11 +154,11 @@ are required beyond reverting the git changes.
 
 ## Related documents
 
-- [A2A Task Lifecycle Contract](../../contracts/a2a/task-lifecycle.md)
-- [Terminal Semantics Contract](../../contracts/a2a/terminal-semantics.md)
-- [Worker Capability Profile](../../contracts/a2a/worker-capability-profile.md)
+- [A2A Task Lifecycle Contract](../../../contracts/a2a/task-lifecycle.md)
+- [Terminal Semantics Contract](../../../contracts/a2a/terminal-semantics.md)
+- [Worker Capability Profile](../../../contracts/a2a/worker-capability-profile.md)
 - [A2A Spec-First TaskFlow Bridge](../a2a-spec-first-taskflow-bridge/spec.md)
 - [A2A Spec-First TaskFlow Runtime Rehearsal](../a2a-spec-first-taskflow-runtime/spec.md)
 - [Team1 Dispatch Wrapper Runbook](../a2a-team1-dispatch-wrapper/runbook.md)
-- [Goal Mode Lifecycle Contract](../../contracts/a2a/goal-mode-lifecycle.md)
+- [Goal Mode Lifecycle Contract](../../../contracts/a2a/goal-mode-lifecycle.md)
 - [Goal Object Schema](./schema.json)

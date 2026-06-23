@@ -6,7 +6,7 @@ native workers. This checklist builds on:
 - [Hermes broker-agnostic worker contract](specs/hermes-worker-integration/spec.md) (jinwon-int/a2a-plane#435)
 - [Hermes reference worker dry-run](specs/hermes-worker-integration/plan.md) (Phase 2, #441)
 - [Gongyung Hermes lightweight worker profile](specs/gongyung-hermes-worker-profile/spec.md) (#393)
-- [Hermes/Android native worker runbook](../hermes-android-native-worker-runbook.md)
+- [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md)
 - [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json)
 
 ## Safety preamble

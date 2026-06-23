@@ -199,14 +199,20 @@ Canonical source now lives in this repository's `packages/*`. The former split i
 
 ## Verification
 
+Local validation requires an external secret/history scanner on `PATH`; install either
+`gitleaks` or `trufflehog` before running the release gate. CI bootstraps
+`gitleaks` with Go before invoking the same scan.
+
 For local validation, use:
 
 ```bash
 npm ci --ignore-scripts --include=dev
+# install or otherwise provide gitleaks/trufflehog on PATH first
 npm run check
 ```
 
-The check script validates layout, package metadata, and public-readiness scan rules.
+The check script validates layout, package metadata, public-readiness scan rules,
+and fails closed when the external scanner prerequisite is missing.
 
 
 ## Spec-first A2A changes

@@ -52,6 +52,13 @@ jobs:
               - 'fixtures/**'
             docs:
               - 'docs/**'
+              - 'README.md'
+              - 'SECURITY.md'
+              - 'SUPPORT.md'
+              - 'CONTRIBUTING.md'
+              - 'CODE_OF_CONDUCT.md'
+              - 'CHANGELOG.md'
+              - 'GOVERNANCE.md'
             scripts:
               - 'scripts/**'
               - 'scanner/**'
@@ -180,8 +187,15 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - run: go install github.com/zricethezav/gitleaks/v8@latest
+      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
       - run: npm run check:layout
+      - run: npm run check:markdown-links
+      - run: npm run scan:external-secrets
       - run: echo "docs-only change — code build/smoke skipped"
 
   # ── Promotion-ready quickstart capstone (no-live 5-minute path) ─────

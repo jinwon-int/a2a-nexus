@@ -143,6 +143,28 @@
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
+      "name": "markdown-links",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:markdown-links"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Tracked Markdown relative-link validation for docs/root-doc public-readiness; keeps docs-only CI from accepting broken internal links."
+    },
+    {
+      "name": "ci-docs-safety-tests",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:ci-docs-safety"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Regression tests for docs-only CI secret/link gates and root-document path routing; keep with public-readiness gates."
+    },
+    {
       "name": "body-safety-scan",
       "command": "npm",
       "args": [
