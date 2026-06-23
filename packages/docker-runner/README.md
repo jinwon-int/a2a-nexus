@@ -101,6 +101,16 @@ Phase 1 focuses on GitHub/PR-producing tasks:
 - return structured stdout/stderr/artifacts/PR URL
 - clean containers automatically; keep task artifacts for audit/TTL cleanup
 
+## Credential and egress boundary
+
+Public safe-default runner config treats task commands as untrusted:
+
+- `A2A_DOCKER_RUNNER_NETWORK` defaults to `none` unless an operator selects a reviewed network.
+- `A2A_DOCKER_RUNNER_GITHUB_TOKEN_FILE` is rejected unless `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1`.
+- `buildRunArgs` defensively avoids mounting `/run/secrets/gh-hosts.yml` and filters `GH_TOKEN`/`GITHUB_TOKEN`-style credential env vars for untrusted task commands.
+
+Trusted GitHub PR/comment/push lanes must opt into `A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1` and should use short-lived, repo/branch-scoped credentials where possible. Log redaction is still required, but it is not treated as an exfiltration control.
+
 Phase 2 can add generic analyze/backfill task support.
 
 ## CLI

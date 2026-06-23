@@ -303,8 +303,12 @@ TRUSTED_PROXY=0
 EDGE_SECRET=
 ```
 
-When `EDGE_SECRET` is set, every route except `GET /health` also requires the
-`x-a2a-edge-secret` header. This lets trusted callers use the public broker
+When `EDGE_SECRET` is set, detailed operator routes including `GET /health` require the
+`x-a2a-edge-secret` header; `GET /livez` and `GET /.well-known/agent-card.json`
+remain public minimal liveness/discovery endpoints. Non-loopback or production
+startup fails closed unless an edge secret is configured, strict worker HTTP
+signatures have a non-empty key registry, or `A2A_ALLOW_INSECURE_DEV=1` is set
+for local-only development. This lets trusted callers use the public broker
 domain directly instead of relying on host-local tunnels alone. The bundled
 worker client resolves secrets in this order: `BROKER_EDGE_SECRET`,
 `A2A_BROKER_EDGE_SECRET`, `EDGE_SECRET`, then `A2A_EDGE_SECRET`.
@@ -381,7 +385,9 @@ npm start
 Health check:
 
 ```bash
-curl http://127.0.0.1:8787/health
+curl -H "x-a2a-edge-secret: $EDGE_SECRET" http://127.0.0.1:8787/health
+# Public minimal liveness remains unauthenticated:
+curl http://127.0.0.1:8787/livez
 ```
 
 Start a worker daemon against the broker:

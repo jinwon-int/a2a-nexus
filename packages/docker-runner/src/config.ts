@@ -108,6 +108,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
 
   const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
   const image = env.A2A_DOCKER_RUNNER_IMAGE || DEFAULT_IMAGE;
+  const trustedOperator = isTruthy(env.A2A_DOCKER_RUNNER_TRUSTED_OPERATOR);
   const expectedProfile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE);
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
 
@@ -120,8 +121,8 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (profile === "openclaw" || profile === "hermes" ? "host" : "bridge"),
-    trustedOperator: isTruthy(env.A2A_DOCKER_RUNNER_TRUSTED_OPERATOR),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes") ? "host" : "none"),
+    trustedOperator,
     pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
     noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
     capDrop: parseCommaList(env.A2A_DOCKER_RUNNER_CAP_DROP),
@@ -181,6 +182,9 @@ export function validateRunnerConfig(config: RunnerConfig): void {
     }
     if ((config.capAdd ?? []).length > 0) {
       errors.push("public safe-default policy rejects added capabilities; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for capability-add lanes");
+    }
+    if (config.githubTokenFile) {
+      errors.push("public safe-default policy rejects GitHub token file exposure; set A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1 for trusted GitHub side-effect lanes");
     }
   }
 

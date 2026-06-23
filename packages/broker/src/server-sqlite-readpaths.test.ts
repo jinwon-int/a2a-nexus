@@ -10,7 +10,7 @@ import { emptySnapshot, SqliteBrokerStateStore, type BrokerSnapshot } from "./co
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
-test("server surfaces invalid worker hot row diagnostics on health and dashboard", async () => {
+test("server surfaces invalid worker hot row diagnostics on dashboard while health keeps safe persistence metadata", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-broker-invalid-worker-"));
   const sqliteFile = join(dir, "state.sqlite");
   const runtime = createBrokerServer({
@@ -21,6 +21,9 @@ test("server surfaces invalid worker hot row diagnostics on health and dashboard
     sqliteFile,
     persistenceBackend: "sqlite",
     staleReaperEnabled: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
   });
   try {
     const db = new DatabaseSync(sqliteFile);
@@ -93,10 +96,10 @@ test("server surfaces invalid worker hot row diagnostics on health and dashboard
         count: 1,
       },
     ];
-    const health = await (await fetch(`http://127.0.0.1:${address.port}/health`)).json();
+    const health = await (await fetch(`http://127.0.0.1:${address.port}/health`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } })).json();
     assert.deepEqual(health.persistence.hotEntityDiagnostics.invalidRows, expectedInvalidRows);
 
-    const dashboard = await (await fetch(`http://127.0.0.1:${address.port}/dashboard`)).json();
+    const dashboard = await (await fetch(`http://127.0.0.1:${address.port}/dashboard`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } })).json();
     assert.deepEqual(dashboard.hotEntityDiagnostics.invalidRows, expectedInvalidRows);
   } finally {
     runtime.stopStaleReaper();
@@ -124,7 +127,7 @@ test("server reports SQLite persistence metadata when SQLite backend is enabled"
       throw new Error("failed to bind test server");
     }
 
-    const res = await fetch(`http://127.0.0.1:${address.port}/health`);
+    const res = await fetch(`http://127.0.0.1:${address.port}/health`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
     assert.equal(res.status, 200);
     const health = await res.json();
     assert.equal(health.persistence.kind, "sqlite");
@@ -199,6 +202,9 @@ test("health p99 stays under 500ms with SQLite cache over 50 requests", async ()
     sqliteFile: join(dir, "state.sqlite"),
     persistenceBackend: "sqlite",
     staleReaperEnabled: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
   });
   try {
     // Pre-seed a small realistic workload so COUNT / mirror status paths are exercised.
@@ -236,7 +242,7 @@ test("health p99 stays under 500ms with SQLite cache over 50 requests", async ()
 
     for (let i = 0; i < 50; i++) {
       const start = performance.now();
-      const res = await fetch(`${baseUrl}/health`);
+      const res = await fetch(`${baseUrl}/health`, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
       const elapsed = performance.now() - start;
       assert.equal(res.status, 200);
       const body = await res.json();

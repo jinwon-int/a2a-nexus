@@ -67,6 +67,29 @@ function runResolverScript(source: string, files: ResolverFiles, env: Record<str
 }
 
 
+
+
+test("untrusted runner defaults deny task egress and reject GitHub token file exposure", async () => {
+  const cfg = await loadConfig({
+    ...baseEnv,
+  });
+  assert.equal(cfg.network, "none");
+
+  assert.throws(
+    () => validateRunnerConfig({
+      rootDir: "/tmp/a2a-runner",
+      image: "node:22-bookworm-slim",
+      defaultTimeoutMs: 1000,
+      network: "bridge",
+      noNewPrivileges: true,
+      capDrop: [],
+      githubTokenFile: "/tmp/hosts.yml",
+      trustedOperator: false,
+    }),
+    /public safe-default policy rejects GitHub token file exposure/,
+  );
+});
+
 test("public safe-default policy rejects host network unless trusted operator mode is explicit", () => {
   assert.throws(
     () => validateRunnerConfig({

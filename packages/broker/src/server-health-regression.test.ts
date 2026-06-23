@@ -341,6 +341,9 @@ test("/health p95/p99 regression with small SQLite fixture (≤200 audit rows)",
     stateFile: join(tmp.dir, "state.json"),
     staleReaperEnabled: false,
     enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
   });
 
   try {
@@ -354,7 +357,7 @@ test("/health p95/p99 regression with small SQLite fixture (≤200 audit rows)",
 
     // Warm-up: 5 requests to settle JIT / WAL / OS cache.
     for (let i = 0; i < 5; i++) {
-      await fetch(healthUrl);
+      await fetch(healthUrl, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
     }
 
     // Collect 100 measurements.
@@ -362,7 +365,7 @@ test("/health p95/p99 regression with small SQLite fixture (≤200 audit rows)",
     const REQUEST_COUNT = 100;
     for (let i = 0; i < REQUEST_COUNT; i++) {
       const start = performance.now();
-      const res = await fetch(healthUrl);
+      const res = await fetch(healthUrl, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
       const elapsed = performance.now() - start;
       durationsMs.push(elapsed);
 
@@ -433,6 +436,9 @@ test("/health p95/p99 regression with minimal DB (empty hot tables)", async (t) 
     stateFile: join(tmp.dir, "state.json"),
     staleReaperEnabled: false,
     enforceRequesterIdentity: false,
+    edgeSecret: "test-edge-secret",
+    rateLimitMaxRequests: 1000,
+    workerRateLimitMaxRequests: 1000,
   });
 
   try {
@@ -446,14 +452,14 @@ test("/health p95/p99 regression with minimal DB (empty hot tables)", async (t) 
 
     // Warm-up.
     for (let i = 0; i < 5; i++) {
-      await fetch(healthUrl);
+      await fetch(healthUrl, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
     }
 
     const durationsMs: number[] = [];
     const REQUEST_COUNT = 50;
     for (let i = 0; i < REQUEST_COUNT; i++) {
       const start = performance.now();
-      const res = await fetch(healthUrl);
+      const res = await fetch(healthUrl, { headers: { "x-a2a-edge-secret": "test-edge-secret" } });
       durationsMs.push(performance.now() - start);
       assert.equal(res.status, 200);
       const body = await res.json();
