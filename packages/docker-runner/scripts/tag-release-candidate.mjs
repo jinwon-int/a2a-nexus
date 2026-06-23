@@ -150,14 +150,33 @@ function gatePkgVersion(expectedVersion) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const version = validateVersion(args.version);
+  const dryRun = Boolean(args.dryRun);
 
+  // Read-only gates are always safe to evaluate.
   const gates = [
     { name: "clean-tree", result: gateCleanTree() },
     { name: "pkg-version", result: gatePkgVersion(version) },
     { name: "bootstrap-guard", result: gateBootstrapGuard() },
-    { name: "npm-gates", result: gateNpmCi(version) },
-    { name: "chaos-e2e-mock", result: gateChaosE2e() },
   ];
+
+  // The npm and chaos gates run `npm ci`, a full build/check/lint/test, and the
+  // chaos-e2e mock. `npm ci` re-resolves the entire workspace and rewrites
+  // node_modules, so evaluating these here as a side effect would mutate the
+  // caller's install (e.g. pruning the hoisted root `@types/node` and breaking
+  // sibling packages' builds with TS2688). A --dry-run must be a side-effect-free
+  // preview, so the heavy gates are skipped; they run only when a tag is actually
+  // created.
+  if (dryRun) {
+    gates.push(
+      { name: "npm-gates", result: { ok: true, skipped: true, reason: "skipped in --dry-run (would run npm ci/build/check/lint/test)" } },
+      { name: "chaos-e2e-mock", result: { ok: true, skipped: true, reason: "skipped in --dry-run (would run npm run chaos:e2e)" } },
+    );
+  } else {
+    gates.push(
+      { name: "npm-gates", result: gateNpmCi(version) },
+      { name: "chaos-e2e-mock", result: gateChaosE2e() },
+    );
+  }
 
   const failed = gates.filter((g) => !g.result.ok);
   const tagName = nextRcTag(version);
@@ -167,7 +186,7 @@ async function main() {
     ok: failed.length === 0,
     version,
     tagName,
-    dryRun: Boolean(args.dryRun),
+    dryRun,
     parent: "a2a-docker-runner#195",
     gates: gates.map((g) => ({ name: g.name, ...g.result })),
   };
@@ -177,7 +196,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (args.dryRun) {
+  if (dryRun) {
     output.tagCreated = false;
     output.dryRunNote = `would create tag ${tagName}`;
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
