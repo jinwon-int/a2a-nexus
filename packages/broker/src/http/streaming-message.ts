@@ -15,13 +15,14 @@ import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
 /**
  * Parse the raw JSON-RPC body and return the request when it is a single
- * (non-batch) SendStreamingMessage call with a non-null id. Returns null for
- * everything else so the generic JSON-RPC executor handles it (including the
- * batch case, which the dispatcher rejects with -32600).
+ * (non-batch) SendStreamingMessage call with a JSON-RPC id, including
+ * `id:null`. Returns null for everything else so the generic JSON-RPC executor
+ * handles it (including the batch case, which the dispatcher rejects with
+ * -32600).
  */
 export function parseSingleStreamingMessageRequest(
   rawBody: string,
-): { id: string | number; params: unknown } | null {
+): { id: string | number | null; params: unknown } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawBody);
@@ -42,7 +43,7 @@ export function parseSingleStreamingMessageRequest(
     return null;
   }
   const id = request.id;
-  if (typeof id !== "string" && typeof id !== "number") {
+  if (typeof id !== "string" && typeof id !== "number" && id !== null) {
     // A streaming notification is meaningless: there is no id to correlate
     // streamed envelopes with. Let the generic layer answer.
     return null;
@@ -68,7 +69,7 @@ export function handleStreamingMessageResponse(
   res: ServerResponse<IncomingMessage>,
   params: {
     broker: InMemoryA2ABroker;
-    rpcId: string | number;
+    rpcId: string | number | null;
     sendResult: ReturnType<typeof executeSendMessage>;
     task: TaskRecord;
     heartbeatMs: number;

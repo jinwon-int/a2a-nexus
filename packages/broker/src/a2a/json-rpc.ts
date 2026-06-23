@@ -493,11 +493,18 @@ function executeOneJsonRpc(
   request: unknown,
   options: ExecuteJsonRpcOptions,
 ): JsonRpcResponse | null {
-  // A request object with no `id` member is a notification and gets no
-  // response (note: `id: null` is a normal request, not a notification).
+  // A request object with no `id` member is a notification only after it is a
+  // syntactically valid JSON-RPC request. Invalid no-id objects such as `{}`
+  // must still produce -32600, including when embedded in a batch.
   const isNotification = isRecord(request) && !("id" in request);
-  const response = executeA2AJsonRpc(request, options);
-  return isNotification ? null : response;
+  const parsed = parseJsonRpcRequest(request);
+  if ("error" in parsed) {
+    return parsed;
+  }
+  if (isNotification) {
+    return null;
+  }
+  return executeA2AJsonRpc(request, options);
 }
 
 function parseJsonRpcRequest(request: unknown): JsonRpcRequest | JsonRpcFailure {
