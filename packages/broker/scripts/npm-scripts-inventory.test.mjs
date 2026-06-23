@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
 const inventoryPath = new URL('./npm-scripts-inventory.mjs', import.meta.url).pathname;
+const brokerPackagePath = new URL('../package.json', import.meta.url).pathname;
+
+test('broker npm test removes ignored dist artifacts before incremental build', () => {
+  const pkg = JSON.parse(readFileSync(brokerPackagePath, 'utf8'));
+  assert.match(pkg.scripts?.test ?? '', /npm run clean:dist && npm run build/);
+});
 
 test('npm scripts inventory emits caller audit refs without reading package files as callers', () => {
   const tempDir = mkdtempSync(join(tmpdir(), 'npm-scripts-inventory-'));

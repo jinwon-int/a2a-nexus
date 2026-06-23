@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
+import { parseSingleStreamingMessageRequest } from "../http/streaming-message.js";
 import { createBrokerAgentCard } from "./agent-card.js";
 import { executeA2AJsonRpc, executeA2AJsonRpcBody, type ExecuteJsonRpcOptions, type JsonRpcResponse } from "./json-rpc.js";
 
@@ -442,6 +443,29 @@ test("a notification (no id member) gets no response", () => {
   assert.equal(result, null, "a notification must not produce a response");
 });
 
+test("invalid JSON-RPC objects without id still return invalid-request errors", () => {
+  const broker = createBroker();
+  for (const raw of ["{}", JSON.stringify({ jsonrpc: "2.0" }), JSON.stringify({ jsonrpc: "1.0", method: "GetTask" })]) {
+    const result = executeA2AJsonRpcBody(raw, createJsonRpcOptions(broker, { enforceRequesterIdentity: false }));
+    assert.ok(result && !Array.isArray(result) && "error" in result, `${raw} should produce an error response`);
+    assert.equal((result as { error: { code: number } }).error.code, -32600);
+  }
+});
+
+test("invalid no-id entries in a batch are preserved instead of swallowed as notifications", () => {
+  const broker = createBroker();
+  const result = executeA2AJsonRpcBody(
+    JSON.stringify([{}, { jsonrpc: "2.0", method: "NoSuch", id: 1 }]),
+    createJsonRpcOptions(broker, { enforceRequesterIdentity: false }),
+  );
+  if (!Array.isArray(result)) {
+    assert.fail("batch should return two error responses");
+  }
+  const responses: JsonRpcResponse[] = result;
+  assert.equal(responses.length, 2);
+  assert.deepEqual(responses.map((item) => ("error" in item ? item.error.code : null)), [-32600, -32601]);
+});
+
 test("a batch of only notifications returns null (no response body)", () => {
   const broker = createBroker();
   const body = JSON.stringify([
@@ -461,6 +485,14 @@ test("id: null is a normal request and still gets a response", () => {
   );
   assert.ok(result && !Array.isArray(result) && "result" in result);
   assert.equal((result as JsonRpcResponse).id, null);
+});
+
+test("single SendStreamingMessage with id null stays on the streaming fast path", () => {
+  const parsed = parseSingleStreamingMessageRequest(
+    JSON.stringify({ jsonrpc: "2.0", id: null, method: "SendStreamingMessage", params: { message: "hello" } }),
+  );
+
+  assert.deepEqual(parsed, { id: null, params: { message: "hello" } });
 });
 
 test("GetTask on a missing task returns A2A TaskNotFoundError (-32001) with ErrorInfo", () => {
