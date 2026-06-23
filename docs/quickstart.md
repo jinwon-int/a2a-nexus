@@ -160,8 +160,7 @@ When you are done with the local demo, stop the broker and worker processes.
 Press `Ctrl+C` in both terminals. Clean up persisted state and verify the port is released:
 
 ```bash
-rm -f /tmp/a2a-broker-state.json
-rm -rf /tmp/a2a-broker-sqlite/
+rm -rf packages/broker/.local
 lsof -i :8787 2>/dev/null || echo "Port 8787 is free"
 ```
 

@@ -128,6 +128,49 @@ expect(typeof brokerPkg.scripts?.['worker:echo'] === 'string', 'broker package.j
 expect(/127\.0\.0\.1:8787/.test(brokerPkg.scripts?.['start:local'] || ''), 'start:local must bind loopback broker URL');
 expect(/WORKER_HANDLER_BUILTIN=echo/.test(brokerPkg.scripts?.['worker:echo'] || ''), 'worker:echo must use built-in echo handler');
 
+const startLocalScript = brokerPkg.scripts?.['start:local'] || '';
+const usesLocalState = /STATE_FILE=\.local\/state\.json/.test(startLocalScript);
+if (usesLocalState) {
+  for (const [doc, text] of [
+    ['docs/quickstart.md', quickstart],
+    ['docs/demo/README.md', readRel('docs/demo/README.md')],
+  ]) {
+    expect(/rm -rf packages\/broker\/\.local/.test(text || ''), `${doc}: teardown must remove packages/broker/.local when start:local uses .local/state.json`);
+    expect(!/rm -f \/tmp\/a2a-broker-state\.json/.test(text || ''), `${doc}: teardown must not point start:local cleanup at stale /tmp state file`);
+  }
+}
+
+// ── Compose examples must be copy-safe by default ───────────────────────────
+
+for (const composePath of [
+  'packages/broker/examples/docker-compose.smoke.yml',
+  'packages/broker/examples/docker-compose.trading-partners.yml',
+]) {
+  const compose = readRel(composePath) || '';
+  expect(/A2A_BROKER_REVISION:\s*\$\{A2A_BROKER_REVISION:\?/.test(compose), `${composePath}: build revision must fail fast instead of defaulting to unknown`);
+  expect(/A2A_BROKER_CREATED:\s*\$\{A2A_BROKER_CREATED:\?/.test(compose), `${composePath}: build created timestamp must fail fast instead of defaulting empty`);
+}
+
+const tradingCompose = readRel('packages/broker/examples/docker-compose.trading-partners.yml') || '';
+expect(/127\.0\.0\.1:8787:8787/.test(tradingCompose), 'trading compose: broker port must bind loopback by default');
+expect(!/"8787:8787"/.test(tradingCompose), 'trading compose: must not publish broker on all interfaces by default');
+expect(!/\/srv\/trading\/.+:rw/.test(tradingCompose), 'trading compose: must not mount live /srv/trading paths read-write by default');
+expect(/operator-only override/i.test(tradingCompose), 'trading compose: must tell operators to use an override for live host paths');
+
+// ── Canonical issue routing must match a2a-nexus source of truth ────────────
+
+const publicUmbrella = readRel('docs/quickstart/public-umbrella.md') || '';
+const issueRouting = readRel('docs/issue-routing.md') || '';
+for (const [doc, text] of [
+  ['docs/quickstart/public-umbrella.md', publicUmbrella],
+  ['docs/issue-routing.md', issueRouting],
+]) {
+  expect(/a2a-nexus/.test(text), `${doc}: must name a2a-nexus as canonical implementation source`);
+  expect(/open unclear or cross-repo issues in `a2a-nexus` first/i.test(text), `${doc}: ambiguous/cross-repo issues must route to a2a-nexus first`);
+  expect(!/Open unclear or cross-repo issues in `a2a-plane` first/.test(text), `${doc}: must not route new unclear work to legacy a2a-plane first`);
+  expect(!/split repo issues and PRs remain authoritative/i.test(text), `${doc}: must not describe split repos as authoritative for new work`);
+}
+
 // ── Release gate must keep public-readiness and package checks ──────────────
 
 const releaseGateInventory = JSON.parse(readRel('docs/ops/release-gate-step-inventory.json') || '{}');

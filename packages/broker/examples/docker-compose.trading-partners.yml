@@ -6,15 +6,15 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:-unknown}
+        A2A_BROKER_REVISION: ${A2A_BROKER_REVISION:?set A2A_BROKER_REVISION=$(git rev-parse HEAD)}
         A2A_BROKER_VERSION: ${A2A_BROKER_VERSION:-0.1.0}
-        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:-}
+        A2A_BROKER_CREATED: ${A2A_BROKER_CREATED:?set A2A_BROKER_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)}
     container_name: a2a-broker
     restart: unless-stopped
     env_file:
       - ../.env
     environment:
-      HOST: 0.0.0.0
+      HOST: 127.0.0.1
       PORT: 8787
       SERVICE_NAME: a2a-broker
       PUBLIC_BASE_URL: http://a2a-broker:8787
@@ -24,7 +24,7 @@ services:
       RATE_LIMIT_MAX_REQUESTS: 10
       ENFORCE_REQUESTER_IDENTITY: 1
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
     volumes:
       - broker-artifacts:/artifacts
       - broker-state:/var/lib/a2a-broker
@@ -46,9 +46,10 @@ services:
       ARTIFACT_ROOT: /artifacts
       CONFIG_ROOT: /config
     volumes:
-      - /srv/trading/bangtong/live:/workspace/live:rw
-      - /srv/trading/bangtong/config:/config:ro
-      - /srv/trading/bangtong/artifacts:/artifacts:rw
+      # Safe placeholder volumes. Put live host paths in an operator-only override file, not this copyable example.
+      - bangtong-workspace:/workspace/live:ro
+      - bangtong-config:/config:ro
+      - bangtong-artifacts:/artifacts:ro
     depends_on:
       - a2a-broker
     networks:
@@ -69,9 +70,10 @@ services:
       DATASET_ROOT: /datasets
       ARTIFACT_ROOT: /artifacts
     volumes:
-      - /srv/trading/dengae/research:/workspace/research:rw
-      - /srv/trading/dengae/datasets:/datasets:ro
-      - /srv/trading/dengae/artifacts:/artifacts:rw
+      # Safe placeholder volumes. Put live host paths in an operator-only override file, not this copyable example.
+      - dengae-research:/workspace/research:ro
+      - dengae-datasets:/datasets:ro
+      - dengae-artifacts:/artifacts:ro
     depends_on:
       - a2a-broker
     networks:
@@ -80,6 +82,12 @@ services:
 volumes:
   broker-artifacts:
   broker-state:
+  bangtong-workspace:
+  bangtong-config:
+  bangtong-artifacts:
+  dengae-research:
+  dengae-datasets:
+  dengae-artifacts:
 
 networks:
   a2a-net:

@@ -83,8 +83,7 @@ Detailed task and worker health is available at:
 ```bash
 # Stop the broker and echo worker with Ctrl+C in their terminals.
 # Clean up persisted state (if any):
-rm -f /tmp/a2a-broker-state.json
-rm -rf /tmp/a2a-broker-sqlite/
+rm -rf packages/broker/.local
 
 # Verify no leftover processes:
 lsof -i :8787 2>/dev/null || echo "Port 8787 is free"
