@@ -84,6 +84,15 @@ test("tag-release-candidate --dry-run produces valid gate evidence JSON", () => 
   assert.ok(gateNames.includes("bootstrap-guard"));
   assert.ok(gateNames.includes("pkg-version"));
 
+  // The npm and chaos gates run `npm ci` + a full build/lint/test and the
+  // chaos-e2e mock. A --dry-run must not execute them: `npm ci` rewrites the
+  // workspace node_modules and would corrupt the caller's install (TS2688 in
+  // sibling packages). They must be reported as skipped, never run, in dry-run.
+  const gateByName = (name: string) =>
+    (output.gates as Array<{ name: string; skipped?: boolean }>).find((g) => g.name === name);
+  assert.ok(gateByName("npm-gates")?.skipped === true, "npm-gates must be skipped in --dry-run (no npm ci side effects)");
+  assert.ok(gateByName("chaos-e2e-mock")?.skipped === true, "chaos-e2e-mock must be skipped in --dry-run");
+
   // tagCreated is only present when gates pass (dry-run or real).
   // In workspaces with OpenClaw bootstrap files on disk, the bootstrap-guard
   // gate fails correctly and tagCreated is absent.
