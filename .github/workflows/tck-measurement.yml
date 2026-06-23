@@ -38,16 +38,16 @@ jobs:
     name: measure A2A TCK compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
       - run: npm ci --include=dev
       - run: npm run build -w packages/broker
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload TCK reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tck-compliance-report
           path: |
