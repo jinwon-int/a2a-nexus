@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Keep GitHub Actions versions current through reviewed PRs instead of letting
+  # mutable tags drift. Dependabot maintains SHA-pinned actions (e.g.
+  # dorny/paths-filter) and their version comments, and surfaces bumps for the
+  # first-party actions/* still referenced by tag.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
