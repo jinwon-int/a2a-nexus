@@ -20,6 +20,13 @@ defaults:
   run:
     shell: bash
 
+env:
+  # Pin the secret scanner to a reviewed release instead of @latest so a new
+  # gitleaks release can't silently change the readiness gate. Centralized here
+  # so every job stays in sync; bump deliberately (mirrors the pinned external
+  # source pattern in tck-measurement.yml).
+  GITLEAKS_VERSION: v8.30.1
+
 jobs:
   # ── Detect changed paths ────────────────────────────────────────────
   paths-filter:
@@ -37,7 +44,7 @@ jobs:
       root: ${{ steps.filter.outputs.root }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
           filters: |
@@ -169,7 +176,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
-      - run: go install github.com/zricethezav/gitleaks/v8@latest
+      - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
       - run: npm run test:conformance
@@ -190,7 +197,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
-      - run: go install github.com/zricethezav/gitleaks/v8@latest
+      - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
       - run: npm run check:layout
@@ -227,7 +234,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
-      - run: go install github.com/zricethezav/gitleaks/v8@latest
+      - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - uses: actions/cache@v4
         with:
