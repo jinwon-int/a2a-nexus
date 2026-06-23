@@ -66,7 +66,7 @@ and on an operator laptop without:
 
 Passing this canary is a **necessary but not sufficient** condition for production
 auto-closeout enablement. The full criteria are defined in
-[§7.4 of the action reconciliation contract](../contracts/a2a/action-reconciliation.md).
+[§7.4 of the action reconciliation contract](../../../contracts/a2a/action-reconciliation.md).
 
 ## Relationship to other canaries
 

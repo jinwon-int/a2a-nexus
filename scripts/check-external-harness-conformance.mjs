@@ -44,7 +44,7 @@ if (doc) {
 const quickstart = readRel('docs/quickstart.md');
 expect(quickstart !== null, 'missing docs/quickstart.md');
 if (quickstart) {
-  expect(/docs\/external-harness-quickstart\.md/.test(quickstart), 'quickstart: must link external harness path');
+  expect(/(?:docs\/)?external-harness-quickstart\.md/.test(quickstart), 'quickstart: must link external harness path');
 }
 
 const examplesReadme = readRel('examples/README.md');

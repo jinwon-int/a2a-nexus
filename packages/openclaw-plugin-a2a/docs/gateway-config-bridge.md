@@ -133,6 +133,6 @@ scripts/canary-receipt-gated-preflight.sh
 
 ## Related
 
-- [Operator notification adapter](./operator-notification-adapter.md)
+- [Operator notification adapter](./operator-terminal-notification-receipts.md)
 - [Canary receipt-gated runtime preflight](./canary-receipt-gated-runtime-preflight.md)
 - [openclaw.plugin.json](../openclaw.plugin.json) — Plugin config schema

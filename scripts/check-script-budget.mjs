@@ -27,9 +27,9 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 143, // top-level scripts/*.mjs, incl. script-budget guard/test, release-gate inventory guard, and tiering regression test
-  rootNpmScripts: 115, // package.json "scripts" (incl. script budget + release-gate inventory gates)
-  brokerNpmScripts: 149, // packages/broker/package.json "scripts"
+  scriptsMjs: 145, // includes tracked Markdown link checker and CI docs safety regression test (#1006/#994/#995)
+  rootNpmScripts: 117, // includes check:markdown-links and check:ci-docs-safety (#1006/#994/#995)
+  brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };
 
 /** Count top-level *.mjs files in a directory (non-recursive; excludes subdirs like lib/). */

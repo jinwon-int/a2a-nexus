@@ -319,5 +319,5 @@ Use this module when the operator needs a definitive answer:
 
 - [Source-Public Execution Orchestrator](./source-public-execution-orchestrator.md) — execution plan production
 - [Dry-Run Approval Projection](./dry-run-approval-projection.md) — approval packet projection
-- [Approval Rehearsal](./approval-rehearsal.md) — source-public approval rehearsal
+- [Approval Rehearsal](./source-public-approval-rehearsal.md) — source-public approval rehearsal
 - [Operator Install Checklist](./operator-install-checklist.md) — full operator diagnostics and runbook

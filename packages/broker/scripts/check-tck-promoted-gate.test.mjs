@@ -32,6 +32,9 @@ test("promoted TCK gate is documented separately from the non-gating measurement
   assert.match(runbook, /tck-promoted-gate\.yml/);
   assert.match(runbook, /agent_card/);
   assert.match(runbook, /measurement lane .*non-gating/i);
+  assert.match(runbook, /one-time promotion exception/i);
+  assert.match(runbook, /stable window at 2/i);
+  assert.match(runbook, /future promoted categories must appear as stable promotion candidates/i);
 });
 
 test("broker test suite covers TCK harness passthrough and promoted gate guards", () => {

@@ -28,7 +28,7 @@ If you are integrating a non-OpenClaw harness, use the external harness path aft
 npm run check:external-harness-conformance
 ~~~
 
-The public-safe guide is docs/external-harness-quickstart.md; it keeps OpenClaw as a reference integration only and validates the no-live fixture in fixtures/external-harness/no-live-conformance.json.
+The public-safe guide is external-harness-quickstart.md; it keeps OpenClaw as a reference integration only and validates the no-live fixture in fixtures/external-harness/no-live-conformance.json.
 
 ## 1. Run the local A2A Nexus broker
 
@@ -181,12 +181,12 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 
 ## Where to go next
 
-- [Demo overview](docs/demo/README.md) — component map, demo paths, health checks, security rules
-- [Two-broker demo](docs/demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
-- [External harness quickstart](docs/external-harness-quickstart.md) — non-OpenClaw harness integration
-- [Promotion capstone](docs/promotion-capstone.md) — CI-backed 5-minute and 20-minute no-live promotion-ready paths
-- [Canonical demo description](docs/canonical-demo.md) — sequence diagram and evidence rules
-- [Ecosystem guide](docs/ecosystem-guide.md) — full repository map and Korean/English terms
+- [Demo overview](demo/README.md) — component map, demo paths, health checks, security rules
+- [Two-broker demo](demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
+- [External harness quickstart](external-harness-quickstart.md) — non-OpenClaw harness integration
+- [Promotion capstone](promotion-capstone.md) — CI-backed 5-minute and 20-minute no-live promotion-ready paths
+- [Canonical demo description](canonical-demo.md) — sequence diagram and evidence rules
+- [Ecosystem guide](ecosystem-guide.md) — full repository map and Korean/English terms
 
 ## Safety checklist
 

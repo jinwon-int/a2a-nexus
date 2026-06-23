@@ -142,7 +142,15 @@ uses explicit `--ignore` entries for the non-promoted compatibility directories
 instead of appending `tests/compatibility/agent_card` as a positional path.
 
 Promotion evidence: the committed baseline records `agent_card: 6/6` green for
-`must / jsonrpc` on 2026-06-11. The promoted gate is deliberately scoped to
+`must / jsonrpc` on 2026-06-11. This first `agent_card` PR gate is a documented
+one-time promotion exception to the default stability-window rule: the category
+is small, read-only, official-TCK backed, and limited to agent-card schema and
+protocol-binding fields that are already part of every broker A2A surface
+change. `check-tck-regressions.mjs` still keeps the default stable window at 2,
+so future promoted categories must appear as stable promotion candidates across
+the configured window before they are added as CI gates.
+
+The promoted gate is deliberately scoped to
 broker A2A-surface changes (`src/a2a`, protocol compatibility fixtures,
 `server.ts`, the TCK harness, this runbook/history, and the workflow itself).
 It is fail-closed for that promoted category, while the scheduled

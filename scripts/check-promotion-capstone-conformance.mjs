@@ -91,7 +91,7 @@ if (ci) {
 
 const quickstart = readRel('docs/quickstart.md');
 if (quickstart) {
-  expectMatch(quickstart, /docs\/promotion-capstone\.md/, 'quickstart: must link promotion capstone');
+  expectMatch(quickstart, /(?:docs\/)?promotion-capstone\.md/, 'quickstart: must link promotion capstone');
 }
 
 if (failures.length) {
