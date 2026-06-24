@@ -801,10 +801,24 @@ timeout "$A2A_HERMES_TIMEOUT_SEC" hermes chat \\
 HERMES_EXIT="\${PIPESTATUS[0]}"
 set -e
 printf 'hermes_exit_code=%s\n' "$HERMES_EXIT" | tee -a /work/artifacts/summary.txt
+A2A_RUNNER_BASE_BRANCH="\${A2A_RUNNER_BASE_BRANCH:-main}"
+hermes_changes_visible_to_runner() {
+  if [ -n "$(git status --porcelain)" ]; then
+    return 0
+  fi
+  if git rev-parse --verify "origin/$A2A_RUNNER_BASE_BRANCH" >/dev/null 2>&1 \
+    && ! git diff --quiet "origin/$A2A_RUNNER_BASE_BRANCH...HEAD"; then
+    printf 'notice=hermes_committed_changes_detected base=%s\n' "$A2A_RUNNER_BASE_BRANCH" | tee -a /work/artifacts/summary.txt
+    return 0
+  fi
+  return 1
+}
 if [ "$HERMES_EXIT" -ne 0 ]; then
-  if { [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; } \\
+  if { [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; } \
     && grep -Eiq '(^|[[:space:]*_#-])(Done evidence|Done comment|Done[[:space:]]*[^[:alnum:]]|##[[:space:]]*Done|Block evidence|Block comment|Block[[:space:]]*[^[:alnum:]]|##[[:space:]]*Block)' /work/artifacts/hermes-output.txt; then
     printf 'notice=hermes_nonzero_allowed_for_evidence_only_lane exit=%s\n' "$HERMES_EXIT" | tee -a /work/artifacts/summary.txt
+  elif hermes_changes_visible_to_runner; then
+    printf 'notice=hermes_nonzero_with_visible_changes exit=%s changes=present\n' "$HERMES_EXIT" | tee -a /work/artifacts/summary.txt
   else
     printf 'error=hermes_agent_failed\n' | tee -a /work/artifacts/summary.txt
     exit "$HERMES_EXIT"
