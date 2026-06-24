@@ -728,17 +728,57 @@ printf 'hermes_config_bytes=%s\n' "$(du -sb /root/.hermes | awk '{print $1}')" |
 printf 'hermes_workspace=%s\n' "$HERMES_WORKSPACE_DIR" | tee -a /work/artifacts/summary.txt
 ${subagentSummary}
 
+A2A_LIFECYCLE_GUARD_BIN=/work/a2a-lifecycle-guard-bin
+mkdir -p "$A2A_LIFECYCLE_GUARD_BIN"
+cat > "$A2A_LIFECYCLE_GUARD_BIN/git" <<'A2A_GIT_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-}" in
+  add|commit|push|checkout|switch|reset|merge|rebase|tag)
+    printf "error=a2a_runner_contract_violation command=git_\${1:-}\n" >&2
+    exit 90
+    ;;
+  branch)
+    case "\${2:-}" in
+      ""|--show-current|-v|-vv|--list)
+        ;;
+      *)
+        printf "error=a2a_runner_contract_violation command=git_branch_mutation\n" >&2
+        exit 90
+        ;;
+    esac
+    ;;
+esac
+exec /usr/bin/git "$@"
+A2A_GIT_LIFECYCLE_GUARD
+cat > "$A2A_LIFECYCLE_GUARD_BIN/gh" <<'A2A_GH_LIFECYCLE_GUARD'
+#!/usr/bin/env bash
+case "\${1:-} \${2:-}" in
+  "pr create"|"pr merge"|"issue close"|"issue comment")
+    printf "error=a2a_runner_contract_violation command=gh_\${1:-}_\${2:-}\n" >&2
+    exit 90
+    ;;
+esac
+exec /usr/bin/gh "$@"
+A2A_GH_LIFECYCLE_GUARD
+chmod 755 "$A2A_LIFECYCLE_GUARD_BIN/git" "$A2A_LIFECYCLE_GUARD_BIN/gh"
+export PATH="$A2A_LIFECYCLE_GUARD_BIN:$PATH"
+printf 'lifecycle_guard=enabled profile=hermes\n' | tee -a /work/artifacts/summary.txt
+
 cat > /work/artifacts/hermes-prompt.md <<'A2A_HERMES_PROMPT_EOF'
 You are running inside the A2A Docker Runner on a checked-out GitHub repository.
 
 The repository is checked out at /work/repo (or /work/<repo-name> for named checkouts).
-Make all code changes in the repository checkout.
+Your only job is to edit files in the repository checkout.
 
 Use /work/artifacts/prompt.md as the assignment. Complete a minimal, safe patch in the repository only.
 
 Rules:
 - Use Hermes tools available inside this container.
-- Do not run git commit, git push, or gh pr create; the runner will do that after you exit.
+- Edit files only. Do not manage the GitHub or git lifecycle yourself.
+- Do not create or switch branches.
+- Do not run git add, git commit, git push, git reset, git merge, git rebase, or git tag.
+- Do not run gh pr create, gh pr merge, gh issue comment, or gh issue close.
+- The runner posts Start/PR/Done/Block evidence and creates the PR after you exit.
 - Do not write secrets, host-specific private paths, raw session dumps, or Hermes runtime files into the repository.
 - Prefer small focused changes and tests.
 - If the assignment is unsafe or impossible, explain why and exit non-zero without changing files.
@@ -821,7 +861,20 @@ A2A_BOOTSTRAP_LEAKS
   fi
 fi
 
-if [ -z "$(git status --porcelain)" ]; then
+A2A_RUNNER_BASE_BRANCH="\${A2A_RUNNER_BASE_BRANCH:-main}"
+hermes_changes_visible_to_runner() {
+  if [ -n "$(git status --porcelain)" ]; then
+    return 0
+  fi
+  if git rev-parse --verify "origin/$A2A_RUNNER_BASE_BRANCH" >/dev/null 2>&1 \
+    && ! git diff --quiet "origin/$A2A_RUNNER_BASE_BRANCH...HEAD"; then
+    printf 'notice=hermes_committed_changes_detected base=%s\n' "$A2A_RUNNER_BASE_BRANCH" | tee -a /work/artifacts/summary.txt
+    return 0
+  fi
+  return 1
+}
+
+if ! hermes_changes_visible_to_runner; then
   if [ "\${A2A_RUNNER_ALLOW_NO_CHANGES:-0}" = "1" ] || [ "\${A2A_RUNNER_READ_ONLY_VALIDATION:-0}" = "1" ]; then
     printf 'hermes_no_changes=allowed\\n' | tee -a /work/artifacts/summary.txt
     printf 'Hermes produced no repository changes; task-level evidence-only/no-change mode allows runner closeout.\\n' | tee -a /work/artifacts/patch-command.log

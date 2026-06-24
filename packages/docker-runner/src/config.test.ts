@@ -580,6 +580,45 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   ]);
 });
 
+test("Hermes patch profile constrains the embedded agent to file edits only", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+  });
+
+  const script = config.commandScript ?? "";
+  assert.match(script, /A2A_LIFECYCLE_GUARD_BIN=\/work\/a2a-lifecycle-guard-bin/);
+  assert.match(script, /error=a2a_runner_contract_violation command=git_\$\{1:-\}/);
+  assert.match(script, /add\|commit\|push\|checkout\|switch\|reset\|merge\|rebase\|tag/);
+  assert.match(script, /error=a2a_runner_contract_violation command=git_branch_mutation/);
+  assert.match(script, /--show-current\|-v\|-vv/);
+  assert.match(script, /error=a2a_runner_contract_violation command=gh_\$\{1:-\}_\$\{2:-\}/);
+  assert.match(script, /"pr create"\|"pr merge"\|"issue close"\|"issue comment"/);
+  assert.match(script, /export PATH="\$A2A_LIFECYCLE_GUARD_BIN:\$PATH"/);
+  assert.match(script, /Your only job is to edit files in the repository checkout/);
+  assert.match(script, /Do not create or switch branches/);
+  assert.match(script, /Do not run git add, git commit, git push/);
+  assert.match(script, /Do not run gh pr create/);
+  assert.doesNotMatch(script, /Return Start \+ PR\/Done\/Block/);
+});
+
+test("Hermes patch profile accepts already-committed branch diffs as runner-visible changes", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+  });
+
+  const script = config.commandScript ?? "";
+  assert.match(script, /hermes_changes_visible_to_runner\(\)/);
+  assert.match(script, /git status --porcelain/);
+  assert.match(script, /git rev-parse --verify "origin\/\$A2A_RUNNER_BASE_BRANCH"/);
+  assert.match(script, /git diff --quiet "origin\/\$A2A_RUNNER_BASE_BRANCH\.\.\.HEAD"/);
+  assert.match(script, /notice=hermes_committed_changes_detected/);
+  assert.match(script, /if ! hermes_changes_visible_to_runner; then/);
+});
+
 test("loadConfig enables bounded contained Hermes subagents with safe enum inputs", async () => {
   const config = await loadConfig({
     ...baseEnv,
