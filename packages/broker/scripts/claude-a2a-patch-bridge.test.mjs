@@ -414,9 +414,12 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
     assert.match(capturedPrompt, /DETERMINISTIC SINGLE-SHOT MODE/);
     assert.match(capturedPrompt, /Repository: jinwon-int\/a2a-nexus/);
     assert.match(capturedPrompt, /Issue: #1020/);
-    // max-turns must be 1 for the strict single-shot contract.
+    // A small read-only tool budget (default 6 turns) lets claude inspect the
+    // checked-out repo and emit an applying diff; single-shot is preserved by the
+    // bridge owning all git plumbing (still one primary claude call).
     const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
-    assert.equal(args[args.indexOf("--max-turns") + 1], "1");
+    assert.equal(args[args.indexOf("--max-turns") + 1], "6");
+    assert.equal(args[args.indexOf("--tools") + 1], "Read Grep Glob");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
