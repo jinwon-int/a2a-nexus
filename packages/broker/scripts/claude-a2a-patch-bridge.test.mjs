@@ -324,7 +324,8 @@ function writeDiffClaudeStub(path, diffText) {
     "const args = process.argv.slice(2);",
     "const idx = args.indexOf('-p');",
     "const prompt = args[idx + 1];",
-    "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+    "if (process.env.CAPTURE_PROMPT_PATH) writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+    "if (process.env.CAPTURE_ARGS_PATH) writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
     "const diff = " + diffJson + ";",
     "const wrapped = '```diff\\n' + diff + '\\n```';",
     "const envelope = { type: 'result', subtype: 'success', result: wrapped };",
@@ -366,6 +367,7 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
   const fakeGhPath = join(tempDir, "fake-gh.mjs");
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
   const promptCapturePath = join(tempDir, "captured-prompt.txt");
+  const argsCapturePath = join(tempDir, "captured-args.json");
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
@@ -391,6 +393,7 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
         FAKE_GIT_SEED_PATH: workSeed,
         FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1020",
         CAPTURE_PROMPT_PATH: promptCapturePath,
+        CAPTURE_ARGS_PATH: argsCapturePath,
         REAL_GIT_BIN: "git",
         REAL_GH_BIN: "gh",
       },
@@ -412,9 +415,8 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
     assert.match(capturedPrompt, /Repository: jinwon-int\/a2a-nexus/);
     assert.match(capturedPrompt, /Issue: #1020/);
     // max-turns must be 1 for the strict single-shot contract.
-    const args = JSON.parse(readFileSync(join(tempDir, "captured-prompt.txt"), "utf8").length > 0 ? promptCapturePath : promptCapturePath);
-    // The test stub doesn't capture args; instead, verify max-turns is 1 by checking the stub
-    // script behavior. (Stub has hard-coded max-turns handling; no further check needed here.)
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args[args.indexOf("--max-turns") + 1], "1");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
