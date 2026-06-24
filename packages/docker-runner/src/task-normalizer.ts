@@ -19,7 +19,7 @@ export function normalizeTask(task: RunnerTask): NormalizedRunnerTask {
   const familyWikiReadonlyAudit = task.mode === FAMILY_WIKI_READONLY_AUDIT_MODE;
   const readOnlyValidation = task.readOnlyValidation === true || READ_ONLY_VALIDATION_MODES.has(task.mode ?? "");
   const allowNoChanges = task.allowNoChanges === true || readOnlyValidation;
-  const env = normalizeTaskEnv({ ...task, readOnlyValidation }, allowNoChanges);
+  const env = normalizeTaskEnv({ ...task, readOnlyValidation }, allowNoChanges, primaryRepo);
   const normalizedTask = {
     ...task,
     ...(familyWikiReadonlyAudit ? { commentOnly: false, forbidNewPr: true } : {}),
@@ -36,10 +36,14 @@ export function normalizeTask(task: RunnerTask): NormalizedRunnerTask {
   };
 }
 
-function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean): Record<string, string> | undefined {
+function normalizeTaskEnv(task: RunnerTask, allowNoChanges: boolean, primaryRepo: RunnerRepo | undefined): Record<string, string> | undefined {
   const env = { ...(task.env ?? {}) };
   const model = normalizeWorkerOverride(task.workerModel, "workerModel");
   const thinking = normalizeWorkerOverride(task.workerThinking, "workerThinking");
+  const baseBranch = normalizeWorkerOverride(task.baseBranch ?? primaryRepo?.branch, "baseBranch");
+  if (baseBranch) {
+    env.A2A_RUNNER_BASE_BRANCH = baseBranch;
+  }
   if (model) {
     env.A2A_OPENCLAW_MODEL = model;
     // The Hermes patch profile runs in the same Docker runner pipeline but

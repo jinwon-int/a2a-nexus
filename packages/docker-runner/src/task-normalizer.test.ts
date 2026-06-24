@@ -95,6 +95,31 @@ test("normalizes per-task worker overrides into OpenClaw and Hermes container en
   assert.equal(task.env?.A2A_RUNNER_READ_ONLY_VALIDATION, "1");
 });
 
+test("normalizes primary base branch into runner env for patch profile recovery", () => {
+  const task = normalizeTask({
+    id: "base-branch-env",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/test-repo",
+    baseBranch: "master",
+  });
+
+  assert.equal(task.env?.A2A_RUNNER_BASE_BRANCH, "master");
+});
+
+test("normalizes explicit primary repo branch into runner env for patch profile recovery", () => {
+  const task = normalizeTask({
+    id: "primary-branch-env",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repos: [
+      { url: "jinwon-int/test-repo", path: "repo", branch: "release", primary: true },
+    ],
+  });
+
+  assert.equal(task.env?.A2A_RUNNER_BASE_BRANCH, "release");
+});
+
 test("normalizes read-only validation into OpenClaw no-change env guards", () => {
   const task = normalizeTask({
     id: "readonly-env",
