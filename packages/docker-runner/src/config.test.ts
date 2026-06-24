@@ -619,6 +619,20 @@ test("Hermes patch profile accepts already-committed branch diffs as runner-visi
   assert.match(script, /if ! hermes_changes_visible_to_runner; then/);
 });
 
+test("Hermes patch profile recovers nonzero agent exits when repository changes are visible", async () => {
+  const config = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+  });
+
+  const script = config.commandScript ?? "";
+  assert.match(script, /notice=hermes_nonzero_with_visible_changes/);
+  assert.match(script, /exit=\%s changes=present/);
+  assert.match(script, /if hermes_changes_visible_to_runner; then/);
+  assert.match(script, /else\n    printf 'error=hermes_agent_failed/);
+});
+
 test("loadConfig enables bounded contained Hermes subagents with safe enum inputs", async () => {
   const config = await loadConfig({
     ...baseEnv,
