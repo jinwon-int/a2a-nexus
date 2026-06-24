@@ -521,6 +521,7 @@ function buildSingleShotPrompt({ message, taskContext }) {
     "- Return ONLY a unified diff inside a single ```diff ... ``` fenced code block.",
     "- Do NOT include prose, JSON, shell commands, or any other output outside the fenced block.",
     "- The diff must apply cleanly with `git apply` against the repository's current main branch.",
+    "- The target repository is checked out in your CURRENT working directory. Use the Read/Grep/Glob tools to inspect the actual file contents and produce correct paths, line numbers, and surrounding context. Do NOT edit files or run shell/git commands yourself; the bridge owns all git plumbing.",
     "- Touch only files inside the cloned target repository.",
     "- Never modify, create, or commit secrets, tokens, `.env` files, or bootstrap/agent-context files (`.openclaw/`, `AGENTS.md`, `SOUL.md`, `HEARTBEAT.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`).",
     "- If you cannot produce a safe diff, return a fenced block containing a single line: `NO_DIFF: <short reason>`.",
@@ -770,15 +771,21 @@ function createBranch({ cloneDir, branch, env }) {
 }
 
 // Single claude call (one model round-trip). Strict format, read-only-ish prompt:
-// claude has no Edit/Write/Bash tools and the prompt forbids tool use.
+// Single claude invocation with a small READ-ONLY tool budget so it can inspect
+// the checked-out repo (cwd is the clone) and emit a diff whose paths/line
+// context `git apply` accepts. A no-tool call makes claude guess context (the
+// diff fails to apply); a tool-enabled call capped at max-turns 1 aborts mid
+// tool_use (error_max_turns). A few read-only turns is still "single-shot": the
+// bridge — not an agentic loop — owns all git plumbing.
 function callClaudeOnce(prompt, flags, env, cwd) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
-  // max-turns intentionally 1 for the primary call: the prompt is one-shot.
+  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
   const args = [
     "-p", prompt,
     "--output-format", "json",
-    "--max-turns", "1",
+    "--max-turns", String(maxTurns),
+    "--tools", "Read Grep Glob",
   ];
   const child = spawnSync(claudeBin, args, {
     cwd,
@@ -811,10 +818,12 @@ function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     "Original task:",
     safeText(prompt),
   ].join("\n");
+  const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
   const args = [
     "-p", retryPrompt,
     "--output-format", "json",
-    "--max-turns", "1",
+    "--max-turns", String(maxTurns),
+    "--tools", "Read Grep Glob",
   ];
   const child = spawnSync(claudeBin, args, {
     cwd,
@@ -860,8 +869,9 @@ function runSingleShotPatchMode(message, flags) {
 
     const prompt = buildSingleShotPrompt({ message, taskContext });
 
-    // First (and primary) claude call.
-    const firstStdout = callClaudeOnce(prompt, flags, env, workspace);
+    // First (and primary) claude call. Run inside the clone so the read-only
+    // tools see the actual repo and the emitted diff has correct line context.
+    const firstStdout = callClaudeOnce(prompt, flags, env, cloneDir);
     let extracted = extractUnifiedDiff(firstStdout);
     let claudeCalls = 1;
 
@@ -879,7 +889,7 @@ function runSingleShotPatchMode(message, flags) {
     if (!checked.ok) {
       // One corrective retry (2nd and final claude call). The original prompt goes
       // back in so the model has full context for the fix.
-      const correctiveStdout = callClaudeCorrective(prompt, checked.error, flags, env, workspace);
+      const correctiveStdout = callClaudeCorrective(prompt, checked.error, flags, env, cloneDir);
       claudeCalls = 2;
       extracted = extractUnifiedDiff(correctiveStdout);
       if (extracted.kind === "no_diff") {
