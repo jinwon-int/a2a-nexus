@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -213,6 +213,415 @@ test("PATCH mode runs claude in a fresh temp dir and removes it afterward (isola
     assert.equal(existsSync(claudeCwd), false, "isolated temp workspace must be removed afterward");
 
     rmSync(bridgeCwd, { recursive: true, force: true });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SINGLE-SHOT deterministic harness tests (issue #1020)
+// ---------------------------------------------------------------------------
+
+// Mirrors the handler's prompt so parseTaskContext can find Repository:/Issue: lines.
+function singleShotMessage() {
+  return [
+    "You are A2A worker nosuk. Complete this GitHub development assignment end-to-end.",
+    "Do not report success unless you opened a pull request, posted a Done comment, or posted a Block comment on GitHub.",
+    "Return JSON only with: {\"status\":\"pr_opened|blocked|done\",\"summary\":\"...\",\"prUrl\":\"...\",\"blockCommentUrl\":\"...\",\"doneCommentUrl\":\"...\"}",
+    "Repository: jinwon-int/a2a-nexus",
+    "Issue: #1020",
+    "Issue URL: https://github.com/jinwon-int/a2a-nexus/issues/1020",
+  ].join("\n\n");
+}
+
+// Set up a real local bare repo + working clone with an initial commit.
+// The fake git stub will cp -r from the working clone during `git clone`,
+// and the working clone's `origin` remote points at the bare repo so
+// `git push origin HEAD:<branch>` succeeds end-to-end in the test.
+function setupLocalFakeOrigin(parentDir) {
+  const originBare = join(parentDir, "origin.git");
+  const workSeed = join(parentDir, "origin-work");
+  execFileSync("git", ["init", "--bare", "--initial-branch=main", originBare], { stdio: "ignore" });
+  execFileSync("git", ["clone", originBare, workSeed], { stdio: "ignore" });
+  execFileSync("git", ["-C", workSeed, "config", "user.email", "a2a-test@example.com"]);
+  execFileSync("git", ["-C", workSeed, "config", "user.name", "A2A Test"]);
+  writeFileSync(join(workSeed, "hello.txt"), "hello world\n");
+  writeFileSync(join(workSeed, "README.md"), "# test\n");
+  execFileSync("git", ["-C", workSeed, "add", "-A"]);
+  execFileSync("git", ["-C", workSeed, "commit", "-m", "initial"], { stdio: "ignore" });
+  execFileSync("git", ["-C", workSeed, "push", "origin", "main"], { stdio: "ignore" });
+  return { originBare, workSeed };
+}
+
+// Write a fake `git` binary. Handles `clone` via cp -r from a seed; everything
+// else delegates to the real `git` (resolved via REAL_GIT_BIN env).
+function writeFakeGitStub(path) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { spawnSync } from 'node:child_process';",
+    "import { cpSync, rmSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "const sub = args[0];",
+    "if (sub === 'clone') {",
+    "  const dir = args[args.length - 1];",
+    "  const seed = process.env.FAKE_GIT_SEED_PATH;",
+    "  if (!seed) { console.error('FAKE_GIT_SEED_PATH not set'); process.exit(2); }",
+    "  rmSync(dir, { recursive: true, force: true });",
+    "  cpSync(seed, dir, { recursive: true });",
+    "  process.exit(0);",
+    "}",
+    "const realGit = process.env.REAL_GIT_BIN || 'git';",
+    "const res = spawnSync(realGit, args, { cwd: process.cwd(), encoding: 'utf8', stdio: 'inherit' });",
+    "process.exit(res.status ?? 1);",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+// Write a fake `gh` binary. Handles `pr create` by printing a fake URL;
+// `repo clone` delegates to the bridge's A2A_CLAUDE_CODE_GIT_BIN. Everything
+// else is forwarded to the real `gh` (resolved via REAL_GH_BIN env).
+function writeFakeGhStub(path) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { spawnSync } from 'node:child_process';",
+    "const args = process.argv.slice(2);",
+    "const sub = args[0];",
+    "if (sub === 'repo' && args[1] === 'clone') {",
+    "  const sep = args.indexOf('--');",
+    "  const before = sep >= 0 ? args.slice(2, sep) : args.slice(2);",
+    "  const repo = before[0];",
+    "  const dir = before[1];",
+    "  const realGit = process.env.A2A_CLAUDE_CODE_GIT_BIN || 'git';",
+    "  const res = spawnSync(realGit, ['clone', '--depth=1', '--branch', 'main', `https://github.com/${repo}.git`, dir], { encoding: 'utf8' });",
+    "  process.exit(res.status ?? 1);",
+    "}",
+    "if (sub === 'pr' && args[1] === 'create') {",
+    "  const url = process.env.FAKE_GH_PR_URL || 'https://github.com/jinwon-int/a2a-nexus/pull/42';",
+    "  process.stdout.write(url + '\\n');",
+    "  process.exit(0);",
+    "}",
+    "const realGh = process.env.REAL_GH_BIN || 'gh';",
+    "const res = spawnSync(realGh, args, { encoding: 'utf8', stdio: 'inherit' });",
+    "process.exit(res.status ?? 1);",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+// Fake claude that returns a single fenced diff block in its stdout (any
+// surrounding JSON envelope is fine — the bridge scans for the fence).
+function writeDiffClaudeStub(path, diffText) {
+  const diffJson = JSON.stringify(diffText);
+  // Emulate `claude --output-format json` shape: the diff is the value of the
+  // `result` field as a real string with literal newlines. The bridge walks
+  // the JSON envelope to recover the diff.
+  const script = [
+    "#!/usr/bin/env node",
+    "import { writeFileSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    "const idx = args.indexOf('-p');",
+    "const prompt = args[idx + 1];",
+    "if (process.env.CAPTURE_PROMPT_PATH) writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+    "if (process.env.CAPTURE_ARGS_PATH) writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+    "const diff = " + diffJson + ";",
+    "const wrapped = '```diff\\n' + diff + '\\n```';",
+    "const envelope = { type: 'result', subtype: 'success', result: wrapped };",
+    "process.stdout.write(JSON.stringify(envelope));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+// Fake claude that returns different diffs on the 1st vs 2nd call. Used to
+// exercise the corrective-retry path (first call's diff fails `git apply --check`).
+function writeCorrectiveRetryClaudeStub(path, firstDiff, secondDiff, callCountPath) {
+  const firstJson = JSON.stringify(firstDiff);
+  const secondJson = JSON.stringify(secondDiff);
+  const script = [
+    "#!/usr/bin/env node",
+    "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+    "let count = 0;",
+    "if (existsSync(" + JSON.stringify(callCountPath) + ")) {",
+    "  count = Number(readFileSync(" + JSON.stringify(callCountPath) + ", 'utf8'));",
+    "}",
+    "count += 1;",
+    "writeFileSync(" + JSON.stringify(callCountPath) + ", String(count));",
+    "const diff = count === 1 ? " + firstJson + " : " + secondJson + ";",
+    "const wrapped = '```diff\\n' + diff + '\\n```';",
+    "const envelope = { type: 'result', subtype: 'success', result: wrapped };",
+    "process.stdout.write(JSON.stringify(envelope));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing -> prUrl", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-happy-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const promptCapturePath = join(tempDir, "captured-prompt.txt");
+  const argsCapturePath = join(tempDir, "captured-args.json");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    const validDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (patched by single-shot)",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, validDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1020",
+        CAPTURE_PROMPT_PATH: promptCapturePath,
+        CAPTURE_ARGS_PATH: argsCapturePath,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1020");
+    assert.equal(payload.claudeCalls, 1, "happy path should only call claude once");
+    assert.ok(payload.branch && payload.branch.startsWith("a2a/single-shot-"));
+    assert.ok(Array.isArray(payload.filesChanged));
+    assert.ok(payload.filesChanged.some((f) => f.endsWith("hello.txt")));
+
+    // The captured prompt must use the single-shot harness contract, not the legacy one.
+    const capturedPrompt = readFileSync(promptCapturePath, "utf8");
+    assert.match(capturedPrompt, /DETERMINISTIC SINGLE-SHOT MODE/);
+    assert.match(capturedPrompt, /Repository: jinwon-int\/a2a-nexus/);
+    assert.match(capturedPrompt, /Issue: #1020/);
+    // max-turns must be 1 for the strict single-shot contract.
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args[args.indexOf("--max-turns") + 1], "1");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT corrective retry: first diff fails git apply --check, second diff applies -> prUrl with 2 calls", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-retry-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const callCountPath = join(tempDir, "call-count.txt");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+
+    // First diff references a non-existent file -> `git apply --check` will reject.
+    const firstDiff = [
+      "diff --git a/no-such-file.txt b/no-such-file.txt",
+      "index 0000000..ce01362 100644",
+      "--- a/no-such-file.txt",
+      "+++ b/no-such-file.txt",
+      "@@ -0,0 +1 @@",
+      "+leaked",
+    ].join("\n");
+    // Second diff modifies the existing hello.txt -> applies cleanly.
+    const secondDiff = [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (corrected on retry)",
+    ].join("\n");
+    writeCorrectiveRetryClaudeStub(fakeClaudePath, firstDiff, secondDiff, callCountPath);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const callCount = Number(readFileSync(callCountPath, "utf8"));
+    assert.equal(callCount, 2, "corrective retry must call claude exactly twice");
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.claudeCalls, 2, "payload must reflect 2 claude calls");
+    assert.equal(payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/1021");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT NO_DIFF response -> bridge exits non-zero (blocked)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-nodiff-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const callCountPath = join(tempDir, "call-count.txt");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeStubClaude(fakeClaudePath, [
+      "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+      "let n = existsSync(" + JSON.stringify(callCountPath) + ") ? Number(readFileSync(" + JSON.stringify(callCountPath) + ", 'utf8')) : 0;",
+      "n += 1;",
+      "writeFileSync(" + JSON.stringify(callCountPath) + ", String(n));",
+      "const inner = JSON.stringify({ status: 'pr_opened', summary: 'no diff' });",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: inner }));",
+    ]);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /no diff/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT bootstrap-leak diff -> bridge exits non-zero (blocked)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-leak-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    // Diff creates AGENTS.md -> bootstrap-leak guard must block the commit.
+    const leakedDiff = [
+      "diff --git a/AGENTS.md b/AGENTS.md",
+      "new file mode 100644",
+      "index 0000000..ce01362",
+      "--- /dev/null",
+      "+++ b/AGENTS.md",
+      "@@ -0,0 +1 @@",
+      "+leaked agent context",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, leakedDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /bootstrap|AGENTS\.md|blocked/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT missing Repository: in message -> bridge exits non-zero with clear error", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-norepo-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    const messageNoRepo = [
+      "You are A2A worker nosuk. Complete this GitHub development assignment end-to-end.",
+      "Repository is missing from this message.",
+      "Issue: #42",
+    ].join("\n\n");
+
+    const result = spawnSync(bridgePath, bridgeArgs(messageNoRepo), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Repository/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT with default A2A_CLAUDE_CODE_PATCH_MODE unset -> legacy agentic path is used (no regression)", () => {
+  // The 6 original tests already exercise the legacy path. This test pins the
+  // contract that "no env var" still means the legacy runClaudePatch path runs,
+  // not the new single-shot path. We assert by inspecting the prompt the
+  // stub claude receives: legacy uses the GitHub PATCH bridge preamble, not
+  // DETERMINISTIC SINGLE-SHOT MODE.
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-default-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const promptCapturePath = join(tempDir, "captured-prompt.txt");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, args[args.indexOf('-p') + 1]);",
+      "const result = { status: 'pr_opened', summary: 'legacy path', prUrl: 'https://github.com/jinwon-int/a2a-nexus/pull/9' };",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(result) }));",
+    ]);
+
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_PROMPT_PATH: promptCapturePath,
+        // Intentionally NOT setting A2A_CLAUDE_CODE_PATCH_MODE.
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const capturedPrompt = readFileSync(promptCapturePath, "utf8");
+    assert.match(capturedPrompt, /GitHub PATCH bridge/, "legacy path should use the 1019 preamble");
+    assert.doesNotMatch(capturedPrompt, /DETERMINISTIC SINGLE-SHOT MODE/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
