@@ -84,9 +84,16 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(payload.status, "done");
     assert.equal(payload.summary, "Claude adapter returned strict analysis JSON");
     assert.deepEqual(payload.evidenceRefs, ["embedded:claude-code-adapter-test"]);
+    assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.requestedModel, "claude-code/default");
+    assert.equal(payload.requestedThinking, "low");
+    assert.equal(payload.modelInheritanceMode, "metadata_only");
+    assert.equal(payload.claudeModelArgumentApplied, false);
+    assert.match(payload.modelInheritanceNote, /does not pass it as a Claude CLI --model argument/);
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["-p", readFileSync(promptPath, "utf8")]);
+    assert.equal(args.includes("--model"), false, "Claude bridge should not pass A2A worker model as a raw Claude --model value");
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

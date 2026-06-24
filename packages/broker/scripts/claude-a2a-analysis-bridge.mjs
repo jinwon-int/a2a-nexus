@@ -232,6 +232,26 @@ function normalizeResponse(parsed) {
   };
 }
 
+function attachClaudeModelTelemetry(response, flags, env = process.env) {
+  const requestedModel = safeText(flags.model, "");
+  const requestedThinking = safeText(flags.thinking, "");
+  const configuredRuntimeModel = safeText(
+    env.A2A_CLAUDE_CODE_RUNTIME_MODEL || env.CLAUDE_CODE_MODEL || env.ANTHROPIC_MODEL,
+    "",
+  );
+  return {
+    ...response,
+    bridgeAdapter: "claude_code",
+    requestedModel: requestedModel || undefined,
+    requestedThinking: requestedThinking || undefined,
+    actualRuntimeModel: configuredRuntimeModel || undefined,
+    modelInheritanceMode: "metadata_only",
+    claudeModelArgumentApplied: false,
+    modelInheritanceNote:
+      "Claude Code bridge preserves the A2A requested/effective worker model in prompt/result telemetry but does not pass it as a Claude CLI --model argument.",
+  };
+}
+
 function buildClaudePrompt({ message, flags }) {
   return [
     "You are a Claude Code CLI-backed A2A analysis bridge.",
@@ -287,7 +307,7 @@ function main() {
 
   let response;
   try {
-    response = normalizeResponse(extractAnalysisJsonFromClaudeOutput(stdout));
+    response = attachClaudeModelTelemetry(normalizeResponse(extractAnalysisJsonFromClaudeOutput(stdout)), flags, process.env);
   } catch (error) {
     die(error.message);
   }

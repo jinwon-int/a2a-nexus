@@ -668,7 +668,14 @@ const response = {
   risks: ["none"],
   recommendations: ["continue"],
   evidenceRefs: ["#948"],
-  recoverySource: "direct_stdout"
+  recoverySource: "direct_stdout",
+  bridgeAdapter: "claude_code",
+  requestedModel: "openai-codex/gpt-5.5",
+  requestedThinking: "low",
+  actualRuntimeModel: "claude-opus-4-8[1m]",
+  modelInheritanceMode: "metadata_only",
+  claudeModelArgumentApplied: false,
+  modelInheritanceNote: "Claude Code bridge preserves model metadata without passing --model"
 };
 process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
 `);
@@ -699,6 +706,13 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     assert.equal(result.result.output.bridgeCommand, "claude-a2a-analysis-bridge.mjs");
     assert.equal(result.result.output.analysisStatus, "done");
     assert.equal(result.result.output.recoverySource, "direct_stdout");
+    assert.equal(result.result.output.bridgeReportedAdapter, "claude_code");
+    assert.equal(result.result.output.requestedModel, "openai-codex/gpt-5.5");
+    assert.equal(result.result.output.requestedThinking, "low");
+    assert.equal(result.result.output.actualRuntimeModel, "claude-opus-4-8[1m]");
+    assert.equal(result.result.output.modelInheritanceMode, "metadata_only");
+    assert.equal(result.result.output.claudeModelArgumentApplied, false);
+    assert.match(result.result.output.modelInheritanceNote, /preserves model metadata/);
     assert.equal(result.result.note, "read-only A2A analysis completed through analysis bridge");
     assert.doesNotMatch(result.result.note, /OpenClaw/);
     assert.doesNotMatch(JSON.stringify(result.result.output), /openclaw_bridge/);
