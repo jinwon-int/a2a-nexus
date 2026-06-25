@@ -27,8 +27,8 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 145, // includes tracked Markdown link checker and CI docs safety regression test (#1006/#994/#995)
-  rootNpmScripts: 117, // includes check:markdown-links and check:ci-docs-safety (#1006/#994/#995)
+  scriptsMjs: 147, // includes Seoseo A2A skill guard CLI/test promoted from ops skills (#1035)
+  rootNpmScripts: 119, // includes a2a:skill-guard wrappers so release-gate can run the guardpack (#1035)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };
 

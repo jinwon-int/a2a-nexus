@@ -123,7 +123,9 @@
     "finalizer:gate": "node scripts/a2ad-finalizer-gate.mjs",
     "finalizer:gate:test": "node --test scripts/a2ad-finalizer-gate.test.mjs",
     "check:markdown-links": "node scripts/check-markdown-links.mjs",
-    "check:ci-docs-safety": "node --test scripts/ci-docs-safety.test.mjs"
+    "check:ci-docs-safety": "node --test scripts/ci-docs-safety.test.mjs",
+    "a2a:skill-guard": "node scripts/a2a-skill-guard.mjs",
+    "a2a:skill-guard:test": "node --test scripts/a2a-skill-guard.test.mjs"
   },
   "license": "MIT",
   "devDependencies": {

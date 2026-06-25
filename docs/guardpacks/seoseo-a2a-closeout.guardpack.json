@@ -1,0 +1,43 @@
+{
+  "$schema": "https://a2a-nexus.local/schemas/a2a-guardpack.v1.json",
+  "kind": "a2a.guardpack.v1",
+  "name": "seoseo-a2a-closeout",
+  "version": 1,
+  "summary": "Executable guard rules promoted from Seoseo A2A/A2AD closeout skills.",
+  "commands": [
+    {
+      "name": "manifest",
+      "purpose": "Validate A2AD source-only and GitHub patch task-shape boundaries before dispatch, including raw artifact/sourceBundle caps.",
+      "sourceSkillRules": [
+        "formal A2A must use broker-backed evidence, not generic delegation",
+        "source-only A2AD lanes use intent=analyze and payload.mode=analysis-only",
+        "GitHub patch lanes use intent=propose_patch and payload.mode=github-propose-patch",
+        "large raw artifacts must be bounded or summarized before model-visible injection"
+      ]
+    },
+    {
+      "name": "formal-evidence",
+      "purpose": "Fail closed finalizer drafts that claim quorum/consensus without terminal substantive task evidence, and flag protected-baseline verifier regression."
+    },
+    {
+      "name": "repo-sweep-closeout",
+      "purpose": "Require live open issue/PR inventory to reach zero before declaring a repo sweep closed."
+    },
+    {
+      "name": "pr-body-boundary",
+      "purpose": "Prevent PR-only/live-validation boundary violations such as closure keywords or claimed deploy/restart/ACK effects."
+    },
+    {
+      "name": "scorecard",
+      "purpose": "Classify worker evidence so infra/wrapper/source-projection failures do not count as substantive worker output, and report cost per accepted substantive change."
+    }
+  ],
+  "sideEffectPolicy": {
+    "githubWrites": false,
+    "brokerWrites": false,
+    "deployRestart": false,
+    "dbAckReplay": false,
+    "providerSends": false,
+    "secretMovement": false
+  }
+}

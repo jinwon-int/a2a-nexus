@@ -99,6 +99,17 @@
       "note": "Protocol profile v0.1 worker-card and terminal-evidence contract for #957/#958; local/read-only."
     },
     {
+      "name": "a2a-skill-guard",
+      "command": "npm",
+      "args": [
+        "run",
+        "a2a:skill-guard:test"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Seoseo A2A/A2AD skill guardpack executable checks for #1035; read-only/no-live."
+    },
+    {
       "name": "public-readiness",
       "command": "npm",
       "args": [
