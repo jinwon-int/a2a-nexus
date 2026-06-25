@@ -16,7 +16,7 @@ import {
   buildBackoffSchedule,
   PHASE_BACKOFF_CONFIGS,
 } from "./execution-backoff.js";
-import type { TaskRecord, TaskStatus } from "./types.js";
+import type { TaskError, TaskRecord, TaskStatus } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Phase stale thresholds
@@ -61,6 +61,8 @@ export const DEFAULT_PHASE_RETRY_CAPS: PhaseRetryCaps = {
   maxRunningRetries: 3,
 };
 
+export const DEFAULT_REPEATED_ERROR_THRESHOLD = 2;
+
 /**
  * Combined stale detection and retry policy configuration for the
  * scheduler/control-tower lane.
@@ -74,6 +76,8 @@ export interface SchedulerControlTowerConfig {
   retryCaps: PhaseRetryCaps;
   /** Optional backoff config override for retry scheduling. */
   backoffConfig?: BackoffConfig;
+  /** Consecutive identical normalized error signatures needed for early-stop. */
+  repeatedErrorThreshold: number;
 }
 
 export const DEFAULT_SCHEDULER_CONTROL_TOWER_CONFIG: SchedulerControlTowerConfig =
@@ -81,6 +85,7 @@ export const DEFAULT_SCHEDULER_CONTROL_TOWER_CONFIG: SchedulerControlTowerConfig
     laneLabel: "default",
     staleThresholds: { ...DEFAULT_STALE_PHASE_THRESHOLDS },
     retryCaps: { ...DEFAULT_PHASE_RETRY_CAPS },
+    repeatedErrorThreshold: DEFAULT_REPEATED_ERROR_THRESHOLD,
   };
 
 // ---------------------------------------------------------------------------
@@ -91,6 +96,7 @@ export type StuckPhase = "queued" | "claimed" | "running";
 
 export type StuckVerdict =
   | "stale"
+  | "repeated_error_early_stop"
   | "retry_cap_exceeded"
   | "fresh"; // not stale, within threshold
 
@@ -114,6 +120,10 @@ export interface StuckTaskDiagnosis {
   phaseRequeueCount: number;
   /** Max allowed retries for this phase. */
   maxPhaseRetries: number;
+  /** Normalized repeated error signature when verdict is repeated_error_early_stop. */
+  errorSignature?: string;
+  /** Number of trailing errors considered for repeated-error detection. */
+  repeatedErrorCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +166,7 @@ export interface StuckTaskReport {
   config: {
     staleThresholds: StalePhaseThresholds;
     retryCaps: PhaseRetryCaps;
+    repeatedErrorThreshold: number;
   };
   /** Total non-terminal tasks analyzed. */
   totalActiveTasks: number;
@@ -167,6 +178,12 @@ export interface StuckTaskReport {
   };
   /** Tasks that have exceeded retry caps. */
   capExceededByPhase: {
+    queued: number;
+    claimed: number;
+    running: number;
+  };
+  /** Tasks whose trailing error signatures repeated enough to early-stop. */
+  repeatedErrorByPhase: {
     queued: number;
     claimed: number;
     running: number;
@@ -249,6 +266,48 @@ export function computeTaskPhaseAge(
   return 0;
 }
 
+
+export type RepeatedErrorDiagnosticOptions = {
+  repeatedErrorThreshold?: number;
+};
+
+export function normalizeErrorSignature(error: TaskError | string | null | undefined): string {
+  if (error == null) return "";
+  const code = typeof error === "object" && typeof error.code === "string" ? error.code : "";
+  const message = typeof error === "string" ? error : (typeof error.message === "string" ? error.message : "");
+  const raw = `${code} ${message}`.trim();
+  if (!raw) return "";
+  return raw
+    .toLowerCase()
+    .replace(/\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z\b/g, "<iso-ts>")
+    .replace(/\b\d{13}\b/g, "<epoch-ms>")
+    .replace(/\/tmp\/\S+/g, "<tmp-path>")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, "<uuid>")
+    .replace(/\b[0-9a-f]{12,}\b/g, "<hex>")
+    .replace(/\bpid\s*=\s*\d+\b/g, "pid=<pid>")
+    .replace(/\b\d+(?:\.\d+)?\s*ms\b/g, "<duration-ms>")
+    .replace(/\b\d+(?:\.\d+)?\s*s\b/g, "<duration-s>")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function hasRepeatedErrorSignature(history: TaskError[], threshold: number): boolean {
+  const needed = Math.max(1, Math.floor(threshold));
+  if (history.length < needed) return false;
+  const signatures = history.slice(-needed).map(normalizeErrorSignature).filter(Boolean);
+  if (signatures.length < needed) return false;
+  return signatures.every((signature) => signature === signatures[0]);
+}
+
+function repeatedErrorSignature(task: TaskRecord, threshold: number): { signature?: string; count: number } {
+  const history = [...(task.errorHistory ?? [])];
+  if (task.error) history.push(task.error);
+  const needed = Math.max(1, Math.floor(threshold));
+  if (!hasRepeatedErrorSignature(history, needed)) return { count: 0 };
+  return { signature: normalizeErrorSignature(history[history.length - 1]), count: needed };
+}
+
+
 /**
  * Diagnose a single task for stuck status.
  *
@@ -261,6 +320,7 @@ export function diagnoseTask(
   thresholds: StalePhaseThresholds,
   retryCaps: PhaseRetryCaps,
   nowMs: number,
+  options?: RepeatedErrorDiagnosticOptions,
 ): StuckTaskDiagnosis {
   const phase = getStuckPhase(task.status);
   if (!phase) {
@@ -272,6 +332,7 @@ export function diagnoseTask(
       thresholdMs: 0,
       phaseRequeueCount: task.requeueCount ?? 0,
       maxPhaseRetries: 0,
+      repeatedErrorCount: 0,
     };
   }
 
@@ -291,6 +352,26 @@ export function diagnoseTask(
       thresholdMs,
       phaseRequeueCount: requeueCount,
       maxPhaseRetries,
+      repeatedErrorCount: 0,
+    };
+  }
+
+  const repeated = repeatedErrorSignature(
+    task,
+    options?.repeatedErrorThreshold ?? DEFAULT_REPEATED_ERROR_THRESHOLD,
+  );
+  if (repeated.signature) {
+    return {
+      taskId: task.id,
+      currentStatus: task.status,
+      stuckPhase: phase,
+      verdict: "repeated_error_early_stop",
+      ageMs,
+      thresholdMs,
+      phaseRequeueCount: requeueCount,
+      maxPhaseRetries,
+      errorSignature: repeated.signature,
+      repeatedErrorCount: repeated.count,
     };
   }
 
@@ -305,6 +386,7 @@ export function diagnoseTask(
       thresholdMs,
       phaseRequeueCount: requeueCount,
       maxPhaseRetries,
+      repeatedErrorCount: 0,
     };
   }
 
@@ -317,6 +399,7 @@ export function diagnoseTask(
     thresholdMs,
     phaseRequeueCount: requeueCount,
     maxPhaseRetries,
+    repeatedErrorCount: 0,
   };
 }
 
@@ -340,6 +423,7 @@ export function detectStuckTasks(
       ...DEFAULT_PHASE_RETRY_CAPS,
       ...config?.retryCaps,
     },
+    repeatedErrorThreshold: config?.repeatedErrorThreshold ?? DEFAULT_REPEATED_ERROR_THRESHOLD,
   };
 
   const timeNow = nowMs ?? Date.now();
@@ -353,6 +437,11 @@ export function detectStuckTasks(
     running: 0,
   };
   const capExceededByPhase: StuckTaskReport["capExceededByPhase"] = {
+    queued: 0,
+    claimed: 0,
+    running: 0,
+  };
+  const repeatedErrorByPhase: StuckTaskReport["repeatedErrorByPhase"] = {
     queued: 0,
     claimed: 0,
     running: 0,
@@ -373,6 +462,7 @@ export function detectStuckTasks(
       mergedConfig.staleThresholds,
       mergedConfig.retryCaps,
       timeNow,
+      { repeatedErrorThreshold: mergedConfig.repeatedErrorThreshold },
     );
 
     // Collect diagnoses (cap at 50)
@@ -383,6 +473,8 @@ export function detectStuckTasks(
     // Aggregate counts
     if (diagnosis.verdict === "retry_cap_exceeded" && diagnosis.stuckPhase) {
       capExceededByPhase[diagnosis.stuckPhase]++;
+    } else if (diagnosis.verdict === "repeated_error_early_stop" && diagnosis.stuckPhase) {
+      repeatedErrorByPhase[diagnosis.stuckPhase]++;
     } else if (diagnosis.verdict === "stale" && diagnosis.stuckPhase) {
       staleByPhase[diagnosis.stuckPhase]++;
     }
@@ -418,12 +510,14 @@ export function detectStuckTasks(
     config: {
       staleThresholds: { ...mergedConfig.staleThresholds },
       retryCaps: { ...mergedConfig.retryCaps },
+      repeatedErrorThreshold: mergedConfig.repeatedErrorThreshold,
     },
     totalActiveTasks: tasks.filter((t) =>
       nonTerminalStatuses.has(t.status),
     ).length,
     staleByPhase,
     capExceededByPhase,
+    repeatedErrorByPhase,
     diagnoses,
     blockers,
     severity,
@@ -453,6 +547,9 @@ export function buildOperatorBlockers(
     );
     const capExceededTasks = diagnoses.filter(
       (d) => d.stuckPhase === phase && d.verdict === "retry_cap_exceeded",
+    );
+    const repeatedErrorTasks = diagnoses.filter(
+      (d) => d.stuckPhase === phase && d.verdict === "repeated_error_early_stop",
     );
 
     if (staleTasks.length > 0) {
@@ -499,6 +596,25 @@ export function buildOperatorBlockers(
           `${capExceededTasks.length} task(s) that exceeded the ` +
           `${phase} retry cap. Options: cancel, reassign, or mark ` +
           `as dead-lettered.`,
+      });
+    }
+
+    if (repeatedErrorTasks.length > 0) {
+      blockers.push({
+        id: `repeated-error-${phase}-${generatedAt}`,
+        title: `Repeated error early-stop for ${phase} tasks`,
+        description:
+          `${repeatedErrorTasks.length} task(s) have repeated the same ` +
+          `normalized error signature in "${phase}" phase. Automatic retry ` +
+          `should stop until the unresolved failure is triaged.`,
+        severity: "critical",
+        affectedTaskIds: repeatedErrorTasks.slice(0, 20).map((d) => d.taskId),
+        phase,
+        totalAffected: repeatedErrorTasks.length,
+        generatedAt,
+        recommendedAction:
+          `Operator intervention required: inspect the repeated error signature, ` +
+          `fix the underlying worker/tool/config issue, then requeue or cancel the task explicitly.`,
       });
     }
   }
