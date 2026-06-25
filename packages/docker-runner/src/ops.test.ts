@@ -286,6 +286,82 @@ test("GitHub patch readiness Hermes profile reports contained subagent policy", 
   });
 });
 
+
+test("GitHub patch readiness Claude Code profile reports bridge and credential mount readiness", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "a2a-docker-runner-cccb:latest",
+    defaultTimeoutMs: 1000,
+    commandProfile: "claude-code",
+    commandScript: "#!/usr/bin/env bash\nclaude --version\nnode /opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs\n",
+    claudeCodeProfile: { configDir: "/srv/claude-profile" },
+    containedSubagents: {
+      enabled: false,
+      maxCount: 0,
+      outputBytes: 12000,
+      reasons: [],
+      roles: [],
+    },
+  }, {
+    claudeCodeProfileProbe: () => ({
+      cliOnPath: true,
+      cliPath: "/usr/local/bin/claude",
+      cliVersionOk: true,
+      cliVersion: "2.1.191 (Claude Code)",
+      profileMountExists: true,
+      expectedMountPath: "/run/secrets/claude-dir",
+      bridgeExists: true,
+      bridgePath: "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs",
+      errors: [],
+    }),
+  });
+
+  assert.equal(report.status, "ok");
+  assert.equal(report.message, "GitHub patch execution is ready via Claude Code profile");
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.profile, "claude-code");
+  assert.equal(detail.failureCategory, "ok");
+  assert.deepEqual(detail.checks, [
+    { kind: "claude_cli_resolved", passed: true },
+    { kind: "claude_cli_version_ok", passed: true },
+    { kind: "claude_profile_mount_present", passed: true },
+    { kind: "claude_patch_bridge_present", passed: true },
+  ]);
+});
+
+test("GitHub patch readiness Claude Code profile failure includes cccb provisioning guidance", () => {
+  const report = checkGitHubPatchReadiness({
+    rootDir: "/tmp/a2a-test",
+    engine: "docker",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    commandProfile: "claude-code",
+    commandScript: "#!/usr/bin/env bash\nclaude --version\n",
+    claudeCodeProfile: { configDir: "/srv/claude-profile" },
+  }, {
+    claudeCodeProfileProbe: () => ({
+      cliOnPath: false,
+      cliPath: undefined,
+      cliVersionOk: false,
+      cliVersion: undefined,
+      profileMountExists: false,
+      expectedMountPath: "/run/secrets/claude-dir",
+      bridgeExists: false,
+      bridgePath: "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs",
+      errors: ["container probe exited with status 127"],
+    }),
+  });
+
+  assert.equal(report.status, "fail");
+  const detail = report.detail as Record<string, unknown>;
+  assert.equal(detail.failureCategory, "claude_cli_unavailable");
+  const paths = detail.provisioningPaths as string[];
+  assert.ok(paths.some((entry: string) => entry.includes("docker/claude-code-runner.Dockerfile")));
+  assert.ok(paths.some((entry: string) => entry.includes("A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR")));
+  assert.ok(paths.some((entry: string) => entry.includes("a2a-docker-runner-cccb")));
+});
+
 test("deploy marker doctor fails for mismatched revision even without upstream", async () => {
   const { repo, head } = await makeRevisionRepo();
   // Check against the right revision — should still pass even though there's
