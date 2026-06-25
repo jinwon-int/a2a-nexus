@@ -267,6 +267,37 @@ test("mergeRunnerEnvFile supports Hermes patch profile", async () => {
   }
 });
 
+test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
+  try {
+    const file = join(dir, "worker.env");
+    writeFileSync(file, [
+      "A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=cccb",
+      "A2A_DOCKER_RUNNER_TRUSTED_OPERATOR=1",
+      "A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR=/srv/claude-profile",
+      "A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-cccb:latest",
+    ].join("\n"));
+
+    const env = mergeRunnerEnvFile({
+      ...baseEnv,
+      A2A_CLAUDE_MODEL: "sonnet",
+    }, file);
+    const config = await loadConfig(env);
+
+    assert.equal(config.commandProfile, "claude-code");
+    assert.equal(config.image, "a2a-docker-runner-cccb:latest");
+    assert.equal(config.network, "host");
+    assert.match(config.commandScript ?? "", /claude-a2a-patch-bridge\.mjs/);
+    assert.match(config.commandScript ?? "", /A2A_CLAUDE_MODEL/);
+    assert.deepEqual(config.claudeCodeProfile, { configDir: "/srv/claude-profile" });
+    assert.deepEqual(config.extraMounts, [
+      { source: "/srv/claude-profile", target: "/run/secrets/claude-dir", readOnly: true },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by mere presence", async () => {
   // Truthy values skip detection and force docker (deterministic on any host).
   for (const value of ["1", "true", "yes", "on"]) {
@@ -290,6 +321,15 @@ test("loadConfig treats A2A_DOCKER_RUNNER_SKIP_ENGINE_DETECT truthily, not by me
 });
 
 test("loadConfig enforces expected patch command profile", async () => {
+  const claudeCode = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "claude-code",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "cccb",
+    A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+    A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-cccb:d9d7d64",
+  });
+  assert.equal(claudeCode.commandProfile, "claude-code");
+
   const config = await loadConfig({
     ...baseEnv,
     A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE: "hermes",
@@ -340,6 +380,16 @@ test("loadConfig rejects known runner image/profile family mismatches", async ()
       A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-hermes:d9d7d64",
     }),
     /image\/profile mismatch.*hermes runner image.*PROFILE=openclaw/,
+  );
+
+  await assert.rejects(
+    () => loadConfig({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
+      A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: "1",
+      A2A_DOCKER_RUNNER_IMAGE: "a2a-docker-runner-cccb:d9d7d64",
+    }),
+    /image\/profile mismatch.*claude-code runner image.*PROFILE=hermes/,
   );
 });
 
@@ -900,7 +950,7 @@ test("loadConfig rejects unsupported patch command profile", async () => {
   await assert.rejects(
     () => loadConfig({
       ...baseEnv,
-      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude",
+      A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "llama",
     }),
     /unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE/,
   );
@@ -1073,7 +1123,7 @@ test("loadConfig blocks Claude-in-Docker patch commands", async () => {
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "npm install -g @anthropic-ai/claude-code\nclaude --print hello",
     }),
-    /Claude-in-Docker.*not an allowed Docker patch executor/,
+    /Claude-in-Docker.*requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code/,
   );
 
   await assert.rejects(
@@ -1081,7 +1131,7 @@ test("loadConfig blocks Claude-in-Docker patch commands", async () => {
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["claude", "--print", "hello"] }),
     }),
-    /Claude-in-Docker.*not an allowed Docker patch executor/,
+    /Claude-in-Docker.*requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code/,
   );
 
   await assert.rejects(
@@ -1101,7 +1151,7 @@ test("loadConfig blocks Claude credential mounts", async () => {
         { source: "/root/.claude", target: "/run/secrets/claude-dir" },
       ]),
     }),
-    /Claude credentials.*not allowed in Docker patch execution/,
+    /Claude credentials.*require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code/,
   );
 });
 
@@ -1112,7 +1162,7 @@ test("loadConfig rejects Claude-in-Docker even with the legacy opt-in flag", asy
       A2A_ALLOW_CLAUDE_IN_DOCKER: "1",
       A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON: JSON.stringify({ argv: ["claude", "--print", "hello"] }),
     }),
-    /not an allowed Docker patch executor|OpenClaw, Hermes, or Codex/,
+    /requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code/,
   );
 });
 
@@ -1122,7 +1172,7 @@ test("loadConfig rejects patch commands without an allowed agent executor", asyn
       ...baseEnv,
       A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT: "#!/usr/bin/env bash\ngit status",
     }),
-    /allowed Docker patch executor: OpenClaw, Hermes, or Codex/,
+    /allowed Docker patch executor: OpenClaw, Hermes, Claude Code, or Codex/,
   );
 });
 

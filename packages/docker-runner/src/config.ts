@@ -47,6 +47,7 @@ const DEFAULT_IMAGE = "node:22-bookworm-slim";
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_SEC = "3600";
 const DEFAULT_HERMES_TIMEOUT_SEC = "3600";
+const DEFAULT_CLAUDE_CODE_TIMEOUT_SEC = "3600";
 export const DEFAULT_SERVICE_ENV_FILE = "/etc/default/openclaw-a2a-worker";
 
 export function loadEnvFile(path: string): Record<string, string> {
@@ -102,11 +103,11 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     await access(githubTokenFile, constants.R_OK);
   }
 
+  const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
   const patchCommand = loadPatchCommandConfig(env);
   const extraMounts = loadExtraMounts(env);
-  validatePatchExecutorPolicy(patchCommand, extraMounts);
+  validatePatchExecutorPolicy(patchCommand, extraMounts, profile);
 
-  const profile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE);
   const image = env.A2A_DOCKER_RUNNER_IMAGE || DEFAULT_IMAGE;
   const trustedOperator = isTruthy(env.A2A_DOCKER_RUNNER_TRUSTED_OPERATOR);
   const expectedProfile = normalizePatchCommandProfile(env.A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE);
@@ -121,7 +122,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes") ? "host" : "none"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code") ? "host" : "none"),
     trustedOperator,
     pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
     noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
@@ -256,6 +257,13 @@ export function loadExtraMounts(env: NodeJS.ProcessEnv): RunnerExtraMount[] | un
         readOnly: true,
       }];
     }
+    if (profile === "claude-code") {
+      return [{
+        source: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
+        target: "/run/secrets/claude-dir",
+        readOnly: true,
+      }];
+    }
     return undefined;
   }
 
@@ -318,6 +326,16 @@ function validateProfileMountSelection(mounts: RunnerExtraMount[], env: NodeJS.P
       "hermes",
       "Hermes",
     );
+    return;
+  }
+  if (profile === "claude-code") {
+    validateNamedProfileMountSelection(
+      mounts,
+      "/run/secrets/claude-dir",
+      env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR,
+      "claude-code",
+      "Claude Code",
+    );
   }
 }
 
@@ -358,12 +376,14 @@ function validateOpenClawRuntimeMount(mount: RunnerExtraMount, index: number): v
   const protectedTarget = isProtectedOpenClawRuntimePath(target);
   const protectedHermesSource = isProtectedHermesRuntimePath(source);
   const protectedHermesTarget = isProtectedHermesRuntimePath(target);
+  const protectedClaudeSource = isProtectedClaudeRuntimePath(source);
+  const protectedClaudeTarget = isProtectedClaudeRuntimePath(target);
 
-  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget)) {
+  if (writable && (protectedSource || protectedTarget || protectedHermesSource || protectedHermesTarget || protectedClaudeSource || protectedClaudeTarget)) {
     throw new ExtraMountsConfigError(
       "forbidden_writable_runtime_mount",
       `invalid extra mount at index ${index}: writable agent runtime/session paths are forbidden; ` +
-      "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes sessions read-only",
+      "mount only scratch paths read-write and keep host ~/.openclaw / ~/.hermes / ~/.claude sessions read-only",
     );
   }
 }
@@ -394,9 +414,18 @@ function isProtectedHermesRuntimePath(value: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+function isProtectedClaudeRuntimePath(value: string): boolean {
+  const normalized = value.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+  return [
+    /^\/root\/\.claude(?:\/|$)/,
+    /^\/home\/[^/]+\/\.claude(?:\/|$)/,
+    /^\/run\/secrets\/claude-dir(?:\/|$)/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function loadPatchCommandConfig(
   env: NodeJS.ProcessEnv,
-): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile"> {
+): Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate" | "commandProfile" | "openclawProfile" | "hermesProfile" | "claudeCodeProfile"> {
   const commandScript = env.A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT || undefined;
   if (commandScript) return { commandScript };
 
@@ -419,6 +448,15 @@ function loadPatchCommandConfig(
       commandScript: buildHermesPatchCommandScript(env),
       hermesProfile: {
         configDir: env.A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR || "/root/.hermes",
+      },
+    };
+  }
+  if (profile === "claude-code") {
+    return {
+      commandProfile: "claude-code",
+      commandScript: buildClaudeCodePatchCommandScript(env),
+      claudeCodeProfile: {
+        configDir: env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR || "/root/.claude",
       },
     };
   }
@@ -513,11 +551,12 @@ function parseEnumList<T extends string>(
   return Array.from(new Set(parsed)) as T[];
 }
 
-export function normalizePatchCommandProfile(value?: string): "openclaw" | "hermes" | undefined {
+export function normalizePatchCommandProfile(value?: string): RunnerCommandProfile | undefined {
   if (!value) return undefined;
   const normalized = value.trim().toLowerCase().replace(/_/g, "-");
   if (normalized === "openclaw") return "openclaw";
   if (normalized === "hermes") return "hermes";
+  if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
   throw new Error(`unsupported A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: ${value}`);
 }
 
@@ -556,7 +595,62 @@ function inferRunnerImageProfileFamily(image: string): RunnerCommandProfile | un
   if (!normalized) return undefined;
   if (/(^|[/:])a2a-docker-runner-hermes(?=[:@/]|$)/.test(normalized)) return "hermes";
   if (/(^|[/:])a2a-docker-runner-openclaw(?=[:@/]|$)/.test(normalized)) return "openclaw";
+  if (/(^|[/:])a2a-docker-runner-(?:cccb|claude-code)(?=[:@/]|$)/.test(normalized)) return "claude-code";
   return undefined;
+}
+
+function buildClaudeCodePatchCommandScript(env: NodeJS.ProcessEnv): string {
+  const defaultModel = shellSingleQuote(env.A2A_CLAUDE_MODEL || env.A2A_OPENCLAW_MODEL || "sonnet");
+  const defaultTimeout = shellSingleQuote(env.A2A_CLAUDE_TIMEOUT_SEC || env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_CLAUDE_CODE_TIMEOUT_SEC);
+  const bridgePath = shellSingleQuote(env.A2A_CLAUDE_PATCH_BRIDGE || "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs");
+  return `#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+A2A_CLAUDE_DEFAULT_MODEL=${defaultModel}
+if [ -n "\${A2A_CLAUDE_MODEL:-}" ]; then
+  export A2A_CLAUDE_MODEL
+elif [ -n "\${A2A_OPENCLAW_MODEL:-}" ]; then
+  export A2A_CLAUDE_MODEL="$A2A_OPENCLAW_MODEL"
+else
+  export A2A_CLAUDE_MODEL="$A2A_CLAUDE_DEFAULT_MODEL"
+fi
+if [ -z "\${A2A_CLAUDE_TIMEOUT_SEC:-}" ]; then
+  export A2A_CLAUDE_TIMEOUT_SEC=${defaultTimeout}
+else
+  export A2A_CLAUDE_TIMEOUT_SEC
+fi
+if [ ! -d /run/secrets/claude-dir ]; then
+  printf 'error=claude_config_mount_missing\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Set A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code and mount a Claude config dir via A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR or A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON.\\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+if ! command -v claude >/dev/null 2>&1; then
+  printf 'error=claude_cli_missing\\n' | tee -a /work/artifacts/summary.txt
+  printf 'failure_category=claude_cli_unavailable\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Embedded Claude Code CLI is missing from the runner image. Use a cccb runner image with Claude Code preinstalled.\\n' | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+A2A_CLAUDE_PATCH_BRIDGE=${bridgePath}
+if [ ! -f "$A2A_CLAUDE_PATCH_BRIDGE" ]; then
+  printf 'error=claude_patch_bridge_missing\\n' | tee -a /work/artifacts/summary.txt
+  printf 'Claude Code patch bridge is missing from the runner image: %s\\n' "$A2A_CLAUDE_PATCH_BRIDGE" | tee /work/artifacts/patch-command.log
+  exit 2
+fi
+rm -rf /root/.claude
+mkdir -p /root/.claude
+if [ -d /run/secrets/claude-dir ]; then
+  cp -a /run/secrets/claude-dir/. /root/.claude/ 2>/dev/null || true
+fi
+chmod -R u+rwX /root/.claude
+export HOME=/root
+export A2A_CLAUDE_CODE_PATCH_MODE=single-shot
+export A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES="\${A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES:-16777216}"
+printf 'claude_cli=%s\\n' "$(claude --version 2>/dev/null | head -n 1 || printf unknown)" | tee -a /work/artifacts/summary.txt
+printf 'model_source=env profile=claude-code\\n' | tee -a /work/artifacts/summary.txt
+printf 'claude_config_bytes=%s\\n' "$(du -sb /root/.claude | awk '{print $1}')" | tee -a /work/artifacts/summary.txt
+ASSIGNMENT="$(cat /work/artifacts/prompt.md)"
+exec node "$A2A_CLAUDE_PATCH_BRIDGE" agent --json --message "$ASSIGNMENT"
+`;
 }
 
 function buildHermesPatchCommandScript(env: NodeJS.ProcessEnv): string {
@@ -1404,11 +1498,12 @@ function buildContainedSubagentSummaryShell(config: RunnerContainedSubagentsConf
 function validatePatchExecutorPolicy(
   patchCommand: Pick<RunnerConfig, "commandScript" | "commandJson" | "commandTemplate">,
   extraMounts?: RunnerExtraMount[],
+  profile?: RunnerCommandProfile,
 ): void {
   if (patchCommand.commandTemplate) {
     throw new Error(
       "A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE is disabled for GitHub patch execution; " +
-      "use commandScript or commandJson with an OpenClaw, Hermes, or Codex executor",
+      "use commandScript or commandJson with an OpenClaw, Hermes, Claude Code, or Codex executor",
     );
   }
 
@@ -1420,24 +1515,24 @@ function validatePatchExecutorPolicy(
 
   for (const [key, value] of Object.entries(executablePatchCommands)) {
     if (!value) continue;
-    if (referencesClaudeExecutor(value)) {
+    if (referencesClaudeExecutor(value) && profile !== "claude-code") {
       throw new Error(
-        `${key} references Claude-in-Docker, which is not an allowed Docker patch executor; ` +
-        "use OpenClaw, Hermes, or Codex via commandScript or commandJson",
+        `${key} references Claude-in-Docker, which requires A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code; ` +
+        "use OpenClaw, Hermes, Claude Code, or Codex via commandScript or commandJson",
       );
     }
-    if (!referencesAllowedPatchExecutor(value)) {
+    if (!referencesAllowedPatchExecutor(value, profile)) {
       throw new Error(
-        `${key} must invoke an allowed Docker patch executor: OpenClaw, Hermes, or Codex`,
+        `${key} must invoke an allowed Docker patch executor: OpenClaw, Hermes, Claude Code, or Codex`,
       );
     }
   }
 
   for (const mount of extraMounts ?? []) {
-    if (referencesClaudeMount(mount.source) || referencesClaudeMount(mount.target)) {
+    if (profile !== "claude-code" && (referencesClaudeMount(mount.source) || referencesClaudeMount(mount.target))) {
       throw new Error(
-        "extraMounts reference Claude credentials, which are not allowed in Docker patch execution; " +
-        "mount only OpenClaw/Codex-specific credentials or scratch paths",
+        "extraMounts reference Claude credentials, which require A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code; " +
+        "mount only the active profile credentials or scratch paths",
       );
     }
   }
@@ -1457,8 +1552,11 @@ function referencesClaudeMount(value: string): boolean {
   return /(^|\/)\.claude(?:\.json|\/|$)/i.test(value) || /(^|\/)claude(?:\.json|-dir)?$/i.test(value);
 }
 
-function referencesAllowedPatchExecutor(value: string): boolean {
-  return referencesOpenClawExecutor(value) || referencesHermesExecutor(value) || referencesCodexExecutor(value);
+function referencesAllowedPatchExecutor(value: string, profile?: RunnerCommandProfile): boolean {
+  return referencesOpenClawExecutor(value)
+    || referencesHermesExecutor(value)
+    || referencesCodexExecutor(value)
+    || (profile === "claude-code" && referencesClaudeExecutor(value));
 }
 
 function referencesOpenClawExecutor(value: string): boolean {
