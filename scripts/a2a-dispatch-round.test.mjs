@@ -447,6 +447,55 @@ function makeGitHubPatchManifest(brokerUrl) {
   return manifest;
 }
 
+function addPatchReadyWorker(manifest, workerId = 'yukson') {
+  manifest.workerReadiness = {
+    rows: [
+      {
+        node: workerId,
+        ok: true,
+        githubPatch: 'ok',
+        canPatchWorkspace: true,
+        canOpenPullRequest: true,
+        runnerTrustedOperator: true,
+        githubTokenFileReadable: true,
+        patchCommandProfile: 'claude-code',
+        bridgeMode: 'patch',
+        violations: [],
+      },
+    ],
+  };
+  return manifest;
+}
+
+test('dry-run rejects github-propose-patch lanes without patch-readiness proof (#1034)', async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /github-propose-patch.*workerReadiness.*#1034/.test(e)), out.errors.join('\n'));
+});
+
+test('dry-run accepts github-propose-patch lanes with proven PR capability (#1034)', async () => {
+  const manifest = addPatchReadyWorker(makeGitHubPatchManifest('http://unused'));
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 0, out.errors.join('\n'));
+});
+
+test('dry-run rejects github-propose-patch lanes whose readiness lacks PR capability (#1034)', async () => {
+  const manifest = makeGitHubPatchManifest('http://unused');
+  manifest.workerReadiness = {
+    rows: [{ node: 'yukson', ok: true, githubPatch: 'ok', canPatchWorkspace: true, canOpenPullRequest: false }],
+  };
+
+  const out = await runDispatch(manifest, { dryRun: true });
+
+  assert.equal(out.exitCode, 1);
+  assert.ok(out.errors.some((e) => /#1034.*canOpenPullRequest/.test(e)), out.errors.join('\n'));
+});
+
 test('dry-run rejects github-propose-patch lanes declared read-only/no-write (#889)', async () => {
   const manifest = makeGitHubPatchManifest('http://unused');
   manifest.defaults.payload = {
@@ -485,7 +534,8 @@ test('GitHub propose-patch dispatch derives worker workspace before POST (#884)'
     },
   });
   try {
-    const out = await runDispatch(makeGitHubPatchManifest(broker.url), { fetchImpl: fetch, secret: SECRET, verify: true });
+    const manifest = addPatchReadyWorker(makeGitHubPatchManifest(broker.url));
+    const out = await runDispatch(manifest, { fetchImpl: fetch, secret: SECRET, verify: true });
     assert.equal(out.exitCode, 0);
     assert.equal(seenBodies.length, 1);
     const body = seenBodies[0];

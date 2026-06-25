@@ -150,6 +150,53 @@ function validateGitHubPatchWriteCapability(errors, tag, payload) {
   }
 }
 
+function githubPatchStatusOk(value) {
+  if (value === true || value === 'ok') return true;
+  if (isPlainObject(value) && (value.ok === true || value.status === 'ok')) return true;
+  return false;
+}
+
+function readinessNodeId(row) {
+  if (!isPlainObject(row)) return '';
+  if (hasText(row.node)) return row.node;
+  if (hasText(row.workerId)) return row.workerId;
+  return '';
+}
+
+function readinessRowForLane(manifest, lane) {
+  const workerId = hasText(lane.assignedWorkerId) ? lane.assignedWorkerId : lane.target?.id;
+  if (!hasText(workerId)) return null;
+  return workerReadinessRows(manifest).find((candidate) => readinessNodeId(candidate) === workerId) ?? null;
+}
+
+function validateGitHubPatchReadiness(errors, tag, manifest, lane, payload) {
+  if (!isPlainObject(payload) || payload.mode !== 'github-propose-patch') return;
+  if (manifest.allowUnverifiedPatchWorkers === true || manifest.allowUnverifiedGithubPatchWorkers === true) return;
+
+  const row = readinessRowForLane(manifest, lane);
+  if (!row) {
+    errors.push(`${tag}.payload.mode=github-propose-patch requires workerReadiness proof for patch/PR capability (#1034); provide a readiness row or explicit allowUnverifiedPatchWorkers override`);
+    return;
+  }
+
+  if (row.ok !== true) {
+    errors.push(`${tag}.workerReadiness row for '${readinessNodeId(row)}' must have ok=true for github-propose-patch lanes (#1034)`);
+    return;
+  }
+
+  const missing = [];
+  if (!githubPatchStatusOk(row.githubPatch)) missing.push('githubPatch=ok');
+  if (row.canPatchWorkspace !== true && row.canWritePatchPR !== true) missing.push('canPatchWorkspace');
+  if (row.canOpenPullRequest !== true && row.canWritePatchPR !== true) missing.push('canOpenPullRequest');
+  if (row.runnerTrustedOperator !== true && row.trustedOperator !== true) missing.push('runnerTrustedOperator');
+  if (row.githubTokenFileReadable !== true && row.githubTokenFileMounted !== false) missing.push('githubTokenFileReadable');
+  if (!(row.bridgeMode === 'patch' || row.patchBridge === true || row.canWritePatchPR === true)) missing.push('bridgeMode=patch');
+
+  if (missing.length > 0) {
+    errors.push(`${tag}.workerReadiness for '${readinessNodeId(row)}' is not patch/PR capable for github-propose-patch (#1034): missing ${missing.join(', ')}`);
+  }
+}
+
 function isA2adSourceOnlyNoLiveLane(payload) {
   if (!isPlainObject(payload)) return false;
   return payload.roundMode === 'a2ad' && payload.sourceOnly === true && payload.noLive === true
@@ -312,6 +359,7 @@ function validateManifest(manifest) {
     validateSourceOnlyBundle(errors, tag, payload);
     validateA2adOpinionLane(errors, tag, intent, payload, { terminalBrief });
     validateGitHubPatchWriteCapability(errors, tag, payload);
+    validateGitHubPatchReadiness(errors, tag, manifest, lane, payload);
     validateGitHubVerifyLane(errors, tag, lane, defaults, payload, { taskOrigin, workspace, terminalBrief });
 
     if (seenIds.has(laneId)) {
