@@ -36,6 +36,31 @@ test("ready when hermes profile includes the required hermes-dir mount", () => {
   assert.equal(outcome.failureCategory, "ok");
 });
 
+test("ready when claude-code profile includes the required claude-dir mount", () => {
+  const outcome = evaluateExtraMountsPreflight({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "claude-code",
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/root/.claude", target: "/run/secrets/claude-dir", readOnly: true },
+    ]),
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.profile, "claude-code");
+  assert.equal(outcome.failureCategory, "ok");
+});
+
+test("blocks claude-code profile when the claude-dir mount is missing", () => {
+  const outcome = evaluateExtraMountsPreflight({
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "cccb",
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/var/tmp/a2a", target: "/scratch", readOnly: false },
+    ]),
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.profile, "claude-code");
+  assert.equal(outcome.failureCategory, "claude_code_profile_mount_missing");
+  assert.match(outcome.blockReason, /claude-code patch profile requires a \/run\/secrets\/claude-dir mount/);
+});
+
 test("blocks hermes profile when the hermes-dir mount is missing (the #775 incident)", () => {
   const outcome = evaluateExtraMountsPreflight({
     A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "hermes",
@@ -77,6 +102,16 @@ test("blocks a forbidden writable agent runtime/session mount", () => {
   const outcome = evaluateExtraMountsPreflight({
     A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
       { source: "/root/.hermes/sessions", target: "/host-hermes-sessions", readOnly: false },
+    ]),
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.failureCategory, "forbidden_writable_runtime_mount");
+});
+
+test("blocks a forbidden writable claude runtime/session mount", () => {
+  const outcome = evaluateExtraMountsPreflight({
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/root/.claude", target: "/run/secrets/claude-dir", readOnly: false },
     ]),
   });
   assert.equal(outcome.ok, false);

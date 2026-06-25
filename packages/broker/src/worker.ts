@@ -1037,6 +1037,8 @@ function validateDockerRunnerExtraMountsReadiness(env: NodeJS.ProcessEnv): void 
     validateDockerRunnerProfileMount(mounts, "/run/secrets/hermes-dir", env.A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR, "hermes", "Hermes");
   } else if (profile === "openclaw") {
     validateDockerRunnerProfileMount(mounts, "/run/secrets/openclaw-dir", env.A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR, "openclaw", "OpenClaw");
+  } else if (profile === "claude-code") {
+    validateDockerRunnerProfileMount(mounts, "/run/secrets/claude-dir", env.A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR, "claude-code", "Claude Code");
   }
 }
 
@@ -1093,13 +1095,14 @@ function validateDockerRunnerProfileMount(
   }
 }
 
-function normalizeDockerRunnerPatchProfile(value: unknown): "openclaw" | "hermes" | undefined {
+function normalizeDockerRunnerPatchProfile(value: unknown): "openclaw" | "hermes" | "claude-code" | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
   const normalized = value.trim().toLowerCase().replace(/_/g, "-");
   if (normalized === "openclaw") return "openclaw";
   if (normalized === "hermes") return "hermes";
+  if (normalized === "claude-code" || normalized === "claude" || normalized === "cccb") return "claude-code";
   return undefined;
 }
 
@@ -1116,6 +1119,9 @@ function isProtectedDockerRunnerMountPath(value: string): boolean {
     /^\/root\/\.hermes(?:\/|$)/,
     /^\/home\/[^/]+\/\.hermes(?:\/|$)/,
     /^\/run\/secrets\/hermes-dir(?:\/|$)/,
+    /^\/root\/\.claude(?:\/|$)/,
+    /^\/home\/[^/]+\/\.claude(?:\/|$)/,
+    /^\/run\/secrets\/claude-dir(?:\/|$)/,
   ].some((pattern) => pattern.test(normalized));
 }
 

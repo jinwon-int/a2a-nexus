@@ -759,6 +759,45 @@ test("worker env config reads A2A home broker id and lease file", () => {
   assert.equal(config.homeBrokerLeaseFile, "/tmp/a2a-home-broker-lease.json");
 });
 
+test("worker env config validates claude-code docker-runner profile mounts before startup", () => {
+  const baseEnv = {
+    BROKER_URL: "http://127.0.0.1:8787",
+    WORKER_ID: "worker-a",
+    WORKER_HANDLER_BUILTIN: "echo",
+    A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "cccb",
+    A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR: "/root/.claude",
+  };
+
+  assert.throws(
+    () => createWorkerConfigFromEnv({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/tmp/a2a-scratch", target: "/workspace", readOnly: false },
+      ]),
+    }),
+    /claude-code patch profile requires a \/run\/secrets\/claude-dir mount/,
+  );
+
+  const config = createWorkerConfigFromEnv({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+      { source: "/root/.claude", target: "/run/secrets/claude-dir", readOnly: true },
+      { source: "/tmp/a2a-scratch", target: "/workspace", readOnly: false },
+    ]),
+  });
+  assert.equal(config.worker.nodeId, "worker-a");
+
+  assert.throws(
+    () => createWorkerConfigFromEnv({
+      ...baseEnv,
+      A2A_DOCKER_RUNNER_EXTRA_MOUNTS_JSON: JSON.stringify([
+        { source: "/root/.claude", target: "/run/secrets/claude-dir", readOnly: false },
+      ]),
+    }),
+    /writable agent runtime\/session paths are forbidden/,
+  );
+});
+
 test("worker env config fails closed on unsafe docker-runner extra mounts before startup (#775)", () => {
   const baseEnv = {
     BROKER_URL: "http://127.0.0.1:8787",
