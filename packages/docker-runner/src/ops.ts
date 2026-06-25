@@ -57,6 +57,7 @@ export interface GitHubPatchReadinessOptions {
   engine?: RunnerEngine;
   openclawProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => OpenClawProfileReadinessInput;
   hermesProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => HermesProfileReadinessInput;
+  claudeCodeProfileProbe?: (config: RunnerConfig, engine: RunnerEngine) => ClaudeCodeProfileReadinessInput;
 }
 
 interface HermesProfileReadinessInput {
@@ -67,6 +68,18 @@ interface HermesProfileReadinessInput {
   profileMountExists: boolean;
   expectedMountPath: string;
   configFiles: string[];
+  errors: string[];
+}
+
+interface ClaudeCodeProfileReadinessInput {
+  cliOnPath: boolean;
+  cliPath?: string;
+  cliVersionOk: boolean;
+  cliVersion?: string;
+  profileMountExists: boolean;
+  expectedMountPath: string;
+  bridgeExists: boolean;
+  bridgePath: string;
   errors: string[];
 }
 
@@ -500,6 +513,9 @@ export function checkGitHubPatchReadiness(config: RunnerConfig, options: GitHubP
   if (config.commandProfile === "hermes") {
     return checkHermesProfilePatchReadiness(config, options);
   }
+  if (config.commandProfile === "claude-code") {
+    return checkClaudeCodeProfilePatchReadiness(config, options);
+  }
 
   if (config.commandScript) {
     return {
@@ -598,6 +614,59 @@ function checkHermesProfilePatchReadiness(config: RunnerConfig, options: GitHubP
   return {
     status: "fail",
     message: "GitHub patch execution is blocked: Hermes profile runtime is not ready",
+    detail,
+  };
+}
+
+
+function checkClaudeCodeProfilePatchReadiness(config: RunnerConfig, options: GitHubPatchReadinessOptions): OpsCheck {
+  if (!config.commandScript) {
+    return {
+      status: "fail",
+      message: "GitHub patch execution is blocked: Claude Code profile selected without a generated commandScript",
+      detail: { profile: "claude-code", safe: false, eval: false },
+    };
+  }
+
+  const engine = options.engine ?? config.engine ?? "docker";
+  const probeInput = options.claudeCodeProfileProbe
+    ? options.claudeCodeProfileProbe(config, engine)
+    : probeClaudeCodeProfileInContainer(config, engine);
+  const checks = [
+    { kind: "claude_cli_resolved", passed: probeInput.cliOnPath && Boolean(probeInput.cliPath) },
+    { kind: "claude_cli_version_ok", passed: probeInput.cliVersionOk && Boolean(probeInput.cliVersion) },
+    { kind: "claude_profile_mount_present", passed: probeInput.profileMountExists },
+    { kind: "claude_patch_bridge_present", passed: probeInput.bridgeExists },
+  ];
+  const failureCategory = classifyClaudeCodeProfileFailure(probeInput);
+  const detail: Record<string, unknown> = {
+    path: "/work/patch-command.sh",
+    profile: "claude-code",
+    safe: true,
+    eval: false,
+    containedSubagents: describeContainedSubagents(config),
+    failureCategory,
+    summary: buildClaudeCodeProfileSummary(probeInput, failureCategory),
+    checks,
+    bridgePath: probeInput.bridgePath,
+  };
+
+  if (failureCategory === "ok") {
+    return {
+      status: "ok",
+      message: "GitHub patch execution is ready via Claude Code profile",
+      detail,
+    };
+  }
+
+  detail.provisioningPaths = [
+    "preferred: pre-bake Claude Code into the runner base image (docker/claude-code-runner.Dockerfile)",
+    "set A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR and mount a host dir containing minimal Claude Code auth/config files",
+    "use A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-cccb:<runner-sha>",
+  ];
+  return {
+    status: "fail",
+    message: "GitHub patch execution is blocked: Claude Code profile runtime is not ready",
     detail,
   };
 }
@@ -749,6 +818,78 @@ function buildHermesProfileSummary(input: HermesProfileReadinessInput, failureCa
   return parts.join(" ");
 }
 
+
+function probeClaudeCodeProfileInContainer(config: RunnerConfig, engine: RunnerEngine): ClaudeCodeProfileReadinessInput {
+  const args = [
+    "run",
+    "--rm",
+    "--network",
+    config.network ?? "bridge",
+    "--entrypoint",
+    "sh",
+  ];
+
+  for (const mount of config.extraMounts ?? []) {
+    const mode = mount.readOnly === false ? "rw" : "ro";
+    args.push("-v", mount.source + ":" + mount.target + ":" + mode);
+  }
+
+  args.push(config.image, "-lc", CLAUDE_CODE_PROFILE_PROBE_SCRIPT);
+
+  const result = spawnSync(engine, args, {
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 256 * 1024,
+  });
+
+  if (result.status !== 0) {
+    return {
+      cliOnPath: false,
+      cliVersionOk: false,
+      profileMountExists: false,
+      expectedMountPath: CLAUDE_CODE_PROFILE_MOUNT_PATH,
+      bridgeExists: false,
+      bridgePath: CLAUDE_CODE_PATCH_BRIDGE_PATH,
+      errors: [boundedProbeError(result.status, result.error)],
+    };
+  }
+
+  const values = parseProbeKeyValues(result.stdout ?? "");
+  const cliPath = boundedProbeValue(values.get("cli_path"), 200);
+  const cliVersion = boundedProbeValue(values.get("cli_version"), 100);
+  return {
+    cliOnPath: Boolean(cliPath),
+    cliPath,
+    cliVersionOk: values.get("cli_version_ok") === "1" && Boolean(cliVersion),
+    cliVersion,
+    profileMountExists: values.get("profile_mount_exists") === "1",
+    expectedMountPath: CLAUDE_CODE_PROFILE_MOUNT_PATH,
+    bridgeExists: values.get("bridge_exists") === "1",
+    bridgePath: boundedProbeValue(values.get("bridge_path"), 240) ?? CLAUDE_CODE_PATCH_BRIDGE_PATH,
+    errors: [],
+  };
+}
+
+function classifyClaudeCodeProfileFailure(input: ClaudeCodeProfileReadinessInput): string {
+  if (!input.cliOnPath) return "claude_cli_unavailable";
+  if (!input.cliVersionOk) return "claude_version_failed";
+  if (!input.profileMountExists) return "claude_profile_unavailable";
+  if (!input.bridgeExists) return "claude_patch_bridge_missing";
+  return "ok";
+}
+
+function buildClaudeCodeProfileSummary(input: ClaudeCodeProfileReadinessInput, failureCategory: string): string {
+  const parts = [
+    "failureCategory=" + failureCategory,
+    "cli=" + (input.cliPath ?? "missing"),
+    "version=" + (input.cliVersion ?? "missing"),
+    "mount=" + (input.profileMountExists ? input.expectedMountPath : "missing"),
+    "bridge=" + (input.bridgeExists ? input.bridgePath : "missing"),
+  ];
+  if (input.errors.length) parts.push("errors=" + input.errors.slice(0, 3).join("; "));
+  return parts.join(" ");
+}
+
 function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEngine): OpenClawProfileReadinessInput {
   const args = [
     "run",
@@ -803,6 +944,8 @@ function probeOpenClawProfileInContainer(config: RunnerConfig, engine: RunnerEng
 }
 
 const HERMES_PROFILE_MOUNT_PATH = "/run/secrets/hermes-dir";
+const CLAUDE_CODE_PROFILE_MOUNT_PATH = "/run/secrets/claude-dir";
+const CLAUDE_CODE_PATCH_BRIDGE_PATH = "/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs";
 
 const HERMES_PROFILE_PROBE_SCRIPT = [
   "set -u",
@@ -830,6 +973,35 @@ const HERMES_PROFILE_PROBE_SCRIPT = [
   "printf 'cli_version=%s\\n' \"$cli_version\"",
   "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
   "printf 'config_files=%s\\n' \"$config_files\"",
+].join("\n");
+
+
+const CLAUDE_CODE_PROFILE_PROBE_SCRIPT = [
+  "set -u",
+  "cli_path=\"$(command -v claude 2>/dev/null || true)\"",
+  "cli_version=\"\"",
+  "cli_version_ok=0",
+  "if [ -n \"$cli_path\" ]; then",
+  "  cli_version=\"$(claude --version 2>/dev/null | head -n 1 || true)\"",
+  "  if [ -n \"$cli_version\" ]; then",
+  "    cli_version_ok=1",
+  "  fi",
+  "fi",
+  "profile_mount_exists=0",
+  "if [ -d " + CLAUDE_CODE_PROFILE_MOUNT_PATH + " ]; then",
+  "  profile_mount_exists=1",
+  "fi",
+  "bridge_path=" + CLAUDE_CODE_PATCH_BRIDGE_PATH,
+  "bridge_exists=0",
+  "if [ -f \"$bridge_path\" ]; then",
+  "  bridge_exists=1",
+  "fi",
+  "printf 'cli_path=%s\\n' \"$cli_path\"",
+  "printf 'cli_version_ok=%s\\n' \"$cli_version_ok\"",
+  "printf 'cli_version=%s\\n' \"$cli_version\"",
+  "printf 'profile_mount_exists=%s\\n' \"$profile_mount_exists\"",
+  "printf 'bridge_exists=%s\\n' \"$bridge_exists\"",
+  "printf 'bridge_path=%s\\n' \"$bridge_path\"",
 ].join("\n");
 
 const OPENCLAW_PROFILE_PROBE_SCRIPT = [
