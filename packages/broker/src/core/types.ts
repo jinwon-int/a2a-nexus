@@ -552,6 +552,12 @@ export interface TaskRecord extends A2ATaskRequest {
   claimedBy?: string;
   result?: TaskResult;
   error?: TaskError;
+  /**
+   * Recent worker-visible failure history used by scheduler diagnostics to
+   * detect identical unresolved errors before the normal retry budget is spent.
+   * Values must be operator-safe/redacted; raw secrets must never be stored here.
+   */
+  errorHistory?: TaskError[];
   cancellation?: TaskCancellationInfo;
   /** Operator/hub approval that released an approval-gated task for worker claim. */
   approval?: TaskApprovalInfo;
