@@ -602,7 +602,8 @@ Precedence is `commandScript > commandJson > commandProfile > commandTemplate`:
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON` | `commandJson` | `/work/patch-command.sh` | JSON `{ "argv": [...], "env": {...} }` is converted into a quoted argv script. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=hermes` | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_HERMES_CONFIG_DIR` (or `/root/.hermes`) read-only at `/run/secrets/hermes-dir`, then runs `hermes chat --query ... --quiet --yolo` in the checked-out repo. Explicit `A2A_HERMES_MODEL` / legacy `A2A_OPENCLAW_MODEL` overrides still win. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied Hermes profile `.env` / `config.yaml` for the model and fails closed if no safe model is found. |
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=openclaw` | generated `commandScript` | `/work/patch-command.sh` | Legacy operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_OPENCLAW_CONFIG_DIR` (or the profile default when unset) read-only at `/run/secrets/openclaw-dir`, then runs `openclaw agent` in the checked-out repo. Explicit `A2A_OPENCLAW_MODEL` overrides still win. Default legacy behavior remains `openai-codex/gpt-5.5` so OAuth-backed Codex auth is used instead of same-name OpenAI API-key models. When `A2A_DOCKER_RUNNER_MODEL_SOURCE=native`, the runner reads the copied OpenClaw profile agent/default model and fails closed if no safe model is found. Do not present this profile or host-network mode as a public sandbox default. |
-| `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | blocked | Legacy eval path; rejected for GitHub patch execution. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=claude-code` (`cccb`) | generated `commandScript` | `/work/patch-command.sh` | Operator-only trusted-worker profile. Mounts `A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR` (or `/root/.claude`) read-only at `/run/secrets/claude-dir`, then runs the bundled `claude-a2a-patch-bridge.mjs` through the `claude` CLI in single-shot mode. Use the `a2a-docker-runner-cccb:<runner-sha>` image; credentials are mounted at runtime only and are not baked into image layers. |
+| `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | `commandTemplate` | `/work/patch-command.sh` | Legacy eval path; rejected for GitHub patch execution. |
 
 For the OpenClaw profile, prefer a runner image that already contains the
 `openclaw` CLI, or an explicitly approved trusted read-only CLI/package mount.
@@ -641,13 +642,35 @@ export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
 export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
 ```
 
+For the Claude Code cccb profile, use a runner image that contains the Claude
+Code CLI, `gh`, `gitleaks`, and the A2A patch bridge:
+
+```bash
+docker build -f docker/claude-code-runner.Dockerfile \
+  --build-arg A2A_NEXUS_REF=<runner-sha-or-tag> \
+  -t a2a-docker-runner-cccb:<runner-sha> .
+```
+
+Then point worker env at a minimal Claude config directory. Do not bake Claude
+OAuth/config files into the image:
+
+```bash
+export A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE=cccb
+export A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE=claude-code
+export A2A_DOCKER_RUNNER_CLAUDE_CONFIG_DIR=/secure/operator/claude-config
+export A2A_DOCKER_RUNNER_IMAGE=a2a-docker-runner-cccb:<runner-sha>
+export A2A_CLAUDE_MODEL=sonnet
+export A2A_CLAUDE_TIMEOUT_SEC=3600
+```
+
 For fixed-role workers, set `A2A_DOCKER_RUNNER_EXPECTED_PATCH_COMMAND_PROFILE`
 with the node's intended harness. For example, Hermes nodes should set it to
 `hermes`; if the service env later drifts back to `openclaw` or unset, runner
 config validation fails before task execution. Known runner image families are
 also checked against the selected profile, so `a2a-docker-runner-hermes:*` cannot
 be paired with the `openclaw` profile and `a2a-docker-runner-openclaw:*` cannot
-be paired with the `hermes` profile.
+be paired with the `hermes` profile; `a2a-docker-runner-cccb:*` and
+`a2a-docker-runner-claude-code:*` must use the `claude-code` profile.
 
 Examples:
 
@@ -670,8 +693,8 @@ export A2A_OPENCLAW_TIMEOUT_SEC=3600
 export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_ENABLED=1
 export A2A_DOCKER_RUNNER_CONTAINED_SUBAGENTS_MAX=2
 
-# Legacy Claude-in-Docker commands are intentionally rejected for GitHub patch tasks.
-# Use host-side OpenClaw/Codex commandScript or commandJson instead.
+# Legacy ad-hoc Claude-in-Docker commands are rejected for GitHub patch tasks.
+# Use the first-class claude-code/cccb profile when Claude Code is intended.
 ```
 
 When no patch command config is set, `doctor` reports `githubPatch.status: "fail"`. The generated patch pipeline now emits `error=no_patch_command_configured` and exits non-zero before any no-op PR flow can be reported as success. GitHub evidence collection treats the diagnostic as Block evidence rather than Done evidence.
@@ -685,8 +708,9 @@ After creating a PR, the default pipeline calls
 warning instead of deleting or duplicating the newly created PR.
 
 If a patch command or extra mount references Claude CLI, Claude credentials, or
-Claude-specific artifacts, config loading fails. This prevents accidental
-production fallback to Claude-in-Docker.
+Claude-specific artifacts outside the first-class `claude-code`/`cccb` profile,
+config loading fails. This prevents accidental production fallback to
+Claude-in-Docker while allowing the explicit trusted-worker cccb path.
 
 A safe Docker-first worker rollout from plugin-only routing to all-GitHub routing should therefore be:
 
