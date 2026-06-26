@@ -46,6 +46,7 @@ export A2A_WORKER_DISPLAY_NAME="Gongyung Hermes Worker"
 export A2A_WORKER_MODE=mobile
 export A2A_HERMES_RUNTIME_FLAVOR=termux-hermes
 export A2A_HERMES_ARTIFACT_ROOT="$HOME/.hermes/a2a/artifacts"
+export A2A_WORKER_LOCK_PATH="$HOME/.hermes/a2a/daegyo-worker.lock"
 export A2A_HTTP_TIMEOUT_SEC=10
 ```
 
@@ -67,15 +68,24 @@ while true; do
 done >> "$HOME/.hermes/a2a/worker.log" 2>&1
 ```
 
-Keep the loop simple. The worker re-registers and heartbeats on every pass, so a
-sleep/network interruption becomes a retry instead of a special recovery path.
+Keep the loop simple, but do not make durable registration the normal poll path.
+The reference worker takes a non-blocking `A2A_WORKER_LOCK_PATH` ownership lock
+before broker lifecycle calls so two local processes cannot use the same
+`A2A_WORKER_ID` at the same time. If the lock is already held, the worker fails
+closed and the operator should stop the duplicate process or give the smoke lane
+a distinct worker id.
+The reference worker keeps a small registration-state file and only calls
+`/workers/register` on first boot, after `A2A_WORKER_REGISTER_REFRESH_SEC`
+expires, or after a heartbeat reports that the broker no longer knows the
+worker (`404`/`410`). The default refresh interval is 3600 seconds and the
+state file can be overridden with `A2A_WORKER_REGISTRATION_STATE_PATH`.
 
 ## Reconnect And Sleep Handling
 
 The Android worker should assume that TCP connections can drop at any time.
 
-- Each loop calls register, heartbeat, poll, claim/start, and evidence through
-  short HTTP requests.
+- Each loop ensures a fresh-enough registration, heartbeats, polls, claim/start,
+  and evidence through short HTTP requests.
 - Local evidence is written before relying on broker-visible evidence.
 - If the process is killed after local evidence but before broker submission,
   the operator can inspect `~/.hermes/a2a/artifacts/<task-id>/evidence.json`.

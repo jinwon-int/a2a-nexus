@@ -9,6 +9,8 @@ production worker service.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 import subprocess
@@ -245,6 +247,107 @@ def register() -> Any:
     return request_json("POST", "/workers/register", registration_payload())
 
 
+def registration_state_path() -> Path:
+    configured = os.environ.get("A2A_WORKER_REGISTRATION_STATE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    name = f"{safe_task_dir_name(worker_id())}-registration.json"
+    work_root = mobile_work_root()
+    if work_root is not None:
+        return work_root / home_broker_id() / name
+    return artifact_root() / name
+
+
+def worker_lock_path() -> Path:
+    configured = os.environ.get("A2A_WORKER_LOCK_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    name = f"{safe_task_dir_name(worker_id())}-worker.lock"
+    work_root = mobile_work_root()
+    if work_root is not None:
+        return work_root / home_broker_id() / name
+    return artifact_root() / name
+
+
+@contextmanager
+def worker_ownership_lock() -> Any:
+    """Fail closed when another local process already owns this workerId.
+
+    Termux/mobile workers are commonly launched by simple shell loops. A stale
+    duplicate loop with the same nodeId can create confusing broker identity
+    churn, so each process takes a non-blocking advisory lock before touching
+    broker lifecycle endpoints.
+    """
+    path = worker_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as fh:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise SystemExit(
+                f"workerId ownership lock already held for {worker_id()} at {path}; "
+                "stop the duplicate process or set a distinct A2A_WORKER_ID"
+            ) from exc
+        fh.seek(0)
+        fh.truncate()
+        fh.write(json.dumps({
+            "workerId": worker_id(),
+            "brokerUrl": broker_url(),
+            "pid": os.getpid(),
+            "lockedAt": utc_now_iso(),
+        }, ensure_ascii=False, sort_keys=True))
+        fh.flush()
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def registration_max_age_sec() -> int:
+    raw = env("A2A_WORKER_REGISTER_REFRESH_SEC", "3600")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 3600
+    return max(60, value)
+
+
+def registration_fresh() -> bool:
+    try:
+        data = json.loads(registration_state_path().read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if data.get("workerId") != worker_id() or data.get("brokerUrl") != broker_url():
+        return False
+    registered_at = data.get("registeredAtEpochSec")
+    if not isinstance(registered_at, (int, float)):
+        return False
+    return time.time() - float(registered_at) < registration_max_age_sec()
+
+
+def mark_registered() -> None:
+    path = registration_state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "workerId": worker_id(),
+        "brokerUrl": broker_url(),
+        "registeredAt": utc_now_iso(),
+        "registeredAtEpochSec": int(time.time()),
+        "refreshAfterSec": registration_max_age_sec(),
+    }
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
+def ensure_registered() -> Any:
+    if registration_fresh():
+        return {"status": "skipped", "reason": "recent-registration", "workerId": worker_id()}
+    result = register()
+    mark_registered()
+    return result
+
+
 def heartbeat() -> Any:
     return request_json(
         "POST",
@@ -452,8 +555,15 @@ def is_safe_local_task(task: dict[str, Any]) -> bool:
 
 
 def run_once() -> dict[str, Any]:
-    register()
-    heartbeat()
+    ensure_registered()
+    try:
+        heartbeat()
+    except RuntimeError as exc:
+        if "HTTP 404" not in str(exc) and "HTTP 410" not in str(exc):
+            raise
+        register()
+        mark_registered()
+        heartbeat()
     tasks = poll()
     if not tasks:
         return {"status": "idle", "workerId": worker_id(), "processed": 0}
@@ -550,14 +660,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Hermes-style A2A worker local dry-run reference")
     parser.add_argument("--action", choices=["register", "heartbeat", "poll", "run-once"], default="run-once")
     args = parser.parse_args()
-    if args.action == "register":
-        result = register()
-    elif args.action == "heartbeat":
-        result = heartbeat()
-    elif args.action == "poll":
-        result = {"items": poll()}
-    else:
-        result = run_once()
+    with worker_ownership_lock():
+        if args.action == "register":
+            result = register()
+        elif args.action == "heartbeat":
+            result = heartbeat()
+        elif args.action == "poll":
+            result = {"items": poll()}
+        else:
+            result = run_once()
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

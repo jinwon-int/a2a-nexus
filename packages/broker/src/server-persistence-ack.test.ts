@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { type BrokerPersistenceQueueDiagnostics } from "./server.js";
 import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
 import { emptySnapshot, SqliteBrokerStateStore, type BrokerStateStore } from "./core/store.js";
+import { WorkerThreadProxyStore, WriteQueue, type SqliteWorkerThread } from "./core/sqlite-worker-thread-persistence.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { createInMemoryStateStore, createDeferred, waitFor, startTestServer, createTaskRequest, jsonHeaders, withEnv, registerTestWorker } from "./server-test-helpers.js";
 
@@ -126,6 +127,43 @@ test("task create disambiguates durable-ack failure as 202 accepted-unconfirmed;
     assert.equal(claimBody.error.code, "queue_drain_timeout");
   } finally {
     await server.close();
+  }
+});
+
+test("worker-thread persistence ACK timeout does not permanently abort the write queue (#1038)", async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "worker-queue-ack-timeout-"));
+  const sqliteFile = join(tmpDir, "state.sqlite");
+  const queue = new WriteQueue(4);
+  const first = createDeferred<boolean>();
+  const second = createDeferred<boolean>();
+  const requests: string[] = [];
+  const fakeWorkerThread = {
+    request(method: string) {
+      requests.push(method);
+      return requests.length === 1 ? first.promise : second.promise;
+    },
+  } as unknown as SqliteWorkerThread;
+  const store = new WorkerThreadProxyStore(queue, fakeWorkerThread, sqliteFile, 20);
+  const keepAlive = setInterval(() => undefined, 5);
+  try {
+    store.saveHotEntities({ hotTasks: [] });
+    await assert.rejects(store.awaitDurablePersistenceAck(), /queue_drain_timeout/);
+    assert.equal(queue.stats().aborted, false, "ACK timeout must not poison future writes");
+    assert.equal(queue.stats().closing, false, "ACK timeout must not close the queue");
+
+    first.resolve(true);
+    await queue.awaitIdle({ timeoutMs: 1000 });
+    assert.equal(queue.stats().inFlight, 0);
+
+    store.saveHotEntities({ hotTasks: [] });
+    second.resolve(true);
+    await store.awaitDurablePersistenceAck();
+    assert.equal(queue.stats().aborted, false);
+    assert.deepEqual(requests, ["saveHotEntities", "saveHotEntities"]);
+  } finally {
+    clearInterval(keepAlive);
+    store.close();
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 

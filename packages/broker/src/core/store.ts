@@ -195,6 +195,13 @@ export interface BrokerHotTerminalOutboxDiagnostics {
   unackedRatio: number;
   oldestUnackedCreatedAt: string | null;
   oldestUnackedAgeMs: number | null;
+  classification: "clean" | "recent_unacked_watch" | "ack_ineligible_historical_residue" | "actionable_review_required";
+  actionableBacklog: boolean;
+  ageBuckets: Record<"lt1d" | "1to7d" | "7to14d" | "gte14d" | "unknown", number>;
+  byTerminalStatus: Record<string, number>;
+  byReceiptStatus: Record<string, number>;
+  byBrokerOfRecord: Record<string, number>;
+  byWorker: Record<string, number>;
   warnings: string[];
 }
 
@@ -1532,8 +1539,25 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     ).all() as Array<{ createdAt?: string; payload?: string }>;
     let ackIneligibleUnacked = 0;
     let oldestUnackedCreatedAt: string | null = null;
+    const ageBuckets: BrokerHotTerminalOutboxDiagnostics["ageBuckets"] = {
+      lt1d: 0,
+      "1to7d": 0,
+      "7to14d": 0,
+      gte14d: 0,
+      unknown: 0,
+    };
+    const byTerminalStatus: Record<string, number> = {};
+    const byReceiptStatus: Record<string, number> = {};
+    const byBrokerOfRecord: Record<string, number> = {};
+    const byWorker: Record<string, number> = {};
     for (const row of unackedRows) {
-      if (isAckIneligibleTerminalOutboxPayload(row.payload)) {
+      const event = parseTerminalOutboxEventPayload(row.payload);
+      incrementDiagnosticsCounter(byTerminalStatus, event?.payload?.status);
+      incrementDiagnosticsCounter(byReceiptStatus, event?.receipt?.status);
+      incrementDiagnosticsCounter(byBrokerOfRecord, event?.payload?.brokerOfRecordId);
+      incrementDiagnosticsCounter(byWorker, event?.payload?.worker ?? event?.payload?.crossBrokerHandoff?.childWorkerId);
+      incrementDiagnosticsCounter(ageBuckets, terminalOutboxAgeBucket(row.createdAt, nowMs));
+      if (isAckIneligibleTerminalOutboxEvent(event)) {
         ackIneligibleUnacked += 1;
         continue;
       }
@@ -1547,6 +1571,14 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const oldestUnackedAgeMs = oldestUnackedCreatedAt !== null
       ? nowMs - Date.parse(oldestUnackedCreatedAt)
       : null;
+    const actionableBacklog = ackEligibleUnacked > 0 && oldestUnackedAgeMs !== null && oldestUnackedAgeMs > 7 * 24 * 60 * 60 * 1000;
+    const classification: BrokerHotTerminalOutboxDiagnostics["classification"] = actionableBacklog
+      ? "actionable_review_required"
+      : ackEligibleUnacked > 0
+        ? "recent_unacked_watch"
+        : ackIneligibleUnacked > 0
+          ? "ack_ineligible_historical_residue"
+          : "clean";
     const warnings: string[] = [];
     if (unacked > 500) {
       warnings.push(`broker_terminal_outbox has ${unacked} unacked entries; may indicate stalled provider delivery`);
@@ -1564,6 +1596,13 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       unackedRatio,
       oldestUnackedCreatedAt,
       oldestUnackedAgeMs,
+      classification,
+      actionableBacklog,
+      ageBuckets,
+      byTerminalStatus,
+      byReceiptStatus,
+      byBrokerOfRecord,
+      byWorker,
       warnings,
     };
   }
@@ -2704,22 +2743,50 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 }
 
-function isAckIneligibleTerminalOutboxPayload(payload: unknown): boolean {
+function parseTerminalOutboxEventPayload(payload: unknown): {
+  payload?: {
+    status?: unknown;
+    brokerOfRecordId?: unknown;
+    worker?: unknown;
+    crossBrokerHandoff?: { childWorkerId?: unknown };
+    notificationOwnership?: { terminalAckPermittedByProjection?: unknown };
+  };
+  receipt?: { status?: unknown };
+} | null {
   if (typeof payload !== "string" || !payload.trim()) {
-    return false;
+    return null;
   }
   try {
-    const event = JSON.parse(payload) as {
-      payload?: {
-        notificationOwnership?: {
-          terminalAckPermittedByProjection?: unknown;
-        };
-      };
-    };
-    return event.payload?.notificationOwnership?.terminalAckPermittedByProjection === false;
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isAckIneligibleTerminalOutboxEvent(event: ReturnType<typeof parseTerminalOutboxEventPayload>): boolean {
+  return event?.payload?.notificationOwnership?.terminalAckPermittedByProjection === false;
+}
+
+function isAckIneligibleTerminalOutboxPayload(payload: unknown): boolean {
+  return isAckIneligibleTerminalOutboxEvent(parseTerminalOutboxEventPayload(payload));
+}
+
+function terminalOutboxAgeBucket(createdAt: unknown, nowMs: number): "lt1d" | "1to7d" | "7to14d" | "gte14d" | "unknown" {
+  if (typeof createdAt !== "string") return "unknown";
+  const createdAtMs = Date.parse(createdAt);
+  if (!Number.isFinite(createdAtMs)) return "unknown";
+  const ageMs = Math.max(0, nowMs - createdAtMs);
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (ageMs < dayMs) return "lt1d";
+  if (ageMs < 7 * dayMs) return "1to7d";
+  if (ageMs < 14 * dayMs) return "7to14d";
+  return "gte14d";
+}
+
+function incrementDiagnosticsCounter(counter: Record<string, number>, value: unknown): void {
+  const key = typeof value === "string" && value.trim() ? value.trim() : "unknown";
+  counter[key] = (counter[key] ?? 0) + 1;
 }
 
 export class SqliteTaskRuntimeRepository implements TaskRuntimeRepository {

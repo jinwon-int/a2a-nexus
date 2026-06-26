@@ -120,17 +120,19 @@ export class WriteQueue {
     };
   }
 
-  async drainAndClose(options: { timeoutMs?: number } = {}): Promise<void> {
+  async drainAndClose(options: { timeoutMs?: number; abortOnTimeout?: boolean } = {}): Promise<void> {
     this.closing = true;
     await this.awaitIdle(options);
   }
 
-  async awaitIdle(options: { timeoutMs?: number } = {}): Promise<void> {
+  async awaitIdle(options: { timeoutMs?: number; abortOnTimeout?: boolean } = {}): Promise<void> {
     const startedAt = Date.now();
     while (this.entries.length > 0 || this.active || this.activeEntry !== null) {
       if (options.timeoutMs !== undefined && Date.now() - startedAt >= options.timeoutMs) {
         const err = new Error("queue_drain_timeout");
-        this.abort(err);
+        if (options.abortOnTimeout) {
+          this.abort(err);
+        }
         throw err;
       }
       await new Promise<void>((r) => setImmediate(r));
@@ -418,9 +420,7 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
     let timeout: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
-        const error = new Error("queue_drain_timeout");
-        this.queue.abort(error);
-        reject(error);
+        reject(new Error("queue_drain_timeout"));
       }, this.ackTimeoutMs);
       timeout.unref?.();
     });

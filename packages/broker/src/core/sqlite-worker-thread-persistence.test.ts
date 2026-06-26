@@ -165,13 +165,13 @@ test("WriteQueue: drain completes before close and rejects after", async () => {
   await assert.rejects(queue.enqueue("after-close", () => "nope"), /queue_closed/);
 });
 
-test("WriteQueue: drain timeout triggers abort", async () => {
+test("WriteQueue: drain timeout triggers abort only when requested", async () => {
   const queue = new WriteQueue(2);
   const blocked = deferred();
   const stuck = queue.enqueue("stuck", () => blocked.promise);
   await nextTick();
 
-  await assert.rejects(queue.drainAndClose({ timeoutMs: 50 }), /queue_drain_timeout/);
+  await assert.rejects(queue.drainAndClose({ timeoutMs: 50, abortOnTimeout: true }), /queue_drain_timeout/);
   await assert.rejects(stuck, /queue_drain_timeout/);
   assert.equal(queue.stats().aborted, true);
   blocked.resolve(); // cleanup

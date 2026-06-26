@@ -399,6 +399,11 @@ test("SqliteBrokerStateStore readHotTerminalOutboxDiagnostics reports unacked st
     assert.ok(diag.oldestUnackedCreatedAt !== null);
     assert.ok(diag.oldestUnackedAgeMs !== null);
     assert.ok(diag.oldestUnackedAgeMs! > 12 * 24 * 60 * 60 * 1000, "oldest unacked should be >12 days old");
+    assert.equal(diag.classification, "actionable_review_required");
+    assert.equal(diag.actionableBacklog, true);
+    assert.equal(diag.ageBuckets.gte14d, 2);
+    assert.equal(Object.values(diag.byTerminalStatus).reduce((sum, count) => sum + count, 0), 2);
+    assert.equal(Object.values(diag.byReceiptStatus).reduce((sum, count) => sum + count, 0), 2);
     // The oldest unacked warning should fire (>7 days)
     assert.ok(diag.warnings.some((w) => w.includes("days old")), "should warn about old unacked entry");
 

@@ -232,6 +232,61 @@ test("worker registration still records material metadata changes", async () => 
   }
 });
 
+test("server surfaces duplicate nodeId identity churn warnings on worker capacity", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  const nodeId = "daegyo";
+  const capabilities = {
+    canAnalyze: true,
+    canBackfill: false,
+    canPatchWorkspace: false,
+    canPromoteLive: false,
+    workspaceIds: ["team2-gwakga"],
+    environments: ["research"],
+  };
+  const baseRegistration = {
+    nodeId,
+    role: "analyst",
+    displayName: "Daegyo mobile worker",
+    brokerUrl: "http://127.0.0.1:18787",
+    workerMode: "mobile",
+    capabilities,
+    metadata: { runtime: "hermes-agent", transport: "http-poll" },
+  };
+  try {
+    for (const registration of [
+      baseRegistration,
+      {
+        ...baseRegistration,
+        displayName: "Daegyo JS-pinned worker",
+        brokerUrl: "http://127.0.0.1:18790",
+        workerMode: "persistent",
+        metadata: { runtime: "claude-code", transport: "node-worker" },
+      },
+      baseRegistration,
+    ]) {
+      const res = await fetch(`${server.baseUrl}/workers/register`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify(registration),
+      });
+      assert.equal(res.status, 201);
+    }
+
+    const churnEvents = server.runtime.broker.listAuditEvents({ action: "worker.identity_churn_detected" });
+    assert.equal(churnEvents.length, 1);
+    assert.match(churnEvents[0].note ?? "", /duplicate processes sharing the same nodeId/);
+
+    const capacityRes = await fetch(`${server.baseUrl}/workers/capacity`);
+    assert.equal(capacityRes.status, 200);
+    const capacity = await capacityRes.json() as { items: Array<{ nodeId: string; identityWarning?: { code: string; lastChangedFields: string[] } }> };
+    const daegyo = capacity.items.find((item) => item.nodeId === nodeId);
+    assert.equal(daegyo?.identityWarning?.code, "worker_identity_churn");
+    assert.ok(daegyo?.identityWarning?.lastChangedFields.includes("workerMode"));
+  } finally {
+    await server.close();
+  }
+});
+
 test("server accepts a broker-agnostic Hermes-style worker poll and evidence flow", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
   const workerId = "hermes-agent-reference-worker";
