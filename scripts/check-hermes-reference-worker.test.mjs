@@ -94,7 +94,7 @@ def fake_request_json(method, path, body=None):
     return {}
 globals_ = m['run_once'].__globals__
 globals_['request_json'] = fake_request_json
-globals_['register'] = lambda: {}
+globals_['ensure_registered'] = lambda: {'status': 'skipped'}
 globals_['heartbeat'] = lambda: {}
 globals_['poll'] = lambda: [task]
 result = m['run_once']()
@@ -142,7 +142,7 @@ def fake_request_json(method, path, body=None):
     return {}
 globals_ = m['run_once'].__globals__
 globals_['request_json'] = fake_request_json
-globals_['register'] = lambda: {}
+globals_['ensure_registered'] = lambda: {'status': 'skipped'}
 globals_['heartbeat'] = lambda: {}
 globals_['poll'] = lambda: [task]
 result = m['run_once']()
@@ -266,6 +266,64 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
   assert.match(output.summary, /invalid JSON/i);
 });
 
+test('Hermes reference worker throttles mobile registration within TTL and re-registers after broker forgets worker', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'a2a-mobile-registration-'));
+  const program = String.raw`
+import json, os, pathlib, runpy
+m = runpy.run_path('examples/workers/hermes-reference-worker/a2a_worker.py', run_name='a2a_worker_test')
+requests = []
+tasks = []
+def fake_request_json(method, path, body=None):
+    requests.append({'method': method, 'path': path, 'body': body})
+    if path == '/workers/register':
+        return {'status': 'registered'}
+    if path.endswith('/heartbeat'):
+        return {'status': 'heartbeat'}
+    if method == 'GET' and path.startswith('/tasks?'):
+        return {'items': tasks}
+    return {}
+g = m['request_json'].__globals__
+g['request_json'] = fake_request_json
+first = m['run_once']()
+second = m['run_once']()
+register_count_before_404 = len([r for r in requests if r['path'] == '/workers/register'])
+heartbeat_calls = {'count': 0}
+def heartbeat_then_404():
+    heartbeat_calls['count'] += 1
+    if heartbeat_calls['count'] == 1:
+        raise RuntimeError('POST /workers/test/heartbeat failed: HTTP 404 worker not found')
+    return {'status': 'heartbeat'}
+g['heartbeat'] = heartbeat_then_404
+third = m['run_once']()
+print(json.dumps({
+  'first': first,
+  'second': second,
+  'third': third,
+  'registerCountBefore404': register_count_before_404,
+  'registerCountAfter404': len([r for r in requests if r['path'] == '/workers/register']),
+  'stateExists': pathlib.Path(os.environ['A2A_WORKER_REGISTRATION_STATE_PATH']).is_file(),
+}, sort_keys=True))
+`;
+  const result = spawnSync('python3', ['-c', program], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      A2A_WORKER_ID: 'daegyo',
+      A2A_BROKER_URL: 'http://127.0.0.1:18787',
+      A2A_WORKER_REGISTRATION_STATE_PATH: join(dir, 'registration.json'),
+      A2A_WORKER_REGISTER_REFRESH_SEC: '3600',
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.registerCountBefore404, 1, 'second run_once must not re-register within TTL');
+  assert.equal(output.registerCountAfter404, 2, 'heartbeat 404 must force re-register');
+  assert.equal(output.stateExists, true);
+  assert.equal(output.first.status, 'idle');
+  assert.equal(output.second.status, 'idle');
+  assert.equal(output.third.status, 'idle');
+});
+
 test('Hermes Android native runbook documents no-Gateway boot and reconnect path', () => {
   const readme = readFileSync(readmePath, 'utf8');
   const runbook = readFileSync(androidRunbookPath, 'utf8');
@@ -276,7 +334,8 @@ test('Hermes Android native runbook documents no-Gateway boot and reconnect path
   assert.match(runbook, /not require a full OpenClaw Gateway install/);
   assert.match(runbook, /termux-wake-lock/);
   assert.match(runbook, /\.termux\/boot\/a2a-hermes-worker/);
-  assert.match(runbook, /re-registers and heartbeats on every pass/);
+  assert.match(runbook, /only calls\s+`\/workers\/register` on first boot/);
+  assert.match(runbook, /A2A_WORKER_REGISTER_REFRESH_SEC/);
   assert.match(runbook, /No provider send, Telegram send, Terminal Brief ACK\/replay, DB mutation/);
   assert.doesNotMatch(runbook, /A2A_EDGE_SECRET=.*[A-Za-z0-9_]{8,}/);
 });

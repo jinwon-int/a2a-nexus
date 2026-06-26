@@ -203,6 +203,7 @@ export type AuditAction =
   | "task.wake.failed"
   | "worker.registered"
   | "worker.heartbeat"
+  | "worker.identity_churn_detected"
   | "broker.cleanup.applied";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
@@ -1139,6 +1140,16 @@ export interface WorkerFleetSummary {
   }>;
 }
 
+export interface WorkerIdentityWarning {
+  code: "worker_identity_churn";
+  severity: "warning";
+  message: string;
+  windowMs: number;
+  changesInWindow: number;
+  lastDetectedAt: string;
+  lastChangedFields: string[];
+}
+
 export interface WorkerCapacitySummaryItem {
   nodeId: string;
   role: string;
@@ -1166,6 +1177,8 @@ export interface WorkerCapacitySummaryItem {
    * Persistent workers omit this field to keep payloads compact.
    */
   mobileHealth?: WorkerMobileHealth;
+  /** Warning surfaced when a nodeId appears to be shared by conflicting runtimes. */
+  identityWarning?: WorkerIdentityWarning;
 }
 
 export interface WorkerCapacitySummary {

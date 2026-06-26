@@ -186,7 +186,7 @@ test("server exposes JSON-RPC SendMessage and task methods behind the A2A facade
 });
 
 test("server keeps peer status default-off and exposes a2a.peer.status when enabled", async () => {
-  const defaultOffServer = await startTestServer({ edgeSecret: "test-edge-secret" });
+  const defaultOffServer = await startTestServer({ edgeSecret: "test-edge-secret", peerStatusEnabled: false });
   try {
     await registerTestWorker(defaultOffServer.baseUrl, "worker-a", "analyst", "test-edge-secret");
     const disabledRes = await fetch(`${defaultOffServer.baseUrl}/a2a/jsonrpc`, {

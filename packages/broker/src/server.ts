@@ -2131,6 +2131,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
     ),
   );
+  const workerHeartbeatPersistence = {
+    intervalMs: Number.isFinite(workerHeartbeatPersistIntervalMs) ? workerHeartbeatPersistIntervalMs : null,
+    disabled: !Number.isFinite(workerHeartbeatPersistIntervalMs),
+    persistEveryHeartbeat: workerHeartbeatPersistIntervalMs === 0,
+    warning: persistenceBackend === "sqlite" && workerHeartbeatPersistIntervalMs === 0
+      ? "BROKER_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS=0 persists every worker heartbeat/register change through durable SQLite; this can starve task lifecycle writes. Use a positive interval such as 60000 unless explicitly load-testing."
+      : undefined,
+  };
   const rateLimitWindowSec = options.rateLimitWindowSec ?? Number(process.env.RATE_LIMIT_WINDOW_SEC ?? 60);
   const rateLimitMaxRequests = options.rateLimitMaxRequests ?? Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 10);
   const workerRateLimitWindowSec =
@@ -2833,6 +2841,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           },
           persistence,
           persistenceQueue,
+          workerHeartbeatPersistence,
           ...(auditDiagnostics !== undefined ? { auditDiagnostics } : {}),
           ...(hotTableGrowth !== undefined ? { hotTableGrowth } : {}),
           workers: {
@@ -2880,6 +2889,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           const existing = body.warning ? `${body.warning}; ` : "";
           const warns = hotTableGrowth.warnings.filter((w) => w.startsWith("WARNING"));
           body.warning = `${existing}hot-table growth warning: ${truncateMessage(warns.join("; "), 500) || "growth approaching stability limits"}`;
+        }
+
+        if (workerHeartbeatPersistence.warning) {
+          const existing = body.warning ? `${body.warning}; ` : "";
+          body.warning = `${existing}${workerHeartbeatPersistence.warning}`;
         }
 
         body.timing = {
@@ -5146,6 +5160,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           requestRoutes: requestRouteSnapshot(),
           routeHandlerBodyTiming: routeHandlerBodySnapshot(),
           persistenceQueue: readPersistenceQueueDiagnostics(persistenceQueueDiagnosticsProvider),
+          workerHeartbeatPersistence,
           terminalOutbox: summarizeTerminalOutboxForSchedz(broker.getTerminalTaskEventOutbox()),
           workerHeartbeatPhases: workerHeartbeatPhaseTimingSnapshot(),
           workerRegisterPhases: workerRegisterPhaseTimingSnapshot(),

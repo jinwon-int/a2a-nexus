@@ -2,6 +2,30 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { startTestServer, jsonHeaders, withEnv, registerTestWorker } from "./server-test-helpers.js";
 
+test("server warns when SQLite worker heartbeat persistence is configured to persist every heartbeat", async () => {
+  const server = await startTestServer({
+    persistenceBackend: "sqlite",
+    workerHeartbeatPersistIntervalMs: 0,
+  });
+  try {
+    const healthRes = await fetch(`${server.baseUrl}/health`, { headers: { "x-a2a-edge-secret": "s" } });
+    assert.equal(healthRes.status, 200);
+    const health = await healthRes.json();
+    assert.equal(health.workerHeartbeatPersistence.intervalMs, 0);
+    assert.equal(health.workerHeartbeatPersistence.persistEveryHeartbeat, true);
+    assert.match(health.workerHeartbeatPersistence.warning, /persists every worker heartbeat/);
+    assert.match(health.warning, /BROKER_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS=0/);
+
+    const schedzRes = await fetch(`${server.baseUrl}/schedz`, { headers: { "x-a2a-edge-secret": "s" } });
+    assert.equal(schedzRes.status, 200);
+    const schedz = await schedzRes.json();
+    assert.equal(schedz.workerHeartbeatPersistence.intervalMs, 0);
+    assert.match(schedz.workerHeartbeatPersistence.warning, /task lifecycle writes/);
+  } finally {
+    await server.close();
+  }
+});
+
 test("server exposes empty worker capacity preflight as compact response", async () => {
   const server = await startTestServer();
   try {

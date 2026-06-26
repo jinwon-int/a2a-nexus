@@ -115,6 +115,7 @@ import type {
   WorkerCapabilities,
   WorkerFleetSummary,
   WorkerHeartbeatRequest,
+  WorkerIdentityWarning,
   TaskDiagnosticReport,
   TaskDiagnosticStatus,
   TaskTombstone,
@@ -449,6 +450,12 @@ export class InMemoryA2ABroker {
   private readonly pendingHotArtifacts = new Map<string, ArtifactRecord>();
   private readonly pendingHotValidations = new Map<string, ValidationResult>();
   private readonly lastPersistedWorkerHeartbeatAtMs = new Map<string, number>();
+  private readonly workerIdentityChurn = new Map<string, {
+    fingerprint: string;
+    changesAtMs: number[];
+    lastChangedFields: string[];
+    warning?: WorkerIdentityWarning;
+  }>();
   private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
   private readonly stateListeners = new Set<BrokerStateListener>();
   private readonly profilingListeners = new Set<BrokerProfilingListener>();
@@ -984,6 +991,10 @@ export class InMemoryA2ABroker {
       JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities) ||
       !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
 
+    const identityWarning = existing && materialChange
+      ? this.recordWorkerIdentityFingerprintChange(existing, request, capabilities)
+      : undefined;
+
     if (existing && !materialChange) {
       return this.heartbeatWorker(request.nodeId, {
         displayName: request.displayName,
@@ -1017,8 +1028,66 @@ export class InMemoryA2ABroker {
       targetId: worker.nodeId,
       note: worker.displayName ?? worker.role,
     });
+    if (identityWarning) {
+      this.appendAuditEvent({
+        actorId: worker.nodeId,
+        action: "worker.identity_churn_detected",
+        targetType: "worker",
+        targetId: worker.nodeId,
+        note: identityWarning.message,
+      });
+    }
     this.persistState();
     return worker;
+  }
+
+  private recordWorkerIdentityFingerprintChange(
+    existing: WorkerRecord,
+    request: RegisterWorkerRequest,
+    capabilities: WorkerCapabilities,
+  ): WorkerIdentityWarning | undefined {
+    const changedFields = workerIdentityChangedFields(existing, request, capabilities);
+    const fingerprint = workerIdentityFingerprint(request, capabilities);
+    const nowMs = Date.now();
+    const windowMs = 10 * 60 * 1000;
+    const previous = this.workerIdentityChurn.get(request.nodeId);
+    const changesAtMs = (previous?.fingerprint && previous.fingerprint !== fingerprint
+      ? [...previous.changesAtMs, nowMs]
+      : [nowMs]
+    ).filter((timestamp) => nowMs - timestamp <= windowMs);
+    let warning = previous?.warning;
+    if (changesAtMs.length >= 2) {
+      warning = {
+        code: "worker_identity_churn",
+        severity: "warning",
+        message: `worker ${request.nodeId} changed identity fields ${changedFields.join(", ")} ${changesAtMs.length} times within ${Math.round(windowMs / 1000)}s; check for duplicate processes sharing the same nodeId`,
+        windowMs,
+        changesInWindow: changesAtMs.length,
+        lastDetectedAt: new Date(nowMs).toISOString(),
+        lastChangedFields: changedFields,
+      };
+    }
+    this.workerIdentityChurn.set(request.nodeId, {
+      fingerprint,
+      changesAtMs,
+      lastChangedFields: changedFields,
+      warning,
+    });
+    return warning;
+  }
+
+  getWorkerIdentityWarnings(): Record<string, WorkerIdentityWarning> {
+    const warnings: Record<string, WorkerIdentityWarning> = {};
+    for (const [nodeId, record] of this.workerIdentityChurn) {
+      if (record.warning) {
+        warnings[nodeId] = record.warning;
+      }
+    }
+    return warnings;
+  }
+
+  private workerIdentityWarning(nodeId: string): WorkerIdentityWarning | undefined {
+    return this.workerIdentityChurn.get(nodeId)?.warning;
   }
 
   heartbeatWorker(nodeId: string, request?: WorkerHeartbeatRequest): WorkerRecord {
@@ -2361,6 +2430,7 @@ export class InMemoryA2ABroker {
       staleTasks += counts.stale;
       active += counts.active;
 
+      const identityWarning = this.workerIdentityWarning(worker.nodeId);
       return {
         nodeId: worker.nodeId,
         role: worker.role,
@@ -2374,6 +2444,7 @@ export class InMemoryA2ABroker {
         runtimeFlavor: worker.capabilities.runtimeFlavor,
         gatewayRequired: worker.capabilities.gatewayRequired,
         mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
+        ...(identityWarning ? { identityWarning } : {}),
       };
     });
 
@@ -5122,6 +5193,37 @@ function workerMetadataMateriallyEqual(
   b?: Record<string, string>,
 ): boolean {
   return JSON.stringify(materialWorkerMetadata(a)) === JSON.stringify(materialWorkerMetadata(b));
+}
+
+function workerIdentityFingerprint(
+  request: RegisterWorkerRequest,
+  capabilities: WorkerCapabilities,
+): string {
+  return JSON.stringify({
+    role: request.role,
+    displayName: request.displayName ?? null,
+    brokerUrl: request.brokerUrl ?? null,
+    workerMode: request.workerMode ?? null,
+    managementPlane: request.managementPlane ?? null,
+    capabilities,
+    metadata: materialWorkerMetadata(request.metadata),
+  });
+}
+
+function workerIdentityChangedFields(
+  existing: WorkerRecord,
+  request: RegisterWorkerRequest,
+  capabilities: WorkerCapabilities,
+): string[] {
+  const fields: string[] = [];
+  if (existing.role !== request.role) fields.push("role");
+  if (existing.displayName !== request.displayName) fields.push("displayName");
+  if (existing.brokerUrl !== request.brokerUrl) fields.push("brokerUrl");
+  if (existing.workerMode !== request.workerMode) fields.push("workerMode");
+  if (existing.managementPlane !== request.managementPlane) fields.push("managementPlane");
+  if (JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities)) fields.push("capabilities");
+  if (!workerMetadataMateriallyEqual(existing.metadata, request.metadata)) fields.push("metadata");
+  return fields.length > 0 ? fields : ["unknown"];
 }
 
 function materialWorkerMetadata(metadata?: Record<string, string>): Record<string, string> | null {
