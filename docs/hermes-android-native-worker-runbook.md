@@ -46,6 +46,7 @@ export A2A_WORKER_DISPLAY_NAME="Gongyung Hermes Worker"
 export A2A_WORKER_MODE=mobile
 export A2A_HERMES_RUNTIME_FLAVOR=termux-hermes
 export A2A_HERMES_ARTIFACT_ROOT="$HOME/.hermes/a2a/artifacts"
+export A2A_WORKER_LOCK_PATH="$HOME/.hermes/a2a/daegyo-worker.lock"
 export A2A_HTTP_TIMEOUT_SEC=10
 ```
 
@@ -68,6 +69,11 @@ done >> "$HOME/.hermes/a2a/worker.log" 2>&1
 ```
 
 Keep the loop simple, but do not make durable registration the normal poll path.
+The reference worker takes a non-blocking `A2A_WORKER_LOCK_PATH` ownership lock
+before broker lifecycle calls so two local processes cannot use the same
+`A2A_WORKER_ID` at the same time. If the lock is already held, the worker fails
+closed and the operator should stop the duplicate process or give the smoke lane
+a distinct worker id.
 The reference worker keeps a small registration-state file and only calls
 `/workers/register` on first boot, after `A2A_WORKER_REGISTER_REFRESH_SEC`
 expires, or after a heartbeat reports that the broker no longer knows the
