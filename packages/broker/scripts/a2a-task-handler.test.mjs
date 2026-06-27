@@ -766,6 +766,76 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("Hermes source-only analysis bridge receives structured task files when prompt payload is truncated", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-hermes-structured-analysis-"));
+  const bin = join(dir, "gongmyoung-source-analysis-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+const payload = JSON.parse(readFileSync(process.env.A2A_ANALYSIS_PAYLOAD_FILE, "utf8"));
+const task = JSON.parse(readFileSync(process.env.A2A_ANALYSIS_TASK_FILE, "utf8"));
+const response = {
+  status: payload.noLive === true && payload.sourceOnly === true && Array.isArray(payload.sourceBundle?.files) ? "done" : "blocked",
+  summary: "Hermes source-only bridge read structured task file",
+  findings: [
+    "round=" + payload.parentRoundId,
+    "role=" + payload.dialecticRole,
+    "files=" + String(payload.sourceBundle?.files?.length || 0),
+    "task=" + task.id,
+  ],
+  risks: [],
+  recommendations: ["keep structured env file handoff"],
+  evidenceRefs: [payload.sourceBundle.files[0].path],
+  bridgeAdapter: "hermes"
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-gongmyoung-hermes-source-only",
+      intent: "analyze",
+      assignedWorkerId: "gongmyoung",
+      message: "Analyze large source-only bundle",
+      payload: {
+        mode: "analysis-only",
+        roundMode: "a2ad",
+        parentRoundId: "round-large-payload",
+        dialecticRole: "synthesis",
+        sourceOnly: true,
+        noLive: true,
+        sourceBundle: {
+          files: [{
+            repo: "jinwon-int/ccc-node",
+            path: "issue-190-pr192-full.patch",
+            content: "x".repeat(40000),
+          }],
+        },
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_HERMES_ANALYSIS_ENABLED: "1",
+      A2A_HERMES_ANALYSIS_BIN: bin,
+      A2A_WORKER_RUNTIME_FLAVOR: "hermes-agent-source-only",
+      A2A_NODE_ID: "gongmyoung",
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.analysisKind, "analysis_bridge");
+    assert.equal(result.result.output.bridgeAdapter, "hermes");
+    assert.equal(result.result.output.bridgeCommand, "gongmyoung-source-analysis-bridge.mjs");
+    assert.equal(result.result.output.bridgeReportedAdapter, "hermes");
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.noLive, true);
+    assert.equal(result.result.output.sourceOnly, true);
+    assert.equal(result.result.output.role, "synthesis");
+    assert.match(result.result.output.findings.join("\n"), /files=1/);
+    assert.match(result.result.output.findings.join("\n"), /round=round-large-payload/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 
 test("Hermes patch profile rejects legacy OPENCLAW_MODEL deepseek flash before docker runner execution (#860)", () => {
