@@ -3,6 +3,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket } from "./terminal-brief-sidecar-default-on-final-live-execution.js";
+import { optionalString } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarDefaultOnExecutionWindowRequestDraftState =
   | "execution_window_request_draft_ready"
@@ -613,10 +614,6 @@ function approvalExpiry(
 function numberOption(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
   return value;
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function buildExecutionWindowReference(finalLiveExecution: TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket): string {

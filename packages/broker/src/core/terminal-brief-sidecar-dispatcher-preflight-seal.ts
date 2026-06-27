@@ -3,6 +3,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarExecutorDispatchRequestDraftPacket } from "./terminal-brief-sidecar-executor-dispatch-request-draft.js";
+import { approvalSensitiveActionsExcluded } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarDispatcherPreflightSealState =
   | "dispatcher_preflight_seal_ready"
@@ -449,21 +450,6 @@ function titleForState(state: TerminalBriefSidecarDispatcherPreflightSealState):
   if (state === "runtime_evidence_stale") return "Stale evidence: Terminal Brief sidecar dispatcher preflight seal";
   if (state === "integrity_failed") return "Integrity failed: Terminal Brief sidecar dispatcher preflight seal";
   return "Blocked: Terminal Brief sidecar dispatcher preflight seal";
-}
-
-function approvalSensitiveActionsExcluded(): string[] {
-  return [
-    "sending the approval request",
-    "granting approval or executing an approval grant",
-    "dispatching or invoking a start executor",
-    "spawning a process or starting/stopping the sidecar",
-    "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
-    "terminal ACK/replay or terminal receipt DB mutation",
-    "GitHub PR merge, issue close, or comment post from the packet/route",
-    "TaskFlow record creation or broker DB mutation",
-    "production deploy/restart, historical replay, release, publish, or secret movement",
-  ];
 }
 
 function isTerminalBriefSidecarExecutorDispatchRequestDraftPacket(value: unknown): value is TerminalBriefSidecarExecutorDispatchRequestDraftPacket {

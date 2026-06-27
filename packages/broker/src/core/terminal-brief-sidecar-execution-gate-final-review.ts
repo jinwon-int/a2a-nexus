@@ -3,6 +3,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarApprovalGrantEvidenceIngestorPacket } from "./terminal-brief-sidecar-approval-grant-evidence-ingestor.js";
+import { approvalSensitiveActionsExcluded } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarExecutionGateFinalReviewState =
   | "ready_for_execution_gate_final_review"
@@ -369,21 +370,6 @@ function nextActionFor(state: TerminalBriefSidecarExecutionGateFinalReviewState)
 
 function nextActionsFor(state: TerminalBriefSidecarExecutionGateFinalReviewState): string[] {
   return [nextActionFor(state), "do not dispatch executor, invoke executor, spawn process, start sidecar, ACK terminal rows, or mutate state from this packet"];
-}
-
-function approvalSensitiveActionsExcluded(): string[] {
-  return [
-    "sending the approval request",
-    "granting approval or executing an approval grant",
-    "dispatching or invoking a start executor",
-    "spawning a process or starting/stopping the sidecar",
-    "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
-    "terminal ACK/replay or terminal receipt DB mutation",
-    "GitHub PR merge, issue close, or comment post from the packet/route",
-    "TaskFlow record creation or broker DB mutation",
-    "production deploy/restart, historical replay, release, publish, or secret movement",
-  ];
 }
 
 function buildExecutionGateReference(grantEvidence: TerminalBriefSidecarApprovalGrantEvidenceIngestorPacket): string {

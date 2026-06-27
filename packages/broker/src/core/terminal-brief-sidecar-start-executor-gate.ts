@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { TerminalBriefSidecarActivationReceiptIngestorPacket } from "./terminal-brief-sidecar-activation-receipt-ingestor.js";
 import type { TerminalBriefSidecarDryRunStartApprovalReceiptIngestorPacket } from "./terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.js";
 import { numberValue, optionalString } from "./value-text.js";
+import { stringArray } from "./terminal-brief-value-guards.js";
 
 type TerminalBriefSidecarStartExecutorGateReceipt =
   | TerminalBriefSidecarActivationReceiptIngestorPacket
@@ -494,10 +495,6 @@ function titleForState(state: TerminalBriefSidecarStartExecutorGateState): strin
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar start executor gate source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar start executor gate source";
   return "Blocked: Terminal Brief sidecar start executor gate";
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function isTerminalBriefSidecarActivationReceiptIngestorPacket(value: unknown): value is TerminalBriefSidecarActivationReceiptIngestorPacket {

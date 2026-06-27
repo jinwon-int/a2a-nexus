@@ -3,6 +3,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDefaultOnCandidateFinalGatePacket } from "./terminal-brief-sidecar-default-on-candidate-final-gate.js";
+import { optionalString } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarDefaultOnApprovalRequestState =
   | "approval_request_draft_ready"
@@ -349,10 +350,6 @@ function buildApprovalReference(finalGate: TerminalBriefSidecarDefaultOnCandidat
 function buildIdempotencyKey(finalGate: TerminalBriefSidecarDefaultOnCandidateFinalGatePacket, generatedAt: string, state: string, approvalReference: string): string {
   const base = JSON.stringify({ label: "terminal-brief-sidecar-default-on-approval-request", finalGate: finalGate.idempotencyKey, generatedAt, state, approvalReference });
   return "tb-sidecar-default-on-approval-request:" + createHash("sha256").update(base).digest("hex").slice(0, 24);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function isFinalGatePacket(value: unknown): value is TerminalBriefSidecarDefaultOnCandidateFinalGatePacket {
