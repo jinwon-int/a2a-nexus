@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jinwon-int/a2a-nexus/docs/specs/a2ad-preset-ux/preset.schema.json",
+  "title": "A2AD Preset UX Contract",
+  "type": "object",
+  "required": [
+    "presetId",
+    "displayName",
+    "executionMode",
+    "sideEffectPolicy",
+    "lanes",
+    "finalizer",
+    "evidencePolicy",
+    "budget",
+    "allowedSurfaces"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "presetId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$" },
+    "displayName": { "type": "string", "minLength": 3 },
+    "description": { "type": "string" },
+    "executionMode": {
+      "enum": [
+        "broker-a2ad",
+        "local-multi-model-review",
+        "local-subagent-debate",
+        "single-agent-structured-review"
+      ]
+    },
+    "reportLabel": { "type": "string", "minLength": 3 },
+    "brokerOfRecord": { "type": "string", "minLength": 1 },
+    "workerInventorySource": { "type": "string", "minLength": 1 },
+    "sideEffectPolicy": { "const": "finalizer-only" },
+    "sideEffectAllowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "approvalPacketRequired": { "type": "boolean", "default": true },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/lane" }
+    },
+    "finalizer": { "$ref": "#/$defs/finalizer" },
+    "evidencePolicy": { "$ref": "#/$defs/evidencePolicy" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "allowedSurfaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["slash-command", "cli", "api", "gateway-command", "model-picker"] },
+      "uniqueItems": true
+    },
+    "degradedModePolicy": { "$ref": "#/$defs/degradedModePolicy" },
+    "benchmarkTrack": {
+      "type": "array",
+      "items": { "enum": ["single-agent", "local-multi-model", "local-subagent-debate", "broker-a2ad", "broker-a2ad-tool-interleaving"] },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "executionMode": { "const": "broker-a2ad" } }, "required": ["executionMode"] },
+      "then": { "required": ["brokerOfRecord", "workerInventorySource"] }
+    },
+    {
+      "if": { "properties": { "executionMode": { "enum": ["local-multi-model-review", "local-subagent-debate", "single-agent-structured-review"] } }, "required": ["executionMode"] },
+      "then": {
+        "not": { "required": ["brokerOfRecord"] }
+      }
+    }
+  ],
+  "$defs": {
+    "lane": {
+      "type": "object",
+      "required": ["role", "participants", "toolPolicy", "sideEffects"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "enum": ["thesis", "antithesis", "rebuttal", "synthesis", "reference", "critic"] },
+        "participants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "pool": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "required": { "type": "boolean", "default": true },
+        "toolPolicy": { "enum": ["none", "read-only", "evidence-only", "finalizer-only"] },
+        "sideEffects": { "const": "forbidden" },
+        "evidenceRequired": { "type": "boolean", "default": true }
+      }
+    },
+    "finalizer": {
+      "type": "object",
+      "required": ["role", "owner", "sideEffects", "requiresEvidenceRefs"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "const": "synthesis" },
+        "owner": { "type": "string", "minLength": 1 },
+        "sideEffects": { "enum": ["approval-gated", "forbidden"] },
+        "requiresEvidenceRefs": { "const": true },
+        "quorum": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "required": ["publicSummaryFields", "privateScratch", "requiredEvidenceRefs", "redaction", "downgradeDisclosure"],
+      "additionalProperties": false,
+      "properties": {
+        "publicSummaryFields": {
+          "type": "array",
+          "minItems": 4,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "privateScratch": { "enum": ["not-published", "redacted-only"] },
+        "requiredEvidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "redaction": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "downgradeDisclosure": { "const": true }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": ["timeoutSeconds", "costTier", "maxLanes"],
+      "additionalProperties": false,
+      "properties": {
+        "timeoutSeconds": { "type": "integer", "minimum": 60, "maximum": 7200 },
+        "costTier": { "enum": ["low", "medium", "high", "max"] },
+        "maxLanes": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "maxInputTokens": { "type": "integer", "minimum": 1000 },
+        "maxOutputTokens": { "type": "integer", "minimum": 256 }
+      }
+    },
+    "degradedModePolicy": {
+      "type": "object",
+      "required": ["allowExplicitDegrade", "silentDegradeAllowed", "notOfficialBrokerA2adWhenDegraded"],
+      "additionalProperties": false,
+      "properties": {
+        "allowExplicitDegrade": { "type": "boolean" },
+        "silentDegradeAllowed": { "const": false },
+        "notOfficialBrokerA2adWhenDegraded": { "const": true }
+      }
+    }
+  }
+}

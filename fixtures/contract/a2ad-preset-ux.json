@@ -1,0 +1,495 @@
+{
+  "fixtureId": "a2a-nexus.contract.a2ad-preset-ux.v1",
+  "contract": "docs/specs/a2ad-preset-ux/spec.md",
+  "schema": "docs/specs/a2ad-preset-ux/preset.schema.json",
+  "validPresets": [
+    {
+      "presetId": "ops-risk-review",
+      "displayName": "Ops risk review",
+      "description": "Official broker A2AD review for operational risk decisions.",
+      "executionMode": "broker-a2ad",
+      "reportLabel": "broker A2AD",
+      "brokerOfRecord": "seoseo",
+      "workerInventorySource": "broker-workers-read-model",
+      "sideEffectPolicy": "finalizer-only",
+      "sideEffectAllowlist": [],
+      "approvalPacketRequired": true,
+      "lanes": [
+        {
+          "role": "thesis",
+          "participants": [
+            "bangtong"
+          ],
+          "toolPolicy": "read-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "antithesis",
+          "participants": [
+            "sogyo"
+          ],
+          "toolPolicy": "read-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "synthesis",
+          "participants": [
+            "yukson"
+          ],
+          "toolPolicy": "finalizer-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        }
+      ],
+      "finalizer": {
+        "role": "synthesis",
+        "owner": "yukson",
+        "sideEffects": "approval-gated",
+        "requiresEvidenceRefs": true,
+        "quorum": 2
+      },
+      "evidencePolicy": {
+        "publicSummaryFields": [
+          "executionMode",
+          "brokerOfRecord",
+          "participants",
+          "verdict",
+          "evidenceRefs",
+          "sideEffectBoundary"
+        ],
+        "privateScratch": "not-published",
+        "requiredEvidenceRefs": [
+          "brokerTaskId",
+          "parentRoundId",
+          "workerIds",
+          "phaseEvidenceRefs",
+          "finalizerVerdict"
+        ],
+        "redaction": [
+          "secrets",
+          "providerTargets",
+          "telegramIds",
+          "runtimeBootstrap",
+          "rawSessionDumps"
+        ],
+        "downgradeDisclosure": true
+      },
+      "budget": {
+        "timeoutSeconds": 1800,
+        "costTier": "medium",
+        "maxLanes": 4,
+        "maxInputTokens": 64000,
+        "maxOutputTokens": 8000
+      },
+      "allowedSurfaces": [
+        "slash-command",
+        "cli",
+        "api",
+        "gateway-command"
+      ],
+      "degradedModePolicy": {
+        "allowExplicitDegrade": true,
+        "silentDegradeAllowed": false,
+        "notOfficialBrokerA2adWhenDegraded": true
+      },
+      "benchmarkTrack": [
+        "single-agent",
+        "local-multi-model",
+        "local-subagent-debate",
+        "broker-a2ad",
+        "broker-a2ad-tool-interleaving"
+      ]
+    },
+    {
+      "presetId": "security-review-moa-local",
+      "displayName": "Security review local multi-model",
+      "executionMode": "local-multi-model-review",
+      "reportLabel": "local multi-model review",
+      "sideEffectPolicy": "finalizer-only",
+      "sideEffectAllowlist": [],
+      "approvalPacketRequired": true,
+      "lanes": [
+        {
+          "role": "reference",
+          "participants": [
+            "model-reference-a"
+          ],
+          "toolPolicy": "none",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "critic",
+          "participants": [
+            "model-reference-b"
+          ],
+          "toolPolicy": "none",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "synthesis",
+          "participants": [
+            "aggregator-model"
+          ],
+          "toolPolicy": "finalizer-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        }
+      ],
+      "finalizer": {
+        "role": "synthesis",
+        "owner": "aggregator-model",
+        "sideEffects": "forbidden",
+        "requiresEvidenceRefs": true,
+        "quorum": 2
+      },
+      "evidencePolicy": {
+        "publicSummaryFields": [
+          "executionMode",
+          "participants",
+          "verdict",
+          "evidenceRefs",
+          "notOfficialBrokerA2AD"
+        ],
+        "privateScratch": "not-published",
+        "requiredEvidenceRefs": [
+          "referenceSummaries",
+          "aggregatorVerdict",
+          "noBrokerStatement"
+        ],
+        "redaction": [
+          "rawModelScratch",
+          "providerTargets",
+          "privateScratch"
+        ],
+        "downgradeDisclosure": true
+      },
+      "budget": {
+        "timeoutSeconds": 900,
+        "costTier": "medium",
+        "maxLanes": 3,
+        "maxInputTokens": 32000,
+        "maxOutputTokens": 6000
+      },
+      "allowedSurfaces": [
+        "slash-command",
+        "cli",
+        "model-picker"
+      ],
+      "degradedModePolicy": {
+        "allowExplicitDegrade": true,
+        "silentDegradeAllowed": false,
+        "notOfficialBrokerA2adWhenDegraded": true
+      },
+      "benchmarkTrack": [
+        "single-agent",
+        "local-multi-model",
+        "broker-a2ad"
+      ]
+    },
+    {
+      "presetId": "architecture-review-local",
+      "displayName": "Architecture review local",
+      "executionMode": "local-subagent-debate",
+      "reportLabel": "local subagent debate",
+      "sideEffectPolicy": "finalizer-only",
+      "sideEffectAllowlist": [],
+      "approvalPacketRequired": true,
+      "lanes": [
+        {
+          "role": "thesis",
+          "participants": [
+            "local-thesis"
+          ],
+          "toolPolicy": "read-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "antithesis",
+          "participants": [
+            "local-critic"
+          ],
+          "toolPolicy": "read-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        },
+        {
+          "role": "synthesis",
+          "participants": [
+            "local-synthesizer"
+          ],
+          "toolPolicy": "finalizer-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        }
+      ],
+      "finalizer": {
+        "role": "synthesis",
+        "owner": "local-synthesizer",
+        "sideEffects": "forbidden",
+        "requiresEvidenceRefs": true,
+        "quorum": 2
+      },
+      "evidencePolicy": {
+        "publicSummaryFields": [
+          "executionMode",
+          "participants",
+          "verdict",
+          "evidenceRefs",
+          "notOfficialBrokerA2AD"
+        ],
+        "privateScratch": "not-published",
+        "requiredEvidenceRefs": [
+          "laneSummaries",
+          "synthesizerVerdict",
+          "noBrokerStatement"
+        ],
+        "redaction": [
+          "rawSessionDumps",
+          "privateScratch"
+        ],
+        "downgradeDisclosure": true
+      },
+      "budget": {
+        "timeoutSeconds": 900,
+        "costTier": "low",
+        "maxLanes": 3
+      },
+      "allowedSurfaces": [
+        "slash-command",
+        "cli"
+      ],
+      "degradedModePolicy": {
+        "allowExplicitDegrade": true,
+        "silentDegradeAllowed": false,
+        "notOfficialBrokerA2adWhenDegraded": true
+      },
+      "benchmarkTrack": [
+        "single-agent",
+        "local-subagent-debate",
+        "broker-a2ad"
+      ]
+    },
+    {
+      "presetId": "single-agent-structured-check",
+      "displayName": "Single agent structured check",
+      "executionMode": "single-agent-structured-review",
+      "reportLabel": "single-agent structured review",
+      "sideEffectPolicy": "finalizer-only",
+      "sideEffectAllowlist": [],
+      "approvalPacketRequired": true,
+      "lanes": [
+        {
+          "role": "synthesis",
+          "participants": [
+            "single-agent"
+          ],
+          "toolPolicy": "read-only",
+          "sideEffects": "forbidden",
+          "evidenceRequired": true
+        }
+      ],
+      "finalizer": {
+        "role": "synthesis",
+        "owner": "single-agent",
+        "sideEffects": "forbidden",
+        "requiresEvidenceRefs": true,
+        "quorum": 1
+      },
+      "evidencePolicy": {
+        "publicSummaryFields": [
+          "executionMode",
+          "participants",
+          "verdict",
+          "notA2AD"
+        ],
+        "privateScratch": "not-published",
+        "requiredEvidenceRefs": [
+          "singleAgentDisclosure"
+        ],
+        "redaction": [
+          "rawSessionDumps",
+          "privateScratch"
+        ],
+        "downgradeDisclosure": true
+      },
+      "budget": {
+        "timeoutSeconds": 600,
+        "costTier": "low",
+        "maxLanes": 1
+      },
+      "allowedSurfaces": [
+        "slash-command",
+        "cli",
+        "model-picker"
+      ],
+      "degradedModePolicy": {
+        "allowExplicitDegrade": false,
+        "silentDegradeAllowed": false,
+        "notOfficialBrokerA2adWhenDegraded": true
+      },
+      "benchmarkTrack": [
+        "single-agent"
+      ]
+    }
+  ],
+  "invalidPresets": [
+    {
+      "caseId": "broker-a2ad-missing-broker-of-record",
+      "expectError": "broker-a2ad requires brokerOfRecord and workerInventorySource",
+      "preset": {
+        "presetId": "bad-broker-a2ad",
+        "displayName": "Bad broker A2AD",
+        "executionMode": "broker-a2ad",
+        "reportLabel": "broker A2AD",
+        "sideEffectPolicy": "finalizer-only",
+        "lanes": [
+          {
+            "role": "thesis",
+            "participants": [
+              "a"
+            ],
+            "toolPolicy": "read-only",
+            "sideEffects": "forbidden"
+          }
+        ],
+        "finalizer": {
+          "role": "synthesis",
+          "owner": "a",
+          "sideEffects": "approval-gated",
+          "requiresEvidenceRefs": true
+        },
+        "evidencePolicy": {
+          "publicSummaryFields": [
+            "executionMode",
+            "participants",
+            "verdict",
+            "evidenceRefs"
+          ],
+          "privateScratch": "not-published",
+          "requiredEvidenceRefs": [
+            "task"
+          ],
+          "redaction": [
+            "secrets"
+          ],
+          "downgradeDisclosure": true
+        },
+        "budget": {
+          "timeoutSeconds": 300,
+          "costTier": "low",
+          "maxLanes": 2
+        },
+        "allowedSurfaces": [
+          "cli"
+        ]
+      }
+    },
+    {
+      "caseId": "advisory-lane-side-effect",
+      "expectError": "non-finalizer lanes forbid side effects",
+      "preset": {
+        "presetId": "bad-side-effect",
+        "displayName": "Bad side effect",
+        "executionMode": "local-subagent-debate",
+        "reportLabel": "local subagent debate",
+        "sideEffectPolicy": "finalizer-only",
+        "lanes": [
+          {
+            "role": "thesis",
+            "participants": [
+              "a"
+            ],
+            "toolPolicy": "read-only",
+            "sideEffects": "approval-gated"
+          }
+        ],
+        "finalizer": {
+          "role": "synthesis",
+          "owner": "b",
+          "sideEffects": "forbidden",
+          "requiresEvidenceRefs": true
+        },
+        "evidencePolicy": {
+          "publicSummaryFields": [
+            "executionMode",
+            "participants",
+            "verdict",
+            "evidenceRefs"
+          ],
+          "privateScratch": "not-published",
+          "requiredEvidenceRefs": [
+            "summary"
+          ],
+          "redaction": [
+            "secrets"
+          ],
+          "downgradeDisclosure": true
+        },
+        "budget": {
+          "timeoutSeconds": 300,
+          "costTier": "low",
+          "maxLanes": 2
+        },
+        "allowedSurfaces": [
+          "cli"
+        ]
+      }
+    },
+    {
+      "caseId": "local-mode-mislabels-broker-a2ad",
+      "expectError": "local modes must not use broker A2AD report label",
+      "preset": {
+        "presetId": "bad-downgrade-label",
+        "displayName": "Bad downgrade label",
+        "executionMode": "local-multi-model-review",
+        "reportLabel": "broker A2AD",
+        "sideEffectPolicy": "finalizer-only",
+        "lanes": [
+          {
+            "role": "synthesis",
+            "participants": [
+              "a"
+            ],
+            "toolPolicy": "read-only",
+            "sideEffects": "forbidden"
+          }
+        ],
+        "finalizer": {
+          "role": "synthesis",
+          "owner": "a",
+          "sideEffects": "forbidden",
+          "requiresEvidenceRefs": true
+        },
+        "evidencePolicy": {
+          "publicSummaryFields": [
+            "executionMode",
+            "participants",
+            "verdict",
+            "evidenceRefs"
+          ],
+          "privateScratch": "not-published",
+          "requiredEvidenceRefs": [
+            "summary"
+          ],
+          "redaction": [
+            "secrets"
+          ],
+          "downgradeDisclosure": true
+        },
+        "budget": {
+          "timeoutSeconds": 300,
+          "costTier": "low",
+          "maxLanes": 1
+        },
+        "allowedSurfaces": [
+          "cli"
+        ]
+      }
+    }
+  ]
+}
