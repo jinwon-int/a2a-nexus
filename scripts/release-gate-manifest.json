@@ -5,6 +5,7 @@
     { "file": "scripts/check-compatibility-baselines.test.mjs", "class": "gate", "round": null, "note": "Compatibility baseline conformance." },
     { "file": "scripts/libero-public-preflight-closeout.test.mjs", "class": "gate", "round": null, "note": "Public preflight closeout check." },
     { "file": "scripts/check-no-diff-closeout-guidance.test.mjs", "class": "gate", "round": null, "note": "No-diff closeout guidance check." },
+    { "file": "scripts/lib/a2ad-preset-ux-contract.test.mjs", "class": "gate", "round": null, "note": "A2AD preset UX contract for issue #1045; no round id, kept as gate." },
     { "file": "scripts/check-quickstart-conformance.test.mjs", "class": "gate", "round": null, "note": "Quickstart conformance." },
     { "file": "scripts/check-external-harness-conformance.test.mjs", "class": "gate", "round": null, "note": "External harness conformance." },
     { "file": "scripts/check-message-id-ack-boundary.test.mjs", "class": "gate", "round": null, "note": "Message-id ack boundary check." },

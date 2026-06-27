@@ -110,6 +110,17 @@
       "note": "Seoseo A2A/A2AD skill guardpack executable checks for #1035; read-only/no-live."
     },
     {
+      "name": "a2ad-preset-ux-contract",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/a2ad-preset-ux-contract.test.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "A2AD preset UX execution-mode, finalizer-only, evidence, downgrade, and fixture contract for issue #1045; local/read-only without adding package-script budget."
+    },
+    {
       "name": "public-readiness",
       "command": "npm",
       "args": [
