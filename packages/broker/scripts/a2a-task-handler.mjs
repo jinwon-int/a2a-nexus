@@ -15,7 +15,7 @@ import {
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
 
-const HANDLER_VERSION = "0.2.13";
+const HANDLER_VERSION = "0.2.14";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
 const sourceSha256 = createHash("sha256").update(readFileSync(SOURCE_PATH)).digest("hex");
 
@@ -442,15 +442,25 @@ function shouldUseDecisionDialecticBridge(task, env = process.env) {
 }
 
 function isOpenClawAnalysisBridgeConfigured(env = process.env) {
+  if (safeText(env.A2A_HERMES_ANALYSIS_BIN, "")) return true;
   if (safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, "")) return true;
   return isOpenClawBridgeConfigured(env);
 }
 
 function shouldUseOpenClawAnalysisBridge(task, env = process.env) {
   if (!isReadOnlyAnalysisTask(task)) return false;
+  if (isTruthyEnv(env.A2A_HERMES_ANALYSIS_DISABLED)) return false;
   if (isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_DISABLED)) return false;
-  if (!isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_ENABLED)) return false;
+  if (!isTruthyEnv(env.A2A_HERMES_ANALYSIS_ENABLED) && !isTruthyEnv(env.A2A_OPENCLAW_ANALYSIS_ENABLED)) return false;
   return isOpenClawAnalysisBridgeConfigured(env);
+}
+
+function normalizeAnalysisBridgeAdapter(value) {
+  const adapter = safeText(value, "").toLowerCase().replace(/_/g, "-");
+  if (["claude", "claude-code", "claude_code"].includes(adapter)) return "claude_code";
+  if (["hermes", "hermes-agent", "hermes-agent-source-only", "termux-hermes"].includes(adapter)) return "hermes";
+  if (["openclaw", "openclaw-analysis"].includes(adapter)) return "openclaw";
+  return "";
 }
 
 function normalizedBridgeAnalysisStatus(value) {
@@ -468,11 +478,22 @@ function normalizedAnalysisRecoverySource(value) {
 function analysisBridgeTelemetry(command, env = process.env) {
   const commandText = safeText(command, "");
   const commandName = basename(commandText || "analysis-bridge");
+  const explicitAdapter = normalizeAnalysisBridgeAdapter(env.A2A_ANALYSIS_BRIDGE_ADAPTER || env.A2A_WORKER_BRIDGE_ADAPTER);
+  if (explicitAdapter) {
+    return {
+      analysisKind: "analysis_bridge",
+      bridgeAdapter: explicitAdapter,
+      bridgeCommand: commandName,
+    };
+  }
   const combined = [
     commandText,
     commandName,
     safeText(env.A2A_CLAUDE_CODE_BIN, ""),
     safeText(env.CLAUDE_BIN, ""),
+    safeText(env.A2A_WORKER_RUNTIME_FLAVOR, ""),
+    safeText(env.WORKER_RUNTIME_FLAVOR, ""),
+    safeText(env.WORKER_METADATA_JSON, ""),
   ].join("\n").toLowerCase();
   let bridgeAdapter = "openclaw";
   if (combined.includes("claude")) bridgeAdapter = "claude_code";
@@ -482,6 +503,22 @@ function analysisBridgeTelemetry(command, env = process.env) {
     bridgeAdapter,
     bridgeCommand: commandName,
   };
+}
+
+function analysisBridgeCommand(env = process.env) {
+  return safeText(
+    env.A2A_HERMES_ANALYSIS_BIN,
+    safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw")),
+  );
+}
+
+function writeAnalysisBridgeInputFiles(task, payload) {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-"));
+  const taskFile = join(dir, "task.json");
+  const payloadFile = join(dir, "payload.json");
+  writeFileSync(taskFile, `${JSON.stringify(task, null, 2)}\n`, "utf8");
+  writeFileSync(payloadFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return { dir, taskFile, payloadFile };
 }
 
 function githubIssueTargetFromTask(task) {
@@ -632,7 +669,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload, 16000)}`,
   ].join("\n\n");
 
-  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const command = analysisBridgeCommand(env);
   const args = [
     "agent",
     "--local",
@@ -649,14 +686,24 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     ? Number(env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS)
     : (Number(timeoutSec) + 30) * 1000;
 
-  const child = spawnSync(command, args, {
-    cwd: safeText(env.A2A_HANDLER_CWD, process.cwd()),
-    env,
-    encoding: "utf8",
-    maxBuffer: 50 * 1024 * 1024,
-    timeout: watchdogMs,
-    killSignal: "SIGKILL",
-  });
+  const bridgeFiles = writeAnalysisBridgeInputFiles(task, payload);
+  let child;
+  try {
+    child = spawnSync(command, args, {
+      cwd: safeText(env.A2A_HANDLER_CWD, process.cwd()),
+      env: {
+        ...env,
+        A2A_ANALYSIS_TASK_FILE: bridgeFiles.taskFile,
+        A2A_ANALYSIS_PAYLOAD_FILE: bridgeFiles.payloadFile,
+      },
+      encoding: "utf8",
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: watchdogMs,
+      killSignal: "SIGKILL",
+    });
+  } finally {
+    rmSync(bridgeFiles.dir, { recursive: true, force: true });
+  }
 
   if (child.error) {
     const isTimeout = child.error.code === "ETIMEDOUT";
@@ -741,7 +788,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     nodeId,
     taskId: safeText(task.id, undefined),
     mode: taskMode(task),
-    role: safeText(payload.role, undefined),
+    role: safeText(payload.dialecticRole || payload.role, undefined),
     phase: safeText(payload.phase, undefined),
     noLive: payload.noLive === true || payload.no_live === true || undefined,
     sourceOnly: payload.sourceOnly === true || payload.source_only === true || undefined,
