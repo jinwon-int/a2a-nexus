@@ -20,6 +20,15 @@ Issues, pull requests, and local verification do not authorize:
 
 These require separate explicit operator approval naming the exact action, target, and rollback/no-op boundary.
 
+## Branch protection and auto-merge
+
+The [`auto-merge`](.github/workflows/auto-merge.yml) workflow relies on `main`
+branch protection to keep merges gated on review and required checks. The
+steady-state requirement is documented in
+[`docs/branch-protection.md`](docs/branch-protection.md); applying or changing
+the GitHub ruleset itself is an approval-sensitive action (see the
+[branch protection approval packet](docs/monorepo-branch-protection-approval-packet.md)).
+
 ## Maintainer changes
 
 CODEOWNERS is the current review-routing source. Maintainer or team changes should be made by repository administrators and should not be inferred from ordinary issue or PR participation.

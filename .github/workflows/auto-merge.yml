@@ -1,3 +1,7 @@
+# Safety invariant: this workflow merges only PRs GitHub reports as
+# mergeStateStatus == "CLEAN", which is only meaningful when `main` branch
+# protection marks reviews and required checks as required. See
+# docs/branch-protection.md for the required ruleset state and how to verify it.
 name: auto-merge
 
 on:
