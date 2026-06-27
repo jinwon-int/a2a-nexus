@@ -97,6 +97,21 @@ export function createTaskRequest(id: string): CreateTaskRequest {
   };
 }
 
+export function workerPayload(nodeId: "sogyo" | "bangtong") {
+  return {
+    nodeId,
+    role: "analyst",
+    capabilities: {
+      canAnalyze: true,
+      canBackfill: false,
+      canPatchWorkspace: true,
+      canPromoteLive: false,
+      workspaceIds: ["test"],
+      environments: ["research"],
+    },
+  };
+}
+
 export function jsonHeaders(headers: Record<string, string> = {}): Record<string, string> {
   return {
     "content-type": "application/json",
