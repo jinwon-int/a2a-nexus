@@ -36,7 +36,7 @@ import {
   stringListBodyField,
 } from "./http/request-params.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
-import { loadavg, cpus } from "node:os";
+import { readHostLoadSnapshot } from "./host-load-snapshot.js";
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
 import { RequestTimingWindow, type RequestTimingSnapshot } from "./diagnostics/request-timing-window.js";
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
@@ -669,39 +669,6 @@ function requestRouteSnapshot(): Record<RequestRouteGroup, {
     };
   }
   return snapshot;
-}
-
-/** Lazily-cached host-level scheduling snapshot (refreshed at most once per second). */
-interface HostLoadSnapshot {
-  loadavg1: number;
-  loadavg5: number;
-  loadavg15: number;
-  cpuCount: number;
-  loadPerCpu: number;
-  snapshotAtMs: number;
-}
-
-let _cachedHostLoad: HostLoadSnapshot | null = null;
-let _cachedHostLoadAt = 0;
-
-function readHostLoadSnapshot(): HostLoadSnapshot {
-  const now = Date.now();
-  if (_cachedHostLoad && now - _cachedHostLoadAt < 1000) {
-    return _cachedHostLoad;
-  }
-  const avg = loadavg();
-  const cpuInfo = cpus();
-  const cpuCount = cpuInfo.length;
-  _cachedHostLoad = {
-    loadavg1: avg[0],
-    loadavg5: avg[1],
-    loadavg15: avg[2],
-    cpuCount,
-    loadPerCpu: cpuCount > 0 ? Math.round((avg[0] / cpuCount) * 1000) / 1000 : 0,
-    snapshotAtMs: now,
-  };
-  _cachedHostLoadAt = now;
-  return _cachedHostLoad;
 }
 
 /**
