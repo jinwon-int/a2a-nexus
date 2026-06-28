@@ -39,6 +39,7 @@ import { createServer, type IncomingMessage, type RequestListener, type Server, 
 import { readHostLoadSnapshot } from "./host-load-snapshot.js";
 import { readHttpServerDiagnostics } from "./http-server-diagnostics.js";
 import { OperatorEventStream } from "./operator-event-stream.js";
+import { StaleReaperStatusTracker } from "./stale-reaper-status-tracker.js";
 import {
   _livezTiming,
   _healthTiming,
@@ -1100,12 +1101,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // broker snapshot already survives restart, but recovery still required a human. This loop
   // makes recovery self-healing after node, worker, or broker restarts.
   let staleReaperTimer: NodeJS.Timeout | null = null;
-  let staleReaperLastRunAt: string | undefined;
-  let staleReaperLastRequeued: number | undefined;
-  let staleReaperLastDeadLettered: number | undefined;
-  let staleReaperTotalDeadLettered = 0;
-  let staleReaperLastError: string | undefined;
-  let staleReaperRunCount = 0;
+  const staleReaperStatus = new StaleReaperStatusTracker();
   let suppressOperatorStateBroadcast = false;
 
   const runStaleReaperSweep = (): number => {
@@ -1115,12 +1111,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         staleReaperOlderThanSec * 1000,
         { workerOfflineAfterMs: workerOfflineAfterSec * 1000 },
       );
-      staleReaperLastRunAt = new Date().toISOString();
-      staleReaperLastRequeued = requeued.length;
-      staleReaperLastDeadLettered = deadLettered.length;
-      staleReaperTotalDeadLettered += deadLettered.length;
-      staleReaperLastError = undefined;
-      staleReaperRunCount += 1;
+      staleReaperStatus.recordSweep(requeued.length, deadLettered.length);
       if (deadLettered.length > 0) {
         // Operators want to see this without trawling audit logs. Keep it a single, greppable
         // line with task ids so it maps back to `task.failed` audit events.
@@ -1135,13 +1126,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
       return requeued.length;
     } catch (error) {
-      staleReaperLastRunAt = new Date().toISOString();
-      staleReaperLastRequeued = 0;
-      staleReaperLastDeadLettered = 0;
-      staleReaperLastError = error instanceof Error ? error.message : String(error);
-      staleReaperRunCount += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      staleReaperStatus.recordError(message);
       // Keep the loop alive: transient persistence errors shouldn't kill the timer.
-      console.error(`[a2a-broker] stale reaper sweep failed: ${staleReaperLastError}`);
+      console.error(`[a2a-broker] stale reaper sweep failed: ${message}`);
       publishOperatorEvents();
       return 0;
     } finally {
@@ -1156,18 +1144,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }
   };
 
-  const getStaleReaperStatus = (): BrokerStaleReaperStatus => ({
-    enabled: staleReaperEnabled,
-    intervalSec: staleReaperIntervalSec,
-    olderThanSec: staleReaperOlderThanSec,
-    maxRequeueAttempts,
-    lastRunAt: staleReaperLastRunAt,
-    lastRequeued: staleReaperLastRequeued,
-    lastDeadLettered: staleReaperLastDeadLettered,
-    totalDeadLettered: staleReaperTotalDeadLettered,
-    lastError: staleReaperLastError,
-    runCount: staleReaperRunCount,
-  });
+  const getStaleReaperStatus = (): BrokerStaleReaperStatus =>
+    staleReaperStatus.status({
+      enabled: staleReaperEnabled,
+      intervalSec: staleReaperIntervalSec,
+      olderThanSec: staleReaperOlderThanSec,
+      maxRequeueAttempts,
+    });
 
   const operatorEvents = new OperatorEventStream(DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT);
 
