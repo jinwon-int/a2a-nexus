@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
 import {
+  normalizeBrokerRetentionPolicy,
+  normalizeMaxRequeueAttempts,
+} from "./broker-retention-policy.js";
+// Re-exported to preserve the public surface; the retention/requeue defaults now
+// live in broker-retention-policy.js alongside the normalizers that use them.
+export {
+  DEFAULT_BROKER_RETENTION_POLICY,
+  DEFAULT_MAX_REQUEUE_ATTEMPTS,
+  DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
+} from "./broker-retention-policy.js";
+import {
   normalizeExchangeState,
   normalizeExchangeMessageRecord,
   createLegacyRootExchangeMessage,
@@ -306,12 +317,6 @@ export interface TaskDiagnosticsOptions {
 }
 
 /**
- * Default cap on automatic requeues for a single task. Chosen to tolerate a short burst of
- * worker crashes or transient outages without masking a genuinely stuck task forever.
- */
-export const DEFAULT_MAX_REQUEUE_ATTEMPTS = 5;
-
-/**
  * Worker heartbeats are high-churn liveness hints. Persist unchanged heartbeats
  * only when explicitly configured; in-memory liveness remains updated on every
  * request. Material heartbeat changes still persist immediately.
@@ -323,8 +328,6 @@ const EPHEMERAL_WORKER_HEARTBEAT_METADATA_KEYS = new Set([
   "lastHeartbeatAt",
 ]);
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
-export const DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS = 60_000;
-
 /**
  * Default milliseconds after which a persistent worker is considered stale.
  * @see WorkerMode
@@ -332,19 +335,6 @@ export const DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS = 60_000;
 export const DEFAULT_WORKER_OFFLINE_AFTER_MS = 90_000;
 
 export const REQUEUE_EXHAUSTED_ERROR_CODE = "exceeded_requeue_limit";
-
-export const DEFAULT_BROKER_RETENTION_POLICY: BrokerRetentionPolicy = {
-  terminalRetentionMs: 7 * 24 * 60 * 60 * 1000,
-  maxTerminalExchanges: 1_000,
-  maxTerminalTasks: 2_000,
-  maxTerminalProposals: 1_000,
-  inactiveWorkerRetentionMs: 14 * 24 * 60 * 60 * 1000,
-  maxInactiveWorkers: 500,
-  auditRetentionMs: 7 * 24 * 60 * 60 * 1000,
-  maxAuditEvents: 5_000,
-  maxHeartbeatAuditEvents: 500,
-  heartbeatAuditSampleIntervalMs: DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
-};
 
 /** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
 const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
@@ -5344,69 +5334,6 @@ function normalizeTaskResult(result: TaskResult | undefined): TaskResult {
         }
       : undefined,
   };
-}
-
-function normalizeBrokerRetentionPolicy(
-  overrides?: Partial<BrokerRetentionPolicy>,
-): BrokerRetentionPolicy {
-  const maxAuditEvents = normalizeNonNegativeInteger(
-    overrides?.maxAuditEvents,
-    DEFAULT_BROKER_RETENTION_POLICY.maxAuditEvents,
-  );
-  return {
-    terminalRetentionMs: normalizeNonNegativeInteger(
-      overrides?.terminalRetentionMs,
-      DEFAULT_BROKER_RETENTION_POLICY.terminalRetentionMs,
-    ),
-    maxTerminalExchanges: normalizeNonNegativeInteger(
-      overrides?.maxTerminalExchanges,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalExchanges,
-    ),
-    maxTerminalTasks: normalizeNonNegativeInteger(
-      overrides?.maxTerminalTasks,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalTasks,
-    ),
-    maxTerminalProposals: normalizeNonNegativeInteger(
-      overrides?.maxTerminalProposals,
-      DEFAULT_BROKER_RETENTION_POLICY.maxTerminalProposals,
-    ),
-    inactiveWorkerRetentionMs: normalizeNonNegativeInteger(
-      overrides?.inactiveWorkerRetentionMs,
-      DEFAULT_BROKER_RETENTION_POLICY.inactiveWorkerRetentionMs,
-    ),
-    maxInactiveWorkers: normalizeNonNegativeInteger(
-      overrides?.maxInactiveWorkers,
-      DEFAULT_BROKER_RETENTION_POLICY.maxInactiveWorkers,
-    ),
-    auditRetentionMs: normalizeNonNegativeInteger(
-      overrides?.auditRetentionMs,
-      DEFAULT_BROKER_RETENTION_POLICY.auditRetentionMs,
-    ),
-    maxAuditEvents,
-    maxHeartbeatAuditEvents: normalizeNonNegativeInteger(
-      overrides?.maxHeartbeatAuditEvents,
-      Math.min(maxAuditEvents, DEFAULT_BROKER_RETENTION_POLICY.maxHeartbeatAuditEvents),
-    ),
-    heartbeatAuditSampleIntervalMs: normalizeNonNegativeInteger(
-      overrides?.heartbeatAuditSampleIntervalMs,
-      DEFAULT_BROKER_RETENTION_POLICY.heartbeatAuditSampleIntervalMs,
-    ),
-  };
-}
-
-function normalizeMaxRequeueAttempts(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) {
-    return DEFAULT_MAX_REQUEUE_ATTEMPTS;
-  }
-  return Math.max(0, Math.trunc(value));
-}
-
-function normalizeNonNegativeInteger(value: number | undefined, fallback: number): number {
-  if (!Number.isFinite(value)) {
-    return fallback;
-  }
-  const normalized = value ?? fallback;
-  return Math.max(0, Math.trunc(normalized));
 }
 
 function normalizeTaskError(error: TaskError | undefined): TaskError {
