@@ -180,31 +180,12 @@ import type {
   WorkerView,
 } from "./types.js";
 
-export type BrokerErrorCode =
-  | "bad_request"
-  | "not_found"
-  | "policy_denied"
-  | "invalid_transition"
-  | "github_completion_evidence_missing"
-  | "github_completion_receipt_invalid"
-  | "queue_saturated"
-  | "queue_drain_timeout"
-  | "queue_closed"
-  | "worker_crashed"
-  | "worker_unavailable"
-  | "unauthorized"
-  | "rate_limited";
-
-export class BrokerError extends Error {
-  constructor(
-    readonly code: BrokerErrorCode,
-    message: string,
-    readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = "BrokerError";
-  }
-}
+import { BrokerError, type BrokerErrorCode } from "./broker-error.js";
+// Re-exported to preserve the public surface; BrokerError/BrokerErrorCode now
+// live in broker-error.js so other modules can throw and type broker errors
+// without importing the full broker module.
+export { BrokerError };
+export type { BrokerErrorCode };
 
 export interface BrokerRetentionPolicy {
   terminalRetentionMs: number;
