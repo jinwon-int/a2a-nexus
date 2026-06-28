@@ -13,6 +13,7 @@ import {
   buildA2AOperatorTerminalOutboxNotificationEnvelope,
   getA2AOperatorTerminalReceiptGate,
 } from "./operator-terminal-notifier.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import {
   buildA2ACrossBrokerTerminalProjection,
   type A2ACrossBrokerTerminalProjection,
@@ -2635,11 +2636,6 @@ function readOptionalTimestamp(value: unknown): number | undefined {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function defaultWaitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {

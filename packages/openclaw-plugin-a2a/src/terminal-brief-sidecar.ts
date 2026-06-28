@@ -16,6 +16,7 @@ import {
   type A2AOperatorTerminalOutboxEventProjection,
 } from "./operator-event-bridge.js";
 import type { A2AOperatorTerminalNotificationEnvelope } from "./operator-terminal-notifier.js";
+import { normalizeOptionalString } from "./value-guards.js";
 
 export type A2ATerminalBriefSidecarDeliveryMode = "dry-run" | "external";
 
@@ -499,11 +500,6 @@ function normalizeCursorSnapshot(value: unknown): A2ATerminalBriefSidecarCursorS
     ...(normalizeOptionalString(record.updatedAt) ? { updatedAt: normalizeOptionalString(record.updatedAt) } : {}),
   };
 }
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map(normalizeOptionalString).filter((item): item is string => Boolean(item))

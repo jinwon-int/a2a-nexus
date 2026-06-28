@@ -19,6 +19,7 @@ import {
   type ResolveRemoteNodeIdOptions,
 } from "./remote-node-resolver.js";
 import type { A2AWakeAuditEvent } from "./wake-layer.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import {
   evaluateRemoteHandoffVisibilityPolicy,
   mapRemoteHandoffPolicyError,
@@ -108,11 +109,6 @@ export type RemoteNodeHandoffDeps = {
   resolverOptions?: ResolveRemoteNodeIdOptions;
   visibilityPolicy?: RemoteHandoffVisibilityPolicy;
 };
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function detectRemoteTarget(
   event: SessionsSendHookEvent,
   options?: ResolveRemoteNodeIdOptions,

@@ -25,6 +25,7 @@ import {
   validateA2ATaskApproveParams,
   validateA2ATaskRejectApprovalParams,
 } from "./gateway-validators.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import type {
   A2ATaskApproveParams,
   A2ATaskRejectApprovalParams,
@@ -339,12 +340,6 @@ function buildValidationError(
     message: `invalid ${method} params: ${errors || "unknown validation error"}`,
   };
 }
-
-function normalizeOptionalString(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 function stripOptionalFields(ref: A2ABrokerPartyRef): A2ABrokerPartyRef {
   const stripped: Record<string, unknown> = { id: ref.id };
   if (ref.kind) stripped.kind = ref.kind;

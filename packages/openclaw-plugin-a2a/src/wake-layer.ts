@@ -1,4 +1,5 @@
 import type { A2ABrokerTaskStatus } from "../standalone-broker-client.js";
+import { normalizeOptionalString } from "./value-guards.js";
 
 export type A2AWakeTargetRef = {
   sessionKey: string;
@@ -155,11 +156,6 @@ const TERMINAL_BROKER_STATUSES = new Set<A2ABrokerTaskStatus>([
   "failed",
   "canceled",
 ]);
-
-function normalizeOptionalString(value: string | undefined): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function buildWakeKey(envelope: A2AWakeEnvelope): string {
   const stableCorrelation =
     normalizeOptionalString(envelope.correlationId) ?? normalizeOptionalString(envelope.taskId);
