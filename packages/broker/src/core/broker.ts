@@ -5,6 +5,7 @@ import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
 import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
 import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
+import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -53,10 +54,8 @@ import {
   normalizeOwnershipString,
 } from "./broker-task-request-normalizers.js";
 import {
-  isTerminalExchangeStatus,
   isTerminalTaskStatus,
   computeTaskDiagnosticStatus,
-  isTerminalProposalStatus,
 } from "./broker-status-predicates.js";
 import {
   normalizeWakeString,
@@ -70,9 +69,6 @@ import {
   normalizeTaskWakeState,
 } from "./broker-wake-normalizers.js";
 import {
-  selectRetainedTerminalRecordIds,
-  selectRetainedWorkerIds,
-  selectRetainedAuditEventIds,
   getHeartbeatAuditEventId,
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
@@ -2603,214 +2599,34 @@ export class InMemoryA2ABroker {
   }
 
   private applyRetentionPolicy(nowMs = Date.now()): void {
-    const retainedExchangeIds = selectRetainedTerminalRecordIds({
-      records: [...this.exchanges.values()],
-      isTerminal: (exchange) => isTerminalExchangeStatus(exchange.status),
-      getId: (exchange) => exchange.id,
-      getTimestamp: (exchange) => exchange.updatedAt,
+    const retained = computeRetainedRecordIds(
+      {
+        exchanges: this.exchanges,
+        exchangeMessages: this.exchangeMessages,
+        tasks: this.tasks,
+        proposals: this.proposals,
+        artifacts: this.artifacts,
+        validations: this.validations,
+        workers: this.workers,
+        auditEvents: this.auditEvents,
+      },
+      this.retentionPolicy,
       nowMs,
-      retentionMs: this.retentionPolicy.terminalRetentionMs,
-      maxTerminalRecords: this.retentionPolicy.maxTerminalExchanges,
-    });
+    );
 
-    const protectedTaskIds = new Set<string>();
-    for (const exchangeId of retainedExchangeIds) {
-      const activeTaskId = this.exchanges.get(exchangeId)?.activeTaskId;
-      if (activeTaskId) {
-        protectedTaskIds.add(activeTaskId);
-      }
-    }
+    const prunedTaskIds = [...this.tasks.keys()].filter((taskId) => !retained.taskIds.has(taskId));
 
-    const retainedTaskIds = selectRetainedTerminalRecordIds({
-      records: [...this.tasks.values()],
-      isTerminal: (task) => isTerminalTaskStatus(task.status),
-      getId: (task) => task.id,
-      getTimestamp: (task) => task.completedAt ?? task.updatedAt,
-      nowMs,
-      retentionMs: this.retentionPolicy.terminalRetentionMs,
-      maxTerminalRecords: this.retentionPolicy.maxTerminalTasks,
-      protectedIds: protectedTaskIds,
-    });
-
-    for (const taskId of retainedTaskIds) {
-      const exchangeId = this.tasks.get(taskId)?.exchangeId;
-      if (exchangeId) {
-        retainedExchangeIds.add(exchangeId);
-      }
-    }
-
-    const protectedProposalIds = new Set<string>();
-    for (const taskId of retainedTaskIds) {
-      const proposalId = this.tasks.get(taskId)?.proposalId;
-      if (proposalId) {
-        protectedProposalIds.add(proposalId);
-      }
-    }
-
-    const retainedProposalIds = selectRetainedTerminalRecordIds({
-      records: [...this.proposals.values()],
-      isTerminal: (proposal) => isTerminalProposalStatus(proposal.status),
-      getId: (proposal) => proposal.id,
-      getTimestamp: (proposal) => proposal.updatedAt,
-      nowMs,
-      retentionMs: this.retentionPolicy.terminalRetentionMs,
-      maxTerminalRecords: this.retentionPolicy.maxTerminalProposals,
-      protectedIds: protectedProposalIds,
-    });
-
-    const retainedArtifactIds = this.collectRetainedArtifactIds({
-      retainedTaskIds,
-      retainedProposalIds,
-    });
-    const retainedValidationIds = this.collectRetainedValidationIds(retainedProposalIds);
-    const retainedMessageIds = this.collectRetainedExchangeMessageIds(retainedExchangeIds);
-
-    const retainedWorkerIds = selectRetainedWorkerIds({
-      workers: [...this.workers.values()],
-      nowMs,
-      inactiveWorkerRetentionMs: this.retentionPolicy.inactiveWorkerRetentionMs,
-      maxInactiveWorkers: this.retentionPolicy.maxInactiveWorkers,
-      protectedIds: this.collectProtectedWorkerIds({
-        retainedExchangeIds,
-        retainedTaskIds,
-        retainedProposalIds,
-      }),
-    });
-
-    const retainedAuditEventIds = selectRetainedAuditEventIds({
-      auditEvents: [...this.auditEvents.values()],
-      nowMs,
-      auditRetentionMs: this.retentionPolicy.auditRetentionMs,
-      maxAuditEvents: this.retentionPolicy.maxAuditEvents,
-      maxHeartbeatAuditEvents: this.retentionPolicy.maxHeartbeatAuditEvents,
-      retainedProposalIds,
-      retainedTaskIds,
-      retainedExchangeIds,
-      retainedMessageIds,
-      retainedArtifactIds,
-      retainedValidationIds,
-      retainedWorkerIds,
-    });
-
-    const prunedTaskIds = [...this.tasks.keys()].filter((taskId) => !retainedTaskIds.has(taskId));
-
-    pruneMapEntries(this.exchanges, retainedExchangeIds);
-    pruneMapEntries(this.exchangeMessages, retainedMessageIds);
-    pruneMapEntries(this.tasks, retainedTaskIds);
-    pruneMapEntries(this.proposals, retainedProposalIds);
-    pruneMapEntries(this.artifacts, retainedArtifactIds);
-    pruneMapEntries(this.validations, retainedValidationIds);
-    pruneMapEntries(this.workers, retainedWorkerIds);
-    pruneMapEntries(this.auditEvents, retainedAuditEventIds);
-    this.workerHeartbeatPersist.prune(retainedWorkerIds);
-    this.taskHeartbeatAuditPersist.prune(retainedTaskIds);
-    this.taskEvents.prune(retainedTaskIds, prunedTaskIds);
-  }
-
-  private collectRetainedExchangeMessageIds(retainedExchangeIds: Set<string>): Set<string> {
-    const retainedMessageIds = new Set<string>();
-    for (const message of this.exchangeMessages.values()) {
-      if (retainedExchangeIds.has(message.exchangeId)) {
-        retainedMessageIds.add(message.id);
-      }
-    }
-    return retainedMessageIds;
-  }
-
-  private collectRetainedArtifactIds(params: {
-    retainedTaskIds: Set<string>;
-    retainedProposalIds: Set<string>;
-  }): Set<string> {
-    const retainedArtifactIds = new Set<string>();
-
-    for (const proposalId of params.retainedProposalIds) {
-      const proposal = this.proposals.get(proposalId);
-      for (const artifactId of proposal?.artifactIds ?? []) {
-        retainedArtifactIds.add(artifactId);
-      }
-    }
-
-    for (const artifact of this.artifacts.values()) {
-      if (params.retainedProposalIds.has(artifact.proposalId)) {
-        retainedArtifactIds.add(artifact.id);
-      }
-    }
-
-    for (const taskId of params.retainedTaskIds) {
-      const task = this.tasks.get(taskId);
-      for (const artifactId of task?.artifactIds ?? []) {
-        retainedArtifactIds.add(artifactId);
-      }
-      for (const artifactId of task?.result?.artifactIds ?? []) {
-        retainedArtifactIds.add(artifactId);
-      }
-      for (const artifactId of task?.result?.validation?.artifactIds ?? []) {
-        retainedArtifactIds.add(artifactId);
-      }
-      for (const artifactId of task?.result?.apply?.artifactIds ?? []) {
-        retainedArtifactIds.add(artifactId);
-      }
-    }
-
-    return retainedArtifactIds;
-  }
-
-  private collectRetainedValidationIds(retainedProposalIds: Set<string>): Set<string> {
-    const retainedValidationIds = new Set<string>();
-    for (const validation of this.validations.values()) {
-      if (retainedProposalIds.has(validation.proposalId)) {
-        retainedValidationIds.add(validation.id);
-      }
-    }
-    return retainedValidationIds;
-  }
-
-  private collectProtectedWorkerIds(params: {
-    retainedExchangeIds: Set<string>;
-    retainedTaskIds: Set<string>;
-    retainedProposalIds: Set<string>;
-  }): Set<string> {
-    const retainedWorkerIds = new Set<string>();
-
-    for (const exchangeId of params.retainedExchangeIds) {
-      const exchange = this.exchanges.get(exchangeId);
-      if (!exchange) {
-        continue;
-      }
-      retainedWorkerIds.add(exchange.targetNodeId);
-      if (exchange.assignedWorkerId) {
-        retainedWorkerIds.add(exchange.assignedWorkerId);
-      }
-      retainedWorkerIds.add(exchange.target.id);
-    }
-
-    for (const taskId of params.retainedTaskIds) {
-      const task = this.tasks.get(taskId);
-      if (!task) {
-        continue;
-      }
-      retainedWorkerIds.add(task.targetNodeId);
-      retainedWorkerIds.add(task.target.id);
-      if (task.assignedWorkerId) {
-        retainedWorkerIds.add(task.assignedWorkerId);
-      }
-      if (task.claimedBy) {
-        retainedWorkerIds.add(task.claimedBy);
-      }
-    }
-
-    for (const proposalId of params.retainedProposalIds) {
-      const proposal = this.proposals.get(proposalId);
-      if (!proposal) {
-        continue;
-      }
-      retainedWorkerIds.add(proposal.sourceNodeId);
-      retainedWorkerIds.add(proposal.targetNodeId);
-      retainedWorkerIds.add(proposal.source.id);
-      retainedWorkerIds.add(proposal.target.id);
-    }
-
-    return retainedWorkerIds;
+    pruneMapEntries(this.exchanges, retained.exchangeIds);
+    pruneMapEntries(this.exchangeMessages, retained.messageIds);
+    pruneMapEntries(this.tasks, retained.taskIds);
+    pruneMapEntries(this.proposals, retained.proposalIds);
+    pruneMapEntries(this.artifacts, retained.artifactIds);
+    pruneMapEntries(this.validations, retained.validationIds);
+    pruneMapEntries(this.workers, retained.workerIds);
+    pruneMapEntries(this.auditEvents, retained.auditEventIds);
+    this.workerHeartbeatPersist.prune(retained.workerIds);
+    this.taskHeartbeatAuditPersist.prune(retained.taskIds);
+    this.taskEvents.prune(retained.taskIds, prunedTaskIds);
   }
 
   private loadSnapshot(snapshot: BrokerSnapshot): void {
