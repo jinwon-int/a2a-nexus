@@ -13,7 +13,7 @@ import {
   buildA2AOperatorTerminalOutboxNotificationEnvelope,
   getA2AOperatorTerminalReceiptGate,
 } from "./operator-terminal-notifier.js";
-import { normalizeOptionalString } from "./value-guards.js";
+import { isPlainObject, normalizeOptionalString } from "./value-guards.js";
 import {
   buildA2ACrossBrokerTerminalProjection,
   type A2ACrossBrokerTerminalProjection,
@@ -1015,8 +1015,8 @@ export function createA2AOperatorEventBridge(
     if (!isParentSyntheticCrossBrokerTerminalEvent(event) || isParentSyntheticCrossBrokerOperatorTerminalEvent(event)) {
       return false;
     }
-    const payload = isRecord(event.payload) ? event.payload : undefined;
-    const ownership = payload && isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+    const payload = isPlainObject(event.payload) ? event.payload : undefined;
+    const ownership = payload && isPlainObject(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
     return ownership?.providerSendPermittedByProjection === false ||
       ownership?.terminalAckPermittedByProjection === false;
   }
@@ -1028,7 +1028,7 @@ export function createA2AOperatorEventBridge(
     if (isParentSyntheticCrossBrokerOperatorTerminalEvent(event)) return false;
     if (isParentSyntheticCrossBrokerProjectionEvidenceOnly(event)) return true;
     if (isParentSyntheticCrossBrokerTerminalEvent(event)) return false;
-    const payload = isRecord(event.payload) ? event.payload : undefined;
+    const payload = isPlainObject(event.payload) ? event.payload : undefined;
     if (!shouldSuppressLocalCrossBrokerTerminalNotification(event.id, payload, options.handoffBrokerId)) {
       return false;
     }
@@ -1146,7 +1146,7 @@ function shouldSuppressHistoricalTerminalEventReplay(
 
 
 function isAllowedTerminalOutboxEvent(event: A2ATerminalOutboxEvent, allowedIds: readonly string[]): boolean {
-  const payload: UnknownRecord = isRecord(event.payload) ? event.payload : {};
+  const payload: UnknownRecord = isPlainObject(event.payload) ? event.payload : {};
   const taskId = typeof payload.taskId === "string" && payload.taskId.trim().length > 0
     ? payload.taskId.trim()
     : undefined;
@@ -1174,7 +1174,7 @@ function shouldSuppressHistoricalTerminalOutboxReplay(
 }
 
 function readTerminalOutboxEventTimestamp(event: A2ATerminalOutboxEvent): number | undefined {
-  const payload: UnknownRecord = isRecord(event.payload) ? event.payload : {};
+  const payload: UnknownRecord = isPlainObject(event.payload) ? event.payload : {};
   return readOptionalTimestamp(event.createdAt)
     ?? readOptionalTimestamp(payload.completedAt)
     ?? readOptionalTimestamp(payload.updatedAt)
@@ -1182,7 +1182,7 @@ function readTerminalOutboxEventTimestamp(event: A2ATerminalOutboxEvent): number
 }
 
 function readOperatorEventTerminalPayload(event: A2ABrokerOperatorSseEvent): UnknownRecord | undefined {
-  const data = isRecord(event.data) ? event.data : undefined;
+  const data = isPlainObject(event.data) ? event.data : undefined;
   if (!data) return undefined;
   return readRecordCandidate(data, ["terminalEvent", "event"]) ?? data;
 }
@@ -1203,7 +1203,7 @@ function shouldSuppressLocalCrossBrokerTerminalNotification(
 }
 
 function readCrossBrokerHandoffRecord(payload: UnknownRecord): UnknownRecord | undefined {
-  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
+  const metadata = isPlainObject(payload.metadata) ? payload.metadata : undefined;
   const candidates = [
     payload.crossBrokerHandoff,
     payload.crossBroker,
@@ -1215,7 +1215,7 @@ function readCrossBrokerHandoffRecord(payload: UnknownRecord): UnknownRecord | u
     metadata && hasDirectCrossBrokerOwnershipFields(metadata) ? metadata : undefined,
   ];
   for (const candidate of candidates) {
-    const record = isRecord(candidate) ? candidate : undefined;
+    const record = isPlainObject(candidate) ? candidate : undefined;
     if (!record) continue;
     const parentRoundId = normalizeOptionalString(record.parentRoundId) ?? normalizeOptionalString(record.roundId);
     const originBrokerId = normalizeOptionalString(record.originBrokerId) ?? normalizeOptionalString(record.parentBrokerId);
@@ -1241,13 +1241,13 @@ function hasDirectCrossBrokerOwnershipFields(record: UnknownRecord): boolean {
 }
 
 function isParentBrokerOnlyTerminalPayload(payload: UnknownRecord): boolean {
-  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
-  const notificationOwnership = isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
-  const metadataNotificationOwnership = metadata && isRecord(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
-  const terminalBrief = isRecord(payload.terminalBrief) ? payload.terminalBrief : undefined;
-  const metadataTerminalBrief = metadata && isRecord(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
+  const metadata = isPlainObject(payload.metadata) ? payload.metadata : undefined;
+  const notificationOwnership = isPlainObject(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+  const metadataNotificationOwnership = metadata && isPlainObject(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
+  const terminalBrief = isPlainObject(payload.terminalBrief) ? payload.terminalBrief : undefined;
+  const metadataTerminalBrief = metadata && isPlainObject(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
   const handoff = readCrossBrokerHandoffRecord(payload);
-  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isRecord);
+  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isPlainObject);
 
   return roots.some((record) => {
     const scope = normalizeOptionalString(record.scope) ?? normalizeOptionalString(record.notificationScope);
@@ -1269,13 +1269,13 @@ function isParentBrokerOnlyTerminalPayload(payload: UnknownRecord): boolean {
 }
 
 function isTerminalPayloadOwnedByLocalBroker(payload: UnknownRecord, localBrokerId: string | undefined): boolean {
-  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
-  const notificationOwnership = isRecord(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
-  const metadataNotificationOwnership = metadata && isRecord(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
-  const terminalBrief = isRecord(payload.terminalBrief) ? payload.terminalBrief : undefined;
-  const metadataTerminalBrief = metadata && isRecord(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
+  const metadata = isPlainObject(payload.metadata) ? payload.metadata : undefined;
+  const notificationOwnership = isPlainObject(payload.notificationOwnership) ? payload.notificationOwnership : undefined;
+  const metadataNotificationOwnership = metadata && isPlainObject(metadata.notificationOwnership) ? metadata.notificationOwnership : undefined;
+  const terminalBrief = isPlainObject(payload.terminalBrief) ? payload.terminalBrief : undefined;
+  const metadataTerminalBrief = metadata && isPlainObject(metadata.terminalBrief) ? metadata.terminalBrief : undefined;
   const handoff = readCrossBrokerHandoffRecord(payload);
-  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isRecord);
+  const roots = [payload, metadata, notificationOwnership, metadataNotificationOwnership, terminalBrief, metadataTerminalBrief, handoff].filter(isPlainObject);
 
   const local = normalizeOptionalString(localBrokerId);
   if (!local) return false;
@@ -1621,7 +1621,7 @@ function recordTerminalOutboxRelayAttempt(
 }
 
 function projectTerminalOutboxEvent(event: A2ATerminalOutboxEvent): A2AOperatorTerminalOutboxEventProjection {
-  const payload: UnknownRecord = isRecord(event.payload) ? event.payload : {};
+  const payload: UnknownRecord = isPlainObject(event.payload) ? event.payload : {};
   const taskId = safeOperatorString(payload.taskId);
   const status = safeOperatorString(payload.status);
   const repo = safeOperatorString(payload.repo);
@@ -2086,7 +2086,7 @@ function readAlertArrayFromRoots(
 
     for (const key of keys) {
       const nested = root[key];
-      if (!isRecord(nested)) {
+      if (!isPlainObject(nested)) {
         continue;
       }
       const nestedRecords = readRecordArrayCandidate(nested, ["alerts", "items", "open"]);
@@ -2186,7 +2186,7 @@ function readGitHubEvidenceRecords(root: UnknownRecord): UnknownRecord[] {
   ]);
   if (!nested) return [];
   return Object.entries(nested)
-    .filter(([, value]) => isRecord(value))
+    .filter(([, value]) => isPlainObject(value))
     .map(([taskId, value]) => ({ taskId, ...(value as UnknownRecord) }));
 }
 
@@ -2294,14 +2294,14 @@ function normalizeTerminalReceiptProjection(
   record: UnknownRecord,
   now: () => number,
 ): A2AOperatorTerminalReceiptProjection | undefined {
-  const task = isRecord(record.task) ? record.task : undefined;
-  const metadata = isRecord(record.metadata) ? record.metadata : undefined;
-  const payload = isRecord(record.payload) ? record.payload : undefined;
-  const ackAudit = isRecord(record.ackAudit) ? record.ackAudit : undefined;
+  const task = isPlainObject(record.task) ? record.task : undefined;
+  const metadata = isPlainObject(record.metadata) ? record.metadata : undefined;
+  const payload = isPlainObject(record.payload) ? record.payload : undefined;
+  const ackAudit = isPlainObject(record.ackAudit) ? record.ackAudit : undefined;
   const taskId = safeOperatorString(record.taskId, task?.id, metadata?.taskId, payload?.taskId, record.id);
   if (!taskId) return undefined;
 
-  const status = safeOperatorString(record.status, record.type, task && isRecord(task.status) ? task.status.state : undefined, payload?.status);
+  const status = safeOperatorString(record.status, record.type, task && isPlainObject(task.status) ? task.status.state : undefined, payload?.status);
   const terminalEventId = safeOperatorString(record.terminalEventId, record.eventId, record.id);
   const cursor = safeOperatorString(record.cursor, record.lastEventId, record.sseId);
   const timestamp = readOptionalTimestamp(record.receivedAt) ?? readOptionalTimestamp(record.timestamp) ?? readOptionalTimestamp(record.createdAt) ?? now();
@@ -2375,10 +2375,10 @@ function readReceiptGapStatus(
   payload?: UnknownRecord,
   ackAudit?: UnknownRecord,
 ): A2AOperatorReceiptGapStatus | undefined {
-  const receipt = isRecord(record.receipt) ? record.receipt : undefined;
-  const ack = isRecord(record.ack) ? record.ack : undefined;
-  const delivery = isRecord(record.delivery) ? record.delivery : undefined;
-  const roots = [ackAudit, record, metadata, receipt, ack, delivery, payload].filter(isRecord);
+  const receipt = isPlainObject(record.receipt) ? record.receipt : undefined;
+  const ack = isPlainObject(record.ack) ? record.ack : undefined;
+  const delivery = isPlainObject(record.delivery) ? record.delivery : undefined;
+  const roots = [ackAudit, record, metadata, receipt, ack, delivery, payload].filter(isPlainObject);
   for (const root of roots) {
     const decision = normalizeOptionalString(root.decision)?.toLowerCase();
     if (["duplicate_suppressed", "duplicate-suppressed", "duplicate_delivery_suppressed", "suppress_duplicate", "duplicate"].includes(decision ?? "")) {
@@ -2431,10 +2431,10 @@ function readTerminalReceiptMode(
   payload?: UnknownRecord,
   ackAudit?: UnknownRecord,
 ): A2AOperatorTerminalReceiptProjection["receiptMode"] | undefined {
-  const receipt = isRecord(record.receipt) ? record.receipt : undefined;
-  const ack = isRecord(record.ack) ? record.ack : undefined;
-  const delivery = isRecord(record.delivery) ? record.delivery : undefined;
-  const roots = [ackAudit, record, metadata, receipt, ack, delivery, payload].filter(isRecord);
+  const receipt = isPlainObject(record.receipt) ? record.receipt : undefined;
+  const ack = isPlainObject(record.ack) ? record.ack : undefined;
+  const delivery = isPlainObject(record.delivery) ? record.delivery : undefined;
+  const roots = [ackAudit, record, metadata, receipt, ack, delivery, payload].filter(isPlainObject);
   for (const root of roots) {
     if (root.current_session_visible === true || root.currentSessionVisible === true) {
       return "current_session_visible";
@@ -2458,9 +2458,9 @@ function readProviderDeliveryState(
   metadata?: UnknownRecord,
   payload?: UnknownRecord,
 ): A2AOperatorTerminalReceiptProjection["providerDeliveryState"] | undefined {
-  const receipt = isRecord(record.receipt) ? record.receipt : undefined;
-  const delivery = isRecord(record.delivery) ? record.delivery : undefined;
-  const roots = [record, metadata, receipt, delivery, payload].filter(isRecord);
+  const receipt = isPlainObject(record.receipt) ? record.receipt : undefined;
+  const delivery = isPlainObject(record.delivery) ? record.delivery : undefined;
+  const roots = [record, metadata, receipt, delivery, payload].filter(isPlainObject);
   for (const root of roots) {
     const raw = normalizeOptionalString(
       root.providerDeliveryState ??
@@ -2490,7 +2490,7 @@ function readBrokerReceiptClassification(
   metadata?: UnknownRecord,
   ackAudit?: UnknownRecord,
 ): string | undefined {
-  const roots = [record, metadata, ackAudit].filter(isRecord);
+  const roots = [record, metadata, ackAudit].filter(isPlainObject);
   for (const root of roots) {
     const classification = normalizeOptionalString(
       root.receiptClassification ??
@@ -2512,7 +2512,7 @@ function readWorkerRecords(root: UnknownRecord): UnknownRecord[] {
   const nested = readRecordFromRoots([root], ["workers", "workerStatuses", "workerLiveness", "fleet", "runners"]);
   if (!nested) return [];
   return Object.entries(nested)
-    .filter(([, value]) => isRecord(value))
+    .filter(([, value]) => isPlainObject(value))
     .map(([id, value]) => ({ workerId: id, ...(value as UnknownRecord) }));
 }
 
@@ -2601,7 +2601,7 @@ function readRecordCandidate(
 ): UnknownRecord | undefined {
   for (const key of keys) {
     const value = payload[key];
-    if (isRecord(value)) {
+    if (isPlainObject(value)) {
       return value;
     }
   }
@@ -2617,15 +2617,10 @@ function readRecordArrayCandidate(
     if (!Array.isArray(value)) {
       continue;
     }
-    return value.filter(isRecord);
+    return value.filter(isPlainObject);
   }
   return undefined;
 }
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function readOptionalTimestamp(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.floor(value);
