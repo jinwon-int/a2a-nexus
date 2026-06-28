@@ -23,6 +23,7 @@ import {
 import { createA2AWakeRuntimePort } from "./runtime-wake-dispatch.js";
 import type { A2ARuntimeWakeAdapter } from "./runtime-wake-adapter.js";
 import type { A2AWakeAuditEvent, A2AWakeGuardState, A2AWakeRuntimePort } from "./wake-layer.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import {
   runA2AWakeAfterTaskAcceptance,
   type A2AWakeAfterAcceptanceOptions,
@@ -84,11 +85,6 @@ type SessionsSendHookResult =
 
 type RawBrokerClient = ReturnType<typeof createConfiguredA2ABrokerClient>;
 type BrokerClientFactory = (config: A2ABrokerAdapterPluginRuntimeConfig) => RawBrokerClient;
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function readRawTaskId(rawParams: unknown): string | undefined {
   if (!rawParams || typeof rawParams !== "object" || Array.isArray(rawParams)) {
     return undefined;

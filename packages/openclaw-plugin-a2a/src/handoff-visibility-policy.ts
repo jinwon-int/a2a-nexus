@@ -1,6 +1,7 @@
 import { A2A_BROKER_ADAPTER_PLUGIN_ID } from "../plugin-id.js";
 import type { A2ABrokerAdapterPluginRuntimeConfig } from "../config.js";
 import type { RemoteNodeHandoffMetadata, SessionsSendHookEvent } from "./remote-node-handoff-adapter.js";
+import { normalizeOptionalString } from "./value-guards.js";
 
 export type RemoteHandoffVisibilityPolicyDecision =
   | {
@@ -45,11 +46,6 @@ export type RemoteHandoffVisibilityPolicy = {
 };
 
 type RawPolicy = Record<string, unknown>;
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function normalizeStringSet(
   value: unknown,
 ): ReadonlySet<string> | undefined {

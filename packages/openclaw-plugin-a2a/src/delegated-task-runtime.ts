@@ -12,6 +12,7 @@ import {
   type A2ABrokerTaskRecord,
 } from "../standalone-broker-client.js";
 import type { A2AWakeGuardState, A2AWakeRuntimePort } from "./wake-layer.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import {
   runA2AWakeAfterTaskAcceptance,
   type A2AWakeAfterAcceptanceOptions,
@@ -267,11 +268,6 @@ const ANNOUNCE_SKIP_TOKEN = "ANNOUNCE_SKIP";
 const REPLY_SKIP_TOKEN = "REPLY_SKIP";
 const REPLY_HISTORY_LIMIT = 50;
 const NESTED_LANE = "nested";
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function normalizeFiniteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
 }

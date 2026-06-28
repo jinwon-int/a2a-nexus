@@ -1,4 +1,5 @@
 import type { A2ABrokerTaskRecord } from "../standalone-broker-client.js";
+import { normalizeOptionalString } from "./value-guards.js";
 import {
   executeA2AWake,
   type A2AWakeEnvelope,
@@ -38,11 +39,6 @@ const runtimeUnavailableWakePort: A2AWakeRuntimePort = {
     message: "Wake runtime is not configured.",
   }),
 };
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function readPayloadRecord(task: A2ABrokerTaskRecord): Record<string, unknown> {
   return task.payload && typeof task.payload === "object" && !Array.isArray(task.payload)
     ? (task.payload as Record<string, unknown>)

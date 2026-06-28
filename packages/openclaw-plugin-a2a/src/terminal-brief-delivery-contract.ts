@@ -1,5 +1,6 @@
 import type { A2AOperatorNotificationAckDecision } from "./operator-event-bridge.js";
 import type { A2AOperatorTerminalNotificationEnvelope } from "./operator-terminal-notifier.js";
+import { normalizeOptionalString } from "./value-guards.js";
 
 export type A2ATerminalBriefDeliveryAdapterEnvelope = A2AOperatorTerminalNotificationEnvelope;
 
@@ -140,8 +141,4 @@ export function normalizeTerminalBriefReceiptStatus(
     return "provider_sent";
   }
   return undefined;
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
