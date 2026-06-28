@@ -29,8 +29,6 @@ import {
   numberQueryParam,
   boundedLimitQueryParam,
   booleanQueryParam,
-  cleanupPlanOptionsFromUrl,
-  cleanupPlanOptionsFromBody,
   stringListQueryParam,
   nonNegativeNumberBodyField,
   stringListBodyField,
@@ -234,12 +232,6 @@ import { buildOperatorTaskReport } from "./core/operator-task-report.js";
 import { buildReleaseEvidenceExport } from "./core/release-evidence.js";
 import { TERMINAL_BRIEF_SIDECAR_ROUTES } from "./terminal-brief-sidecar-routes.js";
 import {
-  buildBrokerCleanupPlan,
-  executeBrokerCleanupPlan,
-  validateCleanupExecution,
-  type BrokerCleanupPlanOptions,
-} from "./core/broker-cleanup.js";
-import {
   isTerminalTaskOutboxAckInputEvidence,
   isTerminalTaskReceiptStatus,
   type TerminalTaskEventOutbox,
@@ -278,6 +270,7 @@ import {
   toWorkerView,
 } from "./http/workers-read.js";
 import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
+import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1816,44 +1809,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         }
       }
 
-      if (req.method === "GET" && path === "/operator/cleanup/plan") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "operator.cleanup.plan");
-        }
-        if (!(stateStore instanceof SqliteBrokerStateStore)) {
-          throw new BrokerError("bad_request", "broker cleanup planning requires sqlite persistence");
-        }
-        const plan = buildBrokerCleanupPlan(stateStore, cleanupPlanOptionsFromUrl(url));
-        return sendJson(res, 200, plan, { "cache-control": "no-store" });
-      }
-
-      if (req.method === "POST" && path === "/operator/cleanup/execute") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "operator.cleanup.execute");
-        }
-        if (!(stateStore instanceof SqliteBrokerStateStore)) {
-          throw new BrokerError("bad_request", "broker cleanup execution requires sqlite persistence");
-        }
-        const body = await readJson<Record<string, unknown>>(req);
-        const plan = buildBrokerCleanupPlan(stateStore, cleanupPlanOptionsFromBody(body));
-        const executionOptions = {
-          approvalToken: optionalString(body?.approvalToken),
-          confirmation: optionalString(body?.confirmation),
-          backupProof: optionalString(body?.backupProof),
-          allowWorkerPrune: body?.allowWorkerPrune === true,
-          actorId: requesterIdentity?.id,
-        };
-        const blockers = validateCleanupExecution(plan, executionOptions);
-        if (blockers.length > 0) {
-          return sendJson(res, 409, {
-            ok: false,
-            error: "cleanup_execution_blocked",
-            blockers,
-            plan,
-          }, { "cache-control": "no-store" });
-        }
-        const result = executeBrokerCleanupPlan(stateStore, plan, executionOptions);
-        return sendJson(res, 200, { ok: true, plan, result }, { "cache-control": "no-store" });
+      if (await handleOperatorCleanupRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        url,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       // GET /alerts — monitoring-friendly alert projection
