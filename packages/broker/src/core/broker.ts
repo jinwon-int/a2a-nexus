@@ -7,7 +7,6 @@ import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
 import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
-  taskStatusSinceAt,
   countStateSaveHints,
   sortWorkersNewestFirst,
   sortExchangeMessages,
@@ -76,8 +75,6 @@ import { normalizeCapabilities } from "./broker-capability-normalizers.js";
 import {
   toWorkerViewRecord,
   isWorkerStale,
-  effectiveOfflineAfterMs,
-  computeWorkerMobileHealth,
 } from "./broker-worker-status.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
@@ -92,12 +89,12 @@ import {
   isoNow,
   uniqueIds,
   sortedCopy,
-  ageSecFromIso,
   sortNewestFirst,
   countBy,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
+import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 
 import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
 
@@ -205,7 +202,6 @@ import type {
   TaskWakeState,
   ValidationResult,
   WorkerCapacitySummary,
-  WorkerCapacitySummaryItem,
   WorkerCapabilities,
   WorkerHeartbeatRequest,
   WorkerIdentityWarning,
@@ -2232,104 +2228,14 @@ export class InMemoryA2ABroker {
     workerOfflineAfterMs?: number;
     taskStaleAfterMs?: number;
   }): WorkerCapacitySummary {
-    const nowMs = options?.nowMs ?? Date.now();
-    const workerOfflineAfterMs = options?.workerOfflineAfterMs ?? 90_000;
-    const taskStaleAfterMs = options?.taskStaleAfterMs ?? workerOfflineAfterMs;
-    const workers = this.listWorkers();
-    const tasks = this.listTasks().filter((task) =>
-      task.status === "queued" || task.status === "claimed" || task.status === "running",
-    );
-    const tasksByWorker = new Map<string, TaskRecord[]>();
-    for (const task of tasks) {
-      const workerId = task.assignedWorkerId ?? task.targetNodeId;
-      if (!workerId) {
-        continue;
-      }
-      const bucket = tasksByWorker.get(workerId) ?? [];
-      bucket.push(task);
-      tasksByWorker.set(workerId, bucket);
-    }
-
-    let online = 0;
-    let staleWorkers = 0;
-    let queued = 0;
-    let claimed = 0;
-    let running = 0;
-    let staleTasks = 0;
-    let active = 0;
-
-    const items: WorkerCapacitySummaryItem[] = workers.map((worker) => {
-      // Use mobile-aware stale threshold when the worker declares mobile mode
-      const effectiveOffline = effectiveOfflineAfterMs(worker.workerMode, workerOfflineAfterMs);
-      const workerIsStale = isWorkerStale(worker.lastSeenAt, effectiveOffline, nowMs);
-      if (workerIsStale) {
-        staleWorkers += 1;
-      } else {
-        online += 1;
-      }
-
-      const workerTasks = tasksByWorker.get(worker.nodeId) ?? [];
-      const counts = { queued: 0, claimed: 0, running: 0, stale: 0, active: 0 };
-      let latestTaskUpdatedAt: string | undefined;
-      for (const task of workerTasks) {
-        if (task.status === "queued") {
-          counts.queued += 1;
-        } else if (task.status === "claimed") {
-          counts.claimed += 1;
-        } else if (task.status === "running") {
-          counts.running += 1;
-        }
-        counts.active += 1;
-        if (!latestTaskUpdatedAt || task.updatedAt > latestTaskUpdatedAt) {
-          latestTaskUpdatedAt = task.updatedAt;
-        }
-        if ((task.status === "claimed" || task.status === "running") && (
-          workerIsStale || nowMs - Date.parse(taskStatusSinceAt(task)) > taskStaleAfterMs
-        )) {
-          counts.stale += 1;
-        }
-      }
-
-      queued += counts.queued;
-      claimed += counts.claimed;
-      running += counts.running;
-      staleTasks += counts.stale;
-      active += counts.active;
-
-      const identityWarning = this.workerChurn.warning(worker.nodeId);
-      return {
-        nodeId: worker.nodeId,
-        role: worker.role,
-        displayName: worker.displayName,
-        status: workerIsStale ? "stale" : "online",
-        lastSeenAt: worker.lastSeenAt,
-        lastSeenAgeSec: ageSecFromIso(worker.lastSeenAt, nowMs),
-        counts,
-        latestTaskUpdatedAt,
-        workerMode: worker.workerMode,
-        runtimeFlavor: worker.capabilities.runtimeFlavor,
-        gatewayRequired: worker.capabilities.gatewayRequired,
-        mobileHealth: computeWorkerMobileHealth(worker.workerMode, worker.lastSeenAt, nowMs),
-        ...(identityWarning ? { identityWarning } : {}),
-      };
-    });
-
-    return {
-      generatedAt: new Date(nowMs).toISOString(),
-      workerOfflineAfterMs,
-      taskStaleAfterMs,
-      totals: {
-        workers: workers.length,
-        online,
-        staleWorkers,
-        queued,
-        claimed,
-        running,
-        staleTasks,
-        active,
+    return buildWorkerCapacitySummary(
+      {
+        workers: this.listWorkers(),
+        tasks: this.listTasks(),
+        identityWarnings: this.workerChurn.getWarnings(),
       },
-      items,
-    };
+      options,
+    );
   }
 
   getDashboard(options?: {
