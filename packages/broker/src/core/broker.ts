@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -473,10 +474,7 @@ export class InMemoryA2ABroker {
   private readonly workers = new Map<string, WorkerRecord>();
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly tombstones = new Map<string, TaskTombstone>();
-  private readonly taskListeners = new Map<string, Set<TaskUpdateListener>>();
-  private readonly taskPruneListeners = new Set<(prunedTaskIds: string[]) => void>();
-  private readonly taskEventBuffers = new Map<string, BufferedTaskEvent[]>();
-  private readonly taskEventSeqs = new Map<string, number>();
+  private readonly taskEvents: TaskEventDispatcher;
   private readonly pendingHotTasks = new Map<string, TaskRecord>();
   private readonly pendingHotTombstones = new Map<string, TaskTombstone>();
   private readonly pendingHotAuditEvents = new Map<string, AuditEvent>();
@@ -497,7 +495,6 @@ export class InMemoryA2ABroker {
   private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
   private readonly stateListeners = new Set<BrokerStateListener>();
   private readonly profilingListeners = new Set<BrokerProfilingListener>();
-  private readonly maxBufferedEventsPerTask: number;
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
@@ -544,7 +541,7 @@ export class InMemoryA2ABroker {
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
     this.checkpointTimeoutMs = Math.max(0, options.checkpointTimeoutMs ?? DEFAULT_CHECKPOINT_TIMEOUT_MS);
-    this.maxBufferedEventsPerTask = options.maxBufferedEventsPerTask ?? 100;
+    this.taskEvents = new TaskEventDispatcher(options.maxBufferedEventsPerTask ?? 100);
     this.taskEventStream = new TaskEventStream({ maxEvents: options.maxTaskStatusEvents });
     this.terminalTaskEventOutbox = new TerminalTaskEventOutbox({ maxEvents: options.maxTerminalTaskOutboxEvents });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
@@ -660,10 +657,7 @@ export class InMemoryA2ABroker {
    * on the same lifecycle instead of outliving the task.
    */
   registerTaskPruneListener(listener: (prunedTaskIds: string[]) => void): () => void {
-    this.taskPruneListeners.add(listener);
-    return () => {
-      this.taskPruneListeners.delete(listener);
-    };
+    return this.taskEvents.registerPruneListener(listener);
   }
 
   /**
@@ -688,22 +682,7 @@ export class InMemoryA2ABroker {
   }
 
   subscribeToTask(taskId: string, listener: TaskUpdateListener): () => void {
-    let listeners = this.taskListeners.get(taskId);
-    if (!listeners) {
-      listeners = new Set();
-      this.taskListeners.set(taskId, listeners);
-    }
-    listeners.add(listener);
-    return () => {
-      const current = this.taskListeners.get(taskId);
-      if (!current) {
-        return;
-      }
-      current.delete(listener);
-      if (current.size === 0) {
-        this.taskListeners.delete(taskId);
-      }
-    };
+    return this.taskEvents.subscribe(taskId, listener);
   }
 
   /** Subscribe to broker-wide state changes after a successful persisted mutation. */
@@ -746,7 +725,7 @@ export class InMemoryA2ABroker {
         byStatus: this.countBy(tasks, (task) => task.status) as Record<TaskStatus, number>,
         stale: staleTasks.length,
         longRunning: longRunningTasks.length,
-        bufferedEventStreams: this.taskEventBuffers.size,
+        bufferedEventStreams: this.taskEvents.bufferedStreamCount(),
       },
       workers: {
         total: workers.length,
@@ -772,76 +751,9 @@ export class InMemoryA2ABroker {
     };
   }
 
-  private emitTaskUpdate(task: TaskRecord, reason: TaskUpdateReason): void {
-    const listeners = this.taskListeners.get(task.id);
-    const hasActiveSubscribers = listeners && listeners.size > 0;
-    const hasBuffer = this.taskEventBuffers.has(task.id);
-
-    if (!hasActiveSubscribers && !hasBuffer) {
-      return;
-    }
-
-    const final = isTerminalTaskStatus(task.status);
-    const seq = this.advanceTaskEventSeq(task.id);
-    // Snapshot the listener set and clone the task so a listener that mutates its copy (or
-    // the broker mutating later) can't alter what other subscribers observe.
-    const snapshot: TaskUpdate = {
-      task: structuredClone(task),
-      reason,
-      final,
-      seq,
-    };
-
-    // Buffer event for replay even if no active subscribers.
-    this.bufferTaskEvent(task.id, {
-      seq,
-      event: "task-status-update",
-      data: snapshot,
-    });
-
-    if (!hasActiveSubscribers) {
-      return;
-    }
-    for (const listener of [...listeners!]) {
-      try {
-        listener(snapshot);
-      } catch (error) {
-        console.error(
-          `[a2a-broker] task subscriber for ${task.id} threw: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  }
-
-  private advanceTaskEventSeq(taskId: string): number {
-    const current = this.taskEventSeqs.get(taskId) ?? 0;
-    const next = current + 1;
-    this.taskEventSeqs.set(taskId, next);
-    return next;
-  }
-
-  private bufferTaskEvent(taskId: string, event: BufferedTaskEvent): void {
-    let buffer = this.taskEventBuffers.get(taskId);
-    if (!buffer) {
-      buffer = [];
-      this.taskEventBuffers.set(taskId, buffer);
-    }
-    buffer.push(event);
-    // Trim oldest events beyond the limit.
-    if (buffer.length > this.maxBufferedEventsPerTask) {
-      buffer.splice(0, buffer.length - this.maxBufferedEventsPerTask);
-    }
-  }
-
   /** Replay buffered events after the given sequence number. Returns events with seq > afterSeq. */
   replayTaskEvents(taskId: string, afterSeq: number): BufferedTaskEvent[] {
-    const buffer = this.taskEventBuffers.get(taskId);
-    if (!buffer) {
-      return [];
-    }
-    return buffer.filter((e) => e.seq > afterSeq);
+    return this.taskEvents.replay(taskId, afterSeq);
   }
 
   /** Build the SSE `id` field value: `{taskId}:{seq}`. */
@@ -1635,7 +1547,7 @@ export class InMemoryA2ABroker {
       note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "created");
+    this.taskEvents.emit(task, "created");
     return task;
   }
 
@@ -1698,7 +1610,7 @@ export class InMemoryA2ABroker {
       note: wake.message ?? wake.wakeKey,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "wake_planned");
+    this.taskEvents.emit(task, "wake_planned");
     return { task, wake, shouldDispatch: true, replayed: false };
   }
 
@@ -1739,7 +1651,7 @@ export class InMemoryA2ABroker {
       note: `${request.status}: ${message}`,
     });
     this.persistState();
-    this.emitTaskUpdate(task, wakeDecisionUpdateReason(request.status));
+    this.taskEvents.emit(task, wakeDecisionUpdateReason(request.status));
     return task;
   }
 
@@ -1795,7 +1707,7 @@ export class InMemoryA2ABroker {
       note: request.note ?? "task payload updated",
     });
     this.persistState();
-    this.emitTaskUpdate(task, "updated");
+    this.taskEvents.emit(task, "updated");
     return task;
   }
 
@@ -1850,7 +1762,7 @@ export class InMemoryA2ABroker {
         `reassigned targetNodeId ${previousTargetNodeId} -> ${task.targetNodeId}, assignedWorkerId ${previousAssignedWorkerId} -> ${task.assignedWorkerId}`,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "reassigned");
+    this.taskEvents.emit(task, "reassigned");
     return task;
   }
 
@@ -1963,7 +1875,7 @@ export class InMemoryA2ABroker {
       note: task.approval.reason ?? `approvalId=${task.approval.approvalId}`,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "approved");
+    this.taskEvents.emit(task, "approved");
     return task;
   }
 
@@ -2044,7 +1956,7 @@ export class InMemoryA2ABroker {
       note: task.intent,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "claimed");
+    this.taskEvents.emit(task, "claimed");
     return task;
   }
 
@@ -2066,7 +1978,7 @@ export class InMemoryA2ABroker {
       note: task.intent,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "started");
+    this.taskEvents.emit(task, "started");
     return task;
   }
 
@@ -2132,7 +2044,7 @@ export class InMemoryA2ABroker {
       note: normalizedResult.note ?? normalizedResult.summary ?? task.intent,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "succeeded");
+    this.taskEvents.emit(task, "succeeded");
     // Succeeded tasks don't get a tombstone — they completed normally.
     return task;
   }
@@ -2183,7 +2095,7 @@ export class InMemoryA2ABroker {
     // loses the tombstone until the next unrelated persist.
     this.writeTombstone(task, "failed");
     this.persistState();
-    this.emitTaskUpdate(task, "failed");
+    this.taskEvents.emit(task, "failed");
     return task;
   }
 
@@ -2301,10 +2213,10 @@ export class InMemoryA2ABroker {
     }
 
     for (const task of deadLettered) {
-      this.emitTaskUpdate(task, "dead_lettered");
+      this.taskEvents.emit(task, "dead_lettered");
     }
     for (const task of requeued) {
-      this.emitTaskUpdate(task, "requeued");
+      this.taskEvents.emit(task, "requeued");
     }
 
     // Expired checkpoints transition to cancelled (contract §1.4/§2.3:
@@ -2868,18 +2780,7 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.auditEvents, retainedAuditEventIds);
     pruneMapEntries(this.lastPersistedWorkerHeartbeatAtMs, retainedWorkerIds);
     pruneMapEntries(this.lastPersistedTaskHeartbeatAuditAtMs, retainedTaskIds);
-    pruneMapEntries(this.taskEventBuffers, retainedTaskIds);
-    pruneMapEntries(this.taskEventSeqs, retainedTaskIds);
-
-    if (prunedTaskIds.length > 0) {
-      for (const listener of this.taskPruneListeners) {
-        try {
-          listener(prunedTaskIds);
-        } catch {
-          // A cleanup listener failure must never break retention itself.
-        }
-      }
-    }
+    this.taskEvents.prune(retainedTaskIds, prunedTaskIds);
   }
 
   private collectRetainedExchangeMessageIds(retainedExchangeIds: Set<string>): Set<string> {
@@ -3579,7 +3480,7 @@ export class InMemoryA2ABroker {
     // (writeTombstone mutates state but does not persist on its own).
     this.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });
     this.persistState();
-    this.emitTaskUpdate(task, "canceled");
+    this.taskEvents.emit(task, "canceled");
     return task;
   }
 
@@ -3718,7 +3619,7 @@ export class InMemoryA2ABroker {
       note: `checkpoint ${task.checkpoint.state}${decisionType ? ` (${decisionType})` : ""}: ${task.checkpoint.reason ?? task.checkpoint.checkpointId}`,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "checkpointed");
+    this.taskEvents.emit(task, "checkpointed");
     return task;
   }
 
@@ -3748,7 +3649,7 @@ export class InMemoryA2ABroker {
       note: `resumed from ${cleared.state} checkpoint ${cleared.checkpointId}`,
     });
     this.persistState();
-    this.emitTaskUpdate(task, "resumed");
+    this.taskEvents.emit(task, "resumed");
     return task;
   }
 
@@ -3778,7 +3679,7 @@ export class InMemoryA2ABroker {
       this.lastPersistedTaskHeartbeatAuditAtMs.set(task.id, nowMs);
     }
     this.persistState();
-    this.emitTaskUpdate(task, "started"); // re-emit so subscribers see the heartbeat
+    this.taskEvents.emit(task, "started"); // re-emit so subscribers see the heartbeat
     return task;
   }
 
