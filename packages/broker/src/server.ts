@@ -1,5 +1,12 @@
 import { readFileSync } from "node:fs";
 import {
+  optionalString,
+  assertCreateTaskRequestParties,
+  parseTerminalOutboxAckReceipt,
+  parseTerminalOutboxReceiptUpdate,
+  assertRequesterCanSubscribeToWorkerAssignments,
+} from "./request-parsers.js";
+import {
   listAuditEventsForReadPath,
   assertCreateTaskPayloadWithinLimit,
   listTasksForReadPath,
@@ -5479,89 +5486,6 @@ export function firstNonEmpty(...values: Array<string | undefined>): string | un
 // Grace period after server.close() before force-closing lingering (e.g. SSE)
 // connections so a graceful shutdown cannot hang indefinitely.
 const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function assertCreateTaskRequestParties(body: CreateTaskRequest): void {
-  assertRequestParty(body.requester, "requester");
-  assertRequestParty(body.target, "target");
-}
-
-function assertRequestParty(value: unknown, field: "requester" | "target"): void {
-  if (!value || typeof value !== "object") {
-    throw new BrokerError("bad_request", `${field}.id is required`);
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record.id !== "string" || record.id.trim().length === 0) {
-    throw new BrokerError("bad_request", `${field}.id is required`);
-  }
-}
-
-function optionalEnum<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const normalized = value.trim() as T;
-  return allowed.includes(normalized) ? normalized : undefined;
-}
-
-function parseTerminalOutboxAckReceipt(value: unknown): TerminalTaskOutboxAckInput {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new BrokerError(
-      "bad_request",
-      "terminal outbox ack requires receipt evidence; Gateway/provider send success alone is not accepted",
-    );
-  }
-  const receipt = value as Record<string, unknown>;
-  if (!isTerminalTaskOutboxAckInputEvidence(receipt.evidence)) {
-    throw new BrokerError(
-      "bad_request",
-      "terminal outbox ack evidence must be current_session_visible, operator_visible, or operator_confirmed",
-    );
-  }
-  return {
-    evidence: receipt.evidence,
-    acknowledgedAt: typeof receipt.acknowledgedAt === "string" ? receipt.acknowledgedAt : undefined,
-    receiptId: typeof receipt.receiptId === "string" ? receipt.receiptId : undefined,
-    note: typeof receipt.note === "string" ? receipt.note : undefined,
-  };
-}
-
-function parseTerminalOutboxReceiptUpdate(value: unknown): TerminalTaskOutboxReceiptUpdateInput {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new BrokerError("bad_request", "terminal outbox receipt update requires a receipt object");
-  }
-  const receipt = value as Record<string, unknown>;
-  if (!isTerminalTaskReceiptStatus(receipt.status)) {
-    throw new BrokerError(
-      "bad_request",
-      "terminal outbox receipt status must be accepted, started, produced, provider_sent, provider_accepted, current_session_visible, operator_visible, timed_out, stale, or failed",
-    );
-  }
-  return {
-    status: receipt.status,
-    updatedAt: typeof receipt.updatedAt === "string" ? receipt.updatedAt : undefined,
-    note: typeof receipt.note === "string" ? receipt.note : undefined,
-  };
-}
-
-function assertRequesterCanSubscribeToWorkerAssignments(
-  identity: RequesterIdentity | null,
-  workerId: string,
-): void {
-  if (!identity?.id) {
-    throw new BrokerError("unauthorized", "x-a2a-requester-id is required for this route");
-  }
-  if (identity.role === "hub" || identity.role === "operator" || identity.id === workerId) {
-    return;
-  }
-  throw new BrokerError(
-    "unauthorized",
-    "worker assignment subscribe requires the assigned worker requester or a hub/operator role",
-  );
-}
 
 // HTTP/SSE plumbing, error mapping, and streaming response helpers extracted to
 // ./http/* (issue #645 phase 2). They take all state via explicit parameters and
