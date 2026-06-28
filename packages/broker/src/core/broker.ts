@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
 import {
+  normalizeWakeString,
+  normalizeApprovalId,
+  normalizeApprovalReason,
+  normalizeApprovalTerminalStatus,
+  buildTaskWakeKey,
+  defaultWakeDecisionMessage,
+  wakeDecisionAuditAction,
+  wakeDecisionUpdateReason,
+  normalizeTaskWakeState,
+} from "./broker-wake-normalizers.js";
+import {
   selectRetainedTerminalRecordIds,
   selectRetainedWorkerIds,
   selectRetainedAuditEventIds,
@@ -5743,82 +5754,6 @@ function normalizeTaskError(error: TaskError | undefined): TaskError {
     code: error.code,
     message: error.message || "task failed",
     details: error.details ? { ...error.details } : undefined,
-  };
-}
-
-function normalizeWakeString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function normalizeApprovalId(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function normalizeApprovalReason(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function normalizeApprovalTerminalStatus(value: unknown): Exclude<TaskApprovalOutcomeStatus, "approved"> {
-  return value === "expired" || value === "canceled" ? value : "rejected";
-}
-
-function buildTaskWakeKey(task: TaskRecord, request: TaskWakePlanRequest): string {
-  const explicit = normalizeWakeString(request.wakeKey);
-  if (explicit) {
-    return explicit;
-  }
-  const stableCorrelation =
-    normalizeWakeString(request.correlationId) ??
-    normalizeWakeString(task.payload.correlationId) ??
-    task.id;
-  const stableRun =
-    normalizeWakeString(request.waitRunId) ??
-    normalizeWakeString(task.payload.waitRunId) ??
-    normalizeWakeString(request.targetSessionKey) ??
-    task.targetNodeId;
-  return `${stableCorrelation}:${stableRun}`;
-}
-
-function defaultWakeDecisionMessage(status: Exclude<TaskWakeState["status"], "planned">): string {
-  switch (status) {
-    case "scheduled":
-      return "Wake-on-Task scheduled.";
-    case "skipped":
-      return "Wake-on-Task skipped.";
-    case "failed":
-      return "Wake-on-Task failed.";
-  }
-}
-
-function wakeDecisionAuditAction(status: Exclude<TaskWakeState["status"], "planned">): AuditAction {
-  switch (status) {
-    case "scheduled":
-      return "task.wake.scheduled";
-    case "skipped":
-      return "task.wake.skipped";
-    case "failed":
-      return "task.wake.failed";
-  }
-}
-
-function wakeDecisionUpdateReason(status: Exclude<TaskWakeState["status"], "planned">): TaskUpdateReason {
-  switch (status) {
-    case "scheduled":
-      return "wake_scheduled";
-    case "skipped":
-      return "wake_skipped";
-    case "failed":
-      return "wake_failed";
-  }
-}
-
-function normalizeTaskWakeState(wake: TaskWakeState | undefined): TaskWakeState | undefined {
-  if (!wake) {
-    return undefined;
-  }
-  return {
-    ...wake,
-    replayCount: wake.replayCount ?? 0,
   };
 }
 
