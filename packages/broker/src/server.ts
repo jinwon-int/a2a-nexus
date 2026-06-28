@@ -37,6 +37,7 @@ import {
 } from "./http/request-params.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { readHostLoadSnapshot } from "./host-load-snapshot.js";
+import { OperatorEventStream } from "./operator-event-stream.js";
 import {
   _livezTiming,
   _healthTiming,
@@ -534,13 +535,13 @@ interface OperatorAlertEvent {
   alert: Alert;
 }
 
-type OperatorEventName =
+export type OperatorEventName =
   | "operator-snapshot"
   | "operator-summary-update"
   | "operator-alert-opened"
   | "operator-alert-resolved";
 
-type OperatorEventPayload =
+export type OperatorEventPayload =
   | OperatorSnapshotEvent
   | OperatorSummaryUpdateEvent
   | OperatorAlertEvent;
@@ -1207,9 +1208,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     runCount: staleReaperRunCount,
   });
 
-  const operatorListeners = new Set<(event: BufferedOperatorEvent) => void>();
-  const operatorEventBuffer: BufferedOperatorEvent[] = [];
-  let operatorEventSeq = 0;
+  const operatorEvents = new OperatorEventStream(DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT);
 
   // Compute hot-table growth for operator alerts once per snapshot.
   const currentHotTableGrowth = (): HotTableGrowthProjection | undefined =>
@@ -1249,49 +1248,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   };
 
   const replayOperatorEvents = (afterSeq: number): BufferedOperatorEvent[] =>
-    operatorEventBuffer.filter((event) => event.seq > afterSeq);
+    operatorEvents.replay(afterSeq);
 
-  const currentOperatorReplayWindow = (): OperatorReplayWindow => ({
-    oldestBufferedSeq: operatorEventBuffer[0]?.seq ?? null,
-    currentSeq: operatorEventSeq,
-  });
+  const currentOperatorReplayWindow = (): OperatorReplayWindow => operatorEvents.replayWindow();
 
   const subscribeToOperatorEvents = (
     listener: (event: BufferedOperatorEvent) => void,
-  ): (() => void) => {
-    operatorListeners.add(listener);
-    return () => {
-      operatorListeners.delete(listener);
-    };
-  };
+  ): (() => void) => operatorEvents.subscribe(listener);
 
-  const emitOperatorEvent = (event: OperatorEventName, data: OperatorEventPayload): void => {
-    const buffered: BufferedOperatorEvent = {
-      seq: operatorEventSeq + 1,
-      event,
-      data: structuredClone(data),
-    };
-    operatorEventSeq = buffered.seq;
-    operatorEventBuffer.push(buffered);
-    if (operatorEventBuffer.length > DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT) {
-      operatorEventBuffer.splice(0, operatorEventBuffer.length - DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT);
-    }
-
-    for (const listener of [...operatorListeners]) {
-      try {
-        listener(buffered);
-      } catch (error) {
-        console.error(
-          `[a2a-broker] operator subscriber threw: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  };
+  const emitOperatorEvent = (event: OperatorEventName, data: OperatorEventPayload): void =>
+    operatorEvents.emit(event, data);
 
   const publishOperatorEvents = (): void => {
-    if (operatorListeners.size === 0) {
+    if (operatorEvents.listenerCount === 0) {
       // Do not run operator projections on every broker state change while
       // the SSE stream is idle. A new subscriber gets a fresh snapshot on
       // connect, and active subscribers still receive buffered updates.
