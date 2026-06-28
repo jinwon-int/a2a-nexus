@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { readPersistenceQueueDiagnostics } from "./persistence-queue-diagnostics.js";
 import { summarizeTerminalOutboxForSchedz } from "./terminal-outbox-schedz.js";
+import { createDefaultStateStore, resolvePublicBaseUrl, firstNonEmpty } from "./server-config.js";
+// Re-exported to preserve the public surface (tests import firstNonEmpty from here).
+export { firstNonEmpty };
 import {
   resolveA2AHttpSignatureWorkerAuthMode,
   validateBrokerStartupSecurity,
@@ -5173,58 +5176,6 @@ const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
  */
 const HEADERS_TIMEOUT_MARGIN_MS = 10000;
 
-function createDefaultStateStore(params: {
-  backend: "json-file" | "sqlite";
-  stateFile: string;
-  sqliteFile?: string;
-  sqliteLoadSource: SqliteBrokerLoadSource;
-  maxSnapshotBytes: number;
-  hotRuntimeLimits?: BrokerHotRuntimeLimits;
-}): BrokerStateStore {
-  if (params.backend === "sqlite") {
-    return new SqliteBrokerStateStore(params.sqliteFile ?? `${params.stateFile}.sqlite`, {
-      importJsonFile: params.stateFile,
-      loadSource: params.sqliteLoadSource,
-      maxBytes: params.maxSnapshotBytes,
-      maxHotRuntimeNonTerminalTasks: params.hotRuntimeLimits?.maxNonTerminalTasks,
-      maxHotRuntimeTerminalTasks: params.hotRuntimeLimits?.maxTerminalTasks,
-      maxHotRuntimeAuditEvents: params.hotRuntimeLimits?.maxAuditEvents,
-      maxHotRuntimeHeartbeatAuditEvents: params.hotRuntimeLimits?.maxHeartbeatAuditEvents,
-      maxHotRuntimeTerminalOutboxEvents: params.hotRuntimeLimits?.maxTerminalOutboxEvents,
-    });
-  }
-  return new JsonFileBrokerStateStore(params.stateFile, { maxBytes: params.maxSnapshotBytes });
-}
-
-function resolvePublicBaseUrl(value: string | undefined): string {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    throw new Error(
-      "PUBLIC_BASE_URL is required. Set a real public base URL instead of relying on the masked placeholder.",
-    );
-  }
-
-  const normalized = trimmed.toLowerCase();
-  if (normalized.includes("<masked-host>")) {
-    throw new Error(
-      "PUBLIC_BASE_URL must not use the placeholder http://<masked-host>:8787. Set the real public base URL before starting the broker.",
-    );
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw new Error(`PUBLIC_BASE_URL must be a valid absolute URL: ${trimmed}`);
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`PUBLIC_BASE_URL must use http or https: ${trimmed}`);
-  }
-
-  return parsed.toString();
-}
-
 export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const runtime = createBrokerServer(options);
   runtime.server.listen(runtime.config.port, runtime.config.host, () => {
@@ -5279,14 +5230,6 @@ if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {
  * (A2A_GITHUB_WEBHOOK_SECRET=secret) and silently disable signature
  * verification — a fail-open. Trimming and skipping blanks closes that gap.
  */
-export function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
-}
-
 // Grace period after server.close() before force-closing lingering (e.g. SSE)
 // connections so a graceful shutdown cannot hang indefinitely.
 const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
