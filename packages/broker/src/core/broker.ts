@@ -15,7 +15,7 @@ import {
   collectThreadMessageIds,
   getTaskRequeueReason,
   findLatestTaskAuditEvent,
-  projectTaskDurableSignals,
+  buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
 import {
   workerMetadataMateriallyEqual,
@@ -2989,67 +2989,21 @@ export class InMemoryA2ABroker {
       lastRequeueEvent?: AuditEvent | null;
     },
   ): TaskDiagnosticReport {
-    const nowMs = options?.nowMs ?? Date.now();
-    const staleAfterMs = options?.staleAfterMs ?? 120_000; // 2 min default
-    const longRunningAfterMs = options?.longRunningAfterMs ?? 3_600_000; // 1 hr default
-    const workerOfflineAfterMs = options?.workerOfflineAfterMs ?? 90_000;
-
+    // Resolve the three broker-coupled inputs (from caller overrides or our own
+    // lookups), then delegate the pure assembly to buildTaskDiagnosticReport.
     const tombstone = overrides && "tombstone" in overrides
       ? overrides.tombstone ?? undefined
       : this.getTombstone(task.id) ?? undefined;
-    const diagnosticStatus = computeTaskDiagnosticStatus(task, staleAfterMs, longRunningAfterMs, nowMs);
     const assignedWorker = overrides && "assignedWorker" in overrides
       ? overrides.assignedWorker ?? undefined
       : task.assignedWorkerId
         ? this.workers.get(task.assignedWorkerId)
         : undefined;
-    const staleWorker = assignedWorker
-      ? isWorkerStale(assignedWorker.lastSeenAt, workerOfflineAfterMs, nowMs)
-      : false;
     const lastRequeueEvent = overrides && "lastRequeueEvent" in overrides
       ? overrides.lastRequeueEvent ?? undefined
       : findLatestTaskAuditEvent(this.listAuditEvents({ targetId: task.id, action: "task.requeued" }), task.id, "task.requeued");
-    const durableSignals = projectTaskDurableSignals({
-      task,
-      diagnosticStatus,
-      tombstone,
-      assignedWorker,
-      staleWorker,
-      lastRequeueEvent,
-    });
-    const createdAtMs = Date.parse(task.createdAt);
-    const lastStatusChangeMs = Math.max(
-      createdAtMs,
-      task.claimedAt ? Date.parse(task.claimedAt) : 0,
-      task.completedAt ? Date.parse(task.completedAt) : 0,
-      task.lastHeartbeatAt ? Date.parse(task.lastHeartbeatAt) : 0,
-    );
-    const stalenessMs = task.lastHeartbeatAt
-      ? nowMs - Date.parse(task.lastHeartbeatAt)
-      : undefined;
 
-    return {
-      taskId: task.id,
-      diagnosticStatus,
-      brokerState: durableSignals.brokerState,
-      reconcileNeeded: durableSignals.reconcileNeeded,
-      interruption: durableSignals.interruption,
-      task: structuredClone(task),
-      currentStatusDurationMs: nowMs - lastStatusChangeMs,
-      stalenessMs,
-      brokerHints: durableSignals.brokerHints,
-      tombstone: tombstone ? structuredClone(tombstone) : undefined,
-      lifecycle: {
-        createdAt: task.createdAt,
-        claimedAt: task.claimedAt,
-        startedAt: task.status === "running" || task.status === "succeeded" || task.status === "failed"
-          ? task.claimedAt
-          : undefined,
-        lastHeartbeatAt: task.lastHeartbeatAt,
-        completedAt: task.completedAt,
-        tombstonedAt: tombstone?.tombstonedAt,
-      },
-    };
+    return buildTaskDiagnosticReport(task, { tombstone, assignedWorker, lastRequeueEvent }, options);
   }
 
   /** List tasks that are stale (claimed/running with no recent heartbeat). */
