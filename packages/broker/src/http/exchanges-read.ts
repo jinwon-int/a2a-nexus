@@ -10,6 +10,7 @@ import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/req
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
 import type { A2AExchangeMessageRecord, A2AExchangeMessageRequest, A2AExchangeRequest, A2AExchangeState } from "../core/types.js";
 import { readJson } from "./body.js";
+import { booleanQueryParam } from "./request-params.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { sendJson } from "./response.js";
 
@@ -220,12 +221,4 @@ function optionalQueryString(url: URL, name: string): string | undefined {
   if (!value) return undefined;
   const normalized = value.trim();
   return normalized ? normalized : undefined;
-}
-
-function booleanQueryParam(url: URL, name: string): boolean | undefined {
-  const value = url.searchParams.get(name);
-  if (!value) return undefined;
-  if (value === "1" || value.toLowerCase() === "true") return true;
-  if (value === "0" || value.toLowerCase() === "false") return false;
-  throw new BrokerError("bad_request", `${name} must be a boolean`);
 }
