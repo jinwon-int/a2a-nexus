@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  normalizeExchangeState,
+  normalizeExchangeMessageRecord,
+  createLegacyRootExchangeMessage,
+} from "./broker-exchange-normalizers.js";
+import {
   normalizeGitHubPatchTaskRequest,
   readString,
   cleanOptionalTaskCancelField,
@@ -5471,39 +5476,4 @@ function parentRoundNumber(value: unknown): number | undefined {
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
   }
   return undefined;
-}
-
-function normalizeExchangeState(exchange: A2AExchangeState): A2AExchangeState {
-  return {
-    ...exchange,
-    targetNodeId: exchange.targetNodeId ?? exchange.target.id,
-    assignedWorkerId: exchange.assignedWorkerId,
-    currentDecision: exchange.currentDecision,
-    rootMessageId: exchange.rootMessageId ?? "",
-    latestMessageId: exchange.latestMessageId ?? exchange.rootMessageId ?? "",
-    messageCount: exchange.messageCount ?? 0,
-    lastMessageAt: exchange.lastMessageAt ?? exchange.updatedAt,
-    activeTaskId: exchange.activeTaskId,
-  };
-}
-
-function normalizeExchangeMessageRecord(message: A2AExchangeMessageRecord): A2AExchangeMessageRecord {
-  return {
-    ...message,
-    kind: message.kind ?? "thread",
-    updatedAt: message.updatedAt ?? message.createdAt,
-  };
-}
-
-function createLegacyRootExchangeMessage(exchange: A2AExchangeState): A2AExchangeMessageRecord {
-  return {
-    id: `legacy-root:${exchange.id}`,
-    exchangeId: exchange.id,
-    kind: "root",
-    message: exchange.message,
-    requester: exchange.requester,
-    targetNodeId: exchange.targetNodeId ?? exchange.target.id,
-    createdAt: exchange.createdAt,
-    updatedAt: exchange.updatedAt,
-  };
 }
