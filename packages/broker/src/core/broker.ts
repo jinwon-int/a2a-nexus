@@ -4,6 +4,7 @@ import { BrokerListenerRegistry } from "./broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
 import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
+import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -477,16 +478,7 @@ export class InMemoryA2ABroker {
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly tombstones = new Map<string, TaskTombstone>();
   private readonly taskEvents: TaskEventDispatcher;
-  private readonly pendingHotTasks = new Map<string, TaskRecord>();
-  private readonly pendingHotTombstones = new Map<string, TaskTombstone>();
-  private readonly pendingHotAuditEvents = new Map<string, AuditEvent>();
-  private readonly pendingHotWorkers = new Map<string, WorkerRecord>();
-  private readonly pendingHotTerminalOutboxEvents = new Map<string, TerminalTaskOutboxEvent>();
-  private readonly pendingHotExchanges = new Map<string, A2AExchangeState>();
-  private readonly pendingHotExchangeMessages = new Map<string, A2AExchangeMessageRecord>();
-  private readonly pendingHotProposals = new Map<string, ChangeProposal>();
-  private readonly pendingHotArtifacts = new Map<string, ArtifactRecord>();
-  private readonly pendingHotValidations = new Map<string, ValidationResult>();
+  private readonly pendingHot = new PendingHotStateBuffer();
   private readonly workerHeartbeatPersist = new HeartbeatPersistThrottle();
   private readonly workerChurn = new WorkerIdentityChurnTracker();
   private readonly taskHeartbeatAuditPersist = new HeartbeatPersistThrottle();
@@ -2889,10 +2881,10 @@ export class InMemoryA2ABroker {
     const hotSave = this.stateStore?.saveHotEntities;
     if (
       hotSave &&
-      this.hasPendingStateSaveHints() &&
+      this.pendingHot.hasPending() &&
       startedAtMs - this.lastFullRetentionPersistAtMs < HOT_PERSIST_FULL_RETENTION_INTERVAL_MS
     ) {
-      const hints = this.consumeStateSaveHintsWithoutSnapshot();
+      const hints = this.pendingHot.consumeAll();
       if (hints) {
         hotSave.call(this.stateStore, hints);
         this.listeners.emitStateChange(change);
@@ -2912,7 +2904,7 @@ export class InMemoryA2ABroker {
     this.applyRetentionPolicy();
     this.lastFullRetentionPersistAtMs = startedAtMs;
     const snapshot = this.exportSnapshot();
-    const hints = this.consumeStateSaveHints(snapshot);
+    const hints = this.pendingHot.consumeRetained(snapshot);
     this.stateStore?.save(snapshot, hints);
     this.listeners.emitStateChange(change);
     this.listeners.emitProfilingSample({
@@ -2929,46 +2921,46 @@ export class InMemoryA2ABroker {
   private setTaskRecord(task: TaskRecord): void {
     this.taskRepository?.upsertTask(structuredClone(task));
     this.tasks.set(task.id, task);
-    this.pendingHotTasks.set(task.id, structuredClone(task));
+    this.pendingHot.stageTask(task);
   }
 
   private setExchangeRecord(exchange: A2AExchangeState): void {
     const normalizedExchange = normalizeExchangeState(exchange);
     this.exchangeRepository?.upsertExchange(structuredClone(normalizedExchange));
     this.exchanges.set(normalizedExchange.id, normalizedExchange);
-    this.pendingHotExchanges.set(normalizedExchange.id, structuredClone(normalizedExchange));
+    this.pendingHot.stageExchange(normalizedExchange);
   }
 
   private setExchangeMessageRecord(message: A2AExchangeMessageRecord): void {
     const normalizedMessage = normalizeExchangeMessageRecord(message);
     this.exchangeMessageRepository?.upsertExchangeMessage(structuredClone(normalizedMessage));
     this.exchangeMessages.set(normalizedMessage.id, normalizedMessage);
-    this.pendingHotExchangeMessages.set(normalizedMessage.id, structuredClone(normalizedMessage));
+    this.pendingHot.stageExchangeMessage(normalizedMessage);
   }
 
   private setProposalRecord(proposal: ChangeProposal): void {
     this.proposalRepository?.upsertProposal(structuredClone(proposal));
     this.proposals.set(proposal.id, proposal);
-    this.pendingHotProposals.set(proposal.id, structuredClone(proposal));
+    this.pendingHot.stageProposal(proposal);
   }
 
   private setArtifactRecord(artifact: ArtifactRecord): void {
     this.artifactRepository?.upsertArtifact(structuredClone(artifact));
     this.artifacts.set(artifact.id, artifact);
-    this.pendingHotArtifacts.set(artifact.id, structuredClone(artifact));
+    this.pendingHot.stageArtifact(artifact);
   }
 
   private setValidationRecord(validation: ValidationResult): void {
     this.validationRepository?.upsertValidation(structuredClone(validation));
     this.validations.set(validation.id, validation);
-    this.pendingHotValidations.set(validation.id, structuredClone(validation));
+    this.pendingHot.stageValidation(validation);
   }
 
   private setWorkerRecord(worker: WorkerRecord): void {
     const normalizedWorker = normalizeWorkerRecord(worker);
     this.workerRepository?.upsertWorker(structuredClone(normalizedWorker));
     this.workers.set(normalizedWorker.nodeId, normalizedWorker);
-    this.pendingHotWorkers.set(normalizedWorker.nodeId, structuredClone(normalizedWorker));
+    this.pendingHot.stageWorker(normalizedWorker);
   }
 
   private setWorkerRecordInMemory(worker: WorkerRecord): void {
@@ -2977,115 +2969,8 @@ export class InMemoryA2ABroker {
   }
 
   private persistTerminalTaskOutboxEvent(event: TerminalTaskOutboxEvent): void {
-    this.pendingHotTerminalOutboxEvents.set(event.id, structuredClone(event));
+    this.pendingHot.stageTerminalOutboxEvent(event);
     this.persistState();
-  }
-
-  private hasPendingStateSaveHints(): boolean {
-    return (
-      this.pendingHotExchanges.size > 0 ||
-      this.pendingHotExchangeMessages.size > 0 ||
-      this.pendingHotProposals.size > 0 ||
-      this.pendingHotArtifacts.size > 0 ||
-      this.pendingHotValidations.size > 0 ||
-      this.pendingHotTasks.size > 0 ||
-      this.pendingHotTombstones.size > 0 ||
-      this.pendingHotAuditEvents.size > 0 ||
-      this.pendingHotWorkers.size > 0 ||
-      this.pendingHotTerminalOutboxEvents.size > 0
-    );
-  }
-
-  private consumeStateSaveHintsWithoutSnapshot(): BrokerStateSaveHints | undefined {
-    if (!this.hasPendingStateSaveHints()) {
-      return undefined;
-    }
-    const hotExchanges = [...this.pendingHotExchanges.values()];
-    const hotExchangeMessages = [...this.pendingHotExchangeMessages.values()];
-    const hotProposals = [...this.pendingHotProposals.values()];
-    const hotArtifacts = [...this.pendingHotArtifacts.values()];
-    const hotValidations = [...this.pendingHotValidations.values()];
-    const hotTasks = [...this.pendingHotTasks.values()];
-    const hotTombstones = [...this.pendingHotTombstones.values()];
-    const hotAuditEvents = [...this.pendingHotAuditEvents.values()];
-    const hotWorkers = [...this.pendingHotWorkers.values()];
-    const hotTerminalOutboxEvents = [...this.pendingHotTerminalOutboxEvents.values()];
-    this.clearPendingStateSaveHints();
-    return {
-      ...(hotExchanges.length ? { hotExchanges } : {}),
-      ...(hotExchangeMessages.length ? { hotExchangeMessages } : {}),
-      ...(hotProposals.length ? { hotProposals } : {}),
-      ...(hotArtifacts.length ? { hotArtifacts } : {}),
-      ...(hotValidations.length ? { hotValidations } : {}),
-      ...(hotTasks.length ? { hotTasks } : {}),
-      ...(hotTombstones.length ? { hotTombstones } : {}),
-      ...(hotAuditEvents.length ? { hotAuditEvents } : {}),
-      ...(hotWorkers.length ? { hotWorkers } : {}),
-      ...(hotTerminalOutboxEvents.length ? { hotTerminalOutboxEvents } : {}),
-    };
-  }
-
-  private clearPendingStateSaveHints(): void {
-    this.pendingHotExchanges.clear();
-    this.pendingHotExchangeMessages.clear();
-    this.pendingHotProposals.clear();
-    this.pendingHotArtifacts.clear();
-    this.pendingHotValidations.clear();
-    this.pendingHotTasks.clear();
-    this.pendingHotTombstones.clear();
-    this.pendingHotAuditEvents.clear();
-    this.pendingHotWorkers.clear();
-    this.pendingHotTerminalOutboxEvents.clear();
-  }
-
-  private consumeStateSaveHints(snapshot: BrokerSnapshot): BrokerStateSaveHints | undefined {
-    if (
-      this.pendingHotExchanges.size === 0 &&
-      this.pendingHotExchangeMessages.size === 0 &&
-      this.pendingHotProposals.size === 0 &&
-      this.pendingHotArtifacts.size === 0 &&
-      this.pendingHotValidations.size === 0 &&
-      this.pendingHotTasks.size === 0 &&
-      this.pendingHotTombstones.size === 0 &&
-      this.pendingHotAuditEvents.size === 0 &&
-      this.pendingHotWorkers.size === 0 &&
-      this.pendingHotTerminalOutboxEvents.size === 0
-    ) {
-      return undefined;
-    }
-    const retainedExchangeIds = new Set(snapshot.exchanges.map((exchange) => exchange.id));
-    const retainedExchangeMessageIds = new Set(snapshot.exchangeMessages.map((message) => message.id));
-    const retainedProposalIds = new Set(snapshot.proposals.map((proposal) => proposal.id));
-    const retainedArtifactIds = new Set(snapshot.artifacts.map((artifact) => artifact.id));
-    const retainedValidationIds = new Set(snapshot.validations.map((validation) => validation.id));
-    const retainedTaskIds = new Set(snapshot.tasks.map((task) => task.id));
-    const retainedTombstoneTaskIds = new Set((snapshot.tombstones ?? []).map((tombstone) => tombstone.taskId));
-    const retainedAuditEventIds = new Set(snapshot.auditEvents.map((event) => event.id));
-    const retainedWorkerIds = new Set(snapshot.workers.map((worker) => worker.nodeId));
-    const retainedTerminalOutboxIds = new Set((snapshot.terminalOutbox ?? []).map((event) => event.id));
-    const hotExchanges = [...this.pendingHotExchanges.values()].filter((exchange) => retainedExchangeIds.has(exchange.id));
-    const hotExchangeMessages = [...this.pendingHotExchangeMessages.values()].filter((message) => retainedExchangeMessageIds.has(message.id));
-    const hotProposals = [...this.pendingHotProposals.values()].filter((proposal) => retainedProposalIds.has(proposal.id));
-    const hotArtifacts = [...this.pendingHotArtifacts.values()].filter((artifact) => retainedArtifactIds.has(artifact.id));
-    const hotValidations = [...this.pendingHotValidations.values()].filter((validation) => retainedValidationIds.has(validation.id));
-    const hotTasks = [...this.pendingHotTasks.values()].filter((task) => retainedTaskIds.has(task.id));
-    const hotTombstones = [...this.pendingHotTombstones.values()].filter((tombstone) => retainedTombstoneTaskIds.has(tombstone.taskId));
-    const hotAuditEvents = [...this.pendingHotAuditEvents.values()].filter((event) => retainedAuditEventIds.has(event.id));
-    const hotWorkers = [...this.pendingHotWorkers.values()].filter((worker) => retainedWorkerIds.has(worker.nodeId));
-    const hotTerminalOutboxEvents = [...this.pendingHotTerminalOutboxEvents.values()].filter((event) => retainedTerminalOutboxIds.has(event.id));
-    this.clearPendingStateSaveHints();
-    return {
-      ...(hotExchanges.length ? { hotExchanges } : {}),
-      ...(hotExchangeMessages.length ? { hotExchangeMessages } : {}),
-      ...(hotProposals.length ? { hotProposals } : {}),
-      ...(hotArtifacts.length ? { hotArtifacts } : {}),
-      ...(hotValidations.length ? { hotValidations } : {}),
-      ...(hotTasks.length ? { hotTasks } : {}),
-      ...(hotTombstones.length ? { hotTombstones } : {}),
-      ...(hotAuditEvents.length ? { hotAuditEvents } : {}),
-      ...(hotWorkers.length ? { hotWorkers } : {}),
-      ...(hotTerminalOutboxEvents.length ? { hotTerminalOutboxEvents } : {}),
-    };
   }
 
   private appendAuditEvent(input: {
@@ -3110,7 +2995,7 @@ export class InMemoryA2ABroker {
 
     this.auditEvents.set(event.id, event);
     this.auditRepository?.appendAuditEvent(structuredClone(event));
-    this.pendingHotAuditEvents.set(event.id, structuredClone(event));
+    this.pendingHot.stageAuditEvent(event);
     if (event.targetType === "task") {
       const task = this.tasks.get(event.targetId);
       if (task) {
@@ -3118,7 +3003,7 @@ export class InMemoryA2ABroker {
         if (taskEvent) {
           const terminalEvent = this.terminalTaskEventOutbox.enqueue(taskEvent, task);
           if (terminalEvent) {
-            this.pendingHotTerminalOutboxEvents.set(terminalEvent.id, structuredClone(terminalEvent));
+            this.pendingHot.stageTerminalOutboxEvent(terminalEvent);
           }
         }
       }
@@ -4113,7 +3998,7 @@ export class InMemoryA2ABroker {
 
     this.tombstones.set(task.id, tombstone);
     this.tombstoneRepository?.upsertTombstone(structuredClone(tombstone));
-    this.pendingHotTombstones.set(task.id, structuredClone(tombstone));
+    this.pendingHot.stageTombstone(task.id, tombstone);
     this.appendAuditEvent({
       actorId: context?.actorId ?? "broker",
       action: "task.tombstoned",
