@@ -2,6 +2,7 @@ import { unique } from "./collections.js";
 import { numberValue } from "./value-text.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
+import { optionalString } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarDefaultOnCandidateFinalGateState =
   | "ready_for_default_on_candidate_review"
@@ -357,10 +358,6 @@ function buildIdempotencyKey(observation: TerminalBriefSidecarBoundedDryRunObser
 function buildGateReference(observation: TerminalBriefSidecarBoundedDryRunObservationPacket): string {
   const base = JSON.stringify({ generatedAt: observation.generatedAt, state: observation.state, windowSeconds: observation.windowSeconds, summary: observation.summary });
   return "tb-sidecar-default-on-candidate:" + createHash("sha256").update(base).digest("hex").slice(0, 16);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function isObservationPacket(value: unknown): value is TerminalBriefSidecarBoundedDryRunObservationPacket {

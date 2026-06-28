@@ -4,6 +4,7 @@ import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarDispatcherPreflightSealPacket } from "./terminal-brief-sidecar-dispatcher-preflight-seal.js";
+import { approvalSensitiveActionsExcluded, optionalString } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarDispatcherApprovalHandoffState =
   | "dispatcher_approval_handoff_ready"
@@ -581,21 +582,6 @@ function forbiddenBeforeSeparateApproval(): string[] {
   ];
 }
 
-function approvalSensitiveActionsExcluded(): string[] {
-  return [
-    "sending the approval request",
-    "granting approval or executing an approval grant",
-    "dispatching or invoking a start executor",
-    "spawning a process or starting/stopping the sidecar",
-    "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
-    "terminal ACK/replay or terminal receipt DB mutation",
-    "GitHub PR merge, issue close, or comment post from the packet/route",
-    "TaskFlow record creation or broker DB mutation",
-    "production deploy/restart, historical replay, release, publish, or secret movement",
-  ];
-}
-
 function approvalExpiry(
   generatedAt: string,
   options: TerminalBriefSidecarDispatcherApprovalHandoffOptions,
@@ -641,10 +627,6 @@ function titleForState(state: TerminalBriefSidecarDispatcherApprovalHandoffState
   if (state === "seal_expired") return "Expired: Terminal Brief sidecar dispatcher approval handoff";
   if (state === "integrity_failed") return "Integrity failed: Terminal Brief sidecar dispatcher approval handoff";
   return "Blocked: Terminal Brief sidecar dispatcher approval handoff";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function isTerminalBriefSidecarDispatcherPreflightSealPacket(

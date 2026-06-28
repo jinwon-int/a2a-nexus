@@ -1,6 +1,7 @@
 import { unique } from "./collections.js";
 import { isRecord } from "./value-guards.js";
 import { createHash } from "node:crypto";
+import { optionalString } from "./terminal-brief-value-guards.js";
 
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGate,
@@ -598,10 +599,6 @@ function approvalExpiry(
 function numberOption(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
   return value;
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function buildExecutionRequestReference(finalGate: TerminalBriefSidecarDefaultOnRuntimeExecutionFinalGatePacket): string {

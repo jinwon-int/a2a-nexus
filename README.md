@@ -76,7 +76,7 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
 
-The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip.
+The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [monorepo migration document index](docs/monorepo-migration-index.md) for a single navigational entry point across the staged migration records.
 
 ## Package Map
 

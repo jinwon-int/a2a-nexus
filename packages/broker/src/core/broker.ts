@@ -1,4 +1,12 @@
 import { randomUUID } from "node:crypto";
+import {
+  isoNow,
+  formatAgeMs,
+  uniqueIds,
+  sortedCopy,
+  ageSecFromIso,
+  sortNewestFirst,
+} from "./broker-helpers.js";
 
 import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
 
@@ -4665,32 +4673,6 @@ export class InMemoryA2ABroker {
   }
 }
 
-function isoNow(): string {
-  return new Date().toISOString();
-}
-
-function formatAgeMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `${hours}h ${min % 60}m`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
-}
-
-function uniqueIds(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function sortedCopy<T>(values: Iterable<T>, compare: (a: T, b: T) => number): T[] {
-  const items = [...values];
-  items.sort(compare);
-  return items;
-}
-
 function taskStatusSinceAt(task: Pick<TaskRecord, "status" | "createdAt" | "updatedAt" | "claimedAt">): string {
   if (task.status === "claimed") {
     return task.claimedAt ?? task.updatedAt ?? task.createdAt;
@@ -4699,18 +4681,6 @@ function taskStatusSinceAt(task: Pick<TaskRecord, "status" | "createdAt" | "upda
     return task.updatedAt ?? task.claimedAt ?? task.createdAt;
   }
   return task.createdAt;
-}
-
-function ageSecFromIso(iso: string, nowMs: number): number {
-  const parsed = Date.parse(iso);
-  if (!Number.isFinite(parsed)) {
-    return 0;
-  }
-  return Math.max(0, Math.floor((nowMs - parsed) / 1000));
-}
-
-function sortNewestFirst<T extends { createdAt: string }>(a: T, b: T): number {
-  return a.createdAt < b.createdAt ? 1 : -1;
 }
 
 function countStateSaveHints(hints: BrokerStateSaveHints): NonNullable<BrokerProfilingSample["saveHints"]> {

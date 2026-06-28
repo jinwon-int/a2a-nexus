@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import type { TerminalBriefSidecarAdapterHandoffApprovalPacket } from "./terminal-brief-sidecar-adapter-handoff-approval.js";
 import { optionalString } from "./value-text.js";
+import { approvalSensitiveActionsExcluded, stringArray } from "./terminal-brief-value-guards.js";
 
 export type TerminalBriefSidecarOperatorReviewTableState =
   | "review_table_ready"
@@ -503,21 +504,6 @@ function nextActionsFor(state: TerminalBriefSidecarOperatorReviewTableState): st
   ];
 }
 
-function approvalSensitiveActionsExcluded(): string[] {
-  return [
-    "sending the approval request",
-    "granting approval or executing an approval grant",
-    "dispatching or invoking a start executor",
-    "spawning a process or starting/stopping the sidecar",
-    "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
-    "terminal ACK/replay or terminal receipt DB mutation",
-    "GitHub PR merge, issue close, or comment post from the packet/route",
-    "TaskFlow record creation or broker DB mutation",
-    "production deploy/restart, historical replay, release, publish, or secret movement",
-  ];
-}
-
 function buildOperatorReviewTableIdempotencyKey(
   handoff: TerminalBriefSidecarAdapterHandoffApprovalPacket,
   generatedAt: string,
@@ -543,10 +529,6 @@ function titleForState(state: TerminalBriefSidecarOperatorReviewTableState): str
   if (state === "conflicting") return "Conflicting: Terminal Brief sidecar operator review source";
   if (state === "rejected") return "Rejected: Terminal Brief sidecar operator review source";
   return "Blocked: Terminal Brief sidecar operator review table";
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function isTerminalBriefSidecarAdapterHandoffApprovalPacket(
