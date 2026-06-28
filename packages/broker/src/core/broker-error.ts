@@ -18,6 +18,14 @@ export type BrokerErrorCode =
   | "unauthorized"
   | "rate_limited";
 
+/**
+ * Error code stamped on a task that is dead-lettered after exhausting its
+ * automatic requeue attempts. Lives here (a leaf) so diagnostics modules can
+ * reference it without importing the full broker module; broker.ts re-exports it
+ * to preserve the existing public surface.
+ */
+export const REQUEUE_EXHAUSTED_ERROR_CODE = "exceeded_requeue_limit";
+
 export class BrokerError extends Error {
   constructor(
     readonly code: BrokerErrorCode,

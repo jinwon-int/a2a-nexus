@@ -90,11 +90,11 @@ import {
   uniqueIds,
   sortedCopy,
   sortNewestFirst,
-  countBy,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
+import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
 
 import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
 
@@ -215,11 +215,12 @@ import type {
   WorkerView,
 } from "./types.js";
 
-import { BrokerError, type BrokerErrorCode } from "./broker-error.js";
-// Re-exported to preserve the public surface; BrokerError/BrokerErrorCode now
-// live in broker-error.js so other modules can throw and type broker errors
-// without importing the full broker module.
-export { BrokerError };
+import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
+// Re-exported to preserve the public surface; BrokerError/BrokerErrorCode and
+// REQUEUE_EXHAUSTED_ERROR_CODE now live in broker-error.js so other modules can
+// throw, type, and reference broker errors without importing the full broker
+// module.
+export { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE };
 export type { BrokerErrorCode };
 
 export interface BrokerRetentionPolicy {
@@ -341,8 +342,6 @@ const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
  * @see WorkerMode
  */
 export const DEFAULT_WORKER_OFFLINE_AFTER_MS = 90_000;
-
-export const REQUEUE_EXHAUSTED_ERROR_CODE = "exceeded_requeue_limit";
 
 /** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
 const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
@@ -663,48 +662,27 @@ export class InMemoryA2ABroker {
     longRunningAfterMs?: number;
     workerOfflineAfterMs?: number;
   }): BrokerCompactDiagnostics {
-    const nowMs = options?.nowMs ?? Date.now();
-    const staleAfterMs = options?.staleAfterMs ?? 120_000;
-    const longRunningAfterMs = options?.longRunningAfterMs ?? 3_600_000;
-    const workerOfflineAfterMs = options?.workerOfflineAfterMs ?? 90_000;
-    const tasks = this.listTasks();
-    const workers = this.listWorkers();
-    const staleTasks = tasks.filter((task) => computeTaskDiagnosticStatus(task, staleAfterMs, longRunningAfterMs, nowMs) === "stale");
-    const longRunningTasks = tasks.filter((task) => computeTaskDiagnosticStatus(task, staleAfterMs, longRunningAfterMs, nowMs) === "long_running");
-    const staleWorkers = workers.filter((worker) => isWorkerStale(worker.lastSeenAt, workerOfflineAfterMs, nowMs));
-    const audits = this.listAuditEvents();
-
-    return {
-      generatedAt: new Date(nowMs).toISOString(),
-      tasks: {
-        total: tasks.length,
-        byStatus: countBy(tasks, (task) => task.status) as Record<TaskStatus, number>,
-        stale: staleTasks.length,
-        longRunning: longRunningTasks.length,
+    return buildCompactDiagnostics(
+      {
+        tasks: this.listTasks(),
+        workers: this.listWorkers(),
+        audits: this.listAuditEvents(),
         bufferedEventStreams: this.taskEvents.bufferedStreamCount(),
+        retentionPolicy: this.retentionPolicy,
+        runtimeRepositories: {
+          tasks: Boolean(this.taskRepository),
+          audit: Boolean(this.auditRepository),
+          tombstones: Boolean(this.tombstoneRepository),
+          workers: Boolean(this.workerRepository),
+          exchanges: Boolean(this.exchangeRepository),
+          exchangeMessages: Boolean(this.exchangeMessageRepository),
+          proposals: Boolean(this.proposalRepository),
+          artifacts: Boolean(this.artifactRepository),
+          validations: Boolean(this.validationRepository),
+        },
       },
-      workers: {
-        total: workers.length,
-        stale: staleWorkers.length,
-      },
-      audit: {
-        total: audits.length,
-        requeued: audits.filter((event) => event.action === "task.requeued").length,
-        deadLettered: tasks.filter((task) => task.error?.code === REQUEUE_EXHAUSTED_ERROR_CODE).length,
-      },
-      retention: { ...this.retentionPolicy },
-      runtimeRepositories: {
-        tasks: Boolean(this.taskRepository),
-        audit: Boolean(this.auditRepository),
-        tombstones: Boolean(this.tombstoneRepository),
-        workers: Boolean(this.workerRepository),
-        exchanges: Boolean(this.exchangeRepository),
-        exchangeMessages: Boolean(this.exchangeMessageRepository),
-        proposals: Boolean(this.proposalRepository),
-        artifacts: Boolean(this.artifactRepository),
-        validations: Boolean(this.validationRepository),
-      },
-    };
+      options,
+    );
   }
 
   /** Replay buffered events after the given sequence number. Returns events with seq > afterSeq. */
