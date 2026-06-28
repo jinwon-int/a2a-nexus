@@ -2587,11 +2587,6 @@
                   "source": "readiness",
                   "matches": "GO_CANDIDATE",
                   "message": "readiness GO_CANDIDATE posture"
-            },
-            {
-                  "source": "releaseGate",
-                  "matches": "monorepo-branch-protection-approval-packet",
-                  "message": "release gate script branch protection check reference"
             }
       ],
       "successMessage": "monorepo branch protection approval packet ok"
@@ -3050,11 +3045,6 @@
                   "source": "importDoc",
                   "matches": "not history-preserving",
                   "message": "import doc non-history-preserving reference"
-            },
-            {
-                  "source": "releaseGate",
-                  "matches": "monorepo-canonical-flip-readiness",
-                  "message": "release gate script canonical readiness reference"
             }
       ],
       "successMessage": "monorepo canonical flip readiness ok"
@@ -4795,13 +4785,13 @@
             },
             {
                   "source": "ciWorkflow",
-                  "matches": "actions\\/checkout@v5",
-                  "message": "ci workflow phrase actions/checkout@v5"
+                  "matches": "actions\\/checkout@v7",
+                  "message": "ci workflow phrase actions/checkout@v7"
             },
             {
                   "source": "ciWorkflow",
-                  "matches": "actions\\/setup-node@v5",
-                  "message": "ci workflow phrase actions/setup-node@v5"
+                  "matches": "actions\\/setup-node@v6",
+                  "message": "ci workflow phrase actions/setup-node@v6"
             },
             {
                   "source": "ciWorkflow",
@@ -5321,13 +5311,13 @@
             },
             {
                   "source": "ciWorkflow",
-                  "matches": "actions\\/checkout@v5",
-                  "message": "ci workflow phrase actions/checkout@v5"
+                  "matches": "actions\\/checkout@v7",
+                  "message": "ci workflow phrase actions/checkout@v7"
             },
             {
                   "source": "ciWorkflow",
-                  "matches": "actions\\/setup-node@v5",
-                  "message": "ci workflow phrase actions/setup-node@v5"
+                  "matches": "actions\\/setup-node@v6",
+                  "message": "ci workflow phrase actions/setup-node@v6"
             },
             {
                   "source": "ciWorkflow",
