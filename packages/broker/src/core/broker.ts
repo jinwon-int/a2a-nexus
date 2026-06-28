@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TaskEventDispatcher } from "./task-event-dispatcher.js";
+import { BrokerListenerRegistry } from "./broker-listener-registry.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -493,8 +494,7 @@ export class InMemoryA2ABroker {
     warning?: WorkerIdentityWarning;
   }>();
   private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
-  private readonly stateListeners = new Set<BrokerStateListener>();
-  private readonly profilingListeners = new Set<BrokerProfilingListener>();
+  private readonly listeners: BrokerListenerRegistry;
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
   private readonly crossBrokerTerminalBriefs: CrossBrokerTerminalBriefProjectionStore;
@@ -509,7 +509,6 @@ export class InMemoryA2ABroker {
   private readonly artifactRepository?: ArtifactRuntimeRepository;
   private readonly validationRepository?: ValidationRuntimeRepository;
   private readonly capabilityCards: WorkerCapabilityCardRepository;
-  private readonly optionProfilingListener?: BrokerProfilingListener;
   private readonly snapshotExtensionProviders = new Set<() => Partial<BrokerSnapshot>>();
   private readonly brokerId?: string;
   private readonly teamId?: string;
@@ -531,7 +530,7 @@ export class InMemoryA2ABroker {
     this.artifactRepository = options.artifactRepository;
     this.validationRepository = options.validationRepository;
     this.capabilityCards = options.capabilityCardRepository ?? new InMemoryWorkerCapabilityCardRepository();
-    this.optionProfilingListener = options.profilingListener;
+    this.listeners = new BrokerListenerRegistry(options.profilingListener);
     if (options.snapshotExtensions) {
       this.snapshotExtensionProviders.add(options.snapshotExtensions);
     }
@@ -687,18 +686,12 @@ export class InMemoryA2ABroker {
 
   /** Subscribe to broker-wide state changes after a successful persisted mutation. */
   subscribeToState(listener: BrokerStateListener): () => void {
-    this.stateListeners.add(listener);
-    return () => {
-      this.stateListeners.delete(listener);
-    };
+    return this.listeners.subscribeState(listener);
   }
 
   /** Subscribe to compact broker profiling samples. Listener errors are ignored. */
   subscribeToProfiling(listener: BrokerProfilingListener): () => void {
-    this.profilingListeners.add(listener);
-    return () => {
-      this.profilingListeners.delete(listener);
-    };
+    return this.listeners.subscribeProfiling(listener);
   }
 
   getCompactDiagnostics(options?: {
@@ -2963,8 +2956,8 @@ export class InMemoryA2ABroker {
       const hints = this.consumeStateSaveHintsWithoutSnapshot();
       if (hints) {
         hotSave.call(this.stateStore, hints);
-        this.emitStateChange(change);
-        this.emitProfilingSample({
+        this.listeners.emitStateChange(change);
+        this.listeners.emitProfilingSample({
           operation: "persistState",
           startedAt,
           durationMs: Date.now() - startedAtMs,
@@ -2982,8 +2975,8 @@ export class InMemoryA2ABroker {
     const snapshot = this.exportSnapshot();
     const hints = this.consumeStateSaveHints(snapshot);
     this.stateStore?.save(snapshot, hints);
-    this.emitStateChange(change);
-    this.emitProfilingSample({
+    this.listeners.emitStateChange(change);
+    this.listeners.emitProfilingSample({
       operation: "persistState",
       startedAt,
       durationMs: Date.now() - startedAtMs,
@@ -3154,37 +3147,6 @@ export class InMemoryA2ABroker {
       ...(hotWorkers.length ? { hotWorkers } : {}),
       ...(hotTerminalOutboxEvents.length ? { hotTerminalOutboxEvents } : {}),
     };
-  }
-
-  private emitStateChange(change: BrokerStateChange): void {
-    for (const listener of [...this.stateListeners]) {
-      try {
-        listener(change);
-      } catch (error) {
-        console.error(
-          `[a2a-broker] broker state listener threw: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  }
-
-  private emitProfilingSample(sample: BrokerProfilingSample): void {
-    const listeners = this.optionProfilingListener
-      ? [this.optionProfilingListener, ...this.profilingListeners]
-      : [...this.profilingListeners];
-    for (const listener of listeners) {
-      try {
-        listener({ ...sample, saveHints: sample.saveHints ? { ...sample.saveHints } : undefined });
-      } catch (error) {
-        console.error(
-          `[a2a-broker] broker profiling listener threw: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
   }
 
   private appendAuditEvent(input: {
