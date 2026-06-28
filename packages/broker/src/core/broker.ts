@@ -3,6 +3,7 @@ import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
+import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -486,9 +487,9 @@ export class InMemoryA2ABroker {
   private readonly pendingHotProposals = new Map<string, ChangeProposal>();
   private readonly pendingHotArtifacts = new Map<string, ArtifactRecord>();
   private readonly pendingHotValidations = new Map<string, ValidationResult>();
-  private readonly lastPersistedWorkerHeartbeatAtMs = new Map<string, number>();
+  private readonly workerHeartbeatPersist = new HeartbeatPersistThrottle();
   private readonly workerChurn = new WorkerIdentityChurnTracker();
-  private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
+  private readonly taskHeartbeatAuditPersist = new HeartbeatPersistThrottle();
   private readonly listeners: BrokerListenerRegistry;
   private readonly taskEventStream: TaskEventStream;
   private readonly terminalTaskEventOutbox: TerminalTaskEventOutbox;
@@ -1006,11 +1007,12 @@ export class InMemoryA2ABroker {
     worker.updatedAt = now;
     worker.lastSeenAt = now;
 
-    const lastPersistedAtMs = this.lastPersistedWorkerHeartbeatAtMs.get(worker.nodeId) ?? 0;
-    const shouldPersistHeartbeat =
-      this.workerHeartbeatPersistIntervalMs === 0 ||
-      materialChange ||
-      nowMs - lastPersistedAtMs >= this.workerHeartbeatPersistIntervalMs;
+    const shouldPersistHeartbeat = this.workerHeartbeatPersist.shouldPersist(
+      worker.nodeId,
+      nowMs,
+      this.workerHeartbeatPersistIntervalMs,
+      materialChange,
+    );
 
     if (!shouldPersistHeartbeat) {
       this.setWorkerRecordInMemory(worker);
@@ -1030,7 +1032,7 @@ export class InMemoryA2ABroker {
       workerId: worker.nodeId,
       materialChange,
     });
-    this.lastPersistedWorkerHeartbeatAtMs.set(worker.nodeId, nowMs);
+    this.workerHeartbeatPersist.markPersisted(worker.nodeId, nowMs);
     return worker;
   }
 
@@ -2708,8 +2710,8 @@ export class InMemoryA2ABroker {
     pruneMapEntries(this.validations, retainedValidationIds);
     pruneMapEntries(this.workers, retainedWorkerIds);
     pruneMapEntries(this.auditEvents, retainedAuditEventIds);
-    pruneMapEntries(this.lastPersistedWorkerHeartbeatAtMs, retainedWorkerIds);
-    pruneMapEntries(this.lastPersistedTaskHeartbeatAuditAtMs, retainedTaskIds);
+    this.workerHeartbeatPersist.prune(retainedWorkerIds);
+    this.taskHeartbeatAuditPersist.prune(retainedTaskIds);
     this.taskEvents.prune(retainedTaskIds, prunedTaskIds);
   }
 
@@ -2863,7 +2865,7 @@ export class InMemoryA2ABroker {
       this.workers.set(normalizedWorker.nodeId, normalizedWorker);
       const lastSeenAtMs = Date.parse(normalizedWorker.lastSeenAt);
       if (Number.isFinite(lastSeenAtMs)) {
-        this.lastPersistedWorkerHeartbeatAtMs.set(normalizedWorker.nodeId, lastSeenAtMs);
+        this.workerHeartbeatPersist.markPersisted(normalizedWorker.nodeId, lastSeenAtMs);
       }
     }
 
@@ -3562,10 +3564,11 @@ export class InMemoryA2ABroker {
     task.lastHeartbeatAt = now;
     task.updatedAt = now;
     this.setTaskRecord(task);
-    const lastPersistedAtMs = this.lastPersistedTaskHeartbeatAuditAtMs.get(task.id) ?? 0;
-    const shouldPersistHeartbeatAudit =
-      this.retentionPolicy.heartbeatAuditSampleIntervalMs === 0 ||
-      nowMs - lastPersistedAtMs >= this.retentionPolicy.heartbeatAuditSampleIntervalMs;
+    const shouldPersistHeartbeatAudit = this.taskHeartbeatAuditPersist.shouldPersist(
+      task.id,
+      nowMs,
+      this.retentionPolicy.heartbeatAuditSampleIntervalMs,
+    );
     if (shouldPersistHeartbeatAudit) {
       this.appendAuditEvent({
         actorId: workerId,
@@ -3575,7 +3578,7 @@ export class InMemoryA2ABroker {
         proposalId: task.proposalId,
         note: "task heartbeat",
       });
-      this.lastPersistedTaskHeartbeatAuditAtMs.set(task.id, nowMs);
+      this.taskHeartbeatAuditPersist.markPersisted(task.id, nowMs);
     }
     this.persistState();
     this.taskEvents.emit(task, "started"); // re-emit so subscribers see the heartbeat
