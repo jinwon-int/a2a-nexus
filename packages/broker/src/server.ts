@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { readPersistenceQueueDiagnostics } from "./persistence-queue-diagnostics.js";
+import { summarizeTerminalOutboxForSchedz } from "./terminal-outbox-schedz.js";
 import {
   resolveA2AHttpSignatureWorkerAuthMode,
   validateBrokerStartupSecurity,
@@ -533,8 +534,6 @@ const _healthTiming = new RequestTimingWindow();
 // O(1) counters and rolling windows. Never touches DB, hot-table, or cache.
 // ---------------------------------------------------------------------------
 
-type TerminalOutboxCounterEntry = { key: string; count: number };
-
 /** Total number of accepted HTTP requests since process start. */
 let _totalAcceptedRequests = 0;
 
@@ -582,89 +581,6 @@ function routeHandlerBodySnapshot(): Record<RequestRouteGroup, RequestTimingSnap
     snapshot[group] = _perRouteHandlerBody.get(group)?.snapshot() ?? null;
   }
   return snapshot;
-}
-
-function incrementCounter(counter: Record<string, number>, key: string | undefined | null): void {
-  const normalized = key && key.length > 0 ? key : "unknown";
-  counter[normalized] = (counter[normalized] ?? 0) + 1;
-}
-
-function topCounterEntries(counter: Record<string, number>, limit = 5): TerminalOutboxCounterEntry[] {
-  return Object.entries(counter)
-    .map(([key, count]) => ({ key, count }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-    .slice(0, limit);
-}
-
-function oldestAgeMs(events: TerminalTaskOutboxEvent[], nowMs: number): number | null {
-  let oldest: number | null = null;
-  for (const event of events) {
-    const timestamp = Date.parse(event.createdAt);
-    if (!Number.isFinite(timestamp)) continue;
-    oldest = oldest === null ? timestamp : Math.min(oldest, timestamp);
-  }
-  return oldest === null ? null : Math.max(0, Math.round(nowMs - oldest));
-}
-
-function summarizeTerminalOutboxForSchedz(outbox: TerminalTaskEventOutbox) {
-  const limit = 200;
-  const retained = outbox.snapshot();
-  const events = retained.slice(-limit);
-  const nowMs = Date.now();
-  const byWorker: Record<string, number> = {};
-  const byStatus: Record<string, number> = {};
-  const byReceiptStatus: Record<string, number> = {};
-  const byBrokerOfRecord: Record<string, number> = {};
-  const pendingAckByWorker: Record<string, number> = {};
-  const pendingAckByStatus: Record<string, number> = {};
-  const pendingAckByReceiptStatus: Record<string, number> = {};
-  const pendingAckByBrokerOfRecord: Record<string, number> = {};
-  const pendingAckEvents: TerminalTaskOutboxEvent[] = [];
-  let oldestPendingAckEvent: TerminalTaskOutboxEvent | null = null;
-  let oldestPendingAckAt: number | null = null;
-
-  for (const event of events) {
-    const worker = event.payload.worker ?? event.payload.crossBrokerHandoff?.childWorkerId ?? undefined;
-    incrementCounter(byWorker, worker);
-    incrementCounter(byStatus, event.payload.status);
-    incrementCounter(byReceiptStatus, event.receipt?.status);
-    incrementCounter(byBrokerOfRecord, event.payload.brokerOfRecordId);
-    if (!event.ack) {
-      pendingAckEvents.push(event);
-      incrementCounter(pendingAckByWorker, worker);
-      incrementCounter(pendingAckByStatus, event.payload.status);
-      incrementCounter(pendingAckByReceiptStatus, event.receipt?.status);
-      incrementCounter(pendingAckByBrokerOfRecord, event.payload.brokerOfRecordId);
-      const createdAt = Date.parse(event.createdAt);
-      if (Number.isFinite(createdAt) && (oldestPendingAckAt === null || createdAt < oldestPendingAckAt)) {
-        oldestPendingAckAt = createdAt;
-        oldestPendingAckEvent = event;
-      }
-    }
-  }
-  const oldestPendingAckWorker = oldestPendingAckEvent
-    ? oldestPendingAckEvent.payload.worker ?? oldestPendingAckEvent.payload.crossBrokerHandoff?.childWorkerId ?? "unknown"
-    : null;
-
-  return {
-    retainedCount: retained.length,
-    sampledCount: events.length,
-    sampleLimit: limit,
-    pendingAckCount: pendingAckEvents.length,
-    oldestPendingAckAgeMs: oldestAgeMs(pendingAckEvents, nowMs),
-    topWorkers: topCounterEntries(byWorker),
-    topStatuses: topCounterEntries(byStatus),
-    topReceiptStatuses: topCounterEntries(byReceiptStatus),
-    topBrokersOfRecord: topCounterEntries(byBrokerOfRecord),
-    topPendingAckWorkers: topCounterEntries(pendingAckByWorker),
-    topPendingAckStatuses: topCounterEntries(pendingAckByStatus),
-    topPendingAckReceiptStatuses: topCounterEntries(pendingAckByReceiptStatus),
-    topPendingAckBrokersOfRecord: topCounterEntries(pendingAckByBrokerOfRecord),
-    oldestPendingAckWorker,
-    oldestPendingAckStatus: oldestPendingAckEvent?.payload.status ?? null,
-    oldestPendingAckReceiptStatus: oldestPendingAckEvent?.receipt?.status ?? null,
-    oldestPendingAckBrokerOfRecord: oldestPendingAckEvent?.payload.brokerOfRecordId ?? null,
-  };
 }
 
 function endpointTimingWindow(group: EndpointGroup): RequestTimingWindow {
