@@ -89,7 +89,6 @@ import {
   type RequesterIdentity,
 } from "./core/request-security.js";
 import {
-  CURRENT_BROKER_STATE_VERSION,
   DEFAULT_BROKER_STATE_MAX_BYTES,
   JsonFileBrokerStateStore,
   SqliteArtifactRuntimeRepository,
@@ -102,12 +101,9 @@ import {
   SqliteTombstoneRuntimeRepository,
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
-  type BrokerHotAuditDiagnostics,
   type BrokerHotEntityDiagnostics,
-  type BrokerPersistenceInfo,
   type BrokerStateStore,
   type SqliteBrokerLoadSource,
-  type BrokerHotTableLoadMetrics,
   type BrokerHotTableRuntimeLoadLimits,
   type SqliteTaskListItemProjection,
 } from "./core/store.js";
@@ -115,6 +111,7 @@ import {
   projectHotTableGrowth,
   type HotTableGrowthProjection,
 } from "./core/hot-table-growth.js";
+import { HealthDiagnosticsCache } from "./health-diagnostics-cache.js";
 import {
   createWorkerThreadPersistence,
 } from "./core/sqlite-worker-thread-persistence.js";
@@ -515,13 +512,7 @@ const DEFAULT_DASHBOARD_PENDING_ACTION_LIMIT = 5;
 const DEFAULT_ALERT_STALE_AFTER_MS = 120_000;
 const DEFAULT_ALERT_LONG_RUNNING_AFTER_MS = 3_600_000;
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
-const DEFAULT_HEALTH_DIAGNOSTICS_TTL_MS = 5_000;
 const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
-type CachedHealthDiagnostics = {
-  persistence: BrokerPersistenceInfo;
-  auditDiagnostics: BrokerHotAuditDiagnostics | undefined;
-  hotTableGrowth: HotTableGrowthProjection | undefined;
-};
 
 
 /**
@@ -1393,72 +1384,6 @@ function readHttpServerDiagnostics(server: Server | null): {
   };
 }
 
-class HealthDiagnosticsCache {
-  private cached: CachedHealthDiagnostics | null = null;
-  private cachedAt = 0;
-  private readonly ttlMs: number;
-  /** Prior snapshot of hot-table load metrics, used to compute growth rate across cache refreshes. */
-  private priorMetrics: BrokerHotTableLoadMetrics | undefined;
-  /** Timestamp of the prior snapshot. */
-  private priorGeneratedAt: string | undefined;
-
-  constructor(ttlMs: number = DEFAULT_HEALTH_DIAGNOSTICS_TTL_MS) {
-    this.ttlMs = ttlMs;
-  }
-
-  get(
-    stateStore: BrokerStateStore,
-    extra?: {
-      processMemory?: {
-        rssBytes: number;
-        heapTotalBytes: number;
-        heapUsedBytes: number;
-        heapLimitBytes: number;
-      };
-      snapshotMetrics?: {
-        lastSnapshotBytes?: number | null;
-        lastPersistDurationMs?: number | null;
-        lastSnapshotAt?: string | null;
-      };
-    },
-  ): { persistence: BrokerPersistenceInfo; auditDiagnostics: BrokerHotAuditDiagnostics | undefined; hotTableGrowth: HotTableGrowthProjection | undefined; fromCache: boolean } {
-    const now = Date.now();
-    if (this.cached !== null && now - this.cachedAt < this.ttlMs) {
-      return { ...this.cached, fromCache: true };
-    }
-    const persistence = stateStore.getPersistenceInfo?.() ?? {
-      kind: "custom",
-      stateVersion: CURRENT_BROKER_STATE_VERSION,
-    };
-    const auditDiagnostics = stateStore instanceof SqliteBrokerStateStore
-      ? stateStore.readHotAuditDiagnostics()
-      : undefined;
-
-    // Compute hot-table growth projection from current load metrics.
-    let hotTableGrowth: HotTableGrowthProjection | undefined;
-    if (persistence.hotTableLoadMetrics) {
-      hotTableGrowth = projectHotTableGrowth({
-        current: persistence.hotTableLoadMetrics,
-        prior: this.priorMetrics,
-        priorGeneratedAt: this.priorGeneratedAt,
-        runtimeLoadLimits: persistence.hotTableRuntimeLoadLimits,
-        maxWarnings: 10,
-        ...(extra?.processMemory ? { processMemory: extra.processMemory } : {}),
-        ...(extra?.snapshotMetrics ? { snapshotMetrics: extra.snapshotMetrics } : {}),
-      });
-    }
-
-    // Rotate prior snapshot for the next cache refresh.
-    if (persistence.hotTableLoadMetrics) {
-      this.priorMetrics = persistence.hotTableLoadMetrics;
-      this.priorGeneratedAt = hotTableGrowth?.generatedAt;
-    }
-
-    this.cached = { persistence, auditDiagnostics, hotTableGrowth };
-    this.cachedAt = now;
-    return { persistence, auditDiagnostics, hotTableGrowth, fromCache: false };
-  }
-}
 
 export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
 export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
