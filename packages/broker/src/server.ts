@@ -241,7 +241,6 @@ import {
 } from "./core/terminal-event-outbox.js";
 import {
   queryTerminalBriefInbox,
-  summarizeTerminalBriefInbox,
 } from "./core/terminal-brief-query-api.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
@@ -271,6 +270,7 @@ import {
 } from "./http/workers-read.js";
 import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
 import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
+import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1686,73 +1686,24 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (req.method === "GET" && path === "/dashboard") {
-        const recentLimit = numberQueryParam(url, "recent_history_limit") ?? 10;
-        const oldestPendingLimit = numberQueryParam(url, "oldest_pending_limit") ?? 5;
-        const pendingActionLimit = numberQueryParam(url, "pending_action_limit") ?? 5;
-        return sendJson(res, 200, buildDashboardResponse({
-          broker,
-          workerOfflineAfterSec,
-          getStaleReaperStatus,
-          rateLimiter,
-          workerRateLimiter,
-          version: buildInfo.version,
-          build: buildInfo.build,
-          recentHistoryLimit: recentLimit,
-          oldestPendingLimit,
-          pendingActionLimit,
-          hotEntityDiagnostics: stateStore instanceof SqliteBrokerStateStore
-            ? stateStore.readHotEntityDiagnostics()
-            : undefined,
-          persistenceQueue: readPersistenceQueueDiagnostics(persistenceQueueDiagnosticsProvider),
-        }));
-      }
-
-      if (req.method === "GET" && path === "/control-tower") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "control_tower.read");
-        }
-        const recentLimit = numberQueryParam(url, "recent_history_limit") ?? 10;
-        const oldestPendingLimit = numberQueryParam(url, "oldest_pending_limit") ?? 5;
-        const pendingActionLimit = numberQueryParam(url, "pending_action_limit") ?? 5;
-        const dashboard = buildDashboardResponse({
-          broker,
-          workerOfflineAfterSec,
-          getStaleReaperStatus,
-          rateLimiter,
-          workerRateLimiter,
-          version: buildInfo.version,
-          build: buildInfo.build,
-          recentHistoryLimit: recentLimit,
-          oldestPendingLimit,
-          pendingActionLimit,
-          hotEntityDiagnostics: stateStore instanceof SqliteBrokerStateStore
-            ? stateStore.readHotEntityDiagnostics()
-            : undefined,
-          persistenceQueue: readPersistenceQueueDiagnostics(persistenceQueueDiagnosticsProvider),
-        });
-        return sendJson(res, 200, {
-          kind: "a2a-broker.control-tower.snapshot",
-          generatedAt: dashboard.generatedAt,
-          brokerId,
-          version: buildInfo.version,
-          build: buildInfo.build,
-          queue: dashboard.operatorSnapshot.taskStatusSummary,
-          recovery: dashboard.operatorSnapshot.recoverySummary,
-          attention: dashboard.attention,
-          workerCapacity: broker.getWorkerCapacitySummary({
-            workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-            taskStaleAfterMs: numberQueryParam(url, "stale_after_ms") ?? workerOfflineAfterSec * 1000,
-          }),
-          terminalBrief: summarizeTerminalBriefInbox(broker.getTerminalTaskEventOutbox()),
-          safety: {
-            readOnly: true,
-            performsMutation: false,
-            forbiddenActions: ["manual_ack", "replay", "prune", "provider_send", "restart", "deploy", "db_mutation"],
-          },
-        }, {
-          "cache-control": "no-store",
-        });
+      if (handleOperatorDashboardRouteIfMatched({
+        method: req.method,
+        path,
+        res,
+        url,
+        broker,
+        stateStore,
+        brokerId,
+        workerOfflineAfterSec,
+        getStaleReaperStatus,
+        rateLimiter,
+        workerRateLimiter,
+        buildInfo,
+        persistenceQueueDiagnosticsProvider,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (req.method === "GET" && path === "/release/evidence") {
