@@ -63,7 +63,14 @@ function applyAssertion({ expect }, roots, assertion, label) {
   }
   if ('matches' in assertion) {
     expect(typeof actual === 'string', `${message}: matches target must be a string`);
-    expect(new RegExp(assertion.matches).test(actual ?? ''), `${message}: ${describe(actual)} does not match /${assertion.matches}/`);
+    // Multiline mode so `^`/`$`-anchored patterns match individual lines, not
+    // only the whole-string boundaries. Doc/workflow assertions use patterns
+    // like `^\s{2}<job>:` to detect a line in a multi-line file; without `m`
+    // those never match unless the line happens to start at the first character
+    // of the file. `matches` is a positive assertion, so widening `^`/`$` to
+    // line boundaries can only let intended line patterns match — it cannot turn
+    // a previously-passing assertion into a failure.
+    expect(new RegExp(assertion.matches, 'm').test(actual ?? ''), `${message}: ${describe(actual)} does not match /${assertion.matches}/`);
   }
   if ('min' in assertion) {
     expect(typeof actual === 'number', `${message}: min target must be a number`);
