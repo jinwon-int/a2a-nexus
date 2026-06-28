@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
+import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -503,7 +504,7 @@ export class InMemoryA2ABroker {
   private readonly artifactRepository?: ArtifactRuntimeRepository;
   private readonly validationRepository?: ValidationRuntimeRepository;
   private readonly capabilityCards: WorkerCapabilityCardRepository;
-  private readonly snapshotExtensionProviders = new Set<() => Partial<BrokerSnapshot>>();
+  private readonly snapshotExtensions: SnapshotExtensionRegistry;
   private readonly brokerId?: string;
   private readonly teamId?: string;
   private readonly workerHeartbeatPersistIntervalMs: number;
@@ -525,9 +526,7 @@ export class InMemoryA2ABroker {
     this.validationRepository = options.validationRepository;
     this.capabilityCards = options.capabilityCardRepository ?? new InMemoryWorkerCapabilityCardRepository();
     this.listeners = new BrokerListenerRegistry(options.profilingListener);
-    if (options.snapshotExtensions) {
-      this.snapshotExtensionProviders.add(options.snapshotExtensions);
-    }
+    this.snapshotExtensions = new SnapshotExtensionRegistry(options.snapshotExtensions);
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
@@ -660,18 +659,7 @@ export class InMemoryA2ABroker {
    * when callers supply their own broker instance.
    */
   registerSnapshotExtension(provider: () => Partial<BrokerSnapshot>): () => void {
-    this.snapshotExtensionProviders.add(provider);
-    return () => {
-      this.snapshotExtensionProviders.delete(provider);
-    };
-  }
-
-  private snapshotExtensionFields(): Partial<BrokerSnapshot> {
-    let extensions: Partial<BrokerSnapshot> = {};
-    for (const provider of this.snapshotExtensionProviders) {
-      extensions = { ...extensions, ...provider() };
-    }
-    return extensions;
+    return this.snapshotExtensions.register(provider);
   }
 
   subscribeToTask(taskId: string, listener: TaskUpdateListener): () => void {
@@ -2616,7 +2604,7 @@ export class InMemoryA2ABroker {
       tombstones: [...this.tombstones.values()],
       terminalOutbox: this.terminalTaskEventOutbox.snapshot(),
       crossBrokerTerminalBriefs: this.crossBrokerTerminalBriefs.snapshot(),
-      ...this.snapshotExtensionFields(),
+      ...this.snapshotExtensions.collectFields(),
     };
   }
 
