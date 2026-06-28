@@ -1,4 +1,8 @@
 import { BrokerError } from "../core/broker.js";
+import { numberQueryParam, boundedLimitQueryParam } from "./request-params.js";
+// Re-exported so existing consumers (e.g. workers-read.ts) keep importing it
+// from here; the implementation now lives in the shared request-params module.
+export { numberQueryParam };
 import type {
   A2APartyRole,
   A2AWorkerEnvironment,
@@ -156,28 +160,4 @@ function includeValues(url: URL): string[] {
 function optionalEnum<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
   if (value === null) return undefined;
   return allowed.includes(value as T) ? (value as T) : undefined;
-}
-
-function boundedLimitQueryParam(
-  url: URL,
-  name: string,
-  max: number,
-  fallback?: number,
-): number | undefined {
-  const parsed = numberQueryParam(url, name);
-  if (parsed === undefined) return fallback;
-  if (!Number.isInteger(parsed)) {
-    throw new BrokerError("bad_request", `${name} must be an integer`);
-  }
-  return Math.min(parsed, max);
-}
-
-export function numberQueryParam(url: URL, name: string): number | undefined {
-  const value = url.searchParams.get(name);
-  if (!value) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new BrokerError("bad_request", `${name} must be a non-negative number`);
-  }
-  return parsed;
 }
