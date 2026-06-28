@@ -277,6 +277,7 @@ import {
   handleWorkersReadRouteIfMatched,
   toWorkerView,
 } from "./http/workers-read.js";
+import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -369,8 +370,6 @@ export interface OperatorReplayWindow {
 const DEFAULT_DASHBOARD_RECENT_HISTORY_LIMIT = 10;
 const DEFAULT_DASHBOARD_OLDEST_PENDING_LIMIT = 5;
 const DEFAULT_DASHBOARD_PENDING_ACTION_LIMIT = 5;
-const DEFAULT_ALERT_STALE_AFTER_MS = 120_000;
-const DEFAULT_ALERT_LONG_RUNNING_AFTER_MS = 3_600_000;
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
 const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
 
@@ -1858,43 +1857,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       // GET /alerts — monitoring-friendly alert projection
-      if (req.method === "GET" && path === "/alerts") {
-        const hotTableGrowth: HotTableGrowthProjection | undefined =
-          stateStore instanceof SqliteBrokerStateStore
-            ? projectHotTableGrowth({
-                current: stateStore.readHotTableLoadMetrics(),
-                runtimeLoadLimits: stateStore.readHotTableRuntimeLoadLimits(),
-              })
-            : undefined;
-        const result = buildAlertScan({
-          broker,
-          staleAfterMs: numberQueryParam(url, "stale_after_ms") ?? DEFAULT_ALERT_STALE_AFTER_MS,
-          longRunningAfterMs: numberQueryParam(url, "long_running_after_ms") ?? DEFAULT_ALERT_LONG_RUNNING_AFTER_MS,
-          staleWarningMs: numberQueryParam(url, "stale_warning_ms") ?? undefined,
-          staleCriticalMs: numberQueryParam(url, "stale_critical_ms") ?? undefined,
-          longRunningWarningMs: numberQueryParam(url, "long_running_warning_ms") ?? undefined,
-          longRunningCriticalMs: numberQueryParam(url, "long_running_critical_ms") ?? undefined,
-          workerHeartbeatMissedAfterMs:
-            numberQueryParam(url, "worker_heartbeat_missed_after_ms") ?? workerOfflineAfterSec * 1000,
-          hotTableGrowth,
-        });
-        return sendJson(res, 200, result);
-      }
-
-      // GET /cleanup/candidates — read-only cleanup candidate discovery (issue #520)
-      if (req.method === "GET" && path === "/cleanup/candidates") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "cleanup.candidates.read");
-        }
-        const plan = broker.discoverCleanupCandidates({
-          staleWorkerAfterMs: numberQueryParam(url, "stale_worker_after_ms") ?? undefined,
-          staleTaskAfterMs: numberQueryParam(url, "stale_task_after_ms") ?? undefined,
-          terminalOutboxBacklogAfterMs: numberQueryParam(url, "terminal_outbox_backlog_after_ms") ?? undefined,
-          historicalTerminalAfterMs: numberQueryParam(url, "historical_terminal_after_ms") ?? undefined,
-        });
-        return sendJson(res, 200, plan, {
-          "cache-control": "no-store",
-        });
+      if (handleOperatorDiagnosticsReadRouteIfMatched({
+        method: req.method,
+        path,
+        res,
+        url,
+        broker,
+        stateStore,
+        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (handleWorkersReadRouteIfMatched({
