@@ -107,3 +107,36 @@ export function uniqueEnvironmentList(values: unknown): A2AWorkerEnvironment[] {
 export function isA2AWorkerEnvironment(value: string): value is A2AWorkerEnvironment {
   return value === "research" || value === "staging" || value === "live";
 }
+
+export function normalizeCapabilities(capabilities: unknown): WorkerCapabilities {
+  if (Array.isArray(capabilities)) {
+    const capabilityNames = new Set(capabilities.map((capability) => String(capability)));
+    return {
+      canAnalyze: capabilityNames.has("canAnalyze"),
+      canBackfill: capabilityNames.has("canBackfill"),
+      canPatchWorkspace: capabilityNames.has("canPatchWorkspace"),
+      canPromoteLive: capabilityNames.has("canPromoteLive"),
+      workspaceIds: [],
+      environments: [],
+    };
+  }
+
+  const capabilityRecord = capabilities && typeof capabilities === "object"
+    ? capabilities as Partial<WorkerCapabilities>
+    : {};
+  const runtimeFlavor = normalizeWorkerRuntimeFlavor(capabilityRecord.runtimeFlavor);
+  const gatewayRequired = normalizeOptionalBoolean(capabilityRecord.gatewayRequired);
+  const providerCapabilities = normalizeProviderCapabilities(capabilityRecord.providerCapabilities);
+
+  return {
+    canAnalyze: capabilityRecord.canAnalyze === true,
+    canBackfill: capabilityRecord.canBackfill === true,
+    canPatchWorkspace: capabilityRecord.canPatchWorkspace === true,
+    canPromoteLive: capabilityRecord.canPromoteLive === true,
+    workspaceIds: uniqueStringList(capabilityRecord.workspaceIds),
+    environments: uniqueEnvironmentList(capabilityRecord.environments),
+    ...(providerCapabilities.length > 0 ? { providerCapabilities } : {}),
+    ...(runtimeFlavor ? { runtimeFlavor } : {}),
+    ...(gatewayRequired !== undefined ? { gatewayRequired } : {}),
+  };
+}
