@@ -40,6 +40,7 @@ import { readHostLoadSnapshot } from "./host-load-snapshot.js";
 import { readHttpServerDiagnostics } from "./http-server-diagnostics.js";
 import { OperatorEventStream } from "./operator-event-stream.js";
 import { StaleReaperStatusTracker } from "./stale-reaper-status-tracker.js";
+import { OperatorAlertDiffer } from "./operator-alert-differ.js";
 import {
   _livezTiming,
   _healthTiming,
@@ -1163,12 +1164,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         })
       : undefined;
 
-  let operatorAlertsById = new Map(
+  const operatorAlerts = new OperatorAlertDiffer(
     buildAlertScan({
       broker,
       workerHeartbeatMissedAfterMs: workerOfflineAfterSec * 1000,
       hotTableGrowth: currentHotTableGrowth(),
-    }).alerts.map((alert) => [alert.id, alert] as const),
+    }).alerts,
   );
 
   const currentOperatorSnapshot = (): OperatorSnapshotEvent => {
@@ -1221,22 +1222,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   };
 
   const publishOperatorAlertChanges = (alerts: AlertScanResult): void => {
-    const nextAlertsById = new Map(alerts.alerts.map((alert) => [alert.id, alert] as const));
-    const openedAlerts = alerts.alerts
-      .filter((alert) => !operatorAlertsById.has(alert.id))
-      .sort((left, right) => left.id.localeCompare(right.id));
-    const resolvedAlerts = [...operatorAlertsById.values()]
-      .filter((alert) => !nextAlertsById.has(alert.id))
-      .sort((left, right) => left.id.localeCompare(right.id));
-
-    for (const alert of openedAlerts) {
+    const { opened, resolved } = operatorAlerts.apply(alerts.alerts);
+    for (const alert of opened) {
       emitOperatorEvent("operator-alert-opened", { alert });
     }
-    for (const alert of resolvedAlerts) {
+    for (const alert of resolved) {
       emitOperatorEvent("operator-alert-resolved", { alert });
     }
-
-    operatorAlertsById = nextAlertsById;
   };
 
   const unsubscribeBrokerState = broker.subscribeToState((change) => {
