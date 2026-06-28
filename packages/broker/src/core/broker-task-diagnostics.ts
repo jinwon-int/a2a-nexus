@@ -2,6 +2,8 @@
 // signal projection, and exchange thread-message collection, extracted from
 // broker.ts. Pure functions over task/audit/worker records; they hold no broker
 // state.
+import { computeTaskDiagnosticStatus } from "./broker-status-predicates.js";
+import { isWorkerStale } from "./broker-worker-status.js";
 import type {
   A2AExchangeMessageRecord,
   AuditAction,
@@ -12,6 +14,9 @@ import type {
   TaskTombstone,
   WorkerRecord,
 } from "./types.js";
+// TaskDiagnosticsOptions is defined and exported by broker.ts; imported here
+// type-only, so there is no runtime import cycle.
+import type { TaskDiagnosticsOptions } from "./broker.js";
 
 export function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],
@@ -278,5 +283,74 @@ export function projectTaskDurableSignals(params: {
     reconcileNeeded: false,
     interruption: undefined,
     brokerHints,
+  };
+}
+
+/**
+ * Assemble a TaskDiagnosticReport from a task plus its already-resolved
+ * tombstone / assigned-worker / last-requeue-event. The broker resolves those
+ * three (from overrides or its own lookups) and delegates the pure computation —
+ * diagnostic status, worker staleness, durable-signal projection, and the
+ * lifecycle/timing fields — here.
+ */
+export function buildTaskDiagnosticReport(
+  task: TaskRecord,
+  resolved: {
+    tombstone?: TaskTombstone;
+    assignedWorker?: WorkerRecord;
+    lastRequeueEvent?: AuditEvent;
+  },
+  options?: TaskDiagnosticsOptions,
+): TaskDiagnosticReport {
+  const nowMs = options?.nowMs ?? Date.now();
+  const staleAfterMs = options?.staleAfterMs ?? 120_000; // 2 min default
+  const longRunningAfterMs = options?.longRunningAfterMs ?? 3_600_000; // 1 hr default
+  const workerOfflineAfterMs = options?.workerOfflineAfterMs ?? 90_000;
+
+  const { tombstone, assignedWorker, lastRequeueEvent } = resolved;
+  const diagnosticStatus = computeTaskDiagnosticStatus(task, staleAfterMs, longRunningAfterMs, nowMs);
+  const staleWorker = assignedWorker
+    ? isWorkerStale(assignedWorker.lastSeenAt, workerOfflineAfterMs, nowMs)
+    : false;
+  const durableSignals = projectTaskDurableSignals({
+    task,
+    diagnosticStatus,
+    tombstone,
+    assignedWorker,
+    staleWorker,
+    lastRequeueEvent,
+  });
+  const createdAtMs = Date.parse(task.createdAt);
+  const lastStatusChangeMs = Math.max(
+    createdAtMs,
+    task.claimedAt ? Date.parse(task.claimedAt) : 0,
+    task.completedAt ? Date.parse(task.completedAt) : 0,
+    task.lastHeartbeatAt ? Date.parse(task.lastHeartbeatAt) : 0,
+  );
+  const stalenessMs = task.lastHeartbeatAt
+    ? nowMs - Date.parse(task.lastHeartbeatAt)
+    : undefined;
+
+  return {
+    taskId: task.id,
+    diagnosticStatus,
+    brokerState: durableSignals.brokerState,
+    reconcileNeeded: durableSignals.reconcileNeeded,
+    interruption: durableSignals.interruption,
+    task: structuredClone(task),
+    currentStatusDurationMs: nowMs - lastStatusChangeMs,
+    stalenessMs,
+    brokerHints: durableSignals.brokerHints,
+    tombstone: tombstone ? structuredClone(tombstone) : undefined,
+    lifecycle: {
+      createdAt: task.createdAt,
+      claimedAt: task.claimedAt,
+      startedAt: task.status === "running" || task.status === "succeeded" || task.status === "failed"
+        ? task.claimedAt
+        : undefined,
+      lastHeartbeatAt: task.lastHeartbeatAt,
+      completedAt: task.completedAt,
+      tombstonedAt: tombstone?.tombstonedAt,
+    },
   };
 }
