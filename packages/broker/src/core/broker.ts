@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  isTerminalExchangeStatus,
+  isTerminalTaskStatus,
+  computeTaskDiagnosticStatus,
+  isTerminalProposalStatus,
+} from "./broker-status-predicates.js";
+import {
   normalizeWakeString,
   normalizeApprovalId,
   normalizeApprovalReason,
@@ -5698,51 +5704,6 @@ function normalizeNonNegativeInteger(value: number | undefined, fallback: number
   }
   const normalized = value ?? fallback;
   return Math.max(0, Math.trunc(normalized));
-}
-
-function isTerminalExchangeStatus(status: A2AExchangeState["status"]): boolean {
-  return status === "completed" || status === "failed";
-}
-
-function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
-}
-
-function computeTaskDiagnosticStatus(
-  task: TaskRecord,
-  staleAfterMs: number,
-  longRunningAfterMs: number,
-  nowMs: number,
-): TaskDiagnosticStatus {
-  if (isTerminalTaskStatus(task.status)) {
-    return "terminal";
-  }
-
-  if (task.status === "claimed" || task.status === "running") {
-    const lastSignal = task.lastHeartbeatAt
-      ? Date.parse(task.lastHeartbeatAt)
-      : task.claimedAt
-        ? Date.parse(task.claimedAt)
-        : Date.parse(task.createdAt);
-    const elapsed = nowMs - lastSignal;
-
-    if (elapsed > staleAfterMs) {
-      return "stale";
-    }
-
-    const runningSince = task.claimedAt
-      ? Date.parse(task.claimedAt)
-      : Date.parse(task.createdAt);
-    if (task.status === "running" && nowMs - runningSince > longRunningAfterMs) {
-      return "long_running";
-    }
-  }
-
-  return "active";
-}
-
-function isTerminalProposalStatus(status: ChangeProposal["status"]): boolean {
-  return status === "rejected" || status === "applied" || status === "rolled_back";
 }
 
 function normalizeTaskError(error: TaskError | undefined): TaskError {
