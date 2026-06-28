@@ -22,6 +22,12 @@ import type {
   WorkerRecord,
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
+import {
+  parseRetentionTimestamp,
+  isHeartbeatAuditEvent,
+  getHeartbeatAuditEventId,
+} from "./broker-retention-selectors.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -3458,37 +3464,6 @@ function isAuditEventProtected(
     case "broker":
       return false;
   }
-}
-
-function isHeartbeatAuditEvent(event: Pick<AuditEvent, "action" | "targetType">): boolean {
-  return (
-    (event.action === "worker.heartbeat" && event.targetType === "worker") ||
-    (event.action === "task.heartbeat" && event.targetType === "task")
-  );
-}
-
-function getHeartbeatAuditEventId(
-  event: Pick<AuditEvent, "action" | "targetType" | "targetId">,
-): string | null {
-  if (event.action === "worker.heartbeat" && event.targetType === "worker") {
-    return `worker-heartbeat:${event.targetId}`;
-  }
-  if (event.action === "task.heartbeat" && event.targetType === "task") {
-    return `task-heartbeat:${event.targetId}`;
-  }
-  return null;
-}
-
-function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
-}
-
-function parseRetentionTimestamp(value: string | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseHotEntityPayload<T>(row: unknown, schema: z.ZodType<T>, tableName: string): T {
