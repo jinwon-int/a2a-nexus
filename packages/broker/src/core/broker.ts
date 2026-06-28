@@ -95,7 +95,9 @@ import {
   sortedCopy,
   ageSecFromIso,
   sortNewestFirst,
+  countBy,
 } from "./broker-helpers.js";
+import { buildBrokerDashboard } from "./broker-dashboard.js";
 
 import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
 
@@ -184,7 +186,6 @@ import type {
   ProposalActorRequest,
   ProposalDetails,
   ProposalListFilters,
-  ProposalPipelineSummary,
   ProposalStatus,
   RegisterWorkerRequest,
   SubmitValidationRequest,
@@ -193,9 +194,7 @@ import type {
   TaskApprovalRequest,
   TaskApprovalTerminalRequest,
   TaskApprovalOutcomeStatus,
-  TaskHistorySummary,
   TaskListFilters,
-  TaskQueueSummary,
   TaskCheckpointState,
   TaskInterruptDecisionType,
   TaskRecord,
@@ -210,7 +209,6 @@ import type {
   WorkerCapacitySummary,
   WorkerCapacitySummaryItem,
   WorkerCapabilities,
-  WorkerFleetSummary,
   WorkerHeartbeatRequest,
   WorkerIdentityWarning,
   TaskDiagnosticReport,
@@ -686,7 +684,7 @@ export class InMemoryA2ABroker {
       generatedAt: new Date(nowMs).toISOString(),
       tasks: {
         total: tasks.length,
-        byStatus: this.countBy(tasks, (task) => task.status) as Record<TaskStatus, number>,
+        byStatus: countBy(tasks, (task) => task.status) as Record<TaskStatus, number>,
         stale: staleTasks.length,
         longRunning: longRunningTasks.length,
         bufferedEventStreams: this.taskEvents.bufferedStreamCount(),
@@ -2345,240 +2343,18 @@ export class InMemoryA2ABroker {
   }): BrokerDashboard {
     const nowMs = options?.nowMs ?? Date.now();
     const offlineAfterMs = options?.offlineAfterMs ?? 90_000;
-    const recentHistoryLimit = options?.recentHistoryLimit ?? 10;
-    const oldestPendingLimit = options?.oldestPendingLimit ?? 5;
-    const pendingActionLimit = options?.pendingActionLimit ?? 5;
-
-    const allTasks = [...this.tasks.values()];
-    const allProposals = [...this.proposals.values()];
-    const allWorkers = [...this.workers.values()];
-    const staleWorkerIds = new Set(this.listStaleWorkerIds(offlineAfterMs, nowMs));
-
-    // --- Queue ---
-    const pendingTasks = allTasks.filter(
-      (t) => t.status === "blocked" || t.status === "queued" || t.status === "claimed",
-    );
-    const oldestPending = sortedCopy(
-      pendingTasks,
-      (a, b) => taskStatusSinceAt(a).localeCompare(taskStatusSinceAt(b)),
-    ).slice(0, oldestPendingLimit);
-    const queue: TaskQueueSummary = {
-      total: pendingTasks.length,
-      byStatus: this.countBy(allTasks, (t) => t.status) as Record<TaskStatus, number>,
-      byIntent: this.countBy(allTasks, (t) => t.intent),
-      oldestPending: oldestPending.map((t) => ({
-        id: t.id,
-        intent: t.intent,
-        status: t.status,
-        targetNodeId: t.targetNodeId,
-        assignedWorkerId: t.assignedWorkerId,
-        createdAt: t.createdAt,
-        statusSinceAt: taskStatusSinceAt(t),
-        statusAgeSec: ageSecFromIso(taskStatusSinceAt(t), nowMs),
-      })),
-    };
-
-    // --- History ---
-    const oneHourAgoMs = nowMs - 3_600_000;
-    const completedTasks = allTasks.filter(
-      (t) => t.status === "succeeded" && t.completedAt && Date.parse(t.completedAt) >= oneHourAgoMs,
-    );
-    const failedTasks = allTasks.filter(
-      (t) => t.status === "failed" && t.completedAt && Date.parse(t.completedAt) >= oneHourAgoMs,
-    );
-    const recentOutcomes = sortedCopy(
-      allTasks.filter((t) => (t.status === "succeeded" || t.status === "failed") && t.completedAt),
-      (a, b) => {
-        const cmp = (b.completedAt ?? "").localeCompare(a.completedAt ?? "");
-        if (cmp !== 0) {
-          return cmp;
-        }
-        const cmp2 = b.createdAt.localeCompare(a.createdAt);
-        if (cmp2 !== 0) {
-          return cmp2;
-        }
-        return b.id.localeCompare(a.id);
+    return buildBrokerDashboard(
+      {
+        tasks: [...this.tasks.values()],
+        proposals: [...this.proposals.values()],
+        workers: [...this.workers.values()],
+        staleWorkerIds: new Set(this.listStaleWorkerIds(offlineAfterMs, nowMs)),
+        requeuedAuditEvents: this.listAuditEvents({ action: "task.requeued" }),
       },
-    ).slice(0, recentHistoryLimit);
-    const history: TaskHistorySummary = {
-      completedLastHour: completedTasks.length,
-      failedLastHour: failedTasks.length,
-      totalCompleted: allTasks.filter((t) => t.status === "succeeded").length,
-      totalFailed: allTasks.filter((t) => t.status === "failed").length,
-      recent: recentOutcomes.map((t) => ({
-        id: t.id,
-        intent: t.intent,
-        status: t.status,
-        targetNodeId: t.targetNodeId,
-        completedAt: t.completedAt!,
-        result: t.result,
-        error: t.error,
-      })),
-    };
-
-    // --- Proposals ---
-    const actionableStatuses = new Set<ProposalStatus>(["submitted", "validated", "approved"]);
-    const pendingAction = sortedCopy(
-      allProposals.filter((p) => actionableStatuses.has(p.status)),
-      (a, b) => a.updatedAt.localeCompare(b.updatedAt),
-    ).slice(0, pendingActionLimit)
-      .map((p) => ({
-        id: p.id,
-        kind: p.kind,
-        summary: p.summary,
-        status: p.status,
-        sourceNodeId: p.sourceNodeId,
-        targetNodeId: p.targetNodeId,
-        updatedAt: p.updatedAt,
-      }));
-    const proposals: ProposalPipelineSummary = {
-      total: allProposals.length,
-      byStatus: this.countBy(allProposals, (p) => p.status) as Record<ProposalStatus, number>,
-      pendingAction,
-    };
-
-    // --- Workers ---
-    let onlineCount = 0;
-    let staleCount = 0;
-    const byNode = allWorkers.map((w) => {
-      const effectiveOffline = effectiveOfflineAfterMs(w.workerMode, offlineAfterMs);
-      const isStale = isWorkerStale(w.lastSeenAt, effectiveOffline, nowMs);
-      const status: WorkerFleetSummary["byNode"][number]["status"] = isStale ? "stale" : "online";
-      if (isStale) {
-        staleCount++;
-      } else {
-        onlineCount++;
-      }
-      return {
-        nodeId: w.nodeId,
-        role: w.role,
-        displayName: w.displayName,
-        status,
-        activeTaskCount: allTasks.filter(
-          (t) =>
-            t.status === "claimed" || t.status === "running"
-              ? t.assignedWorkerId === w.nodeId || t.targetNodeId === w.nodeId
-              : false,
-        ).length,
-        lastSeenAt: w.lastSeenAt,
-        lastSeenAgeSec: ageSecFromIso(w.lastSeenAt, nowMs),
-        workerMode: w.workerMode,
-        mobileHealth: computeWorkerMobileHealth(w.workerMode, w.lastSeenAt, nowMs),
-      };
-    });
-    const workers: WorkerFleetSummary = {
-      total: allWorkers.length,
-      online: onlineCount,
-      stale: staleCount,
-      byNode,
-    };
-
-    const claimedTasks = allTasks.filter((task) => task.status === "claimed");
-    const runningTasks = allTasks.filter((task) => task.status === "running");
-    const oldestClaimedTask = sortedCopy(
-      claimedTasks,
-      (a, b) => taskStatusSinceAt(a).localeCompare(taskStatusSinceAt(b)),
-    )[0];
-    const oldestRunningTask = sortedCopy(
-      runningTasks,
-      (a, b) => taskStatusSinceAt(a).localeCompare(taskStatusSinceAt(b)),
-    )[0];
-    const staleWorkerAssignments = allTasks.filter((task) => {
-      const workerId = task.assignedWorkerId ?? task.targetNodeId;
-      return (
-        (task.status === "claimed" || task.status === "running") &&
-        typeof workerId === "string" &&
-        staleWorkerIds.has(workerId)
-      );
-    }).length;
-    const recentRequeueEvents = this.listAuditEvents({ action: "task.requeued" })
-      .slice(0, 5)
-      .map((event) => ({
-        taskId: event.targetId,
-        actorId: event.actorId,
-        createdAt: event.createdAt,
-        note: event.note,
-      }));
-    const deadLetteredTasks = sortedCopy(
-      allTasks.filter(
-        (task) => task.status === "failed" && task.error?.code === "exceeded_requeue_limit",
-      ),
-      (a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""),
+      { ...options, nowMs, offlineAfterMs },
     );
-    const observability = {
-      queuePressure: {
-        blocked: queue.byStatus.blocked ?? 0,
-        queued: queue.byStatus.queued ?? 0,
-        claimed: queue.byStatus.claimed ?? 0,
-        running: queue.byStatus.running ?? 0,
-        staleWorkerAssignments,
-        oldestClaimed: oldestClaimedTask
-          ? {
-              id: oldestClaimedTask.id,
-              intent: oldestClaimedTask.intent,
-              targetNodeId: oldestClaimedTask.targetNodeId,
-              assignedWorkerId: oldestClaimedTask.assignedWorkerId,
-              createdAt: oldestClaimedTask.createdAt,
-              statusSinceAt: taskStatusSinceAt(oldestClaimedTask),
-              statusAgeSec: ageSecFromIso(taskStatusSinceAt(oldestClaimedTask), nowMs),
-            }
-          : undefined,
-        oldestRunning: oldestRunningTask
-          ? {
-              id: oldestRunningTask.id,
-              intent: oldestRunningTask.intent,
-              targetNodeId: oldestRunningTask.targetNodeId,
-              assignedWorkerId: oldestRunningTask.assignedWorkerId,
-              createdAt: oldestRunningTask.createdAt,
-              statusSinceAt: taskStatusSinceAt(oldestRunningTask),
-              statusAgeSec: ageSecFromIso(taskStatusSinceAt(oldestRunningTask), nowMs),
-            }
-          : undefined,
-      },
-      recovery: {
-        totalRequeued: this.listAuditEvents({ action: "task.requeued" }).length,
-        totalDeadLettered: deadLetteredTasks.length,
-        recentRequeues: recentRequeueEvents,
-        recentDeadLetters: deadLetteredTasks.slice(0, 5).map((task) => ({
-          id: task.id,
-          intent: task.intent,
-          targetNodeId: task.targetNodeId,
-          assignedWorkerId: task.assignedWorkerId,
-          completedAt: task.completedAt,
-          error: task.error,
-          requeueCount: task.requeueCount,
-        })),
-      },
-      workerHealth: {
-        staleWorkersWithActiveTasks: byNode
-          .filter((worker) => worker.status === "stale" && worker.activeTaskCount > 0)
-          .map((worker) => ({
-            nodeId: worker.nodeId,
-            activeTaskCount: worker.activeTaskCount,
-            lastSeenAt: worker.lastSeenAt,
-            lastSeenAgeSec: worker.lastSeenAgeSec,
-          })),
-      },
-    };
-
-    return {
-      generatedAt: new Date(nowMs).toISOString(),
-      queue,
-      history,
-      proposals,
-      workers,
-      observability,
-    };
   }
 
-  private countBy<T>(items: T[], key: (item: T) => string): Record<string, number> {
-    const result: Record<string, number> = {};
-    for (const item of items) {
-      const k = key(item);
-      result[k] = (result[k] ?? 0) + 1;
-    }
-    return result;
-  }
 
   exportSnapshot(): BrokerSnapshot {
     return {
