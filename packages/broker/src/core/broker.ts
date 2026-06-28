@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./broker-listener-registry.js";
+import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
 import {
   taskStatusSinceAt,
   countStateSaveHints,
@@ -15,8 +16,6 @@ import {
 } from "./broker-task-diagnostics.js";
 import {
   workerMetadataMateriallyEqual,
-  workerIdentityFingerprint,
-  workerIdentityChangedFields,
   normalizeWorkerRecord,
   chooseFresherWorkerRecord,
 } from "./broker-worker-identity.js";
@@ -487,12 +486,7 @@ export class InMemoryA2ABroker {
   private readonly pendingHotArtifacts = new Map<string, ArtifactRecord>();
   private readonly pendingHotValidations = new Map<string, ValidationResult>();
   private readonly lastPersistedWorkerHeartbeatAtMs = new Map<string, number>();
-  private readonly workerIdentityChurn = new Map<string, {
-    fingerprint: string;
-    changesAtMs: number[];
-    lastChangedFields: string[];
-    warning?: WorkerIdentityWarning;
-  }>();
+  private readonly workerChurn = new WorkerIdentityChurnTracker();
   private readonly lastPersistedTaskHeartbeatAuditAtMs = new Map<string, number>();
   private readonly listeners: BrokerListenerRegistry;
   private readonly taskEventStream: TaskEventStream;
@@ -935,7 +929,7 @@ export class InMemoryA2ABroker {
       !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
 
     const identityWarning = existing && materialChange
-      ? this.recordWorkerIdentityFingerprintChange(existing, request, capabilities)
+      ? this.workerChurn.recordFingerprintChange(existing, request, capabilities)
       : undefined;
 
     if (existing && !materialChange) {
@@ -984,53 +978,8 @@ export class InMemoryA2ABroker {
     return worker;
   }
 
-  private recordWorkerIdentityFingerprintChange(
-    existing: WorkerRecord,
-    request: RegisterWorkerRequest,
-    capabilities: WorkerCapabilities,
-  ): WorkerIdentityWarning | undefined {
-    const changedFields = workerIdentityChangedFields(existing, request, capabilities);
-    const fingerprint = workerIdentityFingerprint(request, capabilities);
-    const nowMs = Date.now();
-    const windowMs = 10 * 60 * 1000;
-    const previous = this.workerIdentityChurn.get(request.nodeId);
-    const changesAtMs = (previous?.fingerprint && previous.fingerprint !== fingerprint
-      ? [...previous.changesAtMs, nowMs]
-      : [nowMs]
-    ).filter((timestamp) => nowMs - timestamp <= windowMs);
-    let warning = previous?.warning;
-    if (changesAtMs.length >= 2) {
-      warning = {
-        code: "worker_identity_churn",
-        severity: "warning",
-        message: `worker ${request.nodeId} changed identity fields ${changedFields.join(", ")} ${changesAtMs.length} times within ${Math.round(windowMs / 1000)}s; check for duplicate processes sharing the same nodeId`,
-        windowMs,
-        changesInWindow: changesAtMs.length,
-        lastDetectedAt: new Date(nowMs).toISOString(),
-        lastChangedFields: changedFields,
-      };
-    }
-    this.workerIdentityChurn.set(request.nodeId, {
-      fingerprint,
-      changesAtMs,
-      lastChangedFields: changedFields,
-      warning,
-    });
-    return warning;
-  }
-
   getWorkerIdentityWarnings(): Record<string, WorkerIdentityWarning> {
-    const warnings: Record<string, WorkerIdentityWarning> = {};
-    for (const [nodeId, record] of this.workerIdentityChurn) {
-      if (record.warning) {
-        warnings[nodeId] = record.warning;
-      }
-    }
-    return warnings;
-  }
-
-  private workerIdentityWarning(nodeId: string): WorkerIdentityWarning | undefined {
-    return this.workerIdentityChurn.get(nodeId)?.warning;
+    return this.workerChurn.getWarnings();
   }
 
   heartbeatWorker(nodeId: string, request?: WorkerHeartbeatRequest): WorkerRecord {
@@ -2373,7 +2322,7 @@ export class InMemoryA2ABroker {
       staleTasks += counts.stale;
       active += counts.active;
 
-      const identityWarning = this.workerIdentityWarning(worker.nodeId);
+      const identityWarning = this.workerChurn.warning(worker.nodeId);
       return {
         nodeId: worker.nodeId,
         role: worker.role,
