@@ -143,8 +143,6 @@
     "round_manifest": "npm run build && node scripts/round-manifest.mjs",
     "round_parent_aggregate_report": "npm run build && node scripts/round-parent-aggregate-report.mjs",
     "a2a_dialectic_lite_finalizer": "npm run build && node scripts/a2a-dialectic-lite-finalizer.mjs",
-    "a2a_round_artifact_scan": "node scripts/a2a-round-artifact-scan.mjs",
-    "a2a_worker_readiness_matrix": "node scripts/a2a-worker-readiness-matrix.mjs",
     "round_coordinator_closeout_dry_run": "node scripts/round-coordinator-closeout-dry-run.mjs",
     "test:round_coordinator_closeout_dry_run": "node --test scripts/round-coordinator-closeout-dry-run.test.mjs",
     "livez_stall_measure": "node scripts/broker-livez-stall-attribution.mjs --no-live --markdown",
