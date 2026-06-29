@@ -18,8 +18,6 @@ import {
   listAuditEventsForReadPath,
   listTasksForReadPath,
   getTaskForReadPath,
-  getTaskDiagnosticsForReadPath,
-  listTaskDiagnosticsForReadPath,
 } from "./task-read-paths.js";
 import {
   numberQueryParam,
@@ -249,6 +247,7 @@ import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
 import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
+import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1990,11 +1989,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, buildOperatorTaskReport(tasks, { taskIds, parentIssue, staleAfterMs, updatedAfter, terminalOutbox }));
       }
 
-      if (req.method === "GET" && path === "/tasks/diagnostics") {
-        const staleAfterMs = numberQueryParam(url, "stale_after_ms") ?? 120_000;
-        const longRunningAfterMs = numberQueryParam(url, "long_running_after_ms") ?? 3_600_000;
-        const reports = listTaskDiagnosticsForReadPath(stateStore, broker, { staleAfterMs, longRunningAfterMs });
-        return sendJson(res, 200, { items: reports, generatedAt: new Date().toISOString() });
+      if (handleTasksReadRouteIfMatched({
+        method: req.method,
+        path,
+        segments,
+        res,
+        url,
+        broker,
+        stateStore,
+      })) {
+        return;
       }
 
       if (
@@ -2037,34 +2041,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, task);
       }
 
-      if (req.method === "GET" && segments[0] === "tasks" && segments[1] && segments.length === 2) {
-        const task = getTaskForReadPath(stateStore, broker, segments[1], {
-          includeStaleReadPath: url.searchParams
-            .getAll("include")
-            .flatMap((value) => value.split(","))
-            .map((value) => value.trim())
-            .includes("stale_read_path"),
-        });
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        return sendJson(res, 200, task);
-      }
-
-      // GET /tasks/:id/diagnostics — monitoring-friendly diagnostic report
-      if (
-        req.method === "GET" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "diagnostics" &&
-        segments.length === 3
-      ) {
-        const report = getTaskDiagnosticsForReadPath(stateStore, broker, segments[1], {
-          staleAfterMs: numberQueryParam(url, "stale_after_ms") ?? undefined,
-          longRunningAfterMs: numberQueryParam(url, "long_running_after_ms") ?? undefined,
-        });
-        return sendJson(res, 200, report);
-      }
 
       if (await handleTasksDecisionRouteIfMatched({
         method: req.method,
