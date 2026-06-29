@@ -121,7 +121,6 @@ import {
   assertA2AWorkerScopeAllowed,
   assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
-  assertRequesterCanTouchProposalArtifacts,
   assertRequesterMatchesParty,
   classifyRateLimitBucket,
   extractRequesterIdentity,
@@ -178,15 +177,10 @@ import type {
   AuditEvent,
   AuditListFilters,
   BrokerDashboard,
-  ApplyProposalRequest,
-  AttachArtifactRequest,
-  CreateProposalRequest,
   CreateTaskRequest,
-  ProposalActorRequest,
   ProposalKind,
   ProposalStatus,
   RegisterWorkerRequest,
-  SubmitValidationRequest,
   TaskApprovalRequest,
   TaskApprovalTerminalRequest,
   TaskCancelRequest,
@@ -267,6 +261,7 @@ import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-dia
 import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
 import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard-routes.js";
 import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-reporting-read.js";
+import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1833,21 +1828,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return handleProposalsListRequest({ res, url, stateStore, broker });
       }
 
-      if (req.method === "POST" && path === "/proposals") {
-        const body = await readJson<CreateProposalRequest>(req);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.source.id, role: body.source.role },
-            "proposal.create",
-          );
-        }
-        const proposal = broker.createProposal(body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, proposal);
+      if (await handleProposalsWriteRouteIfMatched({
+        method: req.method,
+        path,
+        segments,
+        req,
+        res,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (req.method === "GET" && segments[0] === "proposals" && segments[1] && segments.length === 2) {
@@ -1868,101 +1860,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "artifacts") {
-        const body = await readJson<AttachArtifactRequest>(req);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        if (enforceRequesterIdentity) {
-          const proposal = broker.getProposal(segments[1]);
-          if (!proposal) {
-            throw new BrokerError("not_found", "proposal not found");
-          }
-          assertRequesterCanTouchProposalArtifacts(requesterIdentity, proposal);
-        }
-        const artifact = broker.attachArtifact(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, artifact);
-      }
-
-      if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "validate") {
-        const body = await readJson<SubmitValidationRequest>(req);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.nodeId }, "proposal.validate");
-        }
-        const validation = broker.submitValidationResult(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, validation);
-      }
-
-      if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "approve") {
-        const body = await readJson<ProposalActorRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "proposal.approve",
-          );
-        }
-        const proposal = broker.approveProposal(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, {
-          ok: true,
-          proposalId: proposal.id,
-          status: proposal.status,
-          updatedAt: proposal.updatedAt,
-        });
-      }
-
-      if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "reject") {
-        const body = await readJson<ProposalActorRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "proposal.reject",
-          );
-        }
-        const proposal = broker.rejectProposal(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, {
-          ok: true,
-          proposalId: proposal.id,
-          status: proposal.status,
-          updatedAt: proposal.updatedAt,
-        });
-      }
-
-      if (req.method === "POST" && segments[0] === "proposals" && segments[1] && segments[2] === "apply") {
-        const body = await readJson<ApplyProposalRequest>(req);
-        if (!body?.actor?.id || !body.workspace?.nodeId || !body.workspace?.workspaceId) {
-          throw new BrokerError("bad_request", "actor.id, workspace.nodeId, and workspace.workspaceId are required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "proposal.apply",
-          );
-        }
-        const proposal = broker.applyProposalLocally(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, {
-          ok: true,
-          proposalId: proposal.id,
-          status: proposal.status,
-          updatedAt: proposal.updatedAt,
-        });
-      }
 
       if (req.method === "GET" && path === "/tasks") {
         if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
