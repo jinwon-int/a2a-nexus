@@ -17,10 +17,82 @@
 // claude-a2a-analysis-bridge.mjs (its helpers are not exported), so analysis output
 // schema and recovery behavior are preserved with no regression.
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Process-tree timeout / session-isolation hardening (issue #1129)
+// ---------------------------------------------------------------------------
+
+// Kill an entire process group. On Linux, a negative pid sends the signal to
+// every process in the process group whose PGID is |pid|.
+function killProcessGroup(pid, signal = "SIGKILL") {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Process group may already be gone; that's safe.
+  }
+}
+
+// Spawn a child with its own process group (detached) and a hard timeout.
+// When the timeout fires, the ENTIRE process group is killed.
+function spawnWithProcessGroupKill(bin, args, opts) {
+  const timeoutMs = opts.timeout;
+  const child = spawn(bin, args, { ...opts, detached: true, timeout: undefined });
+
+  let stdout = "";
+  let stderr = "";
+  let killedByTimeout = false;
+  let timer = null;
+
+  return new Promise((resolve) => {
+    if (child.stdout) {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        if (stdout.length < (opts.maxBuffer ?? 8 * 1024 * 1024)) stdout += chunk;
+      });
+    }
+    if (child.stderr) {
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        if (stderr.length < (opts.maxBuffer ?? 8 * 1024 * 1024)) stderr += chunk;
+      });
+    }
+
+    function finish(status, signal, error) {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (child.pid && !killedByTimeout) {
+        killProcessGroup(child.pid, "SIGKILL");
+      }
+      resolve({ status: status ?? null, signal, stdout, stderr, error: error ?? null });
+    }
+
+    child.on("error", (err) => finish(null, null, err));
+    child.on("close", (code, sig) => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (killedByTimeout) return;
+      resolve({ status: code, signal: sig ?? null, stdout, stderr, error: null });
+    });
+
+    if (timeoutMs && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        killedByTimeout = true;
+        if (child.pid) {
+          killProcessGroup(child.pid, "SIGTERM");
+          setTimeout(() => killProcessGroup(child.pid, "SIGKILL"), 2000);
+        }
+        finish(null, "SIGKILL", new Error(`spawn timed out after ${timeoutMs} ms`));
+      }, timeoutMs);
+    }
+  });
+}
+
+// Sanitize the session id into a safe directory segment.
+function sanitizeSessionSegment(id) {
+  return safeText(id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64) || "default";
+}
 
 function safeText(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
@@ -285,31 +357,41 @@ function buildAnalysisPrompt({ message, flags }) {
   ].join("\n\n");
 }
 
-function runClaudeAnalysis(prompt, flags, env = process.env) {
+async function runClaudeAnalysis(prompt, flags, env = process.env) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 10);
-  const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(maxTurns)];
-  const child = spawnSync(claudeBin, args, {
-    env,
-    encoding: "utf8",
-    maxBuffer: positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024),
-    timeout: timeoutSec * 1000,
-    killSignal: "SIGKILL",
-  });
-  if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
-  if (child.status !== 0) {
-    const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+  const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024);
+  const sessionId = safeText(flags["session-id"], "default");
+
+  // Session-scoped isolation (#1129): each task session gets its own temp dir.
+  const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
+
+  try {
+    const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(maxTurns)];
+    const child = await spawnWithProcessGroupKill(claudeBin, args, {
+      env,
+      cwd: sessionWorkspace,
+      encoding: "utf8",
+      maxBuffer,
+      timeout: timeoutSec * 1000,
+    });
+    if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
+    if (child.status !== 0) {
+      const signal = child.signal ? ` signal=${child.signal}` : "";
+      throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+    }
+    return child.stdout;
+  } finally {
+    rmSync(sessionWorkspace, { recursive: true, force: true });
   }
-  return child.stdout;
 }
 
-function runAnalysisMode(message, flags) {
+async function runAnalysisMode(message, flags) {
   const prompt = buildAnalysisPrompt({ message, flags });
   let stdout;
   try {
-    stdout = runClaudeAnalysis(prompt, flags, process.env);
+    stdout = await runClaudeAnalysis(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
@@ -374,10 +456,11 @@ function buildPatchPrompt(message) {
   return `${preamble}\n${message}`;
 }
 
-function runClaudePatch(prompt, flags, env, cwd) {
+async function runClaudePatch(prompt, flags, env, cwd) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 1800));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 40);
+  const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024);
   // NOTE: no --dangerously-skip-permissions: it is refused when running as root (the proot case).
   const args = [
     "-p", prompt,
@@ -385,13 +468,12 @@ function runClaudePatch(prompt, flags, env, cwd) {
     "--allowedTools", "Bash Edit Write Read Glob Grep",
     "--max-turns", String(maxTurns),
   ];
-  const child = spawnSync(claudeBin, args, {
+  const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
     env,
     encoding: "utf8",
-    maxBuffer: positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 64 * 1024 * 1024),
+    maxBuffer,
     timeout: timeoutSec * 1000,
-    killSignal: "SIGKILL",
   });
   if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
   if (child.status !== 0) {
@@ -680,14 +762,13 @@ function resolveTool(env, envName, fallback) {
   return safeText(env[envName], fallback);
 }
 
-// Runs a tool via spawnSync and returns {status, signal, stdout, stderr, error}.
-function runTool(bin, args, { cwd, env, timeoutMs, maxBufferBytes }) {
-  return spawnSync(bin, args, {
+// Runs a tool via spawnWithProcessGroupKill and returns {status, signal, stdout, stderr, error}.
+async function runTool(bin, args, { cwd, env, timeoutMs, maxBufferBytes }) {
+  return spawnWithProcessGroupKill(bin, args, {
     cwd,
     env,
     encoding: "utf8",
     timeout: timeoutMs,
-    killSignal: "SIGKILL",
     maxBuffer: maxBufferBytes,
   });
 }
@@ -702,9 +783,9 @@ function toolError(tool, label, result) {
 }
 
 // Validates a diff with `git apply --check` (does not touch the working tree).
-function checkDiff(workspace, diffPath, env) {
+async function checkDiff(workspace, diffPath, env) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
-  const res = runTool(git, ["apply", "--check", diffPath], {
+  const res = await runTool(git, ["apply", "--check", diffPath], {
     cwd: workspace,
     env,
     timeoutMs: 60_000,
@@ -715,9 +796,9 @@ function checkDiff(workspace, diffPath, env) {
 }
 
 // Actually applies the diff (after --check passed).
-function applyDiff(workspace, diffPath, env) {
+async function applyDiff(workspace, diffPath, env) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
-  const res = runTool(git, ["apply", diffPath], {
+  const res = await runTool(git, ["apply", diffPath], {
     cwd: workspace,
     env,
     timeoutMs: 60_000,
@@ -729,17 +810,17 @@ function applyDiff(workspace, diffPath, env) {
 
 // Captures the list of modified/new files (post-apply) so the bootstrap-leak guard
 // can refuse any attempt to slip agent-context files into the diff.
-function listWorkingTreeChanges(workspace, env) {
+async function listWorkingTreeChanges(workspace, env) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   // `git status --porcelain` after `git add -N .` reports intent-to-add and modifications.
-  const intent = runTool(git, ["add", "--intent-to-add", "."], {
+  const intent = await runTool(git, ["add", "--intent-to-add", "."], {
     cwd: workspace,
     env,
     timeoutMs: 30_000,
     maxBufferBytes: 4 * 1024 * 1024,
   });
   if (intent.status !== 0) return [];
-  const res = runTool(git, ["status", "--porcelain"], {
+  const res = await runTool(git, ["status", "--porcelain"], {
     cwd: workspace,
     env,
     timeoutMs: 30_000,
@@ -754,7 +835,7 @@ function listWorkingTreeChanges(workspace, env) {
 
 // Deterministic commit + push + PR plumbing. Each step is a separate process so a
 // failure points at the failing step instead of returning a generic non-zero.
-function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, env }) {
+async function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
 
@@ -762,16 +843,16 @@ function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, 
     return { ok: false, error: "refusing to push or open a PR from a default branch" };
   }
 
-  const add = runTool(git, ["add", "-A"], { cwd: workspace, env, timeoutMs: 30_000, maxBufferBytes: 4 * 1024 * 1024 });
+  const add = await runTool(git, ["add", "-A"], { cwd: workspace, env, timeoutMs: 30_000, maxBufferBytes: 4 * 1024 * 1024 });
   if (add.status !== 0) return { ok: false, error: toolError("git add", "-A", add).message };
 
-  const commit = runTool(git, ["commit", "-m", commitMessage], { cwd: workspace, env, timeoutMs: 60_000, maxBufferBytes: 4 * 1024 * 1024 });
+  const commit = await runTool(git, ["commit", "-m", commitMessage], { cwd: workspace, env, timeoutMs: 60_000, maxBufferBytes: 4 * 1024 * 1024 });
   if (commit.status !== 0) return { ok: false, error: toolError("git commit", "<msg>", commit).message };
 
-  const push = runTool(git, ["push", "origin", `HEAD:${branch}`], { cwd: workspace, env, timeoutMs: 120_000, maxBufferBytes: 8 * 1024 * 1024 });
+  const push = await runTool(git, ["push", "origin", `HEAD:${branch}`], { cwd: workspace, env, timeoutMs: 120_000, maxBufferBytes: 8 * 1024 * 1024 });
   if (push.status !== 0) return { ok: false, error: toolError("git push", `<branch=${branch}>`, push).message };
 
-  const pr = runTool(gh, ["pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body], {
+  const pr = await runTool(gh, ["pr", "create", "--base", "main", "--head", branch, "--title", title, "--body", body], {
     cwd: workspace,
     env,
     timeoutMs: 120_000,
@@ -785,7 +866,7 @@ function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, 
 
 // Clones the target repo into `cloneDir` using the env-overridable git binary.
 // Always sets a non-default branch name to avoid clobbering the local main.
-function cloneTargetRepo({ repo, cloneDir, branch, env }) {
+async function cloneTargetRepo({ repo, cloneDir, branch, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
   // Prefer `gh repo clone` (uses the worker's authenticated gh token); fall back to
@@ -796,7 +877,7 @@ function cloneTargetRepo({ repo, cloneDir, branch, env }) {
   ];
   const failures = [];
   for (const attempt of attempts) {
-    const res = runTool(attempt.bin, attempt.args, {
+    const res = await runTool(attempt.bin, attempt.args, {
       cwd: tmpdir(),
       env,
       timeoutMs: 180_000,
@@ -809,9 +890,9 @@ function cloneTargetRepo({ repo, cloneDir, branch, env }) {
 }
 
 // Creates a uniquely named branch inside the cloned repo.
-function createBranch({ cloneDir, branch, env }) {
+async function createBranch({ cloneDir, branch, env }) {
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
-  const res = runTool(git, ["checkout", "-b", branch], {
+  const res = await runTool(git, ["checkout", "-b", branch], {
     cwd: cloneDir,
     env,
     timeoutMs: 30_000,
@@ -828,23 +909,23 @@ function createBranch({ cloneDir, branch, env }) {
 // diff fails to apply); a tool-enabled call capped at max-turns 1 aborts mid
 // tool_use (error_max_turns). A few read-only turns is still "single-shot": the
 // bridge — not an agentic loop — owns all git plumbing.
-function callClaudeOnce(prompt, flags, env, cwd) {
+async function callClaudeOnce(prompt, flags, env, cwd) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
+  const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
   const args = [
     "-p", prompt,
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     "--tools", "Read Grep Glob",
   ];
-  const child = spawnSync(claudeBin, args, {
+  const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
     env,
     encoding: "utf8",
-    maxBuffer: positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024),
+    maxBuffer,
     timeout: timeoutSec * 1000,
-    killSignal: "SIGKILL",
   });
   if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
   if (child.status !== 0) {
@@ -856,7 +937,7 @@ function callClaudeOnce(prompt, flags, env, cwd) {
 
 // Corrective retry: feed the previous error back into the model with a tight prompt.
 // Capped at 1 retry (2 total claude calls) per the issue's 1–2-turn budget.
-function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
+async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 300));
   const retryPrompt = [
@@ -870,19 +951,19 @@ function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     safeText(prompt),
   ].join("\n");
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_PATCH_MAX_TURNS, 6);
+  const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024);
   const args = [
     "-p", retryPrompt,
     "--output-format", "json",
     "--max-turns", String(maxTurns),
     "--tools", "Read Grep Glob",
   ];
-  const child = spawnSync(claudeBin, args, {
+  const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
     env,
     encoding: "utf8",
-    maxBuffer: positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 16 * 1024 * 1024),
+    maxBuffer,
     timeout: timeoutSec * 1000,
-    killSignal: "SIGKILL",
   });
   if (child.error) throw new Error(`Claude Code corrective spawn failed: ${child.error.message}`);
   if (child.status !== 0) {
@@ -892,7 +973,7 @@ function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   return child.stdout;
 }
 
-function runSingleShotPatchMode(message, flags) {
+async function runSingleShotPatchMode(message, flags) {
   const env = process.env;
   const taskContext = parseTaskContext(message);
   if (!taskContext.repo) {
@@ -900,7 +981,10 @@ function runSingleShotPatchMode(message, flags) {
     process.exit(1);
   }
 
-  const workspace = mkdtempSync(join(tmpdir(), "a2a-patch-"));
+  // Session-scoped isolation (#1129): prefix the workspace with the session id
+  // so concurrent tasks on the same worker never share a temp directory.
+  const sessionId = safeText(flags["session-id"], "default");
+  const workspace = mkdtempSync(join(tmpdir(), `a2a-patch-${sanitizeSessionSegment(sessionId)}-`));
   const cloneDir = join(workspace, "repo");
   const branch = `a2a/single-shot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -908,12 +992,12 @@ function runSingleShotPatchMode(message, flags) {
   let envelope = null;
 
   try {
-    const cloned = cloneTargetRepo({ repo: taskContext.repo, cloneDir, branch, env });
+    const cloned = await cloneTargetRepo({ repo: taskContext.repo, cloneDir, branch, env });
     if (!cloned.ok) {
       throw new Error(cloned.error);
     }
 
-    const branched = createBranch({ cloneDir, branch, env });
+    const branched = await createBranch({ cloneDir, branch, env });
     if (!branched.ok) {
       throw new Error(branched.error);
     }
@@ -922,7 +1006,7 @@ function runSingleShotPatchMode(message, flags) {
 
     // First (and primary) claude call. Run inside the clone so the read-only
     // tools see the actual repo and the emitted diff has correct line context.
-    const firstStdout = callClaudeOnce(prompt, flags, env, cloneDir);
+    const firstStdout = await callClaudeOnce(prompt, flags, env, cloneDir);
     let extracted = extractUnifiedDiff(firstStdout);
     let claudeCalls = 1;
 
@@ -936,32 +1020,32 @@ function runSingleShotPatchMode(message, flags) {
     const diffPath = join(workspace, "patch.diff");
     writeFileSync(diffPath, extracted.body.endsWith("\n") ? extracted.body : `${extracted.body}\n`);
 
-    let checked = checkDiff(cloneDir, diffPath, env);
+    let checked = await checkDiff(cloneDir, diffPath, env);
     if (!checked.ok) {
       // One corrective retry (2nd and final claude call). The original prompt goes
       // back in so the model has full context for the fix.
-      const correctiveStdout = callClaudeCorrective(prompt, checked.error, flags, env, cloneDir);
+      const correctiveStdout = await callClaudeCorrective(prompt, checked.error, flags, env, cloneDir);
       claudeCalls = 2;
       extracted = extractUnifiedDiff(correctiveStdout);
       if (extracted.kind === "no_diff") {
         throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
       }
       writeFileSync(diffPath, extracted.body.endsWith("\n") ? extracted.body : `${extracted.body}\n`);
-      checked = checkDiff(cloneDir, diffPath, env);
+      checked = await checkDiff(cloneDir, diffPath, env);
       if (!checked.ok) {
         throw new Error(`git apply --check failed after corrective retry: ${redactSecrets(safeText(checked.error, "<empty>")).slice(0, 1000)}`);
       }
     }
 
     // Apply the validated diff. `git apply` only mutates the working tree; commit comes next.
-    const applied = applyDiff(cloneDir, diffPath, env);
+    const applied = await applyDiff(cloneDir, diffPath, env);
     if (!applied.ok) {
       throw new Error(`git apply failed: ${redactSecrets(safeText(applied.error, "<empty>")).slice(0, 1000)}`);
     }
 
     // Bootstrap-leak guard: refuse to commit any diff that touches agent-context files.
     // This is the single-shot equivalent of the agentic path's `filesChanged` filter.
-    const filesChanged = listWorkingTreeChanges(cloneDir, env);
+    const filesChanged = await listWorkingTreeChanges(cloneDir, env);
     const leaked = filesChanged.filter(isBootstrapLeakPath);
     if (leaked.length > 0) {
       throw new Error(`patch blocked: bootstrap/agent-context files reported as changed (${leaked.join(", ")})`);
@@ -987,7 +1071,7 @@ function runSingleShotPatchMode(message, flags) {
       ...filesChanged.map((f) => `- \`${f}\``),
     ].join("\n");
 
-    const pr = commitPushAndCreatePr(cloneDir, {
+    const pr = await commitPushAndCreatePr(cloneDir, {
       branch,
       commitMessage,
       title: prTitle,
@@ -1025,17 +1109,19 @@ function runSingleShotPatchMode(message, flags) {
   process.exit(exitCode);
 }
 
-function runPatchMode(message, flags) {
+async function runPatchMode(message, flags) {
   if (isSingleShotPatchMode(process.env)) {
-    runSingleShotPatchMode(message, flags);
+    await runSingleShotPatchMode(message, flags);
     return;
   }
-  const workspace = mkdtempSync(join(tmpdir(), "a2a-patch-"));
+  // Session-scoped isolation (#1129): prefix the workspace with the session id.
+  const sessionId = safeText(flags["session-id"], "default");
+  const workspace = mkdtempSync(join(tmpdir(), `a2a-patch-${sanitizeSessionSegment(sessionId)}-`));
   let exitCode = 0;
   let envelope = null;
   try {
     const prompt = buildPatchPrompt(message);
-    const stdout = runClaudePatch(prompt, flags, process.env, workspace);
+    const stdout = await runClaudePatch(prompt, flags, process.env, workspace);
 
     let outer;
     try {
@@ -1068,7 +1154,7 @@ function runPatchMode(message, flags) {
 // Entry point
 // ===========================================================================
 
-function main() {
+async function main() {
   const flags = parseArgs(process.argv);
   if (flags.subcommand !== "agent") die("expected OpenClaw-shaped subcommand: agent");
   if (!flags.json) die("expected --json flag");
@@ -1076,10 +1162,10 @@ function main() {
   if (!message) die("missing --message");
 
   if (isPatchIntent(message)) {
-    runPatchMode(message, flags);
+    await runPatchMode(message, flags);
     return;
   }
-  runAnalysisMode(message, flags);
+  await runAnalysisMode(message, flags);
 }
 
 main();

@@ -1,5 +1,83 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Process-tree timeout / session-isolation hardening (issue #1129)
+// ---------------------------------------------------------------------------
+
+// Kill an entire process group. On Linux, a negative pid sends the signal to
+// every process in the process group whose PGID is |pid|. The child must have
+// been spawned with { detached: true } for its own process group to exist.
+function killProcessGroup(pid, signal = "SIGKILL") {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Process group may already be gone; that's safe.
+  }
+}
+
+// Spawn a child with its own process group (detached) and a hard timeout.
+// When the timeout fires, the ENTIRE process group is killed — first SIGTERM
+// (2 s grace), then SIGKILL — so no orphaned grandchildren outlive the bridge.
+// Returns the same shape as spawnSync: { status, signal, stdout, stderr, error }.
+function spawnWithProcessGroupKill(bin, args, opts) {
+  const timeoutMs = opts.timeout;
+  const child = spawn(bin, args, { ...opts, detached: true, timeout: undefined });
+
+  let stdout = "";
+  let stderr = "";
+  let killedByTimeout = false;
+  let timer = null;
+
+  return new Promise((resolve) => {
+    if (child.stdout) {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        if (stdout.length < (opts.maxBuffer ?? 8 * 1024 * 1024)) stdout += chunk;
+      });
+    }
+    if (child.stderr) {
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        if (stderr.length < (opts.maxBuffer ?? 8 * 1024 * 1024)) stderr += chunk;
+      });
+    }
+
+    function finish(status, signal, error) {
+      if (timer) { clearTimeout(timer); timer = null; }
+      // If the child process group might still have survivors, nuke it.
+      if (child.pid && !killedByTimeout) {
+        killProcessGroup(child.pid, "SIGKILL");
+      }
+      resolve({ status: status ?? null, signal, stdout, stderr, error: error ?? null });
+    }
+
+    child.on("error", (err) => finish(null, null, err));
+    child.on("close", (code, sig) => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (killedByTimeout) {
+        // We already resolved inside the timeout handler.
+        return;
+      }
+      resolve({ status: code, signal: sig ?? null, stdout, stderr, error: null });
+    });
+
+    if (timeoutMs && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        killedByTimeout = true;
+        if (child.pid) {
+          killProcessGroup(child.pid, "SIGTERM");
+          setTimeout(() => killProcessGroup(child.pid, "SIGKILL"), 2000);
+        }
+        // Don't wait for close; resolve immediately with a synthetic timeout error.
+        finish(null, "SIGKILL", new Error(`spawn timed out after ${timeoutMs} ms`));
+      }, timeoutMs);
+    }
+  });
+}
 
 function safeText(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
@@ -291,27 +369,43 @@ function buildClaudePrompt({ message, flags }) {
   ].join("\n\n");
 }
 
-function runClaude(prompt, flags, env = process.env) {
+async function runClaude(prompt, flags, env = process.env) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 10);
-  const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
-  const child = spawnSync(claudeBin, args, {
-    env,
-    encoding: "utf8",
-    maxBuffer: positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024),
-    timeout: timeoutSec * 1000,
-    killSignal: "SIGKILL",
-  });
-  if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
-  if (child.status !== 0) {
-    const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+  const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024);
+  const sessionId = safeText(flags["session-id"], "default");
+
+  // Session-scoped isolation (#1129): each task session gets its own temp dir
+  // so that any file artifacts (logs, tool outputs) stay confined.
+  const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
+
+  try {
+    const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
+    const child = await spawnWithProcessGroupKill(claudeBin, args, {
+      env,
+      cwd: sessionWorkspace,
+      encoding: "utf8",
+      maxBuffer,
+      timeout: timeoutSec * 1000,
+    });
+    if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
+    if (child.status !== 0) {
+      const signal = child.signal ? ` signal=${child.signal}` : "";
+      throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+    }
+    return child.stdout;
+  } finally {
+    rmSync(sessionWorkspace, { recursive: true, force: true });
   }
-  return child.stdout;
 }
 
-function main() {
+// Sanitize the session id into a safe directory segment (alphanumeric + hyphens).
+function sanitizeSessionSegment(id) {
+  return safeText(id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64) || "default";
+}
+
+async function main() {
   const flags = parseArgs(process.argv);
   if (flags.subcommand !== "agent") die("expected OpenClaw-shaped subcommand: agent");
   if (!flags.json) die("expected --json flag");
@@ -321,7 +415,7 @@ function main() {
   const prompt = buildClaudePrompt({ message, flags });
   let stdout;
   try {
-    stdout = runClaude(prompt, flags, process.env);
+    stdout = await runClaude(prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }

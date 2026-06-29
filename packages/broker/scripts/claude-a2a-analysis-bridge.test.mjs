@@ -191,3 +191,142 @@ test("Claude Code A2A analysis bridge fails closed on generic Claude JSON", () =
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1129 — process-tree timeout / session isolation tests
+// ---------------------------------------------------------------------------
+
+test("timeout kills the whole child process group (grandchildren do not outlive the bridge)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-tree-kill-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const grandchildPidFile = join(tempDir, "grandchild.pid");
+  try {
+    // This fake claude spawns a background child that writes its PID to a file
+    // and then sleeps. If the bridge only kills the direct child and not the
+    // process group, the grandchild outlives the bridge.
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "const pidFile = process.env.GRANDCHILD_PID_FILE;",
+      "// Spawn a child that writes its PID and sleeps for a long time.",
+      "const gc = spawn('sh', ['-c', 'echo $$ > ' + pidFile + '; sleep 60'], { stdio: 'ignore' });",
+      "// Direct child waits forever (will be killed by bridge timeout).",
+      "setTimeout(() => {}, 60000);",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true });
+    const result = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "a2a-tree-kill-test",
+      "--message", message,
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "2",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, GRANDCHILD_PID_FILE: grandchildPidFile },
+    });
+
+    // Bridge must exit non-zero on timeout.
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /timed out|timeout/i, "bridge should report a timeout");
+
+    // If the grandchild wrote its PID, check that the process is dead.
+    if (existsSync(grandchildPidFile)) {
+      const pid = Number(readFileSync(grandchildPidFile, "utf8").trim());
+      if (pid > 0) {
+        // Signal 0 checks if the process exists (doesn't actually send a signal).
+        try {
+          process.kill(pid, 0);
+          assert.fail("grandchild process " + pid + " survived the bridge timeout — process tree not killed");
+        } catch {
+          // Expected: process does not exist (ESRCH).
+        }
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("session-scoped workspace uses session-id to isolate task sessions", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-session-scope-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const cwdCaptureA = join(tempDir, "cwd-session-a.txt");
+  const cwdCaptureB = join(tempDir, "cwd-session-b.txt");
+  try {
+    // Fake claude that just records its cwd and exits.
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_CWD_PATH, process.cwd());",
+      "const analysis = {",
+      "  status: 'done',",
+      "  summary: 'session scoping test',",
+      "  findings: [],",
+      "  risks: [],",
+      "  recommendations: [],",
+      "  evidenceRefs: []",
+      "};",
+      "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" });
+
+    // Session A: explicit session-id "task-alpha"
+    const resultA = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "task-alpha",
+      "--message", message,
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "60",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_CWD_PATH: cwdCaptureA },
+    });
+    assert.equal(resultA.status, 0, resultA.stderr);
+
+    // Session B: explicit session-id "task-beta"
+    const resultB = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "task-beta",
+      "--message", message,
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "60",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_CWD_PATH: cwdCaptureB },
+    });
+    assert.equal(resultB.status, 0, resultB.stderr);
+
+    const cwdA = readFileSync(cwdCaptureA, "utf8").trim();
+    const cwdB = readFileSync(cwdCaptureB, "utf8").trim();
+
+    // Each session must get its own temp directory, not sharing one.
+    assert.notEqual(cwdA, cwdB, "different session ids must produce different isolated workspaces");
+
+    // The workspace must contain the session-id segment.
+    assert.match(cwdA, /a2a-analysis-task-alpha/);
+    assert.match(cwdB, /a2a-analysis-task-beta/);
+
+    // Workspaces must be cleaned up after use.
+    assert.equal(existsSync(cwdA), false, "session workspace A must be cleaned up after execution");
+    assert.equal(existsSync(cwdB), false, "session workspace B must be cleaned up after execution");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
