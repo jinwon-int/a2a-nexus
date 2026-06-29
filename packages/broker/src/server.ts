@@ -96,7 +96,6 @@ import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
 import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
-import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, specSendResult } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
   BrokerError,
@@ -210,7 +209,6 @@ import {
 } from "./core/terminal-event-outbox.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
-import { A2A_VERSION_HEADER, SUPPORTED_A2A_VERSIONS, negotiateA2AVersion } from "./a2a/version-negotiation.js";
 import { readJson, readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
 import { awaitDurablePersistenceAck, sendError } from "./http/error-mapping.js";
@@ -219,10 +217,6 @@ import {
   handleTerminalTaskEventStream,
   handleWorkerAssignmentEventStream,
 } from "./http/task-event-streams.js";
-import {
-  handleStreamingMessageResponse,
-  parseSingleStreamingMessageRequest,
-} from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
@@ -244,6 +238,7 @@ import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-rou
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
+import { handleA2AJsonRpcRouteIfMatched } from "./http/a2a-jsonrpc-route.js";
 import { handleTasksWakeRouteIfMatched } from "./http/tasks-wake-routes.js";
 import {
   classifyEndpointGroup,
@@ -1327,91 +1322,23 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "POST" && (path === "/a2a/jsonrpc" || path === "/a2a/jsonrpc/")) {
-        // A2A 1.0 version negotiation: serve the requested version's
-        // semantics or fail closed on a version we cannot honor. The
-        // response always advertises the version actually served.
-        const negotiated = negotiateA2AVersion(req.headers[A2A_VERSION_HEADER]);
-        if (!negotiated.ok) {
-          return sendJson(
-            res,
-            400,
-            { jsonrpc: "2.0", id: null, error: { code: -32600, message: negotiated.message } },
-            { "a2a-version": SUPPORTED_A2A_VERSIONS.join(", ") },
-          );
-        }
-        res.setHeader("a2a-version", negotiated.version);
-        // Explicit version negotiation opts the client into A2A 1.0 result
-        // shapes; header-less legacy clients keep the historical envelopes.
-        const responseShape = negotiated.requested !== null ? "spec" as const : "legacy" as const;
-        // Read the raw body so malformed JSON yields a JSON-RPC -32700 rather
-        // than the broker's HTTP error envelope, and so batch arrays /
-        // notifications are handled by the JSON-RPC transport layer.
-        const rawBody = (await readRawBody(req)).toString("utf8");
-
-        // A2A 1.0 SendStreamingMessage: a single (non-batch) request streams
-        // JSON-RPC result envelopes over SSE instead of a unary response.
-        // Batch-embedded SendStreamingMessage falls through to the JSON-RPC
-        // layer, which rejects it with -32600.
-        const streamingRequest = parseSingleStreamingMessageRequest(rawBody);
-        if (streamingRequest) {
-          let created;
-          try {
-            created = executeSendMessage(streamingRequest.params, {
-              broker,
-              agentCard,
-              publicBaseUrl,
-              requesterIdentity,
-              enforceRequesterIdentity,
-              peerStatusService,
-              pushNotificationConfigStore,
-              persistPushNotificationConfigs,
-              defaultAgentNodeId,
-            });
-          } catch (error) {
-            const rpcError = jsonRpcErrorFromUnknown(error);
-            return sendJson(res, 200, {
-              jsonrpc: "2.0",
-              id: streamingRequest.id,
-              error: rpcError,
-            });
-          }
-          const createdTask = created.task ? broker.getTask(created.task.id) : null;
-          if (!createdTask) {
-            // Context-only sends (no active task) have nothing to stream.
-            const contextResult = responseShape === "spec" ? specSendResult(created, broker) : created;
-            return sendJson(res, 200, { jsonrpc: "2.0", id: streamingRequest.id, result: contextResult });
-          }
-          handleStreamingMessageResponse(req, res, {
-            broker,
-            rpcId: streamingRequest.id,
-            sendResult: created,
-            task: createdTask,
-            heartbeatMs: taskSubscribeHeartbeatSec * 1000,
-            responseShape,
-          });
-          return;
-        }
-
-        const response = executeA2AJsonRpcBody(rawBody, {
-          broker,
-          agentCard,
-          publicBaseUrl,
-          requesterIdentity,
-          enforceRequesterIdentity,
-          peerStatusService,
-          pushNotificationConfigStore,
-          persistPushNotificationConfigs,
-          responseShape,
-          defaultAgentNodeId,
-        });
-        if (response === null) {
-          // Entirely notifications — JSON-RPC requires no response body.
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-        return sendJson(res, 200, response);
+      if (await handleA2AJsonRpcRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        broker,
+        agentCard,
+        publicBaseUrl,
+        requesterIdentity,
+        enforceRequesterIdentity,
+        peerStatusService,
+        pushNotificationConfigStore,
+        persistPushNotificationConfigs,
+        defaultAgentNodeId,
+        taskSubscribeHeartbeatSec,
+      })) {
+        return;
       }
 
       if (await handleComplexityOrchestrationRoutesIfMatched({
