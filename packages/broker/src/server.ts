@@ -159,10 +159,8 @@ import {
 import { HealthDiagnosticsCache } from "./health-diagnostics-cache.js";
 import { A2AHttpSignatureReplayCache } from "./a2a-http-signature-replay-cache.js";
 import {
-  recordWorkerRegisterPhase,
   workerRegisterPhaseTimingSnapshot,
   workerRegisterPhasePerWorkerSnapshot,
-  recordWorkerHeartbeatPhase,
   workerHeartbeatPhaseTimingSnapshot,
   workerHeartbeatPhasePerWorkerSnapshot,
 } from "./worker-phase-timing.js";
@@ -180,7 +178,6 @@ import type {
   CreateTaskRequest,
   ProposalKind,
   ProposalStatus,
-  RegisterWorkerRequest,
   TaskDiagnosticReport,
   TaskKind,
   TaskListFilters,
@@ -190,7 +187,6 @@ import type {
   TaskTombstone,
   TaskWakeDecisionRequest,
   TaskWakePlanRequest,
-  WorkerHeartbeatRequest,
   WorkerRecord,
   WorkerView,
   A2AWorkerEnvironment,
@@ -247,7 +243,6 @@ import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
 import {
   handleWorkersReadRouteIfMatched,
-  toWorkerView,
 } from "./http/workers-read.js";
 import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
 import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
@@ -256,6 +251,7 @@ import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-repor
 import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-routes.js";
 import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.js";
 import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
+import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1743,64 +1739,23 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (req.method === "POST" && path === "/workers/register") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const readJsonStartedAt = performance.now();
-        const body = await readJson<RegisterWorkerRequest>(req);
-        recordWorkerRegisterPhase("readJson", readJsonStartedAt);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        const workerId = typeof body.nodeId === "string" ? body.nodeId : undefined;
-        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.register");
-        if (enforceRequesterIdentity) {
-          const authAssertStartedAt = performance.now();
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.nodeId, role: body.role },
-            "worker.register",
-          );
-          recordWorkerRegisterPhase("authAssert", authAssertStartedAt, workerId);
-        }
-        const brokerRegisterStartedAt = performance.now();
-        const worker = broker.registerWorker(body);
-        recordWorkerRegisterPhase("brokerRegister", brokerRegisterStartedAt, workerId);
-        // Registration is always online — use toWorkerView for consistent fields
-        const toWorkerViewStartedAt = performance.now();
-        const workerView = toWorkerView(worker, workerOfflineAfterSec * 1000);
-        recordWorkerRegisterPhase("toWorkerView", toWorkerViewStartedAt, workerId);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 201, { ...workerView, brokerId });
-      }
-
-      if (req.method === "POST" && segments[0] === "workers" && segments[1] && segments[2] === "heartbeat") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const workerId = segments[1];
-        assertVerifiedWorkerMatches(verifiedWorker, workerId, "worker.heartbeat");
-        const readJsonStartedAt = performance.now();
-        const body = await readJson<WorkerHeartbeatRequest>(req);
-        recordWorkerHeartbeatPhase("readJson", readJsonStartedAt, workerId);
-        if (enforceRequesterIdentity) {
-          const authLookupStartedAt = performance.now();
-          const existingWorker = broker.getWorkerCachedFirst(workerId);
-          recordWorkerHeartbeatPhase("authLookup", authLookupStartedAt, workerId);
-          const authAssertStartedAt = performance.now();
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: workerId, role: existingWorker?.role },
-            "worker.heartbeat",
-          );
-          recordWorkerHeartbeatPhase("authAssert", authAssertStartedAt, workerId);
-        }
-        const heartbeatStartedAt = performance.now();
-        const worker = broker.heartbeatWorker(workerId, body ?? undefined);
-        recordWorkerHeartbeatPhase("brokerHeartbeat", heartbeatStartedAt, workerId);
-        // Heartbeat always implies worker-plane online — use toWorkerView for consistent fields
-        const toWorkerViewStartedAt = performance.now();
-        const workerView = toWorkerView(worker, workerOfflineAfterSec * 1000);
-        recordWorkerHeartbeatPhase("toWorkerView", toWorkerViewStartedAt, workerId);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, workerView);
+      if (await handleWorkersWriteRouteIfMatched({
+        method: req.method,
+        path,
+        segments,
+        req,
+        res,
+        url,
+        broker,
+        stateStore,
+        brokerId,
+        workerOfflineAfterMs: workerOfflineAfterSec * 1000,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        assertWorkerHttpSignatureRoute,
+        assertVerifiedWorkerMatches,
+      })) {
+        return;
       }
 
       if (await handleExchangeRoutesIfMatched({
