@@ -1,15 +1,17 @@
 // Operator reporting read routes (GET /terminal-brief/inbox, GET
-// /release/evidence), extracted from the server request closure into
-// explicit-context handlers (continuing the #645 dispatcher migration). Both are
-// read-only operator reports gated on the hub/operator role.
+// /release/evidence, GET /operator/task-report), extracted from the server
+// request closure into explicit-context handlers (continuing the #645 dispatcher
+// migration). All are read-only operator reports gated on the hub/operator role.
 import type { ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import type { TaskRecord } from "../core/types.js";
 import { queryTerminalBriefInbox } from "../core/terminal-brief-query-api.js";
 import { buildReleaseEvidenceExport } from "../core/release-evidence.js";
-import { listTasksForReadPath, mapBrokerDiagnosticsToSnapshot } from "../task-read-paths.js";
+import { buildOperatorTaskReport } from "../core/operator-task-report.js";
+import { getTaskForReadPath, listTasksForReadPath, mapBrokerDiagnosticsToSnapshot } from "../task-read-paths.js";
 import { optionalString } from "../request-parsers.js";
 import { booleanQueryParam } from "./request-params.js";
 import { numberQueryParam, taskFiltersFromUrl, taskIdsFromUrl } from "./read-path-filters.js";
@@ -85,6 +87,22 @@ export function handleReleaseEvidenceRequest(ctx: OperatorReportingReadRouteCont
   });
 }
 
+/** GET /operator/task-report — operator task report over selected (or all) tasks. */
+export function handleOperatorTaskReportRequest(ctx: OperatorReportingReadRouteContext): void {
+  if (ctx.enforceRequesterIdentity) {
+    assertRequesterHasRole(ctx.requesterIdentity, ["hub", "operator"], "operator.task-report");
+  }
+  const taskIds = taskIdsFromUrl(ctx.url);
+  const parentIssue = optionalString(ctx.url.searchParams.get("parent_issue"));
+  const staleAfterMs = numberQueryParam(ctx.url, "stale_after_ms") ?? 15 * 60 * 1000;
+  const updatedAfter = optionalString(ctx.url.searchParams.get("updated_after"));
+  const tasks = taskIds.length
+    ? taskIds.map((id) => getTaskForReadPath(ctx.stateStore, ctx.broker, id)).filter((task): task is TaskRecord => Boolean(task))
+    : listTasksForReadPath(ctx.stateStore, ctx.broker, {});
+  const terminalOutbox = ctx.broker.getTerminalTaskEventOutbox().subscribe();
+  sendJson(ctx.res, 200, buildOperatorTaskReport(tasks, { taskIds, parentIssue, staleAfterMs, updatedAfter, terminalOutbox }));
+}
+
 /** Route dispatcher for operator reporting read routes. Returns true only when handled. */
 export function handleOperatorReportingReadRouteIfMatched(
   ctx: OperatorReportingReadRouteContext,
@@ -98,6 +116,10 @@ export function handleOperatorReportingReadRouteIfMatched(
   }
   if (ctx.path === "/release/evidence") {
     handleReleaseEvidenceRequest(ctx);
+    return true;
+  }
+  if (ctx.path === "/operator/task-report") {
+    handleOperatorTaskReportRequest(ctx);
     return true;
   }
   return false;
