@@ -181,9 +181,6 @@ import type {
   ProposalKind,
   ProposalStatus,
   RegisterWorkerRequest,
-  TaskApprovalRequest,
-  TaskApprovalTerminalRequest,
-  TaskCancelRequest,
   TaskClaimRequest,
   TaskCompleteRequest,
   TaskDiagnosticReport,
@@ -192,7 +189,6 @@ import type {
   TaskKind,
   TaskListFilters,
   TaskOrigin,
-  TaskReassignRequest,
   TaskRecord,
   TaskStatus,
   TaskTombstone,
@@ -262,6 +258,7 @@ import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-rou
 import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard-routes.js";
 import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-reporting-read.js";
 import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-routes.js";
+import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -2215,6 +2212,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, report);
       }
 
+      if (await handleTasksDecisionRouteIfMatched({
+        method: req.method,
+        segments,
+        req,
+        res,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
+      }
+
       if (
         req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "claim") {
         const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
@@ -2282,29 +2292,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, task);
       }
 
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "resume") {
-        const body = await readJson<{ actorId?: string; checkpointId?: string }>(req);
-        const actorId = body?.actorId ?? requesterIdentity?.id;
-        if (!actorId) {
-          throw new BrokerError("bad_request", "actorId is required");
-        }
-        const resumeTarget = broker.getTask(segments[1]);
-        if (!resumeTarget) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: actorId }, "task.resume");
-          // Clearing an operator checkpoint is a task mutation: the caller
-          // must be a party to the task (requester / target / assigned worker)
-          // or a hub/operator. Without this, anyone who knows a task id could
-          // clear another task's awaiting_operator checkpoint.
-          assertRequesterCanSubscribeToTask(requesterIdentity, resumeTarget);
-        }
-        const task = broker.resumeTask(segments[1], actorId, { checkpointId: body?.checkpointId });
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
       if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "complete") {
         const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
         const body = await readJson<TaskCompleteRequest>(req);
@@ -2362,76 +2349,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return sendJson(res, 200, task);
       }
 
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "approve") {
-        const body = await readJson<TaskApprovalRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "task.approve",
-          );
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.approve");
-        }
-        const task = broker.approveTask(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "reject-approval") {
-        const body = await readJson<TaskApprovalTerminalRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "task.reject-approval",
-          );
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.reject-approval");
-        }
-        const task = broker.rejectTaskApproval(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "cancel") {
-        const body = await readJson<TaskCancelRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "task.cancel",
-          );
-        }
-        const task = broker.cancelTask(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "reassign") {
-        const body = await readJson<TaskReassignRequest>(req);
-        if (!body?.actor?.id) {
-          throw new BrokerError("bad_request", "actor.id is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.actor.id, role: body.actor.role },
-            "task.reassign",
-          );
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.reassign");
-        }
-        const task = broker.reassignTask(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
 
       if (req.method === "GET" && path === "/audit") {
         const filters = auditFiltersFromUrl(url);
