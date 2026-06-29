@@ -141,6 +141,7 @@ import {
   assertTaskOwnership,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
+import { assertExchangeMessageActor } from "./broker-exchange-guards.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
@@ -815,7 +816,7 @@ export class InMemoryA2ABroker {
       throw new BrokerError("bad_request", "message is required");
     }
 
-    this.assertExchangeMessageActor(exchange, request);
+    assertExchangeMessageActor(exchange, request);
 
     if (request.targetNodeId) {
       this.requireWorker(request.targetNodeId);
@@ -2544,39 +2545,6 @@ export class InMemoryA2ABroker {
       throw new BrokerError("not_found", "exchange message not found");
     }
     return message;
-  }
-
-  private assertExchangeMessageActor(
-    exchange: A2AExchangeState,
-    request: A2AExchangeMessageRequest,
-  ): void {
-    const actor = request.actor;
-    const isPrivileged = actor.role === "hub" || actor.role === "operator";
-    const isRequester = actor.id === exchange.requester.id;
-    const isTarget = actor.id === exchange.target.id;
-
-    if (!isPrivileged && !isRequester && !isTarget) {
-      throw new BrokerError(
-        "policy_denied",
-        "exchange messages require the requester, target, hub, or operator actor",
-      );
-    }
-
-    if (isRequester && exchange.requester.role && actor.role && exchange.requester.role !== actor.role) {
-      throw new BrokerError("policy_denied", "requester actor role must match the exchange requester role");
-    }
-
-    if (isTarget && exchange.target.role && actor.role && exchange.target.role !== actor.role) {
-      throw new BrokerError("policy_denied", "target actor role must match the exchange target role");
-    }
-
-    if ((request.targetNodeId || request.assignedWorkerId) && !isPrivileged) {
-      throw new BrokerError("policy_denied", "only hub or operator actors may change assignment fields");
-    }
-
-    if (request.decision && !isPrivileged && !isTarget) {
-      throw new BrokerError("policy_denied", "only the target, hub, or operator actor may set a decision");
-    }
   }
 
   private applyExchangeMessageDecision(
