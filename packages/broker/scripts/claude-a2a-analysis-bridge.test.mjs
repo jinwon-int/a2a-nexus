@@ -93,6 +93,8 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
 
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
     assert.deepEqual(args.slice(0, 2), ["-p", readFileSync(promptPath, "utf8")]);
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "Read Glob Grep");
+    assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch");
     assert.equal(args.includes("--model"), false, "Claude bridge should not pass A2A worker model as a raw Claude --model value");
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
   } finally {

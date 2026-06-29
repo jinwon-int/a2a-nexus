@@ -332,6 +332,10 @@ function runAnalysisMode(message, flags) {
 const BOOTSTRAP_LEAK_PATTERNS = [
   /(^|\/)AGENTS\.md$/i,
   /(^|\/)SOUL\.md$/i,
+  /(^|\/)USER\.md$/i,
+  /(^|\/)TOOLS\.md$/i,
+  /(^|\/)HEARTBEAT\.md$/i,
+  /(^|\/)IDENTITY\.md$/i,
   /(^|\/)\.openclaw(\/|$)/i,
   /(^|\/)\.env(\.|$)/i,
 ];
@@ -506,7 +510,50 @@ function parseTaskContext(message) {
   return {
     repo: repoMatch ? safeText(repoMatch[1]).trim() : "",
     issueNumber,
+    declaredWriteSet: parseDeclaredWriteSet(text),
   };
+}
+
+function parseDeclaredWriteSet(text) {
+  const match = /Declared write-set:\s*(\[[\s\S]*?\])(?:\r?\n|$)/i.exec(safeText(text));
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1]);
+    return Array.isArray(parsed) ? parsed.map((entry) => safeText(entry).trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRepoPath(path) {
+  return safeText(path).replace(/\\/g, "/").replace(/^\.\//, "").replace(/^a\//, "").replace(/^b\//, "");
+}
+
+function writeSetPatternToRegExp(pattern) {
+  const normalized = normalizeRepoPath(pattern);
+  let source = "^";
+  for (let i = 0; i < normalized.length; i += 1) {
+    const ch = normalized[i];
+    const next = normalized[i + 1];
+    if (ch === "*" && next === "*") {
+      source += ".*";
+      i += 1;
+    } else if (ch === "*") {
+      source += "[^/]*";
+    } else {
+      source += ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  source += "$";
+  return new RegExp(source);
+}
+
+function filesOutsideDeclaredWriteSet(filesChanged, declaredWriteSet) {
+  if (!Array.isArray(declaredWriteSet) || declaredWriteSet.length === 0) return [];
+  const matchers = declaredWriteSet.map(writeSetPatternToRegExp);
+  return normalizeStringArray(filesChanged)
+    .map(normalizeRepoPath)
+    .filter((file) => !matchers.some((re) => re.test(file)));
 }
 
 // Build a strict single-shot prompt: claude only returns a unified diff (aider style)
@@ -711,6 +758,10 @@ function commitPushAndCreatePr(workspace, { branch, commitMessage, title, body, 
   const git = resolveTool(env, "A2A_CLAUDE_CODE_GIT_BIN", "git");
   const gh = resolveTool(env, "A2A_CLAUDE_CODE_GH_BIN", "gh");
 
+  if (!branch || branch === "main" || branch === "master") {
+    return { ok: false, error: "refusing to push or open a PR from a default branch" };
+  }
+
   const add = runTool(git, ["add", "-A"], { cwd: workspace, env, timeoutMs: 30_000, maxBufferBytes: 4 * 1024 * 1024 });
   if (add.status !== 0) return { ok: false, error: toolError("git add", "-A", add).message };
 
@@ -914,6 +965,10 @@ function runSingleShotPatchMode(message, flags) {
     const leaked = filesChanged.filter(isBootstrapLeakPath);
     if (leaked.length > 0) {
       throw new Error(`patch blocked: bootstrap/agent-context files reported as changed (${leaked.join(", ")})`);
+    }
+    const outOfScope = filesOutsideDeclaredWriteSet(filesChanged, taskContext.declaredWriteSet);
+    if (outOfScope.length > 0) {
+      throw new Error(`patch blocked: files outside declared write-set (${outOfScope.join(", ")})`);
     }
 
     // Deterministic commit + push + PR. All step failures surface the failing step.
