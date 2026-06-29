@@ -10,16 +10,13 @@ import {
 } from "./startup-security.js";
 import {
   optionalString,
-  assertCreateTaskRequestParties,
   parseTerminalOutboxAckReceipt,
   parseTerminalOutboxReceiptUpdate,
   assertRequesterCanSubscribeToWorkerAssignments,
 } from "./request-parsers.js";
 import {
   listAuditEventsForReadPath,
-  assertCreateTaskPayloadWithinLimit,
   listTasksForReadPath,
-  listTaskItemsForReadPath,
   getTaskForReadPath,
   getTaskDiagnosticsForReadPath,
   listTaskDiagnosticsForReadPath,
@@ -252,15 +249,14 @@ import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-route
 import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.js";
 import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
+import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
 } from "./http/route-classification.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
 import {
-  DEFAULT_TASK_LIST_LIMIT,
   auditFiltersFromUrl,
-  taskFiltersFromUrl,
   taskIdsFromUrl,
 } from "./http/read-path-filters.js";
 import { buildAlertScan, buildDashboardResponse, type OperatorSummary } from "./http/dashboard-response.js";
@@ -1810,115 +1806,22 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
 
-      if (req.method === "GET" && path === "/tasks") {
-        if (url.searchParams.has("worker") || url.searchParams.has("assignedWorkerId")) {
-          const workerParam = optionalString(url.searchParams.get("worker"));
-          const assignedWorkerParam = optionalString(url.searchParams.get("assignedWorkerId"));
-          if (workerParam && assignedWorkerParam && workerParam !== assignedWorkerParam) {
-            throw new BrokerError("bad_request", "worker and assignedWorkerId query parameters must match when both are provided");
-          }
-          const expectedWorkerId = assignedWorkerParam ?? workerParam;
-          if (!expectedWorkerId) {
-            throw new BrokerError("bad_request", "worker or assignedWorkerId query parameter is required");
-          }
-          const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-          assertVerifiedWorkerMatches(verifiedWorker, expectedWorkerId, "tasks.list");
-        }
-        const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
-        const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
-        if (includeFullTaskRecords) {
-          const tasks = listTasksForReadPath(stateStore, broker, filters);
-          return sendJson(res, 200, {
-            count: tasks.length,
-            limit: filters.limit,
-            items: tasks,
-          });
-        }
-        const items = listTaskItemsForReadPath(stateStore, broker, filters);
-        return sendJson(res, 200, {
-          count: items.length,
-          limit: filters.limit,
-          items,
-        });
-      }
-
-      if (req.method === "POST" && path === "/tasks") {
-        const body = await readJson<CreateTaskRequest>(req);
-        if (!body) {
-          throw new BrokerError("bad_request", "request body is required");
-        }
-        assertCreateTaskRequestParties(body);
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(
-            requesterIdentity,
-            { id: body.requester.id, role: body.requester.role },
-            "task.create",
-          );
-        }
-        assertCreateTaskPayloadWithinLimit(body, maxTaskPayloadBytes);
-        const task = broker.createTask(body);
-        // Durable-ack disambiguation (a2a-nexus#636/#638): at this point the
-        // task EXISTS in the broker — a persistence-queue ack timeout must
-        // not be reported as a creation failure with no task id, or the
-        // operator cannot tell rejected from accepted-but-slow. 202 carries
-        // the created task plus the ack error so dispatch tooling can
-        // classify it as accepted-unconfirmed and verify via GET /tasks/:id.
-        try {
-          await awaitDurablePersistenceAck(stateStore);
-        } catch (error) {
-          if (
-            error instanceof BrokerError &&
-            (error.code === "queue_drain_timeout" || error.code === "queue_saturated")
-          ) {
-            return sendJson(res, 202, {
-              task,
-              durable: false,
-              ackError: { code: error.code, message: error.message },
-              hint: `task ${task.id} was created; confirm with GET /tasks/${task.id} — it persists on the next successful flush`,
-            });
-          }
-          throw error;
-        }
-        return sendJson(res, 201, task);
-      }
-
-      if (req.method === "POST" && path === "/tasks/requeue_stale") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.requeue_stale");
-        }
-        const olderThanSec = numberQueryParam(url, "older_than_seconds") ?? 300;
-        const { requeued, deadLettered } = broker.requeueStaleTasksDetailed(olderThanSec * 1000, {
-          workerOfflineAfterMs: workerOfflineAfterSec * 1000,
-        });
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, {
-          ok: true,
-          olderThanSeconds: olderThanSec,
-          workerOfflineAfterSeconds: workerOfflineAfterSec,
-          maxRequeueAttempts: broker.getMaxRequeueAttempts(),
-          policy: "requeue_only",
-          requeued: requeued.length,
-          deadLettered: deadLettered.length,
-          items: requeued.map((task) => ({
-            id: task.id,
-            status: task.status,
-            targetNodeId: task.targetNodeId,
-            assignedWorkerId: task.assignedWorkerId,
-            proposalId: task.proposalId,
-            requeueCount: task.requeueCount,
-            updatedAt: task.updatedAt,
-          })),
-          deadLetteredItems: deadLettered.map((task) => ({
-            id: task.id,
-            status: task.status,
-            targetNodeId: task.targetNodeId,
-            assignedWorkerId: task.assignedWorkerId,
-            proposalId: task.proposalId,
-            requeueCount: task.requeueCount,
-            error: task.error,
-            updatedAt: task.updatedAt,
-          })),
-        });
+      if (await handleTasksCollectionRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        url,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        maxTaskPayloadBytes,
+        workerOfflineAfterSec,
+        assertWorkerHttpSignatureRoute,
+        assertVerifiedWorkerMatches,
+      })) {
+        return;
       }
 
       if (
