@@ -12,9 +12,6 @@ import {
   assertRequesterCanSubscribeToWorkerAssignments,
 } from "./request-parsers.js";
 import {
-  listAuditEventsForReadPath,
-} from "./task-read-paths.js";
-import {
   boundedLimitQueryParam,
   stringListQueryParam,
   nonNegativeNumberBodyField,
@@ -210,7 +207,8 @@ import {
   handleTaskEventStream,
   handleWorkerAssignmentEventStream,
 } from "./http/task-event-streams.js";
-import { handleRoundStatusRequest } from "./http/rounds.js";
+import { handleRoundStatusRouteIfMatched } from "./http/rounds.js";
+import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
@@ -238,7 +236,6 @@ import {
   classifyRequestRoute,
 } from "./http/route-classification.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
-import { auditFiltersFromUrl } from "./http/read-path-filters.js";
 import { buildAlertScan, buildDashboardResponse, type OperatorSummary } from "./http/dashboard-response.js";
 import {
   assertA2AContentDigestMatches,
@@ -1588,18 +1585,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "GET" &&
-        segments[0] === "rounds" &&
-        segments[1] &&
-        segments[2] === "status" &&
-        segments.length === 3
-      ) {
-        return handleRoundStatusRequest({
-          res,
-          rawParentRoundId: segments[1],
-          getRoundStatus: (parentRoundId) => broker.getRoundStatus(parentRoundId),
-        });
+      if (handleRoundStatusRouteIfMatched({ method: req.method, segments, res, broker })) {
+        return;
       }
 
 
@@ -1828,9 +1815,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
 
-      if (req.method === "GET" && path === "/audit") {
-        const filters = auditFiltersFromUrl(url);
-        return sendJson(res, 200, { items: listAuditEventsForReadPath(stateStore, broker, filters) });
+      if (handleAuditReadRouteIfMatched({ method: req.method, path, res, url, broker, stateStore })) {
+        return;
       }
 
       // -----------------------------------------------------------------------
