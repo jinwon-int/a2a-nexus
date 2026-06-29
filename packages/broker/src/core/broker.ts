@@ -24,7 +24,6 @@ import {
 } from "./broker-worker-identity.js";
 import {
   normalizeTaskPayload,
-  isPlainRecord,
   normalizeTaskResult,
   normalizeTaskError,
   normalizeTaskRecord,
@@ -48,7 +47,6 @@ import {
 } from "./broker-exchange-normalizers.js";
 import {
   normalizeGitHubPatchTaskRequest,
-  readString,
   cleanOptionalTaskCancelField,
   normalizeOwnershipString,
 } from "./broker-task-request-normalizers.js";
@@ -129,12 +127,14 @@ import {
   type CrossBrokerTerminalBriefProjectionRequest,
   type CrossBrokerTerminalBriefProjectionResult,
 } from "./cross-broker-terminal-brief.js";
+import { normalizeA2ARoundTaskRequest } from "./a2a-round-policy.js";
 import {
-  extractDispatchMetadata,
-  hasTerminalBriefMetadata,
-  validateTerminalBriefMetadata,
-} from "./terminal-brief-metadata.js";
-import { normalizeA2ARoundTaskRequest, validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
+  assertWorkerRegistrationPayload,
+  assertProposalPayload,
+  assertA2ARoundTaskPolicy,
+  assertWorkModeDecisionEvidence,
+  assertTerminalBriefMetadata,
+} from "./broker-payload-validators.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
@@ -861,7 +861,7 @@ export class InMemoryA2ABroker {
   }
 
   registerWorker(request: RegisterWorkerRequest): WorkerRecord {
-    this.assertWorkerRegistrationPayload(request);
+    assertWorkerRegistrationPayload(request);
 
     const now = isoNow();
     const existing = this.getWorkerCachedFirst(request.nodeId);
@@ -1111,7 +1111,7 @@ export class InMemoryA2ABroker {
   }
 
   createProposal(request: CreateProposalRequest): ChangeProposal {
-    this.assertProposalPayload(request);
+    assertProposalPayload(request);
 
     try {
       assertProposalCreationAllowed(request.source, request.target);
@@ -3179,45 +3179,6 @@ export class InMemoryA2ABroker {
     this.setExchangeRecord(exchange);
   }
 
-  private assertWorkerRegistrationPayload(request: RegisterWorkerRequest): void {
-    if (!request.nodeId) {
-      throw new BrokerError("bad_request", "nodeId is required");
-    }
-    if (!request.role) {
-      throw new BrokerError("bad_request", "role is required");
-    }
-    if (!request.capabilities) {
-      throw new BrokerError("bad_request", "capabilities are required");
-    }
-  }
-
-  private assertProposalPayload(request: CreateProposalRequest): void {
-    if (!request.source?.id || !request.target?.id) {
-      throw new BrokerError("bad_request", "source.id and target.id are required");
-    }
-    if (!request.summary) {
-      throw new BrokerError("bad_request", "summary is required");
-    }
-    if (!request.workspace?.nodeId || !request.workspace?.workspaceId) {
-      throw new BrokerError(
-        "bad_request",
-        "workspace.nodeId and workspace.workspaceId are required",
-      );
-    }
-    if (request.kind === "patch" && !request.patchText) {
-      throw new BrokerError("bad_request", "patch proposals require patchText");
-    }
-    if (request.kind === "params" && !request.parameterPayload) {
-      throw new BrokerError("bad_request", "params proposals require parameterPayload");
-    }
-    if (request.kind === "hybrid" && !request.patchText && !request.parameterPayload) {
-      throw new BrokerError(
-        "bad_request",
-        "hybrid proposals require patchText, parameterPayload, or both",
-      );
-    }
-  }
-
   private assertTaskPayload(request: CreateTaskRequest): void {
     if (!request.requester?.id || !request.target?.id) {
       throw new BrokerError("bad_request", "requester.id and target.id are required");
@@ -3254,29 +3215,9 @@ export class InMemoryA2ABroker {
     // canonical dispatch metadata must be present and internally consistent.
     // This prevents silently creating tasks that would later fail at projection
     // ingestion due to missing/inconsistent round metadata.
-    this.assertA2ARoundTaskPolicy(request);
-    this.assertWorkModeDecisionEvidence(request);
-    this.assertTerminalBriefMetadata(request.payload);
-  }
-
-  private assertWorkModeDecisionEvidence(request: CreateTaskRequest): void {
-    const result = validateWorkModeDecisionEvidenceForTask(request);
-    if (!result.applies || result.valid) {
-      return;
-    }
-    throw new BrokerError("bad_request", `work-mode decision evidence validation failed: ${result.issues.join("; ")}`);
-  }
-
-  private assertA2ARoundTaskPolicy(request: CreateTaskRequest): void {
-    const result = validateA2ARoundTaskPolicy(request, this.brokerId);
-    if (!result.applies || result.valid) {
-      return;
-    }
-
-    const errors = result.issues
-      .map((issue) => `${issue.path}: ${issue.message}`)
-      .join("; ");
-    throw new BrokerError("bad_request", `A2A round task policy validation failed: ${errors}`);
+    assertA2ARoundTaskPolicy(request, this.brokerId);
+    assertWorkModeDecisionEvidence(request);
+    assertTerminalBriefMetadata(request.payload, this.brokerId);
   }
 
   private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {
@@ -3297,34 +3238,6 @@ export class InMemoryA2ABroker {
           `A2A round worker availability validation failed: stale worker ${workerId}`,
         );
       }
-    }
-  }
-
-  /**
-   * Fail-closed guard: validate Terminal Brief metadata in the task payload
-   * at creation time. Rejects with BrokerError when parentRoundId is present
-   * but dispatch metadata fields (parentRoundTotal, parentRoundOrder, etc.)
-   * are missing or inconsistent.
-   *
-   * Tasks without Terminal Brief metadata pass through without validation.
-   */
-  private assertTerminalBriefMetadata(payload: Record<string, unknown> | undefined): void {
-    if (!payload || !hasTerminalBriefMetadata(payload)) {
-      return;
-    }
-
-    const dispatch = extractDispatchMetadata(payload);
-    // Creation-time validation allows local origin — this is the common case
-    // for Team2-local parent rounds where originBrokerId === this.brokerId.
-    // Cross-broker origin-receiver distinction is enforced at projection
-    // ingestion time in CrossBrokerTerminalBriefProjectionStore.ingest().
-    const result = validateTerminalBriefMetadata(dispatch, this.brokerId, { allowLocalOrigin: true });
-    if (!result.valid) {
-      const errors = result.issues
-        .filter((i) => i.severity === "error")
-        .map((i) => i.message)
-        .join("; ");
-      throw new BrokerError("bad_request", `Terminal Brief metadata validation failed: ${errors}`);
     }
   }
 
@@ -3537,71 +3450,3 @@ function normalizePolicyError(error: unknown): BrokerError {
   return new BrokerError("policy_denied", "policy denied");
 }
 
-function validateWorkModeDecisionEvidenceForTask(request: CreateTaskRequest): {
-  applies: boolean;
-  valid: boolean;
-  issues: string[];
-} {
-  const payload = request.payload ?? {};
-  const explicitWorkMode = readString(payload["workMode"]) ?? readString(payload["a2aWorkMode"]);
-  const payloadTeamId = readString(payload["teamId"]) ?? normalizeOwnershipString(request.teamId);
-  const hasParentRoundSignal = Boolean(
-    readString(payload["parentRoundId"]) ||
-    payload["parentRoundTotal"] !== undefined ||
-    payload["parentRoundOrder"] !== undefined ||
-    payload["lane"] !== undefined ||
-    isPlainRecord(payload["crossBrokerHandoff"]),
-  );
-  const requiresEvidence =
-    explicitWorkMode === "team1" ||
-    explicitWorkMode === "hybrid" ||
-    payload["workModeDecisionRequired"] === true ||
-    (payloadTeamId === "team1" && hasParentRoundSignal);
-
-  if (!requiresEvidence) {
-    return { applies: false, valid: true, issues: [] };
-  }
-
-  const evidence = isPlainRecord(payload["workModeDecision"]) ?? isPlainRecord(payload["workModeDecisionEvidence"]);
-  const issues: string[] = [];
-  if (!evidence) {
-    return {
-      applies: true,
-      valid: false,
-      issues: ["payload.workModeDecision is required for Team1/hybrid task creation"],
-    };
-  }
-
-  const mode = readString(evidence["mode"]);
-  if (mode !== "team1" && mode !== "hybrid") {
-    issues.push("workModeDecision.mode must be team1 or hybrid");
-  }
-  if (explicitWorkMode === "team1" || explicitWorkMode === "hybrid") {
-    if (mode !== explicitWorkMode) {
-      issues.push(`workModeDecision.mode must match payload.workMode=${explicitWorkMode}`);
-    }
-  }
-  if (evidence["sourceOnlyDecision"] !== true) {
-    issues.push("workModeDecision.sourceOnlyDecision must be true");
-  }
-  if (evidence["workerDispatchAllowedByThisPacket"] !== false) {
-    issues.push("workModeDecision.workerDispatchAllowedByThisPacket must be false");
-  }
-  if (!readString(evidence["idempotencyKey"])) {
-    issues.push("workModeDecision.idempotencyKey is required");
-  }
-  if (!readString(evidence["finalizerOwner"])) {
-    issues.push("workModeDecision.finalizerOwner is required");
-  }
-  if (!readString(evidence["generatedAt"])) {
-    issues.push("workModeDecision.generatedAt is required");
-  }
-  if (!readString(evidence["capacitySnapshotSource"])) {
-    issues.push("workModeDecision.capacitySnapshotSource is required");
-  }
-  if (!readString(evidence["capacitySnapshotAt"])) {
-    issues.push("workModeDecision.capacitySnapshotAt is required");
-  }
-
-  return { applies: true, valid: issues.length === 0, issues };
-}
