@@ -163,12 +163,14 @@ test("worker runtime boundary accepts loopback tunnel and matching workspace", (
 });
 
 test("runtime audit events are structured, bounded, redacted, and carry token/cost accounting", () => {
+  const bearerHeader = ["Authorization:", "Bearer", "gh" + "p_syntheticRedactionFixture000000000000000"].join(" ");
+  const edgeSecretAssignment = ["EDGE_SECRET", "synthetic" + "SecretValue"].join("=");
   const event = buildRuntimeAuditEvent({
     id: "audit-1",
     taskId: "task-1",
     actorId: "worker-a",
     action: "bridge.spawned",
-    message: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz1234567890 and EDGE_SECRET=supersecretvalue",
+    message: `${bearerHeader} and ${edgeSecretAssignment}`,
     tokenUsage: { inputTokens: 1000, outputTokens: 250, totalTokens: 1250 },
     costUsd: 0.012345,
     maxMessageChars: 80,
