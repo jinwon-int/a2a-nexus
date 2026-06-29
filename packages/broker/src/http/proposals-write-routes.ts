@@ -116,7 +116,9 @@ async function handleActorDecision(
       scope,
     );
   }
-  sendProposalDecision(ctx, decide(ctx.proposalId, body));
+  const proposal = decide(ctx.proposalId, body);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendProposalDecision(ctx, proposal);
 }
 
 /** POST /proposals/:id/apply — apply the proposal locally. */
@@ -132,7 +134,9 @@ export async function handleApplyProposalRequest(ctx: ProposalScopedContext): Pr
       "proposal.apply",
     );
   }
-  sendProposalDecision(ctx, ctx.broker.applyProposalLocally(ctx.proposalId, body));
+  const proposal = ctx.broker.applyProposalLocally(ctx.proposalId, body);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendProposalDecision(ctx, proposal);
 }
 
 /** Route dispatcher for proposal write routes. Returns true only when handled. */
