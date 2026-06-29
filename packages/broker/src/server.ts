@@ -225,7 +225,7 @@ import {
 } from "./http/streaming-message.js";
 import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
-import { handleProposalByIdRequest, handleProposalsListRequest } from "./http/proposals-read.js";
+import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
 import { handleComplexityOrchestrationRoutesIfMatched } from "./http/complexity-orchestration-routes.js";
 import { handleTerminalBriefCloseoutRoutesIfMatched } from "./http/terminal-brief-routes.js";
@@ -1661,8 +1661,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (req.method === "GET" && path === "/proposals") {
-        return handleProposalsListRequest({ res, url, stateStore, broker });
+      if (handleProposalsReadRouteIfMatched({
+        method: req.method,
+        path,
+        segments,
+        res,
+        url,
+        stateStore,
+        broker,
+      })) {
+        return;
       }
 
       if (await handleProposalsWriteRouteIfMatched({
@@ -1677,10 +1685,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         requesterIdentity,
       })) {
         return;
-      }
-
-      if (req.method === "GET" && segments[0] === "proposals" && segments[1] && segments.length === 2) {
-        return handleProposalByIdRequest({ res, url, stateStore, broker, proposalId: segments[1] });
       }
 
       if (
