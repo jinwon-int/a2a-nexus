@@ -10,8 +10,6 @@ import {
 } from "./startup-security.js";
 import {
   optionalString,
-  parseTerminalOutboxAckReceipt,
-  parseTerminalOutboxReceiptUpdate,
   assertRequesterCanSubscribeToWorkerAssignments,
 } from "./request-parsers.js";
 import {
@@ -22,7 +20,6 @@ import {
 import {
   numberQueryParam,
   boundedLimitQueryParam,
-  booleanQueryParam,
   stringListQueryParam,
   nonNegativeNumberBodyField,
   stringListBodyField,
@@ -97,7 +94,7 @@ import {
 import { createBrokerAgentCard, type AgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "./a2a/agent-card-signing.js";
-import { loadCrossBrokerTrustAnchors, verifyCrossBrokerSenderProof, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
+import { loadCrossBrokerTrustAnchors, CrossBrokerNonceCache } from "./a2a/cross-broker-sender-proof.js";
 import { startDefaultAgent, DEFAULT_AGENT_NODE_ID, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { executeA2AJsonRpcBody, executeSendMessage, jsonRpcErrorFromUnknown, specSendResult } from "./a2a/json-rpc.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
@@ -248,6 +245,7 @@ import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js
 import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
+import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1479,123 +1477,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "POST" &&
-        path === "/a2a/cross-broker/terminal-briefs"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "cross-broker-terminal-brief.ingest");
-        }
-
-        const body = await readJson(req);
-        if (crossBrokerTrustAnchors && crossBrokerNonceCache) {
-          const verdict = verifyCrossBrokerSenderProof(crossBrokerTrustAnchors, body, {
-            nonceCache: crossBrokerNonceCache,
-          });
-          if (!verdict.ok) {
-            throw new BrokerError("policy_denied", `cross-broker trust: ${verdict.reason}`);
-          }
-        }
-        const result = broker.ingestCrossBrokerTerminalBriefProjection(body as Parameters<typeof broker.ingestCrossBrokerTerminalBriefProjection>[0]);
-        if (!result.accepted) {
-          const status = result.ack.code === "missing_parent" ? 404 : result.ack.code === "stale_replay" ? 409 : 400;
-          return sendJson(res, status, result);
-        }
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, result.replayed ? 200 : 202, result);
-      }
-
-      if (
-        req.method === "GET" &&
-        path === "/a2a/cross-broker/terminal-briefs"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "cross-broker-terminal-brief.query");
-        }
-
-        const parentRoundId = url.searchParams.get("parent_round_id") ?? undefined;
-        const originBrokerId = url.searchParams.get("origin_broker_id") ?? undefined;
-        const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId });
-        return sendJson(res, 200, {
-          kind: "a2a.cross-broker.terminal-briefs",
-          count: records.length,
-          records,
-        });
-      }
-
-      if (
-        req.method === "GET" &&
-        path === "/a2a/tasks/terminal-outbox"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task-terminal-outbox.subscribe");
-        }
-
-        const afterId = url.searchParams.get("after_id") ?? undefined;
-        const limit = numberQueryParam(url, "limit");
-        const reconcileUnacked = booleanQueryParam(url, "reconcile_unacked") ?? false;
-        if (reconcileUnacked) {
-          const subscription = broker.getTerminalTaskEventOutbox().subscribeWithCursor({ afterId, limit });
-          return sendJson(res, 200, {
-            kind: "task.terminal.outbox",
-            count: subscription.events.length,
-            cursor: subscription.cursor,
-            reconciledUnacked: subscription.reconciledUnacked,
-            events: subscription.events,
-          });
-        }
-        const events = broker.getTerminalTaskEventOutbox().subscribe({ afterId, limit });
-        return sendJson(res, 200, {
-          kind: "task.terminal.outbox",
-          count: events.length,
-          cursor: events.at(-1)?.id ?? afterId ?? null,
-          events,
-        });
-      }
-
-
-      if (
-        req.method === "POST" &&
-        path === "/a2a/tasks/terminal-outbox/receipt"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task-terminal-outbox.receipt");
-        }
-
-        const body = await readJson<{ id?: unknown; receipt?: unknown }>(req);
-        const id = body?.id;
-        if (typeof id !== "string" || id.length === 0) {
-          throw new BrokerError("bad_request", "terminal outbox receipt update requires a non-empty id");
-        }
-        const receipt = parseTerminalOutboxReceiptUpdate(body?.receipt);
-        const event = broker.recordTerminalTaskOutboxReceiptStatus(id, receipt);
-        if (!event) {
-          throw new BrokerError("not_found", "terminal outbox event not found");
-        }
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, { event });
-      }
-
-      if (
-        req.method === "POST" &&
-        path === "/a2a/tasks/terminal-outbox/ack"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task-terminal-outbox.ack");
-        }
-
-        const body = await readJson<{ id?: unknown; receipt?: unknown }>(req);
-        const id = body?.id;
-        if (typeof id !== "string" || id.length === 0) {
-          throw new BrokerError("bad_request", "terminal outbox ack requires a non-empty id");
-        }
-        const receipt = parseTerminalOutboxAckReceipt(body?.receipt);
-        const event = broker.acknowledgeTerminalTaskOutboxEvent(id, receipt);
-        if (!event) {
-          throw new BrokerError("not_found", "terminal outbox event not found");
-        }
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, { event });
+      if (await handleA2ATerminalOutboxRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        url,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        crossBrokerTrustAnchors,
+        crossBrokerNonceCache,
+      })) {
+        return;
       }
 
       if (
