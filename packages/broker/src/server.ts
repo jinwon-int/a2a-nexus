@@ -208,10 +208,8 @@ import { sendJson, truncateMessage } from "./http/response.js";
 import { awaitDurablePersistenceAck, sendError } from "./http/error-mapping.js";
 import {
   handleTaskEventStream,
-  handleTerminalTaskEventStream,
   handleWorkerAssignmentEventStream,
 } from "./http/task-event-streams.js";
-import { handleOperatorEventStream } from "./http/operator-events.js";
 import { handleRoundStatusRequest } from "./http/rounds.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
 import { handleExchangeRoutesIfMatched } from "./http/exchanges-read.js";
@@ -233,6 +231,7 @@ import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
 import { handleA2AJsonRpcRouteIfMatched } from "./http/a2a-jsonrpc-route.js";
+import { handleA2AStreamRouteIfMatched } from "./http/a2a-stream-routes.js";
 import { handleTasksWakeRouteIfMatched } from "./http/tasks-wake-routes.js";
 import {
   classifyEndpointGroup,
@@ -1410,36 +1409,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "GET" &&
-        path === "/a2a/tasks/terminal-events"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task-terminal.subscribe");
-        }
-
-        handleTerminalTaskEventStream(req, res, {
-          broker,
-          heartbeatMs: taskSubscribeHeartbeatSec * 1000,
-        });
-        return;
-      }
-
-      if (
-        req.method === "GET" &&
-        path === "/a2a/operator/events"
-      ) {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "operator.subscribe");
-        }
-
-        handleOperatorEventStream(req, res, {
-          currentSnapshot: currentOperatorSnapshot,
-          replayEvents: replayOperatorEvents,
-          subscribe: subscribeToOperatorEvents,
-          replayWindow: currentOperatorReplayWindow,
-          heartbeatMs: taskSubscribeHeartbeatSec * 1000,
-        });
+      if (handleA2AStreamRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        broker,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        taskSubscribeHeartbeatSec,
+        currentOperatorSnapshot,
+        replayOperatorEvents,
+        subscribeToOperatorEvents,
+        currentOperatorReplayWindow,
+      })) {
         return;
       }
 
