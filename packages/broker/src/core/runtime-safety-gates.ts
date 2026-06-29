@@ -39,6 +39,77 @@ export interface DeclaredWriteSetGateDecision {
   quarantineRequired: boolean;
 }
 
+export type RuntimeLifecyclePhase = "claim" | "process" | "finalize";
+
+export interface RuntimeIdempotencyInput {
+  taskId: string;
+  runId: string;
+  phase: RuntimeLifecyclePhase;
+  action: string;
+  target: string;
+  updatedAt?: string;
+}
+
+export interface RuntimeReplayGateInput {
+  idempotencyKey: string;
+  appliedKeys: string[];
+}
+
+export interface RuntimeReplayGateDecision {
+  allowed: boolean;
+  reason: string;
+}
+
+export interface WorkerRuntimeBoundaryInput {
+  tunnelOnly: boolean;
+  brokerUrl: string;
+  taskWorkspaceId?: string;
+  registeredWorkspaceIds: string[];
+  bridgeBin: string;
+  reportedMetadata?: Record<string, unknown>;
+}
+
+export interface WorkerRuntimeMetadata {
+  runtime: string;
+  harness: string;
+  adapter: string;
+}
+
+export interface WorkerRuntimeBoundaryDecision {
+  allowed: boolean;
+  blockers: string[];
+  derivedMetadata: WorkerRuntimeMetadata;
+}
+
+export interface RuntimeAuditEventInput {
+  id: string;
+  taskId: string;
+  actorId: string;
+  action: string;
+  message: string;
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+  costUsd?: number;
+  maxMessageChars?: number;
+}
+
+export interface RuntimeAuditEvent {
+  id: string;
+  taskId: string;
+  actorId: string;
+  action: string;
+  message: string;
+  tokenUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  costUsd: number;
+}
+
 const DEFAULT_APPROVAL_TOKEN_MAX_AGE_MS = 5 * 60 * 1000;
 
 export function evaluateTerminalActionGate(request: TerminalActionRequest): TerminalActionDecision {
@@ -100,6 +171,95 @@ export function evaluateDeclaredWriteSetGate(input: DeclaredWriteSetGateInput): 
     outOfScopeFiles,
     quarantineRequired: outOfScopeFiles.length > 0,
   };
+}
+
+export function buildStableRuntimeIdempotencyKey(input: RuntimeIdempotencyInput): string {
+  return [input.taskId, input.runId, input.phase, input.action, input.target]
+    .map((part) => encodeURIComponent(String(part ?? "").trim()))
+    .join(":");
+}
+
+export function evaluateRuntimeReplayGate(input: RuntimeReplayGateInput): RuntimeReplayGateDecision {
+  const key = String(input.idempotencyKey ?? "").trim();
+  if (!key) return { allowed: false, reason: "missing_idempotency_key" };
+  const applied = new Set(normalizeStringList(input.appliedKeys));
+  if (applied.has(key)) return { allowed: false, reason: "duplicate_idempotency_key" };
+  return { allowed: true, reason: "new_idempotency_key" };
+}
+
+export function evaluateWorkerRuntimeBoundary(input: WorkerRuntimeBoundaryInput): WorkerRuntimeBoundaryDecision {
+  const blockers: string[] = [];
+  const derivedMetadata = deriveWorkerRuntimeMetadata(input.bridgeBin);
+  if (input.tunnelOnly && !isLoopbackUrl(input.brokerUrl)) {
+    blockers.push("tunnel-only worker must use a loopback broker URL");
+  }
+  const workspaceId = String(input.taskWorkspaceId ?? "").trim();
+  if (workspaceId && !normalizeStringList(input.registeredWorkspaceIds).includes(workspaceId)) {
+    blockers.push(`task workspace ${workspaceId} is not registered for this worker`);
+  }
+  if (!metadataMatchesDerived(input.reportedMetadata, derivedMetadata)) {
+    blockers.push("runtime metadata must be derived from bridge wiring");
+  }
+  return { allowed: blockers.length === 0, blockers, derivedMetadata };
+}
+
+export function buildRuntimeAuditEvent(input: RuntimeAuditEventInput): RuntimeAuditEvent {
+  const tokenUsage = {
+    inputTokens: finiteNumber(input.tokenUsage?.inputTokens),
+    outputTokens: finiteNumber(input.tokenUsage?.outputTokens),
+    totalTokens: finiteNumber(input.tokenUsage?.totalTokens),
+  };
+  const max = Math.max(1, Math.floor(input.maxMessageChars ?? 500));
+  return {
+    id: String(input.id),
+    taskId: String(input.taskId),
+    actorId: String(input.actorId),
+    action: String(input.action),
+    message: redactRuntimeAuditMessage(input.message).slice(0, max),
+    tokenUsage,
+    costUsd: finiteNumber(input.costUsd),
+  };
+}
+
+function deriveWorkerRuntimeMetadata(bridgeBin: string): WorkerRuntimeMetadata {
+  const bin = String(bridgeBin ?? "");
+  if (/claude-a2a-patch-bridge\.mjs$/.test(bin)) {
+    return { runtime: "claude-code", harness: "patch-bridge", adapter: "claude-a2a-patch-bridge" };
+  }
+  if (/claude-a2a-analysis-bridge\.mjs$/.test(bin)) {
+    return { runtime: "claude-code", harness: "analysis-bridge", adapter: "claude-a2a-analysis-bridge" };
+  }
+  if (/hermes-a2a-analysis-bridge\.mjs$/.test(bin)) {
+    return { runtime: "hermes", harness: "analysis-bridge", adapter: "hermes-a2a-analysis-bridge" };
+  }
+  return { runtime: "unknown", harness: "unknown", adapter: "unknown" };
+}
+
+function metadataMatchesDerived(metadata: Record<string, unknown> | undefined, derived: WorkerRuntimeMetadata): boolean {
+  if (!metadata) return false;
+  return metadata.runtime === derived.runtime && metadata.harness === derived.harness && metadata.adapter === derived.adapter;
+}
+
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function finiteNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function redactRuntimeAuditMessage(value: string): string {
+  return String(value ?? "")
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
+    .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
+    .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1[redacted-secret]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]");
 }
 
 function normalizeStringList(value: string[]): string[] {
