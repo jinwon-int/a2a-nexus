@@ -92,8 +92,43 @@ function redactSecrets(value) {
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]");
 }
 
+const SAFE_CHILD_ENV_KEYS = new Set([
+  "HOME",
+  "PATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "SSH_AUTH_SOCK",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+  "DISABLE_AUTOUPDATER",
+]);
+
+function buildClaudeChildEnv(env = process.env) {
+  const child = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (SAFE_CHILD_ENV_KEYS.has(key) || key.startsWith("CAPTURE_") || key.startsWith("GRANDCHILD_")) {
+      child[key] = value;
+    }
+  }
+  if (!child.PATH && env.PATH) child.PATH = env.PATH;
+  if (!child.HOME && env.HOME) child.HOME = env.HOME;
+  return child;
+}
+
 const ANALYSIS_ALLOWED_TOOLS = "Read Glob Grep";
 const ANALYSIS_DISALLOWED_TOOLS = "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch";
+const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
 function buildReadOnlyClaudeArgs(prompt, maxTurns) {
   return [
@@ -341,6 +376,7 @@ function attachClaudeModelTelemetry(response, flags, env = process.env) {
   return {
     ...response,
     bridgeAdapter: "claude_code",
+    bridgeContractVersion: ANALYSIS_BRIDGE_CONTRACT_VERSION,
     requestedModel: requestedModel || undefined,
     requestedThinking: requestedThinking || undefined,
     actualRuntimeModel: configuredRuntimeModel || undefined,
@@ -383,7 +419,7 @@ async function runClaude(prompt, flags, env = process.env) {
   try {
     const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
-      env,
+      env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
       encoding: "utf8",
       maxBuffer,

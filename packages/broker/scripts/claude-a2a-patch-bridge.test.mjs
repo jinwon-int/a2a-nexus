@@ -92,6 +92,7 @@ test("PATCH intent + stub claude returning a PR url -> envelope contains patch J
     assert.ok(Array.isArray(envelope.payloads));
     const payload = JSON.parse(envelope.payloads[0]?.text);
     assert.equal(payload.status, "pr_opened");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-patch.v1");
     assert.equal(payload.prUrl, "https://github.com/jinwon-int/example/pull/7");
     assert.equal(payload.branch, "feat/x");
     assert.deepEqual(payload.tests, ["node --test -> pass"]);
