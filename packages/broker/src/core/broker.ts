@@ -136,6 +136,12 @@ import {
   assertTerminalBriefMetadata,
 } from "./broker-payload-validators.js";
 import {
+  assertTransition,
+  assertTaskStatus,
+  assertTaskOwnership,
+  assertTaskCreationOwnership,
+} from "./broker-transition-guards.js";
+import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
   type TerminalBriefParentOriginRoute,
@@ -181,7 +187,6 @@ import type {
   ProposalActorRequest,
   ProposalDetails,
   ProposalListFilters,
-  ProposalStatus,
   RegisterWorkerRequest,
   SubmitValidationRequest,
   TaskCancelRequest,
@@ -1280,7 +1285,7 @@ export class InMemoryA2ABroker {
 
   approveProposal(proposalId: string, request: ProposalActorRequest): ChangeProposal {
     const proposal = this.requireProposal(proposalId);
-    this.assertTransition(proposal.status, ["submitted", "validated"], "approve");
+    assertTransition(proposal.status, ["submitted", "validated"], "approve");
 
     try {
       assertProposalReviewAllowed(proposal, request);
@@ -1305,7 +1310,7 @@ export class InMemoryA2ABroker {
 
   rejectProposal(proposalId: string, request: ProposalActorRequest): ChangeProposal {
     const proposal = this.requireProposal(proposalId);
-    this.assertTransition(proposal.status, ["submitted", "validated"], "reject");
+    assertTransition(proposal.status, ["submitted", "validated"], "reject");
 
     try {
       assertProposalReviewAllowed(proposal, request);
@@ -1330,7 +1335,7 @@ export class InMemoryA2ABroker {
 
   applyProposalLocally(proposalId: string, request: ApplyProposalRequest): ChangeProposal {
     const proposal = this.requireProposal(proposalId);
-    this.assertTransition(proposal.status, ["approved"], "apply");
+    assertTransition(proposal.status, ["approved"], "apply");
 
     if (request.workspace.nodeId !== proposal.targetNodeId) {
       throw new BrokerError(
@@ -1395,7 +1400,7 @@ export class InMemoryA2ABroker {
     const policyContext = normalizeTaskPolicyContext(normalizedRequest);
     const initialStatus: TaskStatus = policyContext?.requiresApproval === true ? "blocked" : "queued";
     const teamId = normalizeOwnershipString(normalizedRequest.teamId) ?? this.teamId;
-    this.assertTaskCreationOwnership(brokerOfRecord);
+    assertTaskCreationOwnership(brokerOfRecord, this.brokerId);
     const task: TaskRecord = {
       id: normalizedRequest.id ?? randomUUID(),
       exchangeId: normalizedRequest.exchangeId,
@@ -1827,7 +1832,7 @@ export class InMemoryA2ABroker {
     if (task.policyContext?.requiresApproval === true && !task.approval) {
       throw new BrokerError("policy_denied", "task requires operator or hub approval before claim");
     }
-    this.assertTaskStatus(task.status, ["queued"], "claim");
+    assertTaskStatus(task.status, ["queued"], "claim");
 
     const now = isoNow();
     task.status = "claimed";
@@ -1853,7 +1858,7 @@ export class InMemoryA2ABroker {
   startTask(taskId: string, workerId: string): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "start");
-    this.assertTaskStatus(task.status, ["claimed"], "start");
+    assertTaskStatus(task.status, ["claimed"], "start");
 
     task.status = "running";
     task.updatedAt = isoNow();
@@ -2813,7 +2818,7 @@ export class InMemoryA2ABroker {
   ): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "checkpoint");
-    this.assertTaskStatus(task.status, ["claimed", "running"], "checkpoint");
+    assertTaskStatus(task.status, ["claimed", "running"], "checkpoint");
     if (request.state !== "paused" && request.state !== "awaiting_operator") {
       throw new BrokerError("bad_request", "checkpoint state must be paused or awaiting_operator");
     }
@@ -2916,7 +2921,7 @@ export class InMemoryA2ABroker {
   heartbeatTask(taskId: string, workerId: string): TaskRecord {
     const task = this.requireTask(taskId);
     this.assertTaskWorker(task, workerId, "heartbeat");
-    this.assertTaskStatus(task.status, ["claimed", "running"], "heartbeat");
+    assertTaskStatus(task.status, ["claimed", "running"], "heartbeat");
 
     const now = isoNow();
     const nowMs = Date.parse(now);
@@ -3255,12 +3260,12 @@ export class InMemoryA2ABroker {
     }
 
     if (request.intent === "validate_change") {
-      this.assertTransition(proposal.status, ["submitted", "validated"], "queue validation task for");
+      assertTransition(proposal.status, ["submitted", "validated"], "queue validation task for");
       return;
     }
 
     if (request.intent === "apply_local_change") {
-      this.assertTransition(proposal.status, ["approved"], "queue apply task for");
+      assertTransition(proposal.status, ["approved"], "queue apply task for");
       if (!request.workspace?.workspaceId || request.workspace.nodeId !== proposal.targetNodeId) {
         throw new BrokerError(
           "bad_request",
@@ -3270,34 +3275,8 @@ export class InMemoryA2ABroker {
     }
   }
 
-  private assertTransition(
-    current: ProposalStatus,
-    allowed: ProposalStatus[],
-    action: string,
-  ): void {
-    if (!allowed.includes(current)) {
-      throw new BrokerError(
-        "invalid_transition",
-        `cannot ${action} proposal while status is ${current}`,
-      );
-    }
-  }
-
-  private assertTaskStatus(
-    current: TaskStatus,
-    allowed: TaskStatus[],
-    action: string,
-  ): void {
-    if (!allowed.includes(current)) {
-      throw new BrokerError(
-        "invalid_transition",
-        `cannot ${action} task while status is ${current}`,
-      );
-    }
-  }
-
   private assertTaskWorker(task: TaskRecord, workerId: string, action: string): void {
-    this.assertTaskOwnership(task, action);
+    assertTaskOwnership(task, action, this.brokerId, this.teamId);
     this.requireWorker(workerId);
     const expectedWorkerId = task.assignedWorkerId ?? task.targetNodeId;
     if (workerId !== expectedWorkerId) {
@@ -3311,33 +3290,6 @@ export class InMemoryA2ABroker {
       throw new BrokerError(
         "policy_denied",
         `${action} requires the worker that claimed the task`,
-      );
-    }
-  }
-
-  private assertTaskOwnership(task: TaskRecord, action: string): void {
-    const taskBroker = normalizeOwnershipString(task.brokerOfRecord);
-    if (taskBroker && this.brokerId !== taskBroker) {
-      throw new BrokerError(
-        "policy_denied",
-        `${action} requires broker-of-record ${taskBroker}`,
-      );
-    }
-
-    const taskTeam = normalizeOwnershipString(task.teamId);
-    if (taskTeam && this.teamId !== taskTeam) {
-      throw new BrokerError(
-        "policy_denied",
-        `${action} requires teamId ${taskTeam}`,
-      );
-    }
-  }
-
-  private assertTaskCreationOwnership(brokerOfRecord: string | undefined): void {
-    if (brokerOfRecord && this.brokerId && this.brokerId !== brokerOfRecord) {
-      throw new BrokerError(
-        "policy_denied",
-        `create cannot set brokerOfRecord ${brokerOfRecord} on broker ${this.brokerId}`,
       );
     }
   }
