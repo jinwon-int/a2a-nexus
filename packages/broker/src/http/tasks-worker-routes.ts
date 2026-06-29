@@ -1,0 +1,203 @@
+// Worker-signed task lifecycle routes — the task mutations a worker drives and
+// that carry an optional A2A HTTP signature: POST
+// /tasks/:id/{claim,start,heartbeat,checkpoint,complete,evidence,fail}. Extracted
+// from the server request closure into explicit-context handlers (continuing the
+// #645 dispatcher migration). These differ from the actor/operator decision
+// routes (tasks-decision-routes.ts) in that they verify the worker signature and
+// identity-match against the signed requester, so the context carries the
+// server's two signature-route closures.
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import type { BrokerStateStore } from "../core/store.js";
+import {
+  assertRequesterMatchesParty,
+  type A2AWorkerRouteScope,
+  type RequesterIdentity,
+} from "../core/request-security.js";
+import type {
+  TaskClaimRequest,
+  TaskCompleteRequest,
+  TaskEvidenceRequest,
+  TaskFailRequest,
+  TaskRecord,
+} from "../core/types.js";
+import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
+import { awaitDurablePersistenceAck } from "./error-mapping.js";
+import { readJson } from "./body.js";
+import { sendJson } from "./response.js";
+
+export interface TasksWorkerRouteContext {
+  method: string | undefined;
+  segments: string[];
+  req: IncomingMessage;
+  res: ServerResponse;
+  url: URL;
+  broker: InMemoryA2ABroker;
+  stateStore: BrokerStateStore;
+  enforceRequesterIdentity: boolean;
+  requesterIdentity: RequesterIdentity | null;
+  /** Verify (and return) the request's signed worker, if any; throws on a bad signature. */
+  assertWorkerHttpSignatureRoute: (
+    req: IncomingMessage,
+    url: URL,
+  ) => Promise<A2AHttpSignatureVerifiedWorker | null>;
+  /** Enforce the signed worker's route scope and identity-match the expected worker id. */
+  assertVerifiedWorkerMatches: (
+    verified: A2AHttpSignatureVerifiedWorker | null,
+    expectedWorkerId: string | undefined,
+    operation: A2AWorkerRouteScope,
+  ) => void;
+}
+
+type TaskScopedContext = TasksWorkerRouteContext & { taskId: string };
+
+interface WorkerScopedBody {
+  workerId?: string;
+}
+
+/**
+ * Verify the worker signature, read the worker-scoped body, require a workerId,
+ * identity-match it against the signature, and (when enabled) the requester.
+ */
+async function authWorkerAction<T extends WorkerScopedBody>(
+  ctx: TaskScopedContext,
+  scope: A2AWorkerRouteScope,
+): Promise<{ body: T; workerId: string }> {
+  const verifiedWorker = await ctx.assertWorkerHttpSignatureRoute(ctx.req, ctx.url);
+  const body = await readJson<T>(ctx.req);
+  if (!body?.workerId) {
+    throw new BrokerError("bad_request", "workerId is required");
+  }
+  ctx.assertVerifiedWorkerMatches(verifiedWorker, body.workerId, scope);
+  if (ctx.enforceRequesterIdentity) {
+    assertRequesterMatchesParty(ctx.requesterIdentity, { id: body.workerId }, scope);
+  }
+  return { body, workerId: body.workerId };
+}
+
+function sendTask(ctx: TaskScopedContext, task: TaskRecord): void {
+  sendJson(ctx.res, 200, task);
+}
+
+/** POST /tasks/:id/claim — a worker claims a queued task. */
+export async function handleClaimTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { workerId } = await authWorkerAction<TaskClaimRequest>(ctx, "task.claim");
+  const task = ctx.broker.claimTask(ctx.taskId, workerId);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+/** POST /tasks/:id/start — a worker starts a claimed task. */
+export async function handleStartTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { workerId } = await authWorkerAction<TaskClaimRequest>(ctx, "task.start");
+  const task = ctx.broker.startTask(ctx.taskId, workerId);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+/** POST /tasks/:id/heartbeat — a worker reports liveness on a running task. */
+export async function handleHeartbeatTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { workerId } = await authWorkerAction<TaskClaimRequest>(ctx, "task.heartbeat");
+  const task = ctx.broker.heartbeatTask(ctx.taskId, workerId);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+interface TaskCheckpointBody extends WorkerScopedBody {
+  state?: string;
+  checkpointId?: string;
+  reason?: string;
+  decisionType?: string;
+  artifactRefs?: string[];
+}
+
+/** POST /tasks/:id/checkpoint — a worker records a pause/awaiting-operator checkpoint. */
+export async function handleCheckpointTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { body, workerId } = await authWorkerAction<TaskCheckpointBody>(ctx, "task.checkpoint");
+  const task = ctx.broker.checkpointTask(ctx.taskId, workerId, {
+    state: body.state as "paused" | "awaiting_operator",
+    checkpointId: body.checkpointId,
+    reason: body.reason,
+    decisionType: body.decisionType,
+    artifactRefs: body.artifactRefs,
+  });
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+/** POST /tasks/:id/complete — a worker reports successful completion. */
+export async function handleCompleteTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { body, workerId } = await authWorkerAction<TaskCompleteRequest>(ctx, "task.complete");
+  const task = ctx.broker.completeTask(ctx.taskId, workerId, body.result);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+/** POST /tasks/:id/evidence — a worker posts outcome evidence (complete or fail). */
+export async function handlePostEvidenceRequest(ctx: TaskScopedContext): Promise<void> {
+  const { body, workerId } = await authWorkerAction<TaskEvidenceRequest>(ctx, "task.evidence");
+  const outcome = body.outcome ?? "done";
+  if (outcome === "done" || outcome === "pr") {
+    const task = ctx.broker.completeTask(ctx.taskId, workerId, body.result);
+    await awaitDurablePersistenceAck(ctx.stateStore);
+    sendTask(ctx, task);
+    return;
+  }
+  if (outcome === "blocked" || outcome === "failed") {
+    const task = ctx.broker.failTask(ctx.taskId, workerId, body.error ?? {
+      code: outcome,
+      message: body.result?.summary ?? body.result?.note ?? `worker posted ${outcome} evidence`,
+    });
+    await awaitDurablePersistenceAck(ctx.stateStore);
+    sendTask(ctx, task);
+    return;
+  }
+  throw new BrokerError("bad_request", "outcome must be done, pr, blocked, or failed");
+}
+
+/** POST /tasks/:id/fail — a worker reports a failure. */
+export async function handleFailTaskRequest(ctx: TaskScopedContext): Promise<void> {
+  const { body, workerId } = await authWorkerAction<TaskFailRequest>(ctx, "task.fail");
+  const task = ctx.broker.failTask(ctx.taskId, workerId, body.error);
+  await awaitDurablePersistenceAck(ctx.stateStore);
+  sendTask(ctx, task);
+}
+
+/** Route dispatcher for the worker-signed task lifecycle routes. */
+export async function handleTasksWorkerRouteIfMatched(
+  ctx: TasksWorkerRouteContext,
+): Promise<boolean> {
+  if (ctx.method !== "POST") {
+    return false;
+  }
+  if (!(ctx.segments[0] === "tasks" && ctx.segments[1])) {
+    return false;
+  }
+  const scoped: TaskScopedContext = { ...ctx, taskId: ctx.segments[1] };
+  switch (ctx.segments[2]) {
+    case "claim":
+      await handleClaimTaskRequest(scoped);
+      return true;
+    case "start":
+      await handleStartTaskRequest(scoped);
+      return true;
+    case "heartbeat":
+      await handleHeartbeatTaskRequest(scoped);
+      return true;
+    case "checkpoint":
+      await handleCheckpointTaskRequest(scoped);
+      return true;
+    case "complete":
+      await handleCompleteTaskRequest(scoped);
+      return true;
+    case "evidence":
+      await handlePostEvidenceRequest(scoped);
+      return true;
+    case "fail":
+      await handleFailTaskRequest(scoped);
+      return true;
+    default:
+      return false;
+  }
+}

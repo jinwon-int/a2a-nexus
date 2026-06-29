@@ -181,11 +181,7 @@ import type {
   ProposalKind,
   ProposalStatus,
   RegisterWorkerRequest,
-  TaskClaimRequest,
-  TaskCompleteRequest,
   TaskDiagnosticReport,
-  TaskEvidenceRequest,
-  TaskFailRequest,
   TaskKind,
   TaskListFilters,
   TaskOrigin,
@@ -259,6 +255,7 @@ import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard
 import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-reporting-read.js";
 import { handleProposalsWriteRouteIfMatched } from "./http/proposals-write-routes.js";
 import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.js";
+import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -360,7 +357,7 @@ const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
 export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
 
-interface A2AHttpSignatureVerifiedWorker {
+export interface A2AHttpSignatureVerifiedWorker {
   keyid: string;
   requesterId: string;
   scopes?: readonly string[];
@@ -2225,128 +2222,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "claim") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskClaimRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.claim");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.claim");
-        }
-        const task = broker.claimTask(segments[1], body.workerId);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "start") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskClaimRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.start");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.start");
-        }
-        const task = broker.startTask(segments[1], body.workerId);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "heartbeat") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskClaimRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.heartbeat");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.heartbeat");
-        }
-        const task = broker.heartbeatTask(segments[1], body.workerId);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "checkpoint") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<{ workerId?: string; state?: string; checkpointId?: string; reason?: string; decisionType?: string; artifactRefs?: string[] }>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.checkpoint");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.checkpoint");
-        }
-        const task = broker.checkpointTask(segments[1], body.workerId, {
-          state: body.state as "paused" | "awaiting_operator",
-          checkpointId: body.checkpointId,
-          reason: body.reason,
-          decisionType: body.decisionType,
-          artifactRefs: body.artifactRefs,
-        });
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "complete") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskCompleteRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.complete");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.complete");
-        }
-        const task = broker.completeTask(segments[1], body.workerId, body.result);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "evidence") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskEvidenceRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.evidence");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.evidence");
-        }
-        const outcome = body.outcome ?? "done";
-        if (outcome === "done" || outcome === "pr") {
-          const task = broker.completeTask(segments[1], body.workerId, body.result);
-          await awaitDurablePersistenceAck(stateStore);
-          return sendJson(res, 200, task);
-        }
-        if (outcome === "blocked" || outcome === "failed") {
-          const task = broker.failTask(segments[1], body.workerId, body.error ?? {
-            code: outcome,
-            message: body.result?.summary ?? body.result?.note ?? `worker posted ${outcome} evidence`,
-          });
-          await awaitDurablePersistenceAck(stateStore);
-          return sendJson(res, 200, task);
-        }
-        throw new BrokerError("bad_request", "outcome must be done, pr, blocked, or failed");
-      }
-
-      if (req.method === "POST" && segments[0] === "tasks" && segments[1] && segments[2] === "fail") {
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        const body = await readJson<TaskFailRequest>(req);
-        if (!body?.workerId) {
-          throw new BrokerError("bad_request", "workerId is required");
-        }
-        assertVerifiedWorkerMatches(verifiedWorker, body.workerId, "task.fail");
-        if (enforceRequesterIdentity) {
-          assertRequesterMatchesParty(requesterIdentity, { id: body.workerId }, "task.fail");
-        }
-        const task = broker.failTask(segments[1], body.workerId, body.error);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
+      if (await handleTasksWorkerRouteIfMatched({
+        method: req.method,
+        segments,
+        req,
+        res,
+        url,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        assertWorkerHttpSignatureRoute,
+        assertVerifiedWorkerMatches,
+      })) {
+        return;
       }
 
 
