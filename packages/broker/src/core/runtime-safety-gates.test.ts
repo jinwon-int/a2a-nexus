@@ -5,6 +5,10 @@ import {
   evaluateTerminalActionGate,
   evaluateDeclaredWriteSetGate,
   type TerminalActionRequest,
+  buildStableRuntimeIdempotencyKey,
+  evaluateRuntimeReplayGate,
+  evaluateWorkerRuntimeBoundary,
+  buildRuntimeAuditEvent,
 } from "./runtime-safety-gates.js";
 
 const NOW = "2026-06-29T14:20:00.000Z";
@@ -92,4 +96,91 @@ test("declared write-set gate quarantines out-of-scope files before finalize", (
     "AGENTS.md",
   ]);
   assert.match(decision.reason, /outside declared write-set/);
+});
+
+
+test("stable idempotency keys ignore retry-only timestamps and block duplicate apply/finalize", () => {
+  const firstKey = buildStableRuntimeIdempotencyKey({
+    taskId: "task-1",
+    runId: "run-1",
+    phase: "finalize",
+    action: "post_github_evidence",
+    target: "https://github.com/jinwon-int/a2a-nexus/issues/1130",
+    updatedAt: "2026-06-29T14:00:00.000Z",
+  });
+  const retryKey = buildStableRuntimeIdempotencyKey({
+    taskId: "task-1",
+    runId: "run-1",
+    phase: "finalize",
+    action: "post_github_evidence",
+    target: "https://github.com/jinwon-int/a2a-nexus/issues/1130",
+    updatedAt: "2026-06-29T14:05:00.000Z",
+  });
+
+  assert.equal(firstKey, retryKey);
+  assert.equal(evaluateRuntimeReplayGate({ idempotencyKey: firstKey, appliedKeys: [] }).allowed, true);
+  const duplicate = evaluateRuntimeReplayGate({ idempotencyKey: retryKey, appliedKeys: [firstKey] });
+  assert.equal(duplicate.allowed, false);
+  assert.equal(duplicate.reason, "duplicate_idempotency_key");
+});
+
+test("worker runtime boundary enforces tunnel-only broker egress and workspace membership", () => {
+  const decision = evaluateWorkerRuntimeBoundary({
+    tunnelOnly: true,
+    brokerUrl: "https://gwakga.example.invalid:8787",
+    taskWorkspaceId: "a2a-nexus",
+    registeredWorkspaceIds: ["ccc-node"],
+    bridgeBin: "claude-a2a-analysis-bridge.mjs",
+    reportedMetadata: { runtime: "hermes", adapter: "claimed" },
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(decision.blockers, [
+    "tunnel-only worker must use a loopback broker URL",
+    "task workspace a2a-nexus is not registered for this worker",
+    "runtime metadata must be derived from bridge wiring",
+  ]);
+  assert.deepEqual(decision.derivedMetadata, {
+    runtime: "claude-code",
+    harness: "analysis-bridge",
+    adapter: "claude-a2a-analysis-bridge",
+  });
+});
+
+test("worker runtime boundary accepts loopback tunnel and matching workspace", () => {
+  const decision = evaluateWorkerRuntimeBoundary({
+    tunnelOnly: true,
+    brokerUrl: "http://127.0.0.1:18790",
+    taskWorkspaceId: "a2a-nexus",
+    registeredWorkspaceIds: ["a2a-nexus"],
+    bridgeBin: "claude-a2a-patch-bridge.mjs",
+    reportedMetadata: { runtime: "claude-code", harness: "patch-bridge", adapter: "claude-a2a-patch-bridge" },
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.deepEqual(decision.blockers, []);
+  assert.equal(decision.derivedMetadata.adapter, "claude-a2a-patch-bridge");
+});
+
+test("runtime audit events are structured, bounded, redacted, and carry token/cost accounting", () => {
+  const event = buildRuntimeAuditEvent({
+    id: "audit-1",
+    taskId: "task-1",
+    actorId: "worker-a",
+    action: "bridge.spawned",
+    message: "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz1234567890 and EDGE_SECRET=supersecretvalue",
+    tokenUsage: { inputTokens: 1000, outputTokens: 250, totalTokens: 1250 },
+    costUsd: 0.012345,
+    maxMessageChars: 80,
+  });
+
+  assert.equal(event.id, "audit-1");
+  assert.equal(event.action, "bridge.spawned");
+  assert.equal(event.taskId, "task-1");
+  assert.equal(event.actorId, "worker-a");
+  assert.equal(event.tokenUsage.totalTokens, 1250);
+  assert.equal(event.costUsd, 0.012345);
+  assert.ok(event.message.length <= 80);
+  assert.doesNotMatch(event.message, /ghp_|supersecretvalue|Bearer [A-Za-z0-9_]+/);
+  assert.match(event.message, /\[redacted/);
 });
