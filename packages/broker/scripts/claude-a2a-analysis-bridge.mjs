@@ -6,8 +6,29 @@ function safeText(value, fallback = "") {
   return String(value);
 }
 
+function redactSecrets(value) {
+  return safeText(value)
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
+    .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
+    .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted-secret-like]");
+}
+
+const ANALYSIS_ALLOWED_TOOLS = "Read Glob Grep";
+const ANALYSIS_DISALLOWED_TOOLS = "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch";
+
+function buildReadOnlyClaudeArgs(prompt, maxTurns) {
+  return [
+    "-p", prompt,
+    "--output-format", "json",
+    "--max-turns", String(maxTurns),
+    "--allowedTools", ANALYSIS_ALLOWED_TOOLS,
+    "--disallowedTools", ANALYSIS_DISALLOWED_TOOLS,
+  ];
+}
+
 function die(message) {
-  process.stderr.write(`${safeText(message, "Claude Code analysis bridge failed")}\n`);
+  process.stderr.write(`${redactSecrets(safeText(message, "Claude Code analysis bridge failed"))}\n`);
   process.exit(1);
 }
 
@@ -274,7 +295,7 @@ function runClaude(prompt, flags, env = process.env) {
   const claudeBin = safeText(env.A2A_CLAUDE_CODE_BIN, safeText(env.CLAUDE_BIN, "claude"));
   const timeoutSec = positiveInteger(flags.timeout, positiveInteger(env.A2A_CLAUDE_CODE_TIMEOUT_SEC, 600));
   const maxTurns = positiveInteger(env.A2A_CLAUDE_CODE_MAX_TURNS, 10);
-  const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(maxTurns)];
+  const args = buildReadOnlyClaudeArgs(prompt, maxTurns);
   const child = spawnSync(claudeBin, args, {
     env,
     encoding: "utf8",

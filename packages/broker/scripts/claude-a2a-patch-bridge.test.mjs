@@ -231,6 +231,7 @@ function singleShotMessage() {
     "Repository: jinwon-int/a2a-nexus",
     "Issue: #1020",
     "Issue URL: https://github.com/jinwon-int/a2a-nexus/issues/1020",
+    "Declared write-set: [\"hello.txt\"]",
   ].join("\n\n");
 }
 
@@ -534,15 +535,15 @@ test("SINGLE-SHOT bootstrap-leak diff -> bridge exits non-zero (blocked)", () =>
   try {
     writeFakeGitStub(fakeGitPath);
     writeFakeGhStub(fakeGhPath);
-    // Diff creates AGENTS.md -> bootstrap-leak guard must block the commit.
+    // Diff creates USER.md -> expanded bootstrap-leak guard must block the commit.
     const leakedDiff = [
-      "diff --git a/AGENTS.md b/AGENTS.md",
+      "diff --git a/USER.md b/USER.md",
       "new file mode 100644",
       "index 0000000..ce01362",
       "--- /dev/null",
-      "+++ b/AGENTS.md",
+      "+++ b/USER.md",
       "@@ -0,0 +1 @@",
-      "+leaked agent context",
+      "+leaked user context",
     ].join("\n");
     writeDiffClaudeStub(fakeClaudePath, leakedDiff);
 
@@ -561,7 +562,48 @@ test("SINGLE-SHOT bootstrap-leak diff -> bridge exits non-zero (blocked)", () =>
     });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /bootstrap|AGENTS\.md|blocked/i);
+    assert.match(result.stderr, /bootstrap|USER\.md|blocked/i);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SINGLE-SHOT out-of-scope diff -> bridge exits non-zero before PR", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-scope-"));
+  const { workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    const outOfScopeDiff = [
+      "diff --git a/README.md b/README.md",
+      "index 8b13789..f00cafe 100644",
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1 +1 @@",
+      "-# test",
+      "+# changed outside declared scope",
+    ].join("\n");
+    writeDiffClaudeStub(fakeClaudePath, outOfScopeDiff);
+
+    const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /outside declared write-set|README\.md/i);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
