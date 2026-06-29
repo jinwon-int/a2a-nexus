@@ -9,16 +9,12 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import {
-  optionalString,
   assertRequesterCanSubscribeToWorkerAssignments,
 } from "./request-parsers.js";
 import {
   listAuditEventsForReadPath,
-  listTasksForReadPath,
-  getTaskForReadPath,
 } from "./task-read-paths.js";
 import {
-  numberQueryParam,
   boundedLimitQueryParam,
   stringListQueryParam,
   nonNegativeNumberBodyField,
@@ -172,7 +168,6 @@ import type {
   TaskKind,
   TaskListFilters,
   TaskOrigin,
-  TaskRecord,
   TaskStatus,
   TaskTombstone,
   WorkerRecord,
@@ -197,7 +192,6 @@ import {
   TradingDialecticReadModelError,
 } from "./trading-dialectic/read-model.js";
 import type { Alert, AlertScanResult } from "./core/alert-projection.js";
-import { buildOperatorTaskReport } from "./core/operator-task-report.js";
 import { TERMINAL_BRIEF_SIDECAR_ROUTES } from "./terminal-brief-sidecar-routes.js";
 import {
   isTerminalTaskOutboxAckInputEvidence,
@@ -245,10 +239,7 @@ import {
   classifyRequestRoute,
 } from "./http/route-classification.js";
 import { readCgroupCpuSnapshot, readCgroupPsiSnapshot } from "./diagnostics/cgroup-metrics.js";
-import {
-  auditFiltersFromUrl,
-  taskIdsFromUrl,
-} from "./http/read-path-filters.js";
+import { auditFiltersFromUrl } from "./http/read-path-filters.js";
 import { buildAlertScan, buildDashboardResponse, type OperatorSummary } from "./http/dashboard-response.js";
 import {
   assertA2AContentDigestMatches,
@@ -1799,21 +1790,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       // GET /tasks/diagnostics — bulk diagnostic scan (MUST come before /tasks/:id)
-      if (req.method === "GET" && path === "/operator/task-report") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "operator.task-report");
-        }
-        const taskIds = taskIdsFromUrl(url);
-        const parentIssue = optionalString(url.searchParams.get("parent_issue"));
-        const staleAfterMs = numberQueryParam(url, "stale_after_ms") ?? 15 * 60 * 1000;
-        const updatedAfter = optionalString(url.searchParams.get("updated_after"));
-        const tasks = taskIds.length
-          ? taskIds.map((id) => getTaskForReadPath(stateStore, broker, id)).filter((task): task is TaskRecord => Boolean(task))
-          : listTasksForReadPath(stateStore, broker, {});
-        const terminalOutbox = broker.getTerminalTaskEventOutbox().subscribe();
-        return sendJson(res, 200, buildOperatorTaskReport(tasks, { taskIds, parentIssue, staleAfterMs, updatedAfter, terminalOutbox }));
-      }
-
       if (handleTasksReadRouteIfMatched({
         method: req.method,
         path,
