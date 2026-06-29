@@ -142,6 +142,7 @@ import {
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
 import { assertExchangeMessageActor } from "./broker-exchange-guards.js";
+import { readExchange, readExchanges } from "./broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
@@ -753,24 +754,11 @@ export class InMemoryA2ABroker {
   }
 
   getExchange(id: string): A2AExchangeState | null {
-    const repositoryExchange = this.exchangeRepository?.getExchange(id);
-    if (repositoryExchange) {
-      const exchange = normalizeExchangeState(repositoryExchange);
-      this.exchanges.set(exchange.id, exchange);
-      return exchange;
-    }
-    return this.exchanges.get(id) ?? null;
+    return readExchange(this.exchanges, this.exchangeRepository, id);
   }
 
   listExchanges(): A2AExchangeState[] {
-    const exchangesById = new Map(this.exchanges);
-    if (this.exchangeRepository) {
-      for (const repositoryExchange of this.exchangeRepository.listExchanges().map(normalizeExchangeState)) {
-        this.exchanges.set(repositoryExchange.id, repositoryExchange);
-        exchangesById.set(repositoryExchange.id, repositoryExchange);
-      }
-    }
-    return sortedCopy(exchangesById.values(), sortNewestFirst);
+    return readExchanges(this.exchanges, this.exchangeRepository);
   }
 
   listExchangeMessages(
@@ -2500,7 +2488,7 @@ export class InMemoryA2ABroker {
   }
 
   private requireExchange(id: string): A2AExchangeState {
-    const exchange = this.getExchange(id);
+    const exchange = readExchange(this.exchanges, this.exchangeRepository, id);
     if (!exchange) {
       throw new BrokerError("not_found", "exchange not found");
     }
