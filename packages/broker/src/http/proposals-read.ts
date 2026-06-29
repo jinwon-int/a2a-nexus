@@ -82,3 +82,25 @@ export function handleProposalByIdRequest(ctx: ProposalsReadContext & { proposal
   }
   sendJson(ctx.res, 200, details);
 }
+
+export interface ProposalsReadRouteContext extends ProposalsReadContext {
+  method: string | undefined;
+  path: string;
+  segments: string[];
+}
+
+/** Route dispatcher for proposal read routes. Returns true only when handled. */
+export function handleProposalsReadRouteIfMatched(ctx: ProposalsReadRouteContext): boolean {
+  if (ctx.method !== "GET") {
+    return false;
+  }
+  if (ctx.path === "/proposals") {
+    handleProposalsListRequest(ctx);
+    return true;
+  }
+  if (ctx.segments[0] === "proposals" && ctx.segments[1] && ctx.segments.length === 2) {
+    handleProposalByIdRequest({ ...ctx, proposalId: ctx.segments[1] });
+    return true;
+  }
+  return false;
+}
