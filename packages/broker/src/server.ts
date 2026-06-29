@@ -176,8 +176,6 @@ import type {
   TaskRecord,
   TaskStatus,
   TaskTombstone,
-  TaskWakeDecisionRequest,
-  TaskWakePlanRequest,
   WorkerRecord,
   WorkerView,
   A2AWorkerEnvironment,
@@ -246,6 +244,7 @@ import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-rou
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
+import { handleTasksWakeRouteIfMatched } from "./http/tasks-wake-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1896,46 +1895,18 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "POST" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "wake" &&
-        segments[3] === "plan" &&
-        segments.length === 4
-      ) {
-        const body = await readJson<TaskWakePlanRequest>(req);
-        if (!body?.targetSessionKey) {
-          throw new BrokerError("bad_request", "targetSessionKey is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.wake.plan");
-        }
-        const result = broker.planAcceptedTaskWake(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, result.replayed ? 200 : 201, result);
+      if (await handleTasksWakeRouteIfMatched({
+        method: req.method,
+        segments,
+        req,
+        res,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
-
-      if (
-        req.method === "POST" &&
-        segments[0] === "tasks" &&
-        segments[1] &&
-        segments[2] === "wake" &&
-        segments[3] === "decision" &&
-        segments.length === 4
-      ) {
-        const body = await readJson<TaskWakeDecisionRequest>(req);
-        if (!body?.status) {
-          throw new BrokerError("bad_request", "status is required");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "task.wake.decision");
-        }
-        const task = broker.recordTaskWakeDecision(segments[1], body);
-        await awaitDurablePersistenceAck(stateStore);
-        return sendJson(res, 200, task);
-      }
-
 
       if (await handleTasksDecisionRouteIfMatched({
         method: req.method,
