@@ -1,0 +1,95 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  evaluateTerminalActionGate,
+  evaluateDeclaredWriteSetGate,
+  type TerminalActionRequest,
+} from "./runtime-safety-gates.js";
+
+const NOW = "2026-06-29T14:20:00.000Z";
+
+function request(overrides: Partial<TerminalActionRequest> = {}): TerminalActionRequest {
+  return {
+    action: "git_push",
+    actorRole: "implementer",
+    actorId: "worker-a",
+    finalizerOnly: true,
+    freshApprovalToken: null,
+    approvalTokenIssuedAt: null,
+    now: NOW,
+    ...overrides,
+  };
+}
+
+test("terminal action gate denies side-effecting actions from non-finalizers without a fresh approval token", () => {
+  const decision = evaluateTerminalActionGate(request());
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "non_finalizer_actor");
+  assert.deepEqual(decision.blockers, [
+    "terminal action git_push requires finalizer actor",
+    "terminal action git_push requires a fresh approval token",
+  ]);
+});
+
+test("terminal action gate allows finalizer with scoped fresh approval token", () => {
+  const decision = evaluateTerminalActionGate(request({
+    actorRole: "finalizer",
+    actorId: "seoseo-finalizer",
+    freshApprovalToken: "approval:git_push:20260629T1419Z",
+    approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
+    approvalTokenMaxAgeMs: 120_000,
+  }));
+
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.reason, "allowed_finalizer_fresh_approval");
+  assert.deepEqual(decision.blockers, []);
+});
+
+test("terminal action gate denies stale finalizer approval tokens", () => {
+  const decision = evaluateTerminalActionGate(request({
+    actorRole: "finalizer",
+    freshApprovalToken: "approval:deploy:old",
+    approvalTokenIssuedAt: "2026-06-29T14:00:00.000Z",
+    approvalTokenMaxAgeMs: 120_000,
+    action: "deploy_restart",
+  }));
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "stale_approval_token");
+  assert.match(decision.blockers.join("\n"), /fresh approval token/);
+});
+
+test("declared write-set gate allows exact and glob-scoped files", () => {
+  const decision = evaluateDeclaredWriteSetGate({
+    declaredWriteSet: ["packages/broker/src/core/**", "packages/broker/scripts/*.mjs"],
+    touchedFiles: [
+      "packages/broker/src/core/runtime-safety-gates.ts",
+      "packages/broker/scripts/claude-a2a-patch-bridge.mjs",
+    ],
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.deepEqual(decision.outOfScopeFiles, []);
+  assert.equal(decision.quarantineRequired, false);
+});
+
+test("declared write-set gate quarantines out-of-scope files before finalize", () => {
+  const decision = evaluateDeclaredWriteSetGate({
+    declaredWriteSet: ["packages/broker/src/core/**"],
+    touchedFiles: [
+      "packages/broker/src/core/runtime-safety-gates.ts",
+      "packages/broker/scripts/claude-a2a-patch-bridge.mjs",
+      "AGENTS.md",
+    ],
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.quarantineRequired, true);
+  assert.deepEqual(decision.outOfScopeFiles, [
+    "packages/broker/scripts/claude-a2a-patch-bridge.mjs",
+    "AGENTS.md",
+  ]);
+  assert.match(decision.reason, /outside declared write-set/);
+});

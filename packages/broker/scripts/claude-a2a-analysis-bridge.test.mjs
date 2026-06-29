@@ -85,6 +85,7 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(payload.summary, "Claude adapter returned strict analysis JSON");
     assert.deepEqual(payload.evidenceRefs, ["embedded:claude-code-adapter-test"]);
     assert.equal(payload.bridgeAdapter, "claude_code");
+    assert.equal(payload.bridgeContractVersion, "claude-a2a-analysis.v1");
     assert.equal(payload.requestedModel, "claude-code/default");
     assert.equal(payload.requestedThinking, "low");
     assert.equal(payload.modelInheritanceMode, "metadata_only");
@@ -97,6 +98,45 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch");
     assert.equal(args.includes("--model"), false, "Claude bridge should not pass A2A worker model as a raw Claude --model value");
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge does not pass broker/API secret env vars to child claude", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-env-whitelist-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const envCapturePath = join(tempDir, "child-env.json");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify(process.env));",
+      "const analysis = { status: 'done', summary: 'env captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ENV_PATH: envCapturePath,
+        EDGE_SECRET: "edge-secret-must-not-reach-child",
+        A2A_EDGE_SECRET: "a2a-edge-secret-must-not-reach-child",
+        GITHUB_TOKEN: "github-token-must-not-reach-child",
+        Authorization: "Bearer must-not-reach-child",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const childEnv = JSON.parse(readFileSync(envCapturePath, "utf8"));
+    assert.equal(childEnv.EDGE_SECRET, undefined);
+    assert.equal(childEnv.A2A_EDGE_SECRET, undefined);
+    assert.equal(childEnv.GITHUB_TOKEN, undefined);
+    assert.equal(childEnv.Authorization, undefined);
+    assert.equal(childEnv.CAPTURE_ENV_PATH, envCapturePath, "test capture env remains available");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

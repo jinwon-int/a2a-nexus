@@ -99,9 +99,32 @@ function safeText(value, fallback = "") {
   return String(value);
 }
 
-// Redact token-shaped strings (runs of 20+ url-safe chars) from any text we emit.
+// Redact token-shaped strings and common auth assignments from any text we emit.
 function redactSecrets(value) {
-  return safeText(value).replace(/[A-Za-z0-9_-]{20,}/g, "[REDACTED]");
+  return safeText(value)
+    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
+    .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
+    .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
+    .replace(/[A-Za-z0-9_-]{20,}/g, "[REDACTED]");
+}
+
+const SAFE_CHILD_ENV_KEYS = new Set([
+  "HOME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TEMP", "TMP",
+  "USER", "LOGNAME", "SHELL", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+  "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_AUTOUPDATER",
+]);
+const PATCH_BRIDGE_CONTRACT_VERSION = "claude-a2a-patch.v1";
+
+function buildClaudeChildEnv(env = process.env) {
+  const child = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (SAFE_CHILD_ENV_KEYS.has(key) || key.startsWith("CAPTURE_") || key.startsWith("GRANDCHILD_")) {
+      child[key] = value;
+    }
+  }
+  if (!child.PATH && env.PATH) child.PATH = env.PATH;
+  if (!child.HOME && env.HOME) child.HOME = env.HOME;
+  return child;
 }
 
 function die(message) {
@@ -370,7 +393,7 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
   try {
     const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(maxTurns)];
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
-      env,
+      env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
       encoding: "utf8",
       maxBuffer,
@@ -470,7 +493,7 @@ async function runClaudePatch(prompt, flags, env, cwd) {
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
-    env,
+    env: buildClaudeChildEnv(env),
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
@@ -538,6 +561,7 @@ function normalizePatchResponse(obj) {
 
   const result = {
     status: statusRaw,
+    bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
     summary: safeText(obj.summary, `GitHub patch ${statusRaw}`),
     tests: normalizeStringArray(obj.tests),
     filesChanged,
@@ -922,7 +946,7 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
-    env,
+    env: buildClaudeChildEnv(env),
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
@@ -960,7 +984,7 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   ];
   const child = await spawnWithProcessGroupKill(claudeBin, args, {
     cwd,
-    env,
+    env: buildClaudeChildEnv(env),
     encoding: "utf8",
     maxBuffer,
     timeout: timeoutSec * 1000,
@@ -1087,6 +1111,7 @@ async function runSingleShotPatchMode(message, flags) {
 
     const result = {
       status: "pr_opened",
+      bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
       summary: `single-shot patch opened ${pr.prUrl} (${claudeCalls} claude call${claudeCalls === 1 ? "" : "s"})`,
       branch,
       prUrl: pr.prUrl,
