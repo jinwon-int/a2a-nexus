@@ -671,3 +671,157 @@ test("SINGLE-SHOT with default A2A_CLAUDE_CODE_PATCH_MODE unset -> legacy agenti
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1129 — process-tree timeout / session isolation tests
+// ---------------------------------------------------------------------------
+
+test("ANALYSIS intent timeout kills the whole child process group", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-tree-kill-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const grandchildPidFile = join(tempDir, "grandchild.pid");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "const pidFile = process.env.GRANDCHILD_PID_FILE;",
+      "const gc = spawn('sh', ['-c', 'echo $$ > ' + pidFile + '; sleep 60'], { stdio: 'ignore' });",
+      "setTimeout(() => {}, 60000);",
+    ]);
+    // Use a short timeout (2s) to trigger the timeout path quickly.
+    const result = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "a2a-patch-tree-kill-analysis",
+      "--message", analysisMessage(),
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "2",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, GRANDCHILD_PID_FILE: grandchildPidFile },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /timed out|timeout/i);
+    if (existsSync(grandchildPidFile)) {
+      const pid = Number(readFileSync(grandchildPidFile, "utf8").trim());
+      if (pid > 0) {
+        try {
+          process.kill(pid, 0);
+          assert.fail("grandchild survived the bridge timeout");
+        } catch { /* expected */ }
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("PATCH intent timeout kills the whole child process group", () => {
+  // Tests the legacy agentic path (default without single-shot env).
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-legacy-tree-kill-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const grandchildPidFile = join(tempDir, "grandchild.pid");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "const pidFile = process.env.GRANDCHILD_PID_FILE;",
+      "const gc = spawn('sh', ['-c', 'echo $$ > ' + pidFile + '; sleep 60'], { stdio: 'ignore' });",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/1' };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result) }));",
+      "setTimeout(() => {}, 60000);",
+    ]);
+    // Use a very short timeout to force the timeout code path.
+    const result = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "a2a-patch-tree-kill-legacy",
+      "--message", patchMessage(),
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "2",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, GRANDCHILD_PID_FILE: grandchildPidFile },
+    });
+    assert.notEqual(result.status, 0);
+    if (existsSync(grandchildPidFile)) {
+      const pid = Number(readFileSync(grandchildPidFile, "utf8").trim());
+      if (pid > 0) {
+        try {
+          process.kill(pid, 0);
+          assert.fail("grandchild survived the patch bridge timeout");
+        } catch { /* expected */ }
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("session-scoped workspace uses session-id in patch mode for task isolation", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-session-scope-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const cwdCaptureA = join(tempDir, "cwd-patch-a.txt");
+  const cwdCaptureB = join(tempDir, "cwd-patch-b.txt");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_CWD_PATH, process.cwd());",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/1' };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result) }));",
+    ]);
+
+    // Session "task-alpha"
+    const resA = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "task-alpha",
+      "--message", patchMessage(),
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "60",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_CWD_PATH: cwdCaptureA },
+    });
+    assert.equal(resA.status, 0, resA.stderr);
+
+    // Session "task-beta"
+    const resB = spawnSync(bridgePath, [
+      "agent",
+      "--local",
+      "--agent", "main",
+      "--session-id", "task-beta",
+      "--message", patchMessage(),
+      "--model", "claude-code/default",
+      "--thinking", "low",
+      "--timeout", "60",
+      "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_CWD_PATH: cwdCaptureB },
+    });
+    assert.equal(resB.status, 0, resB.stderr);
+
+    const cwdA = readFileSync(cwdCaptureA, "utf8").trim();
+    const cwdB = readFileSync(cwdCaptureB, "utf8").trim();
+
+    assert.notEqual(cwdA, cwdB, "different session ids must produce different isolated workspaces");
+    assert.match(cwdA, /a2a-patch-task-alpha/);
+    assert.match(cwdB, /a2a-patch-task-beta/);
+
+    // Session workspace must be cleaned up after use.
+    assert.equal(existsSync(cwdA), false, "session workspace A must be cleaned up");
+    assert.equal(existsSync(cwdB), false, "session workspace B must be cleaned up");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
