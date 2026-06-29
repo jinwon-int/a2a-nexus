@@ -114,7 +114,6 @@ import {
 import {
   applyRateLimitHeaders,
   assertEdgeSecret,
-  assertGitHubWebhookSignature,
   assertA2AWorkerScopeAllowed,
   assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
@@ -218,7 +217,6 @@ import {
 } from "./core/terminal-event-outbox.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
-import { parseGitHubWebhook, validateWebhookHeaders } from "./github/webhook-parser.js";
 import { A2A_VERSION_HEADER, SUPPORTED_A2A_VERSIONS, negotiateA2AVersion } from "./a2a/version-negotiation.js";
 import { readJson, readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
@@ -250,6 +248,7 @@ import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.
 import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
 import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
+import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -2105,68 +2104,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // -----------------------------------------------------------------------
       // GitHub /a2a assign ingestion endpoint
       // -----------------------------------------------------------------------
-      if (req.method === "POST" && path === "/github/webhook") {
-        const validationError = validateWebhookHeaders(
-          req.headers["x-github-event"] as string | undefined,
-          req.headers["x-github-delivery"] as string | undefined,
-        );
-        if (validationError) {
-          throw new BrokerError("bad_request", validationError);
-        }
-
-        const rawBody = await readRawBody(req);
-        assertGitHubWebhookSignature(
-          rawBody,
-          req.headers["x-hub-signature-256"] as string | undefined,
-          githubWebhookSecret,
-        );
-        let body: Record<string, unknown> | null = null;
-        if (rawBody.length > 0) {
-          try {
-            body = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
-          } catch {
-            throw new BrokerError("bad_request", "invalid JSON body");
-          }
-        }
-        const parsed = parseGitHubWebhook(
-          req.headers["x-github-event"] as string,
-          req.headers["x-github-delivery"] as string,
-          body,
-        );
-        if (!parsed) {
-          throw new BrokerError("bad_request", "unsupported or malformed webhook payload");
-        }
-
-        const result = githubIngestion.ingest(parsed.event, parsed.ctx);
-        return sendJson(res, result.deduped ? 200 : 201, result);
-      }
-
-      // GitHub webhook ingestion diagnostics
-      if (req.method === "GET" && path === "/github/webhook/health") {
-        const replayStats = githubIngestion.getReplayStats();
-        return sendJson(res, 200, {
-          ok: true,
-          service: "github-ingestion",
-          replayStats,
-        });
-      }
-
-      // GitHub bounded poller diagnostics
-      if (req.method === "GET" && path === "/github/poller/health") {
-        const poller = boundedPoller;
-        if (!poller) {
-          return sendJson(res, 200, {
-            ok: true,
-            service: "github-bounded-poller",
-            status: "not_started",
-          });
-        }
-        return sendJson(res, 200, {
-          ok: true,
-          service: "github-bounded-poller",
-          status: "started",
-          stats: poller.getStats(),
-        });
+      if (await handleGitHubRouteIfMatched({
+        method: req.method,
+        path,
+        req,
+        res,
+        githubIngestion,
+        githubWebhookSecret,
+        boundedPoller,
+      })) {
+        return;
       }
 
       // GET /schedz - host/process/container scheduling attribution (#1032)
