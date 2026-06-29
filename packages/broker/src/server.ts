@@ -23,7 +23,6 @@ import {
   getTaskForReadPath,
   getTaskDiagnosticsForReadPath,
   listTaskDiagnosticsForReadPath,
-  mapBrokerDiagnosticsToSnapshot,
 } from "./task-read-paths.js";
 import {
   numberQueryParam,
@@ -229,7 +228,6 @@ import {
 } from "./trading-dialectic/read-model.js";
 import type { Alert, AlertScanResult } from "./core/alert-projection.js";
 import { buildOperatorTaskReport } from "./core/operator-task-report.js";
-import { buildReleaseEvidenceExport } from "./core/release-evidence.js";
 import { TERMINAL_BRIEF_SIDECAR_ROUTES } from "./terminal-brief-sidecar-routes.js";
 import {
   isTerminalTaskOutboxAckInputEvidence,
@@ -239,9 +237,6 @@ import {
   type TerminalTaskOutboxAckInput,
   type TerminalTaskOutboxReceiptUpdateInput,
 } from "./core/terminal-event-outbox.js";
-import {
-  queryTerminalBriefInbox,
-} from "./core/terminal-brief-query-api.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller } from "./github/bounded-poller.js";
 import { parseGitHubWebhook, validateWebhookHeaders } from "./github/webhook-parser.js";
@@ -271,6 +266,7 @@ import {
 import { handleOperatorDiagnosticsReadRouteIfMatched } from "./http/operator-diagnostics-read.js";
 import { handleOperatorCleanupRouteIfMatched } from "./http/operator-cleanup-routes.js";
 import { handleOperatorDashboardRouteIfMatched } from "./http/operator-dashboard-routes.js";
+import { handleOperatorReportingReadRouteIfMatched } from "./http/operator-reporting-read.js";
 import {
   classifyEndpointGroup,
   classifyRequestRoute,
@@ -1578,36 +1574,6 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         });
       }
 
-      if (req.method === "GET" && path === "/terminal-brief/inbox") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "terminal_brief.inbox.read");
-        }
-
-        const outbox = broker.getTerminalTaskEventOutbox();
-        const includeAll = booleanQueryParam(url, "all") ?? false;
-        const filter = {
-          parentRoundId: optionalString(url.searchParams.get("parent_round_id") ?? url.searchParams.get("parentRoundId")),
-          originBrokerId: optionalString(url.searchParams.get("origin_broker_id") ?? url.searchParams.get("originBrokerId")),
-          brokerOfRecordId: optionalString(url.searchParams.get("broker_of_record_id") ?? url.searchParams.get("brokerOfRecordId")),
-          worker: optionalString(url.searchParams.get("worker")),
-          taskStatus: optionalString(url.searchParams.get("task_status") ?? url.searchParams.get("taskStatus")),
-          ticketRef: optionalString(url.searchParams.get("ticket_ref") ?? url.searchParams.get("ticketRef")),
-          ...(includeAll ? {} : { unacked: true }),
-        };
-        const inbox = queryTerminalBriefInbox(
-          outbox,
-          filter,
-          { afterId: optionalString(url.searchParams.get("after_id") ?? url.searchParams.get("afterId")) },
-          numberQueryParam(url, "limit"),
-        );
-        return sendJson(res, 200, {
-          kind: "a2a-broker.terminal-brief.inbox",
-          summary: inbox.summary,
-          query: inbox.query,
-        }, {
-          "cache-control": "no-store",
-        });
-      }
 
       if (
         req.method === "POST" &&
@@ -1706,30 +1672,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (req.method === "GET" && path === "/release/evidence") {
-        if (enforceRequesterIdentity) {
-          assertRequesterHasRole(requesterIdentity, ["hub", "operator"], "release.evidence.read");
-        }
-        const filters = taskFiltersFromUrl(url);
-        const wantedTaskIds = new Set(taskIdsFromUrl(url));
-        const tasks = listTasksForReadPath(stateStore, broker, filters)
-          .filter((task) => wantedTaskIds.size === 0 || wantedTaskIds.has(task.id));
-        const report = buildReleaseEvidenceExport(tasks, {
-          repo: optionalString(url.searchParams.get("repo")),
-          issue: optionalString(url.searchParams.get("issue")),
-          parentIssue: optionalString(url.searchParams.get("parentIssue") ?? url.searchParams.get("parent_issue")),
-          runId: optionalString(url.searchParams.get("runId") ?? url.searchParams.get("run_id")),
-          ...(stateStore instanceof SqliteBrokerStateStore
-            ? {
-                terminalOutboxDiagnostics: mapBrokerDiagnosticsToSnapshot(
-                  stateStore.readHotTerminalOutboxDiagnostics(),
-                ),
-              }
-            : {}),
-        });
-        return sendJson(res, 200, report, {
-          "cache-control": "no-store",
-        });
+      if (handleOperatorReportingReadRouteIfMatched({
+        method: req.method,
+        path,
+        res,
+        url,
+        broker,
+        stateStore,
+        enforceRequesterIdentity,
+        requesterIdentity,
+      })) {
+        return;
       }
 
       if (await handleTerminalBriefCloseoutRoutesIfMatched({
