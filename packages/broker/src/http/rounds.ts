@@ -5,7 +5,7 @@
 
 import type { ServerResponse } from "node:http";
 
-import { BrokerError } from "../core/broker.js";
+import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { sendJson } from "./response.js";
 import type { RoundStatusSummary } from "../core/round-status.js";
 
@@ -26,4 +26,30 @@ export function handleRoundStatusRequest(ctx: RoundStatusRouteContext): void {
     throw new BrokerError("bad_request", "round id path segment is not valid percent-encoding");
   }
   sendJson(ctx.res, 200, ctx.getRoundStatus(parentRoundId));
+}
+
+export interface RoundStatusDispatchContext {
+  method: string | undefined;
+  segments: string[];
+  res: ServerResponse;
+  broker: InMemoryA2ABroker;
+}
+
+/** Route dispatcher for the round-status read route. Returns true only when handled. */
+export function handleRoundStatusRouteIfMatched(ctx: RoundStatusDispatchContext): boolean {
+  if (
+    ctx.method === "GET" &&
+    ctx.segments[0] === "rounds" &&
+    ctx.segments[1] &&
+    ctx.segments[2] === "status" &&
+    ctx.segments.length === 3
+  ) {
+    handleRoundStatusRequest({
+      res: ctx.res,
+      rawParentRoundId: ctx.segments[1],
+      getRoundStatus: (parentRoundId) => ctx.broker.getRoundStatus(parentRoundId),
+    });
+    return true;
+  }
+  return false;
 }
