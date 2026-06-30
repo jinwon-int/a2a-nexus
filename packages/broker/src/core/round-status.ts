@@ -87,8 +87,19 @@ export interface RoundParentAggregatePendingLane {
   reasonCode: "mobile_no_live_queued" | "queued_unclaimed" | "in_progress" | "blocked" | "pending_non_terminal";
 }
 
+export interface RoundParentAggregateSourceProjectionDiagnostic {
+  taskId: string;
+  worker: string;
+  quality: string;
+  budgetReason?: string;
+  canonicalFileCount?: number;
+  projectedFileCount?: number;
+  requiredFilesMissing?: string[];
+}
+
 export interface RoundParentAggregateDiagnostics {
   sourceBundle: RoundParentAggregateSourceBundleDiagnostics;
+  sourceProjections: RoundParentAggregateSourceProjectionDiagnostic[];
   failureReasons: RoundParentAggregateFailureReason[];
   pendingLanes: RoundParentAggregatePendingLane[];
 }
@@ -204,6 +215,7 @@ function buildRoundParentAggregateDiagnostics(
   const roundTasks = tasks.filter((task) => task.parentRoundId === parentRoundId);
   return {
     sourceBundle: summarizeSourceBundleQuality(roundTasks),
+    sourceProjections: summarizeSourceProjections(roundTasks),
     failureReasons: summarizeFailureReasons(roundTasks),
     pendingLanes: summarizePendingLanes(roundTasks),
   };
@@ -245,6 +257,28 @@ function summarizeSourceBundleQuality(tasks: readonly TaskRecord[]): RoundParent
     totalContentBytes,
     emptyContentFiles,
   };
+}
+
+function summarizeSourceProjections(tasks: readonly TaskRecord[]): RoundParentAggregateSourceProjectionDiagnostic[] {
+  return tasks.flatMap((task) => {
+    const output = readRecord(readRecord(task.result)?.output);
+    const projection = readRecord(output?.sourceProjection);
+    const quality = stringValue(projection?.quality);
+    if (!quality) return [];
+    const requiredFilesMissing = Array.isArray(projection?.requiredFilesMissing)
+      ? projection.requiredFilesMissing.filter((item): item is string => typeof item === "string")
+      : undefined;
+    const diagnostic: RoundParentAggregateSourceProjectionDiagnostic = {
+      taskId: task.id,
+      worker: workerIdForTask(task),
+      quality,
+      ...(stringValue(projection?.budgetReason) ? { budgetReason: stringValue(projection?.budgetReason) } : {}),
+      ...(typeof projection?.canonicalFileCount === "number" ? { canonicalFileCount: projection.canonicalFileCount } : {}),
+      ...(typeof projection?.projectedFileCount === "number" ? { projectedFileCount: projection.projectedFileCount } : {}),
+      ...(requiredFilesMissing && requiredFilesMissing.length > 0 ? { requiredFilesMissing } : {}),
+    };
+    return [diagnostic];
+  });
 }
 
 function summarizeFailureReasons(tasks: readonly TaskRecord[]): RoundParentAggregateFailureReason[] {

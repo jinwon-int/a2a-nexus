@@ -356,6 +356,39 @@ test('source projection blocked lanes expose detailed source bundle classes (#98
   }
 });
 
+
+test('source projection telemetry with insufficient quality is non-substantive even if status is done (#1145)', () => {
+  const tasks = [
+    lane('t1', 'succeeded', {
+      worker: 'nosuk',
+      top: { output: {
+        analysisStatus: 'done',
+        analysisKind: 'analysis_bridge',
+        summary: 'model tried to continue',
+        findings: ['thin finding'],
+        sourceProjection: {
+          quality: 'insufficient',
+          budgetReason: 'required_missing',
+          requiredFilesMissing: ['src/security_ledger/report.py'],
+        },
+      } },
+    }),
+    lane('t2', 'succeeded', { worker: 'sogyo' }),
+    lane('t3', 'succeeded', { worker: 'bangtong' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t2 and t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const blocked = result.missingLanes.find((l) => l.taskId === 't1');
+  assert.equal(blocked?.evidenceClass, 'source_projection_worker_insufficient');
+  assert.match(blocked?.reason ?? '', /required_missing/);
+});
+
 test('FINAL refused when draft cites no succeeded-lane task ids', () => {
   const tasks = [
     lane('t1', 'succeeded'),

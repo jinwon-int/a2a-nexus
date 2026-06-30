@@ -105,6 +105,39 @@ fields such as `focus` or `parentRoundOrder` override only the narrow per-lane
 parts. Missing ownership metadata fails closed in `--dry-run`, so the live broker
 is not the first place the operator sees the error.
 
+#### Source projection policy for broad/finalizer lanes
+
+For source-heavy lanes, especially broad finalizer reviewers, do not rely on a
+large undifferentiated `sourceBundle.files[]`. Add a lane-specific
+`payload.sourceProjectionPolicy` so the analysis bridge can prioritize source
+sections and fail closed before the model call if required evidence would not be
+worker-visible:
+
+```jsonc
+{
+  "payload": {
+    "mode": "analysis-only",
+    "sourceOnly": true,
+    "noLive": true,
+    "sourceBundle": { "files": [/* canonical source packet */] },
+    "sourceProjectionPolicy": {
+      "requiredPaths": ["src/security_ledger/manifest.py", "tests/test_manifest.py"],
+      "priorityPaths": ["src/security_ledger/cli.py", "src/security_ledger/report.py"],
+      "minProjectedBytesPerRequiredFile": 2048,
+      "failIfRequiredTruncatedBelowMin": true
+    }
+  }
+}
+```
+
+The bridge emits `sourceProjection` telemetry (`canonicalFileCount`,
+`projectedFileCount`, projected bytes, truncated files, missing required files,
+`quality`, and `budgetReason`) in the worker result. Finalizers must treat
+`quality=insufficient` or `quality=zero_files` as non-substantive source
+projection evidence, even if the worker process itself exited successfully. This
+keeps cases like “broker payload had files but the worker saw 0 files / only a
+README slice” from being counted as quorum evidence (#1145).
+
 ### GitHub patch lanes are write-capable
 
 `payload.mode: "github-propose-patch"` is a PR/patch execution lane, not a

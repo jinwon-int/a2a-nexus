@@ -232,6 +232,121 @@ test("Hermes A2A analysis bridge caps Hermes query argv below the configured pro
   }
 });
 
+
+test("Hermes A2A analysis bridge emits source projection telemetry and prioritizes required paths (#1145)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-source-projection-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('Source projection telemetry')) throw new Error('source projection telemetry missing');",
+      "if (!prompt.includes('src/security_ledger/manifest.py')) throw new Error('required source path missing');",
+      "if (!prompt.includes('MANIFEST_REQUIRED_MARKER')) throw new Error('required source content missing');",
+      "if (!prompt.includes('original worker message truncated by source projection guard')) throw new Error('duplicate worker message was not compacted');",
+      "console.log(JSON.stringify({status:'done',summary:'projection telemetry ok',findings:[],risks:[],recommendations:[],evidenceRefs:['src/security_ledger/manifest.py']}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const sourceBundle = {
+      files: [
+        { path: "README.md", contentText: "# readme\n" + "r".repeat(50000) },
+        { path: "src/security_ledger/manifest.py", contentText: "MANIFEST_REQUIRED_MARKER\n" + "m".repeat(1000) },
+        { path: "tests/test_manifest.py", content: "TEST_REQUIRED_MARKER\n" + "t".repeat(1000) },
+      ],
+    };
+    const payload = {
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      repo: "jinwon-int/seoyoon-security-ledger",
+      sourceBundle,
+      sourceProjectionPolicy: {
+        requiredPaths: ["src/security_ledger/manifest.py", "tests/test_manifest.py"],
+        priorityPaths: ["README.md"],
+        minProjectedBytesPerRequiredFile: 256,
+        failIfRequiredTruncatedBelowMin: true,
+      },
+    };
+    const message = [
+      "Analyze Security Ledger source projection quality.",
+      "Payload JSON:\n" + JSON.stringify(payload),
+      "DUPLICATE_BULK_START " + "z".repeat(50000),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: "32000",
+        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payloadOut = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payloadOut.status, "done");
+    assert.equal(payloadOut.sourceProjection.canonicalFileCount, 3);
+    assert.equal(payloadOut.sourceProjection.projectedFileCount, 3);
+    assert.equal(payloadOut.sourceProjection.requiredFilesMissing.length, 0);
+    assert.deepEqual(payloadOut.sourceProjection.requiredPaths, ["src/security_ledger/manifest.py", "tests/test_manifest.py"]);
+    assert.match(["complete", "partial"].join("|"), new RegExp(payloadOut.sourceProjection.quality));
+
+    const prompt = readFileSync(promptPath, "utf8");
+    assert.match(prompt, /MANIFEST_REQUIRED_MARKER/);
+    assert.match(prompt, /TEST_REQUIRED_MARKER/);
+    assert.doesNotMatch(prompt, /DUPLICATE_BULK_START z{1000}/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge fails closed before model call when required source projection is missing (#1145)", () => {
+  const payload = {
+    mode: "analysis-only",
+    noLive: true,
+    sourceOnly: true,
+    repo: "jinwon-int/seoyoon-security-ledger",
+    sourceBundle: {
+      files: [{ path: "README.md", contentText: "# readme only\n" }],
+    },
+    sourceProjectionPolicy: {
+      requiredPaths: ["src/security_ledger/manifest.py"],
+      minProjectedBytesPerRequiredFile: 128,
+    },
+  };
+  const message = [
+    "Analyze Security Ledger source projection quality.",
+    "Payload JSON:\n" + JSON.stringify(payload),
+  ].join("\n\n");
+
+  const result = spawnSync(process.execPath, openClawArgs(message), {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HERMES_BIN: "/definitely/not/invoked/hermes",
+      A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  const payloadOut = JSON.parse(envelope.payloads[0]?.text);
+  assert.equal(payloadOut.status, "blocked");
+  assert.match(payloadOut.summary, /source projection failed: required_missing/);
+  assert.equal(payloadOut.sourceProjection.quality, "insufficient");
+  assert.deepEqual(payloadOut.sourceProjection.requiredFilesMissing, ["src/security_ledger/manifest.py"]);
+});
+
 test("Hermes A2A analysis bridge derives repo and issue defaults from evidenceRefs", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-evidence-refs-"));
   const repoDir = join(tempDir, "a2a-broker");

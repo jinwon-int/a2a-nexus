@@ -142,6 +142,20 @@ function classifyLaneEvidence(lane) {
   const worker = String(workerOf(lane) || '').toLowerCase();
   const statusBucket = classify(lane.status);
   const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
+  const sourceProjectionQuality = String(output.sourceProjection?.quality ?? '').trim().toLowerCase();
+  const sourceProjectionReason = String(output.sourceProjection?.budgetReason ?? '').trim();
+  const sourceProjectionCanonicalFileCount = Number(output.sourceProjection?.canonicalFileCount ?? 0);
+  const sourceProjectionRequiredCount = Array.isArray(output.sourceProjection?.requiredPaths) ? output.sourceProjection.requiredPaths.length : 0;
+  const sourceProjectionMissingRequiredCount = Array.isArray(output.sourceProjection?.requiredFilesMissing) ? output.sourceProjection.requiredFilesMissing.length : 0;
+
+  if ((sourceProjectionQuality === 'insufficient' || sourceProjectionQuality === 'zero_files')
+    && (sourceProjectionCanonicalFileCount > 0 || sourceProjectionRequiredCount > 0 || sourceProjectionMissingRequiredCount > 0 || analysisStatus === 'blocked')) {
+    return {
+      evidenceClass: sourceProjectionQuality === 'zero_files' ? 'source_projection_payload_dropped' : 'source_projection_worker_insufficient',
+      countsTowardQuorum: false,
+      reason: sourceProjectionReason ? `source projection telemetry: ${sourceProjectionReason}` : 'source projection telemetry reports insufficient worker-visible source',
+    };
+  }
 
   if (statusBucket === 'pending' && worker === 'daegyo') {
     const laneStatus = String(lane.status || '').trim().toLowerCase();

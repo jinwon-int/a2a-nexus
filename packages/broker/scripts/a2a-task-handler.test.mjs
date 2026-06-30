@@ -809,6 +809,7 @@ const response = {
   risks: [],
   recommendations: ["keep structured env file handoff"],
   evidenceRefs: [payload.sourceBundle.files[0].path],
+  sourceProjection: { quality: "partial", canonicalFileCount: payload.sourceBundle.files.length, projectedFileCount: payload.sourceBundle.files.length },
   bridgeAdapter: "hermes"
 };
 process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
@@ -856,6 +857,8 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     assert.equal(result.result.output.role, "synthesis");
     assert.match(result.result.output.findings.join("\n"), /files=1/);
     assert.match(result.result.output.findings.join("\n"), /round=round-large-payload/);
+    assert.equal(result.result.output.sourceProjection.quality, "partial");
+    assert.equal(result.result.output.sourceProjection.canonicalFileCount, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
