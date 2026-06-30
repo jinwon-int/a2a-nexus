@@ -1,6 +1,6 @@
 # External listing tracker
 
-This file prepares the discoverability workflow for A2A Nexus without opening external PRs. External directory submissions are public communications and remain operator-gated.
+This file tracks the operator-approved discoverability workflow for A2A Nexus. External directory submissions are public communications and remain operator-gated.
 
 ## Preconditions before external PRs
 
@@ -15,7 +15,7 @@ This file prepares the discoverability workflow for A2A Nexus without opening ex
 | Directory | Status | Planned category | PR URL | Notes |
 |---|---|---|---|---|
 | `ai-boost/awesome-a2a` | open | Broker / control-plane | <https://github.com/ai-boost/awesome-a2a/pull/138> | PR opened from `jinon86`; existing unrelated `NEXUS` PR #34 was not reused. |
-| `sing1ee/a2a-directory` | open | A2A broker runtime | <https://github.com/sing1ee/a2a-directory/pull/35> | Schema is README table row. |
+| `sing1ee/a2a-directory` | merged | A2A broker runtime | <https://github.com/sing1ee/a2a-directory/pull/35> | Merged 2026-06-30T23:37:19Z, merge commit `dcd58d5aa12769bbcd5fb35415da635624232682`. |
 | `pab1it0/awesome-a2a` | open | Broker / control-plane | <https://github.com/pab1it0/awesome-a2a/pull/71> | README developer-tools listing. |
 
 ## Public-safe PR body base
