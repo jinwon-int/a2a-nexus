@@ -512,6 +512,14 @@ function analysisBridgeCommand(env = process.env) {
   );
 }
 
+function resolveNodeScriptInvocation(command, args = []) {
+  const commandText = safeText(command, "");
+  if (/\.(?:mjs|cjs|js)$/i.test(commandText)) {
+    return { command: process.execPath, args: [commandText, ...args] };
+  }
+  return { command: commandText, args };
+}
+
 function writeAnalysisBridgeInputFiles(task, payload) {
   const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-"));
   const taskFile = join(dir, "task.json");
@@ -669,8 +677,8 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload, 16000)}`,
   ].join("\n\n");
 
-  const command = analysisBridgeCommand(env);
-  const args = [
+  const baseCommand = analysisBridgeCommand(env);
+  const baseArgs = [
     "agent",
     "--local",
     "--agent", safeText(env.A2A_OPENCLAW_ANALYSIS_AGENT_ID || env.A2A_OPENCLAW_AGENT_ID, "main"),
@@ -681,6 +689,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     "--timeout", timeoutSec,
     "--json",
   ];
+  const { command, args } = resolveNodeScriptInvocation(baseCommand, baseArgs);
 
   const watchdogMs = env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS
     ? Number(env.A2A_OPENCLAW_ANALYSIS_WATCHDOG_MS)
@@ -765,7 +774,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   const status = normalizedBridgeAnalysisStatus(response.status);
   const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
   const postGithubComment = shouldPostAnalysisEvidenceComment(task, env);
-  const bridgeTelemetry = analysisBridgeTelemetry(command, env);
+  const bridgeTelemetry = analysisBridgeTelemetry(baseCommand, env);
   const output = {
     analysisSummary,
     ...bridgeTelemetry,
@@ -1001,8 +1010,8 @@ function runDecisionDialecticBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload, 24000)}`,
   ].join("\n\n");
 
-  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
-  const args = [
+  const baseCommand = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const baseArgs = [
     "agent",
     "--local",
     "--agent", safeText(env.A2A_DECISION_DIALECTIC_AGENT_ID || env.A2A_OPENCLAW_ANALYSIS_AGENT_ID || env.A2A_OPENCLAW_AGENT_ID, "main"),
@@ -1013,6 +1022,7 @@ function runDecisionDialecticBridge(task, env = process.env) {
     "--timeout", timeoutSec,
     "--json",
   ];
+  const { command, args } = resolveNodeScriptInvocation(baseCommand, baseArgs);
   const watchdogMs = env.A2A_DECISION_DIALECTIC_WATCHDOG_MS
     ? Number(env.A2A_DECISION_DIALECTIC_WATCHDOG_MS)
     : (Number(timeoutSec) + 30) * 1000;
@@ -1314,8 +1324,8 @@ function runOpenClawBridge(task, env = process.env) {
     `Payload JSON:\n${jsonForPrompt(payload)}`,
   ].join("\n\n");
 
-  const command = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
-  const args = [
+  const baseCommand = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const baseArgs = [
     "agent",
     "--local",
     "--agent", safeText(env.A2A_OPENCLAW_AGENT_ID, "main"),
@@ -1326,6 +1336,7 @@ function runOpenClawBridge(task, env = process.env) {
     "--timeout", timeoutSec,
     "--json",
   ];
+  const { command, args } = resolveNodeScriptInvocation(baseCommand, baseArgs);
 
   const watchdogMs = env.A2A_OPENCLAW_WATCHDOG_MS
     ? Number(env.A2A_OPENCLAW_WATCHDOG_MS)
@@ -1928,6 +1939,7 @@ export const __test = Object.freeze({
   buildRunnerTask,
   DEFAULT_OPENCLAW_TIMEOUT_SEC,
   DEFAULT_RUNNER_TASK_TIMEOUT_MS,
+  resolveNodeScriptInvocation,
   resolveWorkerModel,
   resolveWorkerThinking,
   validateWorkerOverrides,
