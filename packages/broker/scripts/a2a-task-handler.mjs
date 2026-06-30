@@ -512,10 +512,22 @@ function analysisBridgeCommand(env = process.env) {
   );
 }
 
-function resolveNodeScriptInvocation(command, args = []) {
+function nodeExecutableForChild(env = process.env, runtime = process) {
+  const explicit = safeText(env.A2A_NODE_BIN || env.NODE_BIN || env.npm_node_execpath, "");
+  if (explicit) return explicit;
+
+  const execPath = safeText(runtime.execPath, "");
+  const argv0 = safeText(runtime.argv0, "");
+  if (basename(argv0) === "node.real") return argv0.replace(/node\.real$/, "node");
+  if (/^node(?:\.exe)?$/i.test(basename(execPath))) return execPath;
+  if (/^node(?:\.exe)?$/i.test(basename(argv0))) return argv0;
+  return "node";
+}
+
+function resolveNodeScriptInvocation(command, args = [], env = process.env, runtime = process) {
   const commandText = safeText(command, "");
   if (/\.(?:mjs|cjs|js)$/i.test(commandText)) {
-    return { command: process.execPath, args: [commandText, ...args] };
+    return { command: nodeExecutableForChild(env, runtime), args: [commandText, ...args] };
   }
   return { command: commandText, args };
 }
