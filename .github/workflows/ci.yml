@@ -125,6 +125,18 @@ jobs:
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
       - run: npm ci --include=dev
       - run: node scripts/run-monorepo-package-ci-parity.mjs broker
+      - name: a2a-inspector bridge artifact
+        run: |
+          mkdir -p artifacts/a2a-inspector
+          node packages/broker/scripts/conformance-inspector.mjs \
+            --agent-card fixtures/conformance/agent-cards/a2a-nexus-broker.json \
+            --out artifacts/a2a-inspector/bridge.json
+      - name: Upload a2a-inspector bridge artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a2a-inspector-bridge
+          path: artifacts/a2a-inspector/bridge.json
 
   # ── Docker runner package (isolated execution, evidence) ────────────
   docker-runner:
