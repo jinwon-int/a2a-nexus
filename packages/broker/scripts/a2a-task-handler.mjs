@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -532,6 +532,27 @@ function resolveNodeScriptInvocation(command, args = [], env = process.env, runt
   return { command: commandText, args };
 }
 
+function analysisBridgeArtifactPreflight(command, env = process.env) {
+  const commandText = safeText(command, "");
+  if (!/\.(?:mjs|cjs|js)$/i.test(commandText)) return null;
+  if (!commandText.includes("/") && !commandText.includes("\\") && !commandText.startsWith(".")) return null;
+  const cwd = safeText(env.A2A_HANDLER_CWD || env.WORKER_HANDLER_CWD, process.cwd());
+  const resolved = isAbsolute(commandText) ? commandText : resolve(cwd, commandText);
+  if (existsSync(resolved)) return null;
+  return {
+    error: {
+      code: "openclaw_analysis_bridge_missing",
+      message: `analysis bridge artifact is missing: ${commandText}`,
+      details: {
+        failureCategory: "missing_bridge_artifact",
+        bridgeCommand: commandText,
+        resolvedBridgeCommand: resolved,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
+}
+
 function writeAnalysisBridgeInputFiles(task, payload) {
   const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-"));
   const taskFile = join(dir, "task.json");
@@ -690,6 +711,8 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
   ].join("\n\n");
 
   const baseCommand = analysisBridgeCommand(env);
+  const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
+  if (bridgePreflight) return bridgePreflight;
   const baseArgs = [
     "agent",
     "--local",
@@ -1024,6 +1047,8 @@ function runDecisionDialecticBridge(task, env = process.env) {
   ].join("\n\n");
 
   const baseCommand = safeText(env.A2A_OPENCLAW_ANALYSIS_BIN, safeText(env.OPENCLAW_BIN, "openclaw"));
+  const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
+  if (bridgePreflight) return bridgePreflight;
   const baseArgs = [
     "agent",
     "--local",
