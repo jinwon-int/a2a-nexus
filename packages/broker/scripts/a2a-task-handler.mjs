@@ -795,6 +795,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     risks: normalizeStringArray(response.risks),
     recommendations: normalizeStringArray(response.recommendations),
     evidenceRefs: normalizeStringArray(response.evidenceRefs),
+    ...(response.sourceProjection && typeof response.sourceProjection === "object" && !Array.isArray(response.sourceProjection) ? { sourceProjection: response.sourceProjection } : {}),
     recoverySource: normalizedAnalysisRecoverySource(response.recoverySource),
     bridgeReportedAdapter: safeText(response.bridgeAdapter, undefined),
     requestedModel: safeText(response.requestedModel, undefined),

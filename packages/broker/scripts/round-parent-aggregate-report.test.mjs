@@ -77,6 +77,16 @@ describe('round parent aggregate report CLI', () => {
                 ],
               },
             },
+            result: {
+              output: {
+                sourceProjection: {
+                  quality: 'partial',
+                  budgetReason: 'per_file_truncation',
+                  canonicalFileCount: 2,
+                  projectedFileCount: 2,
+                },
+              },
+            },
           },
           {
             id: 'round-task-soonwook',
@@ -120,6 +130,16 @@ describe('round parent aggregate report CLI', () => {
       assert.equal(report.diagnostics.sourceBundle.lanesMissingSourceBundle, 2);
       assert.equal(report.diagnostics.sourceBundle.maxFileCount, 2);
       assert.equal(report.diagnostics.sourceBundle.emptyContentFiles, 1);
+      assert.deepEqual(report.diagnostics.sourceProjections, [
+        {
+          taskId: 'round-task-dungae',
+          worker: 'dungae',
+          quality: 'partial',
+          budgetReason: 'per_file_truncation',
+          canonicalFileCount: 2,
+          projectedFileCount: 2,
+        },
+      ]);
       assert.deepEqual(report.diagnostics.failureReasons, [
         {
           taskId: 'round-task-soonwook',

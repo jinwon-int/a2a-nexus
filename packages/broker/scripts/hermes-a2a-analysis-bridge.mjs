@@ -436,8 +436,9 @@ function fetchGithubPrSourceBundle(prRef, env, limits, remainingBytes) {
   return { files, warnings };
 }
 
-function buildSourceBlockedResponse(sourceBlocked) {
+function buildSourceBlockedResponse(sourceBlocked, fallbackSourceProjection) {
   const summary = `analysis bridge blocked: ${sourceBlocked.reason}`;
+  const sourceProjection = sourceBlocked.sourceProjection || fallbackSourceProjection;
   return {
     payloads: [{
       text: JSON.stringify({
@@ -450,6 +451,7 @@ function buildSourceBlockedResponse(sourceBlocked) {
         ],
         recommendations: ["Retry with a compact canonical payload.sourceBundle.files[] packet or make the referenced source available to the analysis bridge."],
         evidenceRefs: sourceBlocked.evidenceRefs || [],
+        ...(sourceProjection && typeof sourceProjection === "object" ? { sourceProjection } : {}),
       }),
     }],
   };
@@ -719,6 +721,55 @@ function summarizeSourceEvidenceForPrompt(value) {
   return { files, fileCount: files.length };
 }
 
+function normalizePathArray(value) {
+  return toArray(value).map((item) => safeText(item, "")).filter(Boolean);
+}
+
+function normalizeSourceProjectionPolicy(payload) {
+  const raw = payload?.sourceProjectionPolicy && typeof payload.sourceProjectionPolicy === "object" && !Array.isArray(payload.sourceProjectionPolicy)
+    ? payload.sourceProjectionPolicy
+    : {};
+  const minProjectedBytes = Number(raw.minProjectedBytesPerRequiredFile || 0);
+  return {
+    requiredPaths: normalizePathArray(raw.requiredPaths),
+    priorityPaths: normalizePathArray(raw.priorityPaths),
+    minProjectedBytesPerRequiredFile: Number.isFinite(minProjectedBytes) && minProjectedBytes > 0 ? Math.floor(minProjectedBytes) : 0,
+    failIfRequiredTruncatedBelowMin: raw.failIfRequiredTruncatedBelowMin !== false,
+  };
+}
+
+function sourcePathMatches(file, requestedPath) {
+  const wanted = safeText(requestedPath, "");
+  if (!wanted) return false;
+  const repo = safeText(file.repo, "");
+  const path = safeText(file.path, "");
+  return wanted === path || wanted === `${repo}:${path}` || wanted === `${repo}/${path}`;
+}
+
+function sourceFileRank(file, policy) {
+  if (policy.requiredPaths.some((path) => sourcePathMatches(file, path))) return 0;
+  if (policy.priorityPaths.some((path) => sourcePathMatches(file, path))) return 1;
+  return 2;
+}
+
+function sourceFileWeight(file, policy) {
+  const rank = sourceFileRank(file, policy);
+  if (rank === 0) return 6;
+  if (rank === 1) return 3;
+  return 1;
+}
+
+function sourceProjectionQuality({ sourceBundle, projectedFiles, truncatedFiles, omittedFiles, requiredFilesMissing, requiredFilesBelowMin }) {
+  const canonicalFileCount = sourceBundle.files.length;
+  if (canonicalFileCount === 0) return { quality: "zero_files", budgetReason: "no_usable_files" };
+  if (projectedFiles.length === 0) return { quality: "zero_files", budgetReason: "no_usable_files" };
+  if (requiredFilesMissing.length > 0) return { quality: "insufficient", budgetReason: "required_missing" };
+  if (requiredFilesBelowMin.length > 0) return { quality: "insufficient", budgetReason: "required_below_min" };
+  if (omittedFiles.length > 0) return { quality: "partial", budgetReason: "file_omitted" };
+  if (truncatedFiles.length > 0) return { quality: "partial", budgetReason: "per_file_truncation" };
+  return { quality: "complete", budgetReason: "ok" };
+}
+
 function payloadForPrompt(payload) {
   const copy = JSON.parse(JSON.stringify(payload ?? {}));
   if (copy.sourceBundle && typeof copy.sourceBundle === "object" && !Array.isArray(copy.sourceBundle)) {
@@ -766,42 +817,135 @@ function sourceSectionText(file, contentBudget) {
       omitted = `\n[truncated source file for prompt budget: originalBytes=${contentBytes} keptBytes=${Buffer.byteLength(content, "utf8")}]`;
     }
   }
-  return [
+  const projectedBytes = Buffer.byteLength(content, "utf8");
+  const text = [
     header,
     "```text",
     content || omitted,
     content ? `${omitted}\n\`\`\`` : "```",
   ].join("\n");
+  return {
+    text,
+    detail: {
+      path: file.path,
+      repo: file.repo,
+      originalBytes: contentBytes,
+      projectedBytes,
+      truncated: projectedBytes < contentBytes,
+      reason: projectedBytes < contentBytes ? "per_file_budget" : "ok",
+    },
+  };
+}
+
+function buildSourceProjectionForPrompt(sourceBundle, payload) {
+  const maxPromptBytes = sourceBundle.limits?.maxPromptBytes || DEFAULT_MAX_PROMPT_BYTES;
+  const policy = normalizeSourceProjectionPolicy(payload);
+  const fixedBudget = Math.min(18 * 1024, Math.floor(maxPromptBytes * 0.25));
+  const sourceBudget = Math.max(4 * 1024, maxPromptBytes - fixedBudget);
+  const orderedFiles = [...sourceBundle.files].sort((a, b) => {
+    const rank = sourceFileRank(a, policy) - sourceFileRank(b, policy);
+    return rank || safeText(a.path, "").localeCompare(safeText(b.path, ""));
+  });
+  const totalWeight = Math.max(1, orderedFiles.reduce((sum, file) => sum + sourceFileWeight(file, policy), 0));
+  const sourceSections = [];
+  const projectedFiles = [];
+  const truncatedFiles = [];
+  const omittedFiles = [];
+
+  for (const file of orderedFiles) {
+    const weight = sourceFileWeight(file, policy);
+    const budget = Math.max(512, Math.floor((sourceBudget * weight) / totalWeight));
+    const section = sourceSectionText(file, budget);
+    sourceSections.push(section.text);
+    projectedFiles.push(section.detail);
+    if (section.detail.truncated) truncatedFiles.push(section.detail);
+  }
+
+  const requiredFilesMissing = policy.requiredPaths.filter(
+    (requiredPath) => !sourceBundle.files.some((file) => sourcePathMatches(file, requiredPath)),
+  );
+  const requiredFilesBelowMin = policy.requiredPaths.flatMap((requiredPath) => {
+    const detail = projectedFiles.find((file) => sourcePathMatches(file, requiredPath));
+    if (!detail) return [];
+    if (policy.failIfRequiredTruncatedBelowMin && detail.projectedBytes < policy.minProjectedBytesPerRequiredFile) {
+      return [{ path: requiredPath, projectedBytes: detail.projectedBytes, minProjectedBytes: policy.minProjectedBytesPerRequiredFile }];
+    }
+    return [];
+  });
+  const canonicalBytes = sourceBundle.files.reduce((sum, file) => sum + Number(file.bytes || Buffer.byteLength(String(file.content || ""), "utf8")), 0);
+  const projectedBytes = projectedFiles.reduce((sum, file) => sum + file.projectedBytes, 0);
+  const { quality, budgetReason } = sourceProjectionQuality({
+    sourceBundle,
+    projectedFiles,
+    truncatedFiles,
+    omittedFiles,
+    requiredFilesMissing,
+    requiredFilesBelowMin,
+  });
+  const sourceProjection = {
+    canonicalFileCount: sourceBundle.files.length,
+    canonicalBytes,
+    projectedFileCount: projectedFiles.length,
+    projectedBytes,
+    omittedFileCount: omittedFiles.length,
+    truncatedFiles,
+    requiredFilesMissing,
+    requiredFilesBelowMin,
+    quality,
+    budgetReason,
+    requiredPaths: policy.requiredPaths,
+    priorityPaths: policy.priorityPaths,
+    minProjectedBytesPerRequiredFile: policy.minProjectedBytesPerRequiredFile,
+  };
+  let sourceBlocked = null;
+  if (quality === "insufficient" || (sourceBundle.files.length > 0 && quality === "zero_files")) {
+    sourceBlocked = {
+      reason: `source projection failed: ${budgetReason}`,
+      evidenceRefs: requiredFilesMissing.length ? requiredFilesMissing : ["payload.sourceBundle.files"],
+      sourceProjection,
+    };
+  }
+  return { sourceSections, sourceProjection, sourceBlocked };
+}
+
+function compactOriginalMessageForPrompt(message, payload) {
+  const rewritten = messageForPrompt(message, payload);
+  const maxBytes = 6 * 1024;
+  if (Buffer.byteLength(rewritten, "utf8") <= maxBytes) return rewritten;
+  const marker = /Payload JSON\s*:/i.exec(rewritten);
+  const prefix = marker ? rewritten.slice(0, marker.index + marker[0].length) : rewritten;
+  return [
+    truncateUtf8ToBytes(prefix, maxBytes - 512),
+    "[original worker message truncated by source projection guard; sourceBundle content is available in the Read-only source bundle sections above]",
+  ].join("\n");
 }
 
 function buildHermesPrompt({ message, payload, sourceBundle, flags }) {
-  const maxPromptBytes = sourceBundle.limits?.maxPromptBytes || DEFAULT_MAX_PROMPT_BYTES;
-  const fixedBudget = Math.min(24 * 1024, Math.floor(maxPromptBytes * 0.35));
-  const sourceBudget = Math.max(4 * 1024, maxPromptBytes - fixedBudget);
-  const perFileBudget = Math.max(512, Math.floor(sourceBudget / Math.max(1, sourceBundle.files.length)));
-  const sourceSections = sourceBundle.files.map((file) => sourceSectionText(file, perFileBudget));
+  const projection = buildSourceProjectionForPrompt(sourceBundle, payload);
 
   const warningSection = sourceBundle.warnings.length
     ? `\n\nRead-only source warnings:\n${sourceBundle.warnings.map((item) => `- ${item}`).join("\n")}`
     : "";
 
-  return [
+  const prompt = [
     "You are a read-only A2A worker analysis bridge running under Hermes Agent.",
     "Your job is to inspect the provided task and source bundle, then produce substantive design/code-analysis evidence.",
     "Hard safety rules: do not write files, deploy, restart services, send external messages, acknowledge terminal rows, mutate databases, move secrets, create commits, or open PRs.",
     "Use only the task text and the read-only source bundle below. If source evidence is insufficient, return status=blocked and explain the missing evidence.",
     "Return JSON only, no markdown, with exactly this shape:",
-    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["repo:path"],"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["repo:path"],"sourceProjection":{"quality":"complete|partial|insufficient|zero_files"},"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
     "Human-readable text should be Korean unless quoting code, paths, or test output.",
     `OpenClaw-shaped session id: ${safeText(flags["session-id"], "")}`,
     `Effective model requested by worker: ${safeText(flags.model, "")}`,
     `Effective thinking requested by worker: ${safeText(flags.thinking, "")}`,
     `Read-only source bundle (${sourceBundle.files.length} files):`,
-    sourceSections.length ? sourceSections.join("\n\n") : "<no source files available>",
+    projection.sourceSections.length ? projection.sourceSections.join("\n\n") : "<no source files available>",
     warningSection,
+    `Source projection telemetry:\n${JSON.stringify(projection.sourceProjection, null, 2)}`,
     `Task payload JSON (source content summarized; inspect source sections above):\n${JSON.stringify(payloadForPrompt(payload), null, 2)}`,
-    `Original worker message (source content summarized):\n${messageForPrompt(message, payload)}`,
+    `Original worker message (source content summarized):\n${compactOriginalMessageForPrompt(message, payload)}`,
   ].join("\n\n");
+  return { prompt, sourceProjection: projection.sourceProjection, sourceBlocked: projection.sourceBlocked };
 }
 
 function isRecoverableHermesNoJsonAbort(child) {
@@ -953,6 +1097,7 @@ function normalizeResponse(parsed, diagnostics = {}) {
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),
     ...(safeText(parsed.startCommentUrl, "") ? { startCommentUrl: safeText(parsed.startCommentUrl) } : {}),
+    ...(parsed.sourceProjection && typeof parsed.sourceProjection === "object" && !Array.isArray(parsed.sourceProjection) ? { sourceProjection: parsed.sourceProjection } : {}),
   };
 }
 
@@ -977,15 +1122,16 @@ function main() {
     die(`failed to collect read-only source bundle: ${error.message}`);
   }
 
-  const prompt = buildHermesPrompt({ message, payload, sourceBundle, flags });
-  if (sourceBundle.sourceBlocked) {
-    process.stdout.write(JSON.stringify(buildSourceBlockedResponse(sourceBundle.sourceBlocked)));
+  const promptBundle = buildHermesPrompt({ message, payload, sourceBundle, flags });
+  const sourceBlocked = sourceBundle.sourceBlocked || promptBundle.sourceBlocked;
+  if (sourceBlocked) {
+    process.stdout.write(JSON.stringify(buildSourceBlockedResponse(sourceBlocked, promptBundle.sourceProjection)));
     return;
   }
 
   let hermesResult;
   try {
-    hermesResult = runHermes(prompt, flags, process.env);
+    hermesResult = runHermes(promptBundle.prompt, flags, process.env);
   } catch (error) {
     die(error.message);
   }
@@ -1000,6 +1146,7 @@ function main() {
   let response;
   try {
     response = normalizeResponse(parsed, { recoverySource: hermesResult.recoverySource });
+    if (!response.sourceProjection && promptBundle.sourceProjection) response.sourceProjection = promptBundle.sourceProjection;
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

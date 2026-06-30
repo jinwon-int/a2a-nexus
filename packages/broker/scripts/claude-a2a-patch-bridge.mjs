@@ -359,6 +359,7 @@ function normalizeAnalysisResponse(parsed) {
     ...(safeText(parsed.doneCommentUrl, "") ? { doneCommentUrl: safeText(parsed.doneCommentUrl) } : {}),
     ...(safeText(parsed.blockCommentUrl, "") ? { blockCommentUrl: safeText(parsed.blockCommentUrl) } : {}),
     ...(safeText(parsed.startCommentUrl, "") ? { startCommentUrl: safeText(parsed.startCommentUrl) } : {}),
+    ...(parsed.sourceProjection && typeof parsed.sourceProjection === "object" && !Array.isArray(parsed.sourceProjection) ? { sourceProjection: parsed.sourceProjection } : {}),
   };
 }
 
