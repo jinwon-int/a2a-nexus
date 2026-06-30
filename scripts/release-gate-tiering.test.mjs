@@ -12,6 +12,7 @@ import {
   selectReleaseGateEntries,
   summarizeReleaseGateEntries,
 } from './lib/release-gate-steps.mjs';
+import { validateScriptSurfaceManifest } from './lib/script-surface-manifest.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -43,7 +44,7 @@ test('--all selects every inventory entry', () => {
   const entries = selectReleaseGateEntries(inventory, { all: true });
   assert.equal(entries.length, inventory.entries.length);
   assert.deepEqual(summarizeReleaseGateEntries(entries), {
-    core: 20,
+    core: 21,
     'public-readiness': 8,
     'historical-transition': 14,
     'approval-gated': 3,
@@ -76,7 +77,7 @@ test('release-gate --list prints default tiered selection without running steps'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, expectedDefault.length + 1);
-  assert.match(lines.at(-1), /release gate selected 28\/47 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 29\/48 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('external-secrets\tpublic-readiness\t')));
   assert.equal(lines.some((line) => line.startsWith('monorepo-reentry\thistorical-transition\t')), false);
 });
@@ -87,7 +88,17 @@ test('release-gate --all --list prints every tier including approval-only paths'
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.trim().split('\n');
   assert.equal(lines.length, inventory.entries.length + 1);
-  assert.match(lines.at(-1), /release gate selected 47\/47 step\(s\)/);
+  assert.match(lines.at(-1), /release gate selected 48\/48 step\(s\)/);
   assert.ok(lines.some((line) => line.startsWith('monorepo-final-operator-signoff\tapproval-gated\t')));
   assert.ok(lines.some((line) => line.startsWith('monorepo-release-package-tag-approval\tpackage-publication\t')));
+});
+
+test('script surface manifest validates current root and broker package scripts', () => {
+  const result = validateScriptSurfaceManifest();
+  assert.equal(result.ok, true, result.failures.join('\n'));
+  const byId = new Map(result.packages.map((pkg) => [pkg.id, pkg]));
+  assert.equal(byId.get('root')?.scriptCount, 119);
+  assert.equal(byId.get('broker')?.scriptCount, 150);
+  assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
+  assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });
