@@ -9,9 +9,6 @@ import {
   validateBrokerStartupSecurity,
 } from "./startup-security.js";
 import {
-  assertRequesterCanSubscribeToWorkerAssignments,
-} from "./request-parsers.js";
-import {
   boundedLimitQueryParam,
   stringListQueryParam,
   nonNegativeNumberBodyField,
@@ -102,7 +99,6 @@ import {
   applyRateLimitHeaders,
   assertEdgeSecret,
   assertA2AWorkerScopeAllowed,
-  assertRequesterCanSubscribeToTask,
   assertRequesterHasRole,
   assertRequesterMatchesParty,
   classifyRateLimitBucket,
@@ -203,10 +199,6 @@ import { BoundedPoller } from "./github/bounded-poller.js";
 import { readJson, readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
 import { awaitDurablePersistenceAck, sendError } from "./http/error-mapping.js";
-import {
-  handleTaskEventStream,
-  handleWorkerAssignmentEventStream,
-} from "./http/task-event-streams.js";
 import { handleRoundStatusRouteIfMatched } from "./http/rounds.js";
 import { handleAuditReadRouteIfMatched } from "./http/audit-read-route.js";
 import { handleProposalsReadRouteIfMatched } from "./http/proposals-read.js";
@@ -230,6 +222,7 @@ import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
 import { handleA2AJsonRpcRouteIfMatched } from "./http/a2a-jsonrpc-route.js";
 import { handleA2AStreamRouteIfMatched } from "./http/a2a-stream-routes.js";
+import { handleA2ATaskStreamRouteIfMatched } from "./http/a2a-task-stream-routes.js";
 import { handleTasksWakeRouteIfMatched } from "./http/tasks-wake-routes.js";
 import {
   classifyEndpointGroup,
@@ -1339,54 +1332,19 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         return;
       }
 
-      if (
-        req.method === "GET" &&
-        segments[0] === "a2a" &&
-        segments[1] === "workers" &&
-        segments[2] &&
-        segments[3] === "assignment-events" &&
-        segments.length === 4
-      ) {
-        const workerId = segments[2];
-        const verifiedWorker = await assertWorkerHttpSignatureRoute(req, url);
-        assertVerifiedWorkerMatches(verifiedWorker, workerId, "workers.assignment-events");
-        if (enforceRequesterIdentity) {
-          assertRequesterCanSubscribeToWorkerAssignments(requesterIdentity, workerId);
-        }
-        if (!broker.getWorker(workerId)) {
-          throw new BrokerError("not_found", "worker not found");
-        }
-
-        handleWorkerAssignmentEventStream(req, res, {
-          broker,
-          workerId,
-          heartbeatMs: taskSubscribeHeartbeatSec * 1000,
-        });
-        return;
-      }
-
-      if (
-        req.method === "GET" &&
-        segments[0] === "a2a" &&
-        segments[1] === "tasks" &&
-        segments[2] &&
-        segments[3] === "events" &&
-        segments.length === 4
-      ) {
-        const taskId = segments[2];
-        const task = broker.getTask(taskId);
-        if (!task) {
-          throw new BrokerError("not_found", "task not found");
-        }
-        if (enforceRequesterIdentity) {
-          assertRequesterCanSubscribeToTask(requesterIdentity, task);
-        }
-
-        handleTaskEventStream(req, res, {
-          broker,
-          task,
-          heartbeatMs: taskSubscribeHeartbeatSec * 1000,
-        });
+      if (await handleA2ATaskStreamRouteIfMatched({
+        method: req.method,
+        segments,
+        req,
+        res,
+        url,
+        broker,
+        enforceRequesterIdentity,
+        requesterIdentity,
+        taskSubscribeHeartbeatSec,
+        assertWorkerHttpSignatureRoute,
+        assertVerifiedWorkerMatches,
+      })) {
         return;
       }
 
