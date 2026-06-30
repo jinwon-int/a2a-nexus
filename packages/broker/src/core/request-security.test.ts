@@ -147,17 +147,19 @@ test("assertGitHubWebhookSignature accepts a valid signature over the raw body",
 test("InMemoryRateLimiter bounds its bucket map under a flood of distinct keys (a2a-nexus#573 item 14)", () => {
   const limiter = new InMemoryRateLimiter(100, 60_000);
   const now = 1_000_000;
+  const maxBucketKeys = 10_000;
 
   // The key is the (self-asserted) requester id, so a rotating-id flood could
-  // grow the map without bound. Far more distinct keys than the cap, all within
-  // the window, must still leave the bucket map bounded.
-  for (let i = 0; i < 25_000; i++) {
+  // grow the map without bound. The safety property only needs to cross the
+  // bucket cap: cap + 1 exercises pruneBuckets() without making the default test
+  // gate spend seconds iterating keys that cannot change the assertion.
+  for (let i = 0; i < maxBucketKeys + 1; i++) {
     limiter.check(`key-${i}`, now);
   }
 
   const snap = limiter.snapshot(now);
   assert.ok(
-    snap.activeKeys <= 10_000,
+    snap.activeKeys <= maxBucketKeys,
     `rate-limiter bucket map must stay bounded, got ${snap.activeKeys}`,
   );
 });
