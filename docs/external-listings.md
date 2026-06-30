@@ -4,19 +4,19 @@ This file prepares the discoverability workflow for A2A Nexus without opening ex
 
 ## Preconditions before external PRs
 
-- [ ] Operator explicitly approves the external listing wave.
-- [ ] Latest `main` passes `npm run scan:public-readiness`.
-- [ ] Latest `main` passes `npm run scan:external-secrets` or an equivalent operator-run secret scan.
-- [ ] README positioning and conformance evidence are current.
-- [ ] PR bodies are reviewed for private topology, node IDs, endpoints, Telegram/provider IDs, and secret-like strings.
+- [x] Operator explicitly approves the external listing wave. Approved 2026-07-01 KST via operator message: `승인`.
+- [x] Latest `main` passes `npm run scan:public-readiness`.
+- [x] Latest `main` passes `npm run scan:external-secrets` or an equivalent operator-run secret scan. The accepted findings were synthetic fixture findings only.
+- [x] README positioning and conformance evidence are current.
+- [x] PR bodies are reviewed for private topology, node IDs, endpoints, Telegram/provider IDs, and secret-like strings.
 
 ## Directory targets
 
 | Directory | Status | Planned category | PR URL | Notes |
 |---|---|---|---|---|
-| `ai-boost/awesome-a2a` | not opened | Broker / control-plane | N/A | Requires operator approval. |
-| `sing1ee/a2a-directory` | not opened | A2A broker runtime | N/A | Requires schema review and operator approval. |
-| `pab1it0/awesome-a2a` | not opened | Broker / control-plane | N/A | Requires operator approval. |
+| `ai-boost/awesome-a2a` | open | Broker / control-plane | <https://github.com/ai-boost/awesome-a2a/pull/138> | PR opened from `jinon86`; existing unrelated `NEXUS` PR #34 was not reused. |
+| `sing1ee/a2a-directory` | open | A2A broker runtime | <https://github.com/sing1ee/a2a-directory/pull/35> | Schema is README table row. |
+| `pab1it0/awesome-a2a` | open | Broker / control-plane | <https://github.com/pab1it0/awesome-a2a/pull/71> | README developer-tools listing. |
 
 ## Public-safe PR body base
 
