@@ -1,0 +1,12 @@
+{
+  "name": "A2A Nexus Broker",
+  "description": "Public-safe local Agent Card fixture for A2A Nexus conformance preflight.",
+  "url": "http://127.0.0.1:8787/a2a/jsonrpc",
+  "version": "0.1.0",
+  "protocolVersion": "1.0",
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "supportedInterfaces": [{ "protocolBinding": "JSONRPC", "url": "http://127.0.0.1:8787/a2a/jsonrpc" }],
+  "skills": [{ "id": "analyze", "name": "Analyze", "description": "Dispatch local analysis tasks." }]
+}

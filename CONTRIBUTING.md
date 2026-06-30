@@ -1,6 +1,6 @@
 # Contributing
 
-A2A Nexus is a public alpha project. Feedback and contributions are welcome, but public visibility does not imply stable release support, package publication, production deployment, live operations, or relaxed safety boundaries. The contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
+A2A Nexus is a public alpha reference implementation for a fleet-level, operator-gated A2A task/evidence control plane. Feedback and contributions are welcome, but public visibility does not imply stable release support, package publication, production deployment, live operations, external promotion, or relaxed safety boundaries. The contribution flow uses standard GitHub pull requests; see the [PR template](.github/pull_request_template.md) for expected content.
 
 ## Code of Conduct
 

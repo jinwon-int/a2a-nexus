@@ -61,6 +61,18 @@ npm run test:conformance -- --list
 
 The allowlist intentionally includes only local fixture/contract validators. Planning, release go/no-go, live-dispatch, deploy, broker mutation, Terminal Brief ACK/replay, and package publication surfaces are excluded from this command.
 
+## External inspector bridge
+
+A2A Nexus also keeps an operator-safe bridge command for `a2aproject/a2a-inspector` evidence:
+
+```sh
+node packages/broker/scripts/conformance-inspector.mjs \
+  --agent-card fixtures/conformance/agent-cards/a2a-nexus-broker.json \
+  --out /tmp/a2a-inspector-bridge.json
+```
+
+The default mode is a local Agent Card preflight that emits a CI-friendly JSON artifact. If an operator later pins a reviewed headless inspector command, pass it with `--external-command`; until then the artifact explicitly records the headless caveat rather than claiming a browser/Socket.IO inspector run occurred.
+
 ## Safety boundary
 
 `test:conformance` is local and no-live. It must not:

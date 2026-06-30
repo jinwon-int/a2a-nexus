@@ -2,7 +2,11 @@
 
 [![ci](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwon-int/a2a-nexus/actions/workflows/ci.yml)
 
-A2A Nexus is the public "start here" entrypoint for the A2A broker/worker task handoff plane. Use this repository first for project orientation, public quickstarts, repo routing, contracts, examples, and cross-repo coordination.
+A2A Nexus is a fleet-level, operator-gated A2A task/evidence control plane: a broker/worker runtime plus finalizer-ready evidence layer for safe delegated work.
+
+It complements the public A2A protocol and SDK ecosystem rather than replacing it. The project is an alpha reference implementation for broker-managed worker registration, auditable task lifecycle evidence, source-only review bridges, isolated patch execution, and operator closeout reports.
+
+> **Compatibility statement:** A2A Nexus intends to interoperate with public A2A Agent Card / JSON-RPC conventions where practical, but it is not affiliated with or endorsed by a2aproject. Production deployment, package publication, external promotion, and visibility-related actions remain separately operator-gated.
 
 `a2a-nexus` is now the canonical implementation source. An operator-approved, source-state-only canonical flip (recorded in [`fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json`](fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json)) made `packages/broker`, `packages/openclaw-plugin-a2a`, and `packages/docker-runner` the canonical A2A source of truth in this repository. The former split repositories (`a2a-broker`, `openclaw-plugin-a2a`/`plugin-a2a`, `a2a-docker-runner`) remain **active provenance mirrors only** — unchanged, not archived, not redirected, with package ownership not transferred. Package publication, releases, production deployment, and any future visibility transfer remain separately approval-gated and are not implied by this source-state flip. For historical context, see the [topology decision record](docs/topology-decision-record.md) and the monorepo re-entry decision in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md) (originally tracked as historical provenance in [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)).
 
@@ -17,6 +21,9 @@ Start here:
 - [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
 - [Five-minute local quickstart](docs/quickstart.md) - disposable loopback broker plus echo worker path.
 - [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
+- [A2A Nexus positioning](docs/positioning.md) - landscape comparison, differentiators, and public-safe framing.
+- [a2a-js adapter mapping](docs/interop/a2a-js-adapter.md) - first source-only standard SDK interop mapping.
+- [External listing tracker](docs/external-listings.md) - operator-gated discoverability workflow and PR body template.
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
