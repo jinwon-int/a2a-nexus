@@ -524,6 +524,16 @@
       "tier": "core",
       "retirement": "keep",
       "note": "Keeps this report-only inventory in lockstep with scripts/release-gate.mjs so future gate tiering stays source-backed."
+    },
+    {
+      "name": "script-surface-manifest",
+      "command": "node",
+      "args": [
+        "scripts/lib/script-surface-manifest.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "#1150 operating-cost refactor guard: validates root/broker script tiers without deleting gates."
     }
   ]
 }
