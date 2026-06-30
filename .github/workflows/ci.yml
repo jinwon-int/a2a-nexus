@@ -100,7 +100,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
@@ -119,7 +119,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: packages/broker/dist
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
@@ -137,7 +137,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: packages/docker-runner/dist
           key: tsbuild-docker-runner-${{ runner.os }}-${{ hashFiles('packages/docker-runner/**/*.ts', 'packages/docker-runner/tsconfig.json') }}
@@ -155,7 +155,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: packages/openclaw-plugin-a2a/dist
           key: tsbuild-plugin-${{ runner.os }}-${{ hashFiles('packages/openclaw-plugin-a2a/**/*.ts', 'packages/openclaw-plugin-a2a/tsconfig.json') }}
@@ -236,7 +236,7 @@ jobs:
           go-version: '1.24.x'
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
