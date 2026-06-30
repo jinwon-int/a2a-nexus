@@ -790,6 +790,32 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("analysis bridge fails closed with missing bridge artifact before Node spawn (#1147)", () => {
+  const missingBin = join(tmpdir(), `missing-gongmyoung-source-analysis-bridge-${Date.now()}.mjs`);
+  const result = handleTask({
+    id: "task-gongmyoung-missing-bridge",
+    intent: "analyze",
+    assignedWorkerId: "gongmyoung",
+    message: "Analyze no-live bundle",
+    payload: {
+      mode: "analysis-only",
+      sourceOnly: true,
+      noLive: true,
+      sourceBundle: { files: [{ repo: "ops-live-check", path: "health-check-request.md", content: "runId: missing-bridge" }] },
+    },
+  }, {
+    PATH: process.env.PATH,
+    A2A_EXECUTOR_MODE: "builtin",
+    A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+    A2A_OPENCLAW_ANALYSIS_BIN: missingBin,
+    A2A_NODE_ID: "gongmyoung",
+  });
+
+  assert.equal(result.error?.code, "openclaw_analysis_bridge_missing");
+  assert.equal(result.error?.details.failureCategory, "missing_bridge_artifact");
+  assert.equal(result.error?.details.bridgeCommand, missingBin);
+});
+
 test("Hermes source-only analysis bridge receives structured task files when prompt payload is truncated", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-hermes-structured-analysis-"));
   const bin = join(dir, "gongmyoung-source-analysis-bridge.mjs");
