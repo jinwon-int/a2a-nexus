@@ -657,6 +657,20 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
   }
 });
 
+test("analysis bridge .mjs commands are invoked through the current Node binary for Termux service contexts (#1141)", () => {
+  const invocation = __test.resolveNodeScriptInvocation("/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", ["agent", "--json"]);
+
+  assert.equal(invocation.command, process.execPath);
+  assert.deepEqual(invocation.args, ["/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", "agent", "--json"]);
+});
+
+test("analysis bridge non-JS commands keep direct invocation", () => {
+  const invocation = __test.resolveNodeScriptInvocation("openclaw", ["agent", "--json"]);
+
+  assert.equal(invocation.command, "openclaw");
+  assert.deepEqual(invocation.args, ["agent", "--json"]);
+});
+
 test("Claude bridge env is attributed as claude_code without OpenClaw success labels (#948)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-claude-telemetry-"));
   const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
