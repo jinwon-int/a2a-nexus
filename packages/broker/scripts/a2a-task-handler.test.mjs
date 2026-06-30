@@ -671,6 +671,16 @@ test("analysis bridge non-JS commands keep direct invocation", () => {
   assert.deepEqual(invocation.args, ["agent", "--json"]);
 });
 
+test("Termux glibc node wrappers use the node wrapper instead of process.execPath loader (#1141)", () => {
+  const invocation = __test.resolveNodeScriptInvocation("/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", ["agent"], {}, {
+    execPath: "/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1",
+    argv0: "/data/data/com.termux/files/usr/bin/node.real",
+  });
+
+  assert.equal(invocation.command, "/data/data/com.termux/files/usr/bin/node");
+  assert.deepEqual(invocation.args, ["/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", "agent"]);
+});
+
 test("Claude bridge env is attributed as claude_code without OpenClaw success labels (#948)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-claude-telemetry-"));
   const bin = join(dir, "claude-a2a-analysis-bridge.mjs");
