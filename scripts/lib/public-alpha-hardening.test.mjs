@@ -93,6 +93,13 @@ test('external publicization roadmap captures A2AD evidence, local-first path, a
   assert.match(doc, /sing1ee\/a2a-directory#35`:\s*merged/i);
   assert.match(doc, /settings mutation/i);
   assert.match(doc, /separate operator-approved settings task/i);
+  assert.match(doc, /1166 승인/);
+  assert.match(doc, /agent-to-agent/);
+  assert.match(doc, /delete_branch_on_merge:\s*true/);
+  assert.match(doc, /secret_scanning\.status:\s*enabled/);
+  assert.match(doc, /one approval/i);
+  assert.match(doc, /paths-filter/);
+  assert.match(doc, /promotion-capstone/);
   assert.match(doc, /Keep open until all three external-directory PRs have final states/i);
 
   assert.doesNotMatch(doc, /GitHub Release was created/i);
