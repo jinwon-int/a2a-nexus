@@ -101,6 +101,11 @@ test('external publicization roadmap captures A2AD evidence, local-first path, a
   assert.match(doc, /paths-filter/);
   assert.match(doc, /promotion-capstone/);
   assert.match(doc, /Keep open until all three external-directory PRs have final states/i);
+  assert.match(doc, /#1172/);
+  assert.match(doc, /#1173/);
+  assert.match(doc, /#1174/);
+  assert.match(doc, /clone\/view attribution/i);
+  assert.match(doc, /homepage\/docs-site posture/i);
 
   assert.doesNotMatch(doc, /GitHub Release was created/i);
   assert.doesNotMatch(doc, /branch protection was enabled/i);

@@ -25,6 +25,10 @@ Checked for the #1160/#1166 A2AD round and the follow-up operator approval on 20
   - `sing1ee/a2a-directory#35`: merged at `2026-06-30T23:37:19Z`, merge commit `dcd58d5aa12769bbcd5fb35415da635624232682`.
   - `ai-boost/awesome-a2a#138`: open.
   - `pab1it0/awesome-a2a#71`: open.
+- Follow-up after the public externalization A2AD evaluation is tracked in:
+  - [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172): contribution intake hardening before broader promotion;
+  - [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173): clone/view traffic anomaly audit before using traffic as promotion evidence;
+  - [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174): homepage/docs-site posture decision before broader public promotion.
 
 ## A2AD source-only evidence
 
@@ -48,10 +52,11 @@ Finalizer summary:
 
 | Workstream | Current implementation | PR-safe next step | Gated / not done here |
 |---|---|---|---|
-| Public surface polish | README, SECURITY, CONTRIBUTING, issue forms, and PR template exist with public-alpha language. | Keep a concise external-reader path in README and validate local issue-form metadata. GitHub API metadata may not surface Issue Forms; treat repo-local validation as necessary but keep live chooser rendering as a follow-up if unavailable. | Broad announcement/promotion. |
-| Repository metadata/settings | #1166 settings approval was received and applied: topics, delete-branch-on-merge, main branch protection, secret scanning, push protection, and Dependabot security updates. Homepage remains blank by decision. | Monitor that required CI contexts remain stable after branch protection. | Public docs-site homepage, additional rulesets, release/tag/package settings, or visibility transfer. |
+| Public surface polish | README, SECURITY, CONTRIBUTING, issue forms, and PR template exist with public-alpha language. | Keep a concise external-reader path in README and validate local issue-form metadata. GitHub API metadata may not surface Issue Forms; treat repo-local validation as necessary and track contribution-intake hardening in [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172). | Broad announcement/promotion. |
+| Repository metadata/settings | #1166 settings approval was received and applied: topics, delete-branch-on-merge, main branch protection, secret scanning, push protection, and Dependabot security updates. Homepage remains blank by decision. | Monitor that required CI contexts remain stable after branch protection; decide the homepage/docs-site posture in [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174) before broader promotion. | Public docs-site homepage mutation without approval, additional rulesets, release/tag/package settings, or visibility transfer. |
 | External discoverability | `docs/external-listings.md` tracks the three directory PRs. | Keep #1160 open and update the tracker when `ai-boost#138` or `pab1it0#71` changes. | Closing #1160 before all three external PRs have final outcomes. |
-| Feedback/notification readiness | Public issue-form files and PR template route public-safe feedback; [public feedback intake evidence](public-feedback-intake.md) records the GitHub Issue Forms metadata discrepancy and the active GitHub webhook monitoring path for issue/PR feedback events. | Close #1169 after the live monitoring setup evidence is merged; keep bounded reconcile polling and notification canaries as separately approved future hardening if needed. | Live provider/Telegram sends, notification canaries, broad announcement, release/publish, DB/outbox/ACK/replay mutation, or secret disclosure. |
+| Feedback/notification readiness | Public issue-form files and PR template route public-safe feedback; [public feedback intake evidence](public-feedback-intake.md) records the GitHub Issue Forms metadata discrepancy and the active GitHub webhook monitoring path for issue/PR feedback events. | #1169 is closed after live monitoring setup evidence; keep bounded reconcile polling and notification canaries as separately approved future hardening if needed. | Live provider/Telegram sends, notification canaries, broad announcement, release/publish, DB/outbox/ACK/replay mutation, or secret disclosure. |
+| External traction evidence | External listing state and GitHub traffic are read-only signals. The 2026-07-01 readback showed low views but anomalously high clones, so clone counts are not yet treated as organic promotion evidence. | Audit clone/view attribution in [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173) and prefer conservative traction indicators until resolved. | Claiming organic traction or using clone spikes in public promotion before attribution is clear. |
 | Release/package readiness | Release checklist exists, no release is published, and homepage remains blank until a public docs/stable landing page exists. | Keep release/package work as design-only until separately approved. | GitHub Release, tag, npm package, Docker/GHCR image, production deploy. |
 
 ## What to try first
