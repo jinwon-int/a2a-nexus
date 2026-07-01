@@ -1,7 +1,7 @@
 # Team1 Roadmap Input: yukson
 
-Parent roadmap: [#105](https://github.com/jinwon-int/a2a-plane/issues/105)
-Child issue: [#109](https://github.com/jinwon-int/a2a-plane/issues/109)
+Parent roadmap: #105 (a2a-plane#105, internal tracker private)
+Child issue: #109 (a2a-plane#109, internal tracker private)
 Angle: libero/independent review of sequencing, risk prioritization, governance, and what to deliberately not build yet.
 
 ## North-star

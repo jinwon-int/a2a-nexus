@@ -10,7 +10,7 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 ┌─────────────────────────────────────────────────────────────┐
 │ a2a-plane                                                    │
 │ Operator-facing project hub: roadmap, issues, docs, gates    │
-│ https://github.com/jinwon-int/a2a-plane                     │
+│ a2a-plane (internal tracker, private)                     │
 └──────────────────────────────┬──────────────────────────────┘
                                │ creates tasks / collects evidence
 ┌──────────────────────────────┼──────────────────────────────┐
@@ -74,11 +74,11 @@ A2A는 "작업을 접수하고, 격리된 워커에 넘기고, 최종 증거(PR/
 
 > [!NOTE]
 > 현재 4개 저장소 체제와 통합 workspace의 사용자 경험을 계속 정리 중입니다.
-> The current topology decision ([#473](https://github.com/jinwon-int/a2a-plane/issues/473)) recommends **holding full monorepo consolidation** and keeping split implementation repos with `a2a-plane` as the stronger public umbrella. See the [topology decision record](topology-decision-record.md) for the full recommendation, reasoning, and re-entry criteria.
+> The current topology decision (#473 (a2a-plane#473, internal tracker private)) recommends **holding full monorepo consolidation** and keeping split implementation repos with `a2a-plane` as the stronger public umbrella. See the [topology decision record](topology-decision-record.md) for the full recommendation, reasoning, and re-entry criteria.
 >
-> The [monorepo architecture & cutover proof](monorepo-migration-checklist.md) is preserved as a historical reference — it will be revived if a future operator-initiated re-entry activates full consolidation.
+> The [monorepo architecture & cutover proof](history/monorepo-migration-checklist.md) is preserved as a historical reference — it will be revived if a future operator-initiated re-entry activates full consolidation.
 >
-> 추적 이슈: [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) · [#240](https://github.com/jinwon-int/a2a-plane/issues/240) · [#337](https://github.com/jinwon-int/a2a-plane/issues/337)
+> 추적 이슈: a2a-plane#473 (a2a-plane#473, internal tracker private) · #240 (a2a-plane#240, internal tracker private) · #337 (a2a-plane#337, internal tracker private)
 
 ## 라이선스
 

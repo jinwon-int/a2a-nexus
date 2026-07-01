@@ -2,7 +2,7 @@
  * Broker-advertised A2A protocol profile diagnostics extraction.
  *
  * Issue:  jinwon-int/plugin-a2a#454
- * Parent: jinwon-int/a2a-plane#492
+ * Parent: a2a-plane#492 (internal tracker, private)
  * Worker: sogyo
  *
  * Verifies that buildBrokerProtocolProfile() correctly extracts the

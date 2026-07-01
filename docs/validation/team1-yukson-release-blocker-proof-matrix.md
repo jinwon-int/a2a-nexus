@@ -1,7 +1,7 @@
 # Team1/yukson Release-Blocker Proof Matrix for Four Repos
 
-Parent: [#458](https://github.com/jinwon-int/a2a-plane/issues/458) — Release-blocker proof pack
-Assigned child: [#459](https://github.com/jinwon-int/a2a-plane/issues/459)
+Parent: #458 (a2a-plane#458, internal tracker private) — Release-blocker proof pack
+Assigned child: #459 (a2a-plane#459, internal tracker private)
 Lane: 4/4 (yukson)
 Run: `a2a-team1-release-blocker-proof-pack-20260526T0628KST`
 Worker: `yukson` / Team1
@@ -140,14 +140,14 @@ Carried forward from the release-readiness matrix. These rules apply identically
 
 ## 3. Cross-Lane Check
 
-### 3.1 Release-blocker proof pack lanes (from parent [#458](https://github.com/jinwon-int/a2a-plane/issues/458))
+### 3.1 Release-blocker proof pack lanes (from parent #458 (a2a-plane#458, internal tracker private))
 
 | Lane | Worker | Child issue | Start comment | Focus |
 |------|--------|-------------|---------------|-------|
 | Lane 1 | bangtong | [a2a-docker-runner#335](https://github.com/jinwon-int/a2a-docker-runner/issues/335) | [✔ posted](https://github.com/jinwon-int/a2a-docker-runner/issues/335) (seoseo-ai) | Runner package build verification and redacted artifact proof |
 | Lane 2 | sogyo | [openclaw-plugin-a2a#448](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/448) | [✔ posted](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/448) (seoseo-ai) | Plugin diagnostics, package smoke, and visibility proof |
 | Lane 3 | nosuk | [a2a-broker#921](https://github.com/jinwon-int/a2a-broker/issues/921) | [✔ posted](https://github.com/jinwon-int/a2a-broker/issues/921) (seoseo-ai) | Broker replay-safe/idempotency proof and scanner evidence export |
-| Lane 4 (this) | yukson | [a2a-plane#459](https://github.com/jinwon-int/a2a-plane/issues/459) | [✔ posted](https://github.com/jinwon-int/a2a-plane/issues/459) (seoseo-ai) | Cross-repo proof matrix and GO/NO-GO checklist |
+| Lane 4 (this) | yukson | a2a-plane#459 (a2a-plane#459, internal tracker private) | ✔ posted (a2a-plane#459, internal tracker private) (seoseo-ai) | Cross-repo proof matrix and GO/NO-GO checklist |
 
 All four Start comments were posted by `seoseo-ai` (Team1 broker/finalizer) within the same minute. No sibling lane has closed or produced a PR yet at the time of this lane's execution.
 
@@ -167,7 +167,7 @@ The predecessor pack (`a2a-team1-release-readiness-pack-20260526T054020KST`) clo
 | Lane 1 (bangtong) | [a2a-docker-runner#334](https://github.com/jinwon-int/a2a-docker-runner/pull/334) | MERGED |
 | Lane 2 (sogyo) | [openclaw-plugin-a2a#447](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/447) | MERGED |
 | Lane 3 (nosuk) | [a2a-broker#920](https://github.com/jinwon-int/a2a-broker/pull/920) | MERGED |
-| Lane 4 (yukson) | [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) | MERGED |
+| Lane 4 (yukson) | a2a-plane#457 (a2a-plane PR #457, internal tracker private) | MERGED |
 
 The NO-GO items documented in the predecessor matrix (N1–N6) are the exact targets this pack is designed to address. The predecessor matrix remains the authoritative source for the baseline state; this document provides the proof-depth assessment.
 
@@ -229,7 +229,7 @@ $ npm run check:packages
 FAIL — packages/broker: sh: 1: tsc: not found
 
 # GitHub issue/comments — Start posted on #459
-Start comment URL: https://github.com/jinwon-int/a2a-plane/issues/459#issuecomment-4537357237
+Start comment URL: a2a-plane#459 (internal tracker, private)#issuecomment-4537357237
 
 # Sibling lane Start comments verified:
 # Lane 1: https://github.com/jinwon-int/a2a-docker-runner/issues/335

@@ -89,12 +89,12 @@ function mockOrchestrator(overrides = {}) {
 function allGo(overrides = {}) {
   return {
     commitSha: 'a1b2c3d4e5f6',
-    crossLaneEvidence: ['https://github.com/jinwon-int/a2a-plane/issues/226#cross-lane-evidence'],
+    crossLaneEvidence: ['a2a-plane#226 (internal tracker, private)#cross-lane-evidence'],
     laneStatuses: {
-      'a2a-plane': { status: 'GO', evidence: 'https://github.com/jinwon-int/a2a-plane/issues/226', timestamp: new Date().toISOString() },
-      'openclaw-plugin-a2a': { status: 'GO', evidence: 'https://github.com/jinwon-int/a2a-plane/issues/265', timestamp: new Date().toISOString() },
-      'a2a-docker-runner': { status: 'GO', evidence: 'https://github.com/jinwon-int/a2a-plane/issues/195', timestamp: new Date().toISOString() },
-      'a2a-broker': { status: 'GO', evidence: 'https://github.com/jinwon-int/a2a-plane/issues/488', timestamp: new Date().toISOString() },
+      'a2a-plane': { status: 'GO', evidence: 'a2a-plane#226 (internal tracker, private)', timestamp: new Date().toISOString() },
+      'openclaw-plugin-a2a': { status: 'GO', evidence: 'a2a-plane#265 (internal tracker, private)', timestamp: new Date().toISOString() },
+      'a2a-docker-runner': { status: 'GO', evidence: 'a2a-plane#195 (internal tracker, private)', timestamp: new Date().toISOString() },
+      'a2a-broker': { status: 'GO', evidence: 'a2a-plane#488 (internal tracker, private)', timestamp: new Date().toISOString() },
     },
     ciStatus: {
       build: 'PASS',
@@ -109,7 +109,7 @@ function allGo(overrides = {}) {
         id,
         {
           status: 'GO',
-          evidence: [`https://github.com/jinwon-int/a2a-plane/issues/226#gate-${index + 1}`],
+          evidence: [`a2a-plane#226 (internal tracker, private)#gate-${index + 1}`],
           ...overrides[id],
         },
       ]),

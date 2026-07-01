@@ -1,9 +1,9 @@
 {
   "schema": "a2a.monorepo-release-package-tag-approval-packet.v1",
   "snapshotDate": "2026-06-08",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "phase7DispositionPr": "https://github.com/jinwon-int/a2a-plane/pull/546",
-  "phase8ReleasePacketIssue": "https://github.com/jinwon-int/a2a-plane/issues/547",
+  "parentIssue": "a2a-plane#511 (internal tracker, private)",
+  "phase7DispositionPr": "a2a-plane PR #546 (internal tracker, private)",
+  "phase8ReleasePacketIssue": "a2a-plane#547 (internal tracker, private)",
   "phase7MergeCommit": "03cb496a145c130186f6d08a3fd9fd12dc04ef31",
   "releaseTagDecision": "NO_GO_WAITING",
   "githubReleaseDecision": "NO_GO_WAITING",

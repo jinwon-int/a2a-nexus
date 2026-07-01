@@ -1,6 +1,6 @@
 # Redacted Readiness Inventory Disposition
 
-Status: source-level disposition for #881 public-readiness review.  
+Status: source-level disposition for #881 public-readiness review.
 Scope: redacted metadata only; this document does **not** include matched values and does **not** replace an external secret/history scanner (`gitleaks` or `trufflehog`).
 
 ## Current local inventory

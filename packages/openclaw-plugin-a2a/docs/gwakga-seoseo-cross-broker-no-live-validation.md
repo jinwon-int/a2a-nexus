@@ -4,7 +4,7 @@ _No-live validation harness for the route: Gwakga origin row → Seoseo projecti
 
 - Lane: `jinwon-int/plugin-a2a#429`
 - Run: `a2a-allhands-dev-20260522T064600Z`
-- Parent: `jinwon-int/a2a-plane#416`
+- Parent: `a2a-plane#416 (internal tracker, private)`
 - Worker: soonwook (team2)
 
 ## Route

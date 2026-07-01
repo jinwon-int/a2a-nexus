@@ -160,7 +160,7 @@ test('spec documents secret redaction rules', async () => {
 // Prior art reference
 // ──────────────────────────────────────────────────────────
 
-test('spec references prior art jinwon-int/a2a-plane#384', async () => {
+test('spec references prior art a2a-plane#384 (internal tracker, private)', async () => {
   const spec = await readFile(join(profileDir, 'spec.md'), 'utf8');
   assert.match(spec, /#384/);
   assert.match(spec, /hermes-worker-integration/);

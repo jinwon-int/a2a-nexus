@@ -1,7 +1,7 @@
 # Team1 Roadmap Input — nosuk (2026-05-09)
 
-**Parent issue:** [#105](https://github.com/jinwon-int/a2a-plane/issues/105)
-**Child issue:** [#108](https://github.com/jinwon-int/a2a-plane/issues/108)
+**Parent issue:** #105 (a2a-plane#105, internal tracker private)
+**Child issue:** #108 (a2a-plane#108, internal tracker private)
 **Angle:** verification strategy, safety gates, scanner/readiness evidence, CI/test matrix, rollback/no-go criteria.
 
 ---
@@ -91,7 +91,7 @@ These **must never** land in a2a-plane, in tracked files, or in PR evidence:
 
 ## Suggested Next GitHub Epics / Issues
 
-Epics for the `jinwon-int/a2a-plane` issue tracker:
+Epics for the `a2a-plane (internal tracker, private)` issue tracker:
 
 1. **Epic: External Scanner Closure (G2)**
    - Install gitleaks in CI environment

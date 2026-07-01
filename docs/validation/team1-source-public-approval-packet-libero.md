@@ -1,7 +1,7 @@
 # Team1 source-public approval packet validation matrix
 
-Parent: [#192](https://github.com/jinwon-int/a2a-plane/issues/192)
-Child: [#193](https://github.com/jinwon-int/a2a-plane/issues/193)
+Parent: #192 (a2a-plane#192, internal tracker private)
+Child: #193 (a2a-plane#193, internal tracker private)
 Run: `a2a-source-release-gate-20260510T113438Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -13,8 +13,8 @@ This is a redacted validation artifact only. It does not change repository visib
 
 ## Evidence reviewed
 
-- Parent dispatch: [a2a-plane#192](https://github.com/jinwon-int/a2a-plane/issues/192).
-- Libero lane: [a2a-plane#193](https://github.com/jinwon-int/a2a-plane/issues/193).
+- Parent dispatch: a2a-plane#192 (a2a-plane#192, internal tracker private).
+- Libero lane: a2a-plane#193 (a2a-plane#193, internal tracker private).
 - Team1 broker lane: [a2a-broker#475](https://github.com/jinwon-int/a2a-broker/issues/475); PR [a2a-broker#478](https://github.com/jinwon-int/a2a-broker/pull/478) provides the broker release-gate evidence packet.
 - Team1 plugin lane: [openclaw-plugin-a2a#254](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/254); PR [openclaw-plugin-a2a#255](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/255) adds plugin source-public support docs and alpha boundary material.
 - Team1 runner lane: [a2a-docker-runner#173](https://github.com/jinwon-int/a2a-docker-runner/issues/173); PR [a2a-docker-runner#176](https://github.com/jinwon-int/a2a-docker-runner/pull/176) adds runner source-public support docs, license, issue templates, and public-readiness framing.
@@ -30,7 +30,7 @@ At closeout refresh time the sibling Team1 lanes have posted PR/Done evidence. T
 | Broker (`bangtong`) | Broker-specific source-public packet covering license, README/quickstart/API docs, CI badge/release gate, SECURITY/CONTRIBUTING gaps, history scanner procedure, compatibility matrix, known limitations, and exact operator approvals. | [a2a-broker#478](https://github.com/jinwon-int/a2a-broker/pull/478) adds `docs/source-public-release-gate-evidence.md`; Team2 [a2a-broker#477](https://github.com/jinwon-int/a2a-broker/pull/477) adds independent risk-audit/support material. | **Pass for packet evidence after PR merge and CI green.** It supports approval review but is not itself visibility/release approval. |
 | Plugin (`sogyo`) | Plugin install guide, OpenClaw compatibility matrix, alpha boundaries, no-live Terminal Brief semantics, CI/release badge, SECURITY/CONTRIBUTING/issue-template gaps, and exact approval requirements. | [openclaw-plugin-a2a#255](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/255) adds SECURITY/CONTRIBUTING, issue templates, README links, alpha-boundary docs, and package metadata. | **Pass for packet evidence after PR merge and CI green.** No-live Terminal Brief and accepted-send non-ACK semantics remain intact. |
 | Runner (`nosuk`) | Docker runner sandbox/security docs, GitHub auth handling, artifact redaction, cleanup guarantees, scanner/history procedure, CI badge/release gate, support policy, and approval requirements. | [a2a-docker-runner#176](https://github.com/jinwon-int/a2a-docker-runner/pull/176) adds MIT license, SECURITY/CONTRIBUTING/CODE_OF_CONDUCT, issue templates, and README public-readiness framing. Team2 [#175](https://github.com/jinwon-int/a2a-docker-runner/pull/175) independently hardens public artifact redaction and bootstrap guard evidence. | **Pass for packet evidence after PR merge and CI green.** The runner task recorded a failure/block wrapper after PR creation, but the PR and CI are valid closeout evidence. |
-| Libero (`yukson`) | Aggregate validation matrix, remaining gate list, and exact GO/NO-GO posture without performing live-impact or visibility actions. | This A2A Nexus document and its regression test were refreshed with sibling PR evidence. Team2 [a2a-plane#196](https://github.com/jinwon-int/a2a-plane/pull/196) fixes release-gate doc drift. | **Pass for closeout matrix after PR #195/#196 merge and CI green.** The parent can close as an evidence/approval-packet round, not as a release/publication approval. |
+| Libero (`yukson`) | Aggregate validation matrix, remaining gate list, and exact GO/NO-GO posture without performing live-impact or visibility actions. | This A2A Nexus document and its regression test were refreshed with sibling PR evidence. Team2 a2a-plane#196 (a2a-plane PR #196, internal tracker private) fixes release-gate doc drift. | **Pass for closeout matrix after PR #195/#196 merge and CI green.** The parent can close as an evidence/approval-packet round, not as a release/publication approval. |
 
 ## Approval packet validation matrix
 

@@ -1,9 +1,9 @@
 # Team1/yukson DB lifecycle cleanup GO/NO-GO matrix
 
-Issue: [a2a-plane#265](https://github.com/jinwon-int/a2a-plane/issues/265)  
-Parent: [a2a-broker#519](https://github.com/jinwon-int/a2a-broker/issues/519)  
-Linked trackers: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294), [a2a-plane#75](https://github.com/jinwon-int/a2a-plane/issues/75)  
-Worker: `yukson` / Team1  
+Issue: a2a-plane#265 (a2a-plane#265, internal tracker private)
+Parent: [a2a-broker#519](https://github.com/jinwon-int/a2a-broker/issues/519)
+Linked trackers: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294), a2a-plane#75 (a2a-plane#75, internal tracker private)
+Worker: `yukson` / Team1
 Snapshot: `2026-05-12`
 
 This is a no-live Plane decision artifact for the replacement cleanup API / safe-prune lane. It defines when DB lifecycle cleanup work can move from design and dry-run evidence to deploy/canary/cleanup execution. It does not perform a production DB mutation, prune, migration, deploy, restart, live provider send, terminal ACK, secret change, release, force-push, or repository visibility action.
@@ -50,7 +50,7 @@ Safe PR/Done evidence may say: **the DB lifecycle cleanup GO/NO-GO matrix is doc
 Recommended validation for this artifact:
 
 ```bash
-node --test scripts/check-team1-yukson-db-lifecycle-cleanup-go-nogo.test.mjs
+node --test scripts/archive/check-team1-yukson-db-lifecycle-cleanup-go-nogo.test.mjs
 npm run scan:public-readiness
 ```
 

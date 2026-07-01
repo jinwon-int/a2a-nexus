@@ -123,8 +123,8 @@ test('fixture has correct schema and mode', async () => {
 
   assert.strictEqual(fixture.schema, 'a2a.splitRepoLocalDemo.evidence.v1');
   assert.strictEqual(fixture.mode, 'no-live');
-  assert.strictEqual(fixture.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/473');
-  assert.strictEqual(fixture.trackingIssue, 'https://github.com/jinwon-int/a2a-plane/issues/480');
+  assert.strictEqual(fixture.parentIssue, 'a2a-plane#473 (internal tracker, private)');
+  assert.strictEqual(fixture.trackingIssue, 'a2a-plane#480 (internal tracker, private)');
 });
 
 test('fixture has correct completed issue references', async () => {

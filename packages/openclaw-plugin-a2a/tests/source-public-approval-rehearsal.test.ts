@@ -1,7 +1,7 @@
 /**
  * Source-public approval rehearsal tests (#261).
  *
- * Parent: jinwon-int/a2a-plane#211
+ * Parent: a2a-plane#211 (internal tracker, private)
  * Run:    a2a-source-public-approval-rehearsal-20260511T014240Z
  *
  * Exercises the source-public approval rehearsal module without any live

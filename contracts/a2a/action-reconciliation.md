@@ -9,7 +9,7 @@
 > terminal-outbox ACK.
 
 Parent issue: [a2a-broker#844](https://github.com/jinwon-int/a2a-broker/issues/844)
-Child issue: [a2a-plane#402](https://github.com/jinwon-int/a2a-plane/issues/402)
+Child issue: a2a-plane#402 (a2a-plane#402, internal tracker private)
 Parent round: `a2a-team1-auto-closeout-action-reconcile-20260520T180955Z` (4/4)
 Worker: `nosuk`
 
@@ -365,7 +365,7 @@ A PR/Done closeout for this contract must provide:
   "contractVersion": "v0",
   "frozenAt": "2026-05-20T18:09:55Z",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/844",
-  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/402",
+  "childIssue": "a2a-plane#402 (internal tracker, private)",
   "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
   "scope": "Cross-repo approval-gated auto-closeout action reconciliation: contract, runbook, canary gate",
   "syntheticFixtureOnly": true,

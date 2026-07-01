@@ -3,7 +3,7 @@
 ## Linked spec
 
 - Spec: docs/specs/hermes-worker-integration/spec.md
-- Tracker: jinwon-int/a2a-plane#384
+- Tracker: a2a-plane#384 (internal tracker, private)
 
 ## Size classification
 

@@ -1,10 +1,10 @@
 # Team2/Soonwook R16 Terminal Brief notification fix libero validation
 
-Issue: [a2a-plane#316](https://github.com/jinwon-int/a2a-plane/issues/316)  
-Parent: [a2a-broker#631](https://github.com/jinwon-int/a2a-broker/issues/631)  
-Run: `r16-terminal-brief-libero-soonwook-20260514T0937Z`  
-Lane: `soonwook` / Team2 libero validation  
-Start marker: [a2a-plane#316 comment](https://github.com/jinwon-int/a2a-plane/issues/316#issuecomment-4449532046)
+Issue: a2a-plane#316 (a2a-plane#316, internal tracker private)
+Parent: [a2a-broker#631](https://github.com/jinwon-int/a2a-broker/issues/631)
+Run: `r16-terminal-brief-libero-soonwook-20260514T0937Z`
+Lane: `soonwook` / Team2 libero validation
+Start marker: [a2a-plane#316 comment](a2a-plane#316 (internal tracker, private)#issuecomment-4449532046)
 
 This is a redacted, no-live validation artifact for the R16 Terminal Brief live notification fix. It performs repository and GitHub evidence review only. It does not deploy, restart Gateway/broker/worker services, reload runtime config, send a live provider or Telegram canary, mutate/prune/migrate production databases, manually ACK or replay Terminal Brief terminal-outbox rows, replay historical tasks, publish a release/tag, move or disclose secrets, force-push, rewrite history, change repository visibility, or execute operator approval.
 
@@ -31,7 +31,7 @@ Safe current closeout for this lane: this PR documents the validation matrix, ca
 | --- | --- | --- | --- |
 | `dungae` | [openclaw-plugin-a2a#313](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/313) | Fix plugin terminal-outbox poll loop, cursor/allowlist handling, attempt observability, and adapter result accounting. | Start evidence only at validation snapshot. |
 | `jingun` | [a2a-broker#632](https://github.com/jinwon-int/a2a-broker/issues/632) | Preserve structured Terminal Brief metadata in broker terminal-outbox payload projection. | Start evidence only at validation snapshot. |
-| `soonwook` | [a2a-plane#316](https://github.com/jinwon-int/a2a-plane/issues/316) | This independent libero matrix and canary checklist. | Start evidence plus this PR after runner closeout. |
+| `soonwook` | a2a-plane#316 (a2a-plane#316, internal tracker private) | This independent libero matrix and canary checklist. | Start evidence plus this PR after runner closeout. |
 
 Start, queued, running, provider accepted-send, GitHub comment creation, and PR creation are not terminal lane evidence. Count a sibling lane as terminal only when it has an explicit PR, Done, or Block marker with linked checks/evidence.
 
@@ -73,6 +73,6 @@ A future live canary is allowed only after #632 and #313 land and a fresh explic
 
 ## Verification performed for this lane
 
-- Inspected parent [a2a-broker#631](https://github.com/jinwon-int/a2a-broker/issues/631), broker child [#632](https://github.com/jinwon-int/a2a-broker/issues/632), plugin child [openclaw-plugin-a2a#313](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/313), and this issue [a2a-plane#316](https://github.com/jinwon-int/a2a-plane/issues/316).
+- Inspected parent [a2a-broker#631](https://github.com/jinwon-int/a2a-broker/issues/631), broker child [#632](https://github.com/jinwon-int/a2a-broker/issues/632), plugin child [openclaw-plugin-a2a#313](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/313), and this issue a2a-plane#316 (a2a-plane#316, internal tracker private).
 - Added a local validation test that fails if required R16 gates, canary pass/fail criteria, ACK/receipt separation, or bootstrap hygiene language are removed.
 - Confirmed this patch adds documentation/test evidence only and does not create runtime/bootstrap files in the repository.

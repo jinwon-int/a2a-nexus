@@ -1,7 +1,7 @@
 /**
  * No-live canary harness for the plugin/broker public A2A seam (#247).
  *
- * Parent: jinwon-int/a2a-plane#174
+ * Parent: a2a-plane#174 (internal tracker, private)
  * Issue:  jinwon-int/plugin-a2a#247
  * Run:    a2a-live-canary-readiness-20260509T173917Z
  *

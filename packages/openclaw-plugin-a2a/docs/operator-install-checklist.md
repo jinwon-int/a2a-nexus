@@ -2,7 +2,7 @@
 
 Plugin: `a2a-broker-adapter` (plugin-a2a)
 Release-readiness lane: Team1/2
-Parent: [jinwon-int/a2a-plane#453](https://github.com/jinwon-int/a2a-plane/issues/453)
+Parent: a2a-plane#453 (internal tracker, private) (a2a-plane#453, internal tracker private)
 
 This document provides a step-by-step operator checklist for installing,
 configuring, and diagnosing the A2A broker adapter plugin. It consolidates

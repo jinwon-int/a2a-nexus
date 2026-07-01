@@ -1,8 +1,8 @@
 # Terminal Brief reduced-polling validation matrix
 
-Issue: [#379](https://github.com/jinwon-int/a2a-broker/issues/379)  
-Parent: [#376](https://github.com/jinwon-int/a2a-broker/issues/376)  
-Run: `terminal-brief-stabilization-20260505T122527Z`  
+Issue: [#379](https://github.com/jinwon-int/a2a-broker/issues/379)
+Parent: [#376](https://github.com/jinwon-int/a2a-broker/issues/376)
+Run: `terminal-brief-stabilization-20260505T122527Z`
 Worker: `yukson` libero validation lane
 
 This matrix is the no-live validation boundary for **A2A Terminal Brief** and reduced worker polling. It is intentionally conservative: when an implementation lane has only Start/queued evidence, the row stays `Interim Block / waiting` instead of being counted as a pass.

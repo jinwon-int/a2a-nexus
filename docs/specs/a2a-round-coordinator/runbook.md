@@ -4,7 +4,7 @@
 > Covers invocation, cursor management, backoff tuning, reading closeout bundles,
 > handoff to the finalizer, and safe rollback.
 >
-> **Lane issue:** [a2a-plane#467](https://github.com/jinwon-int/a2a-plane/issues/467)
+> **Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
 > **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
 > **Broker/finalizer of record:** `seoseo`
 
@@ -80,7 +80,7 @@ the dispatch wrapper or manually by the operator.
 {
   "$schemaVersion": "a2a.round-coordinator.manifest.v1",
   "roundId": "a2a-team1-<descriptor>-<timestamp>",
-  "parentIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+  "parentIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "team": "team1",
   "originBrokerId": "seoseo",
   "brokerOfRecordId": "seoseo",
@@ -93,9 +93,9 @@ the dispatch wrapper or manually by the operator.
     {
       "order": 1,
       "workerId": "bangtong",
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "role": "broker",
-      "githubIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+      "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
       "noLive": true,
       "noMutation": true,
       "lowPower": false,
@@ -106,9 +106,9 @@ the dispatch wrapper or manually by the operator.
     {
       "order": 2,
       "workerId": "sogyo",
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "role": "plugin",
-      "githubIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+      "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
       "noLive": true,
       "noMutation": true,
       "lowPower": false,
@@ -117,9 +117,9 @@ the dispatch wrapper or manually by the operator.
     {
       "order": 3,
       "workerId": "nosuk",
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "role": "runner",
-      "githubIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+      "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
       "noLive": true,
       "noMutation": true,
       "lowPower": false,
@@ -128,9 +128,9 @@ the dispatch wrapper or manually by the operator.
     {
       "order": 4,
       "workerId": "yukson",
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "role": "validation",
-      "githubIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+      "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
       "noLive": true,
       "noMutation": true,
       "lowPower": false,
@@ -152,10 +152,10 @@ For a cross-team round, set `team: "cross-team"` and list workers from both team
   "originBrokerId": "seoseo",
   "parentBrokerId": "seoseo",
   "workers": [
-    { "order": 1, "workerId": "bangtong", "repo": "jinwon-int/a2a-plane", "role": "broker" },
-    { "order": 2, "workerId": "sogyo",   "repo": "jinwon-int/a2a-plane", "role": "plugin" },
-    { "order": 3, "workerId": "soonwook","repo": "jinwon-int/a2a-plane", "role": "broker" },
-    { "order": 4, "workerId": "gwakga",  "repo": "jinwon-int/a2a-plane", "role": "worker" }
+    { "order": 1, "workerId": "bangtong", "repo": "a2a-plane (internal tracker, private)", "role": "broker" },
+    { "order": 2, "workerId": "sogyo",   "repo": "a2a-plane (internal tracker, private)", "role": "plugin" },
+    { "order": 3, "workerId": "soonwook","repo": "a2a-plane (internal tracker, private)", "role": "broker" },
+    { "order": 4, "workerId": "gwakga",  "repo": "a2a-plane (internal tracker, private)", "role": "worker" }
   ]
 }
 ```
@@ -172,9 +172,9 @@ in the bundle for awareness.
 {
   "order": 5,
   "workerId": "gongyung",
-  "repo": "jinwon-int/a2a-plane",
+  "repo": "a2a-plane (internal tracker, private)",
   "role": "mobile-standby",
-  "githubIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+  "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "noLive": true,
   "noMutation": true,
   "lowPower": true,
@@ -417,7 +417,7 @@ node scripts/a2a-source-dryrun-aggregator.mjs \
   --spec docs/dry-run/source-public-dryrun-schema.json
 
 # Validate round coordinator artefacts with libero test suite
-node --test scripts/check-team1-source-dryrun-orchestrator-libero.test.mjs
+node --test scripts/archive/check-team1-source-dryrun-orchestrator-libero.test.mjs
 ```
 
 A dry-run that exits 0 validates the manifest and configuration without querying

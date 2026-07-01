@@ -25,7 +25,7 @@ This governance note defines who may turn public-readiness evidence into a visib
 
 A valid approval comment must include:
 
-1. Repository name: `jinwon-int/a2a-plane`.
+1. Repository name: `a2a-plane (internal tracker, private)`.
 2. Approved action: repository visibility/publication, not a generic "looks good".
 3. Scope exclusions: no deploy, restart, production DB mutation, provider send, terminal ACK, secret rotation/disclosure, history rewrite, force-push, npm publish, Docker publish, or release creation unless separately approved.
 4. Link to the latest redacted GO/NO-GO matrix, terminal evidence, replay-safety proof, and scanner output.

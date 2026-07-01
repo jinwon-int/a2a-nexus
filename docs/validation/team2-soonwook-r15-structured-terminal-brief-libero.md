@@ -1,10 +1,10 @@
 # Team2/Soonwook R15 structured Terminal Brief libero validation
 
-Issue: [a2a-plane#312](https://github.com/jinwon-int/a2a-plane/issues/312)  
-Parent: [a2a-broker#623](https://github.com/jinwon-int/a2a-broker/issues/623)  
-Run: `a2a-r15-allhands-structured-terminal-brief-20260514T065457Z`  
-Lane: `soonwook` / Team2 libero validation  
-Start marker: [a2a-plane#312 comment](https://github.com/jinwon-int/a2a-plane/issues/312#issuecomment-4448410547)
+Issue: a2a-plane#312 (a2a-plane#312, internal tracker private)
+Parent: [a2a-broker#623](https://github.com/jinwon-int/a2a-broker/issues/623)
+Run: `a2a-r15-allhands-structured-terminal-brief-20260514T065457Z`
+Lane: `soonwook` / Team2 libero validation
+Start marker: [a2a-plane#312 comment](a2a-plane#312 (internal tracker, private)#issuecomment-4448410547)
 
 This is a redacted, no-live validation artifact. It performs repository and GitHub evidence review only. It does not deploy, restart, reload, send live provider or Telegram canaries, mutate or prune production databases, replay or ACK Terminal Brief outbox rows, replay historical tasks, publish a release/tag, move or disclose secrets, force-push, rewrite history, change repository visibility, or execute operator approval.
 
@@ -24,7 +24,7 @@ Safe current closeout for this lane: this PR may document the validation matrix 
 | Cross-broker origin fan-in | Team2/Gwakga terminal events for an origin-broker round project back to the origin/commanding broker parent aggregation and do not remain Gwakga-local accepted notifications. | [#623](https://github.com/jinwon-int/a2a-broker/issues/623) names Gwakga as direct coordinator for this R15 run because `/a2a assign` ingestion is blocked by [#627](https://github.com/jinwon-int/a2a-broker/issues/627). Fan-in hardening is assigned to [#625](https://github.com/jinwon-int/a2a-broker/issues/625). | `NO-GO / Waiting`; merge only after #625 proves stable projection keys and no duplicate parent Terminal Brief rows. |
 | Compact renderer fallback order | Renderer prefers `terminalBriefTitle`, then `childWorkerId(parentRoundIndex/parentRoundTotal)`, then human `taskSummary`/`taskDescription`/`taskBrief`; runner summaries such as `docker runner completed ...` are evidence fallback only, not primary `업무:` text. | Plugin lane [openclaw-plugin-a2a#311](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/311) and runner lane [a2a-docker-runner#255](https://github.com/jinwon-int/a2a-docker-runner/issues/255) have Start/direct-task evidence only at snapshot. | `NO-GO / Waiting`; require renderer tests and runner evidence compatibility tests. |
 | Runner summary precedence | Runner artifacts and PR/Done/Block comments preserve human Terminal Brief summaries and keep machine completion text as secondary evidence. | Runner [#255](https://github.com/jinwon-int/a2a-docker-runner/issues/255) is open; R14 runner PR [#254](https://github.com/jinwon-int/a2a-docker-runner/pull/254) is clean but must not override the R15 renderer fallback contract. | `GO_CANDIDATE` for independent R14 merge after guard checks; R15 still waiting on #255. |
-| Plane contract fixtures | Plane contracts/conformance fixtures cover canonical metadata, malformed top-level-only metadata rejection/normalization, Seoseo-origin to Gwakga-handoff to origin fan-in, compact renderer fallback, and accepted-send/non-ACK evidence boundaries. | Plane contract lane [a2a-plane#311](https://github.com/jinwon-int/a2a-plane/issues/311) has Start/direct-task evidence only at snapshot. | `NO-GO / Waiting`; merge before this libero closeout is treated as final. |
+| Plane contract fixtures | Plane contracts/conformance fixtures cover canonical metadata, malformed top-level-only metadata rejection/normalization, Seoseo-origin to Gwakga-handoff to origin fan-in, compact renderer fallback, and accepted-send/non-ACK evidence boundaries. | Plane contract lane a2a-plane#311 (a2a-plane#311, internal tracker private) has Start/direct-task evidence only at snapshot. | `NO-GO / Waiting`; merge before this libero closeout is treated as final. |
 | GitHub assignment ingestion | `/a2a assign` issue comments create broker tasks or fail closed with diagnostics. Direct broker task creation can be used only as a documented workaround for this R15 run. | [a2a-broker#627](https://github.com/jinwon-int/a2a-broker/issues/627) documents that GitHub comment ingestion is blocked; parent [#623 comment](https://github.com/jinwon-int/a2a-broker/issues/623#issuecomment-4448416430) records direct task creation for all seven lanes. | `BLOCKER` for claiming normal GitHub assignment is fixed; not a production action. |
 | Provider accepted/message-id boundary | Provider accepted-send, provider message IDs, GitHub comment URLs, PR creation, Terminal Brief titles, and runner summaries are evidence inputs only. They are not requester-visible receipt, operator-visible receipt, human-seen proof, terminal ACK, terminal-outbox ACK, or approval. | Existing contracts and checks preserve this boundary: `contracts/a2a/terminal-semantics.md`, `contracts/compatibility/terminal-evidence-ack-boundary.md`, `fixtures/terminal-evidence/accepted-send-non-ack.json`, and `npm run check:message-id-ack-boundary`. | `PASS for wording`; R15 activation remains `NO-GO` until separate receipt proof and explicit operator approval exist. |
 
@@ -35,10 +35,10 @@ Safe current closeout for this lane: this PR may document the validation matrix 
 | 1/7 | `bangtong` | [a2a-broker#624](https://github.com/jinwon-int/a2a-broker/issues/624) | Canonical Terminal Brief metadata schema and fail-closed task creation. | Start/direct-task evidence only. |
 | 2/7 | `sogyo` | [openclaw-plugin-a2a#311](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/311) | Structured compact renderer fallback order and non-ACK wording. | Start/direct-task evidence only. |
 | 3/7 | `nosuk` | [a2a-broker#627](https://github.com/jinwon-int/a2a-broker/issues/627) | GitHub `/a2a assign` ingestion endpoint/poller/diagnostics blocker. | Start/direct-task evidence only. |
-| 4/7 | `yukson` | [a2a-plane#311](https://github.com/jinwon-int/a2a-plane/issues/311) | Plane contract/conformance matrix for metadata, fan-in, renderer, and ACK boundary. | Start/direct-task evidence only. |
+| 4/7 | `yukson` | a2a-plane#311 (a2a-plane#311, internal tracker private) | Plane contract/conformance matrix for metadata, fan-in, renderer, and ACK boundary. | Start/direct-task evidence only. |
 | 5/7 | `dungae` | [a2a-broker#625](https://github.com/jinwon-int/a2a-broker/issues/625) | Post-dispatch verifier and cross-broker origin fan-in. | Start/direct-task evidence only. |
 | 6/7 | `jingun` | [a2a-docker-runner#255](https://github.com/jinwon-int/a2a-docker-runner/issues/255) | Runner summary/evidence compatibility. | Start/direct-task evidence only. |
-| 7/7 | `soonwook` | [a2a-plane#312](https://github.com/jinwon-int/a2a-plane/issues/312) | This libero end-to-end validation and merge/closeout plan. | Start evidence plus this PR after runner closeout. |
+| 7/7 | `soonwook` | a2a-plane#312 (a2a-plane#312, internal tracker private) | This libero end-to-end validation and merge/closeout plan. | Start evidence plus this PR after runner closeout. |
 
 Start, queued, running, provider accepted-send, GitHub comment creation, and PR creation are not terminal lane evidence. Count a lane as terminal only when it has an explicit PR, Done, or Block marker and linked checks/evidence.
 
@@ -52,7 +52,7 @@ Start, queued, running, provider accepted-send, GitHub comment creation, and PR 
 | [a2a-broker#626](https://github.com/jinwon-int/a2a-broker/pull/626) | CI green; `CLEAN`. | `MERGE_CANDIDATE` after fresh checks; edge-secret diagnostics are independent. Keep secret values out of artifacts. |
 | [openclaw-plugin-a2a#310](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/310) | CI green; `CLEAN`. | `MERGE_CANDIDATE` only if compatible with the R15 renderer contract in #311. If #311 rewrites the same notifier/relay paths, close or merge-forward #310 into the R15 plugin PR instead. |
 | [a2a-docker-runner#254](https://github.com/jinwon-int/a2a-docker-runner/pull/254) | CI green; `CLEAN`. | `MERGE_CANDIDATE` after checking temporary evidence files are redacted and do not contain runtime/bootstrap context. R15 #255 remains required for human-summary precedence. |
-| [a2a-plane#310](https://github.com/jinwon-int/a2a-plane/pull/310) | CI green; `CLEAN`. | `MERGE_CANDIDATE` for R14 two-broker validation docs/tests, then layer R15 #311/#312 on top. If conflicts appear, merge-forward the matrix into R15 and close #310 as superseded. |
+| a2a-plane#310 (a2a-plane PR #310, internal tracker private) | CI green; `CLEAN`. | `MERGE_CANDIDATE` for R14 two-broker validation docs/tests, then layer R15 #311/#312 on top. If conflicts appear, merge-forward the matrix into R15 and close #310 as superseded. |
 
 ## Recommended R15 merge and closeout sequence
 
@@ -62,8 +62,8 @@ Start, queued, running, provider accepted-send, GitHub comment creation, and PR 
 4. **Resolve GitHub ingestion separately:** close [#627](https://github.com/jinwon-int/a2a-broker/issues/627) with a PR or Block marker before claiming `/a2a assign` works. Direct task creation is acceptable evidence for this R15 run only because the workaround is documented on [#623](https://github.com/jinwon-int/a2a-broker/issues/623#issuecomment-4448416430).
 5. **Land plugin renderer:** merge the R15 [openclaw-plugin-a2a#311](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/311) PR after tests prove title/body separation, human summary precedence, runner-summary demotion, compact known-total and unknown-total rendering, and accepted-send/non-ACK wording.
 6. **Land runner compatibility:** merge the R15 [a2a-docker-runner#255](https://github.com/jinwon-int/a2a-docker-runner/issues/255) PR after tests/evidence prove PR/Done/Block artifacts preserve human Terminal Brief summaries and do not leak runtime/bootstrap files.
-7. **Land plane contracts:** merge the R15 [a2a-plane#311](https://github.com/jinwon-int/a2a-plane/issues/311) PR after contract fixtures cover canonical metadata, malformed metadata rejection/normalization, origin fan-in, renderer fallback order, and provider accepted-send non-ACK semantics.
-8. **Land libero closeout:** merge this [a2a-plane#312](https://github.com/jinwon-int/a2a-plane/issues/312) PR only after the validation matrix still matches current sibling PR states, or update it before merge.
+7. **Land plane contracts:** merge the R15 a2a-plane#311 (a2a-plane#311, internal tracker private) PR after contract fixtures cover canonical metadata, malformed metadata rejection/normalization, origin fan-in, renderer fallback order, and provider accepted-send non-ACK semantics.
+8. **Land libero closeout:** merge this a2a-plane#312 (a2a-plane#312, internal tracker private) PR only after the validation matrix still matches current sibling PR states, or update it before merge.
 9. **Parent closeout:** post parent [#623](https://github.com/jinwon-int/a2a-broker/issues/623) Done/Block only after all seven child lanes have terminal PR/Done/Block markers, required checks are green, and any remaining R14 supersession comments are posted. Production activation, live canary, deploy/reload, and Terminal Brief ACK remain separate explicit-approval gates.
 
 ## Required checks before any R15 merge
@@ -77,7 +77,7 @@ Start, queued, running, provider accepted-send, GitHub comment creation, and PR 
 
 ## Verification performed for this lane
 
-- Inspected parent [a2a-broker#623](https://github.com/jinwon-int/a2a-broker/issues/623), child [a2a-plane#312](https://github.com/jinwon-int/a2a-plane/issues/312), and sibling R15 lane issues.
+- Inspected parent [a2a-broker#623](https://github.com/jinwon-int/a2a-broker/issues/623), child a2a-plane#312 (a2a-plane#312, internal tracker private), and sibling R15 lane issues.
 - Inspected open R14 PR status across broker, plugin, runner, and plane repositories.
 - Ran local A2A Nexus validation checks listed in the PR evidence.
 - Confirmed this patch adds documentation/test evidence only and does not create runtime/bootstrap files in the repository.

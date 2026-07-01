@@ -1,7 +1,7 @@
 # Public compatibility policy follow-up review
 
-Issue: [#94](https://github.com/jinwon-int/a2a-plane/issues/94)  
-Independent review lane: [#166](https://github.com/jinwon-int/a2a-plane/issues/166)  
+Issue: #94 (a2a-plane#94, internal tracker private)
+Independent review lane: #166 (a2a-plane#166, internal tracker private)
 Run: `a2a-public-readiness-next-20260509T165108Z`
 
 This review is documentation and fixture evidence only. It does not deploy or restart services, contact a live broker, send provider messages, mutate a database, acknowledge terminal-outbox rows, change repository visibility, rotate secrets, or publish artifacts.

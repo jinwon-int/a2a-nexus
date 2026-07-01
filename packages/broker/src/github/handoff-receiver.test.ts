@@ -11,8 +11,8 @@ import type { GitHubDeliveryContext, GitHubIssueCommentEvent, GitHubRepoRef, Git
 
 const repo: GitHubRepoRef = {
   owner: "jinwon-int",
-  name: "a2a-plane",
-  fullName: "jinwon-int/a2a-plane",
+  name: "a2a-nexus",
+  fullName: "jinwon-int/a2a-nexus",
 };
 const sender: GitHubUserRef = { login: "gwakga", id: 101, type: "User" };
 
@@ -45,7 +45,7 @@ function comment(body: string, id = 24901): GitHubIssueCommentEvent {
       number: 249,
       title: "Parent closeout",
       body: "parent",
-      htmlUrl: "https://github.com/jinwon-int/a2a-plane/issues/249",
+      htmlUrl: "https://github.com/jinwon-int/a2a-nexus/issues/249",
       state: "open",
       user: sender,
       labels: [],
@@ -53,7 +53,7 @@ function comment(body: string, id = 24901): GitHubIssueCommentEvent {
     comment: {
       id,
       body,
-      htmlUrl: `https://github.com/jinwon-int/a2a-plane/issues/249#issuecomment-${id}`,
+      htmlUrl: `https://github.com/jinwon-int/a2a-nexus/issues/249#issuecomment-${id}`,
       user: sender,
       createdAt: "2026-05-12T02:19:00Z",
     },
@@ -69,14 +69,14 @@ Handoff metadata:
 brokerOfRecord: seoseo
 requestedByBroker: gwakga
 requestingAgent: gwakga
-sourceTaskId: https://github.com/jinwon-int/a2a-plane/issues/249
+sourceTaskId: a2a-plane#249 (internal tracker, private)
 targetTeam: team1
 handoffReason: operator-direction
 status: requested
 idempotencyKey: a2a-plane-249-team1-closeout-20260512-gwakga
 ${overrides}evidence:
-  - https://github.com/jinwon-int/a2a-plane/issues/249
-  - https://github.com/jinwon-int/a2a-plane/issues/256
+  - a2a-plane#249 (internal tracker, private)
+  - a2a-plane#256 (internal tracker, private)
 \`\`\``;
 }
 
@@ -110,10 +110,10 @@ ${manifest()}`;
     assert.equal(task.taskOrigin, "github");
     assert.equal(task.requester.id, "gwakga");
     assert.equal(task.payload.requestedByBroker, "gwakga");
-    assert.equal(task.payload.sourceTaskId, "https://github.com/jinwon-int/a2a-plane/issues/249");
+    assert.equal(task.payload.sourceTaskId, "a2a-plane#249 (internal tracker, private)");
     assert.deepEqual(task.payload.evidenceUrls, [
-      "https://github.com/jinwon-int/a2a-plane/issues/249",
-      "https://github.com/jinwon-int/a2a-plane/issues/256",
+      "a2a-plane#249 (internal tracker, private)",
+      "a2a-plane#256 (internal tracker, private)",
     ]);
   });
 

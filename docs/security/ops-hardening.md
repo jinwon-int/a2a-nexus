@@ -1,7 +1,7 @@
 # A2A Nexus Security and Ops Hardening
 
 > **Status:** Private/alpha. Part of the A2A security hardening roadmap (a2a-plane#440).
-> **Parent tracker:** https://github.com/jinwon-int/a2a-plane/issues/443
+> **Parent tracker:** a2a-plane#443 (internal tracker, private)
 > **Team1 productization lane 4/4 — yukson.**
 
 This document covers the first security/ops hardening source slice for the A2A Nexus broker and worker surface. It defines the read-only audit surface, exposure/auth expectations, worker credential mount validation, stale worker identity lifecycle, and readiness dimensions.

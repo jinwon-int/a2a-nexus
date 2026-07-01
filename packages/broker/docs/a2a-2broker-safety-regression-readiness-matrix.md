@@ -1,8 +1,8 @@
 # A2A 2-broker safety regression/readiness matrix
 
-Parent: [#409](https://github.com/jinwon-int/a2a-broker/issues/409)  
-Issue: [#414](https://github.com/jinwon-int/a2a-broker/issues/414)  
-Run: `a2a-2broker-safety-20260507T021114Z`  
+Parent: [#409](https://github.com/jinwon-int/a2a-broker/issues/409)
+Issue: [#414](https://github.com/jinwon-int/a2a-broker/issues/414)
+Run: `a2a-2broker-safety-20260507T021114Z`
 Worker: `yukson` validation/matrix lane
 
 This matrix is the no-live regression and cutover-readiness gate for the broker identity, worker home-broker lease, broker-of-record/teamId lifecycle, and duplicate worker preflight work split across #410-#415.

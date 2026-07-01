@@ -2,7 +2,7 @@
 
 The runner writes a stable, public-demo-safe manifest to `artifacts/manifest.json` for every task. Version 1 projects runner output into A2A `Artifact`/`Part` concepts: the manifest is the task `Artifact`, and each item in `evidence` is a renderable `Part` backed by an optional artifact file.
 
-Schema: [`docs/artifact-manifest.schema.json`](artifact-manifest.schema.json)  
+Schema: [`docs/artifact-manifest.schema.json`](artifact-manifest.schema.json)
 Sample: [`examples/artifact-manifest.dummy-task.json`](../examples/artifact-manifest.dummy-task.json)
 
 ## Required fields

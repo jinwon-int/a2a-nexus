@@ -209,7 +209,7 @@ const secondWorkerProof = workers.compatibilityProofs?.find(
   (proof) => proof.proofId === 'second-worker-compatibility-jingun-20260510',
 );
 assert.ok(secondWorkerProof, 'expected jingun second-worker compatibility proof');
-assert.equal(secondWorkerProof.issue, 'https://github.com/jinwon-int/a2a-plane/issues/152');
+assert.equal(secondWorkerProof.issue, 'a2a-plane#152 (internal tracker, private)');
 assert.equal(secondWorkerProof.round, 'a2a-vnext-contract-smoke-crossbroker-20260510');
 assert.equal(secondWorkerProof.brokerOfRecord, 'gwakga');
 assert.ok(workerNames.has(secondWorkerProof.workerName), 'second-worker proof must reference a registered worker');
@@ -222,8 +222,8 @@ const soonwookReplayProof = workers.compatibilityProofs?.find(
   (proof) => proof.proofId === 'second-worker-replay-trace-soonwook-20260509',
 );
 assert.ok(soonwookReplayProof, 'expected soonwook second-reference replay proof');
-assert.equal(soonwookReplayProof.issue, 'https://github.com/jinwon-int/a2a-plane/issues/168');
-assert.equal(soonwookReplayProof.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/163');
+assert.equal(soonwookReplayProof.issue, 'a2a-plane#168 (internal tracker, private)');
+assert.equal(soonwookReplayProof.parentIssue, 'a2a-plane#163 (internal tracker, private)');
 assert.equal(soonwookReplayProof.run, 'a2a-public-readiness-next-20260509T165108Z');
 assert.equal(soonwookReplayProof.brokerOfRecord, 'gwakga');
 assert.ok(workerNames.has(soonwookReplayProof.workerName), 'replay proof must reference a registered worker');
@@ -265,8 +265,8 @@ assert.equal(
 
 const gep = githubEvidenceProjection;
 assert.equal(gep.contract, 'contracts/a2a/github-evidence-projection.md');
-assert.equal(gep.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/204');
-assert.equal(gep.issue, 'https://github.com/jinwon-int/a2a-plane/issues/205');
+assert.equal(gep.parentIssue, 'a2a-plane#204 (internal tracker, private)');
+assert.equal(gep.issue, 'a2a-plane#205 (internal tracker, private)');
 assert.equal(gep.team, 'team1-bangtong');
 assert.equal(gep.brokerOfRecord, 'gwakga');
 assert.deepEqual(gep.evidenceCommentKinds.sort(), ['block', 'done', 'pr', 'start']);
@@ -364,7 +364,7 @@ assert.equal(
   parentTerminalBriefAggregation.contract,
   'contracts/a2a/parent-terminal-brief-aggregation.md',
 );
-assert.equal(parentTerminalBriefAggregation.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/269');
+assert.equal(parentTerminalBriefAggregation.parentIssue, 'a2a-plane#269 (internal tracker, private)');
 assert.equal(parentTerminalBriefAggregation.originBrokerId, 'gwakga');
 assert.equal(parentTerminalBriefAggregation.parentBrokerId, 'gwakga');
 assert.equal(parentTerminalBriefAggregation.handoffBrokerId, 'seoseo');
@@ -809,8 +809,8 @@ for (const [key, value] of Object.entries(terminalBriefParentOriginRouting.safet
 }
 assert.ok(terminalBriefParentOriginRouting.v1Freeze, 'terminal brief parent-origin routing v1 freeze marker must exist');
 
-assert.equal(publicPolicy.sourceIssueUrl, 'https://github.com/jinwon-int/a2a-plane/issues/94');
-assert.equal(publicPolicy.reviewIssueUrl, 'https://github.com/jinwon-int/a2a-plane/issues/166');
+assert.equal(publicPolicy.sourceIssueUrl, 'a2a-plane#94 (internal tracker, private)');
+assert.equal(publicPolicy.reviewIssueUrl, 'a2a-plane#166 (internal tracker, private)');
 assert.equal(publicPolicy.round, 'a2a-public-readiness-next-20260509T165108Z');
 assert.equal(publicPolicy.policyInvariants.referenceIntegrationIsNotExclusive, true);
 assert.equal(publicPolicy.policyInvariants.sourceBrokerIdsAreExamplesNotRequirements, true);
@@ -847,8 +847,8 @@ for (const [key, value] of Object.entries(publicPolicy.safetyConfirmations)) {
   assert.equal(value, true, `public compatibility policy safety confirmation ${key} must be true`);
 }
 
-assert.equal(replayTrace.childIssue, 'https://github.com/jinwon-int/a2a-plane/issues/168');
-assert.equal(replayTrace.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/163');
+assert.equal(replayTrace.childIssue, 'a2a-plane#168 (internal tracker, private)');
+assert.equal(replayTrace.parentIssue, 'a2a-plane#163 (internal tracker, private)');
 assert.equal(replayTrace.brokerOfRecord, 'gwakga');
 assert.ok(workerNames.has(replayTrace.workerName), 'replay fixture must reference a registered worker');
 assert.equal(replayTrace.replayProof.totals.terminalResultsCreated, 1);
@@ -884,8 +884,8 @@ for (const [key, value] of Object.entries(replayTrace.safetyConfirmations)) {
   assert.equal(value, true, `replay trace safety confirmation ${key} must be true`);
 }
 
-assert.equal(liveCanaryApprovalBoundary.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/174');
-assert.equal(liveCanaryApprovalBoundary.childIssue, 'https://github.com/jinwon-int/a2a-plane/issues/177');
+assert.equal(liveCanaryApprovalBoundary.parentIssue, 'a2a-plane#174 (internal tracker, private)');
+assert.equal(liveCanaryApprovalBoundary.childIssue, 'a2a-plane#177 (internal tracker, private)');
 assert.equal(liveCanaryApprovalBoundary.v0Freeze.round, 'a2a-live-canary-readiness-20260509T173917Z');
 assert.equal(liveCanaryApprovalBoundary.brokerOfRecord, 'gwakga');
 assert.ok(workerNames.has(liveCanaryApprovalBoundary.workerName), 'live-canary proof must reference a registered worker');
@@ -924,8 +924,8 @@ for (const [key, value] of Object.entries(liveCanaryApprovalBoundary.safetyConfi
 const examplePath = path.join(root, 'examples', 'compatibility', 'cross-team-conformance.json');
 const example = JSON.parse(fs.readFileSync(examplePath, 'utf8'));
 assert.equal(example.brokerOfRecord, 'gwakga');
-assert.equal(example.publicFollowupIssue, 'https://github.com/jinwon-int/a2a-plane/issues/94');
-assert.equal(example.independentReviewIssue, 'https://github.com/jinwon-int/a2a-plane/issues/166');
+assert.equal(example.publicFollowupIssue, 'a2a-plane#94 (internal tracker, private)');
+assert.equal(example.independentReviewIssue, 'a2a-plane#166 (internal tracker, private)');
 assert.ok(!example.fixtures.some((fixture) => fixture.startsWith('examples/local/')));
 for (const fixture of Object.values(fixtureFiles).map((file) => `fixtures/contract/${file}`)) {
   assert.ok(example.fixtures.includes(fixture), `compatibility example must reference ${fixture}`);
@@ -1166,7 +1166,7 @@ assert.equal(
 );
 assert.equal(
   stabilityGate.issue,
-  'https://github.com/jinwon-int/a2a-plane/issues/327',
+  'a2a-plane#327 (internal tracker, private)',
 );
 assert.equal(stabilityGate.originCoordinator, 'gwakga');
 assert.equal(stabilityGate.receivingBrokerId, 'seoseo');
@@ -1414,8 +1414,8 @@ for (const forbiddenPath of forbiddenRuntimePaths) {
 
 assert.ok(workerCapabilityProfile.fixtureId, 'workerCapabilityProfile must carry fixtureId');
 assert.equal(workerCapabilityProfile.contract, 'contracts/a2a/worker-capability-profile.md');
-assert.equal(workerCapabilityProfile.issue, 'https://github.com/jinwon-int/a2a-plane/issues/382');
-assert.equal(workerCapabilityProfile.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/380');
+assert.equal(workerCapabilityProfile.issue, 'a2a-plane#382 (internal tracker, private)');
+assert.equal(workerCapabilityProfile.parentIssue, 'a2a-plane#380 (internal tracker, private)');
 assert.ok(workerCapabilityProfile.v0Freeze, 'workerCapabilityProfile must carry v0Freeze marker');
 assert.ok(workerCapabilityProfile.v0Freeze.frozenAt, 'workerCapabilityProfile v0Freeze must include frozenAt');
 

@@ -9,7 +9,7 @@
 > **Status:** Design draft. No runtime automation is enabled. Broker implementation
 > must add a separate v0→v1 compatibility plan before any production use.
 >
-> **Lane issue:** [a2a-plane#442](https://github.com/jinwon-int/a2a-plane/issues/442)
+> **Lane issue:** a2a-plane#442 (a2a-plane#442, internal tracker private)
 > **Broker/finalizer of record:** `seoseo`
 
 ---
@@ -468,7 +468,7 @@ No secrets, private paths, raw dumps, or runtime context files.
 ```text
 Objective: "Add a public quickstart guide to a2a-plane"
 Scope:
-  repos: [jinwon-int/a2a-plane]
+  repos: [a2a-plane (internal tracker, private)]
   allowedWorkAreas: [source-patch, validation-run, evidence-only]
   forbiddenActions: [deploy, restart, live_canary, db_mutation]
 SuccessCriteria:
@@ -492,7 +492,7 @@ decision: start
 Plan:
   slice 1: "Create quickstart guide skeleton"
   workArea: source-patch
-  repo: jinwon-int/a2a-plane
+  repo: a2a-plane (internal tracker, private)
 ```
 
 ### 7.4 Dispatch and collect
@@ -528,8 +528,8 @@ eventLog: "All 3 criteria met. Slices: 3/3 terminal."
   "goalRunId": "a2a-goal-quickstart-guide-20260525T120000Z",
   "state": "completed",
   "evidence": [
-    {"sliceId": "...slice:1", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/123"},
-    {"sliceId": "...slice:2", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/124"},
+    {"sliceId": "...slice:1", "result": "pr", "prUrl": "a2a-plane PR #123 (internal tracker, private)"},
+    {"sliceId": "...slice:2", "result": "pr", "prUrl": "a2a-plane PR #124 (internal tracker, private)"},
     {"sliceId": "...slice:3", "result": "done", "summary": "Validation passed against broker v1.2.3"}
   ],
   "approvalGates": [],

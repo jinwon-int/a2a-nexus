@@ -3,8 +3,8 @@
 ## Linked spec
 
 - Spec: `docs/specs/gongyung-hermes-worker-profile/spec.md`
-- Tracker: jinwon-int/a2a-plane#393
-- Prior art: jinwon-int/a2a-plane#384
+- Tracker: a2a-plane#393 (internal tracker, private)
+- Prior art: a2a-plane#384 (internal tracker, private)
 - Finalizer: Seoseo
 
 ## Size classification

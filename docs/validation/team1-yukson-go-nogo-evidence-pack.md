@@ -1,7 +1,7 @@
 # Team1/yukson GO/NO-GO Evidence Packet (Four-Repo Synthesis)
 
-Parent: [#461](https://github.com/jinwon-int/a2a-plane/issues/461) — Team1 GO/NO-GO evidence-pack source round
-Assigned child: [#462](https://github.com/jinwon-int/a2a-plane/issues/462)
+Parent: #461 (a2a-plane#461, internal tracker private) — Team1 GO/NO-GO evidence-pack source round
+Assigned child: #462 (a2a-plane#462, internal tracker private)
 Lane: 4/4 (yukson)
 Run: `a2a-team1-go-nogo-evidence-pack-20260526T0658KST`
 Worker: `yukson` / Team1
@@ -75,7 +75,7 @@ The GO/NO-GO evidence pack requires proofs across eight dimensions. Each dimensi
 
 | Evidence type | Status | Details |
 |---------------|--------|---------|
-| Issue Start comment | POSTED | `https://github.com/jinwon-int/a2a-plane/issues/462#issuecomment-4537534827` — literal "Start" posted by seoseo-ai. |
+| Issue Start comment | POSTED | `a2a-plane#462 (internal tracker, private)#issuecomment-4537534827` — literal "Start" posted by seoseo-ai. |
 | Terminal evidence for candidate flow | NOT PRODUCED | This lane is source/docs proof only. No terminal evidence packet was generated because no live/no-live flow runs in the a2a-plane repo. |
 | Requester-visible evidence for this pack | Issue comments + this PR | Requester-visible receipt is the Start comment and this PR comment on the child issue. |
 | Provider accepted-send vocabulary | ENFORCED | All docs, fixtures, and contracts distinguish provider accepted-send from terminal ACK. Verified by `check:message-id-ack-boundary` and `check:terminal-evidence-ack-boundary`. |
@@ -151,14 +151,14 @@ Carried forward and refined from predecessor evidence packs:
 
 ## 3. Cross-Lane Check
 
-### 3.1 GO/NO-GO evidence pack lanes (from parent [#461](https://github.com/jinwon-int/a2a-plane/issues/461))
+### 3.1 GO/NO-GO evidence pack lanes (from parent #461 (a2a-plane#461, internal tracker private))
 
 | Lane | Worker | Repo | Child issue | Start comment | Focus |
 |------|--------|------|-------------|---------------|-------|
 | Lane 1 | bangtong | `jinwon-int/a2a-docker-runner` | [#337](https://github.com/jinwon-int/a2a-docker-runner/issues/337) | [✔ posted](https://github.com/jinwon-int/a2a-docker-runner/issues/337) (seoseo-ai) | Runner scanner bundle and redacted artifact inventory |
 | Lane 2 | sogyo | `jinwon-int/openclaw-plugin-a2a` | [#450](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/450) | [✔ posted](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/450) (seoseo-ai + sogyo worker) | Plugin requester-visible evidence and no-live diagnostics proof |
 | Lane 3 | nosuk | `jinwon-int/a2a-broker` | [#923](https://github.com/jinwon-int/a2a-broker/issues/923) | [✔ posted](https://github.com/jinwon-int/a2a-broker/issues/923) (seoseo-ai) | Broker no-live replay and evidence export contract |
-| Lane 4 (this) | yukson | `jinwon-int/a2a-plane` | [#462](https://github.com/jinwon-int/a2a-plane/issues/462) | [✔ posted](https://github.com/jinwon-int/a2a-plane/issues/462#issuecomment-4537534827) (seoseo-ai) | Final approval packet and cross-repo gate synthesis |
+| Lane 4 (this) | yukson | `a2a-plane (internal tracker, private)` | #462 (a2a-plane#462, internal tracker private) | [✔ posted](a2a-plane#462 (internal tracker, private)#issuecomment-4537534827) (seoseo-ai) | Final approval packet and cross-repo gate synthesis |
 
 **Start comment status:** All four Start comments posted. Lane 2 (sogyo) has an additional "Start" from sogyo worker indicating the worker has begun execution. No sibling lane has produced a PR, Done, or Block marker at this snapshot.
 
@@ -177,8 +177,8 @@ Carried forward and refined from predecessor evidence packs:
 
 | Pack | Predecessor PR | Status |
 |------|---------------|--------|
-| Release-readiness pack (`a2a-team1-release-readiness-pack-20260526T054020KST`) | [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) | MERGED — produced `team1-yukson-release-readiness-four-repo-matrix.md` |
-| Release-blocker proof pack (`a2a-team1-release-blocker-proof-pack-20260526T0628KST`) | [a2a-plane#459](https://github.com/jinwon-int/a2a-plane/issues/459) | [PR merged](https://github.com/jinwon-int/a2a-plane/pull/459) — produced `team1-yukson-release-blocker-proof-matrix.md` |
+| Release-readiness pack (`a2a-team1-release-readiness-pack-20260526T054020KST`) | a2a-plane#457 (a2a-plane PR #457, internal tracker private) | MERGED — produced `team1-yukson-release-readiness-four-repo-matrix.md` |
+| Release-blocker proof pack (`a2a-team1-release-blocker-proof-pack-20260526T0628KST`) | a2a-plane#459 (a2a-plane#459, internal tracker private) | PR merged (a2a-plane PR #459, internal tracker private) — produced `team1-yukson-release-blocker-proof-matrix.md` |
 | This pack: GO/NO-GO evidence (`a2a-team1-go-nogo-evidence-pack-20260526T0658KST`) | This PR | Open change |
 
 The NO-GO items from predecessors (N1–N6 from release-readiness; B1–B7 from release-blocker) remain open. This pack does not close them — it documents their current status and maps them to the final go/no-go gate schema.
@@ -187,7 +187,7 @@ The NO-GO items from predecessors (N1–N6 from release-readiness; B1–B7 from 
 
 - **Open PRs in a2a-plane:** None at snapshot time.
 - **Open PRs in sibling repos:** None at snapshot time.
-- **Most recent merged a2a-plane PR:** [#459](https://github.com/jinwon-int/a2a-plane/pull/459) (release-blocker proof matrix) — this PR is the successor for this evidence pack.
+- **Most recent merged a2a-plane PR:** #459 (a2a-plane PR #459, internal tracker private) (release-blocker proof matrix) — this PR is the successor for this evidence pack.
 - **Recent closeout context:** The release-blocker pack (commit `00eed73`) is the current branch state. This pack appends the GO/NO-GO synthesis on top of that foundation.
 
 ---
@@ -320,7 +320,7 @@ $ node scripts/a2a-source-public-final-go-nogo-gate.mjs \
 {"ok":true,"phase":"spec","decision":"NO_GO","sourcePublicExecution":"NO_GO",...}
 
 # GitHub issue — Start posted on #462
-Start comment URL: https://github.com/jinwon-int/a2a-plane/issues/462#issuecomment-4537534827
+Start comment URL: a2a-plane#462 (internal tracker, private)#issuecomment-4537534827
 
 # Sibling lane Start comments verified:
 # Lane 1: https://github.com/jinwon-int/a2a-docker-runner/issues/337
@@ -348,7 +348,7 @@ Start comment URL: https://github.com/jinwon-int/a2a-plane/issues/462#issuecomme
 | File | Change type | Description |
 |------|------------|-------------|
 | `docs/validation/team1-yukson-go-nogo-evidence-pack.md` | NEW | This document — GO/NO-GO evidence packet for four repos: scanner evidence, no-live replay proof, package/build checks, requester-visible evidence, Terminal ACK boundaries, approval gates, rollback/no-op rules, explicit operator approval fields, and remaining decision points |
-| `scripts/check-team1-yukson-go-nogo-evidence-pack.test.mjs` | NEW | Validation test matching this evidence packet against the repo state and final go/no-go gate schema |
+| `scripts/archive/check-team1-yukson-go-nogo-evidence-pack.test.mjs` | NEW | Validation test matching this evidence packet against the repo state and final go/no-go gate schema |
 | `package.json` | MODIFIED | Added `check:team1-yukson-go-nogo-evidence-pack` script and wired into `test:release-gate` |
 
 ---

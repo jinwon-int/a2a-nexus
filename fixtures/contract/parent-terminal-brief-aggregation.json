@@ -2,7 +2,7 @@
   "fixtureId": "a2a-nexus.contract.parent-terminal-brief-aggregation.v1",
   "contract": "contracts/a2a/parent-terminal-brief-aggregation.md",
   "description": "Synthetic Gwakga-origin plus Seoseo-handoff and Seoseo-origin plus Gwakga-parent-symmetric canary for parent broker Terminal Brief aggregation, with broker-neutral concise title examples for Gwakga-origin, Seoseo-origin, and symmetric Seoseo-origin/Gwakga-parent parent rounds.",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/269",
+  "parentIssue": "a2a-plane#269 (internal tracker, private)",
   "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
   "originBrokerId": "gwakga",
   "parentBrokerId": "gwakga",
@@ -79,9 +79,9 @@
     "handoffBrokerId": "seoseo",
     "childBrokerId": "seoseo",
     "childTaskId": "task-seoseo-child-canary-001",
-    "childIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/269",
+    "childIssueUrl": "a2a-plane#269 (internal tracker, private)",
     "terminalKind": "pr",
-    "terminalEvidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/0000",
+    "terminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)",
     "terminalSummary": "Synthetic child PR evidence projected into the Gwakga parent Terminal Brief aggregation ledger.",
     "projectionState": "projected",
     "redacted": true,
@@ -219,7 +219,7 @@
       "name": "duplicate-parent-projection-returns-existing-entry",
       "given": {
         "existingProjectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
-        "existingTerminalEvidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/0000"
+        "existingTerminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)"
       },
       "when": {
         "operation": "parentTerminalBrief.project",
@@ -237,12 +237,12 @@
       "name": "same-key-different-payload-conflicts",
       "given": {
         "existingProjectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
-        "existingTerminalEvidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/0000"
+        "existingTerminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)"
       },
       "when": {
         "operation": "parentTerminalBrief.project",
         "projectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
-        "terminalEvidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/9999"
+        "terminalEvidenceUrl": "a2a-plane PR #9999 (internal tracker, private)"
       },
       "then": {
         "status": "conflict",

@@ -18,7 +18,7 @@ expect(fs.existsSync(manifestPath), 'missing packages/docker-runner/package.json
 if (fs.existsSync(manifestPath)) {
   const manifest = readJson(manifestPath);
   expect(manifest.name === '@openclaw/a2a-docker-runner', 'docker runner package name must stay @openclaw/a2a-docker-runner');
-  expect(manifest.private === false, 'docker runner package must remain publishable metadata (private: false)');
+  expect(manifest.private === true, 'docker runner package must remain private until explicit package-publication approval');
   expect(manifest.bin?.['a2a-docker-runner'] === './dist/cli.js', 'docker runner bin must point to ./dist/cli.js');
   expect(manifest.type === 'module', 'docker runner package must stay ESM');
   expect(manifest.engines?.node === '>=22', 'docker runner package must require Node >=22');

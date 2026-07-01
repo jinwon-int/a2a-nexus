@@ -1,7 +1,7 @@
 # Source-public release gate — evidence and approval packet
 
 Issue: [#475](https://github.com/jinwon-int/a2a-broker/issues/475)
-Parent: [a2a-plane#192](https://github.com/jinwon-int/a2a-plane/issues/192)
+Parent: a2a-plane#192 (a2a-plane#192, internal tracker private)
 Run: `a2a-source-release-gate-20260510T113438Z`
 Lane: Team1 — bangtong
 

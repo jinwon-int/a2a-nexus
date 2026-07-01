@@ -72,7 +72,7 @@ test("broker health readiness fixture parses and stays tied to the health-readin
 
   assert.match(fixture.description, /CI-safe/i);
   assert.equal(fixture.source.issue, "https://github.com/jinwon-int/a2a-docker-runner/issues/166");
-  assert.equal(fixture.source.parent, "https://github.com/jinwon-int/a2a-plane/issues/181");
+  assert.equal(fixture.source.parent, "a2a-plane#181 (internal tracker, private)");
   assert.equal(fixture.source.rootHealthIssue, "https://github.com/jinwon-int/a2a-broker/issues/463");
   assert.equal(fixture.source.runId, "a2a-post-78261-health-readiness-20260510T024701Z");
 });

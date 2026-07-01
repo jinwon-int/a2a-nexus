@@ -34,8 +34,8 @@ A peer missing the required scope fails closed before task creation or evidence 
   "destinationBrokerId": "gwakga",
   "brokerOfRecord": "gwakga",
   "idempotencyKey": "issue-23:team2:work-slice",
-  "sourceIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/23",
-  "sourceTaskUrl": "https://github.com/jinwon-int/a2a-plane/issues/23#issuecomment-redacted",
+  "sourceIssueUrl": "a2a-plane#23 (internal tracker, private)",
+  "sourceTaskUrl": "a2a-plane#23 (internal tracker, private)#issuecomment-redacted",
   "requestedTeamId": "team1",
   "summary": "Small bounded request summary"
 }
@@ -92,7 +92,7 @@ Terminal evidence is metadata only:
 ```json
 {
   "kind": "block",
-  "url": "https://github.com/jinwon-int/a2a-plane/issues/23#issuecomment-redacted",
+  "url": "a2a-plane#23 (internal tracker, private)#issuecomment-redacted",
   "summary": "Block: test failed after [redacted] in [path]",
   "redacted": true
 }

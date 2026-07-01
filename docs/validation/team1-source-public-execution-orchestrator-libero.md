@@ -1,7 +1,7 @@
 # Team1 source-public execution orchestrator validation matrix
 
-Parent: [#218](https://github.com/jinwon-int/a2a-plane/issues/218)
-Child: [#219](https://github.com/jinwon-int/a2a-plane/issues/219)
+Parent: #218 (a2a-plane#218, internal tracker private)
+Child: #219 (a2a-plane#219, internal tracker private)
 Run: `a2a-source-public-execution-orchestrator-20260511T023207Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -12,9 +12,9 @@ This is a redacted validation artifact only. It validates the execution orchestr
 
 ## Evidence reviewed
 
-- Parent dispatch: [a2a-plane#218](https://github.com/jinwon-int/a2a-plane/issues/218).
-- Libero lane: [a2a-plane#219](https://github.com/jinwon-int/a2a-plane/issues/219).
-- Approval rehearsal closeout: [a2a-plane#212](https://github.com/jinwon-int/a2a-plane/issues/212).
+- Parent dispatch: a2a-plane#218 (a2a-plane#218, internal tracker private).
+- Libero lane: a2a-plane#219 (a2a-plane#219, internal tracker private).
+- Approval rehearsal closeout: a2a-plane#212 (a2a-plane#212, internal tracker private).
 - Local execution-orchestrator surfaces: `docs/execution-orchestrator/source-public-execution-orchestrator-schema.json`, `scripts/a2a-source-public-execution-orchestrator.mjs`, `scripts/a2a-source-public-execution-orchestrator.test.mjs`, `fixtures/execution-orchestrator/team1-bangtong-execution-plan-evidence.json`.
 
 ## Execution orchestrator validation matrix

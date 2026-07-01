@@ -3,7 +3,7 @@
  * config injection with backup → apply → verify → rollback-on-fail.
  *
  * Issue:  jinwon-int/plugin-a2a#269
- * Parent: jinwon-int/a2a-plane#241
+ * Parent: a2a-plane#241 (internal tracker, private)
  * Run:    terminal-brief-activation-20260511T080211Z
  */
 import test from "node:test";

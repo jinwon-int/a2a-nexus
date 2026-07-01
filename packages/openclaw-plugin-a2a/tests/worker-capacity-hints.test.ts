@@ -1,7 +1,7 @@
 /**
  * Worker capacity hint tests (R31, plugin-a2a#347).
  *
- * Parent: jinwon-int/a2a-plane#380
+ * Parent: a2a-plane#380 (internal tracker, private)
  * Run: a2a-r31-worker-capability-profiles-20260516T1825Z
  *
  * Validates that:

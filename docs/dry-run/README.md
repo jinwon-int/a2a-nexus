@@ -3,8 +3,8 @@
 Team1/bangtong lane: implements the source-public dry-run schema and aggregator/report command for deterministic GO/NO-GO evaluation.
 
 **Run:** `a2a-source-dryrun-orchestrator-20260510T133022Z`
-**Issue:** [#198](https://github.com/jinwon-int/a2a-plane/issues/198)
-**Parent:** [#197](https://github.com/jinwon-int/a2a-plane/issues/197)
+**Issue:** #198 (a2a-plane#198, internal tracker private)
+**Parent:** #197 (a2a-plane#197, internal tracker private)
 
 ## Design
 
@@ -77,7 +77,7 @@ node --test scripts/a2a-source-dryrun-aggregator.test.mjs
   "gates": {
     "brokerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#gate-broker"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#gate-broker"],
       "evidencePacket": {
         "health": { "ok": true },
         "expectedWorkers": ["bangtong"],
@@ -88,7 +88,7 @@ node --test scripts/a2a-source-dryrun-aggregator.test.mjs
     },
     "pluginReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#gate-plugin"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#gate-plugin"],
       "evidencePacket": {
         "liveTelegramConfigured": false,
         "providerDeliveryEnabled": false,
@@ -97,7 +97,7 @@ node --test scripts/a2a-source-dryrun-aggregator.test.mjs
     },
     "runnerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#gate-runner"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#gate-runner"],
       "evidencePacket": {
         "artifactManifest": { "ok": true },
         "scannerProfile": { "ok": true },

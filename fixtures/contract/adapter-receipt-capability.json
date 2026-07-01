@@ -153,7 +153,7 @@
         "adapterReceiptLevel": "requester_visible",
         "providerAccepted": true,
         "providerMessageId": "adapter_gh_003",
-        "commentUrl": "https://github.com/jinwon-int/a2a-plane/issues/424#issuecomment-4523236705",
+        "commentUrl": "a2a-plane#424 (internal tracker, private)#issuecomment-4523236705",
         "ackSafeReceiptProof": null
       },
       "expect": {

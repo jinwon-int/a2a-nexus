@@ -11,8 +11,8 @@
     "round": "a2a-public-readiness-next-20260509T165108Z",
     "note": "Replay/no-duplicate and compact trace policy expectations are locked for public-readiness validation."
   },
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/163",
-  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/168",
+  "parentIssue": "a2a-plane#163 (internal tracker, private)",
+  "childIssue": "a2a-plane#168 (internal tracker, private)",
   "brokerOfRecord": "gwakga",
   "team": "team2-gwakga",
   "workerName": "worker-soonwook-second-reference",

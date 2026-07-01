@@ -3761,7 +3761,7 @@ test("operator bridge relays cross-broker child Terminal Briefs without local op
       taskId: "handoff-child",
       status: "succeeded",
       worker: "soonwook",
-      repo: "jinwon-int/a2a-plane",
+      repo: "a2a-plane (internal tracker, private)",
       issue: 276,
       testSummary: "child handoff completed",
       parentOwnedTerminalBrief: true,

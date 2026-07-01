@@ -1,6 +1,6 @@
 # Docker Runner Safe-Default Threat Model
 
-Parent issue: `jinwon-int/a2a-nexus#957`  
+Parent issue: `jinwon-int/a2a-nexus#957`
 Implementation tracker: `jinwon-int/a2a-nexus#967`
 
 ## Scope

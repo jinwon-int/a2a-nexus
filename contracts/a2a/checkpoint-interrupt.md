@@ -291,7 +291,7 @@ When implementing or testing checkpoint and interrupt behavior, these safety bou
 
 ## 9. Decision Record: Issue #93 Evaluation
 
-This contract records the decisions from [issue #93](https://github.com/jinwon-int/a2a-plane/issues/93)
+This contract records the decisions from issue #93 (a2a-plane#93, internal tracker private)
 evaluation of durable checkpoint, human interrupt, and trace policy.
 
 ### Accepted
@@ -326,7 +326,7 @@ recorded as separate implementation issues.
 
 ## 10. Decision Record: Issue #130 — Post-78261 Terminal Evidence & Replay Safety
 
-This contract records the decisions from [issue #130](https://github.com/jinwon-int/a2a-plane/issues/130)
+This contract records the decisions from issue #130 (a2a-plane#130, internal tracker private)
 post-78261 terminal evidence, replay safety, and readiness gate mapping.
 
 ### Accepted
@@ -361,8 +361,8 @@ recorded as separate implementation issues.
 
 | Issue | Scope | Contract Status | Remaining Implementation Work |
 |---|---|---|---|
-| [#93](https://github.com/jinwon-int/a2a-plane/issues/93) | Durable checkpoint, human interrupt, trace policy | Closed at contract level (§9) | SQLite persistence, worker capability gating, operator notification path |
-| [#130](https://github.com/jinwon-int/a2a-plane/issues/130) | Post-78261 terminal evidence, replay safety, readiness gates | Closed at contract level (§10) | Scanner conformance, replay canary harness, operator approval path |
+| #93 (a2a-plane#93, internal tracker private) | Durable checkpoint, human interrupt, trace policy | Closed at contract level (§9) | SQLite persistence, worker capability gating, operator notification path |
+| #130 (a2a-plane#130, internal tracker private) | Post-78261 terminal evidence, replay safety, readiness gates | Closed at contract level (§10) | Scanner conformance, replay canary harness, operator approval path |
 
 Both issues are contract-complete for v0. All remaining work is implementation-phase tracking under
 separate broker/plugin/runner issues. No new contract states or interrupt decision types are required.

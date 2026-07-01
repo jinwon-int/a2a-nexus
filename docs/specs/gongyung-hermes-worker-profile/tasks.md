@@ -59,7 +59,7 @@
 
 - [x] One finalizer (this agent) made the closeout decision.
 - [x] Evidence supports the decision.
-- [x] Follow-up issues are linked (jinwon-int/a2a-plane#393, PR #407).
+- [x] Follow-up issues are linked (a2a-plane#393 (internal tracker, private), PR #407).
 - [x] Wiki/runbook update is explicitly not needed.
 - [x] No unapproved deploy/restart/canary/DB/ACK/replay/release/secret action
       occurred.

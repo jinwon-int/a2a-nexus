@@ -1,6 +1,6 @@
 # Team2 plane/plugin merge-preflight libero
 
-Parent: [a2a-plane#249](https://github.com/jinwon-int/a2a-plane/issues/249)
+Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
 Lane: Team2/soonwook merge-preflight
 Snapshot: `2026-05-12T01:17:57Z`
 
@@ -10,9 +10,9 @@ This is a local-only merge-preflight artifact for the plane/plugin overlap in th
 
 | Repo | PR | State at snapshot | Overlap notes |
 | --- | --- | --- | --- |
-| `jinwon-int/a2a-plane` | [#255](https://github.com/jinwon-int/a2a-plane/pull/255) | open, CI green, mergeable | Touches `packages/openclaw-plugin-a2a/openclaw.plugin.json` and config-schema tests. |
-| `jinwon-int/a2a-plane` | [#254](https://github.com/jinwon-int/a2a-plane/pull/254) | open, CI green, mergeable | Touches the same plugin manifest/test fixture plus `package.json` release-gate wiring. |
-| `jinwon-int/a2a-plane` | [#253](https://github.com/jinwon-int/a2a-plane/pull/253) | open, CI green, mergeable | Touches `package.json` release-gate wiring for a sibling libero test. |
+| `a2a-plane (internal tracker, private)` | #255 (a2a-plane PR #255, internal tracker private) | open, CI green, mergeable | Touches `packages/openclaw-plugin-a2a/openclaw.plugin.json` and config-schema tests. |
+| `a2a-plane (internal tracker, private)` | #254 (a2a-plane PR #254, internal tracker private) | open, CI green, mergeable | Touches the same plugin manifest/test fixture plus `package.json` release-gate wiring. |
+| `a2a-plane (internal tracker, private)` | #253 (a2a-plane PR #253, internal tracker private) | open, CI green, mergeable | Touches `package.json` release-gate wiring for a sibling libero test. |
 | `jinwon-int/openclaw-plugin-a2a` | [#271](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/271) | open, CI green, mergeable | Plugin-side immediate schema fix; overlaps manifest schema with #273. |
 | `jinwon-int/openclaw-plugin-a2a` | [#273](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/273) | open, CI green, mergeable | Plugin-side schema hardening; overlaps manifest schema with #271. |
 

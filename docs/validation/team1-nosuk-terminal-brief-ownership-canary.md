@@ -1,7 +1,7 @@
 # Team1/nosuk Terminal Brief ownership canary spec and runbook
 
 Parent: [a2a-broker#863](https://github.com/jinwon-int/a2a-broker/issues/863)
-Child issue: [a2a-plane#413](https://github.com/jinwon-int/a2a-plane/issues/413)
+Child issue: a2a-plane#413 (a2a-plane#413, internal tracker private)
 Run: `terminal-brief-all-hands-20260521-863-l03-nosuk`
 Parent broker/finalizer: `seoseo`
 Team2 handoff broker: `gwakga`
@@ -100,7 +100,7 @@ Parent projection owner is always `seoseo` for all seven children regardless of 
 gh issue view https://github.com/jinwon-int/a2a-broker/issues/863
 
 # Verify child issue body includes parent reference and lane order.
-gh issue view https://github.com/jinwon-int/a2a-plane/issues/413
+gh issue view a2a-plane#413 (internal tracker, private)
 ```
 
 Expected: Parent body has scope, safety boundaries, and known child total=7. Child body references parent issue and identifies lane 3/7.
@@ -129,7 +129,7 @@ Expected: All tests pass with no failures related to parent metadata, title form
 # Check Team2 lane issues for any sign of local Gwakga aggregate.
 gh issue view https://github.com/jinwon-int/a2a-broker/issues/864 --json body,comments 2>/dev/null || echo "Team2 lane issue not accessible"
 gh issue view https://github.com/jinwon-int/a2a-broker/issues/865 --json body,comments 2>/dev/null || echo "Team2 lane issue not accessible"
-gh issue view https://github.com/jinwon-int/a2a-plane/issues/415 --json body,comments 2>/dev/null || echo "Team2 lane issue not accessible"
+gh issue view a2a-plane#415 (internal tracker, private) --json body,comments 2>/dev/null || echo "Team2 lane issue not accessible"
 ```
 
 Expected: No Team2 lane produces a local Gwakga aggregate or a 1/1/1/2 brief. All use `(n/7)` format with Seoseo as parent.
@@ -170,13 +170,13 @@ Live activation, parent aggregate sending, and any canary provider send remain `
 
 | Lane | Worker | Issue | Team | Broker of record | Required suppression rule |
 | --- | --- | --- | --- | --- | --- |
-| 1 | bangtong | [a2a-plane#409](https://github.com/jinwon-int/a2a-plane/issues/409) | Team1 | `seoseo` | Direct child; parent-owned notification |
+| 1 | bangtong | a2a-plane#409 (a2a-plane#409, internal tracker private) | Team1 | `seoseo` | Direct child; parent-owned notification |
 | 2 | sogyo | [openclaw-plugin-a2a#445](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/445) | Team1 | `seoseo` | Direct child; parent-owned notification |
-| 3 | nosuk | [a2a-plane#413](https://github.com/jinwon-int/a2a-plane/issues/413) | Team1 | `seoseo` | Direct child; parent-owned notification |
-| 4 | yukson | [a2a-plane#414](https://github.com/jinwon-int/a2a-plane/issues/414) | Team1 | `seoseo` | Direct child; parent-owned notification |
+| 3 | nosuk | a2a-plane#413 (a2a-plane#413, internal tracker private) | Team1 | `seoseo` | Direct child; parent-owned notification |
+| 4 | yukson | a2a-plane#414 (a2a-plane#414, internal tracker private) | Team1 | `seoseo` | Direct child; parent-owned notification |
 | 5 | dungae | [a2a-broker#864](https://github.com/jinwon-int/a2a-broker/issues/864) | Team2 | `gwakga` | Handoff child; suppresses local 1/1 brief |
 | 6 | jingun | [a2a-broker#865](https://github.com/jinwon-int/a2a-broker/issues/865) | Team2 | `gwakga` | Handoff child; suppresses local 1/2 brief |
-| 7 | soonwook | [a2a-plane#415](https://github.com/jinwon-int/a2a-plane/issues/415) | Team2 | `gwakga` | Handoff child; suppresses local 1/2 brief |
+| 7 | soonwook | a2a-plane#415 (a2a-plane#415, internal tracker private) | Team2 | `gwakga` | Handoff child; suppresses local 1/2 brief |
 
 ## Residual risk matrix
 

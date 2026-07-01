@@ -3,7 +3,7 @@
 Deterministic history scanner and redacted artifact bundle utilities for the A2A Docker Runner.
 
 Parent: [a2a-docker-runner#177](https://github.com/jinwon-int/a2a-docker-runner/issues/177)
-Parent: [a2a-plane#197](https://github.com/jinwon-int/a2a-plane/issues/197)
+Parent: a2a-plane#197 (a2a-plane#197, internal tracker private)
 
 ## Safety Gates (Fail-Closed)
 

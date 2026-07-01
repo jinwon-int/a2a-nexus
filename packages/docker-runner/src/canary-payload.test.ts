@@ -270,13 +270,13 @@ test("issueUrl is built from the real issue number, not the first digit run", ()
     id: "canary-issue-ref",
     payload: {
       mode: "github-propose-patch",
-      repo: "jinwon-int/a2a-plane",
-      issue: "jinwon-int/a2a-plane#204",
+      repo: "jinwon-int/a2a-docker-runner",
+      issue: "a2a-docker-runner#204",
     },
   };
 
   const runnerTask = buildRunnerTaskFromHandlerPayload(handlerTask, baseEnv);
-  assert.equal(runnerTask.issueUrl, "https://github.com/jinwon-int/a2a-plane/issues/204");
+  assert.equal(runnerTask.issueUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/204");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

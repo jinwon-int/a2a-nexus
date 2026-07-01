@@ -2,8 +2,8 @@
 
 > **Decision date:** 2026-05-27
 > **Status:** 🟢 Adopted — hold full monorepo consolidation; keep split implementation repos with `a2a-plane` as the stronger public umbrella/start-here entrypoint.
-> **Tracking issue:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
-> **Current coordination:** [#514](https://github.com/jinwon-int/a2a-plane/issues/514), [#515](https://github.com/jinwon-int/a2a-plane/issues/515), [#517](https://github.com/jinwon-int/a2a-plane/issues/517), [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md), and [`docs/current-state.md`](current-state.md)
+> **Tracking issue:** #473 (a2a-plane#473, internal tracker private)
+> **Current coordination:** #514 (a2a-plane#514, internal tracker private), #515 (a2a-plane#515, internal tracker private), #517 (a2a-plane#517, internal tracker private), [`docs/history/monorepo-reentry-decision.md`](history/monorepo-reentry-decision.md), and [`docs/current-state.md`](current-state.md)
 > **Revisit trigger:** See [re-entry criteria](#future-monorepo-re-entry-criteria) below.
 
 ---
@@ -18,34 +18,34 @@ After inspecting historical closed monorepo work, current public surfaces across
 
 This recommendation is documented here along with re-entry criteria for future reconsideration.
 
-> **2026-06-07 update:** Seo Jin On explicitly triggered operator-initiated re-entry in
-> [#511](https://github.com/jinwon-int/a2a-plane/issues/511) after the `#506`
+> **2026-06-07 update:** the operator explicitly triggered operator-initiated re-entry in
+> #511 (a2a-plane#511, internal tracker private) after the `#506`
 > current-state wave. The updated decision is not an immediate canonical flip:
 > proceed with a staged umbrella workspace rehearsal first, while split repos
 > remain canonical during phase 0/1. See
-> [`docs/monorepo-reentry-decision.md`](monorepo-reentry-decision.md).
+> [`docs/history/monorepo-reentry-decision.md`](history/monorepo-reentry-decision.md).
 
 ---
 
 ## 2. Historical Closed Monorepo Work
 
-### [#240 — Monorepo consolidation review (closed)](https://github.com/jinwon-int/a2a-plane/issues/240)
+### #240 — Monorepo consolidation review (closed) (a2a-plane#240, internal tracker private)
 
 Initial review of whether to merge the four repos into a single entrypoint. Produced:
 - [`docs/ecosystem-guide.md`](../docs/ecosystem-guide.md) — bilingual component guide mapping the 4 repos to roles.
-- [`docs/monorepo-migration-checklist.md`](../docs/monorepo-migration-checklist.md) — short/medium/long-term migration checklist with 12 acceptance gates and versioning strategy.
+- [`docs/history/monorepo-migration-checklist.md`](../docs/history/monorepo-migration-checklist.md) — short/medium/long-term migration checklist with 12 acceptance gates and versioning strategy.
 
 **Outcome:** Mapped the migration path but did not declare cutover. CI parity, import rehearsal, CODEOWNERS split, and operator sign-off were deferred.
 
-### [#335 — A2A R23: monorepo plan (closed)](https://github.com/jinwon-int/a2a-plane/issues/335)
+### #335 — A2A R23: monorepo plan (closed) (a2a-plane#335, internal tracker private)
 
 R23 execution parent that included "create a monorepo plan/proof" as one of five end-state goals. Cross-repo Terminal Brief and spec-first design were the higher priorities.
 
 **Outcome:** Monorepo proof was scoped as one work stream among many; R23 did not finalize the cutover.
 
-### [#337 — R23 Team1 cutover proof (closed)](https://github.com/jinwon-int/a2a-plane/issues/337)
+### #337 — R23 Team1 cutover proof (closed) (a2a-plane#337, internal tracker private)
 
-Produced the detailed architecture/migration proof with package boundaries, versioning strategy, CI matrix, compatibility risks, and rollback plan. The proof is preserved in `docs/monorepo-migration-checklist.md`.
+Produced the detailed architecture/migration proof with package boundaries, versioning strategy, CI matrix, compatibility risks, and rollback plan. The proof is preserved in `docs/history/monorepo-migration-checklist.md`.
 
 **Outcome:** Established acceptance gates (9/12 🟢, 3 🟡/🔴) but required operator sign-off before any cutover.
 
@@ -53,9 +53,9 @@ Produced the detailed architecture/migration proof with package boundaries, vers
 
 | PR | Source issue | What it delivered |
 | --- | --- | --- |
-| [#267](https://github.com/jinwon-int/a2a-plane/pull/267) | #240 | Migration checklist (`docs/monorepo-migration-checklist.md`) |
-| [#268](https://github.com/jinwon-int/a2a-plane/pull/268) | #240 | Ecosystem guide (`docs/ecosystem-guide.md`) |
-| [#484](https://github.com/jinwon-int/a2a-plane/pull/484) | #477 | Public umbrella quickstart (`docs/quickstart/public-umbrella.md`) |
+| #267 (a2a-plane PR #267, internal tracker private) | #240 | Migration checklist (`docs/history/monorepo-migration-checklist.md`) |
+| #268 (a2a-plane PR #268, internal tracker private) | #240 | Ecosystem guide (`docs/ecosystem-guide.md`) |
+| #484 (a2a-plane PR #484, internal tracker private) | #477 | Public umbrella quickstart (`docs/quickstart/public-umbrella.md`) |
 
 ### Key takeaway from closed work
 
@@ -69,7 +69,7 @@ The historical monorepo work built the *migration path* and *cutover gates* but 
 
 | Repository | Visibility | Public since | Canonical boundary | Release/tag status |
 | --- | --- | --- | --- | --- |
-| [`a2a-plane`](https://github.com/jinwon-int/a2a-plane) | Public | 2026-05-11 | Umbrella docs, contracts, coordination, release gates | None published (npm `private: true`) |
+| [`a2a-plane`](a2a-plane (internal tracker, private)) | Public | 2026-05-11 | Umbrella docs, contracts, coordination, release gates | None published (npm `private: true`) |
 | [`a2a-broker`](https://github.com/jinwon-int/a2a-broker) | Public | 2026-05-11 | Broker runtime, task lifecycle, worker registry | None published (npm `private: true`) |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Public | 2026-05-11 | Isolated container worker, artifact capture, PR/Done/Block evidence | None published (npm scoped, not published) |
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Public | 2026-05-11 | OpenClaw Gateway adapter, diagnostics, wake/event bridge | None published (npm `private: true`) |
@@ -91,7 +91,7 @@ The historical monorepo work built the *migration path* and *cutover gates* but 
 
 ### Current docs/gate tension
 
-Several docs historically described private/NO-GO/public-readiness-candidate status even though all repos are already PUBLIC. That stale-private-docs reconciliation was completed after the topology decision; use [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md) for current active A2A coordination.
+Several docs historically described private/NO-GO/public-readiness-candidate status even though all repos are already PUBLIC. That stale-private-docs reconciliation was completed after the topology decision; use #506 (a2a-plane#506, internal tracker private) and [`docs/current-state.md`](current-state.md) for current active A2A coordination.
 
 ---
 
@@ -138,7 +138,7 @@ Revisit full monorepo consolidation only when **all** of the following are satis
 | # | Criterion | Required evidence | Current status |
 | --- | --- | --- | --- |
 | RE-1 | **Split repos stable at a release baseline** | Each of broker, runner, and plugin has published a `1.0.0` or equivalent stable release with documented semver policy | 🔴 None published |
-| RE-2 | **Operator-initiated** | Explicit operator approval comment on [#473](https://github.com/jinwon-int/a2a-plane/issues/473) or a follow-up tracking issue, not inferred from earlier direction | 🔴 Not granted |
+| RE-2 | **Operator-initiated** | Explicit operator approval comment on #473 (a2a-plane#473, internal tracker private) or a follow-up tracking issue, not inferred from earlier direction | 🔴 Not granted |
 | RE-3 | **Import rehearsal complete** | Dry-run log exists and is clean for all 3 legacy implementation repos → monorepo layout | 🔴 Not started |
 | RE-4 | **Docs migration planned** | Migration of `docs/` from split-repo layout to monorepo layout is documented with redirect/backlink/archive plan | 🔴 Not started |
 | RE-5 | **CODEOWNERS split defined** | Package-level CODEOWNERS entries are reviewed and accepted by all team leads | 🔴 Not started |
@@ -150,7 +150,7 @@ Until all six are 🟢, the recommendation remains: keep split repos with `a2a-p
 
 If a re-entry criterion is triggered and an operator initiates the monorepo discussion:
 
-1. The `docs/monorepo-migration-checklist.md` should be revived as the canonical migration plan.
+1. The `docs/history/monorepo-migration-checklist.md` should be revived as the canonical migration plan.
 2. A new tracking issue should be opened (not reopened from #240, which is closed).
 3. The cutover should proceed through the 12 acceptance gates from the checklist.
 4. AG-12 (operator sign-off) must be the final gate before any visibility change or canonical-source declaration.
@@ -163,18 +163,18 @@ The topology decision fed into the following lanes. These are historical groundw
 
 | Issue | Repo | Description | Dependency |
 | --- | --- | --- | --- |
-| [#506](https://github.com/jinwon-int/a2a-plane/issues/506) | `a2a-plane` | Current-state integration and A2A effectiveness wave | Active |
-| [#507](https://github.com/jinwon-int/a2a-plane/issues/507) | `a2a-plane` | Refresh current-state docs and checkout hygiene | Active |
-| [#508](https://github.com/jinwon-int/a2a-plane/issues/508) | `a2a-plane` | No-live cross-repo integration smoke spec | Active |
-| [#476](https://github.com/jinwon-int/a2a-plane/issues/476) | `a2a-plane` | P0: reconcile stale private/NO-GO readiness docs with actual public visibility | Closed |
-| [#477](https://github.com/jinwon-int/a2a-plane/issues/477) | `a2a-plane` | Public repo map and quickstart umbrella docs | Closed; merged via #484 |
-| [#478](https://github.com/jinwon-int/a2a-plane/issues/478) | `a2a-plane` | Public-source security, secret-history, license, and provenance scan | Closed |
-| [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | `a2a-plane` | Public release, version, and provenance checklist | Closed |
-| [#480](https://github.com/jinwon-int/a2a-plane/issues/480) | `a2a-plane` | Local public demo and quickstart across repos | Closed |
-| [#482](https://github.com/jinwon-int/a2a-plane/issues/482) | `a2a-plane` | Refresh public compatibility matrix baselines | Independent |
-| [#485](https://github.com/jinwon-int/a2a-plane/issues/485) | `a2a-docker-runner` | Lock release/tag workflow behind approval gates | Independent |
-| [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | `a2a-broker`/`openclaw-plugin-a2a` | Harden public contribution surface and CI gates | Independent |
-| [#488](https://github.com/jinwon-int/a2a-plane/issues/488) | `a2a-plane` | Establish public repo protection baseline | Independent |
+| #506 (a2a-plane#506, internal tracker private) | `a2a-plane` | Current-state integration and A2A effectiveness wave | Active |
+| #507 (a2a-plane#507, internal tracker private) | `a2a-plane` | Refresh current-state docs and checkout hygiene | Active |
+| #508 (a2a-plane#508, internal tracker private) | `a2a-plane` | No-live cross-repo integration smoke spec | Active |
+| #476 (a2a-plane#476, internal tracker private) | `a2a-plane` | P0: reconcile stale private/NO-GO readiness docs with actual public visibility | Closed |
+| #477 (a2a-plane#477, internal tracker private) | `a2a-plane` | Public repo map and quickstart umbrella docs | Closed; merged via #484 |
+| #478 (a2a-plane#478, internal tracker private) | `a2a-plane` | Public-source security, secret-history, license, and provenance scan | Closed |
+| #479 (a2a-plane#479, internal tracker private) | `a2a-plane` | Public release, version, and provenance checklist | Closed |
+| #480 (a2a-plane#480, internal tracker private) | `a2a-plane` | Local public demo and quickstart across repos | Closed |
+| #482 (a2a-plane#482, internal tracker private) | `a2a-plane` | Refresh public compatibility matrix baselines | Independent |
+| #485 (a2a-plane#485, internal tracker private) | `a2a-docker-runner` | Lock release/tag workflow behind approval gates | Independent |
+| #486 (a2a-plane#486, internal tracker private) | `a2a-broker`/`openclaw-plugin-a2a` | Harden public contribution surface and CI gates | Independent |
+| #488 (a2a-plane#488, internal tracker private) | `a2a-plane` | Establish public repo protection baseline | Independent |
 
 Cross-repo related issues that are not blocked by this decision:
 
@@ -206,12 +206,12 @@ No approval-gated action was performed in producing this document.
 
 ## References
 
-- [#240](https://github.com/jinwon-int/a2a-plane/issues/240) — initial monorepo consolidation review (closed)
-- [#335](https://github.com/jinwon-int/a2a-plane/issues/335) — R23 monorepo architecture plan (closed)
-- [#337](https://github.com/jinwon-int/a2a-plane/issues/337) — R23 Team1 monorepo cutover proof (closed)
-- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted topology decision tracker (closed)
-- [#489](https://github.com/jinwon-int/a2a-plane/issues/489) — Team1 roadmap implementation parent (closed)
-- [`docs/monorepo-migration-checklist.md`](monorepo-migration-checklist.md) — historical migration checklist and cutover proof (preserved)
+- #240 (a2a-plane#240, internal tracker private) — initial monorepo consolidation review (closed)
+- #335 (a2a-plane#335, internal tracker private) — R23 monorepo architecture plan (closed)
+- #337 (a2a-plane#337, internal tracker private) — R23 Team1 monorepo cutover proof (closed)
+- #473 (a2a-plane#473, internal tracker private) — adopted topology decision tracker (closed)
+- #489 (a2a-plane#489, internal tracker private) — Team1 roadmap implementation parent (closed)
+- [`docs/history/monorepo-migration-checklist.md`](history/monorepo-migration-checklist.md) — historical migration checklist and cutover proof (preserved)
 - [`docs/ecosystem-guide.md`](ecosystem-guide.md) — bilingual component guide with repo role mapping
 - [`docs/quickstart/public-umbrella.md`](quickstart/public-umbrella.md) — public umbrella and repo map
 - [`README.md`](../README.md) — current source entrypoint with #473 reference

@@ -1,9 +1,9 @@
 # Team2/Soonwook R11 libero cross-team risk review
 
-Issue: [a2a-plane#298](https://github.com/jinwon-int/a2a-plane/issues/298)  
-Parent broker tracker: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)  
-Run: `a2a-r11-stability-activation-gates-20260513T231046Z`  
-Lane: `soonwook` / Team2 libero cross-team risk review  
+Issue: a2a-plane#298 (a2a-plane#298, internal tracker private)
+Parent broker tracker: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)
+Run: `a2a-r11-stability-activation-gates-20260513T231046Z`
+Lane: `soonwook` / Team2 libero cross-team risk review
 Snapshot: `2026-05-13T23:16Z`
 
 This is a redacted, no-live libero validation artifact for the R11 read-only/stability activation-gates round. It uses repository and GitHub issue/PR evidence only. It does not deploy, restart, reload Gateway/broker/worker processes, send a live provider or Telegram canary, mutate production databases or terminal-outbox rows, perform terminal ACK/replay or historical outbox replay, change secrets or repository visibility, publish a release/tag, rewrite history, force-push, or execute approval.
@@ -21,10 +21,10 @@ Safe closeout for this lane may say: **Team2 documented the R11 cross-team risk 
 | Team1/bangtong — [a2a-broker#592](https://github.com/jinwon-int/a2a-broker/issues/592) | Read-only/libero GitHub validation lane hardening that permits true validation Done/Block without weakening patch no-diff failure. | Start marker only: [issuecomment-4445895575](https://github.com/jinwon-int/a2a-broker/issues/592#issuecomment-4445895575). | `NO-GO / Waiting`; Start is not terminal evidence. |
 | Team1/sogyo — [openclaw-plugin-a2a#303](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/303) | Terminal Brief receipt/activation gate plugin no-live proof with provider accepted-send separated from receipt and ACK. | Start marker only: [issuecomment-4445894434](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/303#issuecomment-4445894434). | `NO-GO / Waiting`; plugin activation gates cannot be inferred from Start. |
 | Team1/nosuk — [a2a-broker#593](https://github.com/jinwon-int/a2a-broker/issues/593) | Broker hot-table CPU/memory stability gate with bounded state/queue evidence and no production mutation. | Start marker only: [issuecomment-4445893715](https://github.com/jinwon-int/a2a-broker/issues/593#issuecomment-4445893715). | `NO-GO / Waiting`; hot-table and queue risk remain open until terminal evidence. |
-| Team1/yukson — [a2a-plane#297](https://github.com/jinwon-int/a2a-plane/issues/297) | Activation GO/NO-GO acceptance matrix update for the R11 round. | Start marker plus PR marker: [a2a-plane#299](https://github.com/jinwon-int/a2a-plane/pull/299); CI was in progress at snapshot. | Counts as in-flight PR evidence only; not merge, deploy, receipt, ACK, or approval. |
+| Team1/yukson — a2a-plane#297 (a2a-plane#297, internal tracker private) | Activation GO/NO-GO acceptance matrix update for the R11 round. | Start marker plus PR marker: a2a-plane#299 (a2a-plane PR #299, internal tracker private); CI was in progress at snapshot. | Counts as in-flight PR evidence only; not merge, deploy, receipt, ACK, or approval. |
 | Team2/dungae — [a2a-broker#594](https://github.com/jinwon-int/a2a-broker/issues/594) | Queue hygiene and canary gate hardening that keeps stale/backlog work from live sends or ACK mutation. | Start markers only: [issuecomment-4445894389](https://github.com/jinwon-int/a2a-broker/issues/594#issuecomment-4445894389) and [issuecomment-4445906682](https://github.com/jinwon-int/a2a-broker/issues/594#issuecomment-4445906682). | `NO-GO / Waiting`; queue/canary gates remain unproven. |
 | Team2/jingun — [a2a-docker-runner#247](https://github.com/jinwon-int/a2a-docker-runner/issues/247) | Runner evidence and no-diff validation lane parity for PR-less validation lanes and patch lanes. | Start marker only: [issuecomment-4445898175](https://github.com/jinwon-int/a2a-docker-runner/issues/247#issuecomment-4445898175). | `NO-GO / Waiting`; runner parity cannot be counted until terminal evidence. |
-| Team2/soonwook — [a2a-plane#298](https://github.com/jinwon-int/a2a-plane/issues/298) | This libero cross-team risk review with tests and hygiene guard. | Start marker: [issuecomment-4445898262](https://github.com/jinwon-int/a2a-plane/issues/298#issuecomment-4445898262). | Pass for validation shape only after this PR/test evidence exists; aggregate remains `NO-GO / Waiting`. |
+| Team2/soonwook — a2a-plane#298 (a2a-plane#298, internal tracker private) | This libero cross-team risk review with tests and hygiene guard. | Start marker: [issuecomment-4445898262](a2a-plane#298 (internal tracker, private)#issuecomment-4445898262). | Pass for validation shape only after this PR/test evidence exists; aggregate remains `NO-GO / Waiting`. |
 
 ## Cross-team risk matrix
 

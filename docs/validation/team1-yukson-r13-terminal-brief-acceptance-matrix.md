@@ -1,6 +1,6 @@
 # Team1/yukson R13 compact Terminal Brief acceptance matrix
 
-Issue: [a2a-plane#305](https://github.com/jinwon-int/a2a-plane/issues/305)
+Issue: a2a-plane#305 (a2a-plane#305, internal tracker private)
 Parent: [a2a-broker#607](https://github.com/jinwon-int/a2a-broker/issues/607)
 Primary guard: [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598)
 Run: `a2a-r13-terminal-brief-realround-20260514T013556Z`
@@ -28,7 +28,7 @@ This follows the known-total format defined in `contracts/a2a/parent-terminal-br
 | --- | --- | --- | --- |
 | Parent dispatch — [a2a-broker#607](https://github.com/jinwon-int/a2a-broker/issues/607) | Round lane list, safety gates, known child total=7, Seoseo finalizer. Parent scope: compact Terminal Brief real-round guard and aggregation verification. | Parent issue body records scope, safety boundaries, and known total. Child lane Start evidence posted across 7 lanes. | Pass for dispatch context only; does not prove activation or aggregation. |
 | Primary guard — [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598) | Fail-closed guard: cross-broker child payloads must include `parentRoundId`, `originBrokerId`, parent total/order metadata, and explicit `crossBrokerHandoff` for handoff children. | Issue open with requirement definition; R13 dispatch enforces parent metadata. | Pass for contract/guard definition; runtime enforcement depends on broker implementation. |
-| Team1/yukson lane — [a2a-plane#305](https://github.com/jinwon-int/a2a-plane/issues/305) | This acceptance matrix: update or verify contracts/runbooks for parent metadata, compact title format, origin-broker routing symmetry. | PR/Done evidence from this validation document; local test pass results. | Pass for acceptance matrix shape and local validation. |
+| Team1/yukson lane — a2a-plane#305 (a2a-plane#305, internal tracker private) | This acceptance matrix: update or verify contracts/runbooks for parent metadata, compact title format, origin-broker routing symmetry. | PR/Done evidence from this validation document; local test pass results. | Pass for acceptance matrix shape and local validation. |
 | Brokers/sibling lanes | Team1/Team2 remain at Start or PR/Done/Block evidence at lane issues. | Known from parent broker aggregation view; individual lane issues across a2a-broker, a2a-plane, openclaw-plugin-a2a, a2a-docker-runner. | Open until each lane publishes terminal evidence. |
 
 ## Acceptance gate checklist

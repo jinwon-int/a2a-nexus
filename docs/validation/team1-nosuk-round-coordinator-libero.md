@@ -3,7 +3,7 @@
 **Lane:** Team1 nosuk (3/4)
 **Run:** `a2a-team1-round-coordinator-20260526T201140KST`
 **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
-**Lane issue:** [a2a-plane#467](https://github.com/jinwon-int/a2a-plane/issues/467)
+**Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
 **Broker/finalizer of record:** `seoseo`
 
 ---

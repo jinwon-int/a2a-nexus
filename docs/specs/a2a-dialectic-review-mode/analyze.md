@@ -4,8 +4,8 @@
 
 - Spec: `docs/specs/a2a-dialectic-review-mode/spec.md`
 - Tasks: `docs/specs/a2a-dialectic-review-mode/tasks.md`
-- Related issues: [#436](https://github.com/jinwon-int/a2a-plane/issues/436)
-- Parent tracker: [#443](https://github.com/jinwon-int/a2a-plane/issues/443)
+- Related issues: #436 (a2a-plane#436, internal tracker private)
+- Parent tracker: #443 (a2a-plane#443, internal tracker private)
 - Existing reference: `packages/broker/src/trading-dialectic/` (trading-specific implementation)
 
 ## Consistency checks

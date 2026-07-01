@@ -75,7 +75,7 @@
   "exampleProjection": {
     "taskId": "task-fixture-github-projection-001",
     "runId": "a2a-terminal-brief-github-evidence-fixture",
-    "targetUrl": "https://github.com/jinwon-int/a2a-plane/issues/206",
+    "targetUrl": "a2a-plane#206 (internal tracker, private)",
     "marker": "Done",
     "managedCommentKey": "a2a:terminal-brief:github-comment-projection:fixture",
     "manifestDigest": "sha256:fixture-redacted-manifest-digest",

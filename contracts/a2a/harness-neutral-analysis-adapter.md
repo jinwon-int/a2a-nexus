@@ -2,7 +2,7 @@
 
 This contract freezes the source-only analysis evidence shape used by A2A/A2AD rounds. It exists so the broker/finalizer can classify worker evidence without depending on a specific harness such as Hermes CLI, OpenClaw CLI, or the Docker runner.
 
-Issue: [a2a-nexus#666](https://github.com/jinwon-int/a2a-nexus/issues/666)  
+Issue: [a2a-nexus#666](https://github.com/jinwon-int/a2a-nexus/issues/666)
 Parent direction: [a2a-nexus#663](https://github.com/jinwon-int/a2a-nexus/issues/663)
 
 ## Scope

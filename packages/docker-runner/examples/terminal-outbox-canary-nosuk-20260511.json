@@ -3,7 +3,7 @@
   "description": "Team1/nosuk terminal-outbox canary smoke test + receipt evidence guard. Validates terminal-outbox canary task submission/receipt/completion and broker receipt event confirmation. Synthetic only: no live broker, Docker, Telegram, Gateway, GitHub writes, deploys, restarts, tokens, raw logs, or private paths.",
   "run": "terminal-brief-activation-20260511T080211Z",
   "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/204",
-  "parent": "https://github.com/jinwon-int/a2a-plane/issues/241",
+  "parent": "a2a-plane#241 (internal tracker, private)",
   "worker": "nosuk",
   "emittedAt": "2026-05-11T08:02:11.000Z",
   "canaryContract": {

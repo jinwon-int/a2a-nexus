@@ -1,7 +1,7 @@
 /**
  * Dry-run approval projection tests (#256).
  *
- * Parent: jinwon-int/a2a-plane#197
+ * Parent: a2a-plane#197 (internal tracker, private)
  * Run:    a2a-source-dryrun-orchestrator-20260510T133022Z
  *
  * Exercises the dry-run approval/reject-approval packet projection without

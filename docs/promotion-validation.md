@@ -2,13 +2,13 @@
 
 Last updated: `2026-05-08T01:03:27Z`.
 
-This report records redacted validation evidence for `jinwon-int/a2a-plane#66` on commit `55a317907d301d9780050bb98b230fa97611eed7`. It is evidence-only: no repository visibility change, release, tag, publish, deploy, service restart, production mutation, provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, force-push, commit, or PR creation was performed by this runner.
+This report records redacted validation evidence for `a2a-plane#66 (internal tracker, private)` on commit `55a317907d301d9780050bb98b230fa97611eed7`. It is evidence-only: no repository visibility change, release, tag, publish, deploy, service restart, production mutation, provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, force-push, commit, or PR creation was performed by this runner.
 
 ## Decision
 
 **GO for A2A Nexus closeout evidence.** Required local gates passed, and the external secret/history scan completed with a temporary runner-local scanner and no leaks found. Operational promotion actions remain separately approval-gated.
 
-Repository metadata observed during this run: `jinwon-int/a2a-plane` visibility is `PUBLIC`. This runner did not change repository visibility.
+Repository metadata observed during this run: `a2a-plane (internal tracker, private)` visibility is `PUBLIC`. This runner did not change repository visibility.
 
 ## Redacted evidence
 

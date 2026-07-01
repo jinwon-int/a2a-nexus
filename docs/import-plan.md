@@ -1,6 +1,6 @@
 # Import Plan
 
-1. Keep `jinwon-int/a2a-plane` private.
+1. Keep `a2a-plane (internal tracker, private)` private.
 2. Import each source repo by sanitized/squash copy into its package directory.
 3. Preserve provenance in package README files: source repo, source commit, import date, and known blockers.
 4. Do not preserve private history by default.

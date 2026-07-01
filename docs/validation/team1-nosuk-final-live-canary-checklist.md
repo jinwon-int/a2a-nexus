@@ -2,8 +2,8 @@
 
 **Team1/nosuk — Lane 3/7**
 
-Parent tracker: <https://github.com/jinwon-int/a2a-plane/issues/427>
-Lane issue: <https://github.com/jinwon-int/a2a-plane/issues/428>
+Parent tracker: <a2a-plane#427 (internal tracker, private)>
+Lane issue: <a2a-plane#428 (internal tracker, private)>
 Run: `a2a-terminal-brief-completion-20260523T015723Z`
 Worker: `nosuk`
 Team: `team1`

@@ -1,11 +1,11 @@
 # Team2/Soonwook R9 concise Terminal Brief runtime readiness validation
 
-Parent: [a2a-broker#560](https://github.com/jinwon-int/a2a-broker/issues/560)  
-Lane: [a2a-plane#290](https://github.com/jinwon-int/a2a-plane/issues/290)  
-Runtime-readiness tracker: [openclaw-plugin-a2a#298](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/298)  
-Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`  
-Parent broker: `seoseo`  
-Handoff broker for Team2/Gwakga children: `gwakga`  
+Parent: [a2a-broker#560](https://github.com/jinwon-int/a2a-broker/issues/560)
+Lane: a2a-plane#290 (a2a-plane#290, internal tracker private)
+Runtime-readiness tracker: [openclaw-plugin-a2a#298](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/298)
+Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`
+Parent broker: `seoseo`
+Handoff broker for Team2/Gwakga children: `gwakga`
 Known parent-round total: `7`
 
 This is a redacted, no-live Team2/Soonwook libero validation artifact for the R9 concise Terminal Brief runtime-readiness all-hands round. It performs repository and GitHub evidence review only. It does not deploy, restart, reload Gateway/broker/worker processes, send a live provider or Telegram canary, mutate production databases or terminal-outbox rows, perform manual ACK/replay or historical outbox replay, change secrets or repository visibility, publish a release/tag, rewrite history, force-push, or execute approval.
@@ -43,10 +43,10 @@ The following synthetic projection table is the R9 no-live proof shape. It uses 
 | 1 | `bangtong` | [a2a-broker#561](https://github.com/jinwon-int/a2a-broker/issues/561) | `seoseo` | `seoseo` | `A2A Terminal Brief 완료: bangtong(1/7)` | disabled; parent owns notification |
 | 2 | `sogyo` | [openclaw-plugin-a2a#299](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/299) | `seoseo` | `seoseo` | `A2A Terminal Brief 완료: sogyo(2/7)` | disabled; parent owns notification |
 | 3 | `nosuk` | [a2a-broker#562](https://github.com/jinwon-int/a2a-broker/issues/562) | `seoseo` | `seoseo` | `A2A Terminal Brief 완료: nosuk(3/7)` | disabled; parent owns notification |
-| 4 | `yukson` | [a2a-plane#289](https://github.com/jinwon-int/a2a-plane/issues/289) | `seoseo` | `seoseo` | `A2A Terminal Brief 완료: yukson(4/7)` | disabled; parent owns notification |
+| 4 | `yukson` | a2a-plane#289 (a2a-plane#289, internal tracker private) | `seoseo` | `seoseo` | `A2A Terminal Brief 완료: yukson(4/7)` | disabled; parent owns notification |
 | 5 | `dungae` | [a2a-broker#563](https://github.com/jinwon-int/a2a-broker/issues/563) | `gwakga` | `seoseo` | `A2A Terminal Brief 완료: dungae(5/7)` | disabled; Gwakga relays projection only |
 | 6 | `jingun` | [a2a-docker-runner#243](https://github.com/jinwon-int/a2a-docker-runner/issues/243) | `gwakga` | `seoseo` | `A2A Terminal Brief 완료: jingun(6/7)` | disabled; Gwakga relays projection only |
-| 7 | `soonwook` | [a2a-plane#290](https://github.com/jinwon-int/a2a-plane/issues/290) | `gwakga` | `seoseo` | `A2A Terminal Brief 완료: soonwook(7/7)` | disabled; Gwakga relays projection only |
+| 7 | `soonwook` | a2a-plane#290 (a2a-plane#290, internal tracker private) | `gwakga` | `seoseo` | `A2A Terminal Brief 완료: soonwook(7/7)` | disabled; Gwakga relays projection only |
 
 Unknown-total fallback remains required for future partial or legacy rounds: `A2A Terminal Brief 완료: soonwook(7)`. The renderer must omit the denominator whenever the total is unknown rather than emitting any bogus total marker.
 

@@ -59,7 +59,7 @@
         "taskId": "df0c2e71-8b78-41b0-bc0f-c2519067add9",
         "status": "succeeded",
         "analysisStatus": "blocked",
-        "summary": "analysis bridge blocked: PR #567(최종 운영자 서명/표준 소스 패킷)이 병합 완료(APPROVED+MERGED)되었으나, 실행 핸드오프 패킷이 진전될 수 있는지 판단하려면 `docs/monorepo-canonical-flip-readiness.md`, `docs/monorepo-final-operator-signoff-matrix.md`, `fixtures/current-state/monorepo-canonical-flip-readiness.json`, `scripts/check-monorepo-canonical-flip-readiness.mjs`의 실제 내용이 필요합니다. 제공된 소스 번들에는 이 파일들의 내용이 포함되지 않았습니다."
+        "summary": "analysis bridge blocked: PR #567(최종 운영자 서명/표준 소스 패킷)이 병합 완료(APPROVED+MERGED)되었으나, 실행 핸드오프 패킷이 진전될 수 있는지 판단하려면 `docs/history/monorepo-canonical-flip-readiness.md`, `docs/history/monorepo-final-operator-signoff-matrix.md`, `fixtures/current-state/monorepo-canonical-flip-readiness.json`, `scripts/check-monorepo-canonical-flip-readiness.mjs`의 실제 내용이 필요합니다. 제공된 소스 번들에는 이 파일들의 내용이 포함되지 않았습니다."
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",

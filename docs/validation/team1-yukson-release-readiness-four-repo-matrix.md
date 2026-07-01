@@ -1,7 +1,7 @@
 # Team1/yukson Release-Readiness Gate Matrix for Four Repos
 
-Parent: [#453](https://github.com/jinwon-int/a2a-plane/issues/453) — Release-readiness pack
-Assigned child: [#454](https://github.com/jinwon-int/a2a-plane/issues/454)
+Parent: #453 (a2a-plane#453, internal tracker private) — Release-readiness pack
+Assigned child: #454 (a2a-plane#454, internal tracker private)
 Lane: 4/4 (yukson)
 Run: `a2a-team1-release-readiness-pack-20260526T054020KST`
 Worker: `yukson` / Team1
@@ -212,7 +212,7 @@ A 403 rollback never: deletes comments, reopens issues, mutates terminal outbox,
 
 ## 8. Cross-Lane Check
 
-### 8.1 Release-readiness pack lanes (from parent [#453](https://github.com/jinwon-int/a2a-plane/issues/453))
+### 8.1 Release-readiness pack lanes (from parent #453 (a2a-plane#453, internal tracker private))
 
 This is lane 4/4 (yukson). The pack covers Team1 release-readiness across 4 child issues. Each sibling lane has a merged PR providing source/docs/tests evidence:
 
@@ -221,7 +221,7 @@ This is lane 4/4 (yukson). The pack covers Team1 release-readiness across 4 chil
 | Lane 1 | bangtong | [a2a-docker-runner#333](https://github.com/jinwon-int/a2a-docker-runner/issues/333) | [a2a-docker-runner#334](https://github.com/jinwon-int/a2a-docker-runner/pull/334) (merged) | `a2a-docker-runner` conformance smoke and runner artifact hygiene |
 | Lane 2 | sogyo | [openclaw-plugin-a2a#446](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/446) | [openclaw-plugin-a2a#447](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/447) (merged) | `openclaw-plugin-a2a` operator install/diagnostics readiness |
 | Lane 3 | nosuk | [a2a-broker#919](https://github.com/jinwon-int/a2a-broker/issues/919) | [a2a-broker#920](https://github.com/jinwon-int/a2a-broker/pull/920) (merged) | `a2a-broker` release-readiness evidence export and status contract |
-| Lane 4 (this) | yukson | [a2a-plane#454](https://github.com/jinwon-int/a2a-plane/issues/454) | [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) (this PR) | Four-repo gate matrix, conformance, docs coverage, approval boundaries, rollback/no-op rules, NO-GO items |
+| Lane 4 (this) | yukson | a2a-plane#454 (a2a-plane#454, internal tracker private) | a2a-plane#457 (a2a-plane PR #457, internal tracker private) (this PR) | Four-repo gate matrix, conformance, docs coverage, approval boundaries, rollback/no-op rules, NO-GO items |
 
 **Cross-check finding:** Lanes 1-3 each have a merged PR (#334, #447, #920) providing source/docs/tests evidence for the release-readiness pack. No conflict or gap detected between this lane's scope and the expected coverage from lanes 1-3. The four-repo scope (R1-R4) is independently verifiable from the monorepo checkout.
 
@@ -237,7 +237,7 @@ All three sibling lanes have merged PR evidence. Their source/docs/tests outputs
 
 ### 8.3 Existing open PRs
 
-This pack has one open revision PR: [a2a-plane#457](https://github.com/jinwon-int/a2a-plane/pull/457) (this lane, second revision). The superseded revision PRs [#455](https://github.com/jinwon-int/a2a-plane/pull/455) and [#456](https://github.com/jinwon-int/a2a-plane/pull/456) were not accepted as finalizer evidence.
+This pack has one open revision PR: a2a-plane#457 (a2a-plane PR #457, internal tracker private) (this lane, second revision). The superseded revision PRs #455 (a2a-plane PR #455, internal tracker private) and #456 (a2a-plane PR #456, internal tracker private) were not accepted as finalizer evidence.
 
 ### 8.4 Closeout context
 
@@ -245,9 +245,9 @@ Recent closed lanes relevant to this pack:
 
 | Lane | PR/Issue | Summary |
 |------|----------|---------|
-| Team1 terminal-brief followup | [#451](https://github.com/jinwon-int/a2a-plane/pull/451) (PR) | Auto-patch: a2a-team1-terminal-brief-followup — last merged PR before this run |
-| Team1/yukson public-readiness after #78261 | [#261](https://github.com/jinwon-int/a2a-plane/issues/261) | Post-openclaw/openclaw#78261 direction reset; aggregate decision remains NO-GO/Waiting |
-| Team1/yukson public-readiness gate synthesis | [#263](https://github.com/jinwon-int/a2a-plane/issues/263) | 7-gate matrix (G1-G7) documenting accepted-send vocabulary, terminal evidence, replay safety, broker risk, scanner, hygiene, approvals |
+| Team1 terminal-brief followup | #451 (a2a-plane PR #451, internal tracker private) (PR) | Auto-patch: a2a-team1-terminal-brief-followup — last merged PR before this run |
+| Team1/yukson public-readiness after #78261 | #261 (a2a-plane#261, internal tracker private) | Post-openclaw/openclaw#78261 direction reset; aggregate decision remains NO-GO/Waiting |
+| Team1/yukson public-readiness gate synthesis | #263 (a2a-plane#263, internal tracker private) | 7-gate matrix (G1-G7) documenting accepted-send vocabulary, terminal evidence, replay safety, broker risk, scanner, hygiene, approvals |
 
 No conflicts or stale projections detected against the current branch state.
 

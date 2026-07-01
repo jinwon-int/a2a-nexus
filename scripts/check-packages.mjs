@@ -22,14 +22,31 @@ if (!packages.length) {
 }
 
 const missingChecks = [];
+const manifestFailures = [];
 const runnable = [];
 for (const dir of packages) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, dir, 'package.json'), 'utf8'));
   if (!manifest.scripts?.check) {
     missingChecks.push(dir);
-    continue;
+  } else {
+    runnable.push(dir);
   }
-  runnable.push(dir);
+
+  if (manifest.private !== true) manifestFailures.push(`${dir}: private must be true until explicit package-publication approval`);
+  if (!manifest.repository || typeof manifest.repository !== 'object') {
+    manifestFailures.push(`${dir}: repository object is required`);
+  } else {
+    if (manifest.repository.type !== 'git') manifestFailures.push(`${dir}: repository.type must be git`);
+    if (manifest.repository.url !== 'git+https://github.com/jinwon-int/a2a-nexus.git') manifestFailures.push(`${dir}: repository.url must point at a2a-nexus`);
+    if (manifest.repository.directory !== dir) manifestFailures.push(`${dir}: repository.directory must be ${dir}`);
+  }
+  if (!manifest.homepage || typeof manifest.homepage !== 'string') manifestFailures.push(`${dir}: homepage is required`);
+  if (!manifest.bugs || manifest.bugs.url !== 'https://github.com/jinwon-int/a2a-nexus/issues') manifestFailures.push(`${dir}: bugs.url must point at a2a-nexus issues`);
+}
+
+if (manifestFailures.length) {
+  console.error(`package checks failed:\n${manifestFailures.map((m) => `  - ${m}`).join('\n')}`);
+  process.exit(1);
 }
 
 // Package checks are independent (each compiles into its own dist/), so run

@@ -107,7 +107,7 @@ export interface SourcePublicApprovalRehearsalBundle {
 const DEFAULT_RUN_ID = "a2a-source-public-approval-rehearsal-20260511T014240Z";
 const DEFAULT_REPO = "jinwon-int/a2a-broker";
 const DEFAULT_ISSUE = 484;
-const DEFAULT_PARENT = "https://github.com/jinwon-int/a2a-plane/issues/211";
+const DEFAULT_PARENT = "a2a-plane#211 (internal tracker, private)";
 
 const DEFAULT_EVIDENCE: SourcePublicEvidenceInputs = {
   publicReadinessScan: "pending",

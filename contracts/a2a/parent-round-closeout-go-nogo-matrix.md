@@ -360,7 +360,7 @@ adopted:
 `comment_only` is a closeout mode that posts a GitHub comment on the parent issue with the
 go/no-go matrix summary and finalizer draft, but does **not** close the issue, merge any PR,
 ACK terminal outbox rows, or perform any other write action. This addresses the comment_only
-approval gate requirement from [#437](https://github.com/jinwon-int/a2a-plane/issues/437).
+approval gate requirement from #437 (a2a-plane#437, internal tracker private).
 
 ### When to use comment_only
 

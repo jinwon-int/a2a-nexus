@@ -1,6 +1,6 @@
 # Docker Runner Branch/No-Diff PR Failure — Plane Closeout Guidance
 
-Issue: [#102](https://github.com/jinwon-int/a2a-plane/issues/102)
+Issue: #102 (a2a-plane#102, internal tracker private)
 Parent hardening: [jinwon-int/a2a-broker#446](https://github.com/jinwon-int/a2a-broker/issues/446)
 Roadmap: [jinwon-int/a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Failed evidence lane: [jinwon-int/a2a-broker#443](https://github.com/jinwon-int/a2a-broker/issues/443)
@@ -46,8 +46,8 @@ Before closing the lane or accepting the runner result as terminal evidence, col
 | **current branch** (if different) | Container logs or `git branch` output in artifacts | `"a2a-patch-20260509-..."` |
 | **HEAD SHA** | `result.github.commit`, artifact `commit=` / `sha=` line | `"9ac8228..."` |
 | **origin/main SHA** | `git rev-parse origin/main` captured in runner logs | `"9ac8228..."` |
-| **issue URL** | `task.issueUrl`, `result.github.issueUrl` | `"https://github.com/jinwon-int/a2a-plane/issues/102"` |
-| **branch URL** | Derived from runner branch + repo | `"https://github.com/jinwon-int/a2a-plane/tree/fix/issue-42"` |
+| **issue URL** | `task.issueUrl`, `result.github.issueUrl` | `"a2a-plane#102 (internal tracker, private)"` |
+| **branch URL** | Derived from runner branch + repo | `"a2a-plane (internal tracker, private)tree/fix/issue-42"` |
 | **no-diff marker** | `git diff origin/main...HEAD --stat` → empty output, or `HEAD == origin/main` comparison | `"no-diff: HEAD equals origin/main"` |
 | **branch-mismatch marker** | When runner branch ≠ expected patch branch, or branch URL points to `main` | `"branch-mismatch: expected fix/issue-42, got main"` |
 
@@ -122,7 +122,7 @@ The public-readiness decision matrix in [docs/public-readiness.md](./public-read
 | [jinwon-int/a2a-broker#446](https://github.com/jinwon-int/a2a-broker/issues/446) | Parent broker hardening issue for branch ownership mismatch fix |
 | [jinwon-int/a2a-broker#443](https://github.com/jinwon-int/a2a-broker/issues/443) | Failed evidence lane for nosuk no-diff PR failure |
 | [jinwon-int/a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) | A2A broker roadmap |
-| [jinwon-int/a2a-plane#102](https://github.com/jinwon-int/a2a-plane/issues/102) | This plane closeout issue |
+| a2a-plane#102 (internal tracker, private) (a2a-plane#102, internal tracker private) | This plane closeout issue |
 | [openclaw/openclaw#78261](https://github.com/openclaw/openclaw/pull/78261) | Closed/superseded upstream context; no longer a merge gate |
 | [docs/public-readiness.md](./public-readiness.md) | Authoritative public-readiness decision matrix |
 | [packages/docker-runner/docs/design.md](../packages/docker-runner/docs/design.md) | Docker Runner task lifecycle design |

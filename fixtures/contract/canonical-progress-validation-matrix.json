@@ -2,8 +2,8 @@
   "fixtureId": "a2a-nexus.contract.canonical-progress-validation-matrix.v1",
   "contract": "contracts/a2a/canonical-progress-validation-matrix.md",
   "description": "Validation matrix for canonical n/N progress semantics in A2A Terminal Brief aggregation. Ensures completed/total counts reflect canonical task outcomes, not lane order, event sequence, origin-local projection count, retries, duplicates, out-of-order delivery, or transient state.",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/370",
-  "laneIssue": "https://github.com/jinwon-int/a2a-plane/issues/376",
+  "parentIssue": "a2a-plane#370",
+  "laneIssue": "a2a-plane#376",
   "run": "a2a-r29-terminal-brief-canonical-progress-correction-20260516T1412Z",
   "sourceOnly": true,
   "noLiveProviderSend": true,
@@ -33,8 +33,20 @@
       "name": "canonical-task-completed-count",
       "description": "n/N uses completed canonical child tasks as numerator, total canonical child tasks as denominator. Not lane order, event sequence, or origin-local projection count.",
       "given": {
-        "canonicalChildTasks": ["task-1", "task-2", "task-3", "task-4", "task-5", "task-6", "task-7"],
-        "succeededTaskIds": ["task-1", "task-3", "task-5"],
+        "canonicalChildTasks": [
+          "task-1",
+          "task-2",
+          "task-3",
+          "task-4",
+          "task-5",
+          "task-6",
+          "task-7"
+        ],
+        "succeededTaskIds": [
+          "task-1",
+          "task-3",
+          "task-5"
+        ],
         "totalCanonicalTasks": 7
       },
       "then": {
@@ -54,11 +66,27 @@
       "name": "retry-superseded-original-does-not-inflate-completed",
       "description": "When a canonical task is retried (original fails, retry succeeds), completed counts only the terminal success once. The original failed attempt is superseded and must not inflate completed.",
       "given": {
-        "canonicalChildTasks": ["task-a", "task-b"],
+        "canonicalChildTasks": [
+          "task-a",
+          "task-b"
+        ],
         "taskEvents": [
-          { "taskId": "task-a", "status": "failed", "attempt": 1 },
-          { "taskId": "task-a", "status": "succeeded", "attempt": 2, "supersedes": "attempt-1" },
-          { "taskId": "task-b", "status": "succeeded", "attempt": 1 }
+          {
+            "taskId": "task-a",
+            "status": "failed",
+            "attempt": 1
+          },
+          {
+            "taskId": "task-a",
+            "status": "succeeded",
+            "attempt": 2,
+            "supersedes": "attempt-1"
+          },
+          {
+            "taskId": "task-b",
+            "status": "succeeded",
+            "attempt": 1
+          }
         ]
       },
       "then": {
@@ -75,12 +103,33 @@
       "name": "duplicate-replay-does-not-inflate-completed",
       "description": "Replaying the same terminal event (duplicate delivery, broker restart replay, outbox reprocess) must not increment the completed count.",
       "given": {
-        "canonicalChildTasks": ["task-x", "task-y"],
+        "canonicalChildTasks": [
+          "task-x",
+          "task-y"
+        ],
         "taskEvents": [
-          { "taskId": "task-x", "status": "succeeded", "deliveryId": "d1" },
-          { "taskId": "task-y", "status": "succeeded", "deliveryId": "d2" },
-          { "taskId": "task-x", "status": "succeeded", "deliveryId": "d1", "isReplay": true },
-          { "taskId": "task-y", "status": "succeeded", "deliveryId": "d2", "isReplay": true }
+          {
+            "taskId": "task-x",
+            "status": "succeeded",
+            "deliveryId": "d1"
+          },
+          {
+            "taskId": "task-y",
+            "status": "succeeded",
+            "deliveryId": "d2"
+          },
+          {
+            "taskId": "task-x",
+            "status": "succeeded",
+            "deliveryId": "d1",
+            "isReplay": true
+          },
+          {
+            "taskId": "task-y",
+            "status": "succeeded",
+            "deliveryId": "d2",
+            "isReplay": true
+          }
         ]
       },
       "then": {
@@ -98,12 +147,29 @@
       "name": "failed-cancelled-do-not-count-as-completed",
       "description": "Canonical tasks that end in failed, cancelled, or blocked state are NOT counted as completed. They are still part of total.",
       "given": {
-        "canonicalChildTasks": ["task-p", "task-q", "task-r", "task-s"],
+        "canonicalChildTasks": [
+          "task-p",
+          "task-q",
+          "task-r",
+          "task-s"
+        ],
         "taskEvents": [
-          { "taskId": "task-p", "status": "succeeded" },
-          { "taskId": "task-q", "status": "failed" },
-          { "taskId": "task-r", "status": "canceled" },
-          { "taskId": "task-s", "status": "succeeded" }
+          {
+            "taskId": "task-p",
+            "status": "succeeded"
+          },
+          {
+            "taskId": "task-q",
+            "status": "failed"
+          },
+          {
+            "taskId": "task-r",
+            "status": "canceled"
+          },
+          {
+            "taskId": "task-s",
+            "status": "succeeded"
+          }
         ]
       },
       "then": {
@@ -121,9 +187,21 @@
       "name": "out-of-order-completion-count-is-order-independent",
       "description": "Completed count is independent of the order in which tasks reach terminal state. Tasks completing late arrive at the same count as tasks completing early.",
       "given": {
-        "canonicalChildTasks": ["task-m", "task-n", "task-o"],
-        "terminalOrderScenarioA": ["task-o", "task-m", "task-n"],
-        "terminalOrderScenarioB": ["task-n", "task-o", "task-m"],
+        "canonicalChildTasks": [
+          "task-m",
+          "task-n",
+          "task-o"
+        ],
+        "terminalOrderScenarioA": [
+          "task-o",
+          "task-m",
+          "task-n"
+        ],
+        "terminalOrderScenarioB": [
+          "task-n",
+          "task-o",
+          "task-m"
+        ],
         "allSucceeded": true
       },
       "then": {
@@ -140,9 +218,14 @@
       "name": "single-task-1-1-fallback",
       "description": "A parent round with exactly one canonical child task renders 1/1 when that task completes.",
       "given": {
-        "canonicalChildTasks": ["task-only"],
+        "canonicalChildTasks": [
+          "task-only"
+        ],
         "taskEvents": [
-          { "taskId": "task-only", "status": "succeeded" }
+          {
+            "taskId": "task-only",
+            "status": "succeeded"
+          }
         ]
       },
       "then": {
@@ -158,11 +241,24 @@
       "name": "cross-broker-aggregation-counts-canonical-tasks-not-projections",
       "description": "In cross-broker parent-round aggregation, the completed/total counts reflect canonical child tasks under the child broker of record, not the number of projection entries in the parent broker's ledger.",
       "given": {
-        "canonicalChildTasks": ["brokerA-task-1", "brokerA-task-2", "brokerB-task-3"],
+        "canonicalChildTasks": [
+          "brokerA-task-1",
+          "brokerA-task-2",
+          "brokerB-task-3"
+        ],
         "parentProjections": [
-          { "projectionKey": "parentRound:brokerA:brokerA-task-1:pr", "projectionState": "projected" },
-          { "projectionKey": "parentRound:brokerA:brokerA-task-2:pr", "projectionState": "projected" },
-          { "projectionKey": "parentRound:brokerB:brokerB-task-3:pr", "projectionState": "projected" }
+          {
+            "projectionKey": "parentRound:brokerA:brokerA-task-1:pr",
+            "projectionState": "projected"
+          },
+          {
+            "projectionKey": "parentRound:brokerA:brokerA-task-2:pr",
+            "projectionState": "projected"
+          },
+          {
+            "projectionKey": "parentRound:brokerB:brokerB-task-3:pr",
+            "projectionState": "projected"
+          }
         ],
         "childTaskStatuses": {
           "brokerA-task-1": "succeeded",
@@ -184,10 +280,21 @@
       "name": "sessionKey-redacted-from-progress-evidence",
       "description": "sessionKey values must be redacted from n/N progress evidence. The completed/total counts do not include session identifiers; sessionKey is not used in n/N computation.",
       "given": {
-        "canonicalChildTasks": ["task-alpha", "task-beta"],
+        "canonicalChildTasks": [
+          "task-alpha",
+          "task-beta"
+        ],
         "taskEvents": [
-          { "taskId": "task-alpha", "status": "succeeded", "sessionKey": "session-wxyz-1234" },
-          { "taskId": "task-beta", "status": "succeeded", "sessionKey": "session-efgh-5678" }
+          {
+            "taskId": "task-alpha",
+            "status": "succeeded",
+            "sessionKey": "session-wxyz-1234"
+          },
+          {
+            "taskId": "task-beta",
+            "status": "succeeded",
+            "sessionKey": "session-efgh-5678"
+          }
         ],
         "sessionKeyInSummary": false,
         "sessionKeyInTitle": false,
@@ -208,10 +315,19 @@
       "name": "ack-read-visibility-boundary",
       "description": "n/N progress is a terminal evidence projection, not a terminal ACK. It does not prove provider delivery, operator read, human visibility, or terminal-outbox ACK.",
       "given": {
-        "canonicalChildTasks": ["task-one", "task-two"],
+        "canonicalChildTasks": [
+          "task-one",
+          "task-two"
+        ],
         "taskEvents": [
-          { "taskId": "task-one", "status": "succeeded" },
-          { "taskId": "task-two", "status": "succeeded" }
+          {
+            "taskId": "task-one",
+            "status": "succeeded"
+          },
+          {
+            "taskId": "task-two",
+            "status": "succeeded"
+          }
         ]
       },
       "then": {

@@ -28,7 +28,7 @@ const RULES = [
     // cat <<EOF / tee <<EOF are the body-construction forms that corrupted A2A
     // GitHub Markdown bodies. Embedded node/python heredocs used for local
     // config generation are intentionally out of scope for this guard.
-    pattern: /\b(?:cat|tee)\s+<<-?\s*['"]?[A-Za-z0-9_:-]+['"]?/, 
+    pattern: /\b(?:cat|tee)\s+<<-?\s*['"]?[A-Za-z0-9_:-]+['"]?/,
     message: 'use a literal body file helper instead of heredoc body construction',
   },
   {

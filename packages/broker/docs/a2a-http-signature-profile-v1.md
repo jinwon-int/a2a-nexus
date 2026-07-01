@@ -1,6 +1,6 @@
 # A2A HTTP Signature Profile v1
 
-Status: design proposal  
+Status: design proposal
 Parent tracker: [#691](https://github.com/jinwon-int/a2a-nexus/issues/691)
 
 ## Summary

@@ -6,7 +6,7 @@
 **Base:** `jinwon-int/a2a-broker` `main`
 
 > **This is a read-only plan document.**
-> No live action defined here may be executed without a separate, explicit approval from Seoseo (Seo Jin On). See §8 for the approval gate.
+> No live action defined here may be executed without a separate, explicit approval from Seoseo (the operator). See §8 for the approval gate.
 
 ---
 
@@ -35,7 +35,7 @@ PR #1235 merged the production-facing persistence queue diagnostics surface:
 ### 1.3 Constraints
 
 - Seoseo is finalizer of record. Workers must not merge PRs or close #1032.
-- All live actions require a separate, fresh approval from Seo Jin On. This document only defines *what* would be done, when, and how to verify — not an authorization to do it.
+- All live actions require a separate, fresh approval from the operator. This document only defines *what* would be done, when, and how to verify — not an authorization to do it.
 - No DB migration, prune, mutation, Terminal ACK/replay, provider canary, credential movement, tag/release, or Gateway restart/reload without explicit approval.
 
 ---
@@ -314,7 +314,7 @@ After the latency proof passes on **both** Seoseo and Gwakga:
 
 ### 7.2 Release Path
 
-1. **Seoseo approves:** Seoseo (Seo Jin On) posts an approval comment on #1032
+1. **Seoseo approves:** Seoseo (the operator) posts an approval comment on #1032
 2. **Documentation updated:** Wiki page committed in the release branch
 3. **Tag:** Release tag pushed (e.g., `v1.6.0-rc1` or agreed version)
 4. **Release notes:** Include summary of persistence queue diagnostics and #1032 closure
@@ -334,7 +334,7 @@ After the latency proof passes on **both** Seoseo and Gwakga:
 
 ### 8.1 What Requires Approval
 
-The following actions require a **separate, fresh approval** from Seo Jin On (Seoseo) in a comment on #1032:
+The following actions require a **separate, fresh approval** from the operator (Seoseo) in a comment on #1032:
 
 - [ ] Deploy new broker image to Seoseo (any image change)
 - [ ] Deploy new broker image to Gwakga

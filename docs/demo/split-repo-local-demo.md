@@ -2,8 +2,8 @@
 
 A no-live public local demo showing the three-package A2A Nexus story: broker AgentCard/profile, plugin diagnostics/profile visibility, and docker-runner dry-run evidence. Intended for first-time evaluators who want to see each split-repo component's role without live brokers, providers, or deployments.
 
-**Parent:** [#473](https://github.com/jinwon-int/a2a-plane/issues/473)
-**Tracking:** [#480](https://github.com/jinwon-int/a2a-plane/issues/480)
+**Parent:** #473 (a2a-plane#473, internal tracker private)
+**Tracking:** #480 (a2a-plane#480, internal tracker private)
 **Completed upstream issues:** [#951](https://github.com/jinwon-int/a2a-broker/issues/951), [#454](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454), [#343](https://github.com/jinwon-int/a2a-docker-runner/issues/343)
 
 ## Safety boundary
@@ -170,7 +170,7 @@ This validates:
 | 1 | Broker | AgentCard JSON-RPC profile, worker capacity, health | [#951](https://github.com/jinwon-int/a2a-broker/issues/951) |
 | 2 | Plugin | Config schema, diagnostics surface, unit tests | [#454](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454) |
 | 3 | Docker runner | Dry-run evidence, task manifest structure | [#343](https://github.com/jinwon-int/a2a-docker-runner/issues/343) |
-| 4 | Plane umbrella | Conformance check across all three packages | [#480](https://github.com/jinwon-int/a2a-plane/issues/480) |
+| 4 | Plane umbrella | Conformance check across all three packages | #480 (a2a-plane#480, internal tracker private) |
 
 ## Where to go next
 

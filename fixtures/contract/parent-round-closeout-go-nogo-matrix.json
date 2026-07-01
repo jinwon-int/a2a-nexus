@@ -4,7 +4,7 @@
   "schema": "docs/specs/a2a-parent-round-closeout-go-nogo/schema.json",
   "description": "Synthetic fixture for parent-round closeout go/no-go matrix validation. Covers Go, No-Go, and Blocked scenarios including idempotency replay, GitHub 403, metadata violations, and runtime bootstrap hygiene failure.",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/841",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+  "issue": "a2a-plane#396 (internal tracker, private)",
   "run": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
   "lane": "team1-nosuk",
   "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",

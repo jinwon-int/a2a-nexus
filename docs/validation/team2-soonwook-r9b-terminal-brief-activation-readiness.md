@@ -1,8 +1,8 @@
 # Team2/Soonwook R9b Terminal Brief activation readiness validation
 
-Issue: [a2a-plane#294](https://github.com/jinwon-int/a2a-plane/issues/294)  
-Parent broker tracker: [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567)  
-Run: `a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z`  
+Issue: a2a-plane#294 (a2a-plane#294, internal tracker private)
+Parent broker tracker: [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567)
+Run: `a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z`
 Lane: `soonwook` / Team2 libero cross-team validation and risk review
 
 This is a redacted, no-live readiness artifact. It performs repository evidence review only. It does not deploy, restart, reload Gateway/broker/worker processes, send a live provider or Telegram message, mutate production databases or terminal-outbox rows, perform manual ACK/replay or historical outbox replay, change secrets or repository visibility, publish a release/tag, rewrite history, force-push, or execute approval.

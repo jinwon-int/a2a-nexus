@@ -1830,7 +1830,7 @@ test("GET /release/evidence returns read-only dry-run release evidence without m
     const before = server.runtime.broker.getTask(created.id)?.updatedAt;
 
     const res = await fetch(
-      `${server.baseUrl}/release/evidence?task_id=${created.id}&repo=jinwon-int/a2a-broker&issue=479&parentIssue=jinwon-int/a2a-plane%23197&runId=a2a-source-dryrun-orchestrator-20260510T133022Z`,
+      `${server.baseUrl}/release/evidence?task_id=${created.id}&repo=jinwon-int/a2a-broker&issue=479&parentIssue=a2a-plane (internal tracker, private)%23197&runId=a2a-source-dryrun-orchestrator-20260510T133022Z`,
       {
         headers: {
           "x-a2a-edge-secret": "test-edge-secret",

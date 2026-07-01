@@ -1,8 +1,8 @@
 {
   "schema": "a2a.current-state.no-live-integration-smoke.v1",
   "mode": "no-live",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/506",
-  "trackingIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
+  "parentIssue": "a2a-plane#506 (internal tracker, private)",
+  "trackingIssue": "a2a-plane#508 (internal tracker, private)",
   "snapshotDate": "2026-06-07",
   "description": "Umbrella fixture for the #506 current-state wave. It proves the intended broker, runner, plugin, and finalizer boundaries through injected source fixtures only.",
   "sourceOnly": true,
@@ -63,8 +63,8 @@
     },
     {
       "id": "single-finalizer-packet",
-      "ownerRepo": "jinwon-int/a2a-plane",
-      "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/508",
+      "ownerRepo": "a2a-plane (internal tracker, private)",
+      "childIssue": "a2a-plane#508 (internal tracker, private)",
       "inputKind": "aggregated-worker-evidence",
       "requiredAssertions": [
         "one finalizer owns the closeout decision",

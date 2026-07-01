@@ -38,7 +38,7 @@ function allRehearsalGates(overrides = {}) {
       id,
       {
         status: 'GO',
-        evidence: [`https://github.com/jinwon-int/a2a-plane/issues/214#${id}-${index + 1}`],
+        evidence: [`a2a-plane#214 (internal tracker, private)#${id}-${index + 1}`],
         ...overrides[id],
       },
     ]),
@@ -113,7 +113,7 @@ test('separate approval evidence can produce GO_CANDIDATE but still never execut
         ...allRehearsalGates().gates,
         operatorApproval: {
           status: 'GO',
-          evidence: ['https://github.com/jinwon-int/a2a-plane/issues/211#operator-approval-placeholder'],
+          evidence: ['a2a-plane#211 (internal tracker, private)#operator-approval-placeholder'],
         },
       },
     },
@@ -183,7 +183,7 @@ test('markdown output keeps GO_CANDIDATE separate from approval/source-public ex
         ...allRehearsalGates().gates,
         operatorApproval: {
           status: 'GO',
-          evidence: ['https://github.com/jinwon-int/a2a-plane/issues/211#operator-approval-placeholder'],
+          evidence: ['a2a-plane#211 (internal tracker, private)#operator-approval-placeholder'],
         },
       },
     },

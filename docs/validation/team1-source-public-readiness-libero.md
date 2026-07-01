@@ -1,7 +1,7 @@
 # Team1 source public-readiness libero matrix
 
-Parent: [#185](https://github.com/jinwon-int/a2a-plane/issues/185)
-Child: [#186](https://github.com/jinwon-int/a2a-plane/issues/186)
+Parent: #185 (a2a-plane#185, internal tracker private)
+Child: #186 (a2a-plane#186, internal tracker private)
 Run: `a2a-team1-source-public-readiness-20260510T054829Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -13,13 +13,13 @@ This is a redacted validation artifact only. It does not change repository visib
 
 ## Evidence reviewed
 
-- Team1 dispatch parent: [a2a-plane#185](https://github.com/jinwon-int/a2a-plane/issues/185).
-- Libero lane: [a2a-plane#186](https://github.com/jinwon-int/a2a-plane/issues/186).
+- Team1 dispatch parent: a2a-plane#185 (a2a-plane#185, internal tracker private).
+- Libero lane: a2a-plane#186 (a2a-plane#186, internal tracker private).
 - Broker lane: [a2a-broker#469](https://github.com/jinwon-int/a2a-broker/issues/469); implementation PR [a2a-broker#470](https://github.com/jinwon-int/a2a-broker/pull/470).
 - Plugin lane: [openclaw-plugin-a2a#251](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/251).
 - Runner lane: [a2a-docker-runner#168](https://github.com/jinwon-int/a2a-docker-runner/issues/168); recurrence-prevention follow-up [a2a-docker-runner#169](https://github.com/jinwon-int/a2a-docker-runner/issues/169).
 - Local public-readiness surfaces: `contracts/a2a/terminal-semantics.md`, `contracts/compatibility/terminal-evidence-ack-boundary.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `docs/public-readiness.md`, and `docs/promotion-validation.md`.
-- GitHub metadata observed read-only during this review: `jinwon-int/a2a-plane` is public; `jinwon-int/a2a-broker`, `jinwon-int/openclaw-plugin-a2a`, and `jinwon-int/a2a-docker-runner` remain private source repositories.
+- GitHub metadata observed read-only during this review: `a2a-plane (internal tracker, private)` is public; `jinwon-int/a2a-broker`, `jinwon-int/openclaw-plugin-a2a`, and `jinwon-int/a2a-docker-runner` remain private source repositories.
 
 ## Integrated validation matrix
 
@@ -37,7 +37,7 @@ This is a redacted validation artifact only. It does not change repository visib
 ## Merge and closeout order
 
 1. Merge [a2a-broker#470](https://github.com/jinwon-int/a2a-broker/pull/470) after CI remains green. It closes [a2a-broker#469](https://github.com/jinwon-int/a2a-broker/issues/469).
-2. Merge this A2A Nexus validation PR after local gates pass. It closes [a2a-plane#186](https://github.com/jinwon-int/a2a-plane/issues/186).
+2. Merge this A2A Nexus validation PR after local gates pass. It closes a2a-plane#186 (a2a-plane#186, internal tracker private).
 3. Close [openclaw-plugin-a2a#251](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/251) as Done/no-change evidence and [a2a-docker-runner#168](https://github.com/jinwon-int/a2a-docker-runner/issues/168) as RCA-linked Block/no-change evidence. Keep [a2a-docker-runner#169](https://github.com/jinwon-int/a2a-docker-runner/issues/169) open as recurrence-prevention follow-up.
 4. If more than one A2A Nexus PR from the round exists, run the merge train locally before merging the first PR:
 
@@ -51,7 +51,7 @@ Use the stronger gate when public-readiness wording or tests change:
 npm run round:merge-preflight -- --run "npm run check && npm run test:release-gate" <a2a-plane-pr> [<a2a-plane-pr> ...]
 ```
 
-5. Post parent closeout on [a2a-plane#185](https://github.com/jinwon-int/a2a-plane/issues/185) with merged commits, issue closures, and the open #169 recurrence-prevention follow-up. If any sibling lane is missing, ambiguous, or unsafe, keep the aggregate decision **NO-GO / Waiting**.
+5. Post parent closeout on a2a-plane#185 (a2a-plane#185, internal tracker private) with merged commits, issue closures, and the open #169 recurrence-prevention follow-up. If any sibling lane is missing, ambiguous, or unsafe, keep the aggregate decision **NO-GO / Waiting**.
 
 ## Current aggregate decision
 

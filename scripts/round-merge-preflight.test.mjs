@@ -37,8 +37,8 @@ test('Team1/yukson PR #253 closeout records package conflict and safe resolution
   assert.match(artifact, /CONFLICT \(content\): Merge conflict in package\.json/);
   assert.match(artifact, /253 254/);
   assert.match(artifact, /254 253/);
-  assert.match(artifact, /scripts\/check-team1-config-schema-skew-libero\.test\.mjs/);
-  assert.match(artifact, /scripts\/check-team2-config-schema-parity-libero\.test\.mjs/);
+  assert.match(artifact, /scripts\/archive\/check-team1-config-schema-skew-libero\.test\.mjs/);
+  assert.match(artifact, /scripts\/archive\/check-team2-config-schema-parity-libero\.test\.mjs/);
   assert.match(artifact, /NO-GO \/ Waiting/);
   assert.match(artifact, /AGENTS\.md/);
   assert.match(artifact, /\.openclaw\/\*\*/);

@@ -1,7 +1,7 @@
 # A2A Monorepo Branch And Release Package Policy
 
 > **Snapshot date:** 2026-06-07
-> **Issue:** [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517)
+> **Issue:** a2a-plane#517 (a2a-plane#517, internal tracker private)
 > **Status:** reviewed and documented; no GitHub settings, release, tag, package, image, visibility, or canonical-source change is approved.
 
 This document records the branch protection and release/package policy required
@@ -16,7 +16,7 @@ Only status fields and finding counts are recorded.
 
 | Repo | Visibility | Default branch | Branch protection | Rulesets | Release API | Tags |
 | --- | --- | --- | --- | --- | --- | --- |
-| `jinwon-int/a2a-plane` | Public | `main` | None; protection API returned `404 Branch not protected` | None | No releases returned | `source-public-20260511` |
+| `a2a-plane (internal tracker, private)` | Public | `main` | None; protection API returned `404 Branch not protected` | None | No releases returned | `source-public-20260511` |
 | `jinwon-int/a2a-broker` | Public | `main` | Required `build`, strict/up-to-date; no PR review; admins not enforced | None | No releases returned | `source-public-20260511` |
 | `jinwon-int/a2a-docker-runner` | Public | `main` | Required `build`, strict/up-to-date; no PR review; admins not enforced | None | No releases returned | `source-public-20260511` |
 | `jinwon-int/openclaw-plugin-a2a` | Public | `main` | Required `build`, strict/up-to-date; no PR review; linear history and conversation resolution enabled | None | No releases returned | `source-public-20260511` |
@@ -72,17 +72,17 @@ approval. A valid approval must name the package or image, version, registry,
 tag strategy, dry-run evidence, and rollback/disposition path.
 
 The phase-8 release/package/tag approval packet is tracked in
-[`a2a-plane#547`](https://github.com/jinwon-int/a2a-plane/issues/547) and
+`a2a-plane#547` (a2a-plane#547, internal tracker private) and
 documented in
-[`docs/monorepo-release-package-tag-approval-packet.md`](../monorepo-release-package-tag-approval-packet.md).
+[`docs/history/monorepo-release-package-tag-approval-packet.md`](../history/monorepo-release-package-tag-approval-packet.md).
 It records the package metadata and approval fields only; it does not create
 tags, GitHub Releases, npm packages, Docker images, or package ownership
 changes.
 
 The phase-9 final operator sign-off matrix is tracked in
-[`a2a-plane#549`](https://github.com/jinwon-int/a2a-plane/issues/549) and
+`a2a-plane#549` (a2a-plane#549, internal tracker private) and
 documented in
-[`docs/monorepo-final-operator-signoff-matrix.md`](../monorepo-final-operator-signoff-matrix.md).
+[`docs/history/monorepo-final-operator-signoff-matrix.md`](../history/monorepo-final-operator-signoff-matrix.md).
 It consolidates branch protection, split repo disposition, release/package/tag,
 package ownership transfer, rollback owner, and canonical flip GO/NO-GO fields
 without approving any execution action.

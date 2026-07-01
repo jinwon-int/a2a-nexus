@@ -57,7 +57,7 @@
         "taskId": "4436e96d-d316-45a3-94b9-f116ecc1873c",
         "status": "succeeded",
         "analysisStatus": "blocked",
-        "summary": "analysis bridge blocked: 실행 전제조건 증거 불충분. 페이로드에 포함된 sourceBundle.files 중 핵심 문서 docs/monorepo-actual-canonical-flip-execution-preflight.md가 887,150자에서 절단되어 전문을 검증할 수 없음. 또한 검증 스크립트 scripts/check-monorepo-actual-canonical-flip-execution-preflight.mjs 실행 결과도 제공되지 않음."
+        "summary": "analysis bridge blocked: 실행 전제조건 증거 불충분. 페이로드에 포함된 sourceBundle.files 중 핵심 문서 docs/history/monorepo-actual-canonical-flip-execution-preflight.md가 887,150자에서 절단되어 전문을 검증할 수 없음. 또한 검증 스크립트 scripts/check-monorepo-actual-canonical-flip-execution-preflight.mjs 실행 결과도 제공되지 않음."
       },
       {
         "round": "a2ad-actualflip-exec-retry-20260610T143021Z",

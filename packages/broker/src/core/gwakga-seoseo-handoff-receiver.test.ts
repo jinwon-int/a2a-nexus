@@ -21,7 +21,7 @@ function validCandidate(overrides: Partial<GwakgaSeoseoHandoffCandidate> = {}): 
     handoffReason: "Team1 closeout validation",
     status: "accepted",
     idempotencyKey: "gwakga-249:team1:bangtong",
-    evidenceUrls: ["https://github.com/jinwon-int/a2a-plane/issues/249#issuecomment-1"],
+    evidenceUrls: ["a2a-plane#249 (internal tracker, private)#issuecomment-1"],
     ...overrides,
   };
 }

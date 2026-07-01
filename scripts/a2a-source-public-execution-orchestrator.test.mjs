@@ -57,7 +57,7 @@ function allGo(overrides = {}) {
         id,
         {
           status: 'GO',
-          evidence: [`https://github.com/jinwon-int/a2a-plane/issues/219#gate-${index + 1}`],
+          evidence: [`a2a-plane#219 (internal tracker, private)#gate-${index + 1}`],
           ...overrides[id],
         },
       ]),
@@ -108,7 +108,7 @@ test('all gates GO with operator execution gate GO yields GO_CANDIDATE', () => {
   const input = allGo({
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#explicit-operator-execution-approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#explicit-operator-execution-approval'],
     },
   });
   const result = run(input);
@@ -192,7 +192,7 @@ test('execution plan with operator approval is simulate mode', () => {
   const input = allGo({
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#operator-execution-approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#operator-execution-approval'],
     },
   });
   const result = run(input);
@@ -247,7 +247,7 @@ test('any non-operator gate MISSING yields NO_GO', () => {
     approvalPacketLocked: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -261,7 +261,7 @@ test('orchestrator-specific gate MISSING yields NO_GO', () => {
     executionPlanIntegrity: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -275,7 +275,7 @@ test('scannerHistoryBinding missing yields NO_GO', () => {
     scannerHistoryBinding: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -289,7 +289,7 @@ test('rollbackAbortRunbook missing yields NO_GO', () => {
     rollbackAbortRunbook: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -303,7 +303,7 @@ test('idempotencyReplayProtection missing yields NO_GO', () => {
     idempotencyReplayProtection: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -317,7 +317,7 @@ test('preflightFailureSemantics missing yields NO_GO', () => {
     preflightFailureSemantics: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -331,7 +331,7 @@ test('actionManifestDeterminism missing yields NO_GO', () => {
     actionManifestDeterminism: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -345,7 +345,7 @@ test('crossBrokerHandoffEvidence missing yields NO_GO', () => {
     crossBrokerHandoffEvidence: { status: 'MISSING', evidence: [] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -360,7 +360,7 @@ test('broker readiness GO validates evidence packet', () => {
   const input = allGo({
     brokerReadiness: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#broker'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#broker'],
       evidencePacket: {
         health: { ok: true },
         expectedWorkers: ['bangtong'],
@@ -371,7 +371,7 @@ test('broker readiness GO validates evidence packet', () => {
     },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#operator-execution-approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#operator-execution-approval'],
     },
   });
   const result = run(input);
@@ -384,7 +384,7 @@ test('broker readiness fails on non-zero queue', () => {
   const input = allGo({
     brokerReadiness: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#broker'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#broker'],
       evidencePacket: {
         health: { ok: true },
         expectedWorkers: [],
@@ -395,7 +395,7 @@ test('broker readiness fails on non-zero queue', () => {
     },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -408,12 +408,12 @@ test('plugin readiness fails when live Telegram is configured', () => {
   const input = allGo({
     pluginReadiness: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#plugin'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#plugin'],
       evidencePacket: { liveTelegramConfigured: true },
     },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -426,7 +426,7 @@ test('runner readiness fails when production deploy flag is set', () => {
   const input = allGo({
     runnerReadiness: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#runner'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#runner'],
       evidencePacket: {
         artifactManifest: { ok: true },
         scannerProfile: { ok: true },
@@ -435,7 +435,7 @@ test('runner readiness fails when production deploy flag is set', () => {
     },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -452,7 +452,7 @@ test('GO_CANDIDATE fails when evidence contains unredacted private path', () => 
     scannerHistoryBinding: { status: 'GO', evidence: [unsafePath] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -467,7 +467,7 @@ test('GO_CANDIDATE fails when evidence contains raw session dump markers', () =>
     scannerHistoryBinding: { status: 'GO', evidence: [dumpLine] },
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#approval'],
     },
   });
   const result = run(input);
@@ -492,7 +492,7 @@ test('source-public execution is NO_GO even in GO_CANDIDATE', () => {
   const input = allGo({
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#explicit-operator-execution-approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#explicit-operator-execution-approval'],
     },
   });
   const result = run(input);
@@ -508,7 +508,7 @@ test('NO_GO is a valid fail-closed outcome with unresolved gates', () => {
   const input = {
     decision: 'NO_GO',
     gates: {
-      approvalPacketLocked: { status: 'GO', evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#locked'] },
+      approvalPacketLocked: { status: 'GO', evidence: ['a2a-plane#219 (internal tracker, private)#locked'] },
     },
   };
   const result = run(input);
@@ -525,8 +525,8 @@ test('markdown format produces deterministic report for NO_GO', () => {
   const input = {
     decision: 'NO_GO',
     gates: {
-      approvalPacketLocked: { status: 'GO', evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#locked'] },
-      executionPlanIntegrity: { status: 'GO', evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#integrity'] },
+      approvalPacketLocked: { status: 'GO', evidence: ['a2a-plane#219 (internal tracker, private)#locked'] },
+      executionPlanIntegrity: { status: 'GO', evidence: ['a2a-plane#219 (internal tracker, private)#integrity'] },
     },
   };
   const result = runMarkdown(input);
@@ -546,7 +546,7 @@ test('markdown output for GO_CANDIDATE shows execution plan ready', () => {
   const input = allGo({
     operatorExecutionGate: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#operator-execution-approval'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#operator-execution-approval'],
     },
   });
   const result = runMarkdown(input);
@@ -573,7 +573,7 @@ test('identical input produces identical execution plan', () => {
     operatorExecutionGate: { status: 'MISSING', evidence: [] },
     approvalPacketLocked: {
       status: 'GO',
-      evidence: ['https://github.com/jinwon-int/a2a-plane/issues/219#locked'],
+      evidence: ['a2a-plane#219 (internal tracker, private)#locked'],
       packetHash: 'abc123',
     },
   });

@@ -4,7 +4,7 @@
 # independently, while the full check job runs the complete release gate on
 # main and for cross-cutting changes.
 #
-# https://github.com/jinwon-int/a2a-plane/actions
+# a2a-plane (internal tracker, private)actions
 
 name: ci
 on:

@@ -1,6 +1,6 @@
 # Termux proot-distro A2A Runner (Development/Testing)
 
-**Status**: Experimental / Testing only  
+**Status**: Experimental / Testing only
 **Last updated**: 2026-06-15 by gongyung
 
 ## Overview

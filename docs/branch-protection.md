@@ -4,7 +4,7 @@ This document records the branch protection / ruleset state that the
 [`auto-merge`](../.github/workflows/auto-merge.yml) workflow depends on to stay
 safe. It is the stable, ongoing reference for that invariant. The dated,
 approval-gated execution plan for *applying* the settings lives in
-[`monorepo-branch-protection-approval-packet.md`](monorepo-branch-protection-approval-packet.md);
+[`history/monorepo-branch-protection-approval-packet.md`](history/monorepo-branch-protection-approval-packet.md);
 this file describes the steady-state requirement those settings must satisfy.
 
 > **No-go boundary:** This document does not apply, change, or remove branch
@@ -49,8 +49,8 @@ For auto-merge to be safe, `jinwon-int/a2a-nexus` `main` must enforce a ruleset
   skip reason explicit.
 
 The exact required-check list and its path-aware handling come from the
-["Required-check Candidate"](monorepo-branch-protection-approval-packet.md#required-check-candidate)
-and ["Proposed Settings Shape For Later Approval"](monorepo-branch-protection-approval-packet.md#proposed-settings-shape-for-later-approval)
+["Required-check Candidate"](history/monorepo-branch-protection-approval-packet.md#required-check-candidate)
+and ["Proposed Settings Shape For Later Approval"](history/monorepo-branch-protection-approval-packet.md#proposed-settings-shape-for-later-approval)
 sections of the approval packet; keep the two in sync.
 
 ## How to verify the invariant holds

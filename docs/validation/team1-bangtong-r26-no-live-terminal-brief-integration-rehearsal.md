@@ -1,7 +1,7 @@
 # R26 Team1/bangtong no-live Terminal Brief integration rehearsal
 
-Parent: [a2a-plane#360](https://github.com/jinwon-int/a2a-plane/issues/360)
-Lane: [a2a-plane#361](https://github.com/jinwon-int/a2a-plane/issues/361)
+Parent: a2a-plane#360 (a2a-plane#360, internal tracker private)
+Lane: a2a-plane#361 (a2a-plane#361, internal tracker private)
 Run: `a2a-r26-team1-no-live-terminal-brief-integration-rehearsal-20260515T1832Z`
 Broker of record: Seoseo
 Worker: `bangtong`
@@ -17,8 +17,8 @@ This rehearsal builds on merged R25 artifacts:
 
 | Artifact | Description |
 |----------|-------------|
-| [a2a-plane#359](https://github.com/jinwon-int/a2a-plane/pull/359) | R25 Team1 ops-readiness gate framework (bangtong lane) |
-| [a2a-plane#353](https://github.com/jinwon-int/a2a-plane/issues/353) / [a2a-plane#351](https://github.com/jinwon-int/a2a-plane/issues/351) | R25 yukson validation matrix and parent |
+| a2a-plane#359 (a2a-plane PR #359, internal tracker private) | R25 Team1 ops-readiness gate framework (bangtong lane) |
+| a2a-plane#353 (a2a-plane#353, internal tracker private) / a2a-plane#351 (a2a-plane#351, internal tracker private) | R25 yukson validation matrix and parent |
 | [a2a-docker-runner#275](https://github.com/jinwon-int/a2a-docker-runner/pull/275) | R25 docker-runner integration evidence |
 | `team1-bangtong-r25-ops-readiness-terminal-brief.md` | R25 ops-readiness gate definition (Domains G1&#8211;G5) |
 
@@ -63,8 +63,8 @@ Verify that the R25 G1 preconditions are structurally satisfied for a no-live re
 **Rehearsal command:**
 
 ```bash
-node --test scripts/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
-node --test scripts/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
+node --test scripts/archive/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
+node --test scripts/archive/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
 npm run check:terminal-brief-routing
 node test/conformance/check-contract-fixtures.mjs
 node test/conformance/check-terminal-evidence-ack-boundary.mjs
@@ -133,10 +133,10 @@ Run from the repository root after a clean checkout:
 
 ```bash
 # Core rehearsal test suite
-node --test scripts/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
+node --test scripts/archive/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
 
 # R25 gate framework conformance (prerequisite pass)
-node --test scripts/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
+node --test scripts/archive/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
 
 # Terminal Brief routing guard
 npm run check:terminal-brief-routing

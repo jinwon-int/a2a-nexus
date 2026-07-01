@@ -148,7 +148,7 @@
         "taskId": "9f567857-657a-4369-97de-eb542fb32ffc",
         "status": "succeeded",
         "analysisStatus": "done",
-        "summary": "analysis bridge done: 모노레포 canonical flip 이후 분산 저장소(a2a-broker, a2a-docker-runner, plugin-a2a)의 향후 disposition으로 active_provenance_mirror를 권장. read_only_archive/archived_redirect는 현 단계에서 위험. 근거: (1) monorepo-reentry-decision.md에 phase 0/1 동안 분산 저장소가 canonical 유지 명시, (2) a2a-nexus#553에서 active_canonical 상태 유지 중, active_mirrored는 candidate-only, (3) CI parity matrix에서 분산 저장소 CI가 여전히 canonical, (4) provenance trail 보존과 rollback 경로 확보 필요."
+        "summary": "analysis bridge done: 모노레포 canonical flip 이후 분산 저장소(a2a-broker, a2a-docker-runner, plugin-a2a)의 향후 disposition으로 active_provenance_mirror를 권장. read_only_archive/archived_redirect는 현 단계에서 위험. 근거: (1) history/monorepo-reentry-decision.md에 phase 0/1 동안 분산 저장소가 canonical 유지 명시, (2) a2a-nexus#553에서 active_canonical 상태 유지 중, active_mirrored는 candidate-only, (3) CI parity matrix에서 분산 저장소 CI가 여전히 canonical, (4) provenance trail 보존과 rollback 경로 확보 필요."
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",

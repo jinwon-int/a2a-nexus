@@ -7,34 +7,34 @@
   "gates": {
     "approvalPacketLocked": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#approval-packet-locked-go"],
+      "evidence": ["a2a-plane#219 (internal tracker, private)#approval-packet-locked-go"],
       "packetHash": "abc123def456",
       "commitSha": "a1b2c3d4e5f6"
     },
     "executionPlanIntegrity": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#execution-plan-integrity-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#execution-plan-integrity-go"]
     },
     "scannerHistoryBinding": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#scanner-history-binding-go"],
+      "evidence": ["a2a-plane#219 (internal tracker, private)#scanner-history-binding-go"],
       "scannerRunId": "gitleaks-20260511-023500Z"
     },
     "rollbackAbortRunbook": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#rollback-abort-runbook-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#rollback-abort-runbook-go"]
     },
     "idempotencyReplayProtection": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#idempotency-replay-protection-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#idempotency-replay-protection-go"]
     },
     "preflightFailureSemantics": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#preflight-failure-semantics-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#preflight-failure-semantics-go"]
     },
     "actionManifestDeterminism": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#action-manifest-determinism-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#action-manifest-determinism-go"]
     },
     "operatorExecutionGate": {
       "status": "MISSING",
@@ -42,11 +42,11 @@
     },
     "crossBrokerHandoffEvidence": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#cross-broker-handoff-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#cross-broker-handoff-go"]
     },
     "brokerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#broker-readiness-go"],
+      "evidence": ["a2a-plane#219 (internal tracker, private)#broker-readiness-go"],
       "evidencePacket": {
         "health": { "ok": true, "revision": "abc1234" },
         "expectedWorkers": ["bangtong"],
@@ -58,7 +58,7 @@
     },
     "pluginReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#plugin-readiness-go"],
+      "evidence": ["a2a-plane#219 (internal tracker, private)#plugin-readiness-go"],
       "evidencePacket": {
         "liveTelegramConfigured": false,
         "providerDeliveryEnabled": false,
@@ -70,7 +70,7 @@
     },
     "runnerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#runner-readiness-go"],
+      "evidence": ["a2a-plane#219 (internal tracker, private)#runner-readiness-go"],
       "evidencePacket": {
         "artifactManifest": { "ok": true },
         "scannerProfile": { "ok": true },
@@ -80,15 +80,15 @@
     },
     "publicPrivateBoundary": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#public-private-boundary-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#public-private-boundary-go"]
     },
     "runtimeBootstrapHygiene": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#runtime-bootstrap-hygiene-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#runtime-bootstrap-hygiene-go"]
     },
     "redactedEvidencePolicy": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/219#redacted-evidence-policy-go"]
+      "evidence": ["a2a-plane#219 (internal tracker, private)#redacted-evidence-policy-go"]
     }
   }
 }

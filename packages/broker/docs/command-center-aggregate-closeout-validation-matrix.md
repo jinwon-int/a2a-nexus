@@ -1,9 +1,9 @@
 # Command-center aggregate closeout validation matrix
 
-Issue: [#370](https://github.com/jinwon-int/a2a-broker/issues/370)  
-Parent: [#364](https://github.com/jinwon-int/a2a-broker/issues/364)  
-Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294)  
-Run: `a2a-command-center-aggregation-20260505170100`  
+Issue: [#370](https://github.com/jinwon-int/a2a-broker/issues/370)
+Parent: [#364](https://github.com/jinwon-int/a2a-broker/issues/364)
+Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294)
+Run: `a2a-command-center-aggregation-20260505170100`
 Worker: `yukson` libero validation lane
 
 This matrix is the no-live validation plan for the command-center aggregation round. It is safe to attach to the #370 issue or PR before all implementation lanes have PR/Done evidence, then re-run as linked lanes become available.

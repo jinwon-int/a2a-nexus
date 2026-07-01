@@ -1,10 +1,10 @@
 {
   "schema": "a2a.monorepo-canonical-flip-readiness.v1",
   "snapshotDate": "2026-06-08",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "phase4FreshImportCandidateIssue": "https://github.com/jinwon-int/a2a-plane/issues/538",
-  "phase4FreshImportPr": "https://github.com/jinwon-int/a2a-plane/pull/540",
-  "phase5ReadinessIssue": "https://github.com/jinwon-int/a2a-plane/issues/541",
+  "parentIssue": "a2a-plane#511 (internal tracker, private)",
+  "phase4FreshImportCandidateIssue": "a2a-plane#538 (internal tracker, private)",
+  "phase4FreshImportPr": "a2a-plane PR #540 (internal tracker, private)",
+  "phase5ReadinessIssue": "a2a-plane#541 (internal tracker, private)",
   "phase4MergeCommit": "31273ce05b7e53655e3d8847a8d77ff1cd2f6d05",
   "phase4HeadCommit": "a35f379840a768acf5bcb4656c0b1f26a7e05e19",
   "canonicalFlipDecision": "NO_GO_WAITING",
@@ -40,7 +40,7 @@
   ],
   "ciEvidence": {
     "runId": "27099159202",
-    "runUrl": "https://github.com/jinwon-int/a2a-plane/actions/runs/27099159202",
+    "runUrl": "a2a-plane (internal tracker, private)actions/runs/27099159202",
     "passedJobs": [
       "paths-filter",
       "setup",

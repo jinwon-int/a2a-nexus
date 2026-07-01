@@ -38,7 +38,7 @@ handoffReason: closeout evidence collection
 status: accepted
 idempotencyKey: gwakga-249-team1-bangtong-closeout-20260512-0217
 evidenceUrls:
-  - https://github.com/jinwon-int/a2a-plane/issues/249
+  - a2a-plane#249 (internal tracker, private)
 assignment:
   workerId: bangtong
   intent: propose_patch

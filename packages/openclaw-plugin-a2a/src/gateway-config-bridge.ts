@@ -3,7 +3,7 @@
  * for the a2a-broker-adapter plugin.
  *
  * Issue:  jinwon-int/plugin-a2a#269
- * Parent: jinwon-int/a2a-plane#241
+ * Parent: a2a-plane#241 (internal tracker, private)
  * Run:    terminal-brief-activation-20260511T080211Z
  *
  * Provides a safe config bridge that injects operatorEvents.enabled +

@@ -471,4 +471,4 @@ Each PR or validation lane referencing this spec must produce evidence that incl
 | Parent-origin routing fixture | `fixtures/contract/terminal-brief-parent-origin-routing.json` | Machine-readable four-case invariant |
 | Parent aggregation fixture | `fixtures/contract/parent-terminal-brief-aggregation.json` | Projection field requirements |
 | Accepted-send non-ACK fixture | `fixtures/terminal-evidence/accepted-send-non-ack.json` | Receipt-level 1 non-ACK boundary |
-| R6 synthesis | `docs/r6-terminal-brief-openclaw-routing-synthesis.md` | Historical routing synthesis and unsafe bypass patterns |
+| R6 synthesis | `docs/history/r6-terminal-brief-openclaw-routing-synthesis.md` | Historical routing synthesis and unsafe bypass patterns |

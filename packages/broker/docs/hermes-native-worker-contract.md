@@ -243,4 +243,4 @@ Hermes/native worker contract tests are in:
 - [Worker capability registry](worker-capability-registry.md)
 - [Worker subagent orchestration policy](worker-subagent-orchestration-policy.md)
 - Issue: [a2a-broker#961](https://github.com/jinwon-int/a2a-broker/issues/961)
-- Parent: [a2a-plane#503](https://github.com/jinwon-int/a2a-plane/issues/503)
+- Parent: a2a-plane#503 (a2a-plane#503, internal tracker private)

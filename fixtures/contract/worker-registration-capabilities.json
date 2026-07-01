@@ -40,7 +40,7 @@
   "compatibilityProofs": [
     {
       "proofId": "second-worker-compatibility-jingun-20260510",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/152",
+      "issue": "a2a-plane#152 (internal tracker, private)",
       "round": "a2a-vnext-contract-smoke-crossbroker-20260510",
       "brokerOfRecord": "gwakga",
       "workerName": "worker-jingun-second-worker",
@@ -52,8 +52,8 @@
     },
     {
       "proofId": "second-worker-replay-trace-soonwook-20260509",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/168",
-      "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/163",
+      "issue": "a2a-plane#168 (internal tracker, private)",
+      "parentIssue": "a2a-plane#163 (internal tracker, private)",
       "run": "a2a-public-readiness-next-20260509T165108Z",
       "brokerOfRecord": "gwakga",
       "workerName": "worker-soonwook-second-reference",

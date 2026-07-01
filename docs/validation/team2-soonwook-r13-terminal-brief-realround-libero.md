@@ -1,14 +1,14 @@
 # Team2/Soonwook R13 compact Terminal Brief real-round libero validation
 
-Issue: [a2a-plane#306](https://github.com/jinwon-int/a2a-plane/issues/306)  
-Parent broker tracker: [a2a-broker#607](https://github.com/jinwon-int/a2a-broker/issues/607)  
-Primary guard: [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598)  
-Run: `a2a-r13-terminal-brief-realround-20260514T013556Z`  
-Origin/finalizer broker for this dispatch: `seoseo`  
-Team2 handoff broker when applicable: `gwakga`  
-Lane: `soonwook` / Team2 libero validation  
-Order: `7/7`  
-Target compact title: `A2A Terminal Brief 완료: soonwook(7/7)`  
+Issue: a2a-plane#306 (a2a-plane#306, internal tracker private)
+Parent broker tracker: [a2a-broker#607](https://github.com/jinwon-int/a2a-broker/issues/607)
+Primary guard: [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598)
+Run: `a2a-r13-terminal-brief-realround-20260514T013556Z`
+Origin/finalizer broker for this dispatch: `seoseo`
+Team2 handoff broker when applicable: `gwakga`
+Lane: `soonwook` / Team2 libero validation
+Order: `7/7`
+Target compact title: `A2A Terminal Brief 완료: soonwook(7/7)`
 Snapshot: `2026-05-14T01:39Z`
 
 This is a redacted, no-live validation artifact for the R13 compact Terminal Brief real-round. It uses repository and GitHub issue evidence only. It does not restart Gateway, broker, or worker processes; reload live services; deploy; run a live provider or Telegram canary beyond normal A2A task completion notifications; mutate production databases or terminal-outbox rows; perform manual Terminal Brief ACK/replay or historical outbox replay; change secrets or repository visibility; publish a release/tag; rewrite history; force-push; or execute approval.
@@ -56,10 +56,10 @@ Team2 handoff children must also carry directionally explicit handoff metadata:
 | Team1/bangtong — [a2a-broker#608](https://github.com/jinwon-int/a2a-broker/issues/608) | Fail-closed dispatch guard implementation for missing parent metadata. | Dispatch expected title `A2A Terminal Brief 완료: bangtong(1/7)` at [issuecomment-4446617399](https://github.com/jinwon-int/a2a-broker/issues/608#issuecomment-4446617399); Start marker at [issuecomment-4446632710](https://github.com/jinwon-int/a2a-broker/issues/608#issuecomment-4446632710). | `NO-GO / Waiting`; Start is not terminal evidence. |
 | Team1/sogyo — [openclaw-plugin-a2a#307](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/307) | Plugin/runtime compact Terminal Brief verification with receipt/ACK boundary. | Dispatch expected title `A2A Terminal Brief 완료: sogyo(2/7)` at [issuecomment-4446618127](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/307#issuecomment-4446618127); Start marker at [issuecomment-4446626360](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/307#issuecomment-4446626360). | `NO-GO / Waiting`; plugin receipt safety cannot be inferred from Start. |
 | Team1/nosuk — [a2a-broker#609](https://github.com/jinwon-int/a2a-broker/issues/609) | Parent aggregation and ACK-boundary hardening. | Dispatch expected title `A2A Terminal Brief 완료: nosuk(3/7)` at [issuecomment-4446620137](https://github.com/jinwon-int/a2a-broker/issues/609#issuecomment-4446620137); Start marker at [issuecomment-4446630702](https://github.com/jinwon-int/a2a-broker/issues/609#issuecomment-4446630702). | `NO-GO / Waiting`; ACK-boundary hardening remains open until terminal evidence. |
-| Team1/yukson — [a2a-plane#305](https://github.com/jinwon-int/a2a-plane/issues/305) | Contracts/runbook for all-hands metadata and finalizer acceptance matrix. | Dispatch expected title `A2A Terminal Brief 완료: yukson(4/7)` at [issuecomment-4446622958](https://github.com/jinwon-int/a2a-plane/issues/305#issuecomment-4446622958); Start marker at [issuecomment-4446629898](https://github.com/jinwon-int/a2a-plane/issues/305#issuecomment-4446629898). | `NO-GO / Waiting`; contract/runbook proof remains open until terminal evidence. |
+| Team1/yukson — a2a-plane#305 (a2a-plane#305, internal tracker private) | Contracts/runbook for all-hands metadata and finalizer acceptance matrix. | Dispatch expected title `A2A Terminal Brief 완료: yukson(4/7)` at [issuecomment-4446622958](a2a-plane#305 (internal tracker, private)#issuecomment-4446622958); Start marker at [issuecomment-4446629898](a2a-plane#305 (internal tracker, private)#issuecomment-4446629898). | `NO-GO / Waiting`; contract/runbook proof remains open until terminal evidence. |
 | Team2/dungae — [a2a-broker#610](https://github.com/jinwon-int/a2a-broker/issues/610) | Gwakga handoff parity for Seoseo-origin parent ownership. | Dispatch expected title `A2A Terminal Brief 완료: dungae(5/7)` at [issuecomment-4446623706](https://github.com/jinwon-int/a2a-broker/issues/610#issuecomment-4446623706); Start marker at [issuecomment-4446632488](https://github.com/jinwon-int/a2a-broker/issues/610#issuecomment-4446632488). | `NO-GO / Waiting`; handoff parity cannot be counted from Start. |
 | Team2/jingun — [a2a-docker-runner#251](https://github.com/jinwon-int/a2a-docker-runner/issues/251) | Runner evidence context and compact titles without artifact leaks. | Dispatch expected title `A2A Terminal Brief 완료: jingun(6/7)` at [issuecomment-4446624377](https://github.com/jinwon-int/a2a-docker-runner/issues/251#issuecomment-4446624377); Start markers at [issuecomment-4446629640](https://github.com/jinwon-int/a2a-docker-runner/issues/251#issuecomment-4446629640) and [issuecomment-4446639319](https://github.com/jinwon-int/a2a-docker-runner/issues/251#issuecomment-4446639319). | `NO-GO / Waiting`; runner leak guard and terminal evidence remain open. |
-| Team2/soonwook — [a2a-plane#306](https://github.com/jinwon-int/a2a-plane/issues/306) | This libero validation of compact titles, parent-only ownership, and guard aggregation evidence. | Dispatch expected title `A2A Terminal Brief 완료: soonwook(7/7)` at [issuecomment-4446625430](https://github.com/jinwon-int/a2a-plane/issues/306#issuecomment-4446625430); Start markers at [issuecomment-4446630442](https://github.com/jinwon-int/a2a-plane/issues/306#issuecomment-4446630442) and [issuecomment-4446638467](https://github.com/jinwon-int/a2a-plane/issues/306#issuecomment-4446638467). | Pass for validation shape only after this PR/Done evidence exists; aggregate remains `NO-GO / Waiting`. |
+| Team2/soonwook — a2a-plane#306 (a2a-plane#306, internal tracker private) | This libero validation of compact titles, parent-only ownership, and guard aggregation evidence. | Dispatch expected title `A2A Terminal Brief 완료: soonwook(7/7)` at [issuecomment-4446625430](a2a-plane#306 (internal tracker, private)#issuecomment-4446625430); Start markers at [issuecomment-4446630442](a2a-plane#306 (internal tracker, private)#issuecomment-4446630442) and [issuecomment-4446638467](a2a-plane#306 (internal tracker, private)#issuecomment-4446638467). | Pass for validation shape only after this PR/Done evidence exists; aggregate remains `NO-GO / Waiting`. |
 
 ## R13 closeout risk matrix
 

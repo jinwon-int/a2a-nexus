@@ -5,7 +5,7 @@
  * produces sanitized hints for A2A status responses and Terminal Brief
  * context.  Never leaks raw host data, secrets, or internal metrics.
  *
- * Parent: jinwon-int/a2a-plane#380
+ * Parent: a2a-plane#380 (internal tracker, private)
  * Run: a2a-r31-worker-capability-profiles-20260516T1825Z
  *
  * Hermes/Android native worker metadata (R33, plugin-a2a#452):

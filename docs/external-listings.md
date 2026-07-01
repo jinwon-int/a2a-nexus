@@ -1,31 +1,26 @@
 # External listing tracker
 
-This file tracks the operator-approved discoverability workflow for A2A Nexus. External directory submissions are public communications and remain operator-gated.
+This document tracks gated discoverability submissions for A2A Nexus. It is preparation only: opening external directory PRs, homepage metadata changes, release announcements, or broad promotion require operator approval and the preconditions below.
 
-Scope split:
+## Preconditions
 
-- [#1160](https://github.com/jinwon-int/a2a-nexus/issues/1160) remains the external directory listing tracker until all three directory PRs have final outcomes.
-- [#1166](https://github.com/jinwon-int/a2a-nexus/issues/1166) tracked broader external publicization readiness through the approved settings closeout.
-- Follow-up public externalization hardening was split into focused trackers: contribution intake [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172), clone/view traffic audit [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173), and homepage/docs-site posture [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174). Their PR-safe closeout evidence lives in [Public externalization follow-up closeout evidence](public-externalization-followups.md), while #1160 stays open for external directory outcomes. The PR-safe roadmap lives in [External publicization roadmap](publicization-roadmap.md).
-
-## Preconditions before external PRs
-
-- [x] Operator explicitly approves the external listing wave. Approved 2026-07-01 KST via operator message: `승인`.
-- [x] Latest `main` passes `npm run scan:public-readiness`.
-- [x] Latest `main` passes `npm run scan:external-secrets` or an equivalent operator-run secret scan. The accepted findings were synthetic fixture findings only.
-- [x] README positioning and conformance evidence are current.
-- [x] PR bodies are reviewed for private topology, node IDs, endpoints, Telegram/provider IDs, and secret-like strings.
+- [ ] Repository visibility is public and `npm run scan:public-readiness` is green on the candidate commit.
+- [ ] `npm run scan:external-secrets` has current evidence with no non-synthetic findings.
+- [ ] Local quickstart and public docs path are green enough for external readers.
+- [ ] Operator approval record exists for `external-promotion` if a listing PR will be opened.
 
 ## Directory targets
 
-| Directory | Status | Planned category | PR URL | Notes |
-|---|---|---|---|---|
-| `ai-boost/awesome-a2a` | open | Broker / control-plane | <https://github.com/ai-boost/awesome-a2a/pull/138> | PR opened from `jinon86`; existing unrelated `NEXUS` PR #34 was not reused. |
-| `sing1ee/a2a-directory` | merged | A2A broker runtime | <https://github.com/sing1ee/a2a-directory/pull/35> | Merged 2026-06-30T23:37:19Z, merge commit `dcd58d5aa12769bbcd5fb35415da635624232682`. |
-| `pab1it0/awesome-a2a` | open | Broker / control-plane | <https://github.com/pab1it0/awesome-a2a/pull/71> | README developer-tools listing. |
+| Directory | Status | PR URL | Notes |
+| --- | --- | --- | --- |
+| `ai-boost/awesome-a2a` | prepared, not submitted | — | Broker/control-plane listing candidate. |
+| `sing1ee/a2a-directory` | prepared, not submitted | — | Schema-specific entry pending maintainer format check. |
+| `pab1it0/awesome-a2a` | prepared, not submitted | — | One-line listing candidate. |
 
-## Public-safe PR body base
+## Base PR body template
 
-> A2A Nexus is a fleet-level, operator-gated A2A task/evidence control plane. It complements the public A2A protocol/SDK layer with broker-managed worker registration, auditable task lifecycle evidence, source-only review bridges, and finalizer-oriented closeout reports. It is not affiliated with or endorsed by a2aproject; compatibility work is tracked in-repo and remains alpha.
+> Add A2A Nexus, an operator-gated A2A task and evidence control plane for broker-managed worker registration, auditable task lifecycle evidence, source-only review bridges, isolated patch execution, and finalizer closeout reports.
+>
+> It complements public A2A Agent Card / JSON-RPC conventions; it is not affiliated with or endorsed by a2aproject. The repository is public alpha: production deployment, package publication, release tags, external promotion, provider sends, and visibility-related actions remain separately operator-gated.
 
-Do not include private deployment topology, live broker URLs, node names, tokens, internal ports, Telegram/provider IDs, or production runtime metadata in external submissions.
+Use only README, LICENSE, and public docs as source text. Do not include private topology, node names, endpoints, provider IDs, Telegram IDs, runtime metadata, or raw approval-channel text.

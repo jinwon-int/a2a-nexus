@@ -1,8 +1,8 @@
 # Team2/soonwook Stability R7 risk review and compatibility matrix
 
-Parent: [a2a-broker#548](https://github.com/jinwon-int/a2a-broker/issues/548)  
-Plane lane: [a2a-plane#282](https://github.com/jinwon-int/a2a-plane/issues/282)  
-Run: `a2a-stability-r7-20260513T101831Z`  
+Parent: [a2a-broker#548](https://github.com/jinwon-int/a2a-broker/issues/548)
+Plane lane: a2a-plane#282 (a2a-plane#282, internal tracker private)
+Run: `a2a-stability-r7-20260513T101831Z`
 Snapshot: `2026-05-13T10:25Z`
 
 This is a redacted, no-live Team2 libero validation artifact. It reviews cross-team Stability R7 compatibility for broker liveness, read-only/libero task semantics, canary/receipt gates, PR-less evidence lanes, and Terminal Brief deployment-readiness evidence. It does not deploy or restart Gateway/broker/worker services, mutate or prune production databases, replay or ACK terminal-outbox rows, send live provider/Telegram messages, change secrets or visibility, publish a release/tag, rewrite history, force-push, or execute approval.
@@ -18,7 +18,7 @@ At this snapshot, the R7 sibling lanes discovered from the run id have Start evi
 - [a2a-docker-runner#237](https://github.com/jinwon-int/a2a-docker-runner/issues/237) — Team1 nosuk runner support for PR-less validation tasks.
 - [a2a-docker-runner#238](https://github.com/jinwon-int/a2a-docker-runner/issues/238) — Team2 jingun runner parity/stress fixtures for validation lanes.
 - [openclaw-plugin-a2a#294](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/294) — Team1 sogyo plugin UX for read-only/libero task evidence.
-- [a2a-plane#281](https://github.com/jinwon-int/a2a-plane/issues/281) — Team1 yukson libero contract and gate matrix.
+- a2a-plane#281 (a2a-plane#281, internal tracker private) — Team1 yukson libero contract and gate matrix.
 
 Safe closeout for this lane may say: **Team2 documented the R7 cross-team compatibility matrix and local validation passed; aggregate R7 readiness remains `NO-GO / Waiting` until sibling lanes publish terminal PR/Done/Block evidence, broker implementation evidence lands, runtime/bootstrap hygiene is clean, and any live-impact action receives fresh explicit operator approval.**
 

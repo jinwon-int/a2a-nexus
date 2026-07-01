@@ -2,7 +2,7 @@
 
 ## Preconditions
 
-- [x] Tracker exists: jinwon-int/a2a-plane#384.
+- [x] Tracker exists: a2a-plane#384 (internal tracker, private).
 - [x] Phase 1 is limited to source/docs/tests.
 - [x] Live registration/canary/deploy/restart are out of scope.
 - [x] Phase 2 dry-run remains loopback/local-only unless a separate live canary approval packet exists.

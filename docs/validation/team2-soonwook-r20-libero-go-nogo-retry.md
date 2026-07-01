@@ -1,11 +1,11 @@
 # Team2/Soonwook R20 Libero validation and source-only GO/NO-GO (retry lane)
 
-Issue: [a2a-plane#328](https://github.com/jinwon-int/a2a-plane/issues/328)  
-Parent: [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636)  
-Parent/origin coordinator: Gwakga  
-Run: `r20-libero-go-nogo-retry-soonwook-20260514T2320Z`  
-Lane: `soonwook` / Team2 libero validation (retry after R21 worker runtime repair)  
-Start marker: [a2a-plane#328 comment](https://github.com/jinwon-int/a2a-plane/issues/328#issuecomment-)
+Issue: a2a-plane#328 (a2a-plane#328, internal tracker private)
+Parent: [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636)
+Parent/origin coordinator: Gwakga
+Run: `r20-libero-go-nogo-retry-soonwook-20260514T2320Z`
+Lane: `soonwook` / Team2 libero validation (retry after R21 worker runtime repair)
+Start marker: [a2a-plane#328 comment](a2a-plane#328 (internal tracker, private)#issuecomment-)
 
 This is a redacted, no-live validation artifact for the R20 hot-table persistence and queue hygiene hardening round. It performs repository and GitHub evidence review only. It does not deploy, restart Gateway/broker/worker services, reload runtime config, send a live provider or Telegram canary, mutate/prune/migrate production databases, manually ACK or replay terminal-outbox rows, replay historical tasks, publish a release/tag, move or disclose secrets, force-push, rewrite history, change repository visibility, or execute operator approval.
 
@@ -25,7 +25,7 @@ Source-public execution remains **`NO_GO`**. This is a **source-only** GO/NO-GO:
 | Queue/outbox hygiene fail-closed dry-run reporting | Queue/outbox hygiene has explicit fail-closed dry-run/reporting behavior. The mutation path remains approval-gated. | Parent [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636) defines the acceptance criteria. Related stability trackers: [#497](https://github.com/jinwon-int/a2a-broker/issues/497) (broker high CPU/memory / hot-table state growth), [#294](https://github.com/jinwon-int/a2a-broker/issues/294) (stability roadmap: receipt semantics, queue hygiene, canary gates). | `NO-GO / Waiting`; require PR/Done/Block evidence from broker-outbox hygiene lanes. |
 | Plane contract/release-gate stability policy record | Plane contract/release-gate records the stability policy and no-live activation boundary. | Existing A2A Nexus release-gate definitions in `scripts/release-gate.mjs` and `fixtures/contract/` maintain the safety boundary. | `PASS for existing policy`; new R20-specific policy additions may be needed if outbox/hygiene changes alter the gate surface. |
 | Libero validation produces final GO/NO-GO (this lane) | Independent validation cross-checks all R20 source changes, produces source-only GO/NO-GO, merge sequencing, risk list, and explicit runtime activation blockers. | This validation document supplies the cross-check artifact and regression test. | `PASS for evidence shape`; aggregate remains `NO-GO / Waiting` until all sibling lanes provide terminal evidence. |
-| PR #254 (this repo) source review | New lane PRs including [a2a-plane#254](https://github.com/jinwon-int/a2a-plane/pull/254) need current-main validation. | PR #254 exists as a prior retry artifact. This lane supersedes it with R20 retry context. | `PASS for supersede`; this validation PR is the current terminal marker for the soonwook R20 lane. |
+| PR #254 (this repo) source review | New lane PRs including a2a-plane#254 (a2a-plane PR #254, internal tracker private) need current-main validation. | PR #254 exists as a prior retry artifact. This lane supersedes it with R20 retry context. | `PASS for supersede`; this validation PR is the current terminal marker for the soonwook R20 lane. |
 | Runtime/bootstrap hygiene | Branch diff, PR body, issue comments, and artifact evidence must exclude OpenClaw runtime/bootstrap context files and unredacted session transcripts. If any denied path enters the branch or evidence, fail closed before PR creation and report the exact repo-relative or artifact-relative path. | Intended diff is limited to this validation document and its test. | `PASS if final guard stays clean`; fail closed on any offending path. |
 
 ## R20 lane snapshot
@@ -35,7 +35,7 @@ Source-public execution remains **`NO_GO`**. This is a **source-only** GO/NO-GO:
 | Various (broker) | [jinwon-int/a2a-broker#620](https://github.com/jinwon-int/a2a-broker/issues/620) | R14 stale PR — broker hot-table persistence residual | Start evidence only at validation snapshot; requires current-main revalidation. |
 | Various (broker) | [jinwon-int/a2a-broker#622](https://github.com/jinwon-int/a2a-broker/issues/622) | R14 stale PR — broker hot-table diagnostics residual | Start evidence only at validation snapshot; requires current-main revalidation. |
 | Various (broker) | [jinwon-int/a2a-broker#626](https://github.com/jinwon-int/a2a-broker/issues/626) | R14 stale PR — broker queue/outbox hygiene residual | Start evidence only at validation snapshot; requires current-main revalidation. |
-| `soonwook` | [a2a-plane#328](https://github.com/jinwon-int/a2a-plane/issues/328) | This independent libero validation, GO/NO-GO, risk list, and blocker documentation. | Start evidence plus this PR after runner closeout. |
+| `soonwook` | a2a-plane#328 (a2a-plane#328, internal tracker private) | This independent libero validation, GO/NO-GO, risk list, and blocker documentation. | Start evidence plus this PR after runner closeout. |
 
 Start, queued, running, provider accepted-send, GitHub comment creation, and PR creation are not terminal lane evidence. Count a sibling lane as terminal only when it has an explicit PR, Done, or Block marker with linked checks/evidence.
 
@@ -84,7 +84,7 @@ Transition to `GO` (source-only) requires:
 
 ## Verification performed for this lane
 
-- Inspected parent [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636), broker child issues [#620](https://github.com/jinwon-int/a2a-broker/issues/620), [#622](https://github.com/jinwon-int/a2a-broker/issues/622), [#626](https://github.com/jinwon-int/a2a-broker/issues/626), this issue [a2a-plane#328](https://github.com/jinwon-int/a2a-plane/issues/328), and related stability trackers [#497](https://github.com/jinwon-int/a2a-broker/issues/497) / [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
-- Reviewed PR [#254](https://github.com/jinwon-int/a2a-plane/pull/254) for prior soonwook retry context; superseded by this R20 retry lane.
+- Inspected parent [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636), broker child issues [#620](https://github.com/jinwon-int/a2a-broker/issues/620), [#622](https://github.com/jinwon-int/a2a-broker/issues/622), [#626](https://github.com/jinwon-int/a2a-broker/issues/626), this issue a2a-plane#328 (a2a-plane#328, internal tracker private), and related stability trackers [#497](https://github.com/jinwon-int/a2a-broker/issues/497) / [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
+- Reviewed PR #254 (a2a-plane PR #254, internal tracker private) for prior soonwook retry context; superseded by this R20 retry lane.
 - Added a local validation test that fails if required R20 gates, risk list, source-only GO/NO-GO semantics, runtime activation blockers, ACK/receipt separation, or bootstrap hygiene language are removed.
 - Confirmed this patch adds documentation/test evidence only and does not create runtime/bootstrap files in the repository.

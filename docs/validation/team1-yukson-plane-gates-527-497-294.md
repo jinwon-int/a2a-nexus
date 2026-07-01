@@ -2,9 +2,9 @@
 
 ## R7 context
 
-Stability R7 dispatch: [a2a-broker#548](https://github.com/jinwon-int/a2a-broker/issues/548)  
-This lane: [a2a-plane#281](https://github.com/jinwon-int/a2a-plane/issues/281)  
-Run: `a2a-stability-r7-20260513T101831Z`  
+Stability R7 dispatch: [a2a-broker#548](https://github.com/jinwon-int/a2a-broker/issues/548)
+This lane: a2a-plane#281 (a2a-plane#281, internal tracker private)
+Run: `a2a-stability-r7-20260513T101831Z`
 
 R7 target outcomes: lower broker CPU/OOM risk, formal read-only/libero task semantics, canary/receipt gates, PR-less evidence lanes, and Terminal Brief deployment-readiness evidence. No production activation.
 
@@ -52,9 +52,9 @@ Before any live Terminal Brief canary or activation, the following deployment-re
 
 ## Base gate packet (pre-R7)
 
-Parent: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)  
-Plane lane: [a2a-plane#275](https://github.com/jinwon-int/a2a-plane/issues/275)  
-Trackers: [a2a-broker#527](https://github.com/jinwon-int/a2a-broker/issues/527), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)  
+Parent: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)
+Plane lane: a2a-plane#275 (a2a-plane#275, internal tracker private)
+Trackers: [a2a-broker#527](https://github.com/jinwon-int/a2a-broker/issues/527), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Snapshot: `2026-05-13T10:30Z`
 
 This is a no-live Plane gate packet. It defines the safe evidence shape for GitHub read-only validation/libero lanes and the closeout gates for broker stability hardening. It does not deploy or restart services, mutate production databases, prune SQLite/WAL state, ACK terminal-outbox rows, replay historical outbox rows, send Telegram/provider messages, expose secrets, publish a release, force-push, rewrite history, or change repository visibility.

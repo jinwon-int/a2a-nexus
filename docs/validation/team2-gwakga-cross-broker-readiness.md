@@ -1,7 +1,7 @@
 # Team2/Gwakga cross-broker readiness validation
 
-Parent: [#146](https://github.com/jinwon-int/a2a-plane/issues/146)
-Child: [#153](https://github.com/jinwon-int/a2a-plane/issues/153)
+Parent: #146 (a2a-plane#146, internal tracker private)
+Child: #153 (a2a-plane#153, internal tracker private)
 Run: `a2a-vnext-contract-smoke-crossbroker-20260510`
 Broker of record: `gwakga`
 Team: `team2-gwakga`

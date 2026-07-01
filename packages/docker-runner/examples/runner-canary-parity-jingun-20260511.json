@@ -4,7 +4,7 @@
   "run": "terminal-brief-activation-20260511T085000Z",
   "runnerUpdate": "f17072e",
   "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/205",
-  "parent": "https://github.com/jinwon-int/a2a-plane/issues/241",
+  "parent": "a2a-plane#241 (internal tracker, private)",
   "worker": "jingun",
   "team": "team2",
   "team1Baseline": {

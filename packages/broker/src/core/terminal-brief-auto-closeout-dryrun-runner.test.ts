@@ -68,7 +68,7 @@ function allReadyEvents(): TerminalTaskOutboxEvent[] {
     eventFor("bangtong", "succeeded", { progress: 1, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831" }),
     eventFor("yukson", "succeeded", { progress: 2, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833" }),
     eventFor("sogyo", "succeeded", { progress: 3, total: 4, doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398" }),
-    eventFor("nosuk", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-plane/pull/395" }),
+    eventFor("nosuk", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395" }),
   ];
 }
 

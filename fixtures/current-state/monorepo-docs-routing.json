@@ -1,8 +1,8 @@
 {
   "schema": "a2a.monorepo-docs-routing.v1",
   "snapshotDate": "2026-06-07",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/515",
+  "parentIssue": "a2a-plane#511 (internal tracker, private)",
+  "childIssue": "a2a-plane#515 (internal tracker, private)",
   "decision": "draft_docs_codeowners_issue_routing_without_canonical_flip",
   "canonicalUntilExplicitSignoff": "split_repos",
   "canonicalFlipApproved": false,
