@@ -2,6 +2,11 @@
 
 This file tracks the operator-approved discoverability workflow for A2A Nexus. External directory submissions are public communications and remain operator-gated.
 
+Scope split:
+
+- [#1160](https://github.com/jinwon-int/a2a-nexus/issues/1160) remains the external directory listing tracker until all three directory PRs have final outcomes.
+- [#1166](https://github.com/jinwon-int/a2a-nexus/issues/1166) tracks broader external publicization readiness. The PR-safe implementation plan lives in [External publicization roadmap](publicization-roadmap.md).
+
 ## Preconditions before external PRs
 
 - [x] Operator explicitly approves the external listing wave. Approved 2026-07-01 KST via operator message: `승인`.
