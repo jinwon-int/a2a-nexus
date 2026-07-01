@@ -18,12 +18,12 @@ For external readers, start here first:
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
-`a2a-nexus` is now the canonical implementation source. An operator-approved, source-state-only canonical flip (recorded in [`fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json`](fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json)) made `packages/broker`, `packages/openclaw-plugin-a2a`, and `packages/docker-runner` the canonical A2A source of truth in this repository. The former split repositories (`a2a-broker`, `openclaw-plugin-a2a`/`plugin-a2a`, `a2a-docker-runner`) remain **active provenance mirrors only** — unchanged, not archived, not redirected, with package ownership not transferred. Package publication, releases, production deployment, and any future visibility transfer remain separately approval-gated and are not implied by this source-state flip. For historical context, see the [topology decision record](docs/topology-decision-record.md) and the monorepo re-entry decision in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md) (originally tracked as historical provenance in [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511)).
+`a2a-nexus` is now the canonical implementation source. An operator-approved, source-state-only canonical flip (recorded in [`fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json`](fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json)) made `packages/broker`, `packages/openclaw-plugin-a2a`, and `packages/docker-runner` the canonical A2A source of truth in this repository. The former split repositories (`a2a-broker`, `openclaw-plugin-a2a`/`plugin-a2a`, `a2a-docker-runner`) remain **active provenance mirrors only** — unchanged, not archived, not redirected, with package ownership not transferred. Package publication, releases, production deployment, and any future visibility transfer remain separately approval-gated and are not implied by this source-state flip. For historical context, see the [topology decision record](docs/topology-decision-record.md) and the monorepo re-entry decision in [`docs/history/monorepo-reentry-decision.md`](docs/history/monorepo-reentry-decision.md) (originally tracked as historical provenance in a2a-plane#511 (a2a-plane#511, internal tracker private)).
 
 Additional project docs:
 
 - [A2A current state](docs/current-state.md) - active #536 monorepo phase-3 package CI parity jobs, completed #506/#511/#513/#514/#515/#517/#528/#530/#534 groundwork, ownership boundaries, and checkout hygiene.
-- [A2A monorepo re-entry decision](docs/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
+- [A2A monorepo re-entry decision](docs/history/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
 - [A2A monorepo migration guide](docs/migration.md) - phase 0 migration states, no-live boundaries, provenance, and backlink policy.
 - [A2A operator guide](docs/operators.md) - operator approval points and finalizer boundaries.
 - [A2A developer guide](docs/developers.md) - package surfaces and local validation for rehearsal work.
@@ -66,25 +66,25 @@ This path uses safe placeholders only. Do not paste real broker URLs, tokens, pr
 
 Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
 
-- [a2a-plane#536](https://github.com/jinwon-int/a2a-plane/issues/536) — monorepo phase-3 package CI parity job implementation that preceded the source-state canonical flip.
+- a2a-plane#536 (a2a-plane#536, internal tracker private) — monorepo phase-3 package CI parity job implementation that preceded the source-state canonical flip.
 
 Completed groundwork:
 
-- [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
-- [a2a-plane#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
-- [a2a-plane#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
-- [a2a-plane#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision after the #506 wave.
-- [a2a-plane#513](https://github.com/jinwon-int/a2a-plane/issues/513) — monorepo import rehearsal and mirror freshness checks.
-- [a2a-plane#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix.
-- [a2a-plane#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy.
-- [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517) — branch protection and release/package policy.
-- [a2a-plane#528](https://github.com/jinwon-int/a2a-plane/issues/528) — phase-1 import rehearsal gate refresh after the all-repo audit.
-- [a2a-plane#530](https://github.com/jinwon-int/a2a-plane/issues/530) — phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence.
-- [a2a-plane#534](https://github.com/jinwon-int/a2a-plane/issues/534) — phase-3 package CI gate before package mirror refresh.
-- [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted split-repo topology decision.
-- [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
-- [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist groundwork.
-- [a2a-plane#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario.
+- a2a-plane#506 (a2a-plane#506, internal tracker private) — current-state integration and A2A effectiveness wave.
+- a2a-plane#507 (a2a-plane#507, internal tracker private) — current-state docs and checkout hygiene.
+- a2a-plane#508 (a2a-plane#508, internal tracker private) — no-live cross-repo integration smoke spec.
+- a2a-plane#511 (a2a-plane#511, internal tracker private) — monorepo re-entry decision after the #506 wave.
+- a2a-plane#513 (a2a-plane#513, internal tracker private) — monorepo import rehearsal and mirror freshness checks.
+- a2a-plane#514 (a2a-plane#514, internal tracker private) — monorepo CI parity and package boundary matrix.
+- a2a-plane#515 (a2a-plane#515, internal tracker private) — monorepo docs, CODEOWNERS, and issue-routing policy.
+- a2a-plane#517 (a2a-plane#517, internal tracker private) — branch protection and release/package policy.
+- a2a-plane#528 (a2a-plane#528, internal tracker private) — phase-1 import rehearsal gate refresh after the all-repo audit.
+- a2a-plane#530 (a2a-plane#530, internal tracker private) — phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence.
+- a2a-plane#534 (a2a-plane#534, internal tracker private) — phase-3 package CI gate before package mirror refresh.
+- a2a-plane#473 (a2a-plane#473, internal tracker private) — adopted split-repo topology decision.
+- a2a-plane#478 (a2a-plane#478, internal tracker private) — public-source security, secret-history, license, and provenance scan groundwork.
+- a2a-plane#479 (a2a-plane#479, internal tracker private) — release, version, and provenance checklist groundwork.
+- a2a-plane#480 (a2a-plane#480, internal tracker private) — local public demo and quickstart scenario.
 
 See [`docs/public-readiness.md`](docs/public-readiness.md) for the full readiness gate record.
 See [`docs/current-state.md`](docs/current-state.md) for the live issue index and completed #506/#511/#513/#514/#515 groundwork.
@@ -112,7 +112,7 @@ This repository is the canonical A2A Nexus source and coordination workspace for
 | [`openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a) | Reference OpenClaw integration provenance mirror | Active provenance mirror of `packages/openclaw-plugin-a2a` (canonical source is `a2a-nexus`) |
 | [`a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner) | Isolated worker provenance mirror | Active provenance mirror of `packages/docker-runner` (canonical source is `a2a-nexus`) |
 
-The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [monorepo migration document index](docs/monorepo-migration-index.md) for a single navigational entry point across the staged migration records.
+The mirror repositories are unchanged, not archived, and retain their own closed issue/PR history. See the [topology decision record](docs/topology-decision-record.md) for the historical split-repo topology that preceded the canonical flip, and the [monorepo migration document index](docs/history/monorepo-migration-index.md) for a single navigational entry point across the staged migration records.
 
 ## Package Map
 
@@ -154,19 +154,19 @@ Open issues in `a2a-nexus`, the canonical source repository. Use the `source:*` 
 
 Historical completed trackers:
 
-- [#506](https://github.com/jinwon-int/a2a-plane/issues/506) — current-state integration and A2A effectiveness wave.
-- [#507](https://github.com/jinwon-int/a2a-plane/issues/507) — current-state docs and checkout hygiene.
-- [#508](https://github.com/jinwon-int/a2a-plane/issues/508) — no-live cross-repo integration smoke spec.
-- [#511](https://github.com/jinwon-int/a2a-plane/issues/511) — monorepo re-entry decision. Decision recorded in [`docs/monorepo-reentry-decision.md`](docs/monorepo-reentry-decision.md).
-- [#513](https://github.com/jinwon-int/a2a-plane/issues/513) — monorepo import rehearsal and mirror freshness checks. Plan recorded in [`docs/monorepo-import-rehearsal.md`](docs/monorepo-import-rehearsal.md).
-- [#514](https://github.com/jinwon-int/a2a-plane/issues/514) — monorepo CI parity and package boundary matrix. Matrix recorded in [`docs/monorepo-ci-parity-matrix.md`](docs/monorepo-ci-parity-matrix.md).
-- [#515](https://github.com/jinwon-int/a2a-plane/issues/515) — monorepo docs, CODEOWNERS, and issue-routing policy. Drafts recorded in [`docs/migration.md`](docs/migration.md), [`docs/operators.md`](docs/operators.md), [`docs/developers.md`](docs/developers.md), [`docs/issue-routing.md`](docs/issue-routing.md), and [`.github/CODEOWNERS`](.github/CODEOWNERS).
-- [#534](https://github.com/jinwon-int/a2a-plane/issues/534) — monorepo phase-3 package CI gate before package mirror refresh. Gate recorded in [`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](fixtures/current-state/monorepo-phase3-package-ci-gate.json).
-- [#473](https://github.com/jinwon-int/a2a-plane/issues/473) — adopted topology decision. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
-- [#477](https://github.com/jinwon-int/a2a-plane/issues/477) — public repo map and umbrella docs. Merged via #484.
-- [#478](https://github.com/jinwon-int/a2a-plane/issues/478) — public-source security, secret-history, license, and provenance scan groundwork.
-- [#479](https://github.com/jinwon-int/a2a-plane/issues/479) — release, version, and provenance checklist groundwork.
-- [#480](https://github.com/jinwon-int/a2a-plane/issues/480) — local public demo and quickstart scenario.
+- #506 (a2a-plane#506, internal tracker private) — current-state integration and A2A effectiveness wave.
+- #507 (a2a-plane#507, internal tracker private) — current-state docs and checkout hygiene.
+- #508 (a2a-plane#508, internal tracker private) — no-live cross-repo integration smoke spec.
+- #511 (a2a-plane#511, internal tracker private) — monorepo re-entry decision. Decision recorded in [`docs/history/monorepo-reentry-decision.md`](docs/history/monorepo-reentry-decision.md).
+- #513 (a2a-plane#513, internal tracker private) — monorepo import rehearsal and mirror freshness checks. Plan recorded in [`docs/history/monorepo-import-rehearsal.md`](docs/history/monorepo-import-rehearsal.md).
+- #514 (a2a-plane#514, internal tracker private) — monorepo CI parity and package boundary matrix. Matrix recorded in [`docs/history/monorepo-ci-parity-matrix.md`](docs/history/monorepo-ci-parity-matrix.md).
+- #515 (a2a-plane#515, internal tracker private) — monorepo docs, CODEOWNERS, and issue-routing policy. Drafts recorded in [`docs/migration.md`](docs/migration.md), [`docs/operators.md`](docs/operators.md), [`docs/developers.md`](docs/developers.md), [`docs/issue-routing.md`](docs/issue-routing.md), and [`.github/CODEOWNERS`](.github/CODEOWNERS).
+- #534 (a2a-plane#534, internal tracker private) — monorepo phase-3 package CI gate before package mirror refresh. Gate recorded in [`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](fixtures/current-state/monorepo-phase3-package-ci-gate.json).
+- #473 (a2a-plane#473, internal tracker private) — adopted topology decision. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
+- #477 (a2a-plane#477, internal tracker private) — public repo map and umbrella docs. Merged via #484.
+- #478 (a2a-plane#478, internal tracker private) — public-source security, secret-history, license, and provenance scan groundwork.
+- #479 (a2a-plane#479, internal tracker private) — release, version, and provenance checklist groundwork.
+- #480 (a2a-plane#480, internal tracker private) — local public demo and quickstart scenario.
 
 ## Five-minute local quickstart
 

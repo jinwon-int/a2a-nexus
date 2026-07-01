@@ -13,7 +13,7 @@
       "kind": "pr",
       "taskId": "task-conformance-lifecycle-001",
       "summary": "Prepared independent conformance fixtures for lifecycle, workers, cancellation/idempotency, and terminal evidence.",
-      "url": "https://github.com/jinwon-int/a2a-plane/pull/0000",
+      "url": "a2a-plane PR #0000 (internal tracker, private)",
       "changedFiles": [
         "fixtures/contract/task-lifecycle.json",
         "fixtures/contract/worker-registration-capabilities.json",

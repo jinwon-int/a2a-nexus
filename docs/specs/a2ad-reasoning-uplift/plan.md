@@ -1,6 +1,6 @@
 # A2AD Reasoning-Performance Uplift Plan
 
-Status: source-only plan for #885.  
+Status: source-only plan for #885.
 Scope: evaluation/design packet only — no runtime mode switch, broker restart, provider canary, persisted memory schema, release, visibility change, DB mutation, or live worker behavior change is approved by this document.
 
 ## 1. Decision summary

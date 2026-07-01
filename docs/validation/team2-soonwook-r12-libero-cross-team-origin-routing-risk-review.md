@@ -1,10 +1,10 @@
 # Team2/Soonwook R12 libero cross-team origin-routing risk review
 
-Issue: [a2a-plane#302](https://github.com/jinwon-int/a2a-plane/issues/302)  
-Parent broker tracker: [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598)  
-Run: `a2a-r12-origin-terminal-brief-guard-20260513T235116Z`  
-Origin/finalizer broker for this dispatch: `seoseo`  
-Lane: `soonwook` / Team2 libero cross-team origin-routing risk review  
+Issue: a2a-plane#302 (a2a-plane#302, internal tracker private)
+Parent broker tracker: [a2a-broker#598](https://github.com/jinwon-int/a2a-broker/issues/598)
+Run: `a2a-r12-origin-terminal-brief-guard-20260513T235116Z`
+Origin/finalizer broker for this dispatch: `seoseo`
+Lane: `soonwook` / Team2 libero cross-team origin-routing risk review
 Snapshot: `2026-05-13T23:55Z`
 
 This is a redacted, no-live libero validation artifact for the R12 origin-routing guard round. It uses repository and GitHub issue evidence only. It does not deploy, restart, reload Gateway/broker/worker processes, send a live provider or Telegram canary, mutate production databases or terminal-outbox rows, perform terminal ACK/replay or historical outbox replay, change secrets or repository visibility, publish a release/tag, rewrite history, force-push, or execute approval.
@@ -52,10 +52,10 @@ The guard must be origin-based, not Seoseo-hardcoded:
 | Team1/bangtong — [a2a-broker#599](https://github.com/jinwon-int/a2a-broker/issues/599) | Origin Terminal Brief dispatch guard that fails closed on missing parent metadata. | Start marker only: [issuecomment-4446102891](https://github.com/jinwon-int/a2a-broker/issues/599#issuecomment-4446102891). | `NO-GO / Waiting`; Start is not terminal evidence. |
 | Team1/sogyo — [openclaw-plugin-a2a#305](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/305) | Plugin Terminal Brief origin-routing boundary with provider accepted-send separated from receipt and ACK. | Start marker only: [issuecomment-4446103638](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/305#issuecomment-4446103638). | `NO-GO / Waiting`; plugin routing safety cannot be inferred from Start. |
 | Team1/nosuk — [a2a-broker#600](https://github.com/jinwon-int/a2a-broker/issues/600) | Post-dispatch metadata verifier for broker task snapshots within 30–60 seconds. | Start marker only: [issuecomment-4446104273](https://github.com/jinwon-int/a2a-broker/issues/600#issuecomment-4446104273). | `NO-GO / Waiting`; verifier proof remains open until terminal evidence. |
-| Team1/yukson — [a2a-plane#301](https://github.com/jinwon-int/a2a-plane/issues/301) | Symmetric origin-broker contract for Seoseo-origin and Gwakga-origin rounds. | Start marker only: [issuecomment-4446103922](https://github.com/jinwon-int/a2a-plane/issues/301#issuecomment-4446103922). | `NO-GO / Waiting`; contract symmetry remains unproven. |
+| Team1/yukson — a2a-plane#301 (a2a-plane#301, internal tracker private) | Symmetric origin-broker contract for Seoseo-origin and Gwakga-origin rounds. | Start marker only: [issuecomment-4446103922](a2a-plane#301 (internal tracker, private)#issuecomment-4446103922). | `NO-GO / Waiting`; contract symmetry remains unproven. |
 | Team2/dungae — [a2a-broker#601](https://github.com/jinwon-int/a2a-broker/issues/601) | Gwakga-origin symmetry broker validation and no ownership steal on handoff. | Start marker only: [issuecomment-4446104403](https://github.com/jinwon-int/a2a-broker/issues/601#issuecomment-4446104403). | `NO-GO / Waiting`; future Gwakga-origin path remains open. |
 | Team2/jingun — [a2a-docker-runner#249](https://github.com/jinwon-int/a2a-docker-runner/issues/249) | Runner metadata propagation parity for parent/handoff fields without artifact leaks. | Start marker only: [issuecomment-4446103689](https://github.com/jinwon-int/a2a-docker-runner/issues/249#issuecomment-4446103689). | `NO-GO / Waiting`; runner propagation cannot be counted until terminal evidence. |
-| Team2/soonwook — [a2a-plane#302](https://github.com/jinwon-int/a2a-plane/issues/302) | This libero cross-team origin-routing risk review with tests and hygiene guard. | Start marker: [issuecomment-4446104078](https://github.com/jinwon-int/a2a-plane/issues/302#issuecomment-4446104078). | Pass for validation shape only after this PR/test evidence exists; aggregate remains `NO-GO / Waiting`. |
+| Team2/soonwook — a2a-plane#302 (a2a-plane#302, internal tracker private) | This libero cross-team origin-routing risk review with tests and hygiene guard. | Start marker: [issuecomment-4446104078](a2a-plane#302 (internal tracker, private)#issuecomment-4446104078). | Pass for validation shape only after this PR/test evidence exists; aggregate remains `NO-GO / Waiting`. |
 
 ## Cross-team origin-routing risk matrix
 

@@ -90,5 +90,14 @@
     "extensions": [
       "./dist/index.js"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinwon-int/a2a-nexus.git",
+    "directory": "packages/openclaw-plugin-a2a"
+  },
+  "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/openclaw-plugin-a2a#readme",
+  "bugs": {
+    "url": "https://github.com/jinwon-int/a2a-nexus/issues"
   }
 }

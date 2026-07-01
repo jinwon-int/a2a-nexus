@@ -1,6 +1,6 @@
 # Team1/yukson R22 lightweight/performance acceptance matrix
 
-Lane issue: [a2a-plane#331](https://github.com/jinwon-int/a2a-plane/issues/331)
+Lane issue: a2a-plane#331 (a2a-plane#331, internal tracker private)
 Parent tracker: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497) — broker high CPU/memory and Node heap OOM
 Roadmap tracker: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) — receipt semantics, queue hygiene, canary gates
 Run: `a2a-r22-broker-lightweight-20260515T015139Z`

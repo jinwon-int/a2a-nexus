@@ -1,7 +1,7 @@
 # Team1 bangtong R23: Terminal Brief spec-first acceptance contract
 
-Issue: [a2a-plane#336](https://github.com/jinwon-int/a2a-plane/issues/336)
-Parent: [a2a-plane#335](https://github.com/jinwon-int/a2a-plane/issues/335)
+Issue: a2a-plane#336 (a2a-plane#336, internal tracker private)
+Parent: a2a-plane#335 (a2a-plane#335, internal tracker private)
 Run: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
 Parent round: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
 Origin broker / finalizer: `seoseo`

@@ -1,7 +1,7 @@
 # Team1 source-public dry-run orchestrator validation matrix
 
-Parent: [#197](https://github.com/jinwon-int/a2a-plane/issues/197)
-Child: [#199](https://github.com/jinwon-int/a2a-plane/issues/199)
+Parent: #197 (a2a-plane#197, internal tracker private)
+Child: #199 (a2a-plane#199, internal tracker private)
 Run: `a2a-source-dryrun-orchestrator-20260510T133022Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -12,12 +12,12 @@ This is a redacted validation artifact only. It validates dry-run/evidence orche
 
 ## Evidence reviewed
 
-- Parent dispatch: [a2a-plane#197](https://github.com/jinwon-int/a2a-plane/issues/197).
-- Libero lane: [a2a-plane#199](https://github.com/jinwon-int/a2a-plane/issues/199).
-- Team1 broker lane: [a2a-plane#198](https://github.com/jinwon-int/a2a-plane/issues/198).
+- Parent dispatch: a2a-plane#197 (a2a-plane#197, internal tracker private).
+- Libero lane: a2a-plane#199 (a2a-plane#199, internal tracker private).
+- Team1 broker lane: a2a-plane#198 (a2a-plane#198, internal tracker private).
 - Team1 plugin lane: [openclaw-plugin-a2a#256](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/256).
 - Team1 runner lane: [a2a-docker-runner#177](https://github.com/jinwon-int/a2a-docker-runner/issues/177).
-- Adjacent Team2 cross-check lanes: [a2a-broker#479](https://github.com/jinwon-int/a2a-broker/issues/479), [a2a-docker-runner#178](https://github.com/jinwon-int/a2a-docker-runner/issues/178), and [a2a-plane#200](https://github.com/jinwon-int/a2a-plane/issues/200).
+- Adjacent Team2 cross-check lanes: [a2a-broker#479](https://github.com/jinwon-int/a2a-broker/issues/479), [a2a-docker-runner#178](https://github.com/jinwon-int/a2a-docker-runner/issues/178), and a2a-plane#200 (a2a-plane#200, internal tracker private).
 - Local approval/readiness surfaces: `docs/validation/team1-source-public-approval-packet-libero.md`, `docs/validation/team1-source-public-readiness-libero.md`, `docs/readiness/fail-closed-scanner-readiness.md`, `docs/governance/public-private-boundary-gates.md`, `contracts/a2a/terminal-semantics.md`, and `contracts/compatibility/terminal-evidence-ack-boundary.md`.
 
 ## Dry-run orchestrator validation matrix

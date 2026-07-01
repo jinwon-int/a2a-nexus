@@ -1,9 +1,9 @@
 {
   "schema": "a2a.monorepo-reentry-decision.v1",
   "snapshotDate": "2026-06-07",
-  "decisionIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "previousDecisionIssue": "https://github.com/jinwon-int/a2a-plane/issues/473",
-  "priorWave": "https://github.com/jinwon-int/a2a-plane/issues/506",
+  "decisionIssue": "a2a-plane#511 (internal tracker, private)",
+  "previousDecisionIssue": "a2a-plane#473 (internal tracker, private)",
+  "priorWave": "a2a-plane#506 (internal tracker, private)",
   "decision": "staged_umbrella_workspace_first",
   "canonicalDuringPhase0And1": "split_repos",
   "operatorReentryTrigger": true,
@@ -21,7 +21,7 @@
   ],
   "repos": [
     {
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "visibility": "public",
       "phase0Role": "umbrella_decision_hub",
       "canonicalNow": true,

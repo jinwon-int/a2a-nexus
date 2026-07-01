@@ -5,7 +5,7 @@
 > approval boundaries, sanitized run record, idempotency expectations, worker-online
 > preflight, read-only follow-up check, and finalizer closeout handoff.
 >
-> **Lane issue:** [a2a-plane#404](https://github.com/jinwon-int/a2a-plane/issues/404)
+> **Lane issue:** a2a-plane#404 (a2a-plane#404, internal tracker private)
 > **Parent tracker:** [a2a-broker#847](https://github.com/jinwon-int/a2a-broker/issues/847)
 > **Broker/finalizer of record:** `seoseo`
 
@@ -377,7 +377,7 @@ sanitized JSON run record:
   "originBrokerId": "seoseo",
   "parentBrokerId": "seoseo",
   "parentRoundTotal": 4,
-  "parentIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+  "parentIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "startedAt": "<ISO-8601>",
   "completedAt": "<ISO-8601>",
   "idempotencyKey": "a2a-team1-dispatch:<runId>:seoseo:<timestamp>",
@@ -386,8 +386,8 @@ sanitized JSON run record:
     {
       "order": 1,
       "worker": "bangtong",
-      "repo": "jinwon-int/a2a-plane",
-      "issueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+      "repo": "a2a-plane (internal tracker, private)",
+      "issueUrl": "a2a-plane (internal tracker, private)issues/N",
       "brokerTaskId": "task-uuid-1",
       "brokerTaskUrl": "https://broker.internal/tasks/task-uuid-1",
       "status": "queued|claimed|running|done|pr|blocked|cancelled",

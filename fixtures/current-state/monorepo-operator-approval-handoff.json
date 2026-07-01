@@ -1,19 +1,19 @@
 {
   "schema": "a2a.monorepo-operator-approval-handoff.v1",
   "snapshotDate": "2026-06-10",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "phase9FinalSignoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/549",
-  "phase9FinalSignoffPr": "https://github.com/jinwon-int/a2a-plane/pull/550",
+  "parentIssue": "a2a-plane#511 (internal tracker, private)",
+  "phase9FinalSignoffIssue": "a2a-plane#549 (internal tracker, private)",
+  "phase9FinalSignoffPr": "a2a-plane PR #550 (internal tracker, private)",
   "phase9MergeCommit": "7200a91a92bbdbc82855a5a22321d704fdf2ca29",
-  "phase10OperatorHandoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/551",
-  "latestGreenCiRun": "https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372",
+  "phase10OperatorHandoffIssue": "a2a-plane#551 (internal tracker, private)",
+  "latestGreenCiRun": "a2a-plane (internal tracker, private)actions/runs/27101515372",
   "operatorHandoffDecision": "GO_CANDIDATE_PR_FIRST",
   "operatorResponse": {
     "status": "APPROVED",
     "receivedAt": "2026-06-10T08:33:39Z",
-    "source": "Telegram DM from Seo Jin On / 서진원: \"승인\"",
-    "humanOperatorOwner": "Seo Jin On / 서진원",
-    "rollbackOwner": "seoseo finalizer via PR revert; Seo Jin On retains operator decision authority",
+    "source": "operator private channel
+    "humanOperatorOwner": "the operator / operator",
+    "rollbackOwner": "seoseo finalizer via PR revert; the operator retains operator decision authority",
     "targetCommit": "9669f9098459c9f17bdea0193bc428593b0ef2d5",
     "latestGreenCiRun": "https://github.com/jinwon-int/a2a-nexus/actions/runs/27262174982",
     "acceptedRiskRegister": "Accepted for PR-first planning only: #562 CI green on PR head, target merge commit recorded, post-#562 A2A safe2 round found no import-needed code PR; split repo disposition, branch protection/ruleset changes, release/tag/npm/GHCR publish, package ownership transfer, deploy/restart, DB/Terminal ACK/replay, credential movement, and history rewrite remain execution-separated and must be performed only by subsequent PR/validated action in scope.",
@@ -22,37 +22,37 @@
   "questions": [
     {
       "area": "branch_protection_or_ruleset",
-      "sourceEvidence": "docs/monorepo-branch-protection-approval-packet.md",
+      "sourceEvidence": "docs/history/monorepo-branch-protection-approval-packet.md",
       "defaultDecision": "HOLD"
     },
     {
       "area": "split_repo_disposition",
-      "sourceEvidence": "docs/monorepo-split-repo-disposition-rollback.md",
+      "sourceEvidence": "docs/history/monorepo-split-repo-disposition-rollback.md",
       "defaultDecision": "HOLD_EXECUTION_SEPARATE"
     },
     {
       "area": "release_tag_and_github_release",
-      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "defaultDecision": "HOLD"
     },
     {
       "area": "npm_publish",
-      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "defaultDecision": "HOLD"
     },
     {
       "area": "docker_ghcr_publish",
-      "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "defaultDecision": "HOLD"
     },
     {
       "area": "package_ownership_transfer",
-      "sourceEvidence": "docs/monorepo-canonical-flip-readiness.md",
+      "sourceEvidence": "docs/history/monorepo-canonical-flip-readiness.md",
       "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
     },
     {
       "area": "canonical_flip",
-      "sourceEvidence": "docs/monorepo-final-operator-signoff-matrix.md",
+      "sourceEvidence": "docs/history/monorepo-final-operator-signoff-matrix.md",
       "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
     }
   ],

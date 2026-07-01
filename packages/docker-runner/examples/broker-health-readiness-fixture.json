@@ -3,7 +3,7 @@
   "description": "CI-safe runner fixture for broker /health repeated-latency diagnostics and no-live readiness proof. Synthetic only: it must not touch a live broker, Gateway, Telegram/provider, production DB, or terminal ACK path.",
   "source": {
     "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/166",
-    "parent": "https://github.com/jinwon-int/a2a-plane/issues/181",
+    "parent": "a2a-plane#181 (internal tracker, private)",
     "rootHealthIssue": "https://github.com/jinwon-int/a2a-broker/issues/463",
     "runId": "a2a-post-78261-health-readiness-20260510T024701Z"
   },

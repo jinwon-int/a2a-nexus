@@ -5,7 +5,7 @@
   "gates": {
     "brokerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#broker-readiness-go"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#broker-readiness-go"],
       "evidencePacket": {
         "health": { "ok": true, "revision": "abc1234" },
         "expectedWorkers": ["bangtong"],
@@ -17,7 +17,7 @@
     },
     "pluginReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#plugin-readiness-go"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#plugin-readiness-go"],
       "evidencePacket": {
         "liveTelegramConfigured": false,
         "providerDeliveryEnabled": false,
@@ -29,7 +29,7 @@
     },
     "runnerReadiness": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#runner-readiness-go"],
+      "evidence": ["a2a-plane#198 (internal tracker, private)#runner-readiness-go"],
       "evidencePacket": {
         "artifactManifest": { "ok": true },
         "scannerProfile": { "ok": true },
@@ -39,35 +39,35 @@
     },
     "publicPrivateBoundary": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#public-private-boundary-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#public-private-boundary-go"]
     },
     "terminalEvidence": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#terminal-evidence-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#terminal-evidence-go"]
     },
     "replaySafety": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#replay-safety-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#replay-safety-go"]
     },
     "externalScannerEvidence": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#external-scanner-evidence-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#external-scanner-evidence-go"]
     },
     "runtimeBootstrapHygiene": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#runtime-bootstrap-hygiene-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#runtime-bootstrap-hygiene-go"]
     },
     "goNoGoMatrix": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#go-no-go-matrix-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#go-no-go-matrix-go"]
     },
     "redactedEvidencePolicy": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#redacted-evidence-policy-go"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#redacted-evidence-policy-go"]
     },
     "operatorApproval": {
       "status": "GO",
-      "evidence": ["https://github.com/jinwon-int/a2a-plane/issues/198#explicit-operator-approval-source-public"]
+      "evidence": ["a2a-plane#198 (internal tracker, private)#explicit-operator-approval-source-public"]
     }
   }
 }

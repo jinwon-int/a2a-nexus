@@ -5,8 +5,8 @@
 > health/readiness checks, GO/NO-GO criteria, rollback/disable path, and evidence
 > packet capture.
 >
-> **Issue:** [a2a-plane#504](https://github.com/jinwon-int/a2a-plane/issues/504)
-> **Parent:** [a2a-plane#503](https://github.com/jinwon-int/a2a-plane/issues/503) — A2A Team1 roadmap wave 4
+> **Issue:** a2a-plane#504 (a2a-plane#504, internal tracker private)
+> **Parent:** a2a-plane#503 (a2a-plane#503, internal tracker private) — A2A Team1 roadmap wave 4
 > **Broker/finalizer of record:** `seoseo`
 >
 > **Prerequisite documents:**
@@ -699,7 +699,7 @@ After completing enrollment (or rollback), the operator should have:
 | `~/.hermes/a2a/rollback/rollback-<timestamp>.json` | §8.2 Step R5 | Rollback evidence (if applicable) |
 | `~/.hermes/a2a/artifacts/hermes-enrollment-readiness-check/evidence.json` | Step E6 | Enrollment readiness task evidence |
 | `~/.config/a2a/hermes-worker.env.backup.*` | Step E2 | Pre-enrollment env file backup |
-| GitHub comment (operator approval) | §4.1 | `https://github.com/jinwon-int/a2a-plane/issues/504#issuecomment-*` |
+| GitHub comment (operator approval) | §4.1 | `a2a-plane#504 (internal tracker, private)#issuecomment-*` |
 
 ---
 

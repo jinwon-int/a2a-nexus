@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "description": "A2A Nexus final go/no-go gate schema. Aggregates the execution orchestrator dry-run plan into a presentable final approval packet. Produces deterministic GO/NO-GO per-repo matrix, release candidate tagging readiness, and CI gate capsule. Never executes approval, release, visibility changes, or live sends.",
   "run": "a2a-source-public-go-nogo-gate-20260511T052500Z",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/225",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/226",
+  "parentIssue": "a2a-plane#225 (internal tracker, private)",
+  "issue": "a2a-plane#226 (internal tracker, private)",
   "lane": "team1-bangtong",
   "failClosed": true,
   "defaultDecision": "NO_GO",
@@ -209,22 +209,22 @@
   "roundLanes": {
     "a2a-plane": {
       "owner": "team1-bangtong",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/226",
+      "issue": "a2a-plane#226 (internal tracker, private)",
       "role": "Final go/no-go gate schema and operator approval packet aggregator"
     },
     "openclaw-plugin-a2a": {
       "owner": "team1-sogyo",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/265",
+      "issue": "a2a-plane#265 (internal tracker, private)",
       "role": "Plugin final go/no-go operator-facing status projection"
     },
     "a2a-docker-runner": {
       "owner": "team1-nosuk",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/195",
+      "issue": "a2a-plane#195 (internal tracker, private)",
       "role": "Runner final release candidate tagging and CI gate capsule"
     },
     "a2a-broker": {
       "owner": "team2-dungae",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/488",
+      "issue": "a2a-plane#488 (internal tracker, private)",
       "role": "Broker final go/no-go gate ledger and approval intent record"
     }
   }

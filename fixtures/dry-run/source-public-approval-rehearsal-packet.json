@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "a2a.source-public-approval-rehearsal.packet",
   "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/211",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/213",
+  "parentIssue": "a2a-plane#211 (internal tracker, private)",
+  "issue": "a2a-plane#213 (internal tracker, private)",
   "lane": "team1-yukson-libero",
   "packetKey": "a2a-source-public-approval-rehearsal-20260511T014240Z/team1-yukson-libero/v1",
   "canonicalization": {
@@ -48,19 +48,19 @@
   "evidenceBundle": [
     {
       "id": "parent-dispatch",
-      "url": "https://github.com/jinwon-int/a2a-plane/issues/211",
+      "url": "a2a-plane#211 (internal tracker, private)",
       "status": "OBSERVED",
       "redacted": true
     },
     {
       "id": "libero-start",
-      "url": "https://github.com/jinwon-int/a2a-plane/issues/213#issuecomment-4416984827",
+      "url": "a2a-plane#213 (internal tracker, private)#issuecomment-4416984827",
       "status": "OBSERVED",
       "redacted": true
     },
     {
       "id": "plane-schema-lane",
-      "url": "https://github.com/jinwon-int/a2a-plane/issues/212",
+      "url": "a2a-plane#212 (internal tracker, private)",
       "status": "START_ONLY",
       "redacted": true
     },
@@ -78,7 +78,7 @@
     },
     {
       "id": "team2-cross-check",
-      "url": "https://github.com/jinwon-int/a2a-plane/issues/214",
+      "url": "a2a-plane#214 (internal tracker, private)",
       "status": "START_ONLY",
       "redacted": true
     }

@@ -1,7 +1,7 @@
 # Team1 Scheduler / Control-Tower Libero Validation Matrix
 
-Parent: [#434](https://github.com/jinwon-int/a2a-plane/issues/434)
-Assigned: [#448](https://github.com/jinwon-int/a2a-plane/issues/448)
+Parent: #434 (a2a-plane#434, internal tracker private)
+Assigned: #448 (a2a-plane#448, internal tracker private)
 Run: `a2a-team1-scheduler-control-tower-20260525T2255KST`
 Broker of record: `seoseo`
 Team: `team1`
@@ -37,7 +37,7 @@ publish a release, or post to community channels.
 | Cancellation Idempotency | `contracts/a2a/cancellation-idempotency.md` | v0 Freeze |
 | Compatibility Baseline | `contracts/compatibility/matrix.md` | R23 milestone |
 | Public-Private Boundary Gates | `docs/governance/public-private-boundary-gates.md` | — |
-| Bare / existing issues: [#434](https://github.com/jinwon-int/a2a-plane/issues/434), [#448](https://github.com/jinwon-int/a2a-plane/issues/448) | — | — |
+| Bare / existing issues: #434 (a2a-plane#434, internal tracker private), #448 (a2a-plane#448, internal tracker private) | — | — |
 
 ### Existing validation matrices cross-checked
 

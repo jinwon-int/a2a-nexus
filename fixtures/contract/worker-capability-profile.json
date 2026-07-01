@@ -1,8 +1,8 @@
 {
   "fixtureId": "a2a-nexus.contract.worker-capability-profile.v1",
   "contract": "contracts/a2a/worker-capability-profile.md",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/382",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/380",
+  "issue": "a2a-plane#382 (internal tracker, private)",
+  "parentIssue": "a2a-plane#380 (internal tracker, private)",
   "description": "R31 worker capability profile schema and assignment recommendation semantics. No secrets, raw host logs, or private paths are collected.",
   "profiles": [
     {

@@ -43,7 +43,7 @@ test("release evidence export summarizes PR, Done, Block, and missing terminal e
     generatedAt: "2026-05-10T13:40:00.000Z",
     repo: "jinwon-int/a2a-broker",
     issue: "#479",
-    parentIssue: "jinwon-int/a2a-plane#197",
+    parentIssue: "a2a-plane#197 (internal tracker, private)",
     runId: "a2a-source-dryrun-orchestrator-20260510T133022Z",
   });
 

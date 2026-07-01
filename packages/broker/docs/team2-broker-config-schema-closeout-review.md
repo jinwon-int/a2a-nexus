@@ -1,6 +1,6 @@
 # Team2 broker config/schema closeout review
 
-Parent: [`a2a-plane#249`](https://github.com/jinwon-int/a2a-plane/issues/249)
+Parent: `a2a-plane#249` (a2a-plane#249, internal tracker private)
 Reviewed PR: [`a2a-broker#498`](https://github.com/jinwon-int/a2a-broker/pull/498)
 Lane: Team2 / Gwakga / Dungae
 

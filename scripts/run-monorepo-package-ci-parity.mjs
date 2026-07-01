@@ -44,7 +44,7 @@ const surfaces = {
       ['sh', ['-lc', 'cd packages/docker-runner && node scripts/release-candidate-parity-audit.mjs']],
     ],
     metadata: {
-      private: false,
+      private: true,
       license: 'MIT',
       requiredScripts: ['build', 'check', 'lint', 'test', 'chaos:e2e'],
       requiredFiles: ['scripts/pre-pr-bootstrap-guard.mjs', 'scripts/release-candidate-parity-audit.mjs'],

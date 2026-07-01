@@ -1,6 +1,6 @@
 # Terminal receipt gap no-live matrix
 
-Issue: [#349](https://github.com/jinwon-int/a2a-broker/issues/349)  
+Issue: [#349](https://github.com/jinwon-int/a2a-broker/issues/349)
 Parent: [#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 
 This matrix is the validation/libero boundary for the six current post-cutoff terminal-outbox gaps seen after `2026-05-04T07:10:00.000Z`.

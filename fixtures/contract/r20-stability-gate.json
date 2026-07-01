@@ -3,7 +3,7 @@
   "contract": "contracts/a2a/r20-stability-gate.md",
   "description": "Machine-readable fixture for the R20 stability gate contract: hot-table persistence bounded diagnostics, queue/outbox hygiene, no-live canary boundary, and stale R14 PR reconciliation policy.",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/636",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/327",
+  "issue": "a2a-plane#327 (internal tracker, private)",
   "originCoordinator": "gwakga",
   "receivingBrokerId": "seoseo",
   "team": "team1-yukson",

@@ -2,8 +2,8 @@
 
 **Worker:** `bangtong`
 **Angle:** implementation ergonomics, public repo developer experience, release/PR evidence, what should be demo-ready first
-**Parent:** [#105](https://github.com/jinwon-int/a2a-plane/issues/105)
-**Child:** [#106](https://github.com/jinwon-int/a2a-plane/issues/106)
+**Parent:** #105 (a2a-plane#105, internal tracker private)
+**Child:** #106 (a2a-plane#106, internal tracker private)
 **Date:** 2026-05-09
 
 ---

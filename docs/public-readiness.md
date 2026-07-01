@@ -6,7 +6,7 @@
 >
 > This document records earlier readiness evidence and blockers. It does **not** authorize stable release, announcements, public docs site launch, npm/Docker publication, production deployment, live operations, secret movement, history rewrite, or future ownership/visibility transfer.
 >
-> Current active A2A coordination has moved to [a2a-plane#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md). Historical issues such as `#75` and `a2a-broker#294` are closed and should not be cited as active blockers.
+> Current active A2A coordination has moved to a2a-plane#506 (a2a-plane#506, internal tracker private) and [`docs/current-state.md`](current-state.md). Historical issues such as `#75` and `a2a-broker#294` are closed and should not be cited as active blockers.
 >
 > This page records redacted review evidence only; it does not authorize deploys, service restarts, production database mutations, live provider or Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
 
@@ -42,7 +42,7 @@ Final local validation on the candidate tree passed at `2026-05-07T14:57:00Z`:
 - `npm run check`: passed; release gate completed layout, package checks, public-readiness scan, and compatibility-baseline validation.
 - `node scripts/redacted-readiness-inventory.mjs`: passed and printed redacted metadata only. This historical total is superseded by the current [Redacted Readiness Inventory Disposition](./security/redacted-readiness-inventory-disposition.md), which keeps matched values out of evidence and records current metadata counts for operator review.
 - `npm run test:release-gate`: passed `3/3`.
-- GitHub repository metadata: `jinwon-int/a2a-plane` was private at the time of this validation (now public since 2026-05-27).
+- GitHub repository metadata: `a2a-plane (internal tracker, private)` was private at the time of this validation (now public since 2026-05-27).
 - Runtime/bootstrap hygiene: no tracked or unignored runtime/bootstrap context paths are entering this branch or evidence; root public-readiness scan reported no findings.
 
 ## R4 final closeout state
@@ -81,11 +81,11 @@ A promotion **GO** must not be declared unless both local public-readiness and e
 
 ## Post-R5 A2A dispatch synthesis (Bangtong lane)
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).
+Parent: #75 (a2a-plane#75, internal tracker private).
 
-R5 lanes [#76](https://github.com/jinwon-int/a2a-plane/issues/76), [#77](https://github.com/jinwon-int/a2a-plane/issues/77), [#78](https://github.com/jinwon-int/a2a-plane/issues/78), and [#79](https://github.com/jinwon-int/a2a-plane/issues/79) are closed and merged via PRs [#80](https://github.com/jinwon-int/a2a-plane/pull/80), [#81](https://github.com/jinwon-int/a2a-plane/pull/81), and [#82](https://github.com/jinwon-int/a2a-plane/pull/82).
+R5 lanes #76 (a2a-plane#76, internal tracker private), #77 (a2a-plane#77, internal tracker private), #78 (a2a-plane#78, internal tracker private), and #79 (a2a-plane#79, internal tracker private) are closed and merged via PRs #80 (a2a-plane PR #80, internal tracker private), #81 (a2a-plane PR #81, internal tracker private), and #82 (a2a-plane PR #82, internal tracker private).
 
-a2a-plane R4 follow-on PRs [#92](https://github.com/jinwon-int/a2a-plane/pull/92) and [#95](https://github.com/jinwon-int/a2a-plane/pull/95) are merged.
+a2a-plane R4 follow-on PRs #92 (a2a-plane PR #92, internal tracker private) and #95 (a2a-plane PR #95, internal tracker private) are merged.
 
 A follow-on A2A dispatch round cross-repo synthesis (post-merge state after `openclaw-plugin-a2a#235` and `a2a-broker#433/#434`):
 
@@ -102,20 +102,20 @@ A follow-on A2A dispatch round cross-repo synthesis (post-merge state after `ope
 - External secret scanner unavailable (fail-closed) — remains a promotion blocker.
 - Explicit operator approval for public repository visibility: **required before any visibility change; not granted by this document**.
 - Repository visibility remains **private unless separately approved and evidenced**. A2A terminal evidence/replay-safety proof and clean scanner evidence remain visibility/promotion blockers.
-- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) is now closed. The remaining promotion/stable-release evidence path is tracked by the current-state wave, starting at [#506](https://github.com/jinwon-int/a2a-plane/issues/506).
+- Issue #75 (a2a-plane#75, internal tracker private) is now closed. The remaining promotion/stable-release evidence path is tracked by the current-state wave, starting at #506 (a2a-plane#506, internal tracker private).
 
 Relevant cross-repo guardrail docs:
 - `contracts/a2a/task-lifecycle.md` — A2A task-state mapping reference.
 - `contracts/a2a/worker-registration.md` — Worker registration and capability assumptions.
 - `contracts/a2a/terminal-semantics.md` — Terminal ACK boundary.
-- `docs/r6-terminal-brief-openclaw-routing-synthesis.md` — R6 upstream gate and no-bypass rules.
+- `docs/history/r6-terminal-brief-openclaw-routing-synthesis.md` — R6 upstream gate and no-bypass rules.
 
 ## R10 Team1/yukson public-readiness gate synthesis for #75/#294/#497
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).
+Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 Operational risk signal: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497).
-Lane: [#263](https://github.com/jinwon-int/a2a-plane/issues/263).
+Lane: #263 (a2a-plane#263, internal tracker private).
 
 Team1/yukson added a no-live gate synthesis at `docs/validation/team1-yukson-public-readiness-gate-synthesis.md`. The aggregate decision remains **NO-GO / Waiting**: provider message ids and send success are accepted-send evidence only; terminal evidence, replay-safe canary proof, scanner/readiness evidence, broker state-growth/backlog risk disposition, runtime/bootstrap artifact hygiene, and explicit operator approvals remain separate gates.
 
@@ -123,12 +123,12 @@ This synthesis does not authorize repository visibility changes, live provider/T
 
 ## R11 Team1/yukson #240 closeout route for #75/#94
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).  
-Compatibility follow-up: [#94](https://github.com/jinwon-int/a2a-plane/issues/94).  
-Ecosystem/monorepo clarity lane: [#240](https://github.com/jinwon-int/a2a-plane/issues/240).  
-Review lane: [#271](https://github.com/jinwon-int/a2a-plane/issues/271).
+Parent: #75 (a2a-plane#75, internal tracker private).
+Compatibility follow-up: #94 (a2a-plane#94, internal tracker private).
+Ecosystem/monorepo clarity lane: #240 (a2a-plane#240, internal tracker private).
+Review lane: #271 (a2a-plane#271, internal tracker private).
 
-Team1/yukson added `docs/validation/team1-yukson-240-closeout-to-75-94.md` as the checklist for reviewing #240 PRs [#267](https://github.com/jinwon-int/a2a-plane/pull/267) and [#268](https://github.com/jinwon-int/a2a-plane/pull/268) before citing them from #75 or #94.
+Team1/yukson added `docs/validation/team1-yukson-240-closeout-to-75-94.md` as the checklist for reviewing #240 PRs #267 (a2a-plane PR #267, internal tracker private) and #268 (a2a-plane PR #268, internal tracker private) before citing them from #75 or #94.
 
 The route is deliberately narrow: #267/#268 may clarify component boundaries, migration risks, and issue/link hygiene for public-safe review. They do **not** provide terminal receipt, replay-safe canary proof, external scanner evidence, operator visibility approval, runtime readiness, live-send approval, or release approval.
 
@@ -136,7 +136,7 @@ The route is deliberately narrow: #267/#268 may clarify component boundaries, mi
 
 Bangtong lane closeout refresh after merged round `a2a-plane#92/#95`, `openclaw-plugin-a2a#235`, `a2a-broker#433/#434`.
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).
+Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 
 Local validation on this closeout refresh:
@@ -154,13 +154,13 @@ Decision: **NO-GO / Waiting.**
 - `openclaw/openclaw#78261` is closed/superseded; do not claim that this closure itself unblocks Terminal Brief or public-readiness.
 - External secret scanner evidence remains unavailable (fail-closed).
 - Explicit operator approval for repository visibility is still required.
-- Issue [#75](https://github.com/jinwon-int/a2a-plane/issues/75) is now closed; this historical section should not be used as the active blocker list.
+- Issue #75 (a2a-plane#75, internal tracker private) is now closed; this historical section should not be used as the active blocker list.
 
 This closeout refresh performed redacted documentation evidence updates and local validation only. It did **not** perform any repository visibility change, release, deploy, Gateway/broker/worker restart, production database mutation, live provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, or force-push.
 
 ## R9 Preflight Refresh: Upstream Conflict Gate (Bangtong lane)
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).
+Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 
 Historical live preflight at dispatch (`team1-a2a-public-p0-next-round`) observed `openclaw/openclaw#78261` as OPEN/CONFLICTING/DIRTY. That state is now superseded by maintainer close; no upstream maintainer action is authorized from this repository.
@@ -219,7 +219,7 @@ This preflight refresh performed redacted documentation evidence updates and loc
 
 ## R8 Operator Decision Packet: Public-Readiness GO/NO-GO Matrix (Bangtong lane) [SUPERSEDED by R9 above]
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75).
+Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 
 This packet is the Team1 next-round operator decision surface for `bangtong`. It distills the three remaining public-readiness gates into a single GO/NO-GO matrix and defines exactly what evidence `seoseo` must collect before closing `#75`. All sibling cross-repo lanes are merged (`openclaw-plugin-a2a#235`, `a2a-broker#433`, `a2a-broker#434`). Do **not** mark `#75` complete unless all three gates in this matrix are met.
@@ -270,7 +270,7 @@ Seoseo must link each piece of evidence in a comment on `#75`. Only when all che
 
 ## Promotion-readiness gates (was NO-GO gates)
 
-The parent visibility tracker [#75](https://github.com/jinwon-int/a2a-plane/issues/75) and roadmap [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) are closed historical records. Use [#506](https://github.com/jinwon-int/a2a-plane/issues/506) and [`docs/current-state.md`](current-state.md) for current A2A coordination.
+The parent visibility tracker #75 (a2a-plane#75, internal tracker private) and roadmap [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) are closed historical records. Use #506 (a2a-plane#506, internal tracker private) and [`docs/current-state.md`](current-state.md) for current A2A coordination.
 
 - [x] License decision approved and committed: MIT. NOTICE is not required for MIT unless future third-party notices require it.
 - [x] Secret and history scan clean or explicitly dispositioned with redacted evidence for operator review: root scanner passed with no findings; redacted inventory reports metadata only and keeps matched values out of evidence.
@@ -298,7 +298,7 @@ See [R4 External Scan and Release Dry-Run Freeze](./security/r4-external-scan-an
 
 ## R3 closeout validation
 
-See [R3 Closeout Validation](./r3-closeout-validation.md). At the time this was **ready for operator visibility review**. Visibility remains a separate approval-gated action unless executed and evidenced.
+See [R3 Closeout Validation](./history/r3-closeout-validation.md). At the time this was **ready for operator visibility review**. Visibility remains a separate approval-gated action unless executed and evidenced.
 
 ## R3 security disposition
 

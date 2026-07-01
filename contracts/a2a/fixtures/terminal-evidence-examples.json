@@ -20,7 +20,7 @@
     },
     "pr": {
       "kind": "pr",
-      "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/redacted",
+      "prUrl": "a2a-plane (internal tracker, private)pull/redacted",
       "summary": "Contract v0 skeleton with cancellation, idempotency, and fixtures.",
       "changedFiles": [
         "contracts/a2a/cancellation-idempotency.md",

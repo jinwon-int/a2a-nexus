@@ -1,7 +1,7 @@
 # Cursor and Outbox Health Acceptance Criteria
 
-> **Roadmap:** [#438](https://github.com/jinwon-int/a2a-plane/issues/438)
-> **Parent:** [#433](https://github.com/jinwon-int/a2a-plane/issues/433)
+> **Roadmap:** #438 (a2a-plane#438, internal tracker private)
+> **Parent:** #433 (a2a-plane#433, internal tracker private)
 >
 > This document defines the acceptance criteria for Terminal Brief cursor state, outbox health
 > summary, and inbox visibility. It is source-only and no-live: it does not authorize production

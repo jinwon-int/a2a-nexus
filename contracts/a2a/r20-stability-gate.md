@@ -12,7 +12,7 @@ defines what safe evidence looks like at the contract level without prescribing 
 or implying production mutation.
 
 Parent round: [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636)
-Plane lane: [a2a-plane#327](https://github.com/jinwon-int/a2a-plane/issues/327)
+Plane lane: a2a-plane#327 (a2a-plane#327, internal tracker private)
 Origin coordinator: Gwakga
 Receiving broker for this Team1 task: Seoseo
 Snapshot: `2026-05-15T08:18Z`

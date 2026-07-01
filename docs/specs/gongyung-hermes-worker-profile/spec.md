@@ -5,7 +5,7 @@
 Gongyung runs as an Android/Termux Hermes-style worker on a mobile-constrained
 node (limited memory, Doze/suspend windows, no Docker, no direct GitHub push).
 The existing Hermes broker-agnostic worker contract
-(`docs/specs/hermes-worker-integration/`, jinwon-int/a2a-plane#384) defines the base HTTP transport but
+(`docs/specs/hermes-worker-integration/`, a2a-plane#384 (internal tracker, private)) defines the base HTTP transport but
 does not distinguish mobile workers from Docker-runner or desktop workers. A
 mobile worker needs a narrower admission envelope to avoid being assigned tasks
 it cannot safely execute.

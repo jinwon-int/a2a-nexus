@@ -4,7 +4,7 @@
 - **Lane:** 5/7
 - **Worker:** dungae (Team2)
 - **Lane issue:** https://github.com/jinwon-int/plugin-a2a/issues/441
-- **Parent tracker:** https://github.com/jinwon-int/a2a-plane/issues/427
+- **Parent tracker:** a2a-plane#427 (internal tracker, private)
 
 ## Goal
 

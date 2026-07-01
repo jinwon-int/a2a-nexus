@@ -45,8 +45,8 @@ for (const forbiddenPath of forbiddenRuntimePaths) {
 // --- Metadata checks ---
 assert.equal(fixture.fixtureId, 'a2a-nexus.contract.terminal-brief-canary-acceptance.v1');
 assert.equal(fixture.contract, 'docs/specs/a2a-terminal-brief-canary/spec.md');
-assert.equal(fixture.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/364');
-assert.equal(fixture.issue, 'https://github.com/jinwon-int/a2a-plane/issues/365');
+assert.equal(fixture.parentIssue, 'a2a-plane#364 (internal tracker, private)');
+assert.equal(fixture.issue, 'a2a-plane#365 (internal tracker, private)');
 assert.equal(fixture.team, 'team1-bangtong');
 assert.equal(fixture.brokerOfRecord, 'seoseo');
 assert.equal(fixture.round, 'R27');

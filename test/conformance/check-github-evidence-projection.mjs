@@ -49,8 +49,8 @@ assert.equal(
   'a2a-terminal-brief-github-evidence-20260511T000448Z',
 );
 assert.equal(fixture.contract, 'contracts/a2a/github-evidence-projection.md');
-assert.equal(fixture.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/204');
-assert.equal(fixture.issue, 'https://github.com/jinwon-int/a2a-plane/issues/205');
+assert.equal(fixture.parentIssue, 'a2a-plane#204 (internal tracker, private)');
+assert.equal(fixture.issue, 'a2a-plane#205 (internal tracker, private)');
 assert.equal(fixture.team, 'team1-bangtong');
 assert.equal(fixture.brokerOfRecord, 'gwakga');
 

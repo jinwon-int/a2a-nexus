@@ -1,8 +1,8 @@
 # Team1 config/schema skew prevention libero validation matrix
 
 Run: `a2a-config-schema-skew-prevention-20260511T120400Z`
-Parent: [a2a-plane#249](https://github.com/jinwon-int/a2a-plane/issues/249)
-Lane: Team1/yukson, [a2a-plane#251](https://github.com/jinwon-int/a2a-plane/issues/251)
+Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
+Lane: Team1/yukson, a2a-plane#251 (a2a-plane#251, internal tracker private)
 Snapshot: `2026-05-11T15:20:00Z`
 
 This is a redacted, no-live libero validation matrix for preventing config/schema skew from breaking Gateway restart. It is evidence-only: it does not deploy code, restart Gateway/broker/worker services, send live provider or Telegram messages, ACK terminal-outbox rows, mutate production data, rotate secrets, change repository visibility, rewrite history, force-push, release, or post community announcements.
@@ -58,4 +58,4 @@ A Start marker or an unmerged PR is not sufficient restart evidence. If any requ
 
 ## Safe closeout
 
-The safe closeout for [a2a-plane#251](https://github.com/jinwon-int/a2a-plane/issues/251) is a validation PR/Done marker saying the config/schema skew prevention matrix is documented and tested, while any live restart, deploy, source-public execution, or approval execution remains **`NO-GO / Waiting`** until all sibling hardening evidence and explicit operator approval exist.
+The safe closeout for a2a-plane#251 (a2a-plane#251, internal tracker private) is a validation PR/Done marker saying the config/schema skew prevention matrix is documented and tested, while any live restart, deploy, source-public execution, or approval execution remains **`NO-GO / Waiting`** until all sibling hardening evidence and explicit operator approval exist.

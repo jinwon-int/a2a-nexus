@@ -63,7 +63,7 @@ test("clean-main no-change smoke fixture is scoped to #358 and excludes generate
   const fixture = JSON.parse(raw) as CleanMainSmokeFixture;
 
   assert.equal(fixture.schemaVersion, "a2a.runner.readonly-nochange-clean-main-smoke.v1");
-  assert.equal(fixture.parent, "https://github.com/jinwon-int/a2a-plane/issues/506");
+  assert.equal(fixture.parent, "a2a-plane#506 (internal tracker, private)");
   assert.equal(fixture.issueUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/358");
   assert.deepEqual(fixture.sourceBase, {
     repo: "jinwon-int/a2a-docker-runner",

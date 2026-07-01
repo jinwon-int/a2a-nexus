@@ -1,0 +1,8 @@
+{
+  "action": "repository-visibility-change",
+  "target": "jinwon-int/a2a-nexus public-readability settings proposal tracked by #1166",
+  "approverRole": "operator",
+  "approvedAt": "2026-07-01T00:00:00Z",
+  "rollbackBoundary": "No release, tag, publish, deployment, provider send, DB/outbox/ACK/replay mutation, or secret movement is authorized by this visibility evidence.",
+  "evidenceIssue": 1166
+}

@@ -19,7 +19,7 @@ for (const [component, pattern] of requiredRows) {
 }
 
 const requiredSplitRepoRows = new Map([
-  ['a2a-plane', /^\| \[`a2a-plane`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
+  ['a2a-plane', /^\| `a2a-plane` \(internal tracker, private\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
   ['a2a-broker', /^\| \[`a2a-broker`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
   ['openclaw-plugin-a2a', /^\| \[`openclaw-plugin-a2a`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],
   ['a2a-docker-runner', /^\| \[`a2a-docker-runner`\]\([^)]+\) \|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|[^\n]*\|\s*`[0-9a-f]{40}`\s*\|/m],

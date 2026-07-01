@@ -1,9 +1,9 @@
 # Operator Approval Gate — Live Send Boundary
 
 Issue: [jinwon-int/plugin-a2a#247](https://github.com/jinwon-int/plugin-a2a/issues/247)
-Parent: [jinwon-int/a2a-plane#174](https://github.com/jinwon-int/a2a-plane/issues/174)
+Parent: a2a-plane#174 (internal tracker, private) (a2a-plane#174, internal tracker private)
 Post-#78261 health round: [jinwon-int/plugin-a2a#249](https://github.com/jinwon-int/plugin-a2a/issues/249)
-Parent round: [jinwon-int/a2a-plane#181](https://github.com/jinwon-int/a2a-plane/issues/181)
+Parent round: a2a-plane#181 (internal tracker, private) (a2a-plane#181, internal tracker private)
 Run: `a2a-post-78261-health-readiness-20260510T024701Z`
 
 ## Safety boundary

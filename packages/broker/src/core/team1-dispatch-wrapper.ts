@@ -129,7 +129,7 @@ export interface Team1WorkerModelPolicy {
   selectedThinking: string;
   escalatedToPro: boolean;
   escalationApproved: true;
-  approvalRef: "Seo Jin On 2026-05-21 per-task approval";
+  approvalRef: "the operator 2026-05-21 per-task approval";
   reasons: Team1ModelEscalationReason[];
   env: {
     A2A_OPENCLAW_MODEL: string;
@@ -580,7 +580,7 @@ export function resolveTeam1WorkerModelPolicy(roundSpec: Team1RoundSpec): Team1W
     selectedThinking,
     escalatedToPro: finalEscalatedToPro,
     escalationApproved: true,
-    approvalRef: "Seo Jin On 2026-05-21 per-task approval",
+    approvalRef: "the operator 2026-05-21 per-task approval",
     reasons: finalReasons,
     env: {
       A2A_OPENCLAW_MODEL: selectedModel,

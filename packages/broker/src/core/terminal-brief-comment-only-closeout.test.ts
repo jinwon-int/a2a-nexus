@@ -17,7 +17,7 @@ import type {
 } from "./terminal-event-outbox.js";
 
 const NOW = "2026-05-25T10:30:00.000Z";
-const TARGET = "https://github.com/jinwon-int/a2a-plane/issues/437";
+const TARGET = "https://github.com/jinwon-int/a2a-nexus/issues/437";
 
 function eventFor(
   worker: string,
@@ -44,7 +44,7 @@ function eventFor(
       originBrokerId: "seoseo",
       brokerOfRecordId: "seoseo",
       worker,
-      repo: "jinwon-int/a2a-plane",
+      repo: "jinwon-int/a2a-nexus",
       issue: 437,
       taskBrief: "Team1 guarded closeout comment_only workflow",
       prUrl: options.prUrl,
@@ -111,7 +111,7 @@ test("dry-run returns exact target and finalizer draft without post permission",
   assert.equal(draft.safety.executesTerminalAckReplay, false);
   assert.match(draft.bodyWithMarker, /a2a:comment-only-closeout/);
   assert.match(draft.bodyWithMarker, /This is `comment_only` closeout/);
-  assert.match(draft.bodyWithMarker, /https:\/\/github\.com\/jinwon-int\/a2a-plane\/issues\/437/);
+  assert.match(draft.bodyWithMarker, /https:\/\/github\.com\/jinwon-int\/a2a-nexus\/issues\/437/);
 });
 
 test("comment_only permits only an approved idempotent comment action", () => {
@@ -185,7 +185,7 @@ test("rendered markdown exposes blockers, target, and safety", () => {
   const markdown = renderCommentOnlyCloseoutDraftMarkdown(draft);
 
   assert.match(markdown, /A2A Team1 closeout comment draft/);
-  assert.match(markdown, /Target: https:\/\/github\.com\/jinwon-int\/a2a-plane\/issues\/437/);
+  assert.match(markdown, /Target: https:\/\/github\.com\/jinwon-int\/a2a-nexus\/issues\/437/);
   assert.match(markdown, /GitHub comment permission denied/);
   assert.match(markdown, /executesIssueClose=false/);
   assert.match(markdown, /executesTerminalAckReplay=false/);

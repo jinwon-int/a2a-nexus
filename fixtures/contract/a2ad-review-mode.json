@@ -10,7 +10,7 @@
       "reviewId": "review-design-review-20260525-001",
       "title": "Design review: Workflow engine migration to state-machine model",
       "submittedAt": "2026-05-25T12:00:00Z",
-      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
         "reviewer": { "agentId": "bangtong" },
         "critic": { "agentId": "dengae" },
@@ -193,7 +193,7 @@
       "reviewId": "review-config-update-20260525-002",
       "title": "Config change: Increase broker task timeout from 10m to 15m",
       "submittedAt": "2026-05-25T14:00:00Z",
-      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
         "reviewer": { "agentId": "bangtong" },
         "critic": { "agentId": "dengae" },
@@ -320,7 +320,7 @@
       "reviewId": "review-stale-data-20260525-003",
       "title": "Review: Exchange connectivity migration (CANCELLED)",
       "submittedAt": "2026-05-25T09:00:00Z",
-      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
         "reviewer": { "agentId": "bangtong" },
         "critic": { "agentId": "dengae" },
@@ -384,7 +384,7 @@
       "reviewId": "review-incident-response-20260525-004",
       "title": "Incident analysis: Database connection pool exhaustion on 2026-05-24",
       "submittedAt": "2026-05-25T16:00:00Z",
-      "operatorRef": "https://github.com/jinwon-int/a2a-plane/issues/0000",
+      "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
         "reviewer": { "agentId": "bangtong" },
         "critic": { "agentId": "dengae" },

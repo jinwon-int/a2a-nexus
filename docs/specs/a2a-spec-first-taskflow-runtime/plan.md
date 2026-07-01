@@ -3,8 +3,8 @@
 ## Linked spec
 
 - Spec: `docs/specs/a2a-spec-first-taskflow-runtime/spec.md`
-- Implementation tracker: `jinwon-int/a2a-plane#324`
-- Parent adoption tracker: `jinwon-int/a2a-plane#315`
+- Implementation tracker: `a2a-plane#324 (internal tracker, private)`
+- Parent adoption tracker: `a2a-plane#315 (internal tracker, private)`
 
 ## Size classification
 
@@ -28,7 +28,7 @@ Reason: this is a source-public dry-run command plus tests in one repo. Live Tas
 - Broker of record / finalizer: Gwakga.
 - Workers: none required for this PR.
 - Libero/validator: local release-gate and GitHub Actions.
-- Human approval owner: Seo Jin On for any future live runtime automation.
+- Human approval owner: the operator for any future live runtime automation.
 
 ## Execution lane
 

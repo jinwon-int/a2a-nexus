@@ -1,8 +1,8 @@
 # Team1 bangtong RCA: Gateway config/schema skew failure chain
 
 Run: `a2a-config-schema-skew-prevention-20260511T120400Z`
-Parent: [a2a-plane#249](https://github.com/jinwon-int/a2a-plane/issues/249)
-Lane: Team1/bangtong, [a2a-plane#250](https://github.com/jinwon-int/a2a-plane/issues/250)
+Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
+Lane: Team1/bangtong, a2a-plane#250 (a2a-plane#250, internal tracker private)
 Snapshot: `2026-05-12T02:30:00Z`
 
 This is a redacted, evidence-only root cause analysis document. It does not deploy code, restart Gateway/broker/worker services, send live provider or Telegram messages, ACK terminal-outbox rows, mutate production data, rotate secrets, change repository visibility, rewrite history, force-push, release, or post community announcements.
@@ -92,6 +92,6 @@ The `openclaw status` command reports Gateway health, plugin activation state, a
 
 ## Safe closeout
 
-The safe closeout for [a2a-plane#250](https://github.com/jinwon-int/a2a-plane/issues/250) is a PR/Done marker confirming the RCA analysis is documented and the schema hardening tests pass. The schema fix in PR #255 narrows the `edgeSecret` type tolerance, which is a valid hardening step for the config/schema skew prevention round. Any live restart, deploy, source-public execution, or approval execution remains **`NO-GO / Waiting`** until all sibling hardening evidence and explicit operator approval exist.
+The safe closeout for a2a-plane#250 (a2a-plane#250, internal tracker private) is a PR/Done marker confirming the RCA analysis is documented and the schema hardening tests pass. The schema fix in PR #255 narrows the `edgeSecret` type tolerance, which is a valid hardening step for the config/schema skew prevention round. Any live restart, deploy, source-public execution, or approval execution remains **`NO-GO / Waiting`** until all sibling hardening evidence and explicit operator approval exist.
 
 This RCA does not contain secrets, host-private paths, provider message IDs, or raw session dumps. All cross-references are to public repository artifacts (issues, PRs, contract fixtures).

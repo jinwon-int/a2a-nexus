@@ -9,7 +9,7 @@
 **Canary gate:** `docs/specs/a2a-action-reconciliation/canary-gate.md`
 **Broker reconciler:** `packages/broker/src/core/closeout-reconciler.ts`
 **Parent issue:** [a2a-broker#844](https://github.com/jinwon-int/a2a-broker/issues/844)
-**Child issue:** [a2a-plane#402](https://github.com/jinwon-int/a2a-plane/issues/402)
+**Child issue:** a2a-plane#402 (a2a-plane#402, internal tracker private)
 
 ---
 
@@ -107,7 +107,7 @@ request that includes:
 
 The operator must post a comment that explicitly includes all of:
 
-1. ✅ **Repository name:** `jinwon-int/a2a-plane` (or applicable)
+1. ✅ **Repository name:** `a2a-plane (internal tracker, private)` (or applicable)
 2. ✅ **Approved parent round id:** exact `parentRoundId` from the request
 3. ✅ **Approved action kind(s):** `comment_post` and/or `issue_close`
 4. ✅ **Broker of record:** `seoseo` or `gwakga`

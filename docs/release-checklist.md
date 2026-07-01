@@ -21,7 +21,7 @@ Before merging a round with more than one PR, build the exact intended merge tra
 
 ## CI and local gates
 
-- [ ] GitHub Actions `ci` passes for the exact candidate commit: `https://github.com/jinwon-int/a2a-plane/actions/workflows/ci.yml`.
+- [ ] GitHub Actions `ci` passes for the exact candidate commit: `a2a-plane (internal tracker, private)actions/workflows/ci.yml`.
 - [ ] Fresh local install passes: `npm ci --ignore-scripts --include=dev`.
 - [ ] Root release gate passes: `npm run check`.
 - [ ] Release-gate regression tests pass: `npm run test:release-gate`.

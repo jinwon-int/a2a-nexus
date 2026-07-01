@@ -3,13 +3,13 @@
   "mode": "enrollment-dry-run",
   "fixtureId": "a2a-nexus.fixture.hermes-native-worker-enrollment-evidence.v1",
   "description": "Hermes/Android native A2A worker enrollment evidence fixture for Gongyung/Daegyo-style Termux nodes. Documents the pre-enrollment state snapshot, GO/NO-GO decision packet, post-enrollment evidence, and rollback evidence schemas. All values are redacted, loopback-only example fixtures — no production broker URL, secret, or device identifier is present.",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/504",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/503",
+  "issue": "a2a-plane#504 (internal tracker, private)",
+  "parentIssue": "a2a-plane#503 (internal tracker, private)",
   "priorArt": [
-    "https://github.com/jinwon-int/a2a-plane/issues/393",
-    "https://github.com/jinwon-int/a2a-plane/issues/464",
-    "https://github.com/jinwon-int/a2a-plane/issues/465",
-    "https://github.com/jinwon-int/a2a-plane/issues/504"
+    "a2a-plane#393 (internal tracker, private)",
+    "a2a-plane#464 (internal tracker, private)",
+    "a2a-plane#465 (internal tracker, private)",
+    "a2a-plane#504 (internal tracker, private)"
   ],
   "profiles": [
     "docs/specs/gongyung-hermes-worker-profile/spec.md",
@@ -150,7 +150,7 @@
         "G9_nonLoopbackAuthorized": "PASS",
         "G10_enrollmentEvidence": "PASS"
       },
-      "operatorApprovalCommentUrl": "https://github.com/jinwon-int/a2a-plane/issues/504#issuecomment-0000000000",
+      "operatorApprovalCommentUrl": "a2a-plane#504 (internal tracker, private)#issuecomment-0000000000",
       "redactionStatement": "All device identifiers, provider tokens, and private paths redacted to <redacted>.",
       "safetyConfirmation": {
         "noProductionDeploy": true,

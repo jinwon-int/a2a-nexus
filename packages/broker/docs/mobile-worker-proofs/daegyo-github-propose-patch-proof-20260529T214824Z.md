@@ -8,4 +8,4 @@
 - issueUrl: `https://github.com/jinwon-int/a2a-broker/issues/999`
 - workspace: `~/.hermes/a2a-workspaces/gwakga/<taskId>/`
 - boundary: proof-marker only; no provider send, DB mutation, deploy, or service restart.
-- approvalScope: `Seo Jin On Telegram #9193: GitHub PR-producing mobile executor approval`
+- approvalScope: `the operator Telegram #9193: GitHub PR-producing mobile executor approval`

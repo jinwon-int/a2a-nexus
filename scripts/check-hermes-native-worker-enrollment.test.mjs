@@ -270,8 +270,8 @@ test('enrollment fixture has required top-level fields', () => {
   assert.equal(fixture.mode, 'enrollment-dry-run');
   assert.ok(typeof fixture.fixtureId === 'string' && fixture.fixtureId.length > 0);
   assert.ok(typeof fixture.description === 'string' && fixture.description.length > 0);
-  assert.equal(fixture.issue, 'https://github.com/jinwon-int/a2a-plane/issues/504');
-  assert.equal(fixture.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/503');
+  assert.equal(fixture.issue, 'a2a-plane#504 (internal tracker, private)');
+  assert.equal(fixture.parentIssue, 'a2a-plane#503 (internal tracker, private)');
 });
 
 test('enrollment fixture references prior art issues', () => {

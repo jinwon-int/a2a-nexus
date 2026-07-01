@@ -1,12 +1,12 @@
 # Public Release Provenance Checklist
 
-Issues: [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473), [a2a-plane#478](https://github.com/jinwon-int/a2a-plane/issues/478), [a2a-plane#479](https://github.com/jinwon-int/a2a-plane/issues/479)
+Issues: a2a-plane#473 (a2a-plane#473, internal tracker private), a2a-plane#478 (a2a-plane#478, internal tracker private), a2a-plane#479 (a2a-plane#479, internal tracker private)
 
 Related follow-up issues: [a2a-broker#951](https://github.com/jinwon-int/a2a-broker/issues/951), [a2a-broker#952](https://github.com/jinwon-int/a2a-broker/issues/952), [openclaw-plugin-a2a#454](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454), [a2a-docker-runner#343](https://github.com/jinwon-int/a2a-docker-runner/issues/343)
 
 This checklist distinguishes a source-public snapshot from a product release for the current split A2A repositories:
 
-- [`jinwon-int/a2a-plane`](https://github.com/jinwon-int/a2a-plane)
+- [`a2a-plane (internal tracker, private)`](a2a-plane (internal tracker, private))
 - [`jinwon-int/a2a-broker`](https://github.com/jinwon-int/a2a-broker)
 - [`jinwon-int/openclaw-plugin-a2a`](https://github.com/jinwon-int/openclaw-plugin-a2a)
 - [`jinwon-int/a2a-docker-runner`](https://github.com/jinwon-int/a2a-docker-runner)
@@ -29,7 +29,7 @@ Every action below requires separate explicit operator approval. Approval must n
 
 | Gate | Requires explicit approval before | Minimum approval text must include |
 |---|---|---|
-| Tag gate | Creating or moving any tag, including semantic versions and new source-public markers. | Repo, tag name, target commit SHA, whether tag is annotated/signed/lightweight, and confirmation that no deploy/publish is bundled. The `a2a-docker-runner` release-gate workflow is being hardened to split validation from the non-dry-run tag path and attach tag creation to the `release` GitHub Environment (see [#485](https://github.com/jinwon-int/a2a-plane/issues/485), [a2a-docker-runner#345](https://github.com/jinwon-int/a2a-docker-runner/pull/345), `.github/workflows/release-gate.yml`). |
+| Tag gate | Creating or moving any tag, including semantic versions and new source-public markers. | Repo, tag name, target commit SHA, whether tag is annotated/signed/lightweight, and confirmation that no deploy/publish is bundled. The `a2a-docker-runner` release-gate workflow is being hardened to split validation from the non-dry-run tag path and attach tag creation to the `release` GitHub Environment (see #485 (a2a-plane#485, internal tracker private), [a2a-docker-runner#345](https://github.com/jinwon-int/a2a-docker-runner/pull/345), `.github/workflows/release-gate.yml`). |
 | GitHub Release gate | Drafting, publishing, editing, or marking a GitHub Release as latest/prerelease. | Repo, tag, release name, release notes source, artifact policy, and whether the release is draft/prerelease/latest. |
 | npm gate | Running `npm publish`, changing `private` to `false` for a currently private package, or publishing package provenance. | Package name, version, registry, tag/dist-tag, tarball dry-run evidence, and rollback/deprecation plan. |
 | Docker/image gate | Building for publication, pushing, signing, or attaching image artifacts/digests. | Image name, registry, tag, digest/provenance plan, base image policy, and rollback/deprecation plan. |
@@ -80,7 +80,7 @@ Use this checklist only after source-public review is clean. A product release r
 | `a2a-plane` | Public docs/coordination repo with MIT license and `source-public-20260511` marker. Root package is `private: true`. | Decide whether it remains a non-published coordination/docs package. Update stale private-candidate description and supersede historical private-visibility docs. Link #473 split-vs-monorepo decision. |
 | `a2a-broker` | Public source repo with source-public marker and green CI. Package is `private: true`; license metadata absent in GitHub/package metadata. | Add/confirm license, package metadata, release notes, compatibility matrix, official A2A SDK/TCK drift posture (#951), trust metadata posture (#952), and explicit release/publish approvals. |
 | `openclaw-plugin-a2a` | Public source repo with source-public marker and green CI. Package is `private: true`; license metadata absent in GitHub/package metadata. | Add/confirm license, package metadata, package files allowlist, plugin protocol diagnostics or deferral (#454), and explicit npm release approval. |
-| `a2a-docker-runner` | Public source repo with MIT root license, source-public marker, green CI, and package `private: false`. | Package `license` and `files` allowlist plus release/tag workflow approval gating are tracked by [#485](https://github.com/jinwon-int/a2a-plane/issues/485) and [a2a-docker-runner#345](https://github.com/jinwon-int/a2a-docker-runner/pull/345). Remaining: run package tarball dry-run, decide image publication boundary, close or defer Go/Java evidence support (#343), configure the `release` GitHub Environment with required reviewers before non-dry-run use, and obtain explicit npm/image approval. |
+| `a2a-docker-runner` | Public source repo with MIT root license, source-public marker, green CI, and package `private: false`. | Package `license` and `files` allowlist plus release/tag workflow approval gating are tracked by #485 (a2a-plane#485, internal tracker private) and [a2a-docker-runner#345](https://github.com/jinwon-int/a2a-docker-runner/pull/345). Remaining: run package tarball dry-run, decide image publication boundary, close or defer Go/Java evidence support (#343), configure the `release` GitHub Environment with required reviewers before non-dry-run use, and obtain explicit npm/image approval. |
 
 ## Publication Command Boundary
 

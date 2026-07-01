@@ -3,7 +3,7 @@
  * deterministic, explicitly operator-gated execution plans.
  *
  * Issue:  jinwon-int/plugin-a2a#263
- * Parent: jinwon-int/a2a-plane#218
+ * Parent: a2a-plane#218 (internal tracker, private)
  * Run:    a2a-source-public-execution-orchestrator-20260511T023207Z
  *
  * Takes an approved SourcePublicApprovalPacket (or full rehearsal report) and

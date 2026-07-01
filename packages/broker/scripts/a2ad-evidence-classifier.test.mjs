@@ -13,7 +13,7 @@ import {
 const script = new URL('./a2ad-evidence-classifier.mjs', import.meta.url).pathname;
 
 test('source-root bridge failures are blocked from substantive worker opinions', () => {
-  const result = classifyEvidenceText('analysis bridge blocked: repo root missing for jinwon-int/a2a-plane; check A2A_ANALYSIS_REPO_MAP_JSON');
+  const result = classifyEvidenceText('analysis bridge blocked: repo root missing for a2a-plane (internal tracker, private); check A2A_ANALYSIS_REPO_MAP_JSON');
   assert.equal(result.classification, 'source_blocked');
   assert.equal(result.substantive, false);
   assert.equal(result.countsAsWorkerOpinion, false);

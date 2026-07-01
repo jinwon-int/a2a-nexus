@@ -5,7 +5,7 @@
 > human finalizer boundary, approval-sensitive action gates, and safe transition
 > path from human-polling to broker-side collection.
 >
-> **Lane issue:** [a2a-plane#467](https://github.com/jinwon-int/a2a-plane/issues/467)
+> **Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
 > **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
 > **Run:** `a2a-team1-round-coordinator-20260526T201140KST`
 > **Lane owner:** nosuk (Team1)
@@ -197,7 +197,7 @@ human finalizer's review.
   "generatedAt": "<ISO-8601>",
   "state": "READY",
   "partial": false,
-  "parentIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
+  "parentIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "deadline": "<ISO-8601>",
   "deadlineReached": false,
   "staleAfterMs": 1800000,
@@ -205,12 +205,12 @@ human finalizer's review.
     {
       "order": 1,
       "worker": "bangtong",
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "role": "broker",
       "status": "succeeded",
       "taskId": "task-uuid-1",
-      "issueUrl": "https://github.com/jinwon-int/a2a-plane/issues/N",
-      "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/449",
+      "issueUrl": "a2a-plane (internal tracker, private)issues/N",
+      "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)",
       "evidenceKind": "pr",
       "updatedAt": "<ISO-8601>",
       "ageMs": 120000,
@@ -458,10 +458,10 @@ If at any stage the automated collection produces incorrect results:
   "workers": ["bangtong", "sogyo", "nosuk", "yukson"],
   "deadline": "20260521T120000Z",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/449" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/450" },
-    "nosuk":   { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/451" },
-    "yukson":  { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/452" }
+    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
+    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
+    "nosuk":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #451 (internal tracker, private)" },
+    "yukson":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
   },
   "summary": {
     "decision": "READY",
@@ -480,10 +480,10 @@ If at any stage the automated collection produces incorrect results:
   "workers": ["bangtong", "sogyo", "nosuk", "yukson"],
   "deadline": "20260527T201140KST",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/449" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/450" },
+    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
+    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
     "nosuk":   { "status": "running", "lastUpdate": "20260526T201140Z", "ageMs": 1800000 },
-    "yukson":  { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/452" }
+    "yukson":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
   },
   "risks": [
     { "lane": 3, "worker": "nosuk", "severity": "warning", "description": "No update for 30 min (stale threshold exceeded)." }
@@ -505,8 +505,8 @@ If at any stage the automated collection produces incorrect results:
   "workers": ["soonwook", "gwakga", "gongyung"],
   "deadline": "20260526T090000Z",
   "laneResults": {
-    "soonwook": { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/440" },
-    "gwakga":   { "status": "blocked", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/issues/441" },
+    "soonwook": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #440 (internal tracker, private)" },
+    "gwakga":   { "status": "blocked", "evidenceUrl": "a2a-plane#441 (internal tracker, private)" },
     "gongyung": { "status": "succeeded", "evidenceUrl": null, "mobileStandby": true }
   },
   "risks": [
@@ -530,10 +530,10 @@ If at any stage the automated collection produces incorrect results:
   "workers": ["bangtong", "sogyo", "soonwook", "gwakga"],
   "deadline": "20260524T140000Z",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/445" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/446" },
+    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #445 (internal tracker, private)" },
+    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #446 (internal tracker, private)" },
     "soonwook": { "status": "timeout", "lastUpdate": "20260523T100000Z" },
-    "gwakga":  { "status": "succeeded", "evidenceUrl": "https://github.com/jinwon-int/a2a-plane/pull/447" }
+    "gwakga":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #447 (internal tracker, private)" }
   },
   "risks": [
     { "lane": 3, "worker": "soonwook", "severity": "blocker", "description": "Team2 worker timed out before deadline." }

@@ -1,7 +1,7 @@
 # Team1 source-public approval rehearsal validation matrix
 
-Parent: [#211](https://github.com/jinwon-int/a2a-plane/issues/211)
-Child: [#212](https://github.com/jinwon-int/a2a-plane/issues/212)
+Parent: #211 (a2a-plane#211, internal tracker private)
+Child: #212 (a2a-plane#212, internal tracker private)
 Run: `a2a-source-public-approval-rehearsal-20260511T014240Z`
 Team: `team1`
 Lane: `bangtong`
@@ -11,8 +11,8 @@ This is a redacted validation artifact only. It does not change repository visib
 
 ## Evidence reviewed
 
-- Parent dispatch: [a2a-plane#211](https://github.com/jinwon-int/a2a-plane/issues/211).
-- Team1 lane: [a2a-plane#212](https://github.com/jinwon-int/a2a-plane/issues/212).
+- Parent dispatch: a2a-plane#211 (a2a-plane#211, internal tracker private).
+- Team1 lane: a2a-plane#212 (a2a-plane#212, internal tracker private).
 - Approval packet schema: `docs/approval-rehearsal/source-public-approval-packet-schema.json`.
 - Approval rehearsal aggregator: `scripts/a2a-source-public-approval-rehearsal.mjs`.
 - Conformance tests: `scripts/a2a-source-public-approval-rehearsal.test.mjs`.

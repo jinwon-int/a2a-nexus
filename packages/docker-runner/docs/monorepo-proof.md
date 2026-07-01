@@ -1,7 +1,7 @@
 # Monorepo Build/Test & Template Migration Proof
 
 **Issue**: https://github.com/jinwon-int/a2a-docker-runner/issues/262
-**Parent**: https://github.com/jinwon-int/a2a-plane/issues/335
+**Parent**: a2a-plane#335 (internal tracker, private)
 **Run**: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
 **Lane**: Team2 / `jingun`
 

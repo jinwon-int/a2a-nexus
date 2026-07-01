@@ -40,7 +40,7 @@ function allGo(overrides = {}) {
         id,
         {
           status: 'GO',
-          evidence: [`https://github.com/jinwon-int/a2a-plane/issues/167#gate-${index + 1}`],
+          evidence: [`a2a-plane#167 (internal tracker, private)#gate-${index + 1}`],
           ...overrides[id],
         },
       ]),
@@ -67,7 +67,7 @@ test('GO fails closed when evidence contains an unredacted private path', () => 
 });
 
 test('GO requires operator approval evidence to remain separate from scanner evidence', () => {
-  const sharedEvidence = 'https://github.com/jinwon-int/a2a-plane/issues/167#shared-evidence';
+  const sharedEvidence = 'a2a-plane#167 (internal tracker, private)#shared-evidence';
   const input = allGo({
     externalScannerEvidence: { evidence: [sharedEvidence] },
     operatorApproval: { evidence: [sharedEvidence] },
@@ -82,7 +82,7 @@ test('NO-GO remains a valid fail-closed outcome with unresolved gates', () => {
   const input = {
     decision: 'NO-GO',
     gates: {
-      publicPrivateBoundary: { status: 'GO', evidence: ['https://github.com/jinwon-int/a2a-plane/issues/167#boundary'] },
+      publicPrivateBoundary: { status: 'GO', evidence: ['a2a-plane#167 (internal tracker, private)#boundary'] },
     },
   };
   const result = run(input);

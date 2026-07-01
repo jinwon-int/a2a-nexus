@@ -1,8 +1,8 @@
 # Team1 post-78261 merge-order cross-check
 
-Parent: [#130](https://github.com/jinwon-int/a2a-plane/issues/130)
-Child: [#134](https://github.com/jinwon-int/a2a-plane/issues/134)
-Baseline: [PR #129](https://github.com/jinwon-int/a2a-plane/pull/129)
+Parent: #130 (a2a-plane#130, internal tracker private)
+Child: #134 (a2a-plane#134, internal tracker private)
+Baseline: PR #129 (a2a-plane PR #129, internal tracker private)
 Run: `a2a-plane-post78261-next-20260509T142546Z`
 Broker of record: `seoseo`
 Team: `team1-seoseo`
@@ -45,8 +45,8 @@ This cross-check did not perform production deploys, Gateway/broker/worker resta
 
 # Team1 vNext integration cross-check
 
-Parent: [#146](https://github.com/jinwon-int/a2a-plane/issues/146)
-Child: [#150](https://github.com/jinwon-int/a2a-plane/issues/150)
+Parent: #146 (a2a-plane#146, internal tracker private)
+Child: #150 (a2a-plane#150, internal tracker private)
 Run: `a2a-vnext-contract-smoke-crossbroker-20260510`
 Broker of record: `seoseo`
 Team: `team1-seoseo`
@@ -60,9 +60,9 @@ At this review point, the Team1 sibling issues have only Start/dispatch evidence
 
 | Lane | Issue | Focus | Integration status | Libero decision |
 | --- | --- | --- | --- | --- |
-| bangtong | [#147](https://github.com/jinwon-int/a2a-plane/issues/147) | Five-minute local no-live smoke capstone | Waiting for PR/Done/Block evidence proving deterministic, CI-friendly local broker → worker → terminal-evidence flow. | Do not mark Team1 green until exact commands and validation output land. |
-| sogyo | [#148](https://github.com/jinwon-int/a2a-plane/issues/148) | Contract v0 boundary freeze | Waiting for PR/Done/Block evidence defining the frozen contract surface and accepted-send non-ACK boundary. | Merge before dependent quickstart/scanner wording when it changes shared terms. |
-| nosuk | [#149](https://github.com/jinwon-int/a2a-plane/issues/149) | Readiness scanner and NO-GO gate proof | Waiting for PR/Done/Block evidence showing fail-closed readiness gates and local checks. | Public-readiness remains NO-GO unless scanner evidence and explicit operator approval are separate and complete. |
+| bangtong | #147 (a2a-plane#147, internal tracker private) | Five-minute local no-live smoke capstone | Waiting for PR/Done/Block evidence proving deterministic, CI-friendly local broker → worker → terminal-evidence flow. | Do not mark Team1 green until exact commands and validation output land. |
+| sogyo | #148 (a2a-plane#148, internal tracker private) | Contract v0 boundary freeze | Waiting for PR/Done/Block evidence defining the frozen contract surface and accepted-send non-ACK boundary. | Merge before dependent quickstart/scanner wording when it changes shared terms. |
+| nosuk | #149 (a2a-plane#149, internal tracker private) | Readiness scanner and NO-GO gate proof | Waiting for PR/Done/Block evidence showing fail-closed readiness gates and local checks. | Public-readiness remains NO-GO unless scanner evidence and explicit operator approval are separate and complete. |
 
 ## Risk cross-check
 
@@ -96,8 +96,8 @@ This cross-check performed only repository inspection, issue/comment inspection,
 
 # Team1 post-#78261 health/readiness libero matrix
 
-Parent: [#181](https://github.com/jinwon-int/a2a-plane/issues/181)
-Child: [#182](https://github.com/jinwon-int/a2a-plane/issues/182)
+Parent: #181 (a2a-plane#181, internal tracker private)
+Child: #182 (a2a-plane#182, internal tracker private)
 Run: `a2a-post-78261-health-readiness-20260510T024701Z`
 Broker of record: `seoseo`
 Team: `team1-seoseo`
@@ -120,11 +120,11 @@ At review time, the Team1 sibling lanes had dispatch and Start evidence only; no
 
 | Surface | Required semantics / criterion | Current evidence | Libero decision |
 | --- | --- | --- | --- |
-| `openclaw/openclaw#78261` semantics | Treat upstream #78261 as closed/superseded, not an A2A merge gate; provider send success or message IDs are accepted-send evidence only. | Parent [#181](https://github.com/jinwon-int/a2a-plane/issues/181) states this direction. `packages/broker/docs/operator-terminal-outbox.md` records that provider accepted/send success and provider-returned message IDs remain non-ACK evidence. | **Pass for semantics; Waiting for sibling closeout**. Reject any output that promotes accepted-send evidence to requester-visible receipt, operator-visible receipt, human-seen proof, terminal ACK, or terminal-outbox ACK. |
+| `openclaw/openclaw#78261` semantics | Treat upstream #78261 as closed/superseded, not an A2A merge gate; provider send success or message IDs are accepted-send evidence only. | Parent #181 (a2a-plane#181, internal tracker private) states this direction. `packages/broker/docs/operator-terminal-outbox.md` records that provider accepted/send success and provider-returned message IDs remain non-ACK evidence. | **Pass for semantics; Waiting for sibling closeout**. Reject any output that promotes accepted-send evidence to requester-visible receipt, operator-visible receipt, human-seen proof, terminal ACK, or terminal-outbox ACK. |
 | `/health` p99 criteria | The broker health lane needs a small-DB repeated-request regression target with p95/p99 under 500ms, plus no production DB mutation or service restart. | Issues [a2a-broker#463](https://github.com/jinwon-int/a2a-broker/issues/463) and [#464](https://github.com/jinwon-int/a2a-broker/issues/464) define the symptom and p95/p99 target, but had only Start evidence at review time. | **Waiting / not green** until Team1 posts exact commands, sample size, p95/p99 values, and query-plan evidence from safe local or redacted environments. |
 | Replay / no-duplicate | Terminal evidence and replay paths must not mint duplicate notifications, duplicate artifacts, or false ACKs. Duplicate provider sends must remain suppressed or non-ACK until real receipt evidence exists. | Existing repo contracts and docs cover idempotency/replay boundaries, including `contracts/a2a/checkpoint-interrupt.md`, `contracts/a2a/terminal-semantics.md`, and `packages/broker/docs/operator-terminal-outbox.md`; current Team1 round has no new linked replay closeout yet. | **Waiting / not green** for this round. Existing contract language is useful baseline evidence, not a substitute for current replay/no-duplicate proof. |
 | Scanner / readiness | Public-readiness remains fail-closed unless scanner/readiness evidence is current, redacted, and separate from terminal evidence; runtime/bootstrap files must not enter diffs or evidence. | `docs/readiness/fail-closed-scanner-readiness.md` and `docs/readiness/fail-closed-gates.json` keep the aggregate decision NO-GO when required evidence is missing. This patch only updates this validation note. | **Pass for fail-closed wording; Waiting for current scanner evidence**. A missing external scanner, stale output, or runtime/bootstrap leakage remains Block/NO-GO. |
-| Approval boundaries | No production deploy/restart, Gateway/broker restart, live provider/Telegram send, terminal ACK, production DB mutation, secret/visibility change, history rewrite, or force-push without explicit operator approval. Repository visibility approval must be separate. | Parent [#181](https://github.com/jinwon-int/a2a-plane/issues/181), child [#182](https://github.com/jinwon-int/a2a-plane/issues/182), and the readiness docs all state these boundaries. No such action was performed by this validation lane. | **Pass**. Passing docs/tests or accepted-send evidence does not authorize public visibility, live notification, deploy/restart, DB mutation, or terminal ACK. |
+| Approval boundaries | No production deploy/restart, Gateway/broker restart, live provider/Telegram send, terminal ACK, production DB mutation, secret/visibility change, history rewrite, or force-push without explicit operator approval. Repository visibility approval must be separate. | Parent #181 (a2a-plane#181, internal tracker private), child #182 (a2a-plane#182, internal tracker private), and the readiness docs all state these boundaries. No such action was performed by this validation lane. | **Pass**. Passing docs/tests or accepted-send evidence does not authorize public visibility, live notification, deploy/restart, DB mutation, or terminal ACK. |
 
 ## Aggregate libero decision
 

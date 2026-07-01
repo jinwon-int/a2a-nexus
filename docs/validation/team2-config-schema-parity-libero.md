@@ -1,6 +1,6 @@
 # Team2 Libero config schema parity validation
 
-Parent: [a2a-plane#249](https://github.com/jinwon-int/a2a-plane/issues/249)
+Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
 Incident reference: [openclaw-plugin-a2a#271](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/271)
 Round ID: `a2a-config-schema-skew-prevention-20260511T120400Z`
 
@@ -24,7 +24,7 @@ This validation lane is source-only. It does not restart Gateway, deploy service
 
 - `packages/openclaw-plugin-a2a/openclaw.plugin.json` registers `operatorEvents.crossBrokers[]` under `operatorEvents` while preserving `additionalProperties: false`.
 - `packages/openclaw-plugin-a2a/test/openclaw-plugin-config-schema.test.mjs` validates the incident-shaped restart fixture and rejects unknown cross-broker item fields.
-- `scripts/check-team2-config-schema-parity-libero.test.mjs` pins this document and the manifest/schema shape in the root release gate.
+- `scripts/archive/check-team2-config-schema-parity-libero.test.mjs` pins this document and the manifest/schema shape in the root release gate.
 
 ## Runtime/bootstrap fail-closed rule
 

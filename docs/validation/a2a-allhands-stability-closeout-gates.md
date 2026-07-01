@@ -1,7 +1,7 @@
 # A2A read-only libero and stability closeout gates
 
 Parent: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)
-Plane lane: [a2a-plane#276](https://github.com/jinwon-int/a2a-plane/issues/276)
+Plane lane: a2a-plane#276 (a2a-plane#276, internal tracker private)
 Primary trackers: [a2a-broker#527](https://github.com/jinwon-int/a2a-broker/issues/527), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Snapshot: `2026-05-13T04:49Z`
 
@@ -78,7 +78,7 @@ Suggested read-only watch commands:
 
 ```bash
 gh issue view 539 --repo jinwon-int/a2a-broker --json comments,url,title,state
-gh issue view 276 --repo jinwon-int/a2a-plane --json comments,url,title,state
+gh issue view 276 --repo a2a-plane (internal tracker, private) --json comments,url,title,state
 gh search issues 'a2a-broker#539 OR a2a-plane#276 owner:jinwon-int' --json repository,number,title,state,url,commentsCount --limit 50
 ```
 

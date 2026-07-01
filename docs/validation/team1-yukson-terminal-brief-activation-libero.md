@@ -1,8 +1,8 @@
 # Team1/yukson Terminal Brief activation libero validation — R11
 
-Run: `a2a-r11-stability-activation-gates-20260513T231046Z`  
-Parent: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)  
-Lane: Team1/yukson, [a2a-plane#297](https://github.com/jinwon-int/a2a-plane/issues/297)  
+Run: `a2a-r11-stability-activation-gates-20260513T231046Z`
+Parent: [a2a-broker#539](https://github.com/jinwon-int/a2a-broker/issues/539)
+Lane: Team1/yukson, a2a-plane#297 (a2a-plane#297, internal tracker private)
 Snapshot: `2026-05-13T23:11:50Z`
 
 This is the R11 Team1/yukson activation GO/NO-GO acceptance matrix update. It validates the decision surface for activation readiness gates, compact title conventions, parent-only aggregation ownership, and rollback safety. It does not deploy a broker, restart Gateway, enable core Gateway config, perform a live provider send, record Terminal Brief ACK, mutate production data, change secrets, rewrite history, force-push, release, or change repository visibility.
@@ -25,8 +25,8 @@ A later `GO_CANDIDATE` may be presented only after every required gate below has
 | Plugin activation lane — [openclaw-plugin-a2a#303](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/303) | R11 Team1 sogyo: Terminal Brief receipt/activation gate plugin no-live proof. | Issue open; no terminal evidence at snapshot. | `NO-GO` until refreshed terminal PR/Done/Block evidence lands. |
 | Broker queue/canary lane — [a2a-broker#594](https://github.com/jinwon-int/a2a-broker/issues/594) | R11 Team2 dungae: queue hygiene and canary gate hardening evidence. | Issue open; no terminal evidence at snapshot. | `NO-GO` until refreshed terminal PR/Done/Block evidence lands. |
 | Runner evidence lane — [a2a-docker-runner#247](https://github.com/jinwon-int/a2a-docker-runner/issues/247) | R11 Team2 jingun: runner evidence and no-diff validation lane parity evidence. | Issue open; no terminal evidence at snapshot. | `NO-GO` until refreshed terminal PR/Done/Block evidence lands. |
-| Libero parity lane — [a2a-plane#298](https://github.com/jinwon-int/a2a-plane/issues/298) | R11 Team2 soonwook: libero cross-team risk review evidence. | Issue open; no terminal evidence at snapshot. | `NO-GO` until refreshed terminal PR/Done/Block evidence lands. |
-| Team1/yukson lane — [a2a-plane#297](https://github.com/jinwon-int/a2a-plane/issues/297) | This activation acceptance matrix update and regression guard for R11. | In-progress: this libero document. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
+| Libero parity lane — a2a-plane#298 (a2a-plane#298, internal tracker private) | R11 Team2 soonwook: libero cross-team risk review evidence. | Issue open; no terminal evidence at snapshot. | `NO-GO` until refreshed terminal PR/Done/Block evidence lands. |
+| Team1/yukson lane — a2a-plane#297 (a2a-plane#297, internal tracker private) | This activation acceptance matrix update and regression guard for R11. | In-progress: this libero document. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
 
 ## Activation gate checklist
 

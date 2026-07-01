@@ -38,6 +38,28 @@ For any candidate package/image surface, the release issue or PR must show:
 - confirmation that no runtime config, `.env`, private operator notes, raw session dumps, tokens, provider IDs, Telegram IDs, production data, or host-local paths are included;
 - install or run smoke output from a disposable environment.
 
+## Versioning and stability tiers
+
+Until an operator-approved release plan exists, all packages remain private and unreleased. Version numbers in package manifests are source-state markers, not publication approval.
+
+### SemVer during 0.x
+
+- Breaking changes during `0.x` require a minor bump candidate (`0.MINOR.0`) and a CHANGELOG entry before any tag/release proposal.
+- Compatible features may use a minor bump candidate; fixes and documentation-only changes may use a patch candidate.
+- The default policy is lockstep candidate versions across broker, plugin, and runner until a package-owner decision records independent versioning.
+
+### Stability tiers
+
+| Tier | Surface | Promise |
+| --- | --- | --- |
+| Public alpha | README, quickstart, architecture, contribution entry points, public docs, local-only examples | Feedback welcome; no production or support guarantee. |
+| Contract candidate | `contracts/a2a/`, compatibility fixtures, public JSON schemas | Changes require compatibility notes and regression tests. |
+| Experimental/internal | broker worker internals, historical validation fixtures, round-specific scripts, live-ops runbooks | May change without compatibility promise; do not present as public API. |
+
+### CHANGELOG and bump triggers
+
+A release proposal must update `CHANGELOG.md` when it changes public docs, contracts, package exports, CLI behavior, worker/broker API behavior, or safety policy. The proposal must cite local gates and any approval record.
+
 ## Versioning policy stub
 
 Until a maintainer approves a release plan, use this conservative policy:

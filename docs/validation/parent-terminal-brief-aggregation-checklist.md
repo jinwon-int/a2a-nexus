@@ -1,6 +1,6 @@
 # Parent Terminal Brief aggregation checklist
 
-Issue: [a2a-plane#269](https://github.com/jinwon-int/a2a-plane/issues/269)
+Issue: a2a-plane#269 (a2a-plane#269, internal tracker private)
 Contract: `contracts/a2a/parent-terminal-brief-aggregation.md`
 Fixture: `fixtures/contract/parent-terminal-brief-aggregation.json`
 Canary: Gwakga-origin parent round with Seoseo handoff child task

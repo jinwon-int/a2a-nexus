@@ -3,8 +3,8 @@
 ## Linked spec
 
 - Spec: `docs/specs/a2a-goal-mode/spec.md`
-- Design tracker: `jinwon-int/a2a-plane#442`
-- Parent adoption tracker: `jinwon-int/a2a-plane#443`
+- Design tracker: `a2a-plane#442 (internal tracker, private)`
+- Parent adoption tracker: `a2a-plane#443 (internal tracker, private)`
 
 ## Size classification
 
@@ -28,7 +28,7 @@ Reason: this PR is design/docs-only in one repo. Broker runtime implementation o
 - Broker of record / finalizer for this docs PR: Seoseo.
 - Workers: none required.
 - Libero/validator: GitHub Actions and local release-gate validation.
-- Human approval owner: Seo Jin On for any future runtime automation.
+- Human approval owner: the operator for any future runtime automation.
 
 ## Execution lane
 

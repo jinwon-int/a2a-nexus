@@ -2,8 +2,8 @@
   "schema": "a2a.monorepo-final-operator-signoff-matrix.v1",
   "snapshotDate": "2026-06-10",
   "parentIssue": "https://github.com/jinwon-int/a2a-nexus/issues/553",
-  "historicalParentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "historicalFinalSignoffIssue": "https://github.com/jinwon-int/a2a-plane/issues/549",
+  "historicalParentIssue": "a2a-plane#511 (internal tracker, private)",
+  "historicalFinalSignoffIssue": "a2a-plane#549 (internal tracker, private)",
   "activeFinalPacketIssue": "https://github.com/jinwon-int/a2a-nexus/issues/553",
   "a2aDecisionRound": "a2a-finalpacket-retry-20260610T123212Z",
   "latestMainCommit": "bf36a68ab8a38c0fbea0710d979c165d4f9b07f9",
@@ -16,7 +16,7 @@
     "branchProtectionRulesetMergeCommit": "33de5b493e4f4d156a5900ad4d924a138147329c",
     "splitRepoDispositionPr": "https://github.com/jinwon-int/a2a-nexus/pull/566",
     "splitRepoDispositionMergeCommit": "bf36a68ab8a38c0fbea0710d979c165d4f9b07f9",
-    "historicalFinalSignoffPr": "https://github.com/jinwon-int/a2a-plane/pull/550",
+    "historicalFinalSignoffPr": "a2a-plane PR #550 (internal tracker, private)",
     "historicalFinalSignoffMergeCommit": "7200a91a92bbdbc82855a5a22321d704fdf2ca29"
   },
   "activeRuleset": {
@@ -70,17 +70,17 @@
     {
       "area": "branch_protection_or_ruleset",
       "decision": "RECORDED_ACTIVE_NO_FURTHER_CHANGE",
-      "operatorOwner": "Seo Jin On / 서진원",
-      "evidence": "docs/monorepo-branch-protection-approval-packet.md",
-      "rollbackOwner": "Seo Jin On / 서진원 for settings decision; seoseo finalizer for PR evidence/revert docs",
+      "operatorOwner": "the operator / operator",
+      "evidence": "docs/history/monorepo-branch-protection-approval-packet.md",
+      "rollbackOwner": "the operator / operator for settings decision; seoseo finalizer for PR evidence/revert docs",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
     },
     {
       "area": "split_repo_disposition",
       "decision": "RECORDED_ACTIVE_CANONICAL_REMAINS",
-      "operatorOwner": "Seo Jin On / 서진원",
-      "evidence": "docs/monorepo-split-repo-disposition-rollback.md",
+      "operatorOwner": "the operator / operator",
+      "evidence": "docs/history/monorepo-split-repo-disposition-rollback.md",
       "rollbackOwner": "unassigned for any future read-only/archive/redirect setting",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
@@ -89,7 +89,7 @@
       "area": "release_tag_and_github_release",
       "decision": "NO_GO_WAITING",
       "operatorOwner": "unassigned",
-      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "rollbackOwner": "unassigned",
       "approvedForPrFirstPacket": false,
       "executionApproved": false
@@ -98,7 +98,7 @@
       "area": "npm_publish",
       "decision": "NO_GO_WAITING",
       "operatorOwner": "unassigned",
-      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "rollbackOwner": "unassigned",
       "approvedForPrFirstPacket": false,
       "executionApproved": false
@@ -107,7 +107,7 @@
       "area": "docker_ghcr_publish",
       "decision": "NO_GO_WAITING",
       "operatorOwner": "unassigned",
-      "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+      "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "rollbackOwner": "unassigned",
       "approvedForPrFirstPacket": false,
       "executionApproved": false
@@ -115,8 +115,8 @@
     {
       "area": "package_ownership_transfer",
       "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
-      "operatorOwner": "Seo Jin On / 서진원",
-      "evidence": "docs/monorepo-canonical-flip-readiness.md",
+      "operatorOwner": "the operator / operator",
+      "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
       "rollbackOwner": "seoseo finalizer via PR revert; registry/package owner transfer rollback remains unassigned until a separate execution packet",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
@@ -124,8 +124,8 @@
     {
       "area": "canonical_flip",
       "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
-      "operatorOwner": "Seo Jin On / 서진원",
-      "evidence": "docs/monorepo-canonical-flip-readiness.md",
+      "operatorOwner": "the operator / operator",
+      "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
       "rollbackOwner": "seoseo finalizer via PR revert; live/runtime rollback remains unassigned until a separate execution packet",
       "approvedForPrFirstPacket": true,
       "executionApproved": false

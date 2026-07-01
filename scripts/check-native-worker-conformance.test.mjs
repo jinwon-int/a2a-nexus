@@ -4,7 +4,7 @@
  * Validates the no-live conformance fixture and checklist:
  * - No-live conformance fixture JSON schema, safety flags, conformance steps.
  * - Android/Termux caveats documentation.
- * - Prior art references (jinwon-int/a2a-plane#435, #441).
+ * - Prior art references (a2a-plane#435 (internal tracker, private), #441).
  *
  * Safety: read-only doc and fixture validation. No live broker, provider send,
  * deploy, restart, terminal ACK, database mutation, or secret exposure.
@@ -57,8 +57,8 @@ test('fixture has required top-level fields', () => {
   assert.equal(fixture.mode, 'no-live');
   assert.ok(typeof fixture.fixtureId === 'string' && fixture.fixtureId.length > 0);
   assert.ok(typeof fixture.description === 'string' && fixture.description.length > 0);
-  assert.equal(fixture.issue, 'https://github.com/jinwon-int/a2a-plane/issues/465');
-  assert.equal(fixture.parentIssue, 'https://github.com/jinwon-int/a2a-plane/issues/464');
+  assert.equal(fixture.issue, 'a2a-plane#465 (internal tracker, private)');
+  assert.equal(fixture.parentIssue, 'a2a-plane#464 (internal tracker, private)');
 });
 
 test('fixture references prior art issues 435 and 441', () => {

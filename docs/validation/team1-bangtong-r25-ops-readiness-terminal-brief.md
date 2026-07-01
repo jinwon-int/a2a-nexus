@@ -1,7 +1,7 @@
 # R25 Team1 bangtong operations-readiness gate for Team2 Terminal Brief → Seoseo production
 
-Parent: [a2a-plane#351](https://github.com/jinwon-int/a2a-plane/issues/351)
-Lane: [a2a-plane#352](https://github.com/jinwon-int/a2a-plane/issues/352)
+Parent: a2a-plane#351 (a2a-plane#351, internal tracker private)
+Lane: a2a-plane#352 (a2a-plane#352, internal tracker private)
 Run: `a2a-r25-team1-ops-readiness-terminal-brief-20260515T1656Z`
 Broker of record: Seoseo
 Worker: `bangtong`
@@ -283,7 +283,7 @@ node test/conformance/check-terminal-evidence-ack-boundary.mjs
 npm run check:message-id-ack-boundary
 
 # Ops-readiness gate test
-node --test scripts/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
+node --test scripts/archive/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
 
 # Release gate (full)
 npm run release-gate

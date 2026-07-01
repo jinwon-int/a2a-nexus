@@ -88,7 +88,7 @@ function allReadyEvents(): TerminalTaskOutboxEvent[] {
     eventFor("nosuk", "succeeded", {
       progress: 4,
       total: 4,
-      prUrl: "https://github.com/jinwon-int/a2a-plane/pull/395",
+      prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395",
     }),
   ];
 }

@@ -1,7 +1,7 @@
 # A2A public-readiness next-round libero validation
 
-Parent: [#163](https://github.com/jinwon-int/a2a-plane/issues/163)
-Child: [#165](https://github.com/jinwon-int/a2a-plane/issues/165)
+Parent: #163 (a2a-plane#163, internal tracker private)
+Child: #165 (a2a-plane#165, internal tracker private)
 Run: `a2a-public-readiness-next-20260509T165108Z`
 Broker of record: `seoseo`
 Team: `team1-seoseo`
@@ -16,12 +16,12 @@ At this snapshot, the sibling lanes have Start evidence but no linked PR, Done, 
 
 | Lane | Issue | Required proof before it can count for this round | Snapshot evidence | Integration decision |
 | --- | --- | --- | --- | --- |
-| Team1 bangtong | [a2a-plane#164](https://github.com/jinwon-int/a2a-plane/issues/164) | Durable checkpoint and human-interrupt contract, plus tests or fixtures proving terminal/interruption states are not ambiguous. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Do not let checkpoint wording imply production persistence or DB mutation. |
+| Team1 bangtong | a2a-plane#164 (a2a-plane#164, internal tracker private) | Durable checkpoint and human-interrupt contract, plus tests or fixtures proving terminal/interruption states are not ambiguous. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Do not let checkpoint wording imply production persistence or DB mutation. |
 | Team1 sogyo | [openclaw-plugin-a2a#245](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/245) | Plugin evidence that provider-returned IDs and send success remain accepted-send/non-ACK only, with fail-closed wording. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Merge/order against a2a-plane terms before any receipt closeout claims. |
 | Team1 nosuk | [a2a-broker#457](https://github.com/jinwon-int/a2a-broker/issues/457) | Broker receipt roadmap and queue hygiene closeout that keeps requester/operator-visible receipt separate from provider acceptance. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Must not mutate live broker state or terminal-outbox ACKs. |
-| Team2 dungae | [a2a-plane#166](https://github.com/jinwon-int/a2a-plane/issues/166) | Independent compatibility/policy proof from public-safe files, tied back to issue #94. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Useful as independent validation only after exact commands and changed paths are linked. |
-| Team2 jingun | [a2a-plane#167](https://github.com/jinwon-int/a2a-plane/issues/167) | Scanner/readiness governance and redacted evidence audit that fail closes without scanner evidence and without explicit operator approval. | Start markers observed; no PR/Done/Block closeout observed. | Waiting. Should refresh after wording-changing lanes settle. |
-| Team2 soonwook | [a2a-plane#168](https://github.com/jinwon-int/a2a-plane/issues/168) | Second-worker replay/no-duplicate proof and compact redacted trace validation. | Start markers observed; no PR/Done/Block closeout observed. | Waiting. Must prove replay safety without live sends, private topology, or ACK mutation. |
+| Team2 dungae | a2a-plane#166 (a2a-plane#166, internal tracker private) | Independent compatibility/policy proof from public-safe files, tied back to issue #94. | Start marker only; no PR/Done/Block closeout observed. | Waiting. Useful as independent validation only after exact commands and changed paths are linked. |
+| Team2 jingun | a2a-plane#167 (a2a-plane#167, internal tracker private) | Scanner/readiness governance and redacted evidence audit that fail closes without scanner evidence and without explicit operator approval. | Start markers observed; no PR/Done/Block closeout observed. | Waiting. Should refresh after wording-changing lanes settle. |
+| Team2 soonwook | a2a-plane#168 (a2a-plane#168, internal tracker private) | Second-worker replay/no-duplicate proof and compact redacted trace validation. | Start markers observed; no PR/Done/Block closeout observed. | Waiting. Must prove replay safety without live sends, private topology, or ACK mutation. |
 
 ## Merge-order recommendation
 

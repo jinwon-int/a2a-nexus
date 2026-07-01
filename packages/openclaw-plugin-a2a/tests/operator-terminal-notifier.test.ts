@@ -147,7 +147,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         taskId: "gwakga-child-3",
         status: "succeeded",
         worker: "gwakga",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         issue: 276,
         testSummary: "gwakga handoff completed",
         crossBrokerHandoff: {
@@ -465,7 +465,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
       payload: {
         taskId: "fallback-1",
         status: "succeeded",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         issue: 999,
         testSummary: "fallback test",
       },
@@ -574,7 +574,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
           type: "succeeded",
           taskId: "metadata-task",
           worker: "gwakga",
-          repo: "jinwon-int/a2a-plane",
+          repo: "a2a-plane (internal tracker, private)",
           summary: "metadata progress",
           receiptProjection: "current_session_visible",
           metadata: {
@@ -599,7 +599,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
           type: "succeeded",
           taskId: "cross-live",
           worker: "soonwook",
-          repo: "jinwon-int/a2a-plane",
+          repo: "a2a-plane (internal tracker, private)",
           summary: "cross live progress",
           receiptProjection: "current_session_visible",
           crossBrokerHandoff: {
@@ -897,7 +897,7 @@ describe("concise titles — origin coverage", () => {
         taskId: "gwakga-child",
         status: "succeeded",
         worker: "gwakga",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         issue: 276,
         roundNum: 2,
         roundTotal: 7,
@@ -2050,10 +2050,10 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
         taskId: "task-team2-piu",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
         // Team2's parentIssueUrl field for the parent lane issue
-        parentIssueUrl: "https://github.com/jinwon-int/a2a-plane/issues/350",
+        parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
         testSummary: "Team2 parentIssueUrl mapped to issueUrl",
         completedAt: "2026-05-15T07:16:00.000Z",
       },
@@ -2064,11 +2064,11 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
     // parentIssueUrl should be picked up by readIssueUrl and mapped to issueUrl
     assert.equal(
       envelope!.issueUrl,
-      "https://github.com/jinwon-int/a2a-plane/issues/350",
+      "https://github.com/jinwon-int/a2a-nexus/issues/350",
     );
     assert.equal(
       envelope!.evidence.issueUrl,
-      "https://github.com/jinwon-int/a2a-plane/issues/350",
+      "https://github.com/jinwon-int/a2a-nexus/issues/350",
     );
     // runId also preserved
     assert.equal(
@@ -2085,9 +2085,9 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
           type: "succeeded",
           taskId: "task-team2-live",
           worker: "soonwook",
-          repo: "jinwon-int/a2a-plane",
+          repo: "a2a-plane (internal tracker, private)",
           runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
-          parentIssueUrl: "https://github.com/jinwon-int/a2a-plane/issues/350",
+          parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
           receiptProjection: "current_session_visible",
           summary: "Team2 live dispatch with runId and parentIssueUrl",
           completedAt: "2026-05-15T07:17:00.000Z",
@@ -2103,7 +2103,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
     );
     assert.equal(
       envelope!.issueUrl,
-      "https://github.com/jinwon-int/a2a-plane/issues/350",
+      "https://github.com/jinwon-int/a2a-nexus/issues/350",
     );
   });
 
@@ -2164,9 +2164,9 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
         taskId: "task-team2-cross",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-team2-cross-broker-20260515T075717Z",
-        parentIssueUrl: "https://github.com/jinwon-int/a2a-plane/issues/350",
+        parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
         testSummary: "Team2 cross-broker projection with runId and parentIssueUrl",
         crossBrokerHandoff: {
           parentRoundId: "parent-team2-r25",
@@ -2187,7 +2187,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
     );
     assert.equal(
       envelope!.issueUrl,
-      "https://github.com/jinwon-int/a2a-plane/issues/350",
+      "https://github.com/jinwon-int/a2a-nexus/issues/350",
     );
     assert.equal(envelope!.type, "success");
   });
@@ -2200,9 +2200,9 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
           type: "succeeded",
           taskId: "task-team2-cross-live",
           worker: "soonwook",
-          repo: "jinwon-int/a2a-plane",
+          repo: "a2a-plane (internal tracker, private)",
           runId: "a2a-r25-team2-cross-live-20260515T075717Z",
-          parentIssueUrl: "https://github.com/jinwon-int/a2a-plane/issues/350",
+          parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
           receiptProjection: "current_session_visible",
           summary: "cross-broker live with Team2 runId and parentIssueUrl",
           crossBrokerHandoff: {
@@ -2224,7 +2224,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
     );
     assert.equal(
       envelope!.issueUrl,
-      "https://github.com/jinwon-int/a2a-plane/issues/350",
+      "https://github.com/jinwon-int/a2a-nexus/issues/350",
     );
   });
 
@@ -2245,7 +2245,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
         taskId: "task-team2-no-issue",
         status: "succeeded",
         worker: "soonwook",
-        repo: "jinwon-int/a2a-plane",
+        repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-cross-no-issue-20260515",
         testSummary: "cross-broker with runId only, no parent issue URL",
         crossBrokerHandoff: {
@@ -2281,7 +2281,7 @@ describe("R26 — nested Terminal Brief metadata extraction", () => {
             id: "task-r26-nested",
             payload: {
               worker: "runner-node",
-              parentIssueUrl: "https://github.com/jinwon-int/a2a-plane/issues/350",
+              parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
               terminalBriefTitle: "A2A Terminal Brief 완료: dungae(1/3)",
               parentRoundProgress: 1,
               parentRoundTotal: 3,
@@ -2303,7 +2303,7 @@ describe("R26 — nested Terminal Brief metadata extraction", () => {
     assert.equal(envelope!.worker, "dungae");
     assert.equal(envelope!.roundNum, 1);
     assert.equal(envelope!.roundTotal, 3);
-    assert.equal(envelope!.issueUrl, "https://github.com/jinwon-int/a2a-plane/issues/350");
+    assert.equal(envelope!.issueUrl, "https://github.com/jinwon-int/a2a-nexus/issues/350");
   });
 
   it("prefers crossBrokerHandoff.childWorkerId over handoff broker worker label", () => {

@@ -1,9 +1,9 @@
 # Team2/soonwook R8 ops dashboard readiness libero validation
 
-Parent: [a2a-broker#553](https://github.com/jinwon-int/a2a-broker/issues/553)  
-Plane lane: [a2a-plane#286](https://github.com/jinwon-int/a2a-plane/issues/286)  
-Run: `a2a-r8-ops-dashboard-20260513T111122Z`  
-Snapshot: `2026-05-13T11:18Z`  
+Parent: [a2a-broker#553](https://github.com/jinwon-int/a2a-broker/issues/553)
+Plane lane: a2a-plane#286 (a2a-plane#286, internal tracker private)
+Run: `a2a-r8-ops-dashboard-20260513T111122Z`
+Snapshot: `2026-05-13T11:18Z`
 Broker split: Team1/Seoseo finalizer, Team2/Gwakga broker evidence lanes
 
 This is a redacted, no-live Team2 libero cross-team validation artifact for the R8 ops dashboard, queue hygiene, and Terminal Brief pre-activation round after the GitHub-current fleet update. It uses repository and GitHub issue evidence only. It does not deploy or restart Gateway, broker, or worker processes; send live provider or Telegram messages; replay or ACK Terminal Brief/terminal-outbox rows; mutate, prune, migrate, or inspect a production database directly; change secrets or visibility; publish releases or tags; rewrite history; force-push; or execute approval.
@@ -21,10 +21,10 @@ Safe closeout for this lane may say: **Team2 documented the R8 cross-team valida
 | Team1/bangtong — [a2a-broker#554](https://github.com/jinwon-int/a2a-broker/issues/554) | Bounded two-broker ops dashboard/capacity read model with online workers, active/stale task counts, queue pressure, and terminal-outbox ambiguity without heavy snapshots. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; dashboard/read model cannot be counted until terminal PR/Done/Block evidence exists. |
 | Team1/sogyo — [openclaw-plugin-a2a#296](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/296) | Receipt-safe operator UX that labels provider acceptance and GitHub projection as non-ACK evidence. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; UX parity cannot be inferred from Start evidence. |
 | Team1/nosuk — [a2a-broker#555](https://github.com/jinwon-int/a2a-broker/issues/555) | Stale worker/task residue criteria and safe cleanup proposal with no production mutation. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; stale cleanup remains proposal-only until terminal evidence exists. |
-| Team1/yukson — [a2a-plane#285](https://github.com/jinwon-int/a2a-plane/issues/285) | Deterministic Terminal Brief pre-activation GO/NO-GO matrix. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; no pre-activation GO can be derived yet. |
+| Team1/yukson — a2a-plane#285 (a2a-plane#285, internal tracker private) | Deterministic Terminal Brief pre-activation GO/NO-GO matrix. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; no pre-activation GO can be derived yet. |
 | Team2/dungae — [a2a-broker#556](https://github.com/jinwon-int/a2a-broker/issues/556) | Gwakga broker parity for dashboard/capacity using the same bounded vocabulary as Seoseo. | Linked to parent, dispatched, and Start marker only. | `NO-GO / Waiting`; Team2 broker parity remains unproven. |
 | Team2/jingun — [a2a-docker-runner#241](https://github.com/jinwon-int/a2a-docker-runner/issues/241) | Runner regression evidence for PR-less validation tasks and dashboard evidence export. | Linked to parent, dispatched, and Start markers only. | `NO-GO / Waiting`; runner support cannot be counted until terminal evidence exists. |
-| Team2/soonwook — [a2a-plane#286](https://github.com/jinwon-int/a2a-plane/issues/286) | This libero validation and regression test. | This artifact records the cross-team matrix and no-live boundary. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
+| Team2/soonwook — a2a-plane#286 (a2a-plane#286, internal tracker private) | This libero validation and regression test. | This artifact records the cross-team matrix and no-live boundary. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
 
 The parent dispatch says all seven target tasks reached `running`, with Team1 capacity check succeeding and one public Team2 capacity summary call hitting `429`. That is useful bounded-dispatch evidence and a warning against repeated public polling. It is not terminal evidence, dashboard freshness proof, receipt proof, or activation approval.
 

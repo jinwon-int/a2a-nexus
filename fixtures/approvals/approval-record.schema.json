@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jinwon-int/a2a-nexus/fixtures/approvals/approval-record.schema.json",
+  "title": "A2A Nexus approval record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "target",
+    "approverRole",
+    "approvedAt",
+    "rollbackBoundary",
+    "evidenceIssue"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "production-deploy",
+        "service-restart",
+        "db-mutation",
+        "terminal-outbox-mutation",
+        "terminal-ack-replay",
+        "provider-send",
+        "telegram-send",
+        "release-tag",
+        "github-release",
+        "npm-publish",
+        "docker-publish",
+        "ghcr-publish",
+        "secret-movement",
+        "repository-visibility-change",
+        "repository-transfer",
+        "history-rewrite",
+        "force-push",
+        "homepage-metadata-change",
+        "external-promotion"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "approverRole": {
+      "const": "operator"
+    },
+    "approvedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rollbackBoundary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidenceIssue": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scopeExpiry": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

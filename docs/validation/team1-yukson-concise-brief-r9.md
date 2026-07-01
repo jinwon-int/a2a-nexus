@@ -1,10 +1,10 @@
 # Team1/yukson: concise Terminal Brief contract/runbook gate (R9)
 
-Issue: [a2a-plane#289](https://github.com/jinwon-int/a2a-plane/issues/289)  
-Parent: [a2a-broker#560](https://github.com/jinwon-int/a2a-broker/issues/560)  
-Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`  
-Contract: `contracts/a2a/parent-terminal-brief-aggregation.md`  
-Lane: Team1/yukson  
+Issue: a2a-plane#289 (a2a-plane#289, internal tracker private)
+Parent: [a2a-broker#560](https://github.com/jinwon-int/a2a-broker/issues/560)
+Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`
+Contract: `contracts/a2a/parent-terminal-brief-aggregation.md`
+Lane: Team1/yukson
 Snapshot: `2026-05-13T13:41:43Z`
 
 This runbook gate validates that future all-hands/cross-broker rounds require:
@@ -192,6 +192,6 @@ This runbook gate:
 ```bash
 npm run check:layout
 npm run check:team1-yukson-plane-gates
-node --test scripts/check-team1-yukson-concise-brief-r9.test.mjs
+node --test scripts/archive/check-team1-yukson-concise-brief-r9.test.mjs
 git status --short --ignored
 ```

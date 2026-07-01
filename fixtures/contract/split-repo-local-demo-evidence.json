@@ -2,8 +2,8 @@
   "schema": "a2a.splitRepoLocalDemo.evidence.v1",
   "mode": "no-live",
   "description": "Deterministic fixture for the split-repo local demo quickstart (a2a-plane#480). Validates that the three-package local story produces expected structural evidence without live brokers, providers, or deployments.",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/473",
-  "trackingIssue": "https://github.com/jinwon-int/a2a-plane/issues/480",
+  "parentIssue": "a2a-plane#473 (internal tracker, private)",
+  "trackingIssue": "a2a-plane#480 (internal tracker, private)",
   "completedIssues": {
     "brokerAgentCardProfile": "https://github.com/jinwon-int/a2a-broker/issues/951",
     "pluginDiagnosticsVisibility": "https://github.com/jinwon-int/openclaw-plugin-a2a/issues/454",

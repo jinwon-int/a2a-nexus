@@ -2,8 +2,8 @@
   "meta": {
     "contract": "platform-adapter-interface",
     "version": "v0",
-    "issue": "https://github.com/jinwon-int/a2a-plane/issues/475",
-    "parent": "https://github.com/jinwon-int/a2a-plane/issues/500",
+    "issue": "a2a-plane#475 (internal tracker, private)",
+    "parent": "a2a-plane#500 (internal tracker, private)",
     "run": "a2a-team1-roadmap-wave3-bridge-adapter-20260528T123200KST",
     "updatedAt": "2026-05-28T03:32:00.000Z",
     "redacted": true
@@ -126,7 +126,7 @@
       "kind": "pr",
       "taskId": "task-redacted-example-001",
       "summary": "PR: Added adapter interface contract and migration path",
-      "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/REDACTED",
+      "prUrl": "a2a-plane (internal tracker, private)pull/REDACTED",
       "dedupeKey": "issue-475:contract:adapter-interface:pr",
       "timestamp": "2026-05-28T03:32:00.000Z",
       "redacted": true
@@ -135,7 +135,7 @@
       "kind": "done",
       "taskId": "task-redacted-example-002",
       "summary": "Done: Adapter interface conformance fixture validated",
-      "doneUrl": "https://github.com/jinwon-int/a2a-plane/issues/475#issuecomment-REDACTED",
+      "doneUrl": "a2a-plane#475 (internal tracker, private)#issuecomment-REDACTED",
       "dedupeKey": "issue-475:contract:adapter-interface-v2:done",
       "timestamp": "2026-05-28T03:32:00.000Z",
       "redacted": true
@@ -144,7 +144,7 @@
       "kind": "block",
       "taskId": "task-redacted-example-003",
       "summary": "Block: Adapter could not reach broker endpoint; no production impact",
-      "blockUrl": "https://github.com/jinwon-int/a2a-plane/issues/REDACTED#issuecomment-REDACTED",
+      "blockUrl": "a2a-plane (internal tracker, private)issues/REDACTED#issuecomment-REDACTED",
       "dedupeKey": "issue-REDACTED:worker:block",
       "timestamp": "2026-05-28T03:32:00.000Z",
       "redacted": true

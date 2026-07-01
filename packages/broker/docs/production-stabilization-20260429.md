@@ -15,7 +15,7 @@ Active A2A full-handler workers:
 Explicitly excluded from active all-worker operations:
 
 - `yukson` — old VPS2 / legacy echo-worker remnant. Do not treat it as a
-  current full-handler worker unless Seo Jin On makes a new explicit decision.
+  current full-handler worker unless the operator makes a new explicit decision.
 
 ## Stabilized production shape
 

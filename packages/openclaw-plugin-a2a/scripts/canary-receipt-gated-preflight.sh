@@ -5,7 +5,7 @@ set -euo pipefail
 # terminal-outbox notifier.
 #
 # Issue:  jinwon-int/plugin-a2a#269
-# Parent: jinwon-int/a2a-plane#241
+# Parent: a2a-plane#241 (internal tracker, private)
 # Run:    terminal-brief-activation-20260511T080211Z
 #
 # Safe by design: this script runs local build/tests only. It does not deploy,

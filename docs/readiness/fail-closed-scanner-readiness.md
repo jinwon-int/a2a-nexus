@@ -4,7 +4,7 @@
 
 This lane defines the Team2/Gwakga handoff for public/private boundary readiness. It is intentionally conservative: missing or ambiguous evidence is a **NO-GO**, not a warning.
 
-Scope: `jinwon-int/a2a-plane#136`, parent `#130`, run `a2a-plane-post78261-next-20260509T142546Z`.
+Scope: `a2a-plane#136 (internal tracker, private)`, parent `#130`, run `a2a-plane-post78261-next-20260509T142546Z`.
 
 ## Readiness rule
 

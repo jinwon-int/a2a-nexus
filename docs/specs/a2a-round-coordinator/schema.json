@@ -1,7 +1,7 @@
 {
   "$schemaVersion": "a2a.round-coordinator.root.v1",
   "description": "A2A round coordinator schema root. Defines the round manifest, cursor, closeout bundle, and worker capability policy formats for coded broker polling and result collection.",
-  "laneIssue": "https://github.com/jinwon-int/a2a-plane/issues/467",
+  "laneIssue": "a2a-plane#467 (internal tracker, private)",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/927",
   "run": "a2a-team1-round-coordinator-20260526T201140KST",
   "laneOwner": "nosuk",

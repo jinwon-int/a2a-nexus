@@ -1,7 +1,7 @@
 {
   "schema": "a2a.monorepo-branch-release-package-policy.v1",
   "snapshotDate": "2026-06-07",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/517",
+  "issue": "a2a-plane#517 (internal tracker, private)",
   "decision": "policy_documented_without_settings_or_release_changes",
   "canonicalFlipApproved": false,
   "branchProtectionChanged": false,
@@ -10,7 +10,7 @@
   "packageInventoryBlocker": "GitHub Packages API returned 403 without read:packages scope",
   "repos": [
     {
-      "repo": "jinwon-int/a2a-plane",
+      "repo": "a2a-plane (internal tracker, private)",
       "visibility": "PUBLIC",
       "defaultBranch": "main",
       "branchProtection": "none",

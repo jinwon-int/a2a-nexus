@@ -2,7 +2,7 @@
  * Requester-visible no-live A2A status conformance fixture.
  *
  * Issue:  jinwon-int/plugin-a2a#457
- * Parent: jinwon-int/a2a-plane#506
+ * Parent: a2a-plane#506 (internal tracker, private)
  *
  * This ties together the requester-visible surfaces that were previously
  * covered by separate focused tests: broker protocol/build diagnostics,

@@ -8,7 +8,7 @@ Example:
 curl -H "x-a2a-edge-secret: $A2A_EDGE_SECRET" \
   -H "x-a2a-requester-id: operator" \
   -H "x-a2a-requester-role: operator" \
-  "https://broker.example/release/evidence?repo=jinwon-int/a2a-broker&issue=479&parentIssue=jinwon-int/a2a-plane%23197&runId=a2a-source-dryrun-orchestrator-20260510T133022Z"
+  "https://broker.example/release/evidence?repo=jinwon-int/a2a-broker&issue=479&parentIssue=a2a-plane (internal tracker, private)%23197&runId=a2a-source-dryrun-orchestrator-20260510T133022Z"
 ```
 
 Useful filters mirror `/tasks`: `status`, `targetNodeId`, `assignedWorkerId`, `intent`, `taskOrigin`, plus `task_id`/`task_ids` for exact task IDs.

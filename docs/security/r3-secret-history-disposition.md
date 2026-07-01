@@ -6,8 +6,8 @@ This document records redacted metadata only. Do not add secret values, private 
 
 ## Source and scope
 
-- Parent issue: `jinwon-int/a2a-plane#12`
-- Team1 safety lane: `jinwon-int/a2a-plane#13`
+- Parent issue: `a2a-plane#12 (internal tracker, private)`
+- Team1 safety lane: `a2a-plane#13 (internal tracker, private)`
 - Current monorepo checks after PRs `#20`, `#21`, and `#22`:
   - `npm ci --ignore-scripts --include=dev`
   - `npm run check`
@@ -17,7 +17,7 @@ Repos considered for R3 public-readiness:
 
 | Repo | Intended public exposure model | Disposition |
 |---|---|---|
-| `jinwon-int/a2a-plane` | Public alpha repository | Current tree can be sanitized incrementally; future promotion/stable-release still requires redacted scanner evidence. |
+| `a2a-plane (internal tracker, private)` | Public alpha repository | Current tree can be sanitized incrementally; future promotion/stable-release still requires redacted scanner evidence. |
 | `jinwon-int/a2a-broker` | Source reference only | Original private history must not be made public as-is. Use sanitized/squash import content only. |
 | `jinwon-int/openclaw-plugin-a2a` | Source reference only | Original private history must not be made public as-is. Use sanitized/squash import content only. |
 | `jinwon-int/a2a-docker-runner` | Source reference only | Original private history must not be made public as-is. Use sanitized/squash import content only. |
@@ -48,7 +48,7 @@ Representative source-history blocker classes:
 
 ## Closeout checklist for `#13`
 
-- [x] `jinwon-int/a2a-plane` is public as of 2026-05-27; future promotion or publication still needs explicit approval.
+- [x] `a2a-plane (internal tracker, private)` is public as of 2026-05-27; future promotion or publication still needs explicit approval.
 - [ ] Confirm source repos are **not** made public as-is.
 - [ ] Replace or disposition private topology strings in public-facing docs and examples.
 - [ ] Replace or disposition absolute private path fixtures.

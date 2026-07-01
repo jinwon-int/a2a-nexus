@@ -1,9 +1,9 @@
 # Team1/yukson public-readiness gate synthesis for #75/#294/#497
 
-Parent plane tracker: [a2a-plane#75](https://github.com/jinwon-int/a2a-plane/issues/75)
+Parent plane tracker: a2a-plane#75 (a2a-plane#75, internal tracker private)
 Roadmap: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Operational risk signal: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497)
-Lane: [a2a-plane#263](https://github.com/jinwon-int/a2a-plane/issues/263)
+Lane: a2a-plane#263 (a2a-plane#263, internal tracker private)
 Dispatch parent: [a2a-broker#511](https://github.com/jinwon-int/a2a-broker/issues/511)
 Worker: `yukson` / Team1
 Snapshot: `2026-05-12`
@@ -52,7 +52,7 @@ Safe closeout language for this lane is: **PR/Done evidence may say the matrix i
 Recommended validation for this artifact:
 
 ```bash
-node --test scripts/check-team1-yukson-public-readiness-gate-synthesis.test.mjs
+node --test scripts/archive/check-team1-yukson-public-readiness-gate-synthesis.test.mjs
 npm run scan:public-readiness
 ```
 

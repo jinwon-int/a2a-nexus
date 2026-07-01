@@ -1,10 +1,10 @@
 {
   "schema": "a2a.monorepo-import-rehearsal.v1",
   "snapshotDate": "2026-06-07",
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/511",
-  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/513",
-  "refreshIssue": "https://github.com/jinwon-int/a2a-plane/issues/528",
-  "phase4FreshImportCandidateIssue": "https://github.com/jinwon-int/a2a-plane/issues/538",
+  "parentIssue": "a2a-plane#511 (internal tracker, private)",
+  "childIssue": "a2a-plane#513 (internal tracker, private)",
+  "refreshIssue": "a2a-plane#528 (internal tracker, private)",
+  "phase4FreshImportCandidateIssue": "a2a-plane#538 (internal tracker, private)",
   "decision": "plan_import_rehearsal_before_canonical_flip",
   "canonicalDuringRehearsal": "split_repos",
   "rehearsalWorkspace": {
@@ -211,8 +211,8 @@
     "destructiveCleanup": false,
     "workerOwnedGithubMutation": false
   },
-  "phase2Issue": "https://github.com/jinwon-int/a2a-plane/issues/530",
-  "phase2PriorPr": "https://github.com/jinwon-int/a2a-plane/pull/529",
+  "phase2Issue": "a2a-plane#530 (internal tracker, private)",
+  "phase2PriorPr": "a2a-plane PR #529 (internal tracker, private)",
   "phase2PriorEvidenceCommit": "e2ed672ac7a082e39a20ffd43d64d516413c153d",
   "phase2Rehearsal": {
     "status": "completed_source_only",

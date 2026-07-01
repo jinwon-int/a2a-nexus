@@ -422,7 +422,7 @@ describe("evidence URL enrichment", () => {
     }
     assert.equal(result.workerEvent.marker, "Done");
     assert.equal(result.workerEvent.payload.outcome, "done_evidence_only");
-    assert.equal(result.workerEvent.payload.doneUrl, 
+    assert.equal(result.workerEvent.payload.doneUrl,
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100001",
     );
   });
@@ -445,7 +445,7 @@ describe("evidence URL enrichment", () => {
       throw new Error("expected success");
     }
     assert.equal(result.workerEvent.marker, "Done");
-    assert.equal(result.workerEvent.payload.doneUrl, 
+    assert.equal(result.workerEvent.payload.doneUrl,
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100002",
     );
   });
@@ -468,7 +468,7 @@ describe("evidence URL enrichment", () => {
       throw new Error("expected success");
     }
     assert.equal(result.workerEvent.marker, "Block");
-    assert.equal(result.workerEvent.payload.blockUrl, 
+    assert.equal(result.workerEvent.payload.blockUrl,
       "https://github.com/jinwon-int/plugin-a2a/issues/88#issuecomment-100003",
     );
   });

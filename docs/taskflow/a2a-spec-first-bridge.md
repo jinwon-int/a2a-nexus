@@ -127,7 +127,7 @@ Examples:
 ```json
 {
   "kind": "ci",
-  "repo": "jinwon-int/a2a-plane",
+  "repo": "a2a-plane (internal tracker, private)",
   "pr": 319,
   "check": "check"
 }

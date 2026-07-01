@@ -1,6 +1,6 @@
 # Team1/yukson R9b Terminal Brief activation readiness GO/NO-GO acceptance matrix
 
-Issue: [a2a-plane#293](https://github.com/jinwon-int/a2a-plane/issues/293)
+Issue: a2a-plane#293 (a2a-plane#293, internal tracker private)
 Parent: [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567)
 Run: `a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z`
 Lane: Team1/yukson
@@ -41,12 +41,12 @@ This validation is a no-live, read-only gate. The following actions are explicit
 
 | Lane / source | Required evidence for this round | Snapshot evidence | Validation result |
 | --- | --- | --- | --- |
-| Parent dispatch — [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567) | Round lane list, safety gates, and prior activation context for R9b. | Start marker posted: [a2a-plane#293#issuecomment-4442611374](https://github.com/jinwon-int/a2a-plane/issues/293#issuecomment-4442611374). Parent broker dispatch context pending. | `NO-GO`: parent dispatch context not fully recorded at snapshot. |
+| Parent dispatch — [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567) | Round lane list, safety gates, and prior activation context for R9b. | Start marker posted: [a2a-plane#293#issuecomment-4442611374](a2a-plane#293 (internal tracker, private)#issuecomment-4442611374). Parent broker dispatch context pending. | `NO-GO`: parent dispatch context not fully recorded at snapshot. |
 | Parent aggregation metadata — `parent-terminal-brief-aggregation.md` (contract) | Contract and fixture proving `parentRoundId`, `originBrokerId`, `parentBrokerId`, `handoffBrokerId` metadata lifecycle, `projectionKey` idempotency, and redaction boundary. | Contract `contracts/a2a/parent-terminal-brief-aggregation.md` v0 with R9 addition (7-child fixture, concise title, activation plan). Fixture `fixtures/contract/parent-terminal-brief-aggregation.json` with Gwakga-origin and Seoseo-origin title examples. | `PASS`: contract/fixture frozen at v0; R9 addition adds 7-child scenario with known-total and unknown-total fallback. |
-| Concise title coverage — [a2a-plane#289](https://github.com/jinwon-int/a2a-plane/issues/289) | 7-child parent round titles: 3 direct Team1 + 4 cross-broker Team2 projected + 1 unknown-total fallback. All conform to format, ≤80 chars, forbidden content excluded. | R9 concise brief runbook gate at `docs/validation/team1-yukson-concise-brief-r9.md` defines Gates A–G with exact title formats. Fixture covers Gwakga-origin known-total (`(1/7)`) and Seoseo-origin unknown-total (`(2)`). | `PASS`: concise title format, max chars, and forbidden content rules are documented and fixtures verify both known-total and unknown-total paths. |
+| Concise title coverage — a2a-plane#289 (a2a-plane#289, internal tracker private) | 7-child parent round titles: 3 direct Team1 + 4 cross-broker Team2 projected + 1 unknown-total fallback. All conform to format, ≤80 chars, forbidden content excluded. | R9 concise brief runbook gate at `docs/validation/team1-yukson-concise-brief-r9.md` defines Gates A–G with exact title formats. Fixture covers Gwakga-origin known-total (`(1/7)`) and Seoseo-origin unknown-total (`(2)`). | `PASS`: concise title format, max chars, and forbidden content rules are documented and fixtures verify both known-total and unknown-total paths. |
 | Parent-only notification ownership — `parent-terminal-brief-aggregation.md` | Contractually enforced: only `originBrokerId` may send the parent-round aggregate notification; children/handoff brokers must not. | Contract section "Parent-only notification ownership" with 5 ownership gates. Fixture proves `terminalBriefTitleOwnerBrokerId` and `terminalBriefTitleRenderedByParentBrokerOnly`. | `PASS`: ownership rules are contractually defined with fail-closed conditions and fixture coverage. |
 | Receipt/ACK boundary — `terminal-semantics.md` | 4-level receipt vocabulary is distinct; provider accepted-send is non-ACK; no evidence line promotes send success to ACK. | `terminal-semantics.md` v0 freeze. Fixture `fixtures/terminal-evidence/accepted-send-non-ack.json`. Prior validation in `terminal-brief-live-readiness-go-no-go-matrix.md`. | `PASS`: receipt levels are frozen and tested; accepted-send non-ACK boundary is documented with fail-closed conditions. |
-| Team2 cross-broker parity — [a2a-plane#290](https://github.com/jinwon-int/a2a-plane/issues/290) | Team2/Soonwook R9 concise brief runtime readiness evidence agrees on receipt boundary, title format, parent-only ownership, and rollback semantics. | Team2/Soonwook evidence at `docs/validation/team2-soonwook-r9-concise-terminal-brief-runtime-readiness.md` with 7-child title proof table, parent-only ownership docs for `seoseo`, and approval-gated activation plan. | `PASS`: Team2 evidence agrees on receipt boundary, title format, parent-only ownership, and activation/rollback plan. Continued re-validation needed for R9b dispatch. |
+| Team2 cross-broker parity — a2a-plane#290 (a2a-plane#290, internal tracker private) | Team2/Soonwook R9 concise brief runtime readiness evidence agrees on receipt boundary, title format, parent-only ownership, and rollback semantics. | Team2/Soonwook evidence at `docs/validation/team2-soonwook-r9-concise-terminal-brief-runtime-readiness.md` with 7-child title proof table, parent-only ownership docs for `seoseo`, and approval-gated activation plan. | `PASS`: Team2 evidence agrees on receipt boundary, title format, parent-only ownership, and activation/rollback plan. Continued re-validation needed for R9b dispatch. |
 | Runtime/bootstrap hygiene | No `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**` in branch diff, PR body, issue comments, or artifact bundle. | Pre-creation scan performed (see Runtime/bootstrap hygiene gate). | `PASS` (at snapshot): guard paths absent from branch artifacts. Re-check before PR/Done/Block publication. |
 
 ---
@@ -229,7 +229,7 @@ npm run check:layout
 npm run check:team1-yukson-plane-gates
 
 # Run r9 concise brief specific tests (if available)
-node --test scripts/check-team1-yukson-concise-brief-r9.test.mjs
+node --test scripts/archive/check-team1-yukson-concise-brief-r9.test.mjs
 
 # Hygiene scan
 git diff --name-only -- AGENTS.md SOUL.md USER.md TOOLS.md HEARTBEAT.md IDENTITY.md .openclaw

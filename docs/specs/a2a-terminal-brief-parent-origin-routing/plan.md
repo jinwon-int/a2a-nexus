@@ -4,7 +4,7 @@
 
 - Spec: `docs/specs/a2a-terminal-brief-parent-origin-routing/spec.md`
 - Development tracker: `jinwon-int/a2a-broker#634`
-- Spec-first adoption tracker: `jinwon-int/a2a-plane#315`
+- Spec-first adoption tracker: `a2a-plane#315 (internal tracker, private)`
 
 ## Size classification
 
@@ -31,7 +31,7 @@ Reason: the change spans broker metadata, plugin relay behavior, control-plane c
   - plugin lane for `openclaw-plugin-a2a` relay/notification tests;
   - plane lane for `a2a-plane` contract/fixture/release gate.
 - Libero/validator: validate cross-repo consistency and safety gates.
-- Human approval owner: Seo Jin On for deploy/restart/live canary/DB/ACK/replay/release/secret operations.
+- Human approval owner: the operator for deploy/restart/live canary/DB/ACK/replay/release/secret operations.
 
 ## Execution lane
 

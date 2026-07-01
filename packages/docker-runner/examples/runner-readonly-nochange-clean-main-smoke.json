@@ -1,6 +1,6 @@
 {
   "schemaVersion": "a2a.runner.readonly-nochange-clean-main-smoke.v1",
-  "parent": "https://github.com/jinwon-int/a2a-plane/issues/506",
+  "parent": "a2a-plane#506 (internal tracker, private)",
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/358",
   "sourceBase": {
     "repo": "jinwon-int/a2a-docker-runner",

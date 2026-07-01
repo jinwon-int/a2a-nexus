@@ -1,7 +1,7 @@
 # Team1 source-only parent-round dispatch guardrails
 
 Parent: [#829](https://github.com/jinwon-int/a2a-broker/issues/829)
-Child: [#394](https://github.com/jinwon-int/a2a-plane/issues/394)
+Child: #394 (a2a-plane#394, internal tracker private)
 Run: `a2a-team1-post-bangtong-readiness-20260520T110014Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -26,7 +26,7 @@ Parent round metadata:
 ## Evidence reviewed
 
 - Parent broker dispatch: [a2a-broker#829](https://github.com/jinwon-int/a2a-broker/issues/829).
-- Libero lane: [a2a-plane#394](https://github.com/jinwon-int/a2a-plane/issues/394).
+- Libero lane: a2a-plane#394 (a2a-plane#394, internal tracker private).
 - Team1 dispatch contracts: `contracts/a2a/parent-terminal-brief-aggregation.md`, `contracts/a2a/broker-handoff-protocol.md`, `contracts/a2a/canonical-progress-validation-matrix.md`.
 - Broker dispatch docs: `packages/broker/docs/github-dispatch-payload.md`.
 - Prior Team1 source-only artifacts: `docs/validation/team1-source-public-readiness-libero.md`, `docs/validation/team1-source-public-approval-packet-libero.md`, `docs/validation/team1-source-dryrun-orchestrator-libero.md`, `docs/validation/team1-source-public-approval-rehearsal-libero.md`, `docs/validation/team1-source-public-execution-orchestrator-libero.md`.
@@ -102,7 +102,7 @@ npm run check:team1-source-parent-round-dispatch-guardrails
 ## Merge and closeout order
 
 1. Merge any sibling PRs first (broker, plugin, runner lanes).
-2. Merge this A2A Nexus validation PR after local gates pass. It closes [a2a-plane#394](https://github.com/jinwon-int/a2a-plane/issues/394).
+2. Merge this A2A Nexus validation PR after local gates pass. It closes a2a-plane#394 (a2a-plane#394, internal tracker private).
 3. Run the merge preflight across all A2A Nexus PRs from this round:
 
 ```bash

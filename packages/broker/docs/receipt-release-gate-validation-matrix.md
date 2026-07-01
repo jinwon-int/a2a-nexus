@@ -1,7 +1,7 @@
 # Receipt/Release Gate Validation Matrix
 
-Issue: `jinwon-int/a2a-broker#343`  
-Parent: `jinwon-int/a2a-broker#294`  
+Issue: `jinwon-int/a2a-broker#343`
+Parent: `jinwon-int/a2a-broker#294`
 Run: `a2a-receipt-release-gate-20260504092730`
 
 This matrix is the read-only validation lane for receipt/release gates. It uses synthetic

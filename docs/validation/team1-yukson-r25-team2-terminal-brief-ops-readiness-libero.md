@@ -1,10 +1,10 @@
 # R25 Team1 operations-readiness validation matrix for Team2 Terminal Brief outputs
 
-Issue: [a2a-plane#353](https://github.com/jinwon-int/a2a-plane/issues/353)  
-Parent: [a2a-plane#351](https://github.com/jinwon-int/a2a-plane/issues/351) — R25 validation round  
-Run: `a2a-r25-team1-ops-readiness-terminal-brief-20260515T1656Z`  
-Lane: `yukson` / Team1 libero validation (Team2 Terminal Brief ops-readiness matrix)  
-Parent/origin broker: Seoseo (Team1) — Seoseo is the parent/origin broker and sole operator-facing parent Terminal Brief sender  
+Issue: a2a-plane#353 (a2a-plane#353, internal tracker private)
+Parent: a2a-plane#351 (a2a-plane#351, internal tracker private) — R25 validation round
+Run: `a2a-r25-team1-ops-readiness-terminal-brief-20260515T1656Z`
+Lane: `yukson` / Team1 libero validation (Team2 Terminal Brief ops-readiness matrix)
+Parent/origin broker: Seoseo (Team1) — Seoseo is the parent/origin broker and sole operator-facing parent Terminal Brief sender
 Handoff broker: Gwakga (Team2) — Gwakga produced the Terminal Brief feature code being validated from an operations perspective
 
 This is a redacted, no-live validation artifact for R25. It performs repository and GitHub evidence review only — **no production deploy, Gateway/broker/worker restart or reload, live provider or Telegram canary, production DB mutation/prune/migration, manual Terminal Brief ACK/replay, historical outbox replay, secret movement/rotation/value disclosure, release/tag publish, repo visibility change, history rewrite, or force-push**. Provider accepted/message-id evidence is send-acceptance only, not read/visibility/Terminal ACK. Team2 Terminal Brief implementation ownership is not duplicated; this lane is Team1 operations operations, validation, release gate, and runbook only.
@@ -78,7 +78,7 @@ These are Team2 code assumptions that Team1/Seoseo must verify in a deployable e
 
 | Worker | Repo issue | Assigned scope | Snapshot |
 | --- | --- | --- | --- |
-| `yukson` (Team1) | [a2a-plane#353](https://github.com/jinwon-int/a2a-plane/issues/353) | This independent libero validation: build a Team2 Terminal Brief operations-readiness validation matrix covering integration assumptions, release blockers, test evidence, and no-live/no-ACK approval gates. | Start evidence plus this validation document and test. |
+| `yukson` (Team1) | a2a-plane#353 (a2a-plane#353, internal tracker private) | This independent libero validation: build a Team2 Terminal Brief operations-readiness validation matrix covering integration assumptions, release blockers, test evidence, and no-live/no-ACK approval gates. | Start evidence plus this validation document and test. |
 | (sibling — Team2) | Various | Team2 Terminal Brief feature implementation. | No terminal evidence in this R25 snapshot; waiting on sibling lane closeout. |
 
 Start, queued, running, provider accepted-send, GitHub comment creation, and PR creation are not terminal lane evidence. Count a sibling lane as terminal only when it has an explicit PR, Done, or Block marker with linked checks/evidence.
@@ -139,7 +139,7 @@ Transition to `GO` (source-only) requires:
 
 ## Verification performed for this lane
 
-- Inspected parent issue [a2a-plane#351](https://github.com/jinwon-int/a2a-plane/issues/351) (R25 validation round) and this issue [a2a-plane#353](https://github.com/jinwon-int/a2a-plane/issues/353).
+- Inspected parent issue a2a-plane#351 (a2a-plane#351, internal tracker private) (R25 validation round) and this issue a2a-plane#353 (a2a-plane#353, internal tracker private).
 - Inspected Team2 Terminal Brief routing contract: `terminal-brief-routing-contract.ts` with four receipt levels, allowed/forbidden routes, ACK-safe receipt proof requirement, and no-frills `All`-or-nothing receipt-level 4 path.
 - Inspected Team2 Terminal Brief evidence projection: `terminal-brief-evidence-projection.ts` with manifest binding, dedupe/replay keys, redaction, boundLength truncation, and explicit boundary field.
 - Inspected Team2 Terminal Brief evidence projection tests: `terminal-brief-evidence-projection.test.ts` for coverage of create/skip/update, malformed manifest, replay detection, and context file redaction.

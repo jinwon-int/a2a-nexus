@@ -133,7 +133,7 @@
       "fixtures/**",
       "scanner/**"
     ],
-    "rollbackOwner": "seoseo finalizer executes settings-only rollback after Seo Jin On approval; Seo Jin On retains operator authority",
+    "rollbackOwner": "seoseo finalizer executes settings-only rollback after the operator approval; the operator retains operator authority",
     "rollbackPath": "delete or disable the created ruleset/branch protection only; no source rewrite, force-push, split repo disposition, release, publish, deploy, DB/Terminal ACK, or credential action",
     "abortConditions": [
       "target branch is no longer 910a796b9540cb839a8fa4a1148aa38a90694eea or explicitly re-approved",

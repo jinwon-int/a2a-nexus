@@ -3,8 +3,8 @@
 ## Linked spec
 
 - Spec: `docs/specs/a2a-spec-first-taskflow-bridge/spec.md`
-- Design tracker: `jinwon-int/a2a-plane#322`
-- Parent adoption tracker: `jinwon-int/a2a-plane#315`
+- Design tracker: `a2a-plane#322 (internal tracker, private)`
+- Parent adoption tracker: `a2a-plane#315 (internal tracker, private)`
 
 ## Size classification
 
@@ -28,7 +28,7 @@ Reason: this PR is design/docs-only in one repo. Runtime implementation of the b
 - Broker of record / finalizer for this docs PR: Gwakga.
 - Workers: none required.
 - Libero/validator: GitHub Actions and local release-gate validation.
-- Human approval owner: Seo Jin On for any future runtime automation/deploy/canary.
+- Human approval owner: the operator for any future runtime automation/deploy/canary.
 
 ## Execution lane
 

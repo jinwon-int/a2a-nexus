@@ -6,7 +6,7 @@
       "id": "monorepo-active-provenance-mirror-execution-result",
       "title": "active provenance mirror execution result",
       "fixture": "fixtures/current-state/monorepo-active-provenance-mirror-execution-result.json",
-      "doc": "docs/monorepo-active-provenance-mirror-execution-result.md",
+      "doc": "docs/history/monorepo-active-provenance-mirror-execution-result.md",
       "currentState": "docs/current-state.md",
       "packageScript": {
         "name": "check:monorepo-active-provenance-mirror-execution-result",
@@ -50,7 +50,7 @@
       "id": "monorepo-actual-canonical-flip-execution-result",
       "title": "actual canonical flip execution result",
       "fixture": "fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json",
-      "doc": "docs/monorepo-actual-canonical-flip-execution-result.md",
+      "doc": "docs/history/monorepo-actual-canonical-flip-execution-result.md",
       "currentState": "docs/current-state.md",
       "packageScript": {
         "name": "check:monorepo-actual-canonical-flip-execution-result",
@@ -93,7 +93,7 @@
       "id": "monorepo-split-repo-disposition-preflight",
       "title": "split repo disposition preflight",
       "fixture": "fixtures/current-state/monorepo-split-repo-disposition-preflight.json",
-      "doc": "docs/monorepo-split-repo-disposition-preflight.md",
+      "doc": "docs/history/monorepo-split-repo-disposition-preflight.md",
       "currentState": "docs/current-state.md",
       "packageScript": {
         "name": "check:monorepo-split-repo-disposition-preflight",
@@ -138,7 +138,7 @@
       "id": "monorepo-actual-canonical-flip-execution-preflight",
       "title": "actual canonical flip execution preflight",
       "fixture": "fixtures/current-state/monorepo-actual-canonical-flip-execution-preflight.json",
-      "doc": "docs/monorepo-actual-canonical-flip-execution-preflight.md",
+      "doc": "docs/history/monorepo-actual-canonical-flip-execution-preflight.md",
       "currentState": "docs/current-state.md",
       "packageScript": {
             "name": "check:monorepo-actual-canonical-flip-execution-preflight",
@@ -508,7 +508,7 @@
       "id": "monorepo-canonical-source-flip-execution-handoff",
       "title": "monorepo canonical source flip execution handoff",
       "fixture": "fixtures/current-state/monorepo-canonical-source-flip-execution-handoff.json",
-      "doc": "docs/monorepo-canonical-source-flip-execution-handoff.md",
+      "doc": "docs/history/monorepo-canonical-source-flip-execution-handoff.md",
       "currentState": "docs/current-state.md",
       "packageScript": {
             "name": "check:monorepo-canonical-source-flip-execution-handoff",
@@ -914,10 +914,10 @@
       "id": "monorepo-operator-approval-handoff",
       "title": "monorepo operator approval handoff",
       "fixture": "fixtures/current-state/monorepo-operator-approval-handoff.json",
-      "doc": "docs/monorepo-operator-approval-handoff.md",
+      "doc": "docs/history/monorepo-operator-approval-handoff.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "finalMatrix": "docs/monorepo-final-operator-signoff-matrix.md"
+            "finalMatrix": "docs/history/monorepo-final-operator-signoff-matrix.md"
       },
       "packageScript": {
             "name": "check:monorepo-operator-approval-handoff",
@@ -939,17 +939,17 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent issue"
             },
             {
                   "path": "phase9FinalSignoffIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/549",
+                  "equals": "a2a-plane#549 (internal tracker, private)",
                   "message": "phase9 issue"
             },
             {
                   "path": "phase9FinalSignoffPr",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/550",
+                  "equals": "a2a-plane PR #550 (internal tracker, private)",
                   "message": "phase9 PR"
             },
             {
@@ -959,12 +959,12 @@
             },
             {
                   "path": "phase10OperatorHandoffIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/551",
+                  "equals": "a2a-plane#551 (internal tracker, private)",
                   "message": "phase10 issue"
             },
             {
                   "path": "latestGreenCiRun",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/actions/runs/27101515372",
+                  "equals": "a2a-plane (internal tracker, private)actions/runs/27101515372",
                   "message": "historical latest green CI run"
             },
             {
@@ -1037,7 +1037,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "branch_protection_or_ruleset",
-                        "sourceEvidence": "docs/monorepo-branch-protection-approval-packet.md",
+                        "sourceEvidence": "docs/history/monorepo-branch-protection-approval-packet.md",
                         "defaultDecision": "HOLD"
                   },
                   "message": "question area branch_protection_or_ruleset"
@@ -1046,7 +1046,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "split_repo_disposition",
-                        "sourceEvidence": "docs/monorepo-split-repo-disposition-rollback.md",
+                        "sourceEvidence": "docs/history/monorepo-split-repo-disposition-rollback.md",
                         "defaultDecision": "HOLD_EXECUTION_SEPARATE"
                   },
                   "message": "question area split_repo_disposition"
@@ -1055,7 +1055,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "release_tag_and_github_release",
-                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "defaultDecision": "HOLD"
                   },
                   "message": "question area release_tag_and_github_release"
@@ -1064,7 +1064,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "npm_publish",
-                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "defaultDecision": "HOLD"
                   },
                   "message": "question area npm_publish"
@@ -1073,7 +1073,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "docker_ghcr_publish",
-                        "sourceEvidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "sourceEvidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "defaultDecision": "HOLD"
                   },
                   "message": "question area docker_ghcr_publish"
@@ -1082,7 +1082,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "package_ownership_transfer",
-                        "sourceEvidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "sourceEvidence": "docs/history/monorepo-canonical-flip-readiness.md",
                         "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
                   },
                   "message": "question area package_ownership_transfer"
@@ -1091,7 +1091,7 @@
                   "path": "questions",
                   "arraySome": {
                         "area": "canonical_flip",
-                        "sourceEvidence": "docs/monorepo-final-operator-signoff-matrix.md",
+                        "sourceEvidence": "docs/history/monorepo-final-operator-signoff-matrix.md",
                         "defaultDecision": "APPROVED_FOR_PR_FIRST_PLAN"
                   },
                   "message": "question area canonical_flip"
@@ -1349,14 +1349,14 @@
       "id": "monorepo-final-operator-signoff",
       "title": "monorepo final operator sign-off matrix",
       "fixture": "fixtures/current-state/monorepo-final-operator-signoff-matrix.json",
-      "doc": "docs/monorepo-final-operator-signoff-matrix.md",
+      "doc": "docs/history/monorepo-final-operator-signoff-matrix.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "readiness": "docs/monorepo-canonical-flip-readiness.md",
-            "splitDisposition": "docs/monorepo-split-repo-disposition-rollback.md",
-            "releasePacket": "docs/monorepo-release-package-tag-approval-packet.md",
-            "branchPacket": "docs/monorepo-branch-protection-approval-packet.md",
-            "operatorHandoff": "docs/monorepo-operator-approval-handoff.md"
+            "readiness": "docs/history/monorepo-canonical-flip-readiness.md",
+            "splitDisposition": "docs/history/monorepo-split-repo-disposition-rollback.md",
+            "releasePacket": "docs/history/monorepo-release-package-tag-approval-packet.md",
+            "branchPacket": "docs/history/monorepo-branch-protection-approval-packet.md",
+            "operatorHandoff": "docs/history/monorepo-operator-approval-handoff.md"
       },
       "packageScript": {
             "name": "check:monorepo-final-operator-signoff",
@@ -1383,7 +1383,7 @@
             },
             {
                   "path": "historicalFinalSignoffIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/549",
+                  "equals": "a2a-plane#549 (internal tracker, private)",
                   "message": "historical final signoff issue"
             },
             {
@@ -1523,7 +1523,7 @@
             },
             {
                   "path": "priorPackets.historicalFinalSignoffPr",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/550",
+                  "equals": "a2a-plane PR #550 (internal tracker, private)",
                   "message": "prior packet historicalFinalSignoffPr"
             },
             {
@@ -1649,7 +1649,7 @@
                   "arraySome": {
                         "area": "branch_protection_or_ruleset",
                         "decision": "RECORDED_ACTIVE_NO_FURTHER_CHANGE",
-                        "evidence": "docs/monorepo-branch-protection-approval-packet.md",
+                        "evidence": "docs/history/monorepo-branch-protection-approval-packet.md",
                         "approvedForPrFirstPacket": true,
                         "executionApproved": false
                   },
@@ -1660,7 +1660,7 @@
                   "arraySome": {
                         "area": "split_repo_disposition",
                         "decision": "RECORDED_ACTIVE_CANONICAL_REMAINS",
-                        "evidence": "docs/monorepo-split-repo-disposition-rollback.md",
+                        "evidence": "docs/history/monorepo-split-repo-disposition-rollback.md",
                         "approvedForPrFirstPacket": true,
                         "executionApproved": false
                   },
@@ -1671,7 +1671,7 @@
                   "arraySome": {
                         "area": "release_tag_and_github_release",
                         "decision": "NO_GO_WAITING",
-                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "approvedForPrFirstPacket": false,
                         "executionApproved": false
                   },
@@ -1682,7 +1682,7 @@
                   "arraySome": {
                         "area": "npm_publish",
                         "decision": "NO_GO_WAITING",
-                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "approvedForPrFirstPacket": false,
                         "executionApproved": false
                   },
@@ -1693,7 +1693,7 @@
                   "arraySome": {
                         "area": "docker_ghcr_publish",
                         "decision": "NO_GO_WAITING",
-                        "evidence": "docs/monorepo-release-package-tag-approval-packet.md",
+                        "evidence": "docs/history/monorepo-release-package-tag-approval-packet.md",
                         "approvedForPrFirstPacket": false,
                         "executionApproved": false
                   },
@@ -1704,7 +1704,7 @@
                   "arraySome": {
                         "area": "package_ownership_transfer",
                         "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
-                        "evidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
                         "approvedForPrFirstPacket": true,
                         "executionApproved": false
                   },
@@ -1715,7 +1715,7 @@
                   "arraySome": {
                         "area": "canonical_flip",
                         "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
-                        "evidence": "docs/monorepo-canonical-flip-readiness.md",
+                        "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
                         "approvedForPrFirstPacket": true,
                         "executionApproved": false
                   },
@@ -1996,10 +1996,10 @@
       "id": "monorepo-branch-protection-approval-packet",
       "title": "monorepo branch protection approval packet",
       "fixture": "fixtures/current-state/monorepo-branch-protection-approval-packet.json",
-      "doc": "docs/monorepo-branch-protection-approval-packet.md",
+      "doc": "docs/history/monorepo-branch-protection-approval-packet.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "readiness": "docs/monorepo-canonical-flip-readiness.md",
+            "readiness": "docs/history/monorepo-canonical-flip-readiness.md",
             "workflow": ".github/workflows/ci.yml",
             "releaseGate": "scripts/release-gate.mjs"
       },
@@ -2595,11 +2595,11 @@
       "id": "monorepo-canonical-flip-readiness",
       "title": "monorepo canonical flip readiness",
       "fixture": "fixtures/current-state/monorepo-canonical-flip-readiness.json",
-      "doc": "docs/monorepo-canonical-flip-readiness.md",
+      "doc": "docs/history/monorepo-canonical-flip-readiness.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "ciParity": "docs/monorepo-ci-parity-matrix.md",
-            "importDoc": "docs/monorepo-import-rehearsal.md",
+            "ciParity": "docs/history/monorepo-ci-parity-matrix.md",
+            "importDoc": "docs/history/monorepo-import-rehearsal.md",
             "releaseGate": "scripts/release-gate.mjs"
       },
       "packageScript": {
@@ -2622,22 +2622,22 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent issue"
             },
             {
                   "path": "phase4FreshImportCandidateIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "equals": "a2a-plane#538 (internal tracker, private)",
                   "message": "phase4 issue"
             },
             {
                   "path": "phase4FreshImportPr",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/540",
+                  "equals": "a2a-plane PR #540 (internal tracker, private)",
                   "message": "phase4 PR"
             },
             {
                   "path": "phase5ReadinessIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/541",
+                  "equals": "a2a-plane#541 (internal tracker, private)",
                   "message": "phase5 readiness issue"
             },
             {
@@ -3053,11 +3053,11 @@
       "id": "monorepo-split-repo-disposition-rollback",
       "title": "monorepo split-repo disposition rollback",
       "fixture": "fixtures/current-state/monorepo-split-repo-disposition-rollback.json",
-      "doc": "docs/monorepo-split-repo-disposition-rollback.md",
+      "doc": "docs/history/monorepo-split-repo-disposition-rollback.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "readiness": "docs/monorepo-canonical-flip-readiness.md",
-            "branchPacket": "docs/monorepo-branch-protection-approval-packet.md",
+            "readiness": "docs/history/monorepo-canonical-flip-readiness.md",
+            "branchPacket": "docs/history/monorepo-branch-protection-approval-packet.md",
             "releaseGate": "scripts/release-gate.mjs"
       },
       "packageScript": {
@@ -3724,9 +3724,9 @@
       "id": "monorepo-import-rehearsal",
       "title": "monorepo import rehearsal",
       "fixture": "fixtures/current-state/monorepo-import-rehearsal.json",
-      "doc": "docs/monorepo-import-rehearsal.md",
+      "doc": "docs/history/monorepo-import-rehearsal.md",
       "extraDocs": {
-            "reentryDoc": "docs/monorepo-reentry-decision.md"
+            "reentryDoc": "docs/history/monorepo-reentry-decision.md"
       },
       "packageScript": {
             "name": "check:monorepo-import-rehearsal",
@@ -3748,27 +3748,27 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent #511"
             },
             {
                   "path": "childIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/513",
+                  "equals": "a2a-plane#513 (internal tracker, private)",
                   "message": "child #513"
             },
             {
                   "path": "refreshIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/528",
+                  "equals": "a2a-plane#528 (internal tracker, private)",
                   "message": "refresh #528"
             },
             {
                   "path": "phase2Issue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "equals": "a2a-plane#530 (internal tracker, private)",
                   "message": "phase2 #530"
             },
             {
                   "path": "phase4FreshImportCandidateIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "equals": "a2a-plane#538 (internal tracker, private)",
                   "message": "phase4 #538"
             },
             {
@@ -4120,10 +4120,10 @@
       "id": "monorepo-ci-parity",
       "title": "monorepo CI parity matrix",
       "fixture": "fixtures/current-state/monorepo-ci-parity-matrix.json",
-      "doc": "docs/monorepo-ci-parity-matrix.md",
+      "doc": "docs/history/monorepo-ci-parity-matrix.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "reentryDoc": "docs/history/monorepo-reentry-decision.md",
             "ciWorkflow": ".github/workflows/ci.yml"
       },
       "packageScript": {
@@ -4146,27 +4146,27 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent #511"
             },
             {
                   "path": "childIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/514",
+                  "equals": "a2a-plane#514 (internal tracker, private)",
                   "message": "child #514"
             },
             {
                   "path": "refreshIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/528",
+                  "equals": "a2a-plane#528 (internal tracker, private)",
                   "message": "refresh #528"
             },
             {
                   "path": "phase2Issue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "equals": "a2a-plane#530 (internal tracker, private)",
                   "message": "phase2 #530"
             },
             {
                   "path": "phase4FreshImportCandidateIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "equals": "a2a-plane#538 (internal tracker, private)",
                   "message": "phase4 #538"
             },
             {
@@ -4805,10 +4805,10 @@
       "id": "monorepo-phase3-package-ci-gate",
       "title": "monorepo phase-3 package CI gate",
       "fixture": "fixtures/current-state/monorepo-phase3-package-ci-gate.json",
-      "doc": "docs/monorepo-ci-parity-matrix.md",
+      "doc": "docs/history/monorepo-ci-parity-matrix.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "importRehearsalDoc": "docs/monorepo-import-rehearsal.md",
+            "importRehearsalDoc": "docs/history/monorepo-import-rehearsal.md",
             "ciWorkflow": ".github/workflows/ci.yml",
             "packageCiRunner": "scripts/run-monorepo-package-ci-parity.mjs"
       },
@@ -4832,27 +4832,27 @@
             },
             {
                   "path": "issue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/534",
+                  "equals": "a2a-plane#534 (internal tracker, private)",
                   "message": "issue #534"
             },
             {
                   "path": "implementationIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/536",
+                  "equals": "a2a-plane#536 (internal tracker, private)",
                   "message": "implementation #536"
             },
             {
                   "path": "freshImportCandidateIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/538",
+                  "equals": "a2a-plane#538 (internal tracker, private)",
                   "message": "fresh import candidate #538"
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent #511"
             },
             {
                   "path": "phase2Issue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/530",
+                  "equals": "a2a-plane#530 (internal tracker, private)",
                   "message": "phase2 #530"
             },
             {
@@ -5426,7 +5426,7 @@
       "id": "monorepo-reentry",
       "title": "monorepo re-entry decision",
       "fixture": "fixtures/current-state/monorepo-reentry-decision.json",
-      "doc": "docs/monorepo-reentry-decision.md",
+      "doc": "docs/history/monorepo-reentry-decision.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
             "topologyDoc": "docs/topology-decision-record.md",
@@ -5452,17 +5452,17 @@
             },
             {
                   "path": "decisionIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "decision issue #511"
             },
             {
                   "path": "previousDecisionIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/473",
+                  "equals": "a2a-plane#473 (internal tracker, private)",
                   "message": "previous decision #473"
             },
             {
                   "path": "priorWave",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/506",
+                  "equals": "a2a-plane#506 (internal tracker, private)",
                   "message": "prior wave #506"
             },
             {
@@ -5513,13 +5513,13 @@
             {
                   "path": "repos",
                   "arraySome": {
-                        "repo": "jinwon-int/a2a-plane",
+                        "repo": "a2a-plane (internal tracker, private)",
                         "visibility": "public",
                         "phase0Role": "umbrella_decision_hub",
                         "canonicalNow": true,
                         "monorepoPackage": "root"
                   },
-                  "message": "repo canonical evidence jinwon-int/a2a-plane"
+                  "message": "repo canonical evidence a2a-plane (internal tracker, private)"
             },
             {
                   "path": "repos",
@@ -6045,12 +6045,12 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/473",
+                  "equals": "a2a-plane#473 (internal tracker, private)",
                   "message": "fixture parent #473"
             },
             {
                   "path": "trackingIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/480",
+                  "equals": "a2a-plane#480 (internal tracker, private)",
                   "message": "fixture tracking #480"
             },
             {
@@ -6255,12 +6255,12 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/506",
+                  "equals": "a2a-plane#506 (internal tracker, private)",
                   "message": "parent #506"
             },
             {
                   "path": "trackingIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/508",
+                  "equals": "a2a-plane#508 (internal tracker, private)",
                   "message": "tracking #508"
             },
             {
@@ -6314,7 +6314,7 @@
                   "path": "phases",
                   "arraySome": {
                         "id": "single-finalizer-packet",
-                        "ownerRepo": "jinwon-int/a2a-plane",
+                        "ownerRepo": "a2a-plane (internal tracker, private)",
                         "liveCallsAllowed": false
                   },
                   "message": "phase single-finalizer-packet"
@@ -6645,7 +6645,7 @@
             "operators": "docs/operators.md",
             "developers": "docs/developers.md",
             "issueRouting": "docs/issue-routing.md",
-            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "reentryDoc": "docs/history/monorepo-reentry-decision.md",
             "readme": "README.md",
             "codeowners": ".github/CODEOWNERS"
       },
@@ -6669,12 +6669,12 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent #511"
             },
             {
                   "path": "childIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/515",
+                  "equals": "a2a-plane#515 (internal tracker, private)",
                   "message": "child #515"
             },
             {
@@ -6930,7 +6930,7 @@
       "doc": "docs/release/monorepo-branch-release-package-policy.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
-            "reentryDoc": "docs/monorepo-reentry-decision.md",
+            "reentryDoc": "docs/history/monorepo-reentry-decision.md",
             "operators": "docs/operators.md",
             "migration": "docs/migration.md"
       },
@@ -6954,7 +6954,7 @@
             },
             {
                   "path": "issue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/517",
+                  "equals": "a2a-plane#517 (internal tracker, private)",
                   "message": "issue #517"
             },
             {
@@ -6991,14 +6991,14 @@
             {
                   "path": "repos",
                   "arraySome": {
-                        "repo": "jinwon-int/a2a-plane",
+                        "repo": "a2a-plane (internal tracker, private)",
                         "visibility": "PUBLIC",
                         "defaultBranch": "main",
                         "rulesets": "none",
                         "requiredReviews": false,
                         "historicalTag": "source-public-20260511"
                   },
-                  "message": "repo policy jinwon-int/a2a-plane"
+                  "message": "repo policy a2a-plane (internal tracker, private)"
             },
             {
                   "path": "repos",
@@ -7311,12 +7311,12 @@
       "id": "monorepo-release-package-tag-approval",
       "title": "monorepo release package tag approval",
       "fixture": "fixtures/current-state/monorepo-release-package-tag-approval-packet.json",
-      "doc": "docs/monorepo-release-package-tag-approval-packet.md",
+      "doc": "docs/history/monorepo-release-package-tag-approval-packet.md",
       "currentState": "docs/current-state.md",
       "extraDocs": {
             "releasePolicy": "docs/release/monorepo-branch-release-package-policy.md",
-            "splitDisposition": "docs/monorepo-split-repo-disposition-rollback.md",
-            "readiness": "docs/monorepo-canonical-flip-readiness.md"
+            "splitDisposition": "docs/history/monorepo-split-repo-disposition-rollback.md",
+            "readiness": "docs/history/monorepo-canonical-flip-readiness.md"
       },
       "extraJson": {
             "brokerPkg": "packages/broker/package.json",
@@ -7343,17 +7343,17 @@
             },
             {
                   "path": "parentIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/511",
+                  "equals": "a2a-plane#511 (internal tracker, private)",
                   "message": "parent #511"
             },
             {
                   "path": "phase7DispositionPr",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/pull/546",
+                  "equals": "a2a-plane PR #546 (internal tracker, private)",
                   "message": "phase7 PR"
             },
             {
                   "path": "phase8ReleasePacketIssue",
-                  "equals": "https://github.com/jinwon-int/a2a-plane/issues/547",
+                  "equals": "a2a-plane#547 (internal tracker, private)",
                   "message": "phase8 issue"
             },
             {

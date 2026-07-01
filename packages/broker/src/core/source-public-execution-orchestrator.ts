@@ -150,7 +150,7 @@ export interface SourcePublicExecutionPlanBundle {
 const DEFAULT_RUN_ID = "a2a-source-public-execution-orchestrator-20260511T023207Z";
 const DEFAULT_REPO = "jinwon-int/a2a-broker";
 const DEFAULT_ISSUE = 486;
-const DEFAULT_PARENT = "https://github.com/jinwon-int/a2a-plane/issues/218";
+const DEFAULT_PARENT = "a2a-plane#218 (internal tracker, private)";
 const DEFAULT_PREFLIGHTS: SourcePublicExecutionPreflights = {
   evidencePacketApproved: "pending",
   scannerHistoryBound: "pending",

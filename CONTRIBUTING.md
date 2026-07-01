@@ -40,3 +40,10 @@ Templates live in `docs/spec-templates/`:
 Issues or PRs for medium/large changes should link the completed spec and plan. If the spec is unclear, add clarify notes before planning; before execution, run an analysis pass; before implementation and closeout, use the quality checklist. Closeout must include evidence and must name approval-sensitive actions that were not performed.
 
 Use the **A2A spec-first change** issue template for Medium/Large work. Pull requests should fill the spec-first packet section in `.github/pull_request_template.md`; Small PRs may mark spec/plan fields as N/A only when the change is short, reversible, single-repo, and outside approval-sensitive boundaries.
+
+
+## Public language policy
+
+The default language for public-facing surfaces is English: README, docs intended for external readers, issue templates, PR templates, package metadata, and examples. A bilingual document is allowed when the document states that intent near the top, as in `docs/ecosystem-guide.md`.
+
+Historical records may preserve non-English approval quotes only when they are necessary audit evidence and are kept in `docs/history/` or other explicitly historical fixtures. New public docs should summarize private approvals in role-based English and link the relevant issue/approval record instead of copying personal-channel text.

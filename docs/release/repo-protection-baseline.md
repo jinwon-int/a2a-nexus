@@ -1,8 +1,8 @@
 # Public A2A Repository Protection Baseline
 
-Issues: [a2a-plane#488](https://github.com/jinwon-int/a2a-plane/issues/488), [a2a-plane#517](https://github.com/jinwon-int/a2a-plane/issues/517)
-Parent: [a2a-plane#473](https://github.com/jinwon-int/a2a-plane/issues/473)
-Related: [a2a-plane#486](https://github.com/jinwon-int/a2a-plane/issues/486) (contribution surface and CI hardening)
+Issues: a2a-plane#488 (a2a-plane#488, internal tracker private), a2a-plane#517 (a2a-plane#517, internal tracker private)
+Parent: a2a-plane#473 (a2a-plane#473, internal tracker private)
+Related: a2a-plane#486 (a2a-plane#486, internal tracker private) (contribution surface and CI hardening)
 
 This document records the current repository protection state across the four public A2A repositories and proposes a minimal baseline for public repository protection. The monorepo-specific branch protection and release/package policy for #517 is recorded in [monorepo-branch-release-package-policy](monorepo-branch-release-package-policy.md). This is a read-only evidence document and does not authorize GitHub settings changes, branch protection changes, ruleset creation, permission changes, or any other GitHub repository administration action.
 
@@ -44,7 +44,7 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 
 | Repo | Branch protection | Status checks | PR review requirement | Rulesets |
 |---|---|---|---|---|
-| `jinwon-int/a2a-plane` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
+| `a2a-plane (internal tracker, private)` | **None** (API returned 404) | N/A | N/A | **None** (empty array) |
 | `jinwon-int/a2a-broker` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
 | `jinwon-int/a2a-docker-runner` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
 | `jinwon-int/openclaw-plugin-a2a` | **Present** | Required `build`, strict/up-to-date enabled | **None** | **None** (empty array) |
@@ -55,7 +55,7 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 
 | Repo | CODEOWNERS | Content |
 |---|---|---|
-| `jinwon-int/a2a-plane` | ✅ **Present** at root | `* @jinon86` (interim owner, noted as not a public maintainer roster) |
+| `a2a-plane (internal tracker, private)` | ✅ **Present** at root | `* @jinon86` (interim owner, noted as not a public maintainer roster) |
 | `jinwon-int/a2a-broker` | ❌ **Missing** (API returned 404) | N/A |
 | `jinwon-int/a2a-docker-runner` | ❌ **Missing** (API returned 404) | N/A |
 | `jinwon-int/openclaw-plugin-a2a` | ❌ **Missing** (API returned 404) | N/A |
@@ -66,7 +66,7 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 
 | Repo | Issue templates | PR template |
 |---|---|---|
-| `jinwon-int/a2a-plane` | ✅ Present (`.github/ISSUE_TEMPLATE/` with bug report, spec-first change, readiness task, and config) | ✅ Present (`.github/pull_request_template.md` with safety checklist) |
+| `a2a-plane (internal tracker, private)` | ✅ Present (`.github/ISSUE_TEMPLATE/` with bug report, spec-first change, readiness task, and config) | ✅ Present (`.github/pull_request_template.md` with safety checklist) |
 | `jinwon-int/a2a-broker` | ❌ **Missing**: no `.github/` directory found | ❌ **Missing** |
 | `jinwon-int/a2a-docker-runner` | ❌ **Missing**: no `.github/` directory found | ❌ **Missing** |
 | `jinwon-int/openclaw-plugin-a2a` | ❌ **Missing**: no `.github/` directory found | ❌ **Missing** |
@@ -77,7 +77,7 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 
 | Repo | Workflow files | Coverage notes |
 |---|---|---|
-| `jinwon-int/a2a-plane` | `ci.yml` (in the a2a-plane checkout; part of this repo) | Includes `npm test` and `npm run test:release-gate` |
+| `a2a-plane (internal tracker, private)` | `ci.yml` (in the a2a-plane checkout; part of this repo) | Includes `npm test` and `npm run test:release-gate` |
 | `jinwon-int/a2a-broker` | `ci.yml` | Runs `npm test` |
 | `jinwon-int/a2a-docker-runner` | `ci.yml`, `release-gate.yml` | Runs npm checks and release-gate |
 | `jinwon-int/openclaw-plugin-a2a` | `ci.yml` | Runs public-readiness scan, conformance smoke, and tests |
@@ -88,12 +88,12 @@ All evidence is redacted to commands, exit statuses, and finding counts only. No
 
 | Repo | LICENSE | SECURITY.md | CONTRIBUTING.md | CODE_OF_CONDUCT |
 |---|---|---|---|---|
-| `jinwon-int/a2a-plane` | ✅ MIT | ✅ Present | ✅ Present | ❌ Not found |
+| `a2a-plane (internal tracker, private)` | ✅ MIT | ✅ Present | ✅ Present | ❌ Not found |
 | `jinwon-int/a2a-broker` | ❌ Missing (no GitHub-detected license) | Not checked in this audit | Not checked | Not checked |
 | `jinwon-int/a2a-docker-runner` | ✅ MIT | Not checked | Not checked | ✅ Present (from issue #486) |
 | `jinwon-int/openclaw-plugin-a2a` | ❌ Missing (no GitHub-detected license) | Not checked | Not checked | ❌ Missing (from issue #486) |
 
-> License and community file coverage for broker/runner/plugin is tracked separately in issues [#478](https://github.com/jinwon-int/a2a-plane/issues/478), [#479](https://github.com/jinwon-int/a2a-plane/issues/479), and [#486](https://github.com/jinwon-int/a2a-plane/issues/486).
+> License and community file coverage for broker/runner/plugin is tracked separately in issues #478 (a2a-plane#478, internal tracker private), #479 (a2a-plane#479, internal tracker private), and #486 (a2a-plane#486, internal tracker private).
 
 ---
 
@@ -111,12 +111,12 @@ These can be proposed in PRs and reviewed normally. They require no GitHub admin
 
 | # | Protection | Where | Priority | Prerequisite/Link |
 |---|---|---|---|---|
-| 1.1 | CODEOWNERS for each repo | Root `CODEOWNERS` | High | Needs maintainer team decided per repo; track in [#486](https://github.com/jinwon-int/a2a-plane/issues/486) |
+| 1.1 | CODEOWNERS for each repo | Root `CODEOWNERS` | High | Needs maintainer team decided per repo; track in #486 (a2a-plane#486, internal tracker private) |
 | 1.2 | Issue templates | `.github/ISSUE_TEMPLATE/` | High | Broker/runner/plugin are missing all templates; can copy simplified versions from a2a-plane |
 | 1.3 | PR template with safety checklist | `.github/pull_request_template.md` | High | Broker/runner/plugin are missing; a2a-plane template can serve as reference |
 | 1.4 | SECURITY.md | Root `SECURITY.md` | Medium | Broker/runner/plugin may need their own or can reference a2a-plane |
 | 1.5 | CONTRIBUTING.md | Root `CONTRIBUTING.md` | Medium | Broker/runner/plugin may need their own or can reference a2a-plane |
-| 1.6 | Public-readiness CI check | `.github/workflows/ci.yml` | Medium | Wire `npm run scan:public-readiness` or equivalent into broker CI (tracked in [#486](https://github.com/jinwon-int/a2a-plane/issues/486)) |
+| 1.6 | Public-readiness CI check | `.github/workflows/ci.yml` | Medium | Wire `npm run scan:public-readiness` or equivalent into broker CI (tracked in #486 (a2a-plane#486, internal tracker private)) |
 | 1.7 | Repo protection baseline check | Integration into release-gate pipeline | Medium | Added in this PR for a2a-plane; other repos should adopt equivalent check |
 
 ### 3.2 Tier 2: Settings-change protections (requires operator approval)
@@ -144,7 +144,7 @@ These require GitHub repository settings changes (owner/admin access). They must
 | 3.2 | Secret scanning push protection | GitHub Advanced Security feature |
 | 3.3 | Automatic deletion of head branches | Available in repo settings |
 | 3.4 | Tag protection rules | Requires admin to create tag rulesets |
-| 3.5 | Release artifact attestation | For npm/Docker publication readiness (tracked in [#479](https://github.com/jinwon-int/a2a-plane/issues/479)) |
+| 3.5 | Release artifact attestation | For npm/Docker publication readiness (tracked in #479 (a2a-plane#479, internal tracker private)) |
 
 ---
 
@@ -204,10 +204,10 @@ If the operator has granted approval in a linked comment, the executing person o
 
 | Gap | Repos affected | Tracked in | Current status |
 |---|---|---|---|
-| Missing CODEOWNERS | broker, runner, plugin | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
-| Missing issue/PR templates | broker, runner, plugin | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
-| Missing broker public-readiness CI check | broker | [#486](https://github.com/jinwon-int/a2a-plane/issues/486) | Open |
-| Missing license metadata (package/license fields) | broker, plugin | [#478](https://github.com/jinwon-int/a2a-plane/issues/478), [#479](https://github.com/jinwon-int/a2a-plane/issues/479) | Open |
+| Missing CODEOWNERS | broker, runner, plugin | #486 (a2a-plane#486, internal tracker private) | Open |
+| Missing issue/PR templates | broker, runner, plugin | #486 (a2a-plane#486, internal tracker private) | Open |
+| Missing broker public-readiness CI check | broker | #486 (a2a-plane#486, internal tracker private) | Open |
+| Missing license metadata (package/license fields) | broker, plugin | #478 (a2a-plane#478, internal tracker private), #479 (a2a-plane#479, internal tracker private) | Open |
 | No branch protection on main | a2a-plane | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
 | No required PR review | all | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
 | No rulesets | all | #488 baseline and #517 monorepo policy — awaiting operator approval | Open / Waiting for approval |
@@ -221,7 +221,7 @@ Decision: **baseline documented; settings changes NO-GO / waiting for approval.*
 - Current protection-state evidence is recorded (section 2).
 - Proposed baseline is explicit and testable (section 3).
 - All four repos are PUBLIC. `a2a-plane` has **no branch protection**; `a2a-broker`, `a2a-docker-runner`, and `openclaw-plugin-a2a` have minimal required-`build` branch protection. All four repos have **no rulesets** and **no required PR review**.
-- CODEOWNERS, templates, and CI gaps in broker/runner/plugin are tracked in [#486](https://github.com/jinwon-int/a2a-plane/issues/486).
+- CODEOWNERS, templates, and CI gaps in broker/runner/plugin are tracked in #486 (a2a-plane#486, internal tracker private).
 - Any GitHub settings or permission changes are held until separate explicit operator approval using the checklist in section 5.
 
 This deliverable does not authorize:

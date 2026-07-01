@@ -1,7 +1,7 @@
 {
   "name": "A2A Spec-First TaskFlow Runtime Rehearsal",
   "contract": "docs/taskflow/a2a-spec-first-bridge.md",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/324",
+  "issue": "a2a-plane#324 (internal tracker, private)",
   "protocol": "a2a-spec-first",
   "version": 1,
   "failClosed": true,

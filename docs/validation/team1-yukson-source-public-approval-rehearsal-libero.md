@@ -1,7 +1,7 @@
 # Team1 source-public approval rehearsal validation
 
-Parent: [#211](https://github.com/jinwon-int/a2a-plane/issues/211)
-Child: [#213](https://github.com/jinwon-int/a2a-plane/issues/213)
+Parent: #211 (a2a-plane#211, internal tracker private)
+Child: #213 (a2a-plane#213, internal tracker private)
 Run: `a2a-source-public-approval-rehearsal-20260511T014240Z`
 Broker of record: `seoseo`
 Team: `team1`
@@ -42,11 +42,11 @@ The checked-in packet fixture follows this shape and intentionally records `NO_G
 
 | Evidence lane | Required closeout evidence | Current observed state | Libero assessment |
 | --- | --- | --- | --- |
-| Plane schema/final gate (`bangtong`) | PR/Done/Block for deterministic packet schema and final gate. | [a2a-plane#212](https://github.com/jinwon-int/a2a-plane/issues/212) has Start-only evidence at snapshot. | `NO_GO` until landed or explicitly blocked evidence exists. |
+| Plane schema/final gate (`bangtong`) | PR/Done/Block for deterministic packet schema and final gate. | a2a-plane#212 (a2a-plane#212, internal tracker private) has Start-only evidence at snapshot. | `NO_GO` until landed or explicitly blocked evidence exists. |
 | Plugin status (`sogyo`) | Operator-facing no-live status rendering with Terminal Brief/GitHub evidence URLs and non-ACK/non-approval boundaries. | [openclaw-plugin-a2a#261](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/261) has Start-only evidence at snapshot. | `NO_GO` until PR/Done/Block evidence exists. |
 | Runner bundle (`nosuk`) | Deterministic scanner/artifact bundle, redaction proof, no-secret fixture, and no-live final scanner status. | [a2a-docker-runner#185](https://github.com/jinwon-int/a2a-docker-runner/issues/185) has Start-only evidence at snapshot. | `NO_GO` until PR/Done/Block evidence exists. |
 | Broker evidence/export (`dungae`) | Read-only evidence bundle export plus idempotent approval-intent/rehearsal record; no approval execution. | [a2a-broker#484](https://github.com/jinwon-int/a2a-broker/issues/484) has Start-only evidence at snapshot. | `NO_GO` until PR/Done/Block evidence exists. |
-| Team2 parity/cross-check (`jingun`, `soonwook`) | Independent parity audit and GO/NO-GO semantics cross-check. | [a2a-docker-runner#186](https://github.com/jinwon-int/a2a-docker-runner/issues/186) and [a2a-plane#214](https://github.com/jinwon-int/a2a-plane/issues/214) have Start-only evidence at snapshot. | `NO_GO` until cross-check evidence exists. |
+| Team2 parity/cross-check (`jingun`, `soonwook`) | Independent parity audit and GO/NO-GO semantics cross-check. | [a2a-docker-runner#186](https://github.com/jinwon-int/a2a-docker-runner/issues/186) and a2a-plane#214 (a2a-plane#214, internal tracker private) have Start-only evidence at snapshot. | `NO_GO` until cross-check evidence exists. |
 | Libero validation (`yukson`) | This validation doc, deterministic packet fixture, and regression test. | This patch adds the validation and fixture; tests enforce the no-live and fail-closed terms. | Pass for local contract shape only; aggregate remains `NO_GO`. |
 
 ## No-live Terminal Brief rehearsal gate

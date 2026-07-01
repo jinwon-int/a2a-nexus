@@ -12,13 +12,13 @@
     "round": "a2a-live-canary-readiness-20260509T173917Z",
     "note": "No-duplicate replay readiness and scanner approval-boundary expectations are locked as independent redacted evidence."
   },
-  "parentIssue": "https://github.com/jinwon-int/a2a-plane/issues/174",
-  "childIssue": "https://github.com/jinwon-int/a2a-plane/issues/177",
+  "parentIssue": "a2a-plane#174 (internal tracker, private)",
+  "childIssue": "a2a-plane#177 (internal tracker, private)",
   "sourceIssues": [
-    "https://github.com/jinwon-int/a2a-plane/issues/130",
-    "https://github.com/jinwon-int/a2a-plane/issues/94",
-    "https://github.com/jinwon-int/a2a-plane/issues/171",
-    "https://github.com/jinwon-int/a2a-plane/issues/172"
+    "a2a-plane#130 (internal tracker, private)",
+    "a2a-plane#94 (internal tracker, private)",
+    "a2a-plane#171 (internal tracker, private)",
+    "a2a-plane#172 (internal tracker, private)"
   ],
   "brokerOfRecord": "gwakga",
   "team": "team2-gwakga",

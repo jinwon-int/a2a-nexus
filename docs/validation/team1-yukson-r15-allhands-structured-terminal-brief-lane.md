@@ -1,6 +1,6 @@
 # R15 structured Terminal Brief all-hands lane: metadata and origin fan-in contract matrix
 
-Issue: [a2a-plane#311](https://github.com/jinwon-int/a2a-plane/issues/311)
+Issue: a2a-plane#311 (a2a-plane#311, internal tracker private)
 Parent round: `a2a-r15-allhands-structured-terminal-brief-20260514T065457Z-04-yukson`
 Origin broker/finalizer: `seoseo`
 Lane: Team1/yukson

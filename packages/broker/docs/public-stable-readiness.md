@@ -23,7 +23,7 @@ DB, or ACK terminal outbox rows.
   live Telegram traffic, mutate DB rows, or ACK terminal outbox entries unless a
   separate operator approval names that exact action.
 - [x] **License decision:** a root `LICENSE` file is present and matches the
-  approved release intent. Seo Jin On approved MIT for this repository on
+  approved release intent. the operator approved MIT for this repository on
   2026-06-10 KST, this PR adds the root MIT `LICENSE`, and `package.json`
   declares `"license": "MIT"`. `package.json.private=true` is not itself a
   license and still keeps npm publishing disabled until a separate release action

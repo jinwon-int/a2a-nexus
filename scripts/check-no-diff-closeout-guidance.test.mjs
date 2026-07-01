@@ -4,7 +4,7 @@
  * This test verifies the guidance document at
  * docs/docker-runner-no-diff-closeout-guidance.md contains the required
  * sections, evidence fields, and safety markers defined in
- * jinwon-int/a2a-plane#102.
+ * a2a-plane#102 (internal tracker, private).
  *
  * Safety: read-only doc validation. No deploy, no restart, no live send, no secret logging.
  */

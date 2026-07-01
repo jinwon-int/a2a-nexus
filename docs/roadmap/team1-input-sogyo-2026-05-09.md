@@ -1,7 +1,7 @@
 # Team1 Roadmap Input: Sogyo (Protocol Contract & Compatibility Surface)
 
 > Worker: `sogyo` | Angle: protocol contract, compatibility surface, docs/API semantics, public/private boundary clarity
-> Parent: [#105](https://github.com/jinwon-int/a2a-plane/issues/105) | Child: [#107](https://github.com/jinwon-int/a2a-plane/issues/107)
+> Parent: #105 (a2a-plane#105, internal tracker private) | Child: #107 (a2a-plane#107, internal tracker private)
 > Date: 2026-05-09
 
 ## North-Star: What A2A Nexus Should Be Responsible For
@@ -76,7 +76,7 @@ These boundaries must be enforced by the **public-readiness scan** (`npm run sca
 
 ## Suggested Next GitHub Epics/Issues
 
-**Epic: Contract Hardening (tracking issue in `jinwon-int/a2a-plane`)**
+**Epic: Contract Hardening (tracking issue in `a2a-plane (internal tracker, private)`)**
 
 - **Issue 1:** Add `contracts/a2a/VERSION` and semantic versioning policy
 - **Issue 2:** Build contract conformance test suite (`contracts/a2a/test/`)
@@ -84,20 +84,20 @@ These boundaries must be enforced by the **public-readiness scan** (`npm run sca
 - **Issue 4:** Contract extension process documentation
 - **Issue 5:** Integration-neutral language audit of all contract files
 
-**Epic: External Scanner & Boundary Audit (tracking issue in `jinwon-int/a2a-plane`)**
+**Epic: External Scanner & Boundary Audit (tracking issue in `a2a-plane (internal tracker, private)`)**
 
 - **Issue 6:** Install and run external secret scanner (`gitleaks` or `trufflehog`) with redacted output
 - **Issue 7:** Public/private boundary audit pass with operator sign-off per contract file
 - **Issue 8:** Resolve `absolute-private-path` and `private-topology-term` finding classes
 
-**Epic: Compatibility Surface (tracking issue in `jinwon-int/a2a-plane`)**
+**Epic: Compatibility Surface (tracking issue in `a2a-plane (internal tracker, private)`)**
 
 - **Issue 9:** Compatibility CHANGELOG with baseline update record
 - **Issue 10:** Integration conformance levels document (Level 0/1/2)
 - **Issue 11:** Integration guide for non-OpenClaw workers
 - **Issue 12:** "Break the contract" dry-run exercise
 
-**Epic: Contract Governance & v1.0 Freeze (tracking issue in `jinwon-int/a2a-plane`)**
+**Epic: Contract Governance & v1.0 Freeze (tracking issue in `a2a-plane (internal tracker, private)`)**
 
 - **Issue 13:** Contract governance model and approval process
 - **Issue 14:** Deprecation policy (`contracts/DEPRECATION.md`)

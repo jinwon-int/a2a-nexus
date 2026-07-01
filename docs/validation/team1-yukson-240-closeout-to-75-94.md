@@ -1,9 +1,9 @@
 # Team1/yukson #240 closeout route into #75/#94
 
-Parent lane: [a2a-plane#271](https://github.com/jinwon-int/a2a-plane/issues/271)  
-Source issue: [a2a-plane#240](https://github.com/jinwon-int/a2a-plane/issues/240)  
-Candidate PRs: [#267](https://github.com/jinwon-int/a2a-plane/pull/267), [#268](https://github.com/jinwon-int/a2a-plane/pull/268)  
-Downstream trackers: [#75](https://github.com/jinwon-int/a2a-plane/issues/75), [#94](https://github.com/jinwon-int/a2a-plane/issues/94)
+Parent lane: a2a-plane#271 (a2a-plane#271, internal tracker private)
+Source issue: a2a-plane#240 (a2a-plane#240, internal tracker private)
+Candidate PRs: #267 (a2a-plane PR #267, internal tracker private), #268 (a2a-plane PR #268, internal tracker private)
+Downstream trackers: #75 (a2a-plane#75, internal tracker private), #94 (a2a-plane#94, internal tracker private)
 
 This is a documentation/checklist lane only. It does not change runtime code, deploy or restart services, send live provider messages, mutate production data, ACK terminal-outbox records, change repository visibility, rotate or disclose secrets, publish releases, rewrite history, or force-push.
 

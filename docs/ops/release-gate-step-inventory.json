@@ -143,6 +143,17 @@
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
+      "name": "approval-records",
+      "command": "npm",
+      "args": [
+        "run",
+        "check:approval-records"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Structured approval-record gate for approval-sensitive actions; keeps role-based evidence machine-checkable."
+    },
+    {
       "name": "public-readiness-go-nogo-note",
       "command": "node",
       "args": [

@@ -1,7 +1,7 @@
 # Source-public approval rehearsal packet
 
 Issue: [#484](https://github.com/jinwon-int/a2a-broker/issues/484)
-Parent: [a2a-plane#211](https://github.com/jinwon-int/a2a-plane/issues/211)
+Parent: a2a-plane#211 (a2a-plane#211, internal tracker private)
 Run: `a2a-source-public-approval-rehearsal-20260511T014240Z`
 Lane: Team2 — dungae
 

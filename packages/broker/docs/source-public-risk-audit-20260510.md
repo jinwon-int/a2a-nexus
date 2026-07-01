@@ -2,7 +2,7 @@
 
 Run: `a2a-source-release-gate-20260510T113438Z`
 Lane: Team2 independent broker audit for issue #476
-Parent: jinwon-int/a2a-plane#192
+Parent: a2a-plane#192 (internal tracker, private)
 
 ## Scope
 

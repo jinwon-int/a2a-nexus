@@ -9,8 +9,8 @@
 > **Status:** Interface contract only. No adapter implementation, provider send, terminal-outbox ACK,
 > DB mutation, or any prohibited action is authorized by this document.
 >
-> **Lane issue:** [a2a-plane#475](https://github.com/jinwon-int/a2a-plane/issues/475)
-> **Parent:** [a2a-plane#500](https://github.com/jinwon-int/a2a-plane/issues/500)
+> **Lane issue:** a2a-plane#475 (a2a-plane#475, internal tracker private)
+> **Parent:** a2a-plane#500 (a2a-plane#500, internal tracker private)
 > **Run:** `a2a-team1-roadmap-wave3-bridge-adapter-20260528T123200KST`
 
 ---

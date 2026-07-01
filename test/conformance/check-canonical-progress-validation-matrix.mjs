@@ -9,8 +9,8 @@
  * Source-only: no deploy, restart, live send, ACK, or DB mutation.
  *
  * R29 terminal-brief-canonical-progress-correction
- * Parent: https://github.com/jinwon-int/a2a-plane/issues/370
- * Lane:   https://github.com/jinwon-int/a2a-plane/issues/376
+ * Parent: a2a-plane#370 (internal tracker, private)
+ * Lane:   a2a-plane#376 (internal tracker, private)
  */
 
 import { readFileSync } from "node:fs";
@@ -465,7 +465,7 @@ function validateFixtureStructure(fixture) {
     id: "FIX-002",
     description: "parentIssue references R28 parent #370",
     ...check(() => {
-      assert.ok(fixture.parentIssue?.includes("/issues/370"),
+      assert.ok(fixture.parentIssue === "a2a-plane#370" || fixture.parentIssue?.includes("/issues/370"),
         `parentIssue must reference a2a-plane#370, got ${fixture.parentIssue}`);
     }, "parent issue reference"),
   });
@@ -474,7 +474,7 @@ function validateFixtureStructure(fixture) {
     id: "FIX-003",
     description: "laneIssue references R29 lane #376",
     ...check(() => {
-      assert.ok(fixture.laneIssue?.includes("/issues/376"),
+      assert.ok(fixture.laneIssue === "a2a-plane#376" || fixture.laneIssue?.includes("/issues/376"),
         `laneIssue must reference a2a-plane#376, got ${fixture.laneIssue}`);
     }, "lane issue reference"),
   });

@@ -102,10 +102,10 @@ node scripts/check-parent-round-closeout-go-nogo-matrix.mjs \
 
 | Lane | Terminal kind | Evidence |
 |------|--------------|----------|
-| 1 | PR | https://github.com/jinwon-int/a2a-plane/pull/449 |
+| 1 | PR | a2a-plane PR #449 (internal tracker, private) |
 | 2 | Done | Resolved all blocking checks |
 | 3 | Done | Updated runbook with rollback section |
-| 4 | PR | https://github.com/jinwon-int/a2a-plane/pull/450 |
+| 4 | PR | a2a-plane PR #450 (internal tracker, private) |
 
 ### Gate results (all PASS)
 

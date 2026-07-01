@@ -1,7 +1,7 @@
 /**
  * Source-public execution orchestrator tests (#263).
  *
- * Parent: jinwon-int/a2a-plane#218
+ * Parent: a2a-plane#218 (internal tracker, private)
  * Run:    a2a-source-public-execution-orchestrator-20260511T023207Z
  *
  * Exercises the source-public execution orchestrator in dry-run/simulate mode

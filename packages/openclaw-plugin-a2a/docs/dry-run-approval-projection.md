@@ -1,7 +1,7 @@
 # Dry-Run Approval Packet Projection
 
 Issue: [jinwon-int/plugin-a2a#256](https://github.com/jinwon-int/plugin-a2a/issues/256)
-Parent: [jinwon-int/a2a-plane#197](https://github.com/jinwon-int/a2a-plane/issues/197)
+Parent: a2a-plane#197 (internal tracker, private) (a2a-plane#197, internal tracker private)
 Run: `a2a-source-dryrun-orchestrator-20260510T133022Z`
 
 ## Purpose

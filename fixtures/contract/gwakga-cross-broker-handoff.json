@@ -8,7 +8,7 @@
   "sourceBrokerId": "seoseo",
   "destinationBrokerId": "gwakga",
   "brokerOfRecord": "gwakga",
-  "sourceIssueUrl": "https://github.com/jinwon-int/a2a-plane/issues/151",
+  "sourceIssueUrl": "a2a-plane#151 (internal tracker, private)",
   "handoffEnvelope": {
     "idempotencyKey": "issue-151:team2-dungae:gwakga-cross-broker-proof",
     "sourceBrokerId": "seoseo",
@@ -104,7 +104,7 @@
         "destinationTaskId": "task-gwakga-crossbroker-001",
         "terminalEvidence": {
           "kind": "pr",
-          "url": "https://github.com/jinwon-int/a2a-plane/pull/0000",
+          "url": "a2a-plane PR #0000 (internal tracker, private)",
           "summary": "Fixture PR evidence prepared by Gwakga-owned Team2 task",
           "redacted": true
         }

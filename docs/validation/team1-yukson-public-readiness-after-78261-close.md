@@ -1,18 +1,18 @@
 # Team1/yukson public-readiness matrix after OpenClaw #78261 close
 
-Parent: [#75](https://github.com/jinwon-int/a2a-plane/issues/75)  
-Compatibility follow-up: [#94](https://github.com/jinwon-int/a2a-plane/issues/94)  
-Child: [#261](https://github.com/jinwon-int/a2a-plane/issues/261)  
-Worker: `yukson`  
-Team: `team1`  
+Parent: #75 (a2a-plane#75, internal tracker private)
+Compatibility follow-up: #94 (a2a-plane#94, internal tracker private)
+Child: #261 (a2a-plane#261, internal tracker private)
+Worker: `yukson`
+Team: `team1`
 Run: `team1-yukson-public-readiness-after-78261-close`
 
 This is a redacted source-readiness artifact only. It does not deploy or restart services, send live provider/Telegram messages, mutate production databases, ACK terminal-outbox rows, change repository visibility, rotate or disclose secrets, create a release, rewrite history, or force-push.
 
 ## Evidence reviewed
 
-- [a2a-plane#75](https://github.com/jinwon-int/a2a-plane/issues/75) direction reset after `openclaw/openclaw#78261` close.
-- [a2a-plane#94](https://github.com/jinwon-int/a2a-plane/issues/94) public A2A/orchestrator compatibility and policy follow-ups.
+- a2a-plane#75 (a2a-plane#75, internal tracker private) direction reset after `openclaw/openclaw#78261` close.
+- a2a-plane#94 (a2a-plane#94, internal tracker private) public A2A/orchestrator compatibility and policy follow-ups.
 - `contracts/a2a/terminal-semantics.md` and `contracts/compatibility/terminal-evidence-ack-boundary.md` for the accepted-send/non-ACK terminal evidence boundary.
 - `fixtures/terminal-evidence/accepted-send-non-ack.json`, `fixtures/terminal-evidence/github-comment-projection.json`, and `fixtures/contract/public-compatibility-policy.json` for fixture-backed public-safe evidence.
 - `docs/public-readiness.md`, `docs/governance/public-private-boundary-gates.md`, and `docs/compatibility/public-policy-followup-review.md` for fail-closed readiness and approval separation.
@@ -41,7 +41,7 @@ Recommended local validation for this lane:
 
 ```bash
 npm run check:message-id-ack-boundary
-node --test scripts/check-team1-yukson-public-readiness-after-78261-close.test.mjs
+node --test scripts/archive/check-team1-yukson-public-readiness-after-78261-close.test.mjs
 npm run scan:public-readiness
 ```
 

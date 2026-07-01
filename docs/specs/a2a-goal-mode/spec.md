@@ -1,7 +1,7 @@
 # Feature Spec: A2A Goal Mode — Persistent Objective Execution
 
-> **Lane issue:** [a2a-plane#442](https://github.com/jinwon-int/a2a-plane/issues/442)
-> **Parent tracker:** [a2a-plane#443](https://github.com/jinwon-int/a2a-plane/issues/443)
+> **Lane issue:** a2a-plane#442 (a2a-plane#442, internal tracker private)
+> **Parent tracker:** a2a-plane#443 (a2a-plane#443, internal tracker private)
 > **Phase:** Spec-first design slice (lane 2/4)
 > **Status:** Design proposal. This document does not enable runtime automation.
 

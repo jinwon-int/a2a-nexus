@@ -4,7 +4,7 @@
   "schema": "docs/specs/a2a-action-reconciliation/schema.json",
   "description": "Synthetic fixture for approval-gated auto-closeout action reconciliation canary. Covers GO/NO_GO/BLOCKED matrix decisions, operator approval gating, idempotency replay suppression, conflict detection, GitHub 403 blocking, and broker of record mismatch. All scenarios are purely deterministic and require no provider API calls, production DB state, or live action execution.",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/844",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/402",
+  "issue": "a2a-plane#402 (internal tracker, private)",
   "run": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
   "lane": "team1-nosuk",
   "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",

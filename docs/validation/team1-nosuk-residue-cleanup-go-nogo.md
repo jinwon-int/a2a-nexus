@@ -1,11 +1,11 @@
 # Team1/nosuk residue cleanup GO/NO-GO matrix
 
-Issue: [a2a-plane#397](https://github.com/jinwon-int/a2a-plane/issues/397)  
-Parent: [a2a-broker#835](https://github.com/jinwon-int/a2a-broker/issues/835)  
-Linked trackers: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294), [a2a-broker#342](https://github.com/jinwon-int/a2a-broker/issues/342), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#519](https://github.com/jinwon-int/a2a-broker/issues/519), [a2a-plane#75](https://github.com/jinwon-int/a2a-plane/issues/75)  
-Worker: `nosuk` / Team1  
-Lane: 4/4  
-Parent round: `a2a-team1-residue-outbox-cleanup-20260520T124743Z`  
+Issue: a2a-plane#397 (a2a-plane#397, internal tracker private)
+Parent: [a2a-broker#835](https://github.com/jinwon-int/a2a-broker/issues/835)
+Linked trackers: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294), [a2a-broker#342](https://github.com/jinwon-int/a2a-broker/issues/342), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#519](https://github.com/jinwon-int/a2a-broker/issues/519), a2a-plane#75 (a2a-plane#75, internal tracker private)
+Worker: `nosuk` / Team1
+Lane: 4/4
+Parent round: `a2a-team1-residue-outbox-cleanup-20260520T124743Z`
 Snapshot: `2026-05-20`
 
 This is a no-live Plane decision artifact for the residue/outbox cleanup policy. It defines when terminal-outbox legacy residue and current post-cutoff receipt gaps can transition from read-only scan and dry-run evidence to operator-approved cleanup action. It does not perform a production DB mutation, prune, migration, deploy, restart, live provider send, terminal ACK, historical outbox replay, Gateway/plugin restart, secret change, release, force-push, or repository visibility action.
@@ -68,7 +68,7 @@ Safe PR/Done evidence may say: **the residue cleanup GO/NO-GO matrix is document
 Recommended validation for this artifact:
 
 ```bash
-node --test scripts/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs
+node --test scripts/archive/check-team1-nosuk-residue-cleanup-go-nogo.test.mjs
 npm run scan:public-readiness
 ```
 

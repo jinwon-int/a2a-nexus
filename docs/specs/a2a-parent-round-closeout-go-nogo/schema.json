@@ -3,7 +3,7 @@
   "description": "Parent-round closeout go/no-go matrix schema. Defines gates, metadata, evidence requirements, idempotency, and GitHub 403 rollback/no-op behavior for automatic parent-round closeout. Source-only/no-live; never executes production auto-closeout.",
   "contract": "contracts/a2a/parent-round-closeout-go-nogo-matrix.md",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/841",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+  "issue": "a2a-plane#396 (internal tracker, private)",
   "run": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
   "lane": "team1-nosuk",
   "failClosed": true,
@@ -239,7 +239,7 @@
   "roundLanes": {
     "a2a-plane-nosuk": {
       "owner": "team1-nosuk",
-      "issue": "https://github.com/jinwon-int/a2a-plane/issues/396",
+      "issue": "a2a-plane#396 (internal tracker, private)",
       "role": "Parent-round closeout go/no-go matrix spec/runbook and validation fixture"
     }
   }

@@ -2,8 +2,8 @@
 
 > **v1 (2026-05-16, R29):** Defines the canonical n/N progress semantics for A2A Terminal Brief aggregation. This is a source-only validation gate; it does not authorize deploy, restart, live provider send, terminal-outbox ACK, database mutation, or secret rotation.
 
-Parent: [a2a-plane#370](https://github.com/jinwon-int/a2a-plane/issues/370)  
-Lane: [a2a-plane#376](https://github.com/jinwon-int/a2a-plane/issues/376)  
+Parent: a2a-plane#370 (a2a-plane#370, internal tracker private)
+Lane: a2a-plane#376 (a2a-plane#376, internal tracker private)
 Run: `a2a-r29-terminal-brief-canonical-progress-correction-20260516T1412Z`
 
 ## Purpose
@@ -12,7 +12,7 @@ This contract defines the canonical n/N semantics that all aggregation points (c
 
 ## n/N Definition
 
-**n = number of canonical child tasks that reached a terminal `succeeded` state.**  
+**n = number of canonical child tasks that reached a terminal `succeeded` state.**
 **N = total number of canonical child tasks in the parent round.**
 
 ### Must be TRUE
@@ -62,7 +62,7 @@ This contract defines the canonical n/N semantics that all aggregation points (c
 
 ## Fixture
 
-Machine-readable coverage: `fixtures/contract/canonical-progress-validation-matrix.json`  
+Machine-readable coverage: `fixtures/contract/canonical-progress-validation-matrix.json`
 Conformance test: `node test/conformance/check-canonical-progress-validation-matrix.mjs`
 
 ### Running the validation

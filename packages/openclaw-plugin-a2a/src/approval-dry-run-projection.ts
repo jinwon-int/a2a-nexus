@@ -2,7 +2,7 @@
  * Dry-run approval packet projection — evidence ≠ approval, no live send.
  *
  * Issue:  jinwon-int/plugin-a2a#256
- * Parent: jinwon-int/a2a-plane#197
+ * Parent: a2a-plane#197 (internal tracker, private)
  * Run:    a2a-source-dryrun-orchestrator-20260510T133022Z
  *
  * Projects what an a2a.task.approve or a2a.task.reject_approval broker request

@@ -166,5 +166,14 @@
   "devDependencies": {
     "@types/node": "^24.6.0",
     "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinwon-int/a2a-nexus.git",
+    "directory": "packages/broker"
+  },
+  "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/broker#readme",
+  "bugs": {
+    "url": "https://github.com/jinwon-int/a2a-nexus/issues"
   }
 }

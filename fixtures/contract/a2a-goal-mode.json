@@ -1,7 +1,7 @@
 {
   "name": "A2A Goal Mode Goal Object Fixture",
   "contract": "contracts/a2a/goal-mode-lifecycle.md",
-  "issue": "https://github.com/jinwon-int/a2a-plane/issues/442",
+  "issue": "a2a-plane#442 (internal tracker, private)",
   "protocol": "a2a-goal-mode",
   "version": 1,
   "failClosed": true,
@@ -30,7 +30,7 @@
       "name": "Add public quickstart guide",
       "description": "Create and validate a public quickstart guide for a2a-nexus.",
       "scope": {
-        "repos": ["jinwon-int/a2a-plane"],
+        "repos": ["a2a-plane (internal tracker, private)"],
         "allowedWorkAreas": ["source-patch", "validation-run", "evidence-only"],
         "forbiddenActions": ["deploy", "restart", "live_canary", "db_mutation"]
       },
@@ -133,7 +133,7 @@
         "eventId": "evt-003",
         "eventType": "evidence_collected",
         "summary": "Slice 1: PR #123 — quickstart guide skeleton",
-        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/123"},
+        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "result": "pr", "prUrl": "a2a-plane PR #123 (internal tracker, private)"},
         "timestamp": "2026-05-25T12:30:00Z"
       },
       {
@@ -156,7 +156,7 @@
         "summary": "Slice 2: PR #124 — README link updated. Slice 3: validation passed.",
         "details": {
           "sliceResults": [
-            {"sliceId": "...slice:2", "result": "pr", "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/124"},
+            {"sliceId": "...slice:2", "result": "pr", "prUrl": "a2a-plane PR #124 (internal tracker, private)"},
             {"sliceId": "...slice:3", "result": "done", "summary": "Validation passed against broker v1.2.3"}
           ]
         },
@@ -188,7 +188,7 @@
         "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1",
         "result": "pr",
         "summary": "Quickstart guide skeleton created",
-        "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/123",
+        "prUrl": "a2a-plane PR #123 (internal tracker, private)",
         "checkResults": [
           {"check": "npm run check:layout", "status": "pass"},
           {"check": "npm run test:release-gate", "status": "pass"}
@@ -198,7 +198,7 @@
         "sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:2",
         "result": "pr",
         "summary": "README.md updated with quickstart link",
-        "prUrl": "https://github.com/jinwon-int/a2a-plane/pull/124",
+        "prUrl": "a2a-plane PR #124 (internal tracker, private)",
         "checkResults": [
           {"check": "npm run check:layout", "status": "pass"}
         ]
@@ -237,7 +237,7 @@
     "changedFiles": [
       {"path": "docs/quickstart.md", "changeType": "added"}
     ],
-    "evidenceUrls": ["https://github.com/jinwon-int/a2a-plane/pull/123"],
+    "evidenceUrls": ["a2a-plane PR #123 (internal tracker, private)"],
     "checkResults": [
       {"check": "npm run check:layout", "status": "pass", "output": "redacted"}
     ],

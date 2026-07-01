@@ -1,6 +1,6 @@
 # Team1/yukson R27 canary hardening libero validation matrix — retry-1
 
-Parent: [#364](https://github.com/jinwon-int/a2a-plane/issues/364)
+Parent: #364 (a2a-plane#364, internal tracker private)
 Run: `a2a-r27-team1-terminal-brief-canary-hardening-20260516T121247Z-yukson-retry1`
 Broker of record: `seoseo`
 Team: `team1`
@@ -12,7 +12,7 @@ This is a redacted validation artifact only. It does not change repository visib
 
 ## Evidence reviewed
 
-- Parent dispatch: [a2a-plane#364](https://github.com/jinwon-int/a2a-plane/issues/364)
+- Parent dispatch: a2a-plane#364 (a2a-plane#364, internal tracker private)
 - Receipt-gate no-live canary matrix: `packages/broker/docs/receipt-gate-canary-matrix.md`
 - Receipt-gated ACK canary smoke runbook: `packages/broker/docs/receipt-gated-ack-canary-runbook.md`
 - Broker canary source: `packages/broker/src/core/receipt-gate-canary.ts` and `packages/broker/src/core/receipt-gate-canary.test.ts`

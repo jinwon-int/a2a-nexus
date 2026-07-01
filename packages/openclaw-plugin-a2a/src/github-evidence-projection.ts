@@ -2,7 +2,7 @@
  * Terminal Brief GitHub evidence projection helpers.
  *
  * Issue:  jinwon-int/plugin-a2a#259
- * Parent: jinwon-int/a2a-plane#204
+ * Parent: a2a-plane#204 (internal tracker, private)
  * Run:    a2a-terminal-brief-github-evidence-20260511T000448Z
  *
  * The plugin renders GitHub issue/PR comment evidence as operator-facing

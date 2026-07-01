@@ -3,7 +3,7 @@
 Operator-facing acceptance path for Gongyung/Daegyo-style Hermes Android/Termux
 native workers. This checklist builds on:
 
-- [Hermes broker-agnostic worker contract](specs/hermes-worker-integration/spec.md) (jinwon-int/a2a-plane#435)
+- [Hermes broker-agnostic worker contract](specs/hermes-worker-integration/spec.md) (a2a-plane#435 (internal tracker, private))
 - [Hermes reference worker dry-run](specs/hermes-worker-integration/plan.md) (Phase 2, #441)
 - [Gongyung Hermes lightweight worker profile](specs/gongyung-hermes-worker-profile/spec.md) (#393)
 - [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md)

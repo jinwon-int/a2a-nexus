@@ -1,7 +1,7 @@
 # Source-public final approval execution plan
 
 Issue: [#486](https://github.com/jinwon-int/a2a-broker/issues/486)
-Parent: [a2a-plane#218](https://github.com/jinwon-int/a2a-plane/issues/218)
+Parent: a2a-plane#218 (a2a-plane#218, internal tracker private)
 Run: `a2a-source-public-execution-orchestrator-20260511T023207Z`
 Lane: Team2 — dungae
 
