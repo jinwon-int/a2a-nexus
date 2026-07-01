@@ -187,6 +187,17 @@
       "note": "Regression tests for docs-only CI secret/link gates and root-document path routing; keep with public-readiness gates."
     },
     {
+      "name": "public-alpha-hardening",
+      "command": "node",
+      "args": [
+        "--test",
+        "scripts/lib/public-alpha-hardening.test.mjs"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Public alpha hardening guard for #1163: fresh-clone evidence docs, now-public wording, issue-template coverage, and approval-boundary separation."
+    },
+    {
       "name": "body-safety-scan",
       "command": "npm",
       "args": [
