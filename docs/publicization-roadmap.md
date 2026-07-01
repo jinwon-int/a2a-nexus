@@ -4,7 +4,7 @@ This document tracks the PR-safe implementation plan for moving A2A Nexus from a
 
 ## Current status
 
-Checked for the #1160/#1166 A2AD round and the follow-up operator approval on 2026-07-01 UTC:
+Checked for the #1160/#1166 A2AD round, follow-up operator approval, and the #1177–#1181 public externalization issue split on 2026-07-01 UTC:
 
 - Repository visibility: public.
 - Current public status: public alpha, not stable release.
@@ -29,7 +29,14 @@ Checked for the #1160/#1166 A2AD round and the follow-up operator approval on 20
   - [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172): contribution intake hardening before broader promotion;
   - [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173): clone/view traffic anomaly audit before using traffic as promotion evidence;
   - [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174): homepage/docs-site posture decision before broader public promotion.
-- PR-safe closeout evidence for #1172, #1173, and #1174 is recorded in [Public externalization follow-up closeout evidence](public-externalization-followups.md). #1160 remains the only tracker that should stay open until external directory PRs reach final outcomes.
+- PR-safe closeout evidence for #1172, #1173, and #1174 is recorded in [Public externalization follow-up closeout evidence](public-externalization-followups.md). #1160 remains the external listing tracker until directory PRs reach final outcomes.
+- The next public-externalization issue split is tracked in:
+  - [#1177](https://github.com/jinwon-int/a2a-nexus/issues/1177): README first-screen polish for external public-alpha readers;
+  - [#1178](https://github.com/jinwon-int/a2a-nexus/issues/1178): public-safe architecture diagram and five-minute local quickstart strengthening;
+  - [#1179](https://github.com/jinwon-int/a2a-nexus/issues/1179): public-safe good-first-issue contribution entry points;
+  - [#1180](https://github.com/jinwon-int/a2a-nexus/issues/1180): release/package readiness before any artifact publication;
+  - [#1181](https://github.com/jinwon-int/a2a-nexus/issues/1181): minimal public-alpha landing draft before any homepage metadata approval.
+- PR-safe closeout evidence for #1177–#1181 is implemented through [Public architecture](architecture.md), [Public contribution entry points](contribution-entry-points.md), [Release and package readiness](release-readiness.md), and [Public alpha landing draft](public-alpha-landing.md).
 
 ## A2AD source-only evidence
 
@@ -53,12 +60,13 @@ Finalizer summary:
 
 | Workstream | Current implementation | PR-safe next step | Gated / not done here |
 |---|---|---|---|
-| Public surface polish | README, SECURITY, CONTRIBUTING, issue forms, and PR template exist with public-alpha language. | [Public externalization follow-up closeout evidence](public-externalization-followups.md) records the #1172 decision: Issue Forms remain repo-local source of truth, Discussions stay disabled for pre-promotion public alpha, and CODEOWNERS review remains optional unless separately approved. | Broad announcement/promotion; Discussions or branch-protection settings mutation without explicit approval. |
-| Repository metadata/settings | #1166 settings approval was received and applied: topics, delete-branch-on-merge, main branch protection, secret scanning, push protection, and Dependabot security updates. Homepage remains blank by decision. | [Public externalization follow-up closeout evidence](public-externalization-followups.md) records the #1174 posture: keep the homepage blank and use GitHub README/docs-only public alpha until a public docs/landing URL is reviewed and approved. | Public docs-site homepage mutation without approval, additional rulesets, release/tag/package settings, or visibility transfer. |
+| Public surface polish | README, SECURITY, CONTRIBUTING, issue forms, and PR template exist with public-alpha language. README now sends external readers to the local quickstart, architecture map, contribution entry points, release-readiness checklist, and landing draft before historical migration detail. | [Public externalization follow-up closeout evidence](public-externalization-followups.md) records the #1172 decision; [Public contribution entry points](contribution-entry-points.md) records safe first-task candidates for #1179. | Broad announcement/promotion; Discussions or branch-protection settings mutation without explicit approval. |
+| Repository metadata/settings | #1166 settings approval was received and applied: topics, delete-branch-on-merge, main branch protection, secret scanning, push protection, and Dependabot security updates. Homepage remains blank by decision. | [Public externalization follow-up closeout evidence](public-externalization-followups.md) records the #1174 posture; [Public alpha landing draft](public-alpha-landing.md) records homepage-ready content without changing metadata. | Public docs-site homepage mutation without approval, additional rulesets, release/tag/package settings, or visibility transfer. |
 | External discoverability | `docs/external-listings.md` tracks the three directory PRs. | Keep #1160 open and update the tracker when `ai-boost#138` or `pab1it0#71` changes. | Closing #1160 before all three external PRs have final outcomes. |
 | Feedback/notification readiness | Public issue-form files and PR template route public-safe feedback; [public feedback intake evidence](public-feedback-intake.md) records the GitHub Issue Forms metadata discrepancy and the active GitHub webhook monitoring path for issue/PR feedback events. | #1169 is closed after live monitoring setup evidence; keep bounded reconcile polling and notification canaries as separately approved future hardening if needed. | Live provider/Telegram sends, notification canaries, broad announcement, release/publish, DB/outbox/ACK/replay mutation, or secret disclosure. |
 | External traction evidence | External listing state and GitHub traffic are read-only signals. The 2026-07-01 readback showed low views but anomalously high clones; clone/view attribution remains uncertain, and [Public externalization follow-up closeout evidence](public-externalization-followups.md) classifies clone traffic as `uncertain` and excludes it from organic promotion evidence. | Prefer views, stars/watchers, public issues/PRs, and external listing outcomes in promotion scorecards unless a later approved audit can attribute clone spikes to organic users. | Claiming organic traction or using clone spikes in public promotion before attribution is clear. |
-| Release/package readiness | Release checklist exists, no release is published, and homepage remains blank until a public docs/stable landing page exists. | Keep release/package work as design-only until separately approved. | GitHub Release, tag, npm package, Docker/GHCR image, production deploy. |
+| Release/package readiness | Release checklist exists, no release is published, and homepage remains blank until a public docs/stable landing page exists. | [Release and package readiness](release-readiness.md) distinguishes design readiness from actual GitHub Release, tag, npm, Docker, or GHCR publication. | GitHub Release, tag, npm package, Docker/GHCR image, production deploy. |
+| Architecture and quickstart | Public architecture and quickstart are local/conceptual only. | [Public architecture](architecture.md) and the [five-minute local quickstart](quickstart.md) provide the external-reader path for #1178. | Production topology diagrams, live broker URLs, private node names, or live worker/provider tests. |
 
 ## What to try first
 

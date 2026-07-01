@@ -2,6 +2,8 @@
 
 This checklist prepares evidence for an initial `v0.1.0-alpha` or `v0.1.0` operator decision for **A2A Nexus**. It is safe documentation only. Do not create a tag, publish a release, change repository visibility, deploy, restart services, mutate production state, send provider messages, rotate secrets, rewrite history, force-push, or ACK terminal outbox records while completing this checklist.
 
+For the public-alpha packaging decision model, see [Release and package readiness](release-readiness.md). That document distinguishes readiness planning from actual GitHub Release, tag, npm, Docker, or GHCR publication.
+
 ## Candidate commit
 
 - [ ] Record the exact candidate commit SHA.

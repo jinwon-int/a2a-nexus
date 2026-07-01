@@ -139,6 +139,57 @@ test('public externalization follow-up closeout records contribution, traffic, a
   assert.doesNotMatch(doc, /homepageUrl was set/i);
 });
 
+test('public externalization next-action docs cover README, architecture, entry points, release readiness, and landing draft', () => {
+  const readme = read('README.md');
+  assert.match(readme, /For external readers, start here first/);
+  assert.match(readme, /docs\/architecture\.md/);
+  assert.match(readme, /docs\/contribution-entry-points\.md/);
+  assert.match(readme, /docs\/release-readiness\.md/);
+  assert.match(readme, /docs\/public-alpha-landing\.md/);
+  assert.match(readme, /homepage\/docs-site launch/);
+
+  const architecture = read('docs/architecture.md');
+  assert.match(architecture, /conceptual architecture map/i);
+  assert.match(architecture, /broker\/worker\/finalizer\/evidence/i);
+  assert.match(architecture, /Mermaid/i);
+  assert.match(architecture, /private hostnames/i);
+  assert.match(architecture, /live broker URLs/i);
+  assert.doesNotMatch(architecture, /seoyoon-family\.com/i);
+  assert.doesNotMatch(architecture, /hook\.seoyoon-family\.com/i);
+
+  const entryPoints = read('docs/contribution-entry-points.md');
+  assert.match(entryPoints, /#1179/);
+  assert.match(entryPoints, /Candidate 1/);
+  assert.match(entryPoints, /Candidate 2/);
+  assert.match(entryPoints, /Candidate 3/);
+  assert.match(entryPoints, /good first issue/);
+  assert.match(entryPoints, /npm run check:quickstart-conformance/);
+  assert.match(entryPoints, /#1160.*remains the external directory listing tracker/i);
+
+  const releaseReadiness = read('docs/release-readiness.md');
+  assert.match(releaseReadiness, /#1180/);
+  assert.match(releaseReadiness, /Readiness vs publication/);
+  assert.match(releaseReadiness, /npm run smoke:quickstart/);
+  assert.match(releaseReadiness, /package contents audit/i);
+  assert.match(releaseReadiness, /GitHub Release creation, tag creation, npm publication, Docker build\/push, GHCR push/);
+
+  const landing = read('docs/public-alpha-landing.md');
+  assert.match(landing, /#1181/);
+  assert.match(landing, /operator-gated A2A task and evidence control plane/);
+  assert.match(landing, /not affiliated with or endorsed by a2aproject/);
+  assert.match(landing, /#1160/);
+  assert.match(landing, /homepage metadata/);
+  assert.match(landing, /repository homepage field should remain blank/i);
+
+  const roadmap = read('docs/publicization-roadmap.md');
+  assert.match(roadmap, /#1177/);
+  assert.match(roadmap, /#1178/);
+  assert.match(roadmap, /#1179/);
+  assert.match(roadmap, /#1180/);
+  assert.match(roadmap, /#1181/);
+  assert.match(roadmap, /Architecture and quickstart/);
+});
+
 test('public feedback intake records issue form and monitoring follow-up boundaries', () => {
   assert.equal(exists('docs/public-feedback-intake.md'), true, 'missing docs/public-feedback-intake.md');
   const doc = read('docs/public-feedback-intake.md');
