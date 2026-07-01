@@ -180,6 +180,10 @@ This script stops Docker stacks, kills local broker processes, cleans state file
 
 ## Where to go next
 
+- [Public architecture](architecture.md) — conceptual broker/worker/finalizer/evidence map with no private topology
+- [Public contribution entry points](contribution-entry-points.md) — public-safe first-task candidates
+- [Public alpha landing draft](public-alpha-landing.md) — homepage-ready content draft only; no deployment or metadata change
+- [Release and package readiness](release-readiness.md) — checklist before any release, tag, npm, Docker, or GHCR decision
 - [Demo overview](demo/README.md) — component map, demo paths, health checks, security rules
 - [Two-broker demo](demo/two-broker-demo.md) — cross-broker task handoff with Docker Compose
 - [External harness quickstart](external-harness-quickstart.md) — non-OpenClaw harness integration
