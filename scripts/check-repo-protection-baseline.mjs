@@ -192,10 +192,11 @@ async function main() {
     if (!result.ok && check.required) allFilePass = false;
   }
 
-  // Settings-only requirements
-  console.log('\n=== Settings-change requirements (blocked without operator approval) ===\n');
+  // Settings-only requirements. This script is intentionally repo-file-only:
+  // live GitHub settings must be approved and verified with the GitHub API.
+  console.log('\n=== Settings-change requirements (verify with GitHub API after approval) ===\n');
   for (const req of settingsRequires) {
-    console.log(`⏳ ${req.name}: ${req.description} (GitHub settings only)`);
+    console.log(`ℹ️ ${req.name}: ${req.description} (GitHub settings only; not asserted by this file check)`);
   }
 
   // Summary
@@ -207,9 +208,9 @@ async function main() {
   console.log(`Required protections present: ${requiredPresent}`);
   console.log(`Required protections missing: ${requiredMissing}`);
   console.log(`Recommended protections missing: ${recommendedMissing}`);
-  console.log(`Settings-only protections (blocked): ${settingsRequires.length}`);
+  console.log(`Settings-only protections listed for live API verification: ${settingsRequires.length}`);
   console.log(`\nAggregate decision: ${allFilePass ? 'All file-representable checks pass' : 'One or more required file-representable checks FAIL'}`);
-  console.log(`Settings-change protections: NO-GO / waiting for operator approval (use docs/release/repo-protection-baseline.md checklist)\n`);
+  console.log('Settings-change protections: verify separately through approved GitHub API readback; this script does not mutate or assert live settings.\n');
 
   if (!allFilePass) {
     process.exit(1);
