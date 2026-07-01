@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a public-safe A2A Nexus feature or improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the proposal. Keep this issue public-safe: no secrets, private endpoints, provider IDs, Telegram IDs, raw session dumps, production data, or operator-specific host paths.
+
+        Feature discussions do not authorize production deploys, service restarts, repo settings changes, releases, package/image publication, live provider/Telegram sends, DB/outbox mutation, secret movement, or broad promotion. Those require separate explicit approval.
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: broker, OpenClaw plugin, Docker runner, contracts, docs, examples, issue templates, or public-readiness
+      placeholder: docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What should an outside developer or operator be able to do?
+      placeholder: |
+        As a ...
+        I want ...
+        So that ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest public-safe change that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional public-safe alternatives or trade-offs.
+    validations:
+      required: false
+  - type: textarea
+    id: verification
+    attributes:
+      label: Suggested verification
+      description: Local/read-only checks only. Do not require live services or private infrastructure.
+      placeholder: |
+        npm run check
+        npm run test:conformance
+        npm run scan:public-readiness
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I did not include secrets, private endpoints, provider IDs, Telegram IDs, production data, raw session dumps, or operator-specific host paths.
+          required: true
+        - label: This request does not require production deploys, service restarts, DB/outbox mutation, live provider/Telegram sends, secret movement, release/tag/package publication, repo settings mutation, visibility transfer/change, history rewrite, force push, or broad promotion without separate explicit approval.
+          required: true
