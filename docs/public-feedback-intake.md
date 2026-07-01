@@ -2,11 +2,11 @@
 
 This page tracks the public-safe intake checks for [#1169](https://github.com/jinwon-int/a2a-nexus/issues/1169) and the remaining external-listing boundary for [#1160](https://github.com/jinwon-int/a2a-nexus/issues/1160).
 
-Status: **partial / follow-up still open**. The repository has issue-form files and local validation passes, but live GitHub metadata still does not report rendered templates, and the broker-side GitHub poller is not active.
+Status: **complete for #1169 closeout**. The repository has issue-form files and local validation passes. GitHub metadata still does not report rendered templates, so the chooser/API discrepancy is recorded as a live GitHub metadata limitation. External issue/PR monitoring is active through the repository webhook path; provider/Telegram notification canaries remain outside this issue.
 
 ## 2026-07-01 evidence
 
-Checked against `main` commit `ca5ba9272bd0b46c2e0dace8cfccc22cbd465519`.
+Initial #1169 documentation was checked against `main` commit `ca5ba9272bd0b46c2e0dace8cfccc22cbd465519`; the live monitoring setup was verified after `main` commit `1562a3b4f137bd63614abd954c8877f12662ccc0`.
 
 ### Issue Forms
 
@@ -32,17 +32,19 @@ Live GitHub metadata still needs follow-up:
 - `repos/jinwon-int/a2a-nexus/community/profile` returned `files.issue_template: null` even though the contents API can read `.github/ISSUE_TEMPLATE/*`.
 - An unauthenticated browser request to `/issues/new/choose` redirected to GitHub login, so it was not a reliable live chooser render check.
 
-Decision: do not claim the public issue chooser is verified until a logged-in browser/session or another reliable GitHub-render path confirms it, or the API discrepancy is explicitly accepted as a GitHub metadata limitation with evidence.
+Decision: do not treat the GitHub metadata response as proof that Issue Forms are absent. The default-branch files exist, repo-local validation passes, and the discrepancy is recorded as GitHub live metadata evidence rather than a repo configuration blocker.
 
 ### External issue/PR monitoring
 
 Read-only broker health checks were performed without sending provider/Telegram canaries:
 
-- `GET /github/webhook/health`: `ok=true`, service `github-ingestion`, replay counters at zero.
-- `GET /github/poller/health`: `ok=true`, service `github-bounded-poller`, status `not_started`.
-- Repository webhook list: empty.
+- `GET /github/webhook/health`: `ok=true`, service `github-ingestion`.
+- `GET /github/poller/health`: `ok=true`, service `github-bounded-poller`, status `not_started`; bounded reconcile polling remains a separate future hardening path.
+- Repository webhook list now has one active webhook for `issues`, `issue_comment`, `pull_request`, and `pull_request_review_comment` events.
+- GitHub webhook ping returned `last_response.code=200`, `status=active`.
+- A signed synthetic `issues` event through the webhook proxy reached broker ingestion and returned `skippedReason: "no_assignment_command"`, proving the route without creating tasks or sending provider/Telegram notifications.
 
-Decision: the broker has GitHub ingestion health endpoints, but external issue/PR monitoring is **not proven active** because the bounded poller is `not_started` and no repository webhooks are installed. Starting a poller, adding a webhook, or sending notification/provider canaries remains a separate approval-gated live operation.
+Decision: #1169's monitoring activation scope is now satisfied through the active GitHub webhook path. Provider/Telegram notification canaries, bounded reconcile polling, release/publish, deploy/restart beyond the webhook proxy/Caddy setup, DB/outbox/ACK/replay mutation, and secret movement remain separately gated.
 
 ## A2AD handling round
 
@@ -55,9 +57,11 @@ The operator requested A2A handling for Nexus open issues. A source-only/no-live
 
 Important caveat: three analysis lanes reported blocked/insufficient source projection (`zero_files`), so they are not counted as substantive quorum evidence. The finalizer result plus direct operator verification supports only PR-safe documentation/comment closeout, not live monitoring activation.
 
-Finalizer result:
+Finalizer result before live setup:
 
 > #1160 and #1169 are both processable through PR-safe documentation and issue comments, but neither should be closed now. #1160 remains open because two external directory PRs are still open. #1169 remains open because issue chooser rendering is not reliably verified and GitHub feedback monitoring is not active/proven.
+
+Follow-up live setup completed the #1169 monitoring gap by installing and verifying an active repository webhook path.
 
 ## Issue decisions
 
@@ -71,10 +75,10 @@ Keep open until all external listing PRs have final outcomes. Current state:
 
 ### #1169 feedback intake / monitoring
 
-Keep open until both conditions are satisfied:
+Close as completed after this evidence is merged:
 
-1. live Issue Forms chooser behavior is verified, or the GitHub API/chooser discrepancy is documented with accepted evidence;
-2. external issue/PR monitoring is proven active, or a separate approved monitoring activation task installs/starts the required route and verifies it without leaking private routing details.
+1. live Issue Forms chooser/API discrepancy is documented as GitHub metadata evidence rather than a repo configuration blocker, while default-branch Issue Form files and local validation pass;
+2. external issue/PR monitoring is proven active through an installed repository webhook for public feedback events, with signed ping and synthetic non-task smoke verification.
 
 ## Boundaries
 

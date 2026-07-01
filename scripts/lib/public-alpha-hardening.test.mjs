@@ -117,10 +117,13 @@ test('public feedback intake records issue form and monitoring follow-up boundar
   assert.match(doc, /not_started/);
   assert.match(doc, /GO_WITH_CHANGES/);
   assert.match(doc, /zero_files/);
-  assert.match(doc, /neither should be closed now/i);
+  assert.match(doc, /Repository webhook list now has one active webhook/i);
+  assert.match(doc, /last_response\.code=200/);
+  assert.match(doc, /skippedReason:\s*"no_assignment_command"/);
+  assert.match(doc, /Close as completed after this evidence is merged/i);
   assert.match(doc, /ai-boost\/awesome-a2a#138`:\s*open/i);
   assert.match(doc, /pab1it0\/awesome-a2a#71`:\s*open/i);
-  assert.match(doc, /separate approval-gated live operation/i);
+  assert.match(doc, /bounded reconcile polling.*separately gated/i);
 });
 
 test('release gate includes the public alpha hardening documentation guard', () => {
