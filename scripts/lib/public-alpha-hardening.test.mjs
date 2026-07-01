@@ -106,6 +106,23 @@ test('external publicization roadmap captures A2AD evidence, local-first path, a
   assert.doesNotMatch(doc, /branch protection was enabled/i);
 });
 
+test('public feedback intake records issue form and monitoring follow-up boundaries', () => {
+  assert.equal(exists('docs/public-feedback-intake.md'), true, 'missing docs/public-feedback-intake.md');
+  const doc = read('docs/public-feedback-intake.md');
+
+  assert.match(doc, /#1169/);
+  assert.match(doc, /issueTemplates:\s*\[\]/);
+  assert.match(doc, /isBlankIssuesEnabled:\s*true/);
+  assert.match(doc, /github-bounded-poller/);
+  assert.match(doc, /not_started/);
+  assert.match(doc, /GO_WITH_CHANGES/);
+  assert.match(doc, /zero_files/);
+  assert.match(doc, /neither should be closed now/i);
+  assert.match(doc, /ai-boost\/awesome-a2a#138`:\s*open/i);
+  assert.match(doc, /pab1it0\/awesome-a2a#71`:\s*open/i);
+  assert.match(doc, /separate approval-gated live operation/i);
+});
+
 test('release gate includes the public alpha hardening documentation guard', () => {
   const inventory = JSON.parse(read('docs/ops/release-gate-step-inventory.json'));
   const entry = inventory.entries.find((item) => item.name === 'public-alpha-hardening');
