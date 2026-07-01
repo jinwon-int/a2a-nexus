@@ -73,6 +73,30 @@ test('issue templates cover bug, feature, security contact, and public-readiness
   const readiness = read('.github/ISSUE_TEMPLATE/readiness_task.yml');
   assert.match(readiness, /Public-readiness task/);
   assert.match(readiness, /promotion-readiness/);
+  assert.match(readiness, /labels:\s*\[a2a-public,\s*promotion-readiness\]/);
+  assert.doesNotMatch(readiness, /labels:\s*\[public-readiness\]/);
+});
+
+test('external publicization roadmap captures A2AD evidence, local-first path, and gated settings', () => {
+  assert.equal(exists('docs/publicization-roadmap.md'), true, 'missing docs/publicization-roadmap.md');
+  const doc = read('docs/publicization-roadmap.md');
+
+  assert.match(doc, /#1166/);
+  assert.match(doc, /#1160/);
+  assert.match(doc, /nexus-open-issues-publicization-r2-20260701T030930Z/);
+  assert.match(doc, /GO_WITH_CHANGES/);
+  assert.match(doc, /npm run check:quickstart-conformance/);
+  assert.match(doc, /npm run scan:public-readiness/);
+  assert.match(doc, /npm run scan:external-secrets/);
+  assert.match(doc, /ai-boost\/awesome-a2a#138`:\s*open/i);
+  assert.match(doc, /pab1it0\/awesome-a2a#71`:\s*open/i);
+  assert.match(doc, /sing1ee\/a2a-directory#35`:\s*merged/i);
+  assert.match(doc, /settings mutation/i);
+  assert.match(doc, /separate operator-approved settings task/i);
+  assert.match(doc, /Keep open until all three external-directory PRs have final states/i);
+
+  assert.doesNotMatch(doc, /GitHub Release was created/i);
+  assert.doesNotMatch(doc, /branch protection was enabled/i);
 });
 
 test('release gate includes the public alpha hardening documentation guard', () => {

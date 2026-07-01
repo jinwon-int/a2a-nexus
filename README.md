@@ -24,6 +24,7 @@ Start here:
 - [A2A Nexus positioning](docs/positioning.md) - landscape comparison, differentiators, and public-safe framing.
 - [a2a-js adapter mapping](docs/interop/a2a-js-adapter.md) - first source-only standard SDK interop mapping.
 - [External listing tracker](docs/external-listings.md) - operator-gated discoverability workflow and PR body template.
+- [External publicization roadmap](docs/publicization-roadmap.md) - #1166 public-surface, settings-proposal, feedback, and release-readiness plan.
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
@@ -34,6 +35,27 @@ This repository is now public and remains an alpha project:
 - Code, docs, issues, and PRs are readable by the public.
 - Feedback and contributions are welcome, but no production readiness, stability guarantees, or security support are implied.
 - Tags, GitHub Releases, npm/Docker publication, production deploys, Gateway/broker/worker restarts, production data mutation, credential movement, provider/Telegram sends, terminal-outbox ACK/replay, and any future visibility transfer remain separate approval-gated actions and are **not** authorized by public repository visibility alone.
+
+## What to try first
+
+If you are evaluating A2A Nexus from the public repository, stay on the local-only path first:
+
+```bash
+npm ci --ignore-scripts --include=dev
+npm run check
+npm run check:quickstart-conformance
+npm run scan:public-readiness
+npm run scan:external-secrets
+```
+
+Then follow the public docs path in this order:
+
+1. [Public umbrella quickstart](docs/quickstart/public-umbrella.md)
+2. [Five-minute local quickstart](docs/quickstart.md)
+3. [A2A Nexus positioning](docs/positioning.md)
+4. [External publicization roadmap](docs/publicization-roadmap.md)
+
+This path uses safe placeholders only. Do not paste real broker URLs, tokens, private node IDs, provider IDs, Telegram IDs, host-local paths, raw session dumps, or production data into public issues, pull requests, docs, or artifacts.
 
 Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
 

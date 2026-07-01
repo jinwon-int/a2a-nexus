@@ -1,7 +1,7 @@
 name: Public-readiness task
 description: Track work toward safe public-readiness and promotion-readiness gates
 title: "[Readiness]: "
-labels: [public-readiness]
+labels: [a2a-public, promotion-readiness]
 body:
   - type: markdown
     attributes:
