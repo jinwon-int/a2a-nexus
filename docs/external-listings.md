@@ -6,7 +6,7 @@ Scope split:
 
 - [#1160](https://github.com/jinwon-int/a2a-nexus/issues/1160) remains the external directory listing tracker until all three directory PRs have final outcomes.
 - [#1166](https://github.com/jinwon-int/a2a-nexus/issues/1166) tracked broader external publicization readiness through the approved settings closeout.
-- Follow-up public externalization hardening is now split into focused trackers: contribution intake [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172), clone/view traffic audit [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173), and homepage/docs-site posture [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174). The PR-safe roadmap lives in [External publicization roadmap](publicization-roadmap.md).
+- Follow-up public externalization hardening was split into focused trackers: contribution intake [#1172](https://github.com/jinwon-int/a2a-nexus/issues/1172), clone/view traffic audit [#1173](https://github.com/jinwon-int/a2a-nexus/issues/1173), and homepage/docs-site posture [#1174](https://github.com/jinwon-int/a2a-nexus/issues/1174). Their PR-safe closeout evidence lives in [Public externalization follow-up closeout evidence](public-externalization-followups.md), while #1160 stays open for external directory outcomes. The PR-safe roadmap lives in [External publicization roadmap](publicization-roadmap.md).
 
 ## Preconditions before external PRs
 

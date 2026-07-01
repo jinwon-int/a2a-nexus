@@ -106,9 +106,37 @@ test('external publicization roadmap captures A2AD evidence, local-first path, a
   assert.match(doc, /#1174/);
   assert.match(doc, /clone\/view attribution/i);
   assert.match(doc, /homepage\/docs-site posture/i);
+  assert.match(doc, /public-externalization-followups\.md/);
+  assert.match(doc, /clone traffic as `uncertain`/);
 
   assert.doesNotMatch(doc, /GitHub Release was created/i);
   assert.doesNotMatch(doc, /branch protection was enabled/i);
+});
+
+test('public externalization follow-up closeout records contribution, traffic, and homepage decisions', () => {
+  assert.equal(exists('docs/public-externalization-followups.md'), true, 'missing docs/public-externalization-followups.md');
+  const doc = read('docs/public-externalization-followups.md');
+
+  assert.match(doc, /#1172/);
+  assert.match(doc, /#1173/);
+  assert.match(doc, /#1174/);
+  assert.match(doc, /nexus-open-issues-a2a-process-20260701T084019Z/);
+  assert.match(doc, /nexus-open-issues-a2a-process-r2-20260701T084710Z/);
+  assert.match(doc, /nexus-open-issues-a2a-process-r3-1174-20260701T085251Z/);
+  assert.match(doc, /source-projection blocked/);
+  assert.match(doc, /issueTemplates=\[\]/);
+  assert.match(doc, /isBlankIssuesEnabled=true/);
+  assert.match(doc, /Discussions remain disabled/);
+  assert.match(doc, /CODEOWNERS review remains optional/);
+  assert.match(doc, /classify clone traffic as `uncertain`/i);
+  assert.match(doc, /exclude it from organic promotion evidence/i);
+  assert.match(doc, /keep the GitHub homepage field blank/i);
+  assert.match(doc, /No repository metadata mutation/i);
+  assert.match(doc, /#1160.*remains open/i);
+
+  assert.doesNotMatch(doc, /GitHub Release was created/i);
+  assert.doesNotMatch(doc, /Discussions were enabled/i);
+  assert.doesNotMatch(doc, /homepageUrl was set/i);
 });
 
 test('public feedback intake records issue form and monitoring follow-up boundaries', () => {
