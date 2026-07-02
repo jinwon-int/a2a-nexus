@@ -468,6 +468,10 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     ``,
     patchCommandBlock,
     ``,
+    buildDiffHygieneBlock(task, baseBranch),
+    ``,
+    buildPostPatchVerificationBlock(task),
+    ``,
     `# A coding agent must not manage git branches itself, but some do.`,
     `# Normalize back to the runner-owned branch before commit/push so we`,
     `# never push the pre-agent empty branch and then fail with`,
@@ -539,6 +543,106 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
   ].join("\n");
 
   return [writePrompt, pipeline];
+}
+
+function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
+  const policy = task.diffHygiene;
+  if (!policy) return "";
+  const forbidden = policy.forbiddenPaths?.length ? policy.forbiddenPaths : ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "IDENTITY.md", ".openclaw/", "memory/"];
+  const forbiddenList = forbidden.map(shellSingleQuote).join(" ");
+  const allowLockfiles = policy.allowLockfileChanges === true;
+  const blockWhitespaceOnly = policy.blockWhitespaceOnly !== false;
+  return [
+    `# Fail-closed diff hygiene gate (#1219).`,
+    `CHANGED_PATHS="$( {`,
+    `  git status --porcelain | sed -E 's/^...//'`,
+    `  git diff --name-only "origin/${baseBranch}...HEAD"`,
+    `} | sed '/^$/d' | sort -u )"`,
+    `printf 'diff_hygiene=started\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf '%s\\n' "$CHANGED_PATHS" | sed '/^$/d; s#^#changed_path=#' >> /work/artifacts/summary.txt`,
+    `BLOCKED_PATHS=""`,
+    `for banned in ${forbiddenList}; do`,
+    `  while IFS= read -r path; do`,
+    `    [ -n "$path" ] || continue`,
+    `    case "$banned" in`,
+    `      */) case "$path" in "$banned"* ) BLOCKED_PATHS="\${BLOCKED_PATHS}\${BLOCKED_PATHS:+$'\\n'}$path" ;; esac ;;`,
+    `      *) [ "$path" = "$banned" ] && BLOCKED_PATHS="\${BLOCKED_PATHS}\${BLOCKED_PATHS:+$'\\n'}$path" ;;`,
+    `    esac`,
+    `  done <<< "$CHANGED_PATHS"`,
+    `done`,
+    `LOCKFILE_CHANGES="$(printf '%s\\n' "$CHANGED_PATHS" | grep -E '(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock)$' || true)"`,
+    ...(allowLockfiles ? [] : [
+      `if [ -n "$LOCKFILE_CHANGES" ]; then`,
+      `  BLOCKED_PATHS="\${BLOCKED_PATHS}\${BLOCKED_PATHS:+$'\\n'}$LOCKFILE_CHANGES"`,
+      `fi`,
+    ]),
+    `WHITESPACE_ONLY=0`,
+    ...(blockWhitespaceOnly ? [
+      `if [ -n "$CHANGED_PATHS" ] && ! git diff --quiet "origin/${baseBranch}...HEAD" && git diff -w --quiet "origin/${baseBranch}...HEAD"; then`,
+      `  WHITESPACE_ONLY=1`,
+      `fi`,
+    ] : []),
+    `CHANGED_PATHS_JSON="$(printf '%s\\n' "$CHANGED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+    `BLOCKED_PATHS_JSON="$(printf '%s\\n' "$BLOCKED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+    `LOCKFILE_CHANGES_JSON="$(printf '%s\\n' "$LOCKFILE_CHANGES" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+    `cat > /work/artifacts/diff-hygiene.json <<A2A_DIFF_HYGIENE_JSON`,
+    `{"schemaVersion":"a2a.runner.diff-hygiene.v1","status":"$([ -z \"$BLOCKED_PATHS\" ] && [ \"$WHITESPACE_ONLY\" != 1 ] && printf passed || printf blocked)","changedPaths":$CHANGED_PATHS_JSON,"blockedPaths":$BLOCKED_PATHS_JSON,"lockfileChanges":$LOCKFILE_CHANGES_JSON,"whitespaceOnly":$([ "$WHITESPACE_ONLY" = 1 ] && printf true || printf false)}`,
+    `A2A_DIFF_HYGIENE_JSON`,
+    `if [ -n "$BLOCKED_PATHS" ] || [ "$WHITESPACE_ONLY" = 1 ]; then`,
+    `  printf 'diff_hygiene=blocked\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf '%s\\n' "$BLOCKED_PATHS" | sed '/^$/d; s#^#diff_hygiene_blocked_path=#' >> /work/artifacts/summary.txt`,
+    `  [ "$WHITESPACE_ONLY" = 1 ] && printf 'diff_hygiene_whitespace_only=1\\n' >> /work/artifacts/summary.txt`,
+    `  exit 5`,
+    `fi`,
+    `printf 'diff_hygiene=passed\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
+}
+
+function normalizePostPatchVerification(task: RunnerTask): { command: string[]; expectExitCode: number; timeoutMs: number } | undefined {
+  const raw = task.postPatchVerification;
+  if (!raw) return undefined;
+  const command = raw.command ?? ["npm", "run", "check"];
+  if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || part.length === 0 || /[\0\r\n]/.test(part))) {
+    throw new Error("task.postPatchVerification.command must be a non-empty string array");
+  }
+  const expectExitCode = raw.expectExitCode ?? 0;
+  if (!Number.isInteger(expectExitCode)) throw new Error("task.postPatchVerification.expectExitCode must be an integer");
+  const timeoutMs = raw.timeoutMs ?? 300_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("task.postPatchVerification.timeoutMs must be positive");
+  return { command, expectExitCode, timeoutMs };
+}
+
+function buildPostPatchVerificationBlock(task: RunnerTask): string {
+  const spec = normalizePostPatchVerification(task);
+  if (!spec) return "";
+  const command = spec.command.map(shellSingleQuote).join(" ");
+  const commandJson = JSON.stringify(spec.command);
+  const timeoutSeconds = Math.max(1, Math.ceil(spec.timeoutMs / 1000));
+  return [
+    `# Post-patch verification gate (#1219): run inside the task container before PR success.`,
+    `printf 'post_patch_verification=started\\n' | tee -a /work/artifacts/summary.txt`,
+    `POST_PATCH_VERIFICATION_START_MS="$(node -e 'console.log(Date.now())')"`,
+    `set +e`,
+    `timeout ${timeoutSeconds}s ${command} > /work/artifacts/post-patch-verification.log 2>&1`,
+    `POST_PATCH_VERIFICATION_RC=$?`,
+    `set -e`,
+    `POST_PATCH_VERIFICATION_END_MS="$(node -e 'console.log(Date.now())')"`,
+    `POST_PATCH_VERIFICATION_DURATION_MS="$((POST_PATCH_VERIFICATION_END_MS - POST_PATCH_VERIFICATION_START_MS))"`,
+    `POST_PATCH_VERIFICATION_SHA="$(sha256sum /work/artifacts/post-patch-verification.log | awk '{print $1}')"`,
+    `printf 'post_patch_verification.command=%s\\n' ${shellSingleQuote(commandJson)} >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification.exitCode=%s\\n' "$POST_PATCH_VERIFICATION_RC" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification.expectedExitCode=%s\\n' ${spec.expectExitCode} >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification.durationMs=%s\\n' "$POST_PATCH_VERIFICATION_DURATION_MS" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification.logSha256=%s\\n' "$POST_PATCH_VERIFICATION_SHA" >> /work/artifacts/summary.txt`,
+    `cat > /work/artifacts/post-patch-verification.json <<A2A_POST_PATCH_VERIFICATION_JSON`,
+    `{"schemaVersion":"a2a.runner.post-patch-verification.v1","command":${commandJson},"exitCode":$POST_PATCH_VERIFICATION_RC,"expectedExitCode":${spec.expectExitCode},"durationMs":$POST_PATCH_VERIFICATION_DURATION_MS,"logSha256":"$POST_PATCH_VERIFICATION_SHA","logPath":"artifacts/post-patch-verification.log","status":"$([ "$POST_PATCH_VERIFICATION_RC" -eq ${spec.expectExitCode} ] && printf passed || printf failed)"}`,
+    `A2A_POST_PATCH_VERIFICATION_JSON`,
+    `if [ "$POST_PATCH_VERIFICATION_RC" -ne ${spec.expectExitCode} ]; then`,
+    `  printf 'post_patch_verification=failed\\n' | tee -a /work/artifacts/summary.txt`,
+    `  exit "$POST_PATCH_VERIFICATION_RC"`,
+    `fi`,
+    `printf 'post_patch_verification=passed\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
 }
 
 function buildPrBody(task: RunnerTask, safeTitle: string, issueClosingRef?: string): string {
