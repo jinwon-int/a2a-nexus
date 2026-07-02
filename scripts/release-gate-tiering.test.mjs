@@ -62,6 +62,23 @@ test('--tier augments the default tier selection', () => {
   assert.equal(entries.some((entry) => entry.tier === 'approval-gated'), false);
 });
 
+test('--only-tier replaces the default selection for explicit historical checks', () => {
+  const parsed = parseReleaseGateArgs([
+    '--only-tier', 'historical-transition',
+    '--only-tier', 'approval-gated',
+    '--only-tier=package-publication',
+  ]);
+  assert.equal(parsed.all, false);
+  assert.deepEqual(parsed.tiers, ['historical-transition', 'approval-gated', 'package-publication']);
+  const inventory = loadReleaseGateInventory(INVENTORY);
+  const summary = summarizeReleaseGateEntries(selectReleaseGateEntries(inventory, parsed));
+  assert.deepEqual(summary, {
+    'historical-transition': 14,
+    'approval-gated': 3,
+    'package-publication': 2,
+  });
+});
+
 test('unknown tier fails closed', () => {
   const inventory = loadReleaseGateInventory(INVENTORY);
   assert.throws(
@@ -97,7 +114,7 @@ test('script surface manifest validates current root and broker package scripts'
   const result = validateScriptSurfaceManifest();
   assert.equal(result.ok, true, result.failures.join('\n'));
   const byId = new Map(result.packages.map((pkg) => [pkg.id, pkg]));
-  assert.equal(byId.get('root')?.scriptCount, 120);
+  assert.equal(byId.get('root')?.scriptCount, 100);
   assert.equal(byId.get('broker')?.scriptCount, 150);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);

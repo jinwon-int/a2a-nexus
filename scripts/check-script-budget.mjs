@@ -28,7 +28,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
   scriptsMjs: 147, // includes brokerAlpha A2A skill guard CLI/test promoted from ops skills (#1035)
-  rootNpmScripts: 120, // includes check:approval-records wrapper for structured approval evidence gate (#1188)
+  rootNpmScripts: 100, // ratcheted after C3 historical archive wrappers were consolidated under check:historical (#1201)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };
 

@@ -6,7 +6,7 @@
     {
       "id": "root",
       "packageJson": "package.json",
-      "minScripts": 119,
+      "minScripts": 100,
       "requiredScripts": [
         "build",
         "check",
