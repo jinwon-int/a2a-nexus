@@ -4,6 +4,11 @@ All notable public-safe changes for **A2A Nexus** are collected here. This file 
 
 ## Unreleased
 
+### Added — supply-chain hardening for CI workflows (#1228)
+
+- Every GitHub Actions workflow now declares a minimal top-level `permissions:` block (OpenSSF Scorecard Token-Permissions); `ci.yml` defaults to `contents: read` with job-level widening only where needed. Enforced fail-closed by the new core release-gate step `workflow-permissions` (`scripts/check-workflow-permissions.mjs`).
+- CodeQL SAST workflow (`.github/workflows/codeql.yml`) scans `javascript-typescript` on every pull request, on `main` pushes, and weekly; findings surface as code-scanning alerts.
+
 ### Changed — docker-runner trusted-lane defaults (behavior change, #1204/#1209)
 
 - The trusted-operator default network dropped from `host` to `bridge`. Untrusted lanes keep `none`. Trusted workers that relied on host networking must opt in explicitly with `A2A_DOCKER_RUNNER_NETWORK=host`.
