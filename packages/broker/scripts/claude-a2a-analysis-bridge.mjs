@@ -127,7 +127,7 @@ function buildClaudeChildEnv(env = process.env) {
 }
 
 const ANALYSIS_ALLOWED_TOOLS = "Read Glob Grep";
-const ANALYSIS_DISALLOWED_TOOLS = "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch";
+const ANALYSIS_DISALLOWED_TOOLS = "Bash Edit Write NotebookEdit WebFetch WebSearch";
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
 function buildReadOnlyClaudeArgs(prompt, maxTurns) {
