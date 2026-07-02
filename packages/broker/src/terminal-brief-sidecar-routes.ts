@@ -88,91 +88,91 @@ import {
   buildTerminalBriefSidecarDefaultOnCandidateFinalGate,
   extractTerminalBriefSidecarDefaultOnCandidateFinalGateObservation,
   extractTerminalBriefSidecarDefaultOnCandidateFinalGateOptions,
-} from "./core/terminal-brief-sidecar-default-on-candidate-final-gate.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnApprovalRequest,
   extractTerminalBriefSidecarDefaultOnApprovalRequestFinalGate,
   extractTerminalBriefSidecarDefaultOnApprovalRequestOptions,
-} from "./core/terminal-brief-sidecar-default-on-approval-request.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnApprovalEvidenceIngestor,
   extractTerminalBriefSidecarDefaultOnApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnApprovalEvidenceIngestorOptions,
   extractTerminalBriefSidecarDefaultOnApprovalRequestPacket,
-} from "./core/terminal-brief-sidecar-default-on-approval-evidence-ingestor.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnEnablementGate,
   extractTerminalBriefSidecarDefaultOnEnablementGateApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnEnablementGateOptions,
-} from "./core/terminal-brief-sidecar-default-on-enablement-gate.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeMutationPlan,
   extractTerminalBriefSidecarDefaultOnRuntimeMutationPlanEnablementGate,
   extractTerminalBriefSidecarDefaultOnRuntimeMutationPlanOptions,
-} from "./core/terminal-brief-sidecar-default-on-runtime-mutation-plan.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnExecutionRollbackEnvelope,
   extractTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopeOptions,
   extractTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopePlan,
-} from "./core/terminal-brief-sidecar-default-on-execution-rollback-envelope.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnExecutionApprovalRequest,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestEnvelope,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestOptions,
-} from "./core/terminal-brief-sidecar-default-on-execution-approval-request.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestor,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestorOptions,
   extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestPacket,
-} from "./core/terminal-brief-sidecar-default-on-execution-approval-evidence-ingestor.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGate,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGateEvidence,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGateOptions,
-} from "./core/terminal-brief-sidecar-default-on-runtime-execution-final-gate.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraft,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraftFinalGate,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraftOptions,
-} from "./core/terminal-brief-sidecar-default-on-runtime-execution-request-draft.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEvidenceIngestor,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEvidenceIngestorOptions,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraftPacket,
-} from "./core/terminal-brief-sidecar-default-on-runtime-execution-approval-evidence-ingestor.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnRuntimeExecutorGate,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutorGateEvidence,
   extractTerminalBriefSidecarDefaultOnRuntimeExecutorGateOptions,
-} from "./core/terminal-brief-sidecar-default-on-runtime-executor-gate.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnFinalLiveExecution,
   extractTerminalBriefSidecarDefaultOnFinalLiveExecutionGate,
   extractTerminalBriefSidecarDefaultOnFinalLiveExecutionOptions,
-} from "./core/terminal-brief-sidecar-default-on-final-live-execution.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnExecutionWindowRequestDraft,
   extractTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftFinalLiveExecution,
   extractTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftOptions,
-} from "./core/terminal-brief-sidecar-default-on-execution-window-request-draft.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnExecutionWindowApprovalEvidenceIngestor,
   extractTerminalBriefSidecarDefaultOnExecutionWindowApprovalEvidence,
   extractTerminalBriefSidecarDefaultOnExecutionWindowApprovalEvidenceIngestorOptions,
   extractTerminalBriefSidecarDefaultOnExecutionWindowApprovalEvidenceRequestDraft,
-} from "./core/terminal-brief-sidecar-default-on-execution-window-approval-evidence-ingestor.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGate,
   extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateEvidence,
   extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateOptions,
-} from "./core/terminal-brief-sidecar-default-on-final-runtime-mutation-executor-gate.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDefaultOnLiveExecutor,
   extractTerminalBriefSidecarDefaultOnLiveExecutorGate,
   extractTerminalBriefSidecarDefaultOnLiveExecutorOptions,
-} from "./core/terminal-brief-sidecar-default-on-live-executor.js";
+} from "./core/terminal-brief-sidecar-default-on/index.js";
 import {
   buildTerminalBriefSidecarDryRunStartCanaryPlan,
   extractTerminalBriefSidecarDryRunStartCanaryPlanOptions,
