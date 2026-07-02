@@ -95,7 +95,7 @@ test body or assertion changed.
 | `plugin-entry-reload.test.mjs` | Imports the plugin **ESM entry default export** (`../dist/index.js`) and asserts the reload contract. Converting the plugin entry seam to a colocated TS unit is the explicitly-flagged risky case; keeping it wired-in is the conservative call. |
 | `operator-event-bridge.test.mjs` | Largest legacy suite (65 cases). Wires together monitoring handlers + event bridge + notification adapter + cross-broker relay using tmpdir fixtures and many dynamic `import()` of `dist/` — an integration suite, not a single-module unit. |
 | `agent-card-discovery.test.mjs` | Reads a shipped artifact (`docs/a2a-agent-card.local.json`) via `import.meta.url` relative to package root; colocating + dist-relative resolution would break the path. Validates a shipped doc, not source-unit logic. |
-| `docker-runner-dev-e2e-proof.test.mjs` | Reads a shipped proof doc (`docs/docker-runner-dev-e2e-proof.md`) via `import.meta.url`. Artifact assertion, same path-fragility. |
+| `docker-runner-dev-e2e-doc-conformance.test.mjs` | Reads a shipped proof doc (`docs/docker-runner-dev-e2e-proof.md`) via `import.meta.url`. Artifact assertion, same path-fragility. |
 | `openclaw-plugin-config-schema.test.mjs` | Reads `openclaw.plugin.json` (the shipped manifest) via `import.meta.url`. Manifest/artifact assertion. |
 
 (The pre-existing `tests/*.test.ts` `terminal-brief-hermes-mobileAlpha` /

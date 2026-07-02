@@ -33,6 +33,16 @@
       "note": "Runs on ordinary release-gate path; keep until a narrower owner gate replaces it."
     },
     {
+      "name": "runtime-hardening-docs",
+      "command": "node",
+      "args": [
+        "scripts/check-runtime-hardening-docs.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Absence-detection gate for #1204/#1209 runtime-hardening docs (CHANGELOG trusted-default entry, process-local security limits, hardening escape hatches). Keep while the documented defaults exist."
+    },
+    {
       "name": "packages",
       "command": "npm",
       "args": [
