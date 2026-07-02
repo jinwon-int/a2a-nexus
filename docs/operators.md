@@ -43,6 +43,8 @@ CODEOWNERS routes review attention. It does not move finalizer authority to A2A 
 
 Before closing an issue or merging a closeout PR, the finalizer must compare every issue checklist item and acceptance criterion against concrete artifacts. Bulk closeout is a NO-GO unless the finalizer writes an issue-by-issue disposition that names completed items, deferred follow-ups, and skipped approval-sensitive actions. For A2A rounds, the default mapping is one implementation lane to one PR; consolidating lanes into one PR requires an explicit finalizer note explaining why review coverage is preserved.
 
+This rule is machine-monitored (#1210): the scheduled [`closeout-hygiene`](../.github/workflows/closeout-hygiene.yml) workflow runs `scripts/check-issue-closeout-hygiene.mjs` and fails on issues closed as completed with unchecked task-list items. Deviations require the `closeout-exception` label plus an item-by-item disposition comment before close.
+
 ## Approval records
 
 Approval-sensitive execution records live under `fixtures/approvals/` and are validated by `npm run check:approval-records`. New approval records must use `approverRole: "operator"` and must not include personal-channel or raw-secret fields.
