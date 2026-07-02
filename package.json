@@ -131,5 +131,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.13.1"
+  },
+  "engines": {
+    "node": ">=22.5"
   }
 }

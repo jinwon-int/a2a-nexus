@@ -226,7 +226,9 @@ test("mergeRunnerEnvFile lets direct doctor inherit worker service GitHub patch 
 
     assert.equal(config.commandProfile, "openclaw");
     assert.equal(config.image, "a2a-docker-runner-openclaw:latest");
-    assert.equal(config.network, "host");
+    assert.equal(config.network, "bridge");
+  assert.equal(config.readOnlyRootFilesystem, true);
+  assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /deepseek\/deepseek-v4-pro/);
     assert.deepEqual(config.extraMounts, [
       { source: "/srv/openclaw-profile", target: "/run/secrets/openclaw-dir", readOnly: true },
@@ -255,7 +257,9 @@ test("mergeRunnerEnvFile supports Hermes patch profile", async () => {
 
     assert.equal(config.commandProfile, "hermes");
     assert.equal(config.image, "a2a-docker-runner-hermes:latest");
-    assert.equal(config.network, "host");
+    assert.equal(config.network, "bridge");
+  assert.equal(config.readOnlyRootFilesystem, true);
+  assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /hermes chat/);
     assert.match(config.commandScript ?? "", /deepseek\/deepseek-v4-pro/);
     assert.deepEqual(config.hermesProfile, { configDir: "/srv/hermes-profile" });
@@ -286,7 +290,9 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
 
     assert.equal(config.commandProfile, "claude-code");
     assert.equal(config.image, "a2a-docker-runner-cccb:latest");
-    assert.equal(config.network, "host");
+    assert.equal(config.network, "bridge");
+  assert.equal(config.readOnlyRootFilesystem, true);
+  assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /claude-a2a-patch-bridge\.mjs/);
     assert.match(config.commandScript ?? "", /A2A_CLAUDE_MODEL/);
     assert.deepEqual(config.claudeCodeProfile, { configDir: "/srv/claude-profile" });
@@ -474,7 +480,9 @@ test("loadConfig builds first-class OpenClaw patch profile", async () => {
   assert.match(config.commandScript ?? "", /error=openclaw_agent_failed/);
   assert.match(config.commandScript ?? "", /Done evidence\|Done comment/);
   assert.match(config.commandScript ?? "", /OPENCLAW_DISABLE_BUNDLED_PLUGINS='0'/);
-  assert.equal(config.network, "host");
+  assert.equal(config.network, "bridge");
+  assert.equal(config.readOnlyRootFilesystem, true);
+  assert.equal(config.user, "1000:1000");
   assert.match(config.commandScript ?? "", /copy_file_if_exists \/run\/secrets\/openclaw-dir\/openclaw\.json/);
   assert.match(config.commandScript ?? "", /auth-profiles\.json/);
   assert.match(config.commandScript ?? "", /auth-state\.json/);
@@ -601,7 +609,9 @@ test("loadConfig builds first-class Hermes patch profile", async () => {
   });
 
   assert.equal(config.commandProfile, "hermes");
-  assert.equal(config.network, "host");
+  assert.equal(config.network, "bridge");
+  assert.equal(config.readOnlyRootFilesystem, true);
+  assert.equal(config.user, "1000:1000");
   assert.match(config.commandScript ?? "", /command -v hermes/);
   assert.match(config.commandScript ?? "", /hermes --version/);
   assert.match(config.commandScript ?? "", /export HERMES_HOME=\/root\/\.hermes/);

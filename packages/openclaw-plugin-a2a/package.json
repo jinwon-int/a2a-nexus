@@ -99,5 +99,8 @@
   "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/openclaw-plugin-a2a#readme",
   "bugs": {
     "url": "https://github.com/jinwon-int/a2a-nexus/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
   }
 }

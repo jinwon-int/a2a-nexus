@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -939,24 +939,14 @@ export class JsonFileBrokerStateStore implements BrokerStateStore {
 
   load(): BrokerSnapshot {
     try {
-      const stat = statSync(this.filePath);
-      if (stat.size > this.maxBytes) {
-        throw new Error(
-          `broker snapshot exceeds max size (${stat.size} > ${this.maxBytes} bytes): ${this.filePath}`,
-        );
-      }
-
-      const raw = readFileSync(this.filePath, "utf8");
-      const parsed = brokerSnapshotSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) {
-        throw new Error(
-          `invalid broker snapshot at ${this.filePath}: ${parsed.error.issues[0]?.message ?? "unknown schema error"}`,
-        );
-      }
-      return parsed.data as BrokerSnapshot;
+      return readBrokerSnapshotFile(this.filePath, this.maxBytes);
     } catch (error) {
       if (isMissingFileError(error)) {
         return emptySnapshot();
+      }
+      const backupPath = brokerSnapshotBackupPath(this.filePath);
+      if (existsSync(backupPath)) {
+        return readBrokerSnapshotFile(backupPath, this.maxBytes);
       }
       throw error;
     }
@@ -3096,9 +3086,52 @@ export function writeBrokerSnapshotFile(
 ): void {
   mkdirSync(dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.tmp`;
+  const backupPath = brokerSnapshotBackupPath(filePath);
   const payload = serializeBrokerSnapshot(snapshot, maxBytes);
   writeFileSync(tempPath, payload, "utf8");
+  fsyncFile(tempPath);
+  if (existsSync(filePath)) {
+    copyFileSync(filePath, backupPath);
+    fsyncFile(backupPath);
+  }
   renameSync(tempPath, filePath);
+  fsyncDirectory(dirname(filePath));
+}
+
+function brokerSnapshotBackupPath(filePath: string): string {
+  return `${filePath}.bak`;
+}
+
+function readBrokerSnapshotFile(filePath: string, maxBytes: number): BrokerSnapshot {
+  const stat = statSync(filePath);
+  if (stat.size > maxBytes) {
+    throw new Error(
+      `broker snapshot exceeds max size (${stat.size} > ${maxBytes} bytes): ${filePath}`,
+    );
+  }
+  return parseSnapshotPayload(readFileSync(filePath, "utf8"), filePath, maxBytes);
+}
+
+function fsyncFile(filePath: string): void {
+  const fd = openSync(filePath, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function fsyncDirectory(dirPath: string): void {
+  try {
+    const fd = openSync(dirPath, "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (error) {
+    if (process.platform !== "win32") throw error;
+  }
 }
 
 function parseSnapshotPayload(payload: string, source: string, maxBytes: number): BrokerSnapshot {

@@ -90,9 +90,15 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - id: npm-cache
-        run: echo "cache-key=${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
+        run: echo "cache-key=node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}" >> "$GITHUB_OUTPUT"
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
 
   # ── Monorepo layout and package metadata checks ────────────────────
   layout:
@@ -105,10 +111,16 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+      - uses: actions/cache@v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check:layout
       - run: npm run check:packages
 
@@ -124,10 +136,16 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+      - uses: actions/cache@v6
         with:
           path: packages/broker/dist
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: node scripts/run-monorepo-package-ci-parity.mjs broker
       - name: a2a-inspector bridge artifact
         run: |
@@ -154,10 +172,16 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+      - uses: actions/cache@v6
         with:
           path: packages/docker-runner/dist
           key: tsbuild-docker-runner-${{ runner.os }}-${{ hashFiles('packages/docker-runner/**/*.ts', 'packages/docker-runner/tsconfig.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: node scripts/run-monorepo-package-ci-parity.mjs docker-runner
 
   # ── OpenClaw plugin package (broker adapter, Gateway hooks) ────────
@@ -172,10 +196,16 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
+      - uses: actions/cache@v6
         with:
           path: packages/openclaw-plugin-a2a/dist
           key: tsbuild-plugin-${{ runner.os }}-${{ hashFiles('packages/openclaw-plugin-a2a/**/*.ts', 'packages/openclaw-plugin-a2a/tsconfig.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: node scripts/run-monorepo-package-ci-parity.mjs openclaw-plugin-a2a
 
   # ── Contract conformance and fixtures ────────────────────────────────
@@ -189,12 +219,24 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
       - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
+      - uses: actions/cache@v6
+        id: gitleaks-bin
+        with:
+          path: ~/go/bin/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ env.GITLEAKS_VERSION }}
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+        if: steps.gitleaks-bin.outputs.cache-hit != 'true'
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run test:conformance
       - run: npm run scan:external-secrets
       - run: npm run check:approval-records
@@ -211,12 +253,24 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
       - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
+      - uses: actions/cache@v6
+        id: gitleaks-bin
+        with:
+          path: ~/go/bin/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ env.GITLEAKS_VERSION }}
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+        if: steps.gitleaks-bin.outputs.cache-hit != 'true'
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check:layout
       - run: npm run check:markdown-links
       - run: npm run scan:external-secrets
@@ -233,7 +287,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check:promotion-capstone
       - run: npm run smoke:quickstart
 
@@ -248,16 +308,28 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/cache@v6
+        id: npm-deps
+        with:
+          path: node_modules
+          key: ${{ needs.setup.outputs.cache-key }}
       - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
+      - uses: actions/cache@v6
+        id: gitleaks-bin
+        with:
+          path: ~/go/bin/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ env.GITLEAKS_VERSION }}
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+        if: steps.gitleaks-bin.outputs.cache-hit != 'true'
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - uses: actions/cache@v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
       - run: npm ci --include=dev
+        if: steps.npm-deps.outputs.cache-hit != 'true'
       - run: npm run check
       - run: npm run check:quickstart-conformance
       - run: npm run check:external-harness-conformance
