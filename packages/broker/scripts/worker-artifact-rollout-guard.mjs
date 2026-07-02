@@ -26,7 +26,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { basename, isAbsolute, join, resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
@@ -47,6 +47,8 @@ const DEPLOYED_CHECK = process.argv.includes('--deployed') || process.argv.inclu
 const CANONICAL_HANDLER_FILENAME = 'a2a-task-handler.mjs';
 const LEGACY_HANDLER_FILENAME = '';
 const HANDLER_SUPPORT_FILENAMES = ['worker-model-policy.mjs'];
+const ANALYSIS_BRIDGE_BIN_VARS = ['A2A_HERMES_ANALYSIS_BIN', 'A2A_OPENCLAW_ANALYSIS_BIN', 'OPENCLAW_BIN'];
+const UNSET_ENV_TOKENS = new Set(['', 'none', 'null', 'undefined']);
 const workerRoot = process.env.A2A_WORKER_ROOT || process.env.WORKER_ROOT;
 
 const handlersRoot = resolve(
@@ -108,6 +110,76 @@ function envPresence(name) {
         : `${value.slice(0, 8)}...<redacted>`
       : undefined,
   };
+}
+
+function normalizeConfiguredEnvValue(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (UNSET_ENV_TOKENS.has(text.toLowerCase())) return '';
+  return text;
+}
+
+function unquoteEnvValue(value) {
+  const text = value.trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return text.slice(1, -1);
+    }
+  }
+  return text;
+}
+
+function parseEnvAssignments(filePath) {
+  if (!filePath || !existsSync(filePath)) return {};
+  const content = readFileSafe(filePath);
+  if (content === undefined) return {};
+  const assignments = {};
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+    const withoutExport = trimmed.replace(/^export\s+/, '');
+    const match = withoutExport.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    assignments[match[1]] = unquoteEnvValue(match[2]);
+  }
+  return assignments;
+}
+
+function defaultDeployedEnvPath() {
+  if (process.env.A2A_WORKER_ENV_PATH || process.env.WORKER_ENV_PATH) {
+    return process.env.A2A_WORKER_ENV_PATH || process.env.WORKER_ENV_PATH;
+  }
+  if (!DEPLOYED_CHECK || !workerRoot) return '';
+  return resolve(workerRoot) === '/opt/a2a-broker-worker' ? '/etc/default/a2a-hermes-worker' : '';
+}
+
+const deployedEnvPath = defaultDeployedEnvPath();
+const deployedEnv = parseEnvAssignments(deployedEnvPath);
+
+function configuredAnalysisBridgeBins() {
+  return ANALYSIS_BRIDGE_BIN_VARS.map((name) => {
+    const processValue = normalizeConfiguredEnvValue(process.env[name]);
+    const envFileValue = normalizeConfiguredEnvValue(deployedEnv[name]);
+    const value = processValue || envFileValue;
+    return {
+      name,
+      configured: !!value,
+      source: processValue ? 'process.env' : (envFileValue ? 'env-file' : 'unset'),
+      value,
+    };
+  }).filter((item) => item.configured);
+}
+
+function isScriptBridgeCommand(value) {
+  return /\.(?:mjs|cjs|js)$/i.test(value) && (
+    value.includes('/') || value.includes('\\') || value.startsWith('.')
+  );
+}
+
+function resolveConfiguredBridgeCommand(value) {
+  if (isAbsolute(value)) return value;
+  return resolve(process.env.A2A_HANDLER_CWD || process.env.WORKER_HANDLER_CWD || workerRoot || brokerRoot, value);
 }
 
 function sha256(content) {
@@ -354,6 +426,57 @@ guard('bridge-compat-path', () => compareCompatFile({
   compatLabel: 'bridge compat path',
 }));
 
+// Guard 3b: Any runtime-configured analysis bridge must exist in the deployed artifact.
+// This catches stale node-specific bridge env such as /opt/.../custom-source-analysis-bridge.mjs
+// before the worker claims a task and fails at handler runtime.
+guard('configured-analysis-bridge-artifacts', () => {
+  const configured = configuredAnalysisBridgeBins();
+  if (configured.length === 0) {
+    return ok('configured-analysis-bridge-artifacts', {
+      checked: false,
+      reason: 'no A2A_*_ANALYSIS_BIN/OPENCLAW_BIN bridge command configured in process env or deployed env file',
+      envPathChecked: deployedEnvPath ? '<configured>' : undefined,
+    });
+  }
+
+  const checks = configured.map((item) => {
+    if (!isScriptBridgeCommand(item.value)) {
+      return {
+        name: item.name,
+        source: item.source,
+        commandKind: 'external-command',
+        commandName: basename(item.value),
+        ok: true,
+      };
+    }
+    const resolvedPath = resolveConfiguredBridgeCommand(item.value);
+    const mode = executableBits(resolvedPath);
+    return {
+      name: item.name,
+      source: item.source,
+      commandKind: 'script-bridge',
+      commandName: basename(item.value),
+      resolvedPath,
+      mode: executableHint(mode),
+      ok: mode !== undefined && mode !== 0,
+    };
+  });
+
+  const failed = checks.filter((check) => !check.ok);
+  if (failed.length > 0) {
+    return fail('configured-analysis-bridge-artifacts', 'one or more configured analysis bridge script artifacts are missing or not executable', {
+      failed,
+      hint: 'point node env at a deployed standard bridge such as scripts/source-only-local-analysis-bridge.mjs or scripts/hermes-a2a-analysis-bridge.mjs, or ship the custom bridge with the artifact',
+      envPathChecked: deployedEnvPath ? '<configured>' : undefined,
+    });
+  }
+
+  return ok('configured-analysis-bridge-artifacts', {
+    checks,
+    envPathChecked: deployedEnvPath ? '<configured>' : undefined,
+  });
+});
+
 // Guard 4: Executable bits stay in parity across scripts/ and handlers/
 guard('artifact-executable-parity', () => {
   if (!DEPLOYED_CHECK) {
@@ -467,6 +590,8 @@ guard('executor-policy', () => {
 
   const bridgePolicies = {
     OPENCLAW_BIN: envPresence('OPENCLAW_BIN'),
+    A2A_HERMES_ANALYSIS_BIN: envPresence('A2A_HERMES_ANALYSIS_BIN'),
+    A2A_OPENCLAW_ANALYSIS_BIN: envPresence('A2A_OPENCLAW_ANALYSIS_BIN'),
     A2A_OPENCLAW_BRIDGE_ENABLED: envPresence('A2A_OPENCLAW_BRIDGE_ENABLED'),
     A2A_OPENCLAW_BRIDGE_DISABLED: envPresence('A2A_OPENCLAW_BRIDGE_DISABLED'),
     A2A_OPENCLAW_SESSION_ID: envPresence('A2A_OPENCLAW_SESSION_ID'),
