@@ -552,6 +552,15 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
   const forbiddenList = forbidden.map(shellSingleQuote).join(" ");
   const allowLockfiles = policy.allowLockfileChanges === true;
   const blockWhitespaceOnly = policy.blockWhitespaceOnly !== false;
+  const churnWarnRatio = policy.churnWarnRatio ?? 0.5;
+  const churnBlockRatio = policy.churnBlockRatio ?? 0.9;
+  const churnMinLines = policy.churnMinLines ?? 100;
+  if (!(churnWarnRatio > 0 && churnWarnRatio <= 1) || !(churnBlockRatio > 0 && churnBlockRatio <= 1) || churnWarnRatio > churnBlockRatio) {
+    throw new Error("task.diffHygiene churn ratios must satisfy 0 < churnWarnRatio <= churnBlockRatio <= 1");
+  }
+  if (!Number.isInteger(churnMinLines) || churnMinLines < 1) {
+    throw new Error("task.diffHygiene.churnMinLines must be a positive integer");
+  }
   return [
     `# Fail-closed diff hygiene gate (#1219).`,
     `CHANGED_PATHS="$( {`,
@@ -582,13 +591,23 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
       `  WHITESPACE_ONLY=1`,
       `fi`,
     ] : []),
+    `# Two-stage reformat churn detection (#1225): whitespace-ignored diff delta.`,
+    `TOTAL_CHURN="$(git diff --numstat "origin/${baseBranch}...HEAD" | awk '{a+=$1+$2} END{printf "%d", a+0}')"`,
+    `NONWS_CHURN="$(git diff -w --numstat "origin/${baseBranch}...HEAD" | awk '{a+=$1+$2} END{printf "%d", a+0}')"`,
+    `WS_CHURN=$((TOTAL_CHURN - NONWS_CHURN))`,
+    `[ "$WS_CHURN" -lt 0 ] && WS_CHURN=0`,
+    `CHURN_MIN_LINES=${churnMinLines}`,
+    `CHURN_RATIO="$(awk -v w="$WS_CHURN" -v t="$TOTAL_CHURN" 'BEGIN{ if (t > 0) printf "%.4f", w/t; else printf "0.0000" }')"`,
+    `CHURN_LEVEL="$(awk -v r="$CHURN_RATIO" -v w="$WS_CHURN" -v m="$CHURN_MIN_LINES" -v warn=${churnWarnRatio} -v block=${churnBlockRatio} 'BEGIN{ if (r >= block && w >= m) print "block"; else if (r >= warn && w > 0) print "warn"; else print "none" }')"`,
+    `printf 'diff_hygiene_churn_level=%s\\n' "$CHURN_LEVEL" | tee -a /work/artifacts/summary.txt`,
+    `printf 'diff_hygiene_churn_ratio=%s total=%s whitespace=%s\\n' "$CHURN_RATIO" "$TOTAL_CHURN" "$WS_CHURN" >> /work/artifacts/summary.txt`,
     `CHANGED_PATHS_JSON="$(printf '%s\\n' "$CHANGED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
     `BLOCKED_PATHS_JSON="$(printf '%s\\n' "$BLOCKED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
     `LOCKFILE_CHANGES_JSON="$(printf '%s\\n' "$LOCKFILE_CHANGES" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
     `cat > /work/artifacts/diff-hygiene.json <<A2A_DIFF_HYGIENE_JSON`,
-    `{"schemaVersion":"a2a.runner.diff-hygiene.v1","status":"$([ -z \"$BLOCKED_PATHS\" ] && [ \"$WHITESPACE_ONLY\" != 1 ] && printf passed || printf blocked)","changedPaths":$CHANGED_PATHS_JSON,"blockedPaths":$BLOCKED_PATHS_JSON,"lockfileChanges":$LOCKFILE_CHANGES_JSON,"whitespaceOnly":$([ "$WHITESPACE_ONLY" = 1 ] && printf true || printf false)}`,
+    `{"schemaVersion":"a2a.runner.diff-hygiene.v1","status":"$([ -z \"$BLOCKED_PATHS\" ] && [ \"$WHITESPACE_ONLY\" != 1 ] && [ \"$CHURN_LEVEL\" != block ] && printf passed || printf blocked)","changedPaths":$CHANGED_PATHS_JSON,"blockedPaths":$BLOCKED_PATHS_JSON,"lockfileChanges":$LOCKFILE_CHANGES_JSON,"whitespaceOnly":$([ "$WHITESPACE_ONLY" = 1 ] && printf true || printf false),"churn":{"totalLines":$TOTAL_CHURN,"whitespaceLines":$WS_CHURN,"ratio":$CHURN_RATIO,"level":"$CHURN_LEVEL"}}`,
     `A2A_DIFF_HYGIENE_JSON`,
-    `if [ -n "$BLOCKED_PATHS" ] || [ "$WHITESPACE_ONLY" = 1 ]; then`,
+    `if [ -n "$BLOCKED_PATHS" ] || [ "$WHITESPACE_ONLY" = 1 ] || [ "$CHURN_LEVEL" = block ]; then`,
     `  printf 'diff_hygiene=blocked\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf '%s\\n' "$BLOCKED_PATHS" | sed '/^$/d; s#^#diff_hygiene_blocked_path=#' >> /work/artifacts/summary.txt`,
     `  [ "$WHITESPACE_ONLY" = 1 ] && printf 'diff_hygiene_whitespace_only=1\\n' >> /work/artifacts/summary.txt`,

@@ -73,6 +73,7 @@ test("buildArtifactManifest projects #1219 verification, hygiene, and reproducib
         blockedPaths: [],
         lockfileChanges: [],
         whitespaceOnly: false,
+        churn: { totalLines: 400, whitespaceLines: 391, ratio: 0.9775, level: "block" },
       },
       reproducibility: {
         schemaVersion: "a2a.runner.reproducibility.v1",
@@ -84,6 +85,7 @@ test("buildArtifactManifest projects #1219 verification, hygiene, and reproducib
     });
     assert.equal(manifest.postPatchVerification?.status, "passed");
     assert.equal(manifest.diffHygiene?.changedPaths[0], "packages/docker-runner/src/runner.ts");
+    assert.equal(manifest.diffHygiene?.churn?.level, "block");
     assert.equal(manifest.reproducibility?.runnerRevision, "abc123");
 
     const summary = buildResultSummary(
@@ -832,4 +834,25 @@ test("buildSourcePublicApprovalRehearsal produces deterministic packets", () => 
   assert.equal(first.safetyGates.liveProviderSendPerformed, false);
   assert.equal(first.safetyGates.terminalAckSent, false);
   assert.equal(first.safetyGates.dbMutationPerformed, false);
+});
+
+test("buildContainerScript embeds two-stage reformat churn detection (#1225)", () => {
+  const task = normalizeTask({
+    id: "issue-1225",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    diffHygiene: { blockWhitespaceOnly: true },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /CHURN_RATIO=/);
+  assert.match(script, /diff_hygiene_churn_level=/);
+  assert.match(script, /"churn":\{"totalLines":/);
+  // default two-stage thresholds: warn 0.5, block 0.9 with a 100-line floor
+  assert.match(script, /-v warn=0\.5/);
+  assert.match(script, /-v block=0\.9/);
+  assert.match(script, /CHURN_MIN_LINES=100/);
 });

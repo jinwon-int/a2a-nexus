@@ -111,7 +111,18 @@
         "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
         "blockedPaths": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
         "lockfileChanges": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
-        "whitespaceOnly": { "type": "boolean" }
+        "whitespaceOnly": { "type": "boolean" },
+        "churn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["totalLines", "whitespaceLines", "ratio", "level"],
+          "properties": {
+            "totalLines": { "type": "integer", "minimum": 0 },
+            "whitespaceLines": { "type": "integer", "minimum": 0 },
+            "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "level": { "enum": ["none", "warn", "block"] }
+          }
+        }
       }
     },
     "reproducibility": {
