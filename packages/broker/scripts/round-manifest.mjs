@@ -9,7 +9,7 @@
 //   --issue      Parent issue number
 //   --team       Team identifier (team1, team2)
 //   --run-id     Broker run identifier
-//   --workers    Comma-separated worker list (e.g. "bangtong,dungae,sogyo,nosuk")
+//   --workers    Comma-separated worker list (e.g. "workergamma,workerepsilon,workerbeta,workeralpha")
 //
 // Options:
 //   --label      Optional human-readable round label

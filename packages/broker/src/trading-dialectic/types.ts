@@ -41,7 +41,7 @@ export type TradingDialecticSide = "long" | "short";
 export type TradingDialecticTimeHorizon = "scalp" | "intraday" | "swing" | "position";
 export type TradingDialecticUrgency = "low" | "normal" | "high";
 
-export type TradingDialecticRoute = "bangtong" | "none";
+export type TradingDialecticRoute = "workergamma" | "none";
 
 export type TradingDialecticSchemaName =
   | "tradingDialectic.thesis.v1"

@@ -1,5 +1,5 @@
 /**
- * CI-safe hot-table/outbox stability stress fixture tests for Team1/nosuk.
+ * CI-safe hot-table/outbox stability stress fixture tests for Team1/workerAlpha.
  *
  * Validates that the terminal evidence ACK flow is stable under concurrent
  * outbox operations, handles deduplication, and rejects provider-send-only
@@ -132,7 +132,7 @@ test("hot-table outbox stress fixture is scoped and carries safety gates", () =>
     fixture.parentUrl,
     "https://github.com/jinwon-int/a2a-broker/issues/636",
   );
-  assert.equal(fixture.worker, "nosuk");
+  assert.equal(fixture.worker, "workerAlpha");
   assert.deepEqual(fixture.safetyState, {
     noProductionDeployOrRestart: true,
     noGatewayBrokerWorkerRestart: true,
@@ -568,7 +568,7 @@ test("stress fixture events never contain raw stdout/stderr or private paths", (
   // Only check the serialized output — a subset of these forbidden tokens
   // pass through buildTerminalEvidenceEvent's own redaction already.
   const mustNotAppear = [
-    "/synthetic/hot-table/outbox/nosuk/",
+    "/synthetic/hot-table/outbox/workerAlpha/",
     "stdout omitted from terminal alert",
     "stdout omitted from stress terminal evidence",
   ];

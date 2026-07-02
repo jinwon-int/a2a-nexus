@@ -5,7 +5,7 @@ Issue #693 adds a source/no-live integration rehearsal connecting the Terminal B
 The rehearsal consumes:
 
 - broker terminal task events;
-- Terminal Brief sidecar spool records such as a2a.terminalBrief.hermesGongyungAdapter.spool.v1;
+- Terminal Brief sidecar spool records such as a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1;
 - sidecar receipt decisions such as terminalReceiptStatus=produced.
 
 It then derives final-count signals from the sidecar envelope title/text and renders the same broker-finalizer candidate produced by the final-count closeout layer.
@@ -18,7 +18,7 @@ Run:
 
 The fixture models a three-worker round:
 
-- sidecar spool records show bangtong(1/3), sogyo(2/3), and nosuk(3/3);
+- sidecar spool records show workergamma(1/3), workerbeta(2/3), and workeralpha(3/3);
 - every spool record has providerSend=false, terminalAck=false, and dryRunOnly=true;
 - the sidecar receipt decision is ackTerminalEvent=false with terminalReceiptStatus=produced;
 - broker terminal events have PR or Done evidence and produced receipt state.

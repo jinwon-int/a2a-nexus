@@ -7,9 +7,9 @@ import {
 } from './libero-public-preflight-closeout.mjs';
 
 const URLS = {
-  bangtong: 'https://evidence.example.invalid/a2a-plane-44-bangtong',
-  sogyo: 'https://evidence.example.invalid/a2a-plane-pr-45-sogyo',
-  nosuk: 'https://evidence.example.invalid/a2a-plane-44-nosuk',
+  workerGamma: 'https://evidence.example.invalid/a2a-plane-44-workerGamma',
+  workerBeta: 'https://evidence.example.invalid/a2a-plane-pr-45-workerBeta',
+  workerAlpha: 'https://evidence.example.invalid/a2a-plane-44-workerAlpha',
 };
 
 function cleanEvidence(overrides = {}) {
@@ -59,12 +59,12 @@ function deepMerge(base, patch) {
 }
 
 describe('libero public preflight closeout', () => {
-  it('aggregates bangtong/sogyo/nosuk and keeps public visibility NO-GO without explicit approval', () => {
+  it('aggregates workerGamma/workerBeta/workerAlpha and keeps public visibility NO-GO without explicit approval', () => {
     const report = buildLiberoPublicPreflightCloseout(cleanEvidence(), { nowMs: Date.parse('2026-05-07T22:11:51Z') });
 
     assert.equal(report.ok, true);
     assert.equal(report.state, 'ready-no-go');
-    assert.deepEqual(report.requiredWorkers, ['bangtong', 'sogyo', 'nosuk']);
+    assert.deepEqual(report.requiredWorkers, ['workerGamma', 'workerBeta', 'workerAlpha']);
     assert.equal(report.counts.completed, 3);
     assert.equal(report.scanner.ok, true);
     assert.equal(report.approval.separated, true);
@@ -72,7 +72,7 @@ describe('libero public preflight closeout', () => {
 
     const markdown = renderLiberoPublicPreflightCloseoutMarkdown(report);
     assert.match(markdown, /^Done: Team1 P0 libero public preflight aggregate/);
-    assert.match(markdown, /Required lanes: bangtong,sogyo,nosuk/);
+    assert.match(markdown, /Required lanes: workerGamma,workerBeta,workerAlpha/);
     assert.match(markdown, /Scanners: public-readiness=clean; external-secret\/history=clean/);
     assert.match(markdown, /explicit-visibility-approval=no/);
     assert.doesNotMatch(markdown, /Final GO|\/work\/repo|ghp_|github_pat_|BROKER_EDGE_SECRET|chat_id/i);
@@ -102,15 +102,15 @@ describe('libero public preflight closeout', () => {
   it('waits rather than producing false Done when a sibling lane is unresolved', () => {
     const report = buildLiberoPublicPreflightCloseout(cleanEvidence({
       lanes: [
-        { worker: 'bangtong', status: 'succeeded', prUrl: URLS.bangtong },
-        { worker: 'sogyo', status: 'running' },
-        { worker: 'nosuk', status: 'succeeded', doneCommentUrl: URLS.nosuk },
+        { worker: 'workerGamma', status: 'succeeded', prUrl: URLS.workerGamma },
+        { worker: 'workerBeta', status: 'running' },
+        { worker: 'workerAlpha', status: 'succeeded', doneCommentUrl: URLS.workerAlpha },
       ],
     }));
 
     assert.equal(report.ok, false);
     assert.equal(report.state, 'waiting');
-    assert.equal(report.lanes.find((lane) => lane.workerId === 'sogyo')?.state, 'waiting');
+    assert.equal(report.lanes.find((lane) => lane.workerId === 'workerBeta')?.state, 'waiting');
     assert.match(renderLiberoPublicPreflightCloseoutMarkdown(report), /^Waiting:/);
   });
 

@@ -96,7 +96,7 @@ export interface TerminalBriefSidecarExecutorDispatchRequestDraftPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesExecutionGateFinalReviewPacket: true;
     rendersExecutorDispatchRequestDraft: true;
@@ -229,7 +229,7 @@ export function buildTerminalBriefSidecarExecutorDispatchRequestDraft(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesExecutionGateFinalReviewPacket: true,
       rendersExecutorDispatchRequestDraft: true,

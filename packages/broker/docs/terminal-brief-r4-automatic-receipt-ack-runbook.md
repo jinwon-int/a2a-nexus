@@ -4,7 +4,7 @@ Issue: [#398](https://github.com/jinwon-int/a2a-broker/issues/398)
 Parent: [#383](https://github.com/jinwon-int/a2a-broker/issues/383)
 Run: `terminal-brief-receipt-r4-rerun-20260506T012730Z`
 
-This runbook turns the seoseo live proof into the checklist for moving from manual terminal-outbox ACK to automatic ACK based on current-session-visible receipt evidence. It is documentation only: it does not authorize a production deploy, Gateway restart, live provider send, production DB mutation, worker rollout, or terminal-outbox ACK.
+This runbook turns the brokeralpha live proof into the checklist for moving from manual terminal-outbox ACK to automatic ACK based on current-session-visible receipt evidence. It is documentation only: it does not authorize a production deploy, Gateway restart, live provider send, production DB mutation, worker rollout, or terminal-outbox ACK.
 
 ## Receipt vocabulary
 
@@ -14,7 +14,7 @@ Keep these states separate in every report, PR, and issue comment:
 | --- | --- | --- |
 | Provider send / `provider_accepted` | Telegram/OpenClaw accepted the outbound send request, or the adapter returned send success. | **No.** This is not operator-visible receipt. |
 | Current-session visible / `operator_visible` | The Terminal Brief is rendered in the operator's current session or otherwise has bounded operator-visible proof. | **Yes, if linked to the exact outbox/task id.** |
-| Manual operator confirmation / `operator_confirmed` | An operator explicitly confirms the same Terminal Brief was visible, for example the seoseo proof receipt `telegram:<operator-chat-id>:message:47146`. | **Yes, after explicit approval for that ACK.** |
+| Manual operator confirmation / `operator_confirmed` | An operator explicitly confirms the same Terminal Brief was visible, for example the brokeralpha proof receipt `telegram:<operator-chat-id>:message:47146`. | **Yes, after explicit approval for that ACK.** |
 | Terminal ACK / `receipt_confirmed` | The broker terminal-outbox row is acknowledged with receipt evidence. | Final state; must never be inferred from provider send alone. |
 
 ## R4 child lanes and dependencies

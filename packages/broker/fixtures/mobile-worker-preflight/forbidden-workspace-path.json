@@ -4,7 +4,7 @@
   "description": "Mobile worker input supplies a workspace shape under an OpenClaw config path. This is forbidden because active task outputs must not mix with local runtime configuration or credential-bearing paths.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "online",
     "lastSeenAgeSec": 12,

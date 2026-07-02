@@ -11,7 +11,7 @@
   ],
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/1",
   "reportLanguage": "ko",
-  "requestedBy": "dungae",
+  "requestedBy": "workerEpsilon",
   "timeoutMs": 300000,
   "env": {
     "NODE_ENV": "production"

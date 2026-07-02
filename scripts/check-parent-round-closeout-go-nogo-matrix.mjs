@@ -172,8 +172,8 @@ function evaluateScenario(spec, scenario) {
     gateResults.idempotencyCheck = 'PASS';
   }
 
-  // G9: Seoseo finalizer
-  gateResults.seoseoFinalizer = given.evaluatingBroker === 'seoseo' ? 'PASS' : 'FAIL';
+  // G9: brokerAlpha finalizer
+  gateResults.seoseoFinalizer = given.evaluatingBroker === 'brokerAlpha' ? 'PASS' : 'FAIL';
   if (gateResults.seoseoFinalizer === 'FAIL') {
     blockers.push({ gate: 'seoseoFinalizer', reason: spec.gates.find(g => g.id === 'seoseoFinalizer')?.failedWhenMissing });
   }
@@ -248,7 +248,7 @@ function evaluateScenario(spec, scenario) {
   // In comment_only mode, closeoutAllowed is always false (no issue close/merge)
   // But commentPosted may be true if gates pass
   const closeoutAllowed = decision === 'GO'
-    && given.evaluatingBroker === 'seoseo'
+    && given.evaluatingBroker === 'brokerAlpha'
     && !given.gitHub403
     && !isDuplicate
     && !isCommentOnly;
@@ -268,7 +268,7 @@ function evaluateScenario(spec, scenario) {
   } else if (isCommentOnly) {
     commentPosted = canPostComment && given.draftCommentBody;
   } else {
-    commentPosted = canPostComment && given.evaluatingBroker === 'seoseo';
+    commentPosted = canPostComment && given.evaluatingBroker === 'brokerAlpha';
   }
 
   const issueClosed = isCommentOnly ? false : closeoutAllowed;

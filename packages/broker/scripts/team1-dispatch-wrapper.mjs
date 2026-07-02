@@ -52,7 +52,7 @@ function parseArgs(argv) {
   return {
     teamId: readOption("--team-id") ?? "team1",
     lane: Number(readOption("--lane") ?? "2"),
-    worker: readOption("--worker") ?? "yukson",
+    worker: readOption("--worker") ?? "workerdelta",
     runId: readOption("--run-id") ?? "",
     parentRoundId: readOption("--parent-round-id"),
     parentRoundTotal: readOption("--parent-round-total") === undefined
@@ -129,7 +129,7 @@ function main() {
       "Optional:",
       "  --team-id <id>         Team identifier (default: team1)",
       "  --lane <n>             Lane number 1-4 (default: 2)",
-      "  --worker <name>        Worker handle (default: yukson)",
+      "  --worker <name>        Worker handle (default: workerdelta)",
       "  --issue <ref>          Short issue ref like #848",
       "  --parent-round-id <id> Terminal Brief parent round id (default: --run-id)",
       "  --parent-round-total <n>",
@@ -170,7 +170,7 @@ function main() {
       "    --run-id a2a-team1-dispatch-20260520 \\",
       "    --parent-issue https://github.com/jinwon-int/a2a-broker/issues/847 \\",
       "    --child-issue https://github.com/jinwon-int/a2a-broker/issues/848 \\",
-      '    --issue "#848" --worker yukson --lane 2 --markdown',
+      '    --issue "#848" --worker workerdelta --lane 2 --markdown',
       "",
       "  node scripts/team1-dispatch-wrapper.mjs \\",
       "    --run-id a2a-team1-dispatch-20260520 \\",

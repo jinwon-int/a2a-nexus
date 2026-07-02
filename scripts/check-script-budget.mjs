@@ -27,7 +27,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 147, // includes Seoseo A2A skill guard CLI/test promoted from ops skills (#1035)
+  scriptsMjs: 147, // includes brokerAlpha A2A skill guard CLI/test promoted from ops skills (#1035)
   rootNpmScripts: 120, // includes check:approval-records wrapper for structured approval evidence gate (#1188)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };

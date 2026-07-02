@@ -558,7 +558,7 @@ function oiV2OutputFor(
       "broker task creation or dispatch at runtime",
       "executor invocation",
       "runtime executor enablement",
-      "Daegyo/mobile scope expansion",
+      "mobilebeta/mobile scope expansion",
       "live provider or Telegram canary",
       "deploy, restart, DB mutation, Terminal ACK/replay, release publish, or credential movement",
       "TaskFlow task creation or mutation",

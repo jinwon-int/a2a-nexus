@@ -1,7 +1,7 @@
 /**
  * Terminal Brief parent-origin routing helper (#634).
  *
- * This module defines the four normal Seoseo/Team1 and Gwakga/Team2 routing
+ * This module defines the four normal brokeralpha/Team1 and brokerbeta/Team2 routing
  * cases. It is deliberately pure and side-effect free: resolving a route never
  * creates tasks, sends provider messages, mutates DB/outbox state, or ACKs a
  * Terminal Brief. Runtime dispatch layers may use this helper to derive the
@@ -62,8 +62,8 @@ export type TerminalBriefParentOriginRouteResult =
   | { ok: false; code: TerminalBriefRoutingRejectCode; reason: string };
 
 export const DEFAULT_TERMINAL_BRIEF_BROKER_TEAMS: readonly TerminalBriefBrokerTeamRegistration[] = [
-  { brokerId: "seoseo", teamId: "team1" },
-  { brokerId: "gwakga", teamId: "team2" },
+  { brokerId: "brokeralpha", teamId: "team1" },
+  { brokerId: "brokerbeta", teamId: "team2" },
 ] as const;
 
 export const TERMINAL_BRIEF_PARENT_ORIGIN_METADATA_FIELDS = [

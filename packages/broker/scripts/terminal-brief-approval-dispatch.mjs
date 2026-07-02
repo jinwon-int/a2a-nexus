@@ -2,7 +2,7 @@
 // Source-only Terminal Brief approval dispatch adapter shell.
 //
 // Produces harness-neutral transcript/receipt drafts for OpenClaw, Hermes,
-// Gongyung, or generic adapters without sending providers or granting approval.
+// mobilealpha, or generic adapters without sending providers or granting approval.
 
 import { readFile } from "node:fs/promises";
 import process from "node:process";
@@ -122,7 +122,7 @@ function executorFromRaw(raw, options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.input) {
-    throw new Error("usage: npm run terminal_brief_approval_dispatch -- --input executor.json [--adapter generic|openclaw|hermes|gongyung] [--target target] [--channel channel] [--selected-action post_closeout_comment] [--markdown|--json]");
+    throw new Error("usage: npm run terminal_brief_approval_dispatch -- --input executor.json [--adapter generic|openclaw|hermes|mobilealpha] [--target target] [--channel channel] [--selected-action post_closeout_comment] [--markdown|--json]");
   }
   const raw = JSON.parse(await readFile(options.input, "utf8"));
   const executor = executorFromRaw(raw, options);

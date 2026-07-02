@@ -1,10 +1,10 @@
 {
   "kind": "a2a-broker.mobile-worker-preflight.fixture",
   "version": 1,
-  "description": "Daegyo-style Termux worker, healthy timing and presence signals, but no active lane planned and no wake-lock held. Wake-lock is not required when no active lane is planned and timing is clean.",
+  "description": "mobilebeta-style Termux worker, healthy timing and presence signals, but no active lane planned and no wake-lock held. Wake-lock is not required when no active lane is planned and timing is clean.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "online",
     "lastSeenAgeSec": 12,

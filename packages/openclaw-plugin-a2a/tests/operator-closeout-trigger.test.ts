@@ -166,12 +166,12 @@ describe("extractA2AOperatorCloseoutTriggerMetadata", () => {
     });
 
     const meta = extractA2AOperatorCloseoutTriggerMetadata(envelope, {
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
     });
     assert.ok(meta);
-    assert.equal(meta.originBrokerId, "seoseo");
-    assert.equal(meta.brokerOfRecordId, "seoseo");
+    assert.equal(meta.originBrokerId, "brokerAlpha");
+    assert.equal(meta.brokerOfRecordId, "brokerAlpha");
   });
 
   it("falls back to unknown when no broker context", () => {
@@ -271,8 +271,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-draft-001",
       parentRoundTotal: 3,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -293,8 +293,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-comment-only-001",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       draftPrepared: true,
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
@@ -311,8 +311,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-comment-only-002",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       commentPosted: true,
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
@@ -328,8 +328,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-approval-001",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       commentPosted: true,
       requiresApprovalBeforeClose: true,
       observations: [
@@ -347,8 +347,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-blocked-001",
       parentRoundTotal: 3,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "failure", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -367,8 +367,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-blocked-002",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "block", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -385,8 +385,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-waiting-001",
       parentRoundTotal: 4,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 3, dedupeKey: "dedup:3", operatorNotificationId: "notify-3" },
@@ -405,8 +405,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-dedup-001",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -425,8 +425,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-outoforder-001",
       parentRoundTotal: 3,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         // Lane 3 arrives before lane 1.
         { type: "success", laneOrder: 3, dedupeKey: "dedup:3", operatorNotificationId: "notify-3" },
@@ -447,8 +447,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const step1: A2ACloseoutCandidateInput = {
       parentRoundId: "round-step-001",
       parentRoundTotal: 4,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
       ],
@@ -459,8 +459,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const step2: A2ACloseoutCandidateInput = {
       parentRoundId: "round-step-001",
       parentRoundTotal: 4,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -479,8 +479,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-pr-001",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "pr", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" },
         { type: "success", laneOrder: 2, dedupeKey: "dedup:2", operatorNotificationId: "notify-2" },
@@ -496,8 +496,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-empty-001",
       parentRoundTotal: 4,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [],
     };
 
@@ -511,8 +511,8 @@ describe("evaluateA2AOperatorCloseoutCandidate (#404)", () => {
     const input: A2ACloseoutCandidateInput = {
       parentRoundId: "round-dupe-id-001",
       parentRoundTotal: 2,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [
         { type: "success", laneOrder: 1, dedupeKey: "dedup:lane1", operatorNotificationId: "notify-1-original" },
         // Replay with same dedupeKey but different notification id.
@@ -585,8 +585,8 @@ describe("Closeout-trigger contract integrity (#404)", () => {
     });
 
     const meta = extractA2AOperatorCloseoutTriggerMetadata(envelope, {
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
     });
     assert.ok(meta);
 
@@ -641,8 +641,8 @@ describe("Closeout-trigger contract integrity (#404)", () => {
     const base: A2ACloseoutCandidateInput = {
       parentRoundId: "round-states-001",
       parentRoundTotal: 1,
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerAlpha",
+      brokerOfRecordId: "brokerAlpha",
       observations: [{ type: "success", laneOrder: 1, dedupeKey: "dedup:1", operatorNotificationId: "notify-1" }],
     };
 

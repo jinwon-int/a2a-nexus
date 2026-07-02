@@ -202,7 +202,7 @@ export function buildSourcePublicApprovalRehearsalBundle(
   const repo = options.repo ?? DEFAULT_REPO;
   const issueNumber = options.issueNumber ?? DEFAULT_ISSUE;
   const issueUrl = `https://github.com/${repo}/issues/${issueNumber}`;
-  const worker = options.worker ?? "dungae";
+  const worker = options.worker ?? "workerepsilon";
   const approver = options.operator ?? "operator-required";
   const checks = mergeEvidence(options.evidence);
 

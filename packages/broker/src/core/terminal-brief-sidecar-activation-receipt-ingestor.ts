@@ -141,7 +141,7 @@ export interface TerminalBriefSidecarActivationReceiptIngestorPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesActivationApprovalPacket: true;
     providerAcceptedIsVisibilityProof: false;
     terminalAckRequiresVisibilityProof: true;
@@ -260,7 +260,7 @@ export function buildTerminalBriefSidecarActivationReceiptIngestor(
     approvalSensitiveActionsExcluded: [
       "starting/enabling always-on sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "operator approval grant mutation or execution",
       "GitHub PR merge, issue close, or comment post from the ingestor",
@@ -273,7 +273,7 @@ export function buildTerminalBriefSidecarActivationReceiptIngestor(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesActivationApprovalPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,

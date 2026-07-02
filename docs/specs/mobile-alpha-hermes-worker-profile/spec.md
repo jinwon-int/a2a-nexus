@@ -143,7 +143,7 @@ If the task payload or metadata contains ANY of:
 
 Then the task MUST be **rejected** (not silently ignored). The rejection MUST
 include a structured NO-GO signal with reason
-`"gongyung_not_docker_runner"`.
+`"mobileAlpha_not_docker_runner"`.
 
 This is a **hard boundary**: mobile-alpha runs on Android/Termux with no Docker
 daemon, no `docker` CLI, and no GitHub credential store. Any task that expects
@@ -197,7 +197,7 @@ Every mobile-alpha worker evidence submission MUST include exactly these fields:
   "result": {
     "summary": "<one-line human-readable summary>",
     "output": {
-      "gongyungProfile": "hermes-worker",
+      "mobileAlphaProfile": "hermes-worker",
       "openClawRequired": false,
       "runtimeFlavor": "termux-hermes",
       "profileVersion": 1
@@ -232,7 +232,7 @@ A `manifest ok` check MUST verify that:
 
 - `workerId` is present and non-empty.
 - `outcome` is one of the three allowed values.
-- `result.output.gongyungProfile` equals `"hermes-worker"`.
+- `result.output.mobileAlphaProfile` equals `"hermes-worker"`.
 - `result.output.openClawRequired` is `false`.
 - `result.output.runtimeFlavor` equals `"termux-hermes"`.
 - `result.output.profileVersion` is `1`.
@@ -295,7 +295,7 @@ type AdmissionDecision =
 
 1. **Runtime guard:** If the task payload or metadata contains Docker runner
    indicators (see "Rejected / handoff task classes" above), return
-   `{ ok: false, noGoSignal: { reason: "gongyung_not_docker_runner", ... } }`.
+   `{ ok: false, noGoSignal: { reason: "mobileAlpha_not_docker_runner", ... } }`.
    This check is evaluated first so Docker runner tasks are never assigned
    to a mobile Hermes worker regardless of other fields.
 2. **Intent guard:** If the task `intent` is in the rejected set (docker,
@@ -316,7 +316,7 @@ broker's existing stale-reaper logic handles requeueing. mobile-alpha does not
 mark the task as `failed`; it simply refuses to claim it. If the broker has
 already assigned the task to mobile-alpha, mobile-alpha MUST call
 `POST /tasks/:id/evidence` with `outcome: "blocked"` and
-`summary: "mobile-alpha Hermes worker: task not admitted (gongyung_not_docker_runner)"`
+`summary: "mobile-alpha Hermes worker: task not admitted (mobileAlpha_not_docker_runner)"`
 (adjusted for the specific rejection reason).
 
 ### Unknown mode default

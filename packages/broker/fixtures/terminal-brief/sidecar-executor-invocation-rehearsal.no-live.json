@@ -20,9 +20,9 @@
     },
     "startPlan": {
       "supervisedDryRunOnly": true,
-      "requestedExecutor": "gongyung-sidecar-dry-run-executor",
+      "requestedExecutor": "mobilealpha-sidecar-dry-run-executor",
       "operatorApprovalReference": "operator-visible-approval-720",
-      "dryRunReason": "sidecar-gongyung-spool-dry-run",
+      "dryRunReason": "sidecar-mobilealpha-spool-dry-run",
       "commandShape": {
         "kind": "metadata_only",
         "commandName": "terminal-brief-sidecar",
@@ -71,7 +71,7 @@
     "approvalSensitiveActionsExcluded": [
       "starting/enabling always-on sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation"
     ],
     "integrationContract": {
@@ -80,7 +80,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesActivationReceiptIngestorPacket": true,
       "dispatchesStartExecutor": false,
       "grantsApproval": false,
@@ -113,7 +113,7 @@
     }
   },
   "executorInvocationRehearsal": {
-    "adapterName": "gongyung",
+    "adapterName": "mobilealpha",
     "executorRuntime": "metadata-only",
     "supervisor": "terminal-brief-sidecar-worker",
     "healthCheckTarget": "/readyz",

@@ -4,7 +4,7 @@
   "description": "Timing is clean, but active mobile lane should hold Termux wake-lock first.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "online",
     "lastSeenAgeSec": 8,

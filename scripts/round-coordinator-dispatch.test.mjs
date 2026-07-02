@@ -13,8 +13,8 @@ const coordinator = path.join(scriptDir, "round-coordinator-dispatch.mjs");
 const dispatcher = path.join(scriptDir, "a2a-dispatch-round.mjs");
 
 const baseTeams = [
-  { teamId: "team1", homeBrokerId: "seoseo", brokerUrl: "https://seoseo.invalid", workers: ["sogyo", "nosuk"] },
-  { teamId: "team2", homeBrokerId: "gwakga", brokerUrl: "https://gwakga.invalid", workers: ["dungae"] },
+  { teamId: "team1", homeBrokerId: "brokerAlpha", brokerUrl: "https://brokerAlpha.invalid", workers: ["workerBeta", "workerAlpha"] },
+  { teamId: "team2", homeBrokerId: "brokerBeta", brokerUrl: "https://brokerBeta.invalid", workers: ["workerEpsilon"] },
 ];
 
 test("buildRoundManifests expands PRs × workers per team with a global parent-round total/order", () => {
@@ -28,8 +28,8 @@ test("buildRoundManifests expands PRs × workers per team with a global parent-r
   // team1: 2 PRs × 2 workers = 4; team2: 2 PRs × 1 worker = 2; total 6.
   assert.equal(total, 6);
   assert.deepEqual(summary, [
-    { teamId: "team1", homeBrokerId: "seoseo", lanes: 4 },
-    { teamId: "team2", homeBrokerId: "gwakga", lanes: 2 },
+    { teamId: "team1", homeBrokerId: "brokerAlpha", lanes: 4 },
+    { teamId: "team2", homeBrokerId: "brokerBeta", lanes: 2 },
   ]);
   assert.equal(manifests.length, 2);
 
@@ -49,17 +49,17 @@ test("buildRoundManifests routes each team to its own broker and stamps lane pro
 
   const team1 = manifests.find((m) => m.teamId === "team1");
   const team2 = manifests.find((m) => m.teamId === "team2");
-  assert.equal(team1.brokerUrl, "https://seoseo.invalid");
-  assert.equal(team2.brokerUrl, "https://gwakga.invalid");
+  assert.equal(team1.brokerUrl, "https://brokerAlpha.invalid");
+  assert.equal(team2.brokerUrl, "https://brokerBeta.invalid");
 
   const lane = team1.lanes[0];
-  assert.equal(lane.id, "r1:pr620:sogyo");
+  assert.equal(lane.id, "r1:pr620:workerBeta");
   assert.equal(lane.intent, "analyze");
-  assert.equal(lane.assignedWorkerId, "sogyo");
-  assert.equal(lane.target.id, "sogyo");
+  assert.equal(lane.assignedWorkerId, "workerBeta");
+  assert.equal(lane.target.id, "workerBeta");
   assert.equal(lane.payload.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/620");
   assert.equal(lane.payload.teamId, "team1");
-  assert.equal(lane.payload.homeBrokerId, "seoseo");
+  assert.equal(lane.payload.homeBrokerId, "brokerAlpha");
   assert.match(lane.message, /review round r1/);
 });
 
@@ -68,7 +68,7 @@ test("buildRoundManifests rejects incomplete input (fail-closed)", () => {
   assert.throws(() => buildRoundManifests({ roundId: "r", prs: [], teams: baseTeams }), /at least one PR/);
   assert.throws(() => buildRoundManifests({ roundId: "r", prs: ["1"], teams: [] }), /at least one team/);
   assert.throws(
-    () => buildRoundManifests({ roundId: "r", prs: ["1"], teams: [{ teamId: "team1", homeBrokerId: "seoseo", workers: ["a"] }] }),
+    () => buildRoundManifests({ roundId: "r", prs: ["1"], teams: [{ teamId: "team1", homeBrokerId: "brokerAlpha", workers: ["a"] }] }),
     /needs a brokerUrl/,
   );
 });
@@ -80,11 +80,11 @@ test("CLI dry-run writes per-team manifests that the existing dispatcher accepts
       coordinator,
       "--round-id", "pr-review-it",
       "--prs", "615,617",
-      "--workers-team1", "sogyo,nosuk",
-      "--workers-team2", "dungae",
+      "--workers-team1", "workerBeta,workerAlpha",
+      "--workers-team2", "workerEpsilon",
       "--repo", "jinwon-int/a2a-nexus",
-      "--team1-broker-url", "https://seoseo.invalid",
-      "--team2-broker-url", "https://gwakga.invalid",
+      "--team1-broker-url", "https://brokerAlpha.invalid",
+      "--team2-broker-url", "https://brokerBeta.invalid",
       "--out-dir", outDir,
       "--dry-run",
     ], { encoding: "utf8" });
@@ -112,16 +112,16 @@ test("CLI dry-run writes per-team manifests that the existing dispatcher accepts
 // ─── #681: --execute hardening (timeout, idempotency, structured report) ──────
 
 const writtenFixture = [
-  { teamId: "team1", file: "/tmp/r.team1.manifest.json", brokerUrl: "https://seoseo.invalid" },
-  { teamId: "team2", file: "/tmp/r.team2.manifest.json", brokerUrl: "https://gwakga.invalid" },
+  { teamId: "team1", file: "/tmp/r.team1.manifest.json", brokerUrl: "https://brokerAlpha.invalid" },
+  { teamId: "team2", file: "/tmp/r.team2.manifest.json", brokerUrl: "https://brokerBeta.invalid" },
 ];
 
 test("runExecute reports dispatched with parsed task ids and lane classifications (#681)", () => {
   const spawnImpl = () => ({
     status: 0,
     stdout: JSON.stringify({ ok: true, results: [
-      { id: "r:pr615:sogyo", classification: "created", taskId: "task-1" },
-      { id: "r:pr615:nosuk", classification: "already-exists", taskId: "task-2" },
+      { id: "r:pr615:workerBeta", classification: "created", taskId: "task-1" },
+      { id: "r:pr615:workerAlpha", classification: "already-exists", taskId: "task-2" },
     ] }),
     stderr: "",
   });

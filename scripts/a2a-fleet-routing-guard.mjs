@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * A2A Fleet Routing Guard — pure-offline preflight that enforces fleet worker
- * routing: Team1 → seoseo broker, Team2 → gwakga broker.
+ * routing: Team1 → brokerAlpha broker, Team2 → brokerBeta broker.
  *
  * It validates operator-collected evidence against a declarative routing
  * inventory. Each node's observed broker URL, edge-secret fingerprint, systemd
@@ -225,7 +225,7 @@ function renderTable(rows) {
 
 function renderTextReport(result, { forced }) {
   const lines = [];
-  lines.push('A2A Fleet Routing Guard — Team1→seoseo / Team2→gwakga');
+  lines.push('A2A Fleet Routing Guard — Team1→brokerAlpha / Team2→brokerBeta');
   lines.push('');
   if (result.malformed) {
     lines.push('VERDICT: MALFORMED-INPUT');

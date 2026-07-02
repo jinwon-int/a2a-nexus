@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const bridgePath = new URL("./source-only-local-analysis-bridge.mjs", import.meta.url).pathname;
-const gongmyoungBridgePath = new URL("./gongmyoung-source-analysis-bridge.mjs", import.meta.url).pathname;
+const workerthetaBridgePath = new URL("./workertheta-source-analysis-bridge.mjs", import.meta.url).pathname;
 
 function runBridge(script = bridgePath, payloadOverrides = {}) {
   const dir = mkdtempSync(join(tmpdir(), "source-only-local-bridge-"));
@@ -22,7 +22,7 @@ function runBridge(script = bridgePath, payloadOverrides = {}) {
     sourceBundle: {
       files: [
         { repo: "ops-live-check", path: "health-check-request.md", content: "runId: round-1147\nliveActionsAllowed: false\nproviderCanaryAllowed: false" },
-        { repo: "ops-live-check", path: "capacity-snapshot.json", content: "{\"onlineWorkers\":[{\"nodeId\":\"gongmyoung\"}]}" },
+        { repo: "ops-live-check", path: "capacity-snapshot.json", content: "{\"onlineWorkers\":[{\"nodeId\":\"workertheta\"}]}" },
       ],
     },
     sourceProjectionPolicy: {
@@ -31,7 +31,7 @@ function runBridge(script = bridgePath, payloadOverrides = {}) {
     },
     ...payloadOverrides,
   };
-  writeFileSync(taskFile, JSON.stringify({ id: "task-1147", intent: "analyze", assignedWorkerId: "gongmyoung", message: "no-live health" }), "utf8");
+  writeFileSync(taskFile, JSON.stringify({ id: "task-1147", intent: "analyze", assignedWorkerId: "workertheta", message: "no-live health" }), "utf8");
   writeFileSync(payloadFile, JSON.stringify(payload), "utf8");
   try {
     const child = spawnSync(process.execPath, [script, "agent", "--json"], {
@@ -63,13 +63,13 @@ test("source-only local bridge returns OpenClaw envelope with no-live evidence (
   assert.equal(analysis.sourceProjection.quality, "complete");
 });
 
-test("gongmyoung bridge alias uses the source-only local bridge (#1147)", () => {
-  const { child, envelope } = runBridge(gongmyoungBridgePath);
+test("workertheta bridge alias uses the source-only local bridge (#1147)", () => {
+  const { child, envelope } = runBridge(workerthetaBridgePath);
   assert.equal(child.status, 0, child.stderr);
   const analysis = analysisFromEnvelope(envelope);
   assert.equal(analysis.status, "done");
   assert.equal(analysis.bridgeAdapter, "source_only_local");
-  assert.ok(analysis.recommendations.some((item) => item.includes("Gongmyoung") || item.includes("source-only")));
+  assert.ok(analysis.recommendations.some((item) => item.includes("workertheta") || item.includes("source-only")));
 });
 
 test("source-only local bridge blocks when required source is missing (#1147)", () => {

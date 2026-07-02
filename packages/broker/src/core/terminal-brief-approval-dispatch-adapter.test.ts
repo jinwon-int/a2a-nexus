@@ -24,8 +24,8 @@ function workflow(overrides: Partial<TerminalBriefFinalizerWorkflowPacket> = {})
     currentStep: "finalizer_review",
     idempotencyKey: "tb-finalizer-workflow:fixture-706",
     finalizer: {
-      brokerOfRecordId: "seoseo",
-      owner: "seoseo",
+      brokerOfRecordId: "brokeralpha",
+      owner: "brokeralpha",
       required: true,
       singleFinalizerRequired: true,
     },
@@ -96,9 +96,9 @@ test("approval dispatch adapter emits Hermes transcript draft without provider s
   const packet = buildTerminalBriefApprovalDispatchAdapter(executor(), {
     now: NOW,
     adapter: "hermes",
-    target: "hermes://gongyung/approval",
+    target: "hermes://mobilealpha/approval",
     channel: "operator",
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
   });
 
   assert.equal(packet.kind, "a2a-broker.terminal-brief-approval-dispatch-adapter.packet");
@@ -115,21 +115,21 @@ test("approval dispatch adapter emits Hermes transcript draft without provider s
   assert.equal(packet.receiptDraft.terminalAck, false);
   assert.equal(packet.integrationContract.openclawMessageSendRequired, false);
   assert.equal(packet.integrationContract.hermesAdapterCompatible, true);
-  assert.equal(packet.integrationContract.gongyungAdapterCompatible, true);
+  assert.equal(packet.integrationContract.mobilealphaAdapterCompatible, true);
   assert.equal(packet.integrationContract.sendsApprovalRequest, false);
   assert.equal(packet.semantics.performsProviderSend, false);
 });
 
-test("approval dispatch adapter can draft Gongyung approval receipt without granting approval", () => {
+test("approval dispatch adapter can draft mobilealpha approval receipt without granting approval", () => {
   const packet = buildTerminalBriefApprovalDispatchAdapter(executor({
     selectedAction: "post_closeout_comment",
   }), {
     now: NOW,
-    adapter: "gongyung",
+    adapter: "mobilealpha",
   });
 
   assert.equal(packet.state, "approval_receipt_draft_ready");
-  assert.equal(packet.adapter.type, "gongyung");
+  assert.equal(packet.adapter.type, "mobilealpha");
   assert.equal(packet.source.selectedAction, "post_closeout_comment");
   assert.equal(packet.receiptDraft.approvalGranted, false);
   assert.equal(packet.receiptDraft.actionExecuted, false);
@@ -171,7 +171,7 @@ test("renderTerminalBriefApprovalDispatchAdapterMarkdown states adapter neutrali
   const markdown = renderTerminalBriefApprovalDispatchAdapterMarkdown(packet);
 
   assert.match(markdown, /^Dispatch draft ready: Terminal Brief approval adapter/);
-  assert.match(markdown, /OpenClaw message send required=false; Hermes compatible=true; Gongyung compatible=true/);
+  assert.match(markdown, /OpenClaw message send required=false; Hermes compatible=true; mobilealpha compatible=true/);
   assert.match(markdown, /request not sent; receipt is not visibility proof/);
   assert.match(markdown, /execution not permitted/);
   assert.doesNotMatch(markdown, /ghp_|BROKER_EDGE_SECRET=|\/root\/\.openclaw/);

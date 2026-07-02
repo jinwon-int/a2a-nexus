@@ -363,11 +363,11 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
       blockers.push("[work_mode_decision_evidence] Execute-mode Team1/common dispatch requires --work-mode-decision");
     }
     if (roundSpec.teamId === "team2") {
-      const isGwakgaLocal = roundSpec.originBrokerId === "gwakga" && roundSpec.brokerOfRecordId === "gwakga";
-      const isGwakgaHandoff = roundSpec.brokerOfRecordId === "gwakga"
-        && roundSpec.crossBrokerHandoff?.handoffBrokerId === "gwakga";
-      if (!isGwakgaLocal && !isGwakgaHandoff) {
-        blockers.push("[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target Gwakga broker-of-record via explicit crossBrokerHandoff, not local Seoseo /tasks");
+      const isbrokerbetaLocal = roundSpec.originBrokerId === "brokerbeta" && roundSpec.brokerOfRecordId === "brokerbeta";
+      const isbrokerbetaHandoff = roundSpec.brokerOfRecordId === "brokerbeta"
+        && roundSpec.crossBrokerHandoff?.handoffBrokerId === "brokerbeta";
+      if (!isbrokerbetaLocal && !isbrokerbetaHandoff) {
+        blockers.push("[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target brokerbeta broker-of-record via explicit crossBrokerHandoff, not local brokeralpha /tasks");
       }
     }
   }

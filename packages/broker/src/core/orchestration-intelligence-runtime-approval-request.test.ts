@@ -21,7 +21,7 @@ const allDesignEvidence = {
   executorContractDocumented: true,
   brokerDispatchBoundaryDocumented: true,
   workerSpawnBoundaryDocumented: true,
-  daegyoMobileBoundaryDocumented: true,
+  mobilebetaMobileBoundaryDocumented: true,
   rollbackAbortCriteriaDocumented: true,
   liveBoundaryPlanDocumented: true,
   observabilityPlanDocumented: true,
@@ -58,14 +58,14 @@ function finalizerDecision(decision = "advance_to_next_source_step") {
 function runtimeReadinessGate(decision = "advance_to_next_source_step") {
   return buildOIRuntimeReadinessGatePacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     finalizerDecision: finalizerDecision(decision),
     runtimeEvidence: {
       runtimeExecutorDesignReviewed: false,
       explicitRuntimeApprovalPresent: false,
       brokerDispatchApprovalPresent: false,
       workerSpawnApprovalPresent: false,
-      daegyoMobileScopeResolved: false,
+      mobilebetaMobileScopeResolved: false,
       rollbackAbortCriteriaDocumented: false,
       liveBoundaryPlanDocumented: false,
       validationEvidenceFresh: true,
@@ -76,7 +76,7 @@ function runtimeReadinessGate(decision = "advance_to_next_source_step") {
 function runtimeDesignReview(decision = "advance_to_next_source_step") {
   return buildOIRuntimeDesignReviewPacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     runtimeReadinessGate: runtimeReadinessGate(decision),
     designEvidence: allDesignEvidence,
   });
@@ -85,7 +85,7 @@ function runtimeDesignReview(decision = "advance_to_next_source_step") {
 test("builds an explicit runtime approval request without granting approval", () => {
   const packet = buildOIRuntimeApprovalRequestPacket({
     generatedAt: NOW,
-    requester: "gwakga",
+    requester: "brokerbeta",
     operator: "seo-jin-on",
     runtimeDesignReview: runtimeDesignReview(),
     approvalEvidence: allApprovalEvidence,
@@ -99,14 +99,14 @@ test("builds an explicit runtime approval request without granting approval", ()
   assert.equal(packet.runtimeReadinessEvidencePatch.explicitRuntimeApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.brokerDispatchApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.workerSpawnApprovalPresent, false);
-  assert.equal(packet.runtimeReadinessEvidencePatch.daegyoMobileScopeResolved, false);
+  assert.equal(packet.runtimeReadinessEvidencePatch.mobilebetaMobileScopeResolved, false);
   assert.equal(packet.safety.runtimeApprovalRequestOnly, true);
   assert.equal(packet.safety.explicitRuntimeApprovalPresent, false);
   assert.equal(packet.safety.approvalGranted, false);
   assert.equal(packet.safety.runtimeExecutorEnabled, false);
   assert.equal(packet.safety.brokerDispatchCreated, false);
   assert.equal(packet.safety.workerSpawned, false);
-  assert.equal(packet.safety.daegyoScopeExpanded, false);
+  assert.equal(packet.safety.mobilebetaScopeExpanded, false);
 });
 
 test("fails closed when approval request evidence is incomplete", () => {
@@ -196,5 +196,5 @@ test("renders request phrase, required conditions, and remaining NO-GO boundarie
   assert.match(markdown, /APPROVE OI V2 RUNTIME APPROVAL REQUEST/);
   assert.match(markdown, /explicitRuntimeApprovalPresent: false/);
   assert.match(markdown, /does not grant approval/);
-  assert.match(markdown, /expand Daegyo\/mobile scope/);
+  assert.match(markdown, /expand mobilebeta\/mobile scope/);
 });

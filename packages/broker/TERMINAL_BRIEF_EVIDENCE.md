@@ -1,12 +1,12 @@
-# A2A Terminal Brief 완료: bangtong(1/7)
+# A2A Terminal Brief 완료: workergamma(1/7)
 
 **Run:** a2a-r13-terminal-brief-realround-20260514T013556Z
 **Parent Round:** a2a-r13-terminal-brief-realround-20260514T013556Z
-**Origin Broker:** seoseo
-**Lane:** bangtong (Team1, 1/7)
+**Origin Broker:** brokeralpha
+**Lane:** workergamma (Team1, 1/7)
 **Guard:** #598 fail-closed broker guard (cross-broker dispatch metadata validation)
 **Parent Issue:** #607 (A2A R13 compact Terminal Brief real-round guard and aggregation verification)
-**Issue:** #608 (R13 Team1 bangtong: #598 fail-closed dispatch guard implementation)
+**Issue:** #608 (R13 Team1 workergamma: #598 fail-closed dispatch guard implementation)
 
 ---
 
@@ -46,7 +46,7 @@ ok  2 - rejects wrong-origin packets
 ok  3 - rejects missing parent rounds
 ok  4 - rejects stale replay
 ok  5 - carries parent round denominator into outbox progress
-ok  6 - symmetric for Gwakga-owned parent rounds
+ok  6 - symmetric for brokerbeta-owned parent rounds
 ok  7 - redacts unsafe content and fails closed for ACKs
 ok  8 - survives broker snapshot persistence
 ok  9 - rejects projection with missing parentRoundId
@@ -54,8 +54,8 @@ ok 10 - rejects projection with missing originBrokerId
 ok 11 - rejects projection with missing parentRoundTotal
 ok 12 - rejects projection with non-positive parentRoundTotal
 ok 13 - rejects projection lacking brokerOfRecordId for crossBrokerHandoff
-ok 14 - accepts valid seoseo-origin projection
-ok 15 - accepts valid gwakga-origin projection
+ok 14 - accepts valid brokeralpha-origin projection
+ok 15 - accepts valid brokerbeta-origin projection
 ```
 
 **post-dispatch-verifier.test.ts** — 35 tests across 7 suites, all pass:
@@ -94,7 +94,7 @@ When a valid projection is accepted, the terminal event outbox constructs `cross
 }
 ```
 
-Validated and confirmed working for both seoseo-origin and gwakga-origin projections.
+Validated and confirmed working for both brokeralpha-origin and brokerbeta-origin projections.
 
 ---
 

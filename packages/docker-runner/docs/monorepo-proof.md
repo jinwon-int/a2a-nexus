@@ -3,7 +3,7 @@
 **Issue**: https://github.com/jinwon-int/a2a-docker-runner/issues/262
 **Parent**: a2a-plane#335 (internal tracker, private)
 **Run**: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
-**Lane**: Team2 / `jingun`
+**Lane**: Team2 / `workerZeta`
 
 Cross-check of the current `a2a-docker-runner` build/test topology, workspace
 package assumptions, artifact path contract, Docker image inputs, GitHub patch

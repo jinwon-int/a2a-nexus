@@ -20,12 +20,12 @@ function activeConfig(extraConfig = {}) {
   };
 }
 
-const remote = { nodeId: "nosuk", source: "displayKey" };
+const remote = { nodeId: "workerAlpha", source: "displayKey" };
 
 function event(overrides = {}) {
   return {
-    sessionKey: "nosuk",
-    target: { sessionKey: "nosuk", displayKey: "nosuk" },
+    sessionKey: "workerAlpha",
+    target: { sessionKey: "workerAlpha", displayKey: "workerAlpha" },
     message: "delegate safely",
     task: { intent: "propose_patch", instructions: "delegate safely" },
     rawParams: { taskInput: { workspace: { workspaceId: "plugin-a2a" } } },
@@ -38,7 +38,7 @@ test("handoff visibility policy allows configured remote target/task/workspace",
     event: event(),
     remote,
     policy: {
-      allowedTargets: ["nosuk"],
+      allowedTargets: ["workerAlpha"],
       allowedTaskKinds: ["propose_patch"],
       allowedWorkspaces: ["plugin-a2a"],
     },
@@ -54,7 +54,7 @@ test("handoff visibility policy allows configured remote target/task/workspace",
 test("handoff visibility policy denies disallowed remote target before inner dispatch", async () => {
   let innerCalled = false;
   const adapter = createRemoteNodeHandoffAdapter(activeConfig(), {
-    visibilityPolicy: { deniedTargets: ["nosuk"] },
+    visibilityPolicy: { deniedTargets: ["workerAlpha"] },
     innerHook: async () => {
       innerCalled = true;
       return { handled: true, mode: "direct", result: {} };
@@ -67,7 +67,7 @@ test("handoff visibility policy denies disallowed remote target before inner dis
   assert.equal(result.handled, false);
   assert.equal(result.visibility, "policy_denied");
   assert.equal(result.policy.status, "denied");
-  assert.match(result.reason, /nosuk.*denied/);
+  assert.match(result.reason, /workerAlpha.*denied/);
   assert.deepEqual(result.remote, remote);
 });
 
@@ -94,7 +94,7 @@ test("handoff visibility policy surfaces approval-required live handoff", () => 
       },
     }),
     remote,
-    policy: { allowedTargets: ["nosuk"], requireApprovalForLiveImpact: true },
+    policy: { allowedTargets: ["workerAlpha"], requireApprovalForLiveImpact: true },
   });
 
   assert.equal(decision.status, "approval_required");
@@ -122,7 +122,7 @@ test("handoff visibility policy can be read from plugin config", () => {
   const decision = evaluateRemoteHandoffVisibilityPolicy({
     event: event(),
     remote,
-    config: activeConfig({ remoteHandoff: { allowedTargets: ["sogyo"] } }),
+    config: activeConfig({ remoteHandoff: { allowedTargets: ["workerBeta"] } }),
   });
 
   assert.equal(decision.status, "denied");

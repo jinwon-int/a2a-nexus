@@ -99,7 +99,7 @@ const DEFAULTS: Required<
   memoryThresholdMb: 200,
   cpuLoadThreshold: 0.9,
   maxCommandDurationMs: 30000,
-  delegateTarget: "seoseo",
+  delegateTarget: "brokerAlpha",
 };
 
 // ── Guardrail ─────────────────────────────────────────────────

@@ -175,15 +175,15 @@ function simpleSchedzBody() {
       topWorkers: [{ key: "worker-slow", count: 8 }],
       topStatuses: [{ key: "succeeded", count: 24 }],
       topReceiptStatuses: [{ key: "accepted", count: 7 }],
-      topBrokersOfRecord: [{ key: "seoseo", count: 42 }],
+      topBrokersOfRecord: [{ key: "brokeralpha", count: 42 }],
       topPendingAckWorkers: [{ key: "worker-slow", count: 7 }],
       topPendingAckStatuses: [{ key: "succeeded", count: 7 }],
       topPendingAckReceiptStatuses: [{ key: "accepted", count: 7 }],
-      topPendingAckBrokersOfRecord: [{ key: "seoseo", count: 7 }],
+      topPendingAckBrokersOfRecord: [{ key: "brokeralpha", count: 7 }],
       oldestPendingAckWorker: "worker-slow",
       oldestPendingAckStatus: "succeeded",
       oldestPendingAckReceiptStatus: "accepted",
-      oldestPendingAckBrokerOfRecord: "seoseo",
+      oldestPendingAckBrokerOfRecord: "brokeralpha",
     },
     container: {
       cgroup: {
@@ -459,7 +459,7 @@ describe("broker comprehensive diagnostics (no-live)", () => {
         `slowSampleAttributionRows[${mode}] should carry terminalOutboxTopPendingAckStatus`);
       assert.equal(summary.slowSampleAttributionRows[0].terminalOutboxTopPendingAckReceiptStatus, "accepted",
         `slowSampleAttributionRows[${mode}] should carry terminalOutboxTopPendingAckReceiptStatus`);
-      assert.equal(summary.slowSampleAttributionRows[0].terminalOutboxTopPendingAckBrokerOfRecord, "seoseo",
+      assert.equal(summary.slowSampleAttributionRows[0].terminalOutboxTopPendingAckBrokerOfRecord, "brokeralpha",
         `slowSampleAttributionRows[${mode}] should carry terminalOutboxTopPendingAckBrokerOfRecord`);
       assert.equal(summary.slowSampleAttributionRows[0].containerCpuDeltaNrThrottled, 1,
         `slowSampleAttributionRows[${mode}] should carry containerCpuDeltaNrThrottled`);

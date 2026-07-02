@@ -3,7 +3,7 @@
 **Issues:** [#497](https://github.com/jinwon-int/a2a-broker/issues/497) —
 [#617](https://github.com/jinwon-int/a2a-broker/issues/617)
 **Date:** 2026-05-14
-**Author:** nosuk (Team1)
+**Author:** workeralpha (Team1)
 
 ## 1. Problem
 

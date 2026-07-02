@@ -5,7 +5,7 @@
  * Parent: jinwon-int/a2a-broker#844
  * Run:    a2a-team1-auto-closeout-action-reconcile-20260520T180955Z
  * Round:  3/4
- * Worker: sogyo
+ * Worker: workerBeta
  *
  * Covers:
  *  - All three post-action states: executed, noop, failed.

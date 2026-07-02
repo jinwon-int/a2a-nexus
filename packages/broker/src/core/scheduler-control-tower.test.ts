@@ -24,13 +24,13 @@ function makeTask(overrides: Partial<TaskRecord> & { status?: TaskRecord["status
     id: `task-${Math.random().toString(36).slice(2, 8)}`,
     intent: "propose_patch",
     status: "queued",
-    targetNodeId: "bangtong",
+    targetNodeId: "workergamma",
     payload: {},
     createdAt: "2026-05-25T11:00:00.000Z",
     updatedAt: "2026-05-25T11:00:00.000Z",
     requeueCount: 0,
     requester: { id: "hub-1" },
-    target: { id: "bangtong", kind: "node" },
+    target: { id: "workergamma", kind: "node" },
     ...overrides,
   };
 }
@@ -70,7 +70,7 @@ describe("extractRepo", () => {
   });
 
   it("falls back to workspace.workspaceId", () => {
-    const task = makeTask({ workspace: { nodeId: "bangtong", workspaceId: "my-project" } });
+    const task = makeTask({ workspace: { nodeId: "workergamma", workspaceId: "my-project" } });
     assert.equal(extractRepo(task), "my-project");
   });
 
@@ -94,13 +94,13 @@ describe("extractRepo", () => {
 
 describe("extractWorkerId", () => {
   it("returns assignedWorkerId when present", () => {
-    const task = makeTask({ assignedWorkerId: "bangtong", targetNodeId: "other" });
-    assert.equal(extractWorkerId(task), "bangtong");
+    const task = makeTask({ assignedWorkerId: "workergamma", targetNodeId: "other" });
+    assert.equal(extractWorkerId(task), "workergamma");
   });
 
   it("falls back to targetNodeId", () => {
-    const task = makeTask({ targetNodeId: "sogyo" });
-    assert.equal(extractWorkerId(task), "sogyo");
+    const task = makeTask({ targetNodeId: "workerbeta" });
+    assert.equal(extractWorkerId(task), "workerbeta");
   });
 
   it("returns 'unassigned' when neither is set", () => {
@@ -142,18 +142,18 @@ describe("groupTasksBy", () => {
 
   it("groups non-terminal tasks by the extracted key", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "claimed", targetNodeId: "bangtong" }),
-      makeTask({ id: "t3", status: "running", targetNodeId: "sogyo" }),
-      makeTask({ id: "t4", status: "queued", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "claimed", targetNodeId: "workergamma" }),
+      makeTask({ id: "t3", status: "running", targetNodeId: "workerbeta" }),
+      makeTask({ id: "t4", status: "queued", targetNodeId: "workerbeta" }),
       makeTask({ id: "t5", status: "succeeded" }),
       makeTask({ id: "t6", status: "failed" }),
     ];
 
     const groups = groupTasksBy(tasks, (t) => extractWorkerId(t));
-    assert.equal(groups.length, 2); // bangtong, sogyo — no unassigned
-    const bt = groups.find((g) => g.key === "bangtong")!;
-    const sg = groups.find((g) => g.key === "sogyo")!;
+    assert.equal(groups.length, 2); // workergamma, workerbeta — no unassigned
+    const bt = groups.find((g) => g.key === "workergamma")!;
+    const sg = groups.find((g) => g.key === "workerbeta")!;
     assert.equal(bt.count, 2);
     assert.equal(bt.byStatus.queued, 1);
     assert.equal(bt.byStatus.claimed, 1);
@@ -183,15 +183,15 @@ describe("groupTasksBy", () => {
 
 describe("buildWorkerCapacitySlots", () => {
   const workers: WorkerView[] = [
-    makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
-    makeWorker({ nodeId: "sogyo", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
+    makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+    makeWorker({ nodeId: "workerbeta", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
   ];
 
   it("produces slots for all workers and tasks", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "claimed", targetNodeId: "bangtong" }),
-      makeTask({ id: "t3", status: "running", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "claimed", targetNodeId: "workergamma" }),
+      makeTask({ id: "t3", status: "running", targetNodeId: "workerbeta" }),
     ];
 
     const slots = buildWorkerCapacitySlots(tasks, workers, undefined, {
@@ -200,12 +200,12 @@ describe("buildWorkerCapacitySlots", () => {
     });
 
     assert.equal(slots.length, 2);
-    const bt = slots.find((s) => s.workerId === "bangtong")!;
+    const bt = slots.find((s) => s.workerId === "workergamma")!;
     assert.equal(bt.activeTaskCount, 2);
     assert.equal(bt.queuedTaskCount, 1);
     assert.equal(bt.claimedTaskCount, 1);
     assert.equal(bt.status, "online");
-    const sg = slots.find((s) => s.workerId === "sogyo")!;
+    const sg = slots.find((s) => s.workerId === "workerbeta")!;
     assert.equal(sg.activeTaskCount, 1);
     assert.equal(sg.runningTaskCount, 1);
   });
@@ -226,16 +226,16 @@ describe("buildWorkerCapacitySlots", () => {
 
   it("computes utilization when maxConcurrentOverrides is provided", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "running", targetNodeId: "bangtong" }),
+      makeTask({ id: "t1", status: "running", targetNodeId: "workergamma" }),
     ];
-    const overrides = new Map([["bangtong", 4]]);
+    const overrides = new Map([["workergamma", 4]]);
 
     const slots = buildWorkerCapacitySlots(tasks, workers, overrides, {
       nowMs: NOW_MS,
       workerOfflineAfterMs: STALE_WORKER_MS,
     });
 
-    const bt = slots.find((s) => s.workerId === "bangtong")!;
+    const bt = slots.find((s) => s.workerId === "workergamma")!;
     assert.equal(bt.maxConcurrentTasks, 4);
     assert.equal(bt.utilizationPct, 25); // 1/4
     assert.equal(bt.remainingSlots, 3);
@@ -253,10 +253,10 @@ describe("buildWorkerCapacitySlots", () => {
 
   it("sorts slots descending by activeTaskCount", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "a", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "b", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "c", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "d", status: "queued", targetNodeId: "sogyo" }),
+      makeTask({ id: "a", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "b", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "c", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "d", status: "queued", targetNodeId: "workerbeta" }),
     ];
     const slots = buildWorkerCapacitySlots(tasks, workers, undefined, {
       nowMs: NOW_MS,
@@ -270,16 +270,16 @@ describe("buildWorkerCapacitySlots", () => {
 
 describe("buildSchedulerControlTowerSummaryV2", () => {
   const workers: WorkerView[] = [
-    makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
-    makeWorker({ nodeId: "sogyo", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
+    makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+    makeWorker({ nodeId: "workerbeta", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
   ];
 
   const opts = { nowMs: NOW_MS, workerOfflineAfterMs: STALE_WORKER_MS };
 
   it("produces a well-formed summary with all five grouping dimensions", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
 
     const summary = buildSchedulerControlTowerSummaryV2(tasks, workers, undefined, opts);
@@ -301,8 +301,8 @@ describe("buildSchedulerControlTowerSummaryV2", () => {
 
   it("group entries are correctly populated", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
 
     const summary = buildSchedulerControlTowerSummaryV2(tasks, workers, undefined, opts);
@@ -324,26 +324,26 @@ describe("buildSchedulerControlTowerSummaryV2", () => {
 
   it("includes terminal tasks only in capacity counts, not grouping", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "succeeded", targetNodeId: "bangtong" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "succeeded", targetNodeId: "workergamma" }),
     ];
 
     const summary = buildSchedulerControlTowerSummaryV2(tasks, workers, undefined, opts);
     assert.equal(summary.capacity.totals.activeTasks, 1);
 
-    const bt = summary.groups.byWorker.find((g) => g.key === "bangtong")!;
+    const bt = summary.groups.byWorker.find((g) => g.key === "workergamma")!;
     assert.equal(bt.count, 1);
   });
 
   it("supports maxConcurrentOverrides for utilization", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "claimed", targetNodeId: "bangtong" }),
+      makeTask({ id: "t1", status: "claimed", targetNodeId: "workergamma" }),
     ];
-    const overrides = new Map([["bangtong", 4]]);
+    const overrides = new Map([["workergamma", 4]]);
 
     const summary = buildSchedulerControlTowerSummaryV2(tasks, workers, overrides, opts);
 
-    const bt = summary.capacity.workers.find((s) => s.workerId === "bangtong")!;
+    const bt = summary.capacity.workers.find((s) => s.workerId === "workergamma")!;
     assert.equal(bt.maxConcurrentTasks, 4);
     assert.equal(bt.utilizationPct, 25);
     assert.equal(bt.remainingSlots, 3);
@@ -359,8 +359,8 @@ describe("buildSchedulerControlTowerSummaryV2", () => {
 
   it("deterministic: same inputs produce identical outputs", () => {
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
 
     const a = buildSchedulerControlTowerSummaryV2(tasks, workers, undefined, opts);
@@ -379,12 +379,12 @@ describe("buildSchedulerControlTowerSummaryV2", () => {
 describe("buildQueueGroupSummary", () => {
   it("returns all five dimensions in a single call", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
     const workers = [
-      makeWorker({ nodeId: "bangtong", role: "analyst" }),
-      makeWorker({ nodeId: "sogyo", role: "researcher" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst" }),
+      makeWorker({ nodeId: "workerbeta", role: "researcher" }),
     ];
 
     const groups = buildQueueGroupSummary(tasks, workers);
@@ -400,12 +400,12 @@ describe("buildQueueGroupSummary", () => {
 describe("renderSchedulerControlTowerSummary", () => {
   it("produces a markdown table with capacity and all group dimensions", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
     const workers = [
-      makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
-      makeWorker({ nodeId: "sogyo", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+      makeWorker({ nodeId: "workerbeta", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
     ];
     const summary = buildSchedulerControlTowerSummaryV2(
       tasks, workers, undefined,
@@ -415,7 +415,7 @@ describe("renderSchedulerControlTowerSummary", () => {
 
     assert.match(md, /Scheduler control‑tower summary/);
     assert.match(md, /Capacity/);
-    assert.match(md, /bangtong.*analyst.*online/);
+    assert.match(md, /workergamma.*analyst.*online/);
     assert.match(md, /By worker/);
     assert.match(md, /By role/);
     assert.match(md, /By repo/);
@@ -441,12 +441,12 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("buildSchedulerControlTowerSummaryV2 does not mutate task array", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta" }),
     ];
     const workers = [
-      makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
-      makeWorker({ nodeId: "sogyo", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+      makeWorker({ nodeId: "workerbeta", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
     ];
     const originalTasks = tasks.map((t) => ({ ...t }));
     const originalWorkers = workers.map((w) => ({ ...w }));
@@ -462,8 +462,8 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("buildSchedulerControlTowerSummaryV2 does not mutate input when tasks have extra fields", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "failed", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "succeeded", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "failed", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "succeeded", targetNodeId: "workerbeta" }),
     ];
     const workers: WorkerView[] = [];
     const original = JSON.parse(JSON.stringify(tasks));
@@ -475,11 +475,11 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("renderSchedulerControlTowerSummary does not mutate summary object", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta" }),
     ];
     const workers = [
-      makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
     ];
     const summary = buildSchedulerControlTowerSummaryV2(tasks, workers, undefined, { nowMs: NOW_MS });
     const originalWorkerCount = summary.groups.byWorker.length;
@@ -491,8 +491,8 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("buildWorkerCapacitySlots does not mutate worker array", () => {
     const workerRecords = [
-      makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
-      makeWorker({ nodeId: "sogyo", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+      makeWorker({ nodeId: "workerbeta", role: "researcher", lastSeenAt: "2026-05-25T11:58:00.000Z" }),
     ];
     const tasks: TaskRecord[] = [];
     const original = workerRecords.map((w) => ({ ...w }));
@@ -507,11 +507,11 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("buildQueueGroupSummary does not mutate task and worker arrays", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong", intent: "propose_patch" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo", intent: "analyze" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma", intent: "propose_patch" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta", intent: "analyze" }),
     ];
     const workerRecords = [
-      makeWorker({ nodeId: "bangtong", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
+      makeWorker({ nodeId: "workergamma", role: "analyst", lastSeenAt: "2026-05-25T11:59:00.000Z" }),
     ];
     const originalTasks = tasks.map((t) => ({ ...t }));
     const originalWorkers = workerRecords.map((w) => ({ ...w }));
@@ -528,8 +528,8 @@ describe("scheduler control tower non-mutation guard", () => {
 
   it("groupTasksBy does not mutate task array entries", () => {
     const tasks = [
-      makeTask({ id: "t1", status: "queued", targetNodeId: "bangtong" }),
-      makeTask({ id: "t2", status: "running", targetNodeId: "sogyo" }),
+      makeTask({ id: "t1", status: "queued", targetNodeId: "workergamma" }),
+      makeTask({ id: "t2", status: "running", targetNodeId: "workerbeta" }),
     ];
     const originalTargetNodeIds = tasks.map((t) => t.targetNodeId);
 

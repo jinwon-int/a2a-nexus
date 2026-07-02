@@ -9,7 +9,7 @@ Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`
 Verify that active plugin code uses `A2A Terminal Brief 완료: worker(1/3)`
 as the default manager-facing title contract, with concrete worker names and
 parent-round progress substituted (for example
-`A2A Terminal Brief 완료: sogyo(1/7)`) for direct broker workers and
+`A2A Terminal Brief 완료: workerBeta(1/7)`) for direct broker workers and
 cross-broker projected children. The renderer must preserve parent-broker
 aggregation metadata (roundNum, roundTotal, parentRoundProgress, parentRoundTotal)
 and deliver only through parent-owned notification routing.
@@ -26,8 +26,8 @@ no live Telegram/ACK.
 | 3 | Parent-only notification ownership | ✅ | `deliveryOwner: "openclaw.plugin-notifier"`, `deliveryTarget: "operator-main-session"` |
 | 4 | No-live proof/activation plan | ✅ | Receipt-gated adapter, dry-run harness, preflight helper; this doc is the activation plan |
 | 5 | Adapter text renderer uses compact titles | ✅ | `renderOperatorNotificationText()` in `operator-notification-adapter.ts` — `renderCompactOperatorNotificationTitle()` reads `roundNum`/`parentRoundProgress`/`roundProgress.completed` |
-| 6 | Round progress fallback when total unknown | ✅ | No denominator → worker-only label (e.g. `A2A Terminal Brief 완료: sogyo 작업`) |
-| 7 | 7-child no-live rehearsal | ✅ | Tests cover multi-worker round progress through origin titles (Seoseo, Gwakga) and cross-broker projection fields |
+| 6 | Round progress fallback when total unknown | ✅ | No denominator → worker-only label (e.g. `A2A Terminal Brief 완료: workerBeta 작업`) |
+| 7 | 7-child no-live rehearsal | ✅ | Tests cover multi-worker round progress through origin titles (brokerAlpha, brokerBeta) and cross-broker projection fields |
 
 ## Test verification
 
@@ -53,7 +53,7 @@ Expected: **27 tests pass**, 0 fail — covers:
   - parentRoundProgress/parentRoundTotal, roundProgress.completed/parentRoundTotal, no-denominator fallback
 - `buildA2AOpenClawTelegramOperatorNotification` (1 test)
 - `createA2ATelegramSafeDryRunNotificationHarness` (2 tests)
-- Origin coverage — Seoseo, Gwakga cross-broker (2 tests)
+- Origin coverage — brokerAlpha, brokerBeta cross-broker (2 tests)
 - Evidence preserved in body (1 test)
 
 ### No-live canary harness
@@ -89,10 +89,10 @@ parentRoundTotal     → broker projection fallback
 A 7-child parent round (workers 1-7, all direct) projects as:
 
 ```
-Worker 1 → A2A Terminal Brief 완료: sogyo(1/7)
-Worker 2 → A2A Terminal Brief 완료: dungae(2/7)
-Worker 3 → A2A Terminal Brief 완료: seoseo(3/7)
-Worker 4 → A2A Terminal Brief 완료: gwakga(4/7)
+Worker 1 → A2A Terminal Brief 완료: workerBeta(1/7)
+Worker 2 → A2A Terminal Brief 완료: workerEpsilon(2/7)
+Worker 3 → A2A Terminal Brief 완료: brokerAlpha(3/7)
+Worker 4 → A2A Terminal Brief 완료: brokerBeta(4/7)
 Worker 5 → A2A Terminal Brief 완료: namu(5/7)
 Worker 6 → A2A Terminal Brief 완료: pado(6/7)
 Worker 7 → A2A Terminal Brief 완료: bada(7/7)
@@ -109,10 +109,10 @@ preserves the origin broker's round progress. `readRoundNum` in the notifier
 reads `parentRoundNum` from the handoff payload, which feeds into `formatRoundProgress`
 to produce the compact title.
 
-Example: Team2/Gwakga workers projected through Seoseo as the parent broker:
+Example: Team2/brokerBeta workers projected through brokerAlpha as the parent broker:
 
 ```
-A2A Terminal Brief 완료: gwakga(4/7)
+A2A Terminal Brief 완료: brokerBeta(4/7)
 ```
 
 The title uses the handoff broker's round position without requiring a live

@@ -67,7 +67,7 @@ function makeCapabilityCard(
   const worker: WorkerView = makeWorkerView({ nodeId: workerId });
   return createWorkerCapabilityCard(worker, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze", "propose_patch", "backfill"],
     skills: [],
@@ -96,40 +96,40 @@ test("intentToPreferredRole returns undefined for unknown intents", () => {
 // ── workerSupportsTaskType ─────────────────────────────────────────────────
 
 test("workerSupportsTaskType checks canPatchWorkspace for propose_patch", () => {
-  const worker = makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: true } });
+  const worker = makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: true } });
   assert.equal(workerSupportsTaskType(worker, "propose_patch"), true);
 });
 
 test("workerSupportsTaskType returns false when capability missing", () => {
-  const worker = makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: false } });
+  const worker = makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: false } });
   assert.equal(workerSupportsTaskType(worker, "propose_patch"), false);
 });
 
 test("workerSupportsTaskType checks canAnalyze for analyze", () => {
-  const worker = makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canAnalyze: false } });
+  const worker = makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canAnalyze: false } });
   assert.equal(workerSupportsTaskType(worker, "analyze"), false);
 });
 
 test("workerSupportsTaskType returns false for unknown intent", () => {
-  const worker = makeWorkerView({ nodeId: "yukson" });
+  const worker = makeWorkerView({ nodeId: "workerdelta" });
   assert.equal(workerSupportsTaskType(worker, "chat"), false);
 });
 
 // ── workerHasWorkspaceAccess ───────────────────────────────────────────────
 
 test("workerHasWorkspaceAccess passes when no workspace constraint", () => {
-  const worker = makeWorkerView({ nodeId: "yukson" });
+  const worker = makeWorkerView({ nodeId: "workerdelta" });
   assert.equal(workerHasWorkspaceAccess(worker, undefined), true);
 });
 
 test("workerHasWorkspaceAccess passes when worker has no workspace filter", () => {
-  const worker = makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, workspaceIds: [] } });
+  const worker = makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, workspaceIds: [] } });
   assert.equal(workerHasWorkspaceAccess(worker, "jinwon-int/a2a-broker"), true);
 });
 
 test("workerHasWorkspaceAccess passes when worker has the required workspace", () => {
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: { ...BASE_CAP, workspaceIds: ["jinwon-int/a2a-broker"] },
   });
   assert.equal(workerHasWorkspaceAccess(worker, "jinwon-int/a2a-broker"), true);
@@ -137,7 +137,7 @@ test("workerHasWorkspaceAccess passes when worker has the required workspace", (
 
 test("workerHasWorkspaceAccess fails when worker lacks required workspace", () => {
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: { ...BASE_CAP, workspaceIds: ["other/repo"] },
   });
   assert.equal(workerHasWorkspaceAccess(worker, "jinwon-int/a2a-broker"), false);
@@ -146,7 +146,7 @@ test("workerHasWorkspaceAccess fails when worker lacks required workspace", () =
 // ── cardSupportsTaskType ───────────────────────────────────────────────────
 
 test("cardSupportsTaskType checks supportedTaskTypes", () => {
-  const card = makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch"] });
+  const card = makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch"] });
   assert.equal(cardSupportsTaskType(card, "propose_patch"), true);
   assert.equal(cardSupportsTaskType(card, "backfill"), false);
 });
@@ -162,25 +162,25 @@ test("cardHasCapacity passes when no capacity info", () => {
 });
 
 test("cardHasCapacity passes when max is undefined", () => {
-  const card = makeCapabilityCard("yukson");
+  const card = makeCapabilityCard("workerdelta");
   card.capacity = { currentAssignedTasks: 3 };
   assert.deepEqual(cardHasCapacity(card), { ok: true, current: 3, max: undefined });
 });
 
 test("cardHasCapacity passes when under max", () => {
-  const card = makeCapabilityCard("yukson");
+  const card = makeCapabilityCard("workerdelta");
   card.capacity = { maxConcurrentTasks: 3, currentAssignedTasks: 1 };
   assert.deepEqual(cardHasCapacity(card), { ok: true, current: 1, max: 3 });
 });
 
 test("cardHasCapacity fails when at max", () => {
-  const card = makeCapabilityCard("yukson");
+  const card = makeCapabilityCard("workerdelta");
   card.capacity = { maxConcurrentTasks: 3, currentAssignedTasks: 3 };
   assert.deepEqual(cardHasCapacity(card), { ok: false, current: 3, max: 3 });
 });
 
 test("cardHasCapacity fails when over max", () => {
-  const card = makeCapabilityCard("yukson");
+  const card = makeCapabilityCard("workerdelta");
   card.capacity = { maxConcurrentTasks: 2, currentAssignedTasks: 5 };
   assert.deepEqual(cardHasCapacity(card), { ok: false, current: 5, max: 2 });
 });
@@ -188,14 +188,14 @@ test("cardHasCapacity fails when over max", () => {
 // ── InMemorySchedulerCardLookup ────────────────────────────────────────────
 
 test("InMemorySchedulerCardLookup finds card by worker id", () => {
-  const card = makeCapabilityCard("yukson");
+  const card = makeCapabilityCard("workerdelta");
   const lookup = makeCardLookup(card);
-  assert.equal(lookup.getCard("yukson")?.worker.id, "yukson");
+  assert.equal(lookup.getCard("workerdelta")?.worker.id, "workerdelta");
 });
 
 test("InMemorySchedulerCardLookup returns null for unknown worker", () => {
-  const lookup = makeCardLookup(makeCapabilityCard("yukson"));
-  assert.equal(lookup.getCard("dungae"), null);
+  const lookup = makeCardLookup(makeCapabilityCard("workerdelta"));
+  assert.equal(lookup.getCard("workerepsilon"), null);
 });
 
 // ── evaluateWorkerForTask ─────────────────────────────────────────────────
@@ -208,7 +208,7 @@ const PATCH_TASK: SchedulerDryRunTaskProfile = {
 
 test("evaluateWorkerForTask recommends a capable worker with card", () => {
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: {
       canAnalyze: true,
       canBackfill: true,
@@ -218,10 +218,10 @@ test("evaluateWorkerForTask recommends a capable worker with card", () => {
       environments: ["research", "staging"],
     },
   });
-  const card = makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch", "backfill"] });
+  const card = makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch", "backfill"] });
   const evaluation = evaluateWorkerForTask(worker, PATCH_TASK, card);
 
-  assert.equal(evaluation.workerId, "yukson");
+  assert.equal(evaluation.workerId, "workerdelta");
   assert.equal(evaluation.recommended, true);
   assert.equal(evaluation.constraints.filter((c) => c.verdict === "fail").length, 0);
   assert.match(evaluation.summary, /passes all constraints/);
@@ -229,7 +229,7 @@ test("evaluateWorkerForTask recommends a capable worker with card", () => {
 
 test("evaluateWorkerForTask skips a worker that lacks task-type support", () => {
   const worker = makeWorkerView({
-    nodeId: "dungae",
+    nodeId: "workerepsilon",
     capabilities: {
       canAnalyze: true,
       canBackfill: true,
@@ -239,7 +239,7 @@ test("evaluateWorkerForTask skips a worker that lacks task-type support", () => 
       environments: ["research"],
     },
   });
-  const card = makeCapabilityCard("dungae", { supportedTaskTypes: ["analyze", "backfill"] });
+  const card = makeCapabilityCard("workerepsilon", { supportedTaskTypes: ["analyze", "backfill"] });
   const evaluation = evaluateWorkerForTask(worker, PATCH_TASK, card);
 
   assert.equal(evaluation.recommended, false);
@@ -248,7 +248,7 @@ test("evaluateWorkerForTask skips a worker that lacks task-type support", () => 
 
 test("evaluateWorkerForTask skips a worker that lacks workspace access", () => {
   const worker = makeWorkerView({
-    nodeId: "dungae",
+    nodeId: "workerepsilon",
     capabilities: {
       canAnalyze: true,
       canBackfill: true,
@@ -258,7 +258,7 @@ test("evaluateWorkerForTask skips a worker that lacks workspace access", () => {
       environments: ["research"],
     },
   });
-  const card = makeCapabilityCard("dungae", { supportedTaskTypes: ["analyze", "propose_patch"] });
+  const card = makeCapabilityCard("workerepsilon", { supportedTaskTypes: ["analyze", "propose_patch"] });
   const evaluation = evaluateWorkerForTask(worker, PATCH_TASK, card);
 
   assert.equal(evaluation.recommended, false);
@@ -266,8 +266,8 @@ test("evaluateWorkerForTask skips a worker that lacks workspace access", () => {
 });
 
 test("evaluateWorkerForTask skips a worker at capacity", () => {
-  const worker = makeWorkerView({ nodeId: "nosuk", capabilities: { ...BASE_CAP, canPatchWorkspace: true } });
-  const card = makeCapabilityCard("nosuk", { supportedTaskTypes: ["analyze", "propose_patch", "backfill"] });
+  const worker = makeWorkerView({ nodeId: "workeralpha", capabilities: { ...BASE_CAP, canPatchWorkspace: true } });
+  const card = makeCapabilityCard("workeralpha", { supportedTaskTypes: ["analyze", "propose_patch", "backfill"] });
   card.capacity = { maxConcurrentTasks: 2, currentAssignedTasks: 2 };
   const evaluation = evaluateWorkerForTask(worker, PATCH_TASK, card);
 
@@ -282,16 +282,16 @@ test("evaluateWorkerForTask prefers libero for validation tasks", () => {
   };
 
   // Libero worker with validate_change support
-  const liberoWorker = makeWorkerView({ nodeId: "yukson" });
-  const liberoCard = makeCapabilityCard("yukson", {
+  const liberoWorker = makeWorkerView({ nodeId: "workerdelta" });
+  const liberoCard = makeCapabilityCard("workerdelta", {
     teamId: "team1",
     assignmentRoles: ["libero"],
     supportedTaskTypes: ["analyze", "validate_change"],
   });
 
   // Regular implementation worker
-  const implWorker = makeWorkerView({ nodeId: "dungae" });
-  const implCard = makeCapabilityCard("dungae", {
+  const implWorker = makeWorkerView({ nodeId: "workerepsilon" });
+  const implCard = makeCapabilityCard("workerepsilon", {
     teamId: "team1",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze", "validate_change"],
@@ -311,7 +311,7 @@ test("evaluateWorkerForTask prefers libero for validation tasks", () => {
 
 test("evaluateWorkerForTask uses worker capabilities when no card available", () => {
   const worker = makeWorkerView({
-    nodeId: "bangtong",
+    nodeId: "workergamma",
     capabilities: {
       canAnalyze: true,
       canBackfill: true,
@@ -332,39 +332,39 @@ test("evaluateWorkerForTask uses worker capabilities when no card available", ()
 test("rankWorkersForTask puts recommended before not-recommended", () => {
   const tasks: SchedulerDryRunTaskProfile = { taskType: "propose_patch" };
   const good = evaluateWorkerForTask(
-    makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
     tasks,
-    makeCapabilityCard("yukson"),
+    makeCapabilityCard("workerdelta"),
   );
   const bad = evaluateWorkerForTask(
-    makeWorkerView({ nodeId: "dungae", capabilities: { ...BASE_CAP, canPatchWorkspace: false } }),
+    makeWorkerView({ nodeId: "workerepsilon", capabilities: { ...BASE_CAP, canPatchWorkspace: false } }),
     tasks,
-    makeCapabilityCard("dungae", { supportedTaskTypes: ["analyze"] }),
+    makeCapabilityCard("workerepsilon", { supportedTaskTypes: ["analyze"] }),
   );
 
   const ranked = rankWorkersForTask([bad, good], tasks);
-  assert.equal(ranked[0].workerId, "yukson");
-  assert.equal(ranked[1].workerId, "dungae");
+  assert.equal(ranked[0].workerId, "workerdelta");
+  assert.equal(ranked[1].workerId, "workerepsilon");
 });
 
 test("rankWorkersForTask puts assigned worker first", () => {
   const tasks: SchedulerDryRunTaskProfile = {
     taskType: "propose_patch",
-    assignedWorkerId: "dungae",
+    assignedWorkerId: "workerepsilon",
   };
   const eval1 = evaluateWorkerForTask(
-    makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
     tasks,
-    makeCapabilityCard("yukson"),
+    makeCapabilityCard("workerdelta"),
   );
   const eval2 = evaluateWorkerForTask(
-    makeWorkerView({ nodeId: "dungae", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerepsilon", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
     tasks,
-    makeCapabilityCard("dungae"),
+    makeCapabilityCard("workerepsilon"),
   );
 
   const ranked = rankWorkersForTask([eval1, eval2], tasks);
-  assert.equal(ranked[0].workerId, "dungae"); // assigned worker first
+  assert.equal(ranked[0].workerId, "workerepsilon"); // assigned worker first
 });
 
 // ── runSchedulerDryRun ────────────────────────────────────────────────────
@@ -377,25 +377,25 @@ test("runSchedulerDryRun selects the best worker from candidates", () => {
 
   const workers = [
     makeWorkerView({
-      nodeId: "yukson",
+      nodeId: "workerdelta",
       capabilities: { ...BASE_CAP, canPatchWorkspace: true, workspaceIds: ["jinwon-int/a2a-broker"] },
     }),
     makeWorkerView({
-      nodeId: "dungae",
+      nodeId: "workerepsilon",
       capabilities: { ...BASE_CAP, canPatchWorkspace: true, workspaceIds: ["other/repo"] },
     }),
   ];
 
   const cards = makeCardLookup(
-    makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch"] }),
-    makeCapabilityCard("dungae", { supportedTaskTypes: ["analyze", "propose_patch"] }),
+    makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch"] }),
+    makeCapabilityCard("workerepsilon", { supportedTaskTypes: ["analyze", "propose_patch"] }),
   );
 
   const result = runSchedulerDryRun(task, workers, cards);
 
   assert.equal(result.kind, "a2a-broker.scheduler-dry-run.v1");
   assert.equal(result.workerCount, 2);
-  assert.equal(result.recommendation.selectedWorkerId, "yukson");
+  assert.equal(result.recommendation.selectedWorkerId, "workerdelta");
   assert.equal(result.recommendation.provisional, false);
   assert.equal(result.safety.noMutation, true);
   assert.equal(result.safety.noDispatch, true);
@@ -417,15 +417,15 @@ test("runSchedulerDryRun selects libero when preferValidationWorker is set", () 
     preferValidationWorker: true,
   };
 
-  const liberoWorker = makeWorkerView({ nodeId: "yukson" });
-  const implWorker = makeWorkerView({ nodeId: "dungae" });
+  const liberoWorker = makeWorkerView({ nodeId: "workerdelta" });
+  const implWorker = makeWorkerView({ nodeId: "workerepsilon" });
 
-  const liberoCard = makeCapabilityCard("yukson", {
+  const liberoCard = makeCapabilityCard("workerdelta", {
     teamId: "team1",
     assignmentRoles: ["libero"],
     supportedTaskTypes: ["analyze", "validate_change"],
   });
-  const implCard = makeCapabilityCard("dungae", {
+  const implCard = makeCapabilityCard("workerepsilon", {
     teamId: "team1",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze", "validate_change"],
@@ -434,7 +434,7 @@ test("runSchedulerDryRun selects libero when preferValidationWorker is set", () 
   const cards = makeCardLookup(liberoCard, implCard);
   const result = runSchedulerDryRun(task, [implWorker, liberoWorker], cards);
 
-  assert.equal(result.recommendation.selectedWorkerId, "yukson"); // libero preferred
+  assert.equal(result.recommendation.selectedWorkerId, "workerdelta"); // libero preferred
 });
 
 test("runSchedulerDryRun handles capability-without-card workers", () => {
@@ -444,7 +444,7 @@ test("runSchedulerDryRun handles capability-without-card workers", () => {
 
   const workers = [
     makeWorkerView({
-      nodeId: "bangtong",
+      nodeId: "workergamma",
       capabilities: { ...BASE_CAP, canPatchWorkspace: true },
     }),
   ];
@@ -452,28 +452,28 @@ test("runSchedulerDryRun handles capability-without-card workers", () => {
   // No cards — use worker capabilities directly
   const result = runSchedulerDryRun(task, workers, undefined);
 
-  assert.equal(result.recommendation.selectedWorkerId, "bangtong");
+  assert.equal(result.recommendation.selectedWorkerId, "workergamma");
   assert.equal(result.recommendation.provisional, false);
 });
 
 test("runSchedulerDryRun respects assigned worker when available", () => {
   const task: SchedulerDryRunTaskProfile = {
     taskType: "propose_patch",
-    assignedWorkerId: "dungae",
+    assignedWorkerId: "workerepsilon",
   };
 
   const workers = [
-    makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
-    makeWorkerView({ nodeId: "dungae", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerepsilon", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
   ];
 
   const cards = makeCardLookup(
-    makeCapabilityCard("yukson"),
-    makeCapabilityCard("dungae"),
+    makeCapabilityCard("workerdelta"),
+    makeCapabilityCard("workerepsilon"),
   );
 
   const result = runSchedulerDryRun(task, workers, cards);
-  assert.equal(result.recommendation.selectedWorkerId, "dungae");
+  assert.equal(result.recommendation.selectedWorkerId, "workerepsilon");
 });
 
 // ── Environment constraints ────────────────────────────────────────────────
@@ -485,10 +485,10 @@ test("evaluateWorkerForTask respects target environment constraint", () => {
   };
 
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: { ...BASE_CAP, canPatchWorkspace: true, environments: ["research"] },
   });
-  const card = makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch"] });
+  const card = makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch"] });
   card.assignment.environments = ["research"];
 
   const evaluation = evaluateWorkerForTask(worker, task, card);
@@ -503,10 +503,10 @@ test("evaluateWorkerForTask passes environment constraint when environments matc
   };
 
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: { ...BASE_CAP, canPatchWorkspace: true, environments: ["research", "staging"] },
   });
-  const card = makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch"] });
+  const card = makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch"] });
   card.assignment.environments = ["research", "staging"];
 
   const evaluation = evaluateWorkerForTask(worker, task, card);
@@ -522,16 +522,16 @@ test("runSchedulerDryRun produces no-mutation output with constraints", () => {
     workspaceId: "jinwon-int/a2a-broker",
   };
 
-  const yuksonBase = makeWorkerView({ nodeId: "yukson" });
-  const dungaeBase = makeWorkerView({ nodeId: "dungae" });
+  const workerdeltaBase = makeWorkerView({ nodeId: "workerdelta" });
+  const workerepsilonBase = makeWorkerView({ nodeId: "workerepsilon" });
   const workers = [
-    makeWorkerView({ nodeId: "yukson", capabilities: { ...yuksonBase.capabilities, canPatchWorkspace: true, workspaceIds: ["jinwon-int/a2a-broker"] } }),
-    makeWorkerView({ nodeId: "dungae", capabilities: { ...dungaeBase.capabilities, canPatchWorkspace: false, workspaceIds: ["jinwon-int/a2a-broker"] } }),
+    makeWorkerView({ nodeId: "workerdelta", capabilities: { ...workerdeltaBase.capabilities, canPatchWorkspace: true, workspaceIds: ["jinwon-int/a2a-broker"] } }),
+    makeWorkerView({ nodeId: "workerepsilon", capabilities: { ...workerepsilonBase.capabilities, canPatchWorkspace: false, workspaceIds: ["jinwon-int/a2a-broker"] } }),
   ];
 
   const cards = makeCardLookup(
-    makeCapabilityCard("yukson", { supportedTaskTypes: ["analyze", "propose_patch"] }),
-    makeCapabilityCard("dungae", { supportedTaskTypes: ["analyze", "backfill"] }),
+    makeCapabilityCard("workerdelta", { supportedTaskTypes: ["analyze", "propose_patch"] }),
+    makeCapabilityCard("workerepsilon", { supportedTaskTypes: ["analyze", "backfill"] }),
   );
 
   const result = runSchedulerDryRun(task, workers, cards);
@@ -543,21 +543,21 @@ test("runSchedulerDryRun produces no-mutation output with constraints", () => {
   // Verify evaluations per worker
   assert.equal(result.workerEvaluations.length, 2);
 
-  // Yukson: should be recommended
-  const yuksonResult = result.workerEvaluations.find((w) => w.workerId === "yukson");
-  assert.ok(yuksonResult);
-  assert.equal(yuksonResult.recommended, true);
-  assert.ok(yuksonResult.constraints.length >= 4); // role, task_type, workspace, capacity
-  assert.ok(yuksonResult.constraints.some((c) => c.constraint === "task_type_support" && c.verdict === "pass"));
+  // workerdelta: should be recommended
+  const workerdeltaResult = result.workerEvaluations.find((w) => w.workerId === "workerdelta");
+  assert.ok(workerdeltaResult);
+  assert.equal(workerdeltaResult.recommended, true);
+  assert.ok(workerdeltaResult.constraints.length >= 4); // role, task_type, workspace, capacity
+  assert.ok(workerdeltaResult.constraints.some((c) => c.constraint === "task_type_support" && c.verdict === "pass"));
 
-  // Dungae: should NOT be recommended (no patch support)
-  const dungaeResult = result.workerEvaluations.find((w) => w.workerId === "dungae");
-  assert.ok(dungaeResult);
-  assert.equal(dungaeResult.recommended, false);
-  assert.ok(dungaeResult.constraints.some((c) => c.constraint === "task_type_support" && c.verdict === "fail"));
+  // workerepsilon: should NOT be recommended (no patch support)
+  const workerepsilonResult = result.workerEvaluations.find((w) => w.workerId === "workerepsilon");
+  assert.ok(workerepsilonResult);
+  assert.equal(workerepsilonResult.recommended, false);
+  assert.ok(workerepsilonResult.constraints.some((c) => c.constraint === "task_type_support" && c.verdict === "fail"));
 
   // Verify selected worker
-  assert.equal(result.recommendation.selectedWorkerId, "yukson");
+  assert.equal(result.recommendation.selectedWorkerId, "workerdelta");
 });
 
 // ── Markdown renderer ──────────────────────────────────────────────────────
@@ -569,7 +569,7 @@ test("renderSchedulerDryRunMarkdown produces readable output", () => {
   };
 
   const workers = [
-    makeWorkerView({ nodeId: "yukson", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
+    makeWorkerView({ nodeId: "workerdelta", capabilities: { ...BASE_CAP, canPatchWorkspace: true } }),
   ];
 
   const result = runSchedulerDryRun(task, workers);
@@ -580,7 +580,7 @@ test("renderSchedulerDryRunMarkdown produces readable output", () => {
   assert.match(markdown, /Task type/);
   assert.match(markdown, /Recommendation/);
   assert.match(markdown, /Worker Evaluations/);
-  assert.match(markdown, /yukson/);
+  assert.match(markdown, /workerdelta/);
   assert.match(markdown, /No mutation/);
   assert.match(markdown, /No dispatch/);
 });
@@ -597,7 +597,7 @@ test("renderSchedulerDryRunMarkdown shows empty state when no workers", () => {
 
 test("edge: unknown task type falls through gracefully", () => {
   const task: SchedulerDryRunTaskProfile = { taskType: "chat" };
-  const worker = makeWorkerView({ nodeId: "yukson" });
+  const worker = makeWorkerView({ nodeId: "workerdelta" });
   const evaluation = evaluateWorkerForTask(worker, task, null);
 
   // Role is skipped (no preferred mapping), task_type uses worker capabilities (false for chat)
@@ -612,7 +612,7 @@ test("edge: identical dry-run inputs produce identical results", () => {
   };
 
   const worker = makeWorkerView({
-    nodeId: "yukson",
+    nodeId: "workerdelta",
     capabilities: { ...BASE_CAP, canPatchWorkspace: true, workspaceIds: ["jinwon-int/a2a-broker"] },
   });
 

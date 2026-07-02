@@ -28,15 +28,15 @@ function rehearsal(
       startExecutorGateState: "ready_for_start_executor_review",
       startExecutorGateIdempotencyKey: "tb-sidecar-start-executor-gate:fixture-739",
       startExecutorReviewReady: true,
-      requestedExecutor: "gongyung-sidecar-dry-run-executor",
+      requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
       operatorApprovalReference: "operator-visible-approval-739",
       commandShapeKind: "metadata_only",
     },
     invocationPlan: {
       rehearsalOnly: true,
       supervisedDryRunOnly: true,
-      executorName: "gongyung-sidecar-dry-run-executor",
-      adapterName: "gongyung",
+      executorName: "mobilealpha-sidecar-dry-run-executor",
+      adapterName: "mobilealpha",
       executorRuntime: "metadata-only",
       supervisor: "terminal-brief-sidecar-worker",
       healthCheckTarget: "/readyz",
@@ -57,7 +57,7 @@ function rehearsal(
       expectedEvidence: ["operator-reviewed metadata-only invocation plan"],
       adapterContract: {
         version: 1,
-        adapterName: "gongyung",
+        adapterName: "mobilealpha",
         transport: "json-stdin-stdout",
         input: {
           packetKind: "a2a-broker.terminal-brief-sidecar-executor-invocation-rehearsal.packet",
@@ -107,7 +107,7 @@ function rehearsal(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesStartExecutorGatePacket: true,
       adapterContractVersion: 1,
       requiresAbortEvidence: true,
@@ -153,7 +153,7 @@ function rehearsal(
 test("runtime preflight approval packet becomes ready without runtime execution", () => {
   const packet = buildTerminalBriefSidecarRuntimePreflightApproval(rehearsal(), {
     now: NOW,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     operatorTarget: "round-739",
     approvalReference: "operator-visible-approval-739",
   });
@@ -231,14 +231,14 @@ test("runtime preflight approval extractors and markdown preserve no-live bounda
   const input = {
     executorInvocationRehearsalPacket: rehearsal(),
     runtimePreflightApproval: {
-      requested_by: "seoseo",
+      requested_by: "brokeralpha",
       operator_target: "round-739",
       required_abort_evidence: ["abortCode", "observedAt"],
     },
   };
 
   assert.equal(extractTerminalBriefSidecarRuntimePreflightApprovalRehearsal(input).idempotencyKey, "tb-sidecar-executor-invocation-rehearsal:fixture-739");
-  assert.equal(extractTerminalBriefSidecarRuntimePreflightApprovalOptions(input).requested_by, "seoseo");
+  assert.equal(extractTerminalBriefSidecarRuntimePreflightApprovalOptions(input).requested_by, "brokeralpha");
 
   const packet = buildTerminalBriefSidecarRuntimePreflightApproval(
     extractTerminalBriefSidecarRuntimePreflightApprovalRehearsal(input),

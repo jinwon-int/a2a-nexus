@@ -60,10 +60,10 @@ broker deploy or runtime hot-path instrumentation.
   #1032 close criteria, but `tasks.list` was no longer the only useful signal.
 - The 1196b44 live runtime had healthy Docker state, zero restart count, healthy
   `/schedz`, and no 5s `/livez` failures, but still showed residual `>1s` and
-  Gwakga `>3s` samples.
+  brokerbeta `>3s` samples.
 - PR #1224 added `/schedz.workerHeartbeatHotPath` runtime diagnostics to split
   in-memory heartbeat updates from persisted heartbeat writes. That live gate
-  regressed into new 5s `/livez` timeouts on both Seoseo and Gwakga, so the
+  regressed into new 5s `/livez` timeouts on both brokeralpha and brokerbeta, so the
   broker was rolled back and the source patch was reverted by PR #1225.
 - PR #1226 added a report-only heartbeat correlation guardrail. It prevents
   `workers.heartbeat` or `brokerHeartbeat` slow-sample correlation from being

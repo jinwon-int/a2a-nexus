@@ -137,7 +137,7 @@ describe("parseArgs", () => {
 describe("extractManifestAndTasks", () => {
   it("extracts from { manifest, tasks } shape", () => {
     const fixture = {
-      manifest: { roundLabel: "test", lanes: [{ workerId: "sogyo" }] },
+      manifest: { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] },
       tasks: [{ id: "task-1", status: "succeeded" }],
     };
     const { manifest, tasks } = extractManifestAndTasks(fixture);
@@ -146,14 +146,14 @@ describe("extractManifestAndTasks", () => {
   });
 
   it("extracts from bare manifest shape", () => {
-    const fixture = { roundLabel: "test", lanes: [{ workerId: "sogyo" }], tasks: [{ id: "task-1" }] };
+    const fixture = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }], tasks: [{ id: "task-1" }] };
     const { manifest, tasks } = extractManifestAndTasks(fixture);
     equal(manifest.roundLabel, "test");
     equal(tasks.length, 1);
   });
 
   it("returns empty tasks array when bare manifest has no tasks", () => {
-    const fixture = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const fixture = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
     const { manifest, tasks } = extractManifestAndTasks(fixture);
     equal(tasks.length, 0);
   });
@@ -416,7 +416,7 @@ describe("CLI invocation (subprocess)", () => {
     const output = JSON.parse(stdout);
     equal(output.summary.totalLanes, 2);
     equal(output.summary.completed, 1);
-    ok(output.timeoutLanes.includes("nosuk"));
+    ok(output.timeoutLanes.includes("workeralpha"));
   });
 
   it("exits 0 with --validate-only flag", async () => {
@@ -458,16 +458,16 @@ describe("CLI invocation (subprocess)", () => {
     ok(stdout.includes("round-coordinator-closeout-dry-run"));
   });
 
-  it("(--json) emits sogyo lane with PR evidence in all-complete", async () => {
+  it("(--json) emits workerbeta lane with PR evidence in all-complete", async () => {
     const { execFileSync } = await import("node:child_process");
     const stdout = execFileSync("node", [
       script, "--input", `${fixturesDir}/all-complete.json`, "--json",
     ], { encoding: "utf8", cwd: process.cwd() });
     const output = JSON.parse(stdout);
-    const sogyoLane = output.lanes.find((l) => l.workerId === "sogyo");
-    ok(sogyoLane);
-    ok(sogyoLane.prUrl, "sogyo lane should have prUrl");
-    ok(sogyoLane.prUrl.includes("pull/937"));
+    const workerbetaLane = output.lanes.find((l) => l.workerId === "workerbeta");
+    ok(workerbetaLane);
+    ok(workerbetaLane.prUrl, "workerbeta lane should have prUrl");
+    ok(workerbetaLane.prUrl.includes("pull/937"));
   });
 
   it("(--json) includes safety disclaimer", async () => {

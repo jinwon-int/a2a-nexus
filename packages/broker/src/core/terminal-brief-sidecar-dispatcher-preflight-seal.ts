@@ -112,7 +112,7 @@ export interface TerminalBriefSidecarDispatcherPreflightSealPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesExecutorDispatchRequestDraftPacket: true;
     rendersDispatcherPreflightSeal: true;
@@ -245,7 +245,7 @@ export function buildTerminalBriefSidecarDispatcherPreflightSeal(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesExecutorDispatchRequestDraftPacket: true,
       rendersDispatcherPreflightSeal: true,

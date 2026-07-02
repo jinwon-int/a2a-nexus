@@ -122,7 +122,7 @@ export interface TerminalBriefSidecarDefaultOnFinalLiveExecutionPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesRuntimeExecutorGatePacket: true;
     rendersFinalLiveExecutionPacket: true;
@@ -313,7 +313,7 @@ export function buildTerminalBriefSidecarDefaultOnFinalLiveExecution(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesRuntimeExecutorGatePacket: true,
       rendersFinalLiveExecutionPacket: true,
@@ -519,7 +519,7 @@ function approvalSensitiveActionsExcluded(): string[] {
     "runtime config write",
     "Terminal Brief default-on enablement",
     "Terminal Brief sidecar start/restart",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or terminal receipt DB mutation",
     "start executor dispatch, executor invocation, or process spawn",
     "GitHub PR merge, issue close, or comment post from the packet/route",

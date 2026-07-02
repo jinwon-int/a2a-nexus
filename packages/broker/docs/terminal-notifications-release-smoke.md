@@ -6,8 +6,8 @@ Use this runbook before cutting a broker release that changes `task.terminal` no
 
 - Broker responsibility: expose compact, replayable terminal notification records over HTTP/SSE.
 - Notifier responsibility: poll or subscribe, dedupe by `event.id`, deliver to Telegram/OpenClaw, and acknowledge delivered records.
-- Required workers for a Round 3 fleet smoke: `bangtong,dungae,sogyo,nosuk`.
-- Explicitly exclude `yukson` from fleet checks unless an operator approves a different cohort.
+- Required workers for a Round 3 fleet smoke: `workergamma,workerepsilon,workerbeta,workeralpha`.
+- Explicitly exclude `workerdelta` from fleet checks unless an operator approves a different cohort.
 
 ## Release smoke sequence
 
@@ -58,7 +58,7 @@ Run from the broker checkout.
 5. If validating the Round 3 worker cohort against a disposable or approved broker, require only the active workers:
 
    ```sh
-   npm run smoke:docker-broker:fleet -- --require-workers bangtong,dungae,sogyo,nosuk
+   npm run smoke:docker-broker:fleet -- --require-workers workergamma,workerepsilon,workerbeta,workeralpha
    ```
 
 6. Capture pass evidence in the PR/Done comment: commands, exit codes, and the sanitized release-gate summary. Do not paste secrets, raw logs, private paths, or session transcripts.
@@ -154,5 +154,5 @@ Stop and post Block evidence if any of these occur:
 - Dry-run payload contains secrets, chat IDs, local paths, raw logs, transcripts, or non-HTTP evidence URLs.
 - Auth checks allow unauthenticated/unauthorized outbox access.
 - Rate-limit headers are absent on successful outbox requests.
-- Worker fleet smoke includes `yukson` without explicit operator approval.
+- Worker fleet smoke includes `workerdelta` without explicit operator approval.
 - A step requires live deploy or live Telegram delivery and no operator has approved it.

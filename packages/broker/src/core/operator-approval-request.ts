@@ -32,7 +32,7 @@
 //   - No execution dispatch — the request does not execute anything
 //   - No sealed plan consumption — the request is a draft preview
 //
-// Reference: #990 Team2 Dungae — operator approval request for sealed
+// Reference: #990 Team2 workerepsilon — operator approval request for sealed
 //            execution plan.
 // Parent:    #982 Team2 — complexity execution plan draft.
 // ─────────────────────────────────────────────────────────────────────────────

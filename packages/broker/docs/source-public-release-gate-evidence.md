@@ -3,7 +3,7 @@
 Issue: [#475](https://github.com/jinwon-int/a2a-broker/issues/475)
 Parent: a2a-plane#192 (a2a-plane#192, internal tracker private)
 Run: `a2a-source-release-gate-20260510T113438Z`
-Lane: Team1 — bangtong
+Lane: Team1 — workergamma
 
 This is a read-only evidence and approval packet for the source-public release
 gate. It records the deterministic repo-local checks and scan results needed
@@ -117,7 +117,7 @@ paths, secret values, or private topology leaks found.
 If the source-public release gate evidence is later found to be incomplete or
 invalid:
 
-- **Owner:** seoseo (operator approval boundary per public-stable-readiness)
+- **Owner:** brokeralpha (operator approval boundary per public-stable-readiness)
 - **Path:** Close issue #475 as Block, reopen with corrected evidence
 - **No production rollback needed:** this is a read-only evidence packet only
 
@@ -126,17 +126,17 @@ invalid:
 | Blocker | Status | Detail |
 |---------|--------|--------|
 | Root `LICENSE` file | Pending | `package.json.private=true` is not itself a license; a `LICENSE` file matching the approved release intent is required per `docs/public-stable-readiness.md` |
-| Operator approval | Pending | seoseo must explicitly approve the source-public readiness action |
+| Operator approval | Pending | brokeralpha must explicitly approve the source-public readiness action |
 | External scanner evidence | Supplementary | Not required per `docs/scanner-coverage-vs-gitleaks-trufflehog.md` decision; repo-local scanner is the deterministic gate |
 
 ## Decision record
 
 - **Decision:** Block (pending license file and operator approval)
 - **Commit/PR:** `a2a-patch-20260510-113553-744f6813-6215-478a-9042-364fa2684bd7`
-- **Approver:** seoseo (required)
+- **Approver:** brokeralpha (required)
 - **CI evidence:** To be supplied by runner
 - **Local validation:** Public-readiness scan passed (0 fail, 29 warn)
 - **Secret/history scan:** Clean (0 fail)
 - **License decision:** Pending — root `LICENSE` file required
-- **Rollback owner and path:** seoseo; close #475 as Block
+- **Rollback owner and path:** brokeralpha; close #475 as Block
 - **Deferred follow-ups:** External scanner run (operator-triggered only)

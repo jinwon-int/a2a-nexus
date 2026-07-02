@@ -64,7 +64,7 @@ reports without scraping logs.
 
 ## Low-resource / Termux review
 
-For Gongyung/Android Termux:
+For mobileAlpha/Android Termux:
 
 - default to `in-process-queue` rather than an extra daemon;
 - avoid background polling loops;
@@ -76,5 +76,5 @@ For Gongyung/Android Termux:
 ## Non-goals for Phase 6b
 
 - No live wake behavior is enabled by default.
-- No Bangtong regression-lock behavior changes.
+- No workerGamma regression-lock behavior changes.
 - No broker Phase 7 event stream or Phase 8 peer-status RPC implementation.

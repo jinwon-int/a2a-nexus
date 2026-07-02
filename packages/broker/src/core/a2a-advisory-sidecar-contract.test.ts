@@ -12,7 +12,7 @@ import {
 const validRecommendation = {
   schemaVersion: 1,
   taskType: "github-issue-triage",
-  recommendedWorkerIds: ["sogyo", "bangtong"],
+  recommendedWorkerIds: ["workerbeta", "workergamma"],
   recommendedModel: "minimax/minimax-m3",
   confidence: 0.81234,
   reason: "Low-risk source-only issue triage; use Team1 research workers.",
@@ -27,7 +27,7 @@ test("validates advisory sidecar recommendations (#785)", () => {
   assert.ok(recommendation);
   assert.equal(recommendation.schemaVersion, 1);
   assert.equal(recommendation.taskType, "github-issue-triage");
-  assert.deepEqual(recommendation.recommendedWorkerIds, ["sogyo", "bangtong"]);
+  assert.deepEqual(recommendation.recommendedWorkerIds, ["workerbeta", "workergamma"]);
   assert.equal(recommendation.recommendedModel, "minimax/minimax-m3");
   assert.equal(recommendation.confidence, 0.8123);
   assert.equal(recommendation.needsHuman, true);
@@ -40,7 +40,7 @@ test("rejects malformed advisory sidecar output (#785)", () => {
   assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, taskType: "" }), null);
   assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, confidence: 1.1 }), null);
   assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, confidence: Number.NaN }), null);
-  assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, recommendedWorkerIds: "sogyo" }), null);
+  assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, recommendedWorkerIds: "workerbeta" }), null);
   assert.equal(validateAdvisorySidecarRecommendation({ ...validRecommendation, advisoryOnly: false }), null);
 });
 

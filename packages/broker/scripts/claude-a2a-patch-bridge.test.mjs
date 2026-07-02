@@ -25,7 +25,7 @@ function bridgeArgs(message) {
 // ("GitHub development assignment", '"prUrl"', "pr_opened", "open a pull request").
 function patchMessage() {
   return [
-    "You are A2A worker nosuk. Complete this GitHub development assignment end-to-end.",
+    "You are A2A worker workeralpha. Complete this GitHub development assignment end-to-end.",
     "Do not report success unless you opened a pull request, posted a Done comment, or posted a Block comment on GitHub.",
     'Return JSON only with: {"status":"pr_opened|blocked|done","summary":"...","prUrl":"...","blockCommentUrl":"...","doneCommentUrl":"..."}',
     "Repository: jinwon-int/example\nIssue: #42",
@@ -226,7 +226,7 @@ test("PATCH mode runs claude in a fresh temp dir and removes it afterward (isola
 // Mirrors the handler's prompt so parseTaskContext can find Repository:/Issue: lines.
 function singleShotMessage() {
   return [
-    "You are A2A worker nosuk. Complete this GitHub development assignment end-to-end.",
+    "You are A2A worker workeralpha. Complete this GitHub development assignment end-to-end.",
     "Do not report success unless you opened a pull request, posted a Done comment, or posted a Block comment on GitHub.",
     "Return JSON only with: {\"status\":\"pr_opened|blocked|done\",\"summary\":\"...\",\"prUrl\":\"...\",\"blockCommentUrl\":\"...\",\"doneCommentUrl\":\"...\"}",
     "Repository: jinwon-int/a2a-nexus",
@@ -615,7 +615,7 @@ test("SINGLE-SHOT missing Repository: in message -> bridge exits non-zero with c
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
   try {
     const messageNoRepo = [
-      "You are A2A worker nosuk. Complete this GitHub development assignment end-to-end.",
+      "You are A2A worker workeralpha. Complete this GitHub development assignment end-to-end.",
       "Repository is missing from this message.",
       "Issue: #42",
     ].join("\n\n");

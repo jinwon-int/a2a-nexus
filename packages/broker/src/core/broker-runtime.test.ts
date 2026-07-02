@@ -496,24 +496,24 @@ test("repeat cancel is idempotent and preserves the first cancellation record", 
 
 test("finalizer can durably mark a running sibling task as superseded", () => {
   const broker = new InMemoryA2ABroker();
-  registerWorker(broker, "nosuk");
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workeralpha");
+  registerWorker(broker, "workerbeta");
 
-  const selected = createWorkerTask(broker, "round-selected-pr", "nosuk");
-  broker.claimTask(selected.id, "nosuk");
-  broker.startTask(selected.id, "nosuk");
-  broker.completeTask(selected.id, "nosuk", {
+  const selected = createWorkerTask(broker, "round-selected-pr", "workeralpha");
+  broker.claimTask(selected.id, "workeralpha");
+  broker.startTask(selected.id, "workeralpha");
+  broker.completeTask(selected.id, "workeralpha", {
     summary: "selected PR merged",
     output: { prUrl: "https://github.com/jinwon-int/a2a-docker-runner/pull/356" },
   });
 
-  const sibling = createWorkerTask(broker, "round-sibling-running", "sogyo");
-  broker.claimTask(sibling.id, "sogyo");
-  broker.startTask(sibling.id, "sogyo");
-  const nextRound = createWorkerTask(broker, "next-round-sogyo-queued", "sogyo");
+  const sibling = createWorkerTask(broker, "round-sibling-running", "workerbeta");
+  broker.claimTask(sibling.id, "workerbeta");
+  broker.startTask(sibling.id, "workerbeta");
+  const nextRound = createWorkerTask(broker, "next-round-workerbeta-queued", "workerbeta");
 
   const canceled = broker.cancelTask(sibling.id, {
-    actor: { id: "seoseo", kind: "node", role: "hub" },
+    actor: { id: "brokeralpha", kind: "node", role: "hub" },
     reason: "finalizer selected and merged PR #356",
     supersededByTaskId: selected.id,
     supersededByPrUrl: "https://github.com/jinwon-int/a2a-docker-runner/pull/356",
@@ -534,7 +534,7 @@ test("finalizer can durably mark a running sibling task as superseded", () => {
 
   const diagnostics = broker.getTaskDiagnostics(sibling.id);
   assert.equal(diagnostics.interruption?.kind, "superseded");
-  assert.equal(diagnostics.interruption?.actorId, "seoseo");
+  assert.equal(diagnostics.interruption?.actorId, "brokeralpha");
   assert.equal(diagnostics.brokerHints.supersededByTaskId, selected.id);
   assert.equal(diagnostics.brokerHints.supersededByPrUrl, "https://github.com/jinwon-int/a2a-docker-runner/pull/356");
   assert.equal(diagnostics.brokerHints.supersededRoundId, "a2a-team1-354-runner-nochange-contract-20260606T145219KST");

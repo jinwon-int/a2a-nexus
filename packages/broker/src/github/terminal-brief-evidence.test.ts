@@ -23,26 +23,26 @@ function makeTerminalEvent(overrides: Partial<TerminalTaskOutboxEvent> = {}): Te
       status: "succeeded",
       parentRoundId: "run-1",
       run: "run-1",
-      originBrokerId: "gwakga",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerbeta",
+      brokerOfRecordId: "brokeralpha",
       traceId: "trace-1",
-      worker: "dungae",
+      worker: "workerepsilon",
       repo: "acme/platform",
       issue: 42,
       taskBrief: "safe brief",
       parentRoundProgress: 3,
       parentRoundTotal: 7,
       parentRoundOrder: 3,
-      terminalBriefTitle: "A2A Terminal Brief 완료: dungae(완료 3/7)",
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerepsilon(완료 3/7)",
       crossBrokerHandoff: {
         parentRoundId: "run-1",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        originTaskId: "gwakga-child-3",
-        childWorkerId: "dungae",
+        originBrokerId: "brokeralpha",
+        handoffBrokerId: "brokerbeta",
+        originTaskId: "brokerbeta-child-3",
+        childWorkerId: "workerepsilon",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokeralpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -86,35 +86,35 @@ describe("Terminal Brief GitHub evidence projection", () => {
     assert.equal(projection.manifest.semantics.githubCommentIsOperatorApproval, false);
     assert.match(projection.body, /a2a:terminal-brief-github-evidence/);
     assert.match(projection.body, /manifest_sha256: [a-f0-9]{64}/);
-    assert.equal(projection.manifest.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 3/7)");
+    assert.equal(projection.manifest.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 3/7)");
     assert.equal(projection.manifest.parentRoundId, "run-1");
-    assert.equal(projection.manifest.originBrokerId, "gwakga");
-    assert.equal(projection.manifest.brokerOfRecordId, "seoseo");
+    assert.equal(projection.manifest.originBrokerId, "brokerbeta");
+    assert.equal(projection.manifest.brokerOfRecordId, "brokeralpha");
     assert.equal(projection.manifest.parentRoundProgress, 3);
     assert.equal(projection.manifest.parentRoundTotal, 7);
     assert.equal(projection.manifest.parentRoundOrder, 3);
     assert.deepEqual(projection.manifest.crossBrokerHandoff, {
       parentRoundId: "run-1",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
-      originTaskId: "gwakga-child-3",
-      childWorkerId: "dungae",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
+      originTaskId: "brokerbeta-child-3",
+      childWorkerId: "workerepsilon",
     });
     assert.deepEqual(projection.manifest.notificationOwnership, {
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
     });
-    assert.match(projection.body, /terminal_brief_title: A2A Terminal Brief 완료: dungae\(완료 3\/7\)/);
+    assert.match(projection.body, /terminal_brief_title: A2A Terminal Brief 완료: workerepsilon\(완료 3\/7\)/);
     assert.match(projection.body, /parent_round_progress: 3\/7/);
     assert.match(projection.body, /parent_round_order: 3/);
     assert.match(projection.body, /outbox_created_at: 2026-05-11T00:06:00\.000Z/);
     assert.match(projection.body, /delivery_updated_at: 2026-05-11T00:06:05\.000Z/);
-    assert.match(projection.body, /origin_broker: gwakga/);
-    assert.match(projection.body, /broker_of_record: seoseo/);
-    assert.match(projection.body, /cross_broker_handoff: parent=run-1; origin=seoseo; handoff=gwakga; origin_task=gwakga-child-3; child_worker=dungae/);
-    assert.match(projection.body, /notification_owner: seoseo \(parent-broker-only; provider_send_by_projection=false; terminal_ack_by_projection=false\)/);
+    assert.match(projection.body, /origin_broker: brokerbeta/);
+    assert.match(projection.body, /broker_of_record: brokeralpha/);
+    assert.match(projection.body, /cross_broker_handoff: parent=run-1; origin=brokeralpha; handoff=brokerbeta; origin_task=brokerbeta-child-3; child_worker=workerepsilon/);
+    assert.match(projection.body, /notification_owner: brokeralpha \(parent-broker-only; provider_send_by_projection=false; terminal_ack_by_projection=false\)/);
     assert.match(projection.body, /pull_request: https:\/\/github\.com\/acme\/platform\/pull\/9/);
     assert.match(projection.body, /not a Terminal Brief ACK, read receipt, visibility proof, or operator approval/);
     assert.doesNotMatch(projection.body, /operator_visible.*confirmed/);
@@ -147,7 +147,7 @@ describe("Terminal Brief GitHub evidence projection", () => {
       number: 42,
       taskId: "task-1",
       run: "run-1",
-      worker: "dungae",
+      worker: "workerepsilon",
       status: "running",
     });
 
@@ -203,7 +203,7 @@ describe("Terminal Brief GitHub evidence projection", () => {
       number: 42,
       taskId: "task-1",
       run: `token=${fixtureToken}`,
-      worker: "dungae",
+      worker: "workerepsilon",
     });
 
     assert.ok(projection);

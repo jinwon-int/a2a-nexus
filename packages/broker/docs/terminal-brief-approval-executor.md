@@ -13,7 +13,7 @@ The approval request planner produces a deterministic draft request. The executo
 - execute_blocked: an execution attempt was requested, but execution remains blocked.
 - blocked: the request is not ready or the selected action is invalid.
 
-This shell is not a live executor. It is the shape that future OpenClaw, Hermes, Gongyung, or other harness adapters can use before a real approval and execution path exists.
+This shell is not a live executor. It is the shape that future OpenClaw, Hermes, mobilealpha, or other harness adapters can use before a real approval and execution path exists.
 
 ## CLI
 

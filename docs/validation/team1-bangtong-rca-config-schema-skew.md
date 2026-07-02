@@ -1,8 +1,8 @@
-# Team1 bangtong RCA: Gateway config/schema skew failure chain
+# Team1 workerGamma RCA: Gateway config/schema skew failure chain
 
 Run: `a2a-config-schema-skew-prevention-20260511T120400Z`
 Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
-Lane: Team1/bangtong, a2a-plane#250 (a2a-plane#250, internal tracker private)
+Lane: Team1/workerGamma, a2a-plane#250 (a2a-plane#250, internal tracker private)
 Snapshot: `2026-05-12T02:30:00Z`
 
 This is a redacted, evidence-only root cause analysis document. It does not deploy code, restart Gateway/broker/worker services, send live provider or Telegram messages, ACK terminal-outbox rows, mutate production data, rotate secrets, change repository visibility, rewrite history, force-push, release, or post community announcements.
@@ -26,11 +26,11 @@ On 2026-05-11 at 20:13 KST, Gateway restart failed after a config update that ad
 
 ## Root cause 1: Why the schema lacked `crossBrokers`
 
-The `operatorEvents.crossBrokers` property was documented in the broker handoff protocol (`contracts/a2a/broker-handoff-protocol.md`) and referenced in cross-broker handoff fixtures (`gwakga-cross-broker-handoff.json`), but was never registered in the A2A plugin manifest schema (`openclaw.plugin.json` `configSchema`).
+The `operatorEvents.crossBrokers` property was documented in the broker handoff protocol (`contracts/a2a/broker-handoff-protocol.md`) and referenced in cross-broker handoff fixtures (`brokerBeta-cross-broker-handoff.json`), but was never registered in the A2A plugin manifest schema (`openclaw.plugin.json` `configSchema`).
 
 Three contributing factors:
 
-1. **Feature development timeline gap**: The cross-broker feature was in active development (contract fixture work by Team2/dungae) while the plugin schema was maintained in a separate repository (`jinwon-int/openclaw-plugin-a2a`). The schema was not kept in lock-step with the cross-broker contract specification.
+1. **Feature development timeline gap**: The cross-broker feature was in active development (contract fixture work by Team2/workerEpsilon) while the plugin schema was maintained in a separate repository (`jinwon-int/openclaw-plugin-a2a`). The schema was not kept in lock-step with the cross-broker contract specification.
 
 2. **No schema parity gate in config activate path**: When Gateway loads a plugin and activates its config, AJV validates the config against the manifest `configSchema`. But there was no pre-activation dry-run step that compares every key in the candidate config against the schema before writing it to `openclaw.json`. The config was written, Gateway was restarted, and only then did the schema rejection surface — by which time Gateway was already in a restart-failure loop.
 
@@ -62,7 +62,7 @@ The `openclaw status` command reports Gateway health, plugin activation state, a
 
 1. **Schema type hardening** (PR #255): Narrow `edgeSecret` from `["string", "object"]` to `"string"` to prevent ambiguous config type tolerance. Tests validate string-accept and object/number-reject behavior.
 
-2. **Libero validation matrix** (PR #253, yukson): Team1 config/schema skew libero matrix codifies the changed-key inventory, manifest parity, backward compatibility, pre-restart health, restart authorization, rollback readiness, and runtime hygiene gates required before any config change reaches a Gateway restart.
+2. **Libero validation matrix** (PR #253, workerDelta): Team1 config/schema skew libero matrix codifies the changed-key inventory, manifest parity, backward compatibility, pre-restart health, restart authorization, rollback readiness, and runtime hygiene gates required before any config change reaches a Gateway restart.
 
 ### Short-term hardening
 
@@ -86,8 +86,8 @@ The `openclaw status` command reports Gateway health, plugin activation state, a
 
 | Lane | Issue | PR | Artifact | Status |
 | --- | --- | --- | --- | --- |
-| bangtong (RCA) | a2a-plane#250 | a2a-plane#255 | Schema type hardening + tests + this RCA | CI green, mergeable, needs RCA doc |
-| yukson (libero matrix) | a2a-plane#251 | a2a-plane#253 | Libero validation matrix | OPEN |
+| workerGamma (RCA) | a2a-plane#250 | a2a-plane#255 | Schema type hardening + tests + this RCA | CI green, mergeable, needs RCA doc |
+| workerDelta (libero matrix) | a2a-plane#251 | a2a-plane#253 | Libero validation matrix | OPEN |
 | Team2 (parity) | a2a-plane#TBD | a2a-plane#254 | Team2 config schema parity | OPEN |
 
 ## Safe closeout

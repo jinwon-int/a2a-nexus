@@ -6,7 +6,7 @@
   "now": "2026-05-20T17:43:11.000Z",
   "runner": {
     "runId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-    "requestedBy": "seoseo",
+    "requestedBy": "brokeralpha",
     "lane": 2,
     "laneTotal": 4,
     "dryRunLabel": "auto-closeout-dryrun-runner"
@@ -22,33 +22,33 @@
     ],
     "finalCountInput": {
       "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-      "expectedWorkers": ["bangtong", "yukson", "sogyo", "nosuk"],
+      "expectedWorkers": ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       "expectedTotal": 4,
       "finalCountSignals": [
         {
           "id": "telegram-terminal-brief-final-4-of-4",
           "source": "envelope",
           "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-          "worker": "nosuk",
-          "text": "A2A Terminal Brief: nosuk completed final worker (4/4)",
+          "worker": "workeralpha",
+          "text": "A2A Terminal Brief: workeralpha completed final worker (4/4)",
           "createdAt": "2026-05-20T17:43:00.000Z"
         }
       ],
       "events": [
         {
-          "id": "task-bangtong-succeeded-20260520T174200Z",
+          "id": "task-workergamma-succeeded-20260520T174200Z",
           "kind": "task.terminal",
           "taskEventId": 1,
           "payload": {
-            "taskId": "task-bangtong",
+            "taskId": "task-workergamma",
             "status": "succeeded",
             "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-            "originBrokerId": "seoseo",
-            "brokerOfRecordId": "seoseo",
-            "worker": "bangtong",
+            "originBrokerId": "brokeralpha",
+            "brokerOfRecordId": "brokeralpha",
+            "worker": "workergamma",
             "repo": "jinwon-int/a2a-docker-runner",
             "issue": 842,
-            "taskBrief": "Team1 lane 1 (bangtong)",
+            "taskBrief": "Team1 lane 1 (workergamma)",
             "prUrl": "https://github.com/jinwon-int/a2a-docker-runner/pull/298",
             "parentRoundProgress": 1,
             "parentRoundTotal": 4,
@@ -60,24 +60,24 @@
           "receipt": {
             "status": "provider_accepted",
             "updatedAt": "2026-05-20T17:42:00.000Z",
-            "receiptId": "provider-message-bangtong"
+            "receiptId": "provider-message-workergamma"
           },
           "attempts": 1
         },
         {
-          "id": "task-yukson-succeeded-20260520T174300Z",
+          "id": "task-workerdelta-succeeded-20260520T174300Z",
           "kind": "task.terminal",
           "taskEventId": 2,
           "payload": {
-            "taskId": "task-yukson",
+            "taskId": "task-workerdelta",
             "status": "succeeded",
             "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-            "originBrokerId": "seoseo",
-            "brokerOfRecordId": "seoseo",
-            "worker": "yukson",
+            "originBrokerId": "brokeralpha",
+            "brokerOfRecordId": "brokeralpha",
+            "worker": "workerdelta",
             "repo": "jinwon-int/a2a-broker",
             "issue": 842,
-            "taskBrief": "Team1 lane 2 (yukson) — wire dry-run runner",
+            "taskBrief": "Team1 lane 2 (workerdelta) — wire dry-run runner",
             "prUrl": "https://github.com/jinwon-int/a2a-broker/pull/842",
             "parentRoundProgress": 2,
             "parentRoundTotal": 4,
@@ -89,24 +89,24 @@
           "receipt": {
             "status": "provider_accepted",
             "updatedAt": "2026-05-20T17:43:00.000Z",
-            "receiptId": "provider-message-yukson"
+            "receiptId": "provider-message-workerdelta"
           },
           "attempts": 1
         },
         {
-          "id": "task-sogyo-succeeded-20260520T174350Z",
+          "id": "task-workerbeta-succeeded-20260520T174350Z",
           "kind": "task.terminal",
           "taskEventId": 3,
           "payload": {
-            "taskId": "task-sogyo",
+            "taskId": "task-workerbeta",
             "status": "succeeded",
             "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-            "originBrokerId": "seoseo",
-            "brokerOfRecordId": "seoseo",
-            "worker": "sogyo",
+            "originBrokerId": "brokeralpha",
+            "brokerOfRecordId": "brokeralpha",
+            "worker": "workerbeta",
             "repo": "jinwon-int/openclaw-plugin-a2a",
             "issue": 842,
-            "taskBrief": "Team1 lane 3 (sogyo)",
+            "taskBrief": "Team1 lane 3 (workerbeta)",
             "doneUrl": "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/399",
             "parentRoundProgress": 3,
             "parentRoundTotal": 4,
@@ -118,24 +118,24 @@
           "receipt": {
             "status": "provider_accepted",
             "updatedAt": "2026-05-20T17:43:50.000Z",
-            "receiptId": "provider-message-sogyo"
+            "receiptId": "provider-message-workerbeta"
           },
           "attempts": 1
         },
         {
-          "id": "task-nosuk-succeeded-20260520T174400Z",
+          "id": "task-workeralpha-succeeded-20260520T174400Z",
           "kind": "task.terminal",
           "taskEventId": 4,
           "payload": {
-            "taskId": "task-nosuk",
+            "taskId": "task-workeralpha",
             "status": "succeeded",
             "parentRoundId": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-            "originBrokerId": "seoseo",
-            "brokerOfRecordId": "seoseo",
-            "worker": "nosuk",
+            "originBrokerId": "brokeralpha",
+            "brokerOfRecordId": "brokeralpha",
+            "worker": "workeralpha",
             "repo": "a2a-plane (internal tracker, private)",
             "issue": 842,
-            "taskBrief": "Team1 lane 4 (nosuk)",
+            "taskBrief": "Team1 lane 4 (workeralpha)",
             "prUrl": "a2a-plane PR #396 (internal tracker, private)",
             "parentRoundProgress": 4,
             "parentRoundTotal": 4,
@@ -147,7 +147,7 @@
           "receipt": {
             "status": "provider_accepted",
             "updatedAt": "2026-05-20T17:44:00.000Z",
-            "receiptId": "provider-message-nosuk"
+            "receiptId": "provider-message-workeralpha"
           },
           "attempts": 1
         }

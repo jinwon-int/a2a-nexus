@@ -10,12 +10,12 @@ import {
 
 const fixturePath = resolve(
   process.cwd(),
-  process.argv[2] ?? "examples/terminal-outbox-canary-nosuk-20260511.json",
+  process.argv[2] ?? "examples/terminal-outbox-canary-workerAlpha-20260511.json",
 );
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
 
 assert.equal(fixture.run, "terminal-brief-activation-20260511T080211Z");
-assert.equal(fixture.worker, "nosuk");
+assert.equal(fixture.worker, "workerAlpha");
 assert.equal(fixture.canaryContract.noLiveProviderSend, true);
 assert.equal(
   fixture.canaryContract.providerSendSuccessIsReceiptEvidence,

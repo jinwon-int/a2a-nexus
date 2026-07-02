@@ -43,7 +43,7 @@ function buildTerminalEventPayload(overrides: Record<string, unknown>) {
       terminalEvent: {
         type: "success",
         taskId: "task-canary-1",
-        worker: "sogyo",
+        worker: "workerBeta",
         repo: "jinwon-int/plugin-a2a",
         issue: 247,
         runId: "a2a-live-canary-readiness-20260509T173917Z",
@@ -70,7 +70,7 @@ function buildProviderAcceptedOnlyEvent() {
       terminalEvent: {
         type: "success",
         taskId: "task-provider-accepted-1",
-        worker: "sogyo",
+        worker: "workerBeta",
         repo: "jinwon-int/plugin-a2a",
         issue: 247,
         runId: "a2a-live-canary-readiness-20260509T173917Z",
@@ -87,7 +87,7 @@ function buildProviderAcceptedOnlyOutbox() {
     payload: {
       type: "success",
       taskId: "task-provider-outbox-1",
-      worker: "sogyo",
+      worker: "workerBeta",
       repo: "jinwon-int/plugin-a2a",
       issue: 249,
       completedAt: "2026-05-10T03:00:00Z",
@@ -456,7 +456,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-outbox-visible",
-          worker: "sogyo",
+          worker: "workerBeta",
           repo: "jinwon-int/plugin-a2a",
           issue: 249,
           completedAt: "2026-05-10T03:00:00Z",
@@ -480,7 +480,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "block",
           taskId: "task-outbox-manual",
-          worker: "sogyo",
+          worker: "workerBeta",
           completedAt: "2026-05-10T03:00:00Z",
           receiptProjection: "manual_operator_receipt",
           summary: "outbox with manual receipt projection",
@@ -499,7 +499,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-broker-accepted-pending",
-          worker: "sogyo",
+          worker: "workerBeta",
           completedAt: "2026-05-10T03:00:00Z",
           summary: "broker terminal row awaiting operator-visible receipt",
         },
@@ -524,7 +524,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "failure",
           taskId: "task-broker-produced-pending",
-          worker: "sogyo",
+          worker: "workerBeta",
           completedAt: "2026-05-10T03:00:00Z",
           summary: "broker terminal row produced but still awaiting operator-visible receipt",
         },
@@ -555,7 +555,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-outbox-provider-send",
-          worker: "sogyo",
+          worker: "workerBeta",
           receiptProjection: "provider_send_success",
           summary: "provider send success — non-ACK",
         },
@@ -576,7 +576,7 @@ describe("no-live canary harness (#247)", () => {
           payload: {
             type: "success",
             taskId: `task-outbox-${projection}`,
-            worker: "sogyo",
+            worker: "workerBeta",
             receiptProjection: projection || undefined,
             summary: `outbox with projection "${projection}"`,
           },
@@ -633,7 +633,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-gap-001",
-          worker: "sogyo",
+          worker: "workerBeta",
           summary: "provider accepted, no receipt projection",
         },
         receipt: { status: "accepted" },
@@ -675,7 +675,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-gap-003",
-          worker: "sogyo",
+          worker: "workerBeta",
           receiptProjection: "current_session_visible",
           summary: "operator-visible receipt",
         },
@@ -696,7 +696,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-gap-004",
-          worker: "sogyo",
+          worker: "workerBeta",
           receiptProjection: "manual_operator_receipt",
           summary: "operator receipt confirmed",
         },
@@ -719,7 +719,7 @@ describe("no-live canary harness (#247)", () => {
         payload: {
           type: "success",
           taskId: "task-gap-005",
-          worker: "sogyo",
+          worker: "workerBeta",
           receiptProjection: "current_session_visible",
           summary: "operator-visible but not yet ack-confirmed",
         },

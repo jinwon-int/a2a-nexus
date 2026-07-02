@@ -19,7 +19,17 @@ const deny = [
   },
 ];
 const skipDirs = new Set(['.git', 'node_modules', 'dist', 'coverage']);
-const allowWarningPaths = [/^scripts\//, /^docs\/history\//, /^fixtures\//, /^contracts\//, /^packages\//, /^docs\/validation\//, /^docs\/roadmap\//, /^docs\/approval-rehearsal\//, /^docs\/dry-run\//, /^docs\/execution-orchestrator\//, /^docs\/final-approval\//, /^package(?:-lock)?\.json$/];
+const allowWarningPaths = [
+  /^scripts\/public-readiness-scan(?:\.test)?\.mjs$/,
+  /^docs\/history\//,
+  /^fixtures\//,
+  /^docs\/validation\//,
+  /^docs\/roadmap\//,
+  /^docs\/approval-rehearsal\//,
+  /^docs\/dry-run\//,
+  /^docs\/execution-orchestrator\//,
+  /^docs\/final-approval\//,
+];
 
 function walk(dir) {
   const out = [];

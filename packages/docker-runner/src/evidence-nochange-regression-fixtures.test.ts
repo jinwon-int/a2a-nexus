@@ -83,7 +83,7 @@ test("no-change hardening fixture covers Done, Block, infrastructure failure, an
   for (const entry of fixture.cases) {
     const parsed = parseRunnerOutput(JSON.stringify(entry.runnerOutput));
     const evidence = extractGitHubEvidence(parsed);
-    const handlerResult = buildHandlerResult(parsed, entry.task, "jingun");
+    const handlerResult = buildHandlerResult(parsed, entry.task, "workerZeta");
     const operatorReport = buildOperatorTaskReportEvidence(handlerResult);
 
     seenKinds.add(handlerResult.terminalEvidence.evidenceKind);

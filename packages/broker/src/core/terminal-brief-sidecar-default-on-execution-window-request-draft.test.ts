@@ -32,7 +32,7 @@ function readyFinalLiveExecution(): TerminalBriefSidecarDefaultOnFinalLiveExecut
 test("default-on execution window request draft becomes ready without sending request or permitting mutation", () => {
   const packet = buildTerminalBriefSidecarDefaultOnExecutionWindowRequestDraft(readyFinalLiveExecution(), {
     now: NOW,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     operatorTarget: "terminal-brief-default-on",
     executionWindowReference: "tb-sidecar-default-on-execution-window:fixture-794",
     approvalWindowMinutes: 10,
@@ -117,7 +117,7 @@ test("default-on execution window request extractors and markdown preserve no-li
     defaultOnFinalLiveExecutionPacket: readyFinalLiveExecution(),
     executionWindowRequestDraft: {
       now: NOW,
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       executionWindowReference: "tb-sidecar-default-on-execution-window:fixture-794",
       approvalWindowMinutes: 10,
     },
@@ -129,7 +129,7 @@ test("default-on execution window request extractors and markdown preserve no-li
   );
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnExecutionWindowRequestDraftOptions(input), {
     now: NOW,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     executionWindowReference: "tb-sidecar-default-on-execution-window:fixture-794",
     approvalWindowMinutes: 10,
   });

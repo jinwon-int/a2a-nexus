@@ -5,7 +5,7 @@
  * bounds clamping, aggregate reporting, fixture-loading validation, and
  * edge cases.
  *
- * Reference: #970 Team2 (gwakga/soonwook)
+ * Reference: #970 Team2 (brokerbeta/workereta)
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

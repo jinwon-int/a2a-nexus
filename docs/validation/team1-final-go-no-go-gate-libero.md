@@ -2,7 +2,7 @@
 
 Run: `a2a-source-public-go-nogo-gate-20260511T052500Z`
 Parent: a2a-plane#225 (a2a-plane#225, internal tracker private)
-Lane: Team1/yukson, a2a-plane#227 (a2a-plane#227, internal tracker private)
+Lane: Team1/workerDelta, a2a-plane#227 (a2a-plane#227, internal tracker private)
 Snapshot: `2026-05-11T05:38:36Z`
 
 This validation is a redacted, no-live libero artifact for the final source-public go/no-go gate. It checks whether the round is ready to become an operator-facing approval packet and release-candidate gate. It does not execute approval, release, repository visibility change, live provider or Telegram send, Terminal Brief ACK, production deploy/restart, database mutation, history rewrite, force-push, automatic merge, or community post.
@@ -17,13 +17,13 @@ Source-public execution remains **`NO_GO`** pending a later explicit operator ap
 
 | Lane | Required terminal evidence | Snapshot evidence | Gate result |
 | --- | --- | --- | --- |
-| Team1/bangtong — a2a-plane#226 (a2a-plane#226, internal tracker private) | Plane final go/no-go gate schema and operator approval packet aggregator PR/Done/Block. | Start marker only: a2a-plane#226 (internal tracker, private)#issuecomment-4417850041 | `NO-GO` until terminal evidence lands. |
-| Team1/sogyo — [openclaw-plugin-a2a#265](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/265) | Plugin operator-facing final status projection PR/Done/Block. | Start marker only: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/265#issuecomment-4417850254 | `NO-GO` until terminal evidence lands. |
-| Team1/nosuk — [a2a-docker-runner#195](https://github.com/jinwon-int/a2a-docker-runner/issues/195) | Runner final release-candidate tagging and CI gate capsule PR/Done/Block. | Start marker only: https://github.com/jinwon-int/a2a-docker-runner/issues/195#issuecomment-4417850436 | `NO-GO` until terminal evidence lands. |
-| Team2/dungae — [a2a-broker#488](https://github.com/jinwon-int/a2a-broker/issues/488) | Broker final go/no-go ledger and approval intent record PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
-| Team2/jingun — [a2a-docker-runner#196](https://github.com/jinwon-int/a2a-docker-runner/issues/196) | Runner parity audit for the release candidate PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
-| Team2/soonwook — a2a-plane#228 (a2a-plane#228, internal tracker private) | Independent GO/NO-GO semantics cross-check PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
-| Team1/yukson — a2a-plane#227 (a2a-plane#227, internal tracker private) | This libero validation artifact and regression test. | This patch documents the fail-closed snapshot and local checks. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
+| Team1/workerGamma — a2a-plane#226 (a2a-plane#226, internal tracker private) | Plane final go/no-go gate schema and operator approval packet aggregator PR/Done/Block. | Start marker only: a2a-plane#226 (internal tracker, private)#issuecomment-4417850041 | `NO-GO` until terminal evidence lands. |
+| Team1/workerBeta — [openclaw-plugin-a2a#265](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/265) | Plugin operator-facing final status projection PR/Done/Block. | Start marker only: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/265#issuecomment-4417850254 | `NO-GO` until terminal evidence lands. |
+| Team1/workerAlpha — [a2a-docker-runner#195](https://github.com/jinwon-int/a2a-docker-runner/issues/195) | Runner final release-candidate tagging and CI gate capsule PR/Done/Block. | Start marker only: https://github.com/jinwon-int/a2a-docker-runner/issues/195#issuecomment-4417850436 | `NO-GO` until terminal evidence lands. |
+| Team2/workerEpsilon — [a2a-broker#488](https://github.com/jinwon-int/a2a-broker/issues/488) | Broker final go/no-go ledger and approval intent record PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
+| Team2/workerZeta — [a2a-docker-runner#196](https://github.com/jinwon-int/a2a-docker-runner/issues/196) | Runner parity audit for the release candidate PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
+| Team2/workerEta — a2a-plane#228 (a2a-plane#228, internal tracker private) | Independent GO/NO-GO semantics cross-check PR/Done/Block. | No terminal evidence observed in this snapshot. | `NO-GO` until terminal evidence lands. |
+| Team1/workerDelta — a2a-plane#227 (a2a-plane#227, internal tracker private) | This libero validation artifact and regression test. | This patch documents the fail-closed snapshot and local checks. | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
 
 ## Final gate validation matrix
 

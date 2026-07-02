@@ -23,7 +23,7 @@ This creates a **secret-leakage risk** through:
 ## Impact Window
 
 The primary risk window is **broker Docker restart** (approximately 10
-seconds, observed 2026-05-22 22:10:02–22:10:12 KST for the Seoseo broker).
+seconds, observed 2026-05-22 22:10:02–22:10:12 KST for the brokeralpha broker).
 During this window every proxied request receives a 502, and any request
 header present in those requests can appear in Caddy diagnostics.
 

@@ -97,7 +97,7 @@ export interface TerminalBriefSidecarDispatcherApprovalHandoffPacket {
     separateOperatorApprovalRequired: true;
     separateDispatcherPathRequired: true;
     approvalCanBeRequestedBy: string;
-    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "gongyung" | "external">;
+    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "mobilealpha" | "external">;
     mustNotTreatProviderAcceptedAsVisibilityProof: true;
     forbiddenBeforeSeparateApproval: string[];
   };
@@ -130,7 +130,7 @@ export interface TerminalBriefSidecarDispatcherApprovalHandoffPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesDispatcherPreflightSealPacket: true;
     rendersApprovalHandoffDraft: true;
@@ -273,7 +273,7 @@ export function buildTerminalBriefSidecarDispatcherApprovalHandoff(
       separateOperatorApprovalRequired: true,
       separateDispatcherPathRequired: true,
       approvalCanBeRequestedBy: requestedBy,
-      approvalCanBeDeliveredBy: ["openclaw", "hermes", "gongyung", "external"],
+      approvalCanBeDeliveredBy: ["openclaw", "hermes", "mobilealpha", "external"],
       mustNotTreatProviderAcceptedAsVisibilityProof: true,
       forbiddenBeforeSeparateApproval: forbiddenBeforeSeparateApproval(),
     },
@@ -310,7 +310,7 @@ export function buildTerminalBriefSidecarDispatcherApprovalHandoff(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesDispatcherPreflightSealPacket: true,
       rendersApprovalHandoffDraft: true,
@@ -575,7 +575,7 @@ function forbiddenBeforeSeparateApproval(): string[] {
     "process spawn",
     "sidecar start/stop/restart/apply",
     "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or receipt DB mutation",
     "TaskFlow or broker DB mutation",
     "production deploy/restart, historical replay, release, publish, or secret movement",

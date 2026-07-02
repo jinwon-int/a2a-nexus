@@ -39,7 +39,7 @@ It keeps all execution-facing gates false:
 
 - `brokerDispatchApprovalPresent=false`
 - `workerSpawnApprovalPresent=false`
-- `daegyoMobileScopeResolved=false`
+- `mobilebetaMobileScopeResolved=false`
 - rollback/live readiness remains false
 
 Those remaining gates require separate packets and, later, explicit operator
@@ -58,5 +58,5 @@ Use `--json` for the raw packet.
 
 This packet is source/docs/tests only. It does not grant execution approval,
 enable a runtime executor, create broker dispatch, spawn workers, expand
-Daegyo/mobile GitHub scope, send providers, perform Terminal ACK/replay, mutate
+mobilebeta/mobile GitHub scope, send providers, perform Terminal ACK/replay, mutate
 a database, deploy or restart services, publish releases, or move credentials.

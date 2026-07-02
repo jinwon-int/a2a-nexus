@@ -18,14 +18,14 @@ test('no-live health helper normalizes current and legacy capacity shapes', () =
 test('no-live health helper includes parent round metadata for all A2A/A2AD assignments', () => {
   const args = parseArgs([
     '--team', 'team2',
-    '--broker-id', 'gwakga',
+    '--broker-id', 'brokerBeta',
     '--base-url', 'http://127.0.0.1:8787',
-    '--a2a-worker', 'gongmyoung',
-    '--a2ad-workers', 'dungae,jingun,soonwook',
+    '--a2a-worker', 'workerTheta',
+    '--a2ad-workers', 'workerEpsilon,workerZeta,workerEta',
   ]);
   const assignments = buildAssignments(args, 'run-1');
   assert.equal(assignments.length, 4);
-  assert.deepEqual(assignments.map((a) => a.worker), ['gongmyoung', 'dungae', 'jingun', 'soonwook']);
+  assert.deepEqual(assignments.map((a) => a.worker), ['workerTheta', 'workerEpsilon', 'workerZeta', 'workerEta']);
   for (const [index, assignment] of assignments.entries()) {
     assert.equal(assignment.task.payload.parentRoundId, 'run-1');
     assert.equal(assignment.task.payload.parentRoundTotal, 4);
@@ -69,10 +69,10 @@ test('no-live health helper probes current route first and falls back to legacy 
 
   const result = await runHealthCheck(parseArgs([
     '--team', 'team2',
-    '--broker-id', 'gwakga',
+    '--broker-id', 'brokerBeta',
     '--base-url', 'http://broker.test',
-    '--a2a-worker', 'gongmyoung',
-    '--a2ad-workers', 'dungae,jingun,soonwook',
+    '--a2a-worker', 'workerTheta',
+    '--a2ad-workers', 'workerEpsilon,workerZeta,workerEta',
     '--execute',
     '--poll-ms', '1',
   ]), { fetchImpl, env: {} });

@@ -1,9 +1,9 @@
-# Team1/yukson Terminal Brief pre-activation GO/NO-GO matrix (R8)
+# Team1/workerDelta Terminal Brief pre-activation GO/NO-GO matrix (R8)
 
 Issue: #285 (a2a-plane#285, internal tracker private)
 Parent: [a2a-broker#553](https://github.com/jinwon-int/a2a-broker/issues/553)
 Run: `a2a-r8-ops-dashboard-20260513T111122Z`
-Lane: Team1/yukson, a2a-plane#285 (a2a-plane#285, internal tracker private)
+Lane: Team1/workerDelta, a2a-plane#285 (a2a-plane#285, internal tracker private)
 Snapshot: `2026-05-13T11:11:22Z`
 
 This is a redacted R8 ops-dashboard and queue-hygiene pre-activation validation matrix for Terminal Brief. It evaluates the two-broker dashboard/read model, stale worker/task clarity, PR-less validation evidence, receipt-safe operator UX, and cross-team parity after the GitHub-current fleet update. It does not deploy a broker, restart Gateway, enable core Gateway config, perform a live provider send, record Terminal Brief ACK, mutate production data, change secrets, rewrite history, force-push, release, or change repository visibility.
@@ -22,7 +22,7 @@ The R8 target outcomes do not include live Terminal Brief activation. All outcom
 | 2 | **Stale worker/task clarity** | The dashboard and recovery summary distinguish stale workers, stale tasks, and broker-idle queue rows so the operator can triage without opening raw task logs. | G2 below |
 | 3 | **PR-less validation evidence** | Read-only/libero lanes accept Start+Done/Block GitHub comments as terminal evidence. The no-diff patch-lane false-Done guard is preserved. | G3 below |
 | 4 | **Receipt-safe operator UX** | The dashboard and Terminal Brief gate matrix enforce the receipt vocabulary: provider accepted-send is not operator-visible receipt, operator-visible receipt is not terminal-outbox ACK, and ACK is not read-receipt or approval. | G4 below |
-| 5 | **Cross-team parity** | Team2 (gwakga/soyeon) evidence agrees on the receipt boundary, one-shot safety, rollback semantics, and final closeout evidence shape. Disagreements are documented and addressed before any `GO`. | G5 below |
+| 5 | **Cross-team parity** | Team2 (brokerBeta/soyeon) evidence agrees on the receipt boundary, one-shot safety, rollback semantics, and final closeout evidence shape. Disagreements are documented and addressed before any `GO`. | G5 below |
 
 ## Evidence snapshot
 
@@ -34,9 +34,9 @@ The R8 target outcomes do not include live Terminal Brief activation. All outcom
 | Worker home-broker lease lane — [a2a-broker#411](https://github.com/jinwon-int/a2a-broker/issues/411) | PR/Done evidence for `A2A_HOME_BROKER_ID` validation, local lease, mismatch fail-close, retarget path. | No refreshed R8 snapshot Start evidence. | `NO-GO`: pre-R8 evidence must be re-validated. |
 | Broker-of-record lifecycle lane — [a2a-broker#412](https://github.com/jinwon-int/a2a-broker/issues/412) | PR/Done evidence for task ownership defaults, legacy compatibility, lifecycle guards. | No refreshed R8 snapshot Start evidence. | `NO-GO`: pre-R8 evidence must be re-validated. |
 | Duplicate worker preflight lane — [a2a-broker#413](https://github.com/jinwon-int/a2a-broker/issues/413) | PR/Done evidence for two-broker worker list comparison, duplicate detection, stale/unreachable ambiguity handling. | No refreshed R8 snapshot Start evidence. | `NO-GO`: pre-R8 evidence must be re-validated. |
-| Cutover runbook lane — [a2a-broker#415](https://github.com/jinwon-int/a2a-broker/issues/415) | Runbook for seoseo/gwakga conventions, stop/retarget/restart procedure, duplicate preflight requirement, rollback. | No refreshed R8 snapshot Start evidence. | `NO-GO`: pre-R8 runbook must be validated. |
+| Cutover runbook lane — [a2a-broker#415](https://github.com/jinwon-int/a2a-broker/issues/415) | Runbook for brokerAlpha/brokerBeta conventions, stop/retarget/restart procedure, duplicate preflight requirement, rollback. | No refreshed R8 snapshot Start evidence. | `NO-GO`: pre-R8 runbook must be validated. |
 | Dashboard/read-model — a2a-plane#285 (a2a-plane#285, internal tracker private) | This pre-activation matrix plus bounded `operatorSnapshot` spec review for two-broker stale/task clarity. | Start evidence for this lane plus R8 target outcome definitions. | Start-only: matrix spec defined; implementation validation pending. |
-| Team2 cross-team parity — separately tracked | Team2/gwakga or soyeon evidence on receipt boundary, one-shot safety, rollback, final closeout shape. | No R8 parity evidence at snapshot. | `NO-GO`: parity gates cannot be satisfied by Team1 alone. |
+| Team2 cross-team parity — separately tracked | Team2/brokerBeta or soyeon evidence on receipt boundary, one-shot safety, rollback, final closeout shape. | No R8 parity evidence at snapshot. | `NO-GO`: parity gates cannot be satisfied by Team1 alone. |
 | Terminal Brief activation — a2a-plane#243 (a2a-plane#243, internal tracker private) | Activation matrix from R7 or earlier re-dispatch requires re-validation against R8 baseline. | Previous R7 activation evidence exists. | `NO-GO`: terminal activation awaiting pre-activation gates to close. |
 
 ## Pre-activation gate checklist

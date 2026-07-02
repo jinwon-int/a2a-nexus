@@ -4,10 +4,10 @@
   "generatedAt": "2026-05-26T20:11:40.000Z",
   "description": "Stale: Mobile standby worker non-terminal past stale threshold (35 min idle, 30 min threshold). Collector classifies as stale.",
   "manifest": {
-    "roundLabel": "a2a-team1-round-coordinator-wiring-04-yukson",
+    "roundLabel": "a2a-team1-round-coordinator-wiring-04-workerdelta",
     "lanes": [
       {
-        "workerId": "yukson",
+        "workerId": "workerdelta",
         "description": "Stale mobile worker",
         "expectedOutcome": "analysis"
       }
@@ -24,18 +24,18 @@
     "standby": false,
     "readOnly": true
   },
-  "onboardingKind": "gongyung-hermes",
+  "onboardingKind": "mobilealpha-hermes",
   "evaluation": {
     "decision": "go",
     "reasons": [
       "Policy validation passed",
-      "All GO/NO-GO gates passed for gongyung-hermes"
+      "All GO/NO-GO gates passed for mobilealpha-hermes"
     ]
   },
   "collectorTasks": [
     {
-      "id": "task-yukson-stale-1",
-      "assignedWorkerId": "yukson",
+      "id": "task-workerdelta-stale-1",
+      "assignedWorkerId": "workerdelta",
       "status": "running",
       "createdAt": "2026-05-26T18:00:00.000Z",
       "updatedAt": "2026-05-26T19:25:00.000Z"

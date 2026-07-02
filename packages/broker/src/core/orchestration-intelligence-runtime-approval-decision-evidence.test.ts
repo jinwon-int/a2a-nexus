@@ -24,7 +24,7 @@ const allDesignEvidence = {
   executorContractDocumented: true,
   brokerDispatchBoundaryDocumented: true,
   workerSpawnBoundaryDocumented: true,
-  daegyoMobileBoundaryDocumented: true,
+  mobilebetaMobileBoundaryDocumented: true,
   rollbackAbortCriteriaDocumented: true,
   liveBoundaryPlanDocumented: true,
   observabilityPlanDocumented: true,
@@ -61,14 +61,14 @@ function finalizerDecision(decision = "advance_to_next_source_step") {
 function runtimeReadinessGate(decision = "advance_to_next_source_step") {
   return buildOIRuntimeReadinessGatePacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     finalizerDecision: finalizerDecision(decision),
     runtimeEvidence: {
       runtimeExecutorDesignReviewed: false,
       explicitRuntimeApprovalPresent: false,
       brokerDispatchApprovalPresent: false,
       workerSpawnApprovalPresent: false,
-      daegyoMobileScopeResolved: false,
+      mobilebetaMobileScopeResolved: false,
       rollbackAbortCriteriaDocumented: false,
       liveBoundaryPlanDocumented: false,
       validationEvidenceFresh: true,
@@ -79,13 +79,13 @@ function runtimeReadinessGate(decision = "advance_to_next_source_step") {
 function runtimeApprovalRequest(decision = "advance_to_next_source_step") {
   const designReview = buildOIRuntimeDesignReviewPacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     runtimeReadinessGate: runtimeReadinessGate(decision),
     designEvidence: allDesignEvidence,
   });
   return buildOIRuntimeApprovalRequestPacket({
     generatedAt: NOW,
-    requester: "gwakga",
+    requester: "brokerbeta",
     operator: "seo-jin-on",
     runtimeDesignReview: designReview,
     approvalEvidence: allApprovalEvidence,
@@ -113,7 +113,7 @@ function acceptedEvidence() {
 test("accepts strict runtime approval decision evidence but still does not enable runtime actions", () => {
   const packet = buildOIRuntimeApprovalDecisionEvidencePacket({
     generatedAt: NOW,
-    recorder: "gwakga",
+    recorder: "brokerbeta",
     runtimeApprovalRequest: runtimeApprovalRequest(),
     decisionEvidence: acceptedEvidence(),
   });
@@ -126,13 +126,13 @@ test("accepts strict runtime approval decision evidence but still does not enabl
   assert.equal(packet.runtimeReadinessEvidencePatch.explicitRuntimeApprovalPresent, true);
   assert.equal(packet.runtimeReadinessEvidencePatch.brokerDispatchApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.workerSpawnApprovalPresent, false);
-  assert.equal(packet.runtimeReadinessEvidencePatch.daegyoMobileScopeResolved, false);
+  assert.equal(packet.runtimeReadinessEvidencePatch.mobilebetaMobileScopeResolved, false);
   assert.equal(packet.safety.approvalEvidenceAccepted, true);
   assert.equal(packet.safety.grantsExecutionApproval, false);
   assert.equal(packet.safety.runtimeExecutorEnabled, false);
   assert.equal(packet.safety.brokerDispatchCreated, false);
   assert.equal(packet.safety.workerSpawned, false);
-  assert.equal(packet.safety.daegyoScopeExpanded, false);
+  assert.equal(packet.safety.mobilebetaScopeExpanded, false);
 });
 
 test("waits when operator response evidence is absent", () => {
@@ -259,5 +259,5 @@ test("renders accepted evidence and remaining NO-GO boundaries", () => {
   assert.match(markdown, /explicitRuntimeApprovalPresent: true/);
   assert.match(markdown, /brokerDispatchApprovalPresent: false/);
   assert.match(markdown, /does not grant execution approval/);
-  assert.match(markdown, /expand Daegyo\/mobile scope/);
+  assert.match(markdown, /expand mobilebeta\/mobile scope/);
 });

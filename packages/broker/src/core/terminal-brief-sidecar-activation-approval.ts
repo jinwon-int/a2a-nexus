@@ -93,7 +93,7 @@ export interface TerminalBriefSidecarActivationApprovalPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesSidecarDryRunGate: true;
     producesApprovalRequestDraft: true;
     sendsApprovalRequest: false;
@@ -210,7 +210,7 @@ export function buildTerminalBriefSidecarActivationApproval(
     approvalSensitiveActionsExcluded: [
       "starting/enabling always-on sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "operator approval grant or approval evidence mutation",
       "GitHub PR merge, issue close, or comment post from the packet",
@@ -223,7 +223,7 @@ export function buildTerminalBriefSidecarActivationApproval(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesSidecarDryRunGate: true,
       producesApprovalRequestDraft: true,
       sendsApprovalRequest: false,

@@ -35,7 +35,7 @@ function makeTask(overrides: Partial<TaskRecord> & { id: string; status: TaskSta
     intent: "chat",
     requester: { id: "user-1", kind: "user" },
     target: { id: "worker-1", kind: "node" },
-    targetNodeId: "sogyo",
+    targetNodeId: "workerbeta",
     payload: {},
     createdAt: new Date(now - 60_000).toISOString(),
     updatedAt: new Date(now - 60_000).toISOString(),
@@ -318,8 +318,8 @@ describe("detectStuckTasks", () => {
 
   it("includes lane label", () => {
     const tasks = [t("t1", "queued", 10_000)];
-    const report = detectStuckTasks(tasks, { laneLabel: "nosuk-lane-3" }, now);
-    expect(report.laneLabel).toBe("nosuk-lane-3");
+    const report = detectStuckTasks(tasks, { laneLabel: "workeralpha-lane-3" }, now);
+    expect(report.laneLabel).toBe("workeralpha-lane-3");
   });
 
   it("only analyzes non-terminal tasks", () => {
@@ -481,10 +481,10 @@ describe("config merging in detectStuckTasks", () => {
 
   it("merges partial overrides", () => {
     const report = detectStuckTasks([], {
-      laneLabel: "nosuk-lane-4",
+      laneLabel: "workeralpha-lane-4",
       staleThresholds: { queuedStaleAfterMs: 60_000, claimedStaleAfterMs: 120_000, runningStaleAfterMs: 600_000 },
     }, Date.now());
-    expect(report.laneLabel).toBe("nosuk-lane-4");
+    expect(report.laneLabel).toBe("workeralpha-lane-4");
     expect(report.config.staleThresholds.queuedStaleAfterMs).toBe(60_000);
     expect(report.config.staleThresholds.claimedStaleAfterMs).toBe(120_000); // default
     expect(report.config.staleThresholds.runningStaleAfterMs).toBe(600_000); // default

@@ -72,9 +72,9 @@
     "workers": [
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "73d550ac-c307-4a22-8f63-716fbd7381c4",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -83,9 +83,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "c0de37f5-1369-412a-84df-4962f4cd5c57",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -94,9 +94,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "a307a5c8-bb62-4506-a8a7-211435669a65",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -105,9 +105,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "dungae",
+        "worker": "workerEpsilon",
         "taskId": "37049939-74ac-4296-b2e4-9b55f0c56bbe",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -116,9 +116,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "275f582c-7ee2-42f5-a371-1be078c75310",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -127,9 +127,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-20260610T155109Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "soonwook",
+        "worker": "workerEta",
         "taskId": "82f184b0-87ac-4dd4-bc98-0d347c492c2f",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -138,9 +138,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-team1-retry-20260610T155535Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "6222f191-f8ec-4dcf-8624-fd0f79eb8c2c",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -149,9 +149,9 @@
       },
       {
         "round": "a2ad-active-provenance-mirror-team1-retry-20260610T155535Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "04a2a987-ea53-43ac-8411-2e88595203da",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -161,14 +161,14 @@
     ],
     "usableAnalysisCount": 6,
     "team1UsableWorkers": [
-      "sogyo",
-      "nosuk",
-      "bangtong"
+      "workerBeta",
+      "workerAlpha",
+      "workerGamma"
     ],
     "team2UsableWorkers": [
-      "dungae",
-      "jingun",
-      "soonwook"
+      "workerEpsilon",
+      "workerZeta",
+      "workerEta"
     ],
     "finalizerSynthesis": "GO for docs-only active provenance mirror execution. Split repos receive README/MIRROR_NOTICE source-routing notices and remain active public provenance mirrors. Archive/read-only/redirect, settings mutation, ownership transfer, release/publish/deploy, DB/secret/provider/Terminal ACK, force-push/history rewrite remain HOLD."
   },
@@ -208,7 +208,7 @@
   },
   "rollbackPolicy": {
     "rollbackPath": "revert each split repo PR README/MIRROR_NOTICE change; then revert or follow-up this a2a-nexus execution result packet",
-    "rollbackOwner": "seoseo finalizer/operator",
+    "rollbackOwner": "brokerAlpha finalizer/operator",
     "externalSettingsRollbackRequired": false,
     "reason": "no external repository settings or live systems were mutated"
   },

@@ -78,10 +78,10 @@ function configWithRequester(): A2ABrokerAdapterPluginRuntimeConfig {
           config: {
             baseUrl: "https://broker.internal.example.com",
             requester: {
-              id: "sogyo-operator",
+              id: "workerBeta-operator",
               kind: "user",
               role: "operator",
-              displayName: "Sogyo Operator",
+              displayName: "workerBeta Operator",
             },
           },
         },
@@ -92,20 +92,20 @@ function configWithRequester(): A2ABrokerAdapterPluginRuntimeConfig {
 
 // ── Param fixtures ─────────────────────────────────────────────────
 
-function buildValidApprove(taskId = "task-sogyo-1", sessionKey = "session-approve-1") {
+function buildValidApprove(taskId = "task-workerBeta-1", sessionKey = "session-approve-1") {
   return {
     sessionKey,
     approval: {
       method: "a2a.task.approve" as const,
       taskId,
-      reason: "sogyo dry-run approve test",
+      reason: "workerBeta dry-run approve test",
       approvalId: "approval-abc-123",
     },
   };
 }
 
 function buildValidRejectApproval(
-  taskId = "task-sogyo-2",
+  taskId = "task-workerBeta-2",
   sessionKey = "session-reject-1",
 ) {
   return {
@@ -113,7 +113,7 @@ function buildValidRejectApproval(
     approval: {
       method: "a2a.task.reject_approval" as const,
       taskId,
-      reason: "sogyo dry-run reject test",
+      reason: "workerBeta dry-run reject test",
       approvalId: "approval-xyz-789",
       status: "rejected" as const,
     },
@@ -134,7 +134,7 @@ describe("dry-run approval projection (#256)", () => {
       const evidence = (result as ApprovalDryRunResult).evidence;
       assert.equal(evidence.schema, "a2a.approval.dry-run.evidence");
       assert.equal(evidence.action, "approve");
-      assert.equal(evidence.taskId, "task-sogyo-1");
+      assert.equal(evidence.taskId, "task-workerBeta-1");
 
       // Evidence ≠ approval
       assert.equal((result as ApprovalDryRunResult).isApproval, false);
@@ -155,7 +155,7 @@ describe("dry-run approval projection (#256)", () => {
       assert.equal(packet.body.actor.id, "operator-main");
       assert.equal(packet.body.actor.kind, "session");
       assert.equal(packet.body.actor.role, "hub");
-      assert.equal(packet.body.reason, "sogyo dry-run approve test");
+      assert.equal(packet.body.reason, "workerBeta dry-run approve test");
       assert.equal(packet.body.approvalId, "approval-abc-123");
       assert.ok(packet.headers["content-type"]);
       assert.ok(packet.headers["x-a2a-requester-id"]);
@@ -196,7 +196,7 @@ describe("dry-run approval projection (#256)", () => {
 
       assert.equal(result.ok, true);
       const packet = (result as ApprovalDryRunResult).evidence.projectedPacket;
-      assert.equal(packet.body.actor.id, "sogyo-operator");
+      assert.equal(packet.body.actor.id, "workerBeta-operator");
       assert.equal(packet.body.actor.kind, "user");
       assert.equal(packet.body.actor.role, "operator");
       // displayName from config requester is carried through when present
@@ -266,12 +266,12 @@ describe("dry-run approval projection (#256)", () => {
     it("evidence has runId and projectedAt timestamp", () => {
       const params = buildValidApprove();
       const result = projectApprovalDryRun(params, configActiveWithBaseUrl(), {
-        runId: "sogyo-run-001",
+        runId: "workerBeta-run-001",
       });
 
       assert.equal(result.ok, true);
       const evidence = (result as ApprovalDryRunResult).evidence;
-      assert.equal(evidence.runId, "sogyo-run-001");
+      assert.equal(evidence.runId, "workerBeta-run-001");
       assert.ok(typeof evidence.projectedAt === "number");
       assert.ok(evidence.projectedAt > 0);
     });
@@ -340,7 +340,7 @@ describe("dry-run approval projection (#256)", () => {
       const evidence = (result as ApprovalDryRunResult).evidence;
       assert.equal(evidence.schema, "a2a.approval.dry-run.evidence");
       assert.equal(evidence.action, "reject_approval");
-      assert.equal(evidence.taskId, "task-sogyo-2");
+      assert.equal(evidence.taskId, "task-workerBeta-2");
 
       // Evidence ≠ approval
       assert.equal((result as ApprovalDryRunResult).isApproval, false);
@@ -359,7 +359,7 @@ describe("dry-run approval projection (#256)", () => {
       assert.equal(packet.endpoint, "/tasks/task-256-reject/reject-approval");
       assert.equal(packet.method, "POST");
       assert.equal(packet.body.actor.id, "operator-main");
-      assert.equal(packet.body.reason, "sogyo dry-run reject test");
+      assert.equal(packet.body.reason, "workerBeta dry-run reject test");
       assert.equal(packet.body.approvalId, "approval-xyz-789");
       assert.equal(packet.body.status, "rejected");
     });

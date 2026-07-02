@@ -1,7 +1,7 @@
 {
   "$schema": "a2a-runner-telegram-terminal-notification-smoke-v1",
   "description": "CI-safe Telegram terminal notification smoke harness. It uses synthetic runner output and synthetic Telegram receipt metadata to prove terminal ACK waits for an operator-visible/user receipt, not provider send success.",
-  "worker": "nosuk",
+  "worker": "workerAlpha",
   "emittedAt": "2026-05-02T04:00:00.000Z",
   "handlerTask": {
     "id": "telegram-terminal-receipt-103",

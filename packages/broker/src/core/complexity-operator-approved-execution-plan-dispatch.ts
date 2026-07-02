@@ -240,7 +240,7 @@ export interface OperatorApprovedExecutionPlanDispatchPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesExecutionPlanDraftPacket: true;
     rendersDispatchRequest: true;
@@ -418,7 +418,7 @@ export function buildOperatorApprovedExecutionPlanDispatch(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesExecutionPlanDraftPacket: true,
       rendersDispatchRequest: true,
@@ -1157,7 +1157,7 @@ function approvalSensitiveActionsExcluded(): string[] {
     "dispatching or invoking a start executor",
     "spawning a process or starting/stopping the sidecar",
     "Terminal Brief default-on enablement",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or terminal receipt DB mutation",
     "GitHub PR merge, issue close, or comment post from the packet/route",
     "TaskFlow record creation or broker DB mutation",

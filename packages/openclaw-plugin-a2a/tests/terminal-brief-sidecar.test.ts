@@ -22,7 +22,7 @@ function terminalEvent(id: string): A2ATerminalOutboxEvent {
     payload: {
       taskId: "terminal-brief-sidecar-canary",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       completedAt: "2026-05-18T04:00:00.000Z",
       summary: "sidecar canary completed",
       parentRoundProgress: 1,
@@ -33,7 +33,7 @@ function terminalEvent(id: string): A2ATerminalOutboxEvent {
       decision: "pending",
       reason: "awaiting current-session-visible evidence before ACK",
       updatedAt: "2026-05-18T04:00:00.000Z",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptStatus: "accepted",
     },
     ack: null,
@@ -247,8 +247,8 @@ describe("Terminal Brief sidecar", () => {
         notifyOperator: async () => ({
           ackTerminalEvent: false,
           terminalReceiptStatus: "produced",
-          receiptId: "spool:gongyung:sidecar-produced",
-          reason: "Gongyung spool record produced; terminal ACK remains pending",
+          receiptId: "spool:mobileAlpha:sidecar-produced",
+          reason: "mobileAlpha spool record produced; terminal ACK remains pending",
         }),
         broker: {
           async *streamOperatorEvents() {
@@ -286,7 +286,7 @@ describe("Terminal Brief sidecar", () => {
         receipt: {
           status: "produced",
           updatedAt: "2026-05-18T03:59:59.000Z",
-          note: "Gongyung spool record produced; terminal ACK remains pending",
+          note: "mobileAlpha spool record produced; terminal ACK remains pending",
         },
       }]);
       assert.equal(status.terminalOutbox.cursor, event.id);

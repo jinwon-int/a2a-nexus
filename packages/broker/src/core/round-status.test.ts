@@ -21,7 +21,7 @@ function task(id: string, status: TaskStatus, parentRoundId: string | undefined,
 
 test("summarizeRoundStatus aggregates lanes, completion, and incomplete ids for a round", () => {
   const tasks: TaskRecord[] = [
-    task("t1", "succeeded", "round-1", { parentRoundTotal: 4, parentRoundOrder: 1, assignedWorkerId: "sogyo" }),
+    task("t1", "succeeded", "round-1", { parentRoundTotal: 4, parentRoundOrder: 1, assignedWorkerId: "workerbeta" }),
     task("t2", "failed", "round-1", { parentRoundTotal: 4, parentRoundOrder: 2 }),
     task("t3", "running", "round-1", { parentRoundTotal: 4, parentRoundOrder: 3 }),
     task("t4", "blocked", "round-1", { parentRoundTotal: 4, parentRoundOrder: 4 }),
@@ -43,7 +43,7 @@ test("summarizeRoundStatus aggregates lanes, completion, and incomplete ids for 
   assert.equal(summary.byStatus.blocked, 1);
   // lanes are ordered by parentRoundOrder
   assert.deepEqual(summary.lanes.map((l) => l.taskId), ["t1", "t2", "t3", "t4"]);
-  assert.equal(summary.lanes[0].assignedWorkerId, "sogyo");
+  assert.equal(summary.lanes[0].assignedWorkerId, "workerbeta");
 });
 
 test("summarizeRoundStatus uses matched count when no parentRoundTotal is declared", () => {
@@ -104,8 +104,8 @@ test("expectedButMissingCount is zero when all matched lanes are present", () =>
 
 test("buildRoundParentAggregateTaskReport emits parent-comment compatible task report (#629)", () => {
   const report = buildRoundParentAggregateTaskReport([
-    task("a", "succeeded", "r", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "sogyo" }),
-    task("b", "running", "r", { parentRoundTotal: 3, parentRoundOrder: 2, assignedWorkerId: "nosuk" }),
+    task("a", "succeeded", "r", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "workerbeta" }),
+    task("b", "running", "r", { parentRoundTotal: 3, parentRoundOrder: 2, assignedWorkerId: "workeralpha" }),
     task("other", "failed", "other"),
   ], "r", { generatedAt: "2026-06-15T10:30:00.000Z" });
 
@@ -118,8 +118,8 @@ test("buildRoundParentAggregateTaskReport emits parent-comment compatible task r
   assert.equal(report.reportable, 3);
   assert.equal(report.allTerminal, false);
   assert.deepEqual(report.items.map((item) => item.taskId), ["a", "b", "r:missing:1"]);
-  assert.match(report.items[0].reportLine, /terminal: sogyo lane=1 task=a status=succeeded/);
-  assert.match(report.items[1].reportLine, /progress: nosuk lane=2 task=b status=running/);
+  assert.match(report.items[0].reportLine, /terminal: workerbeta lane=1 task=a status=succeeded/);
+  assert.match(report.items[1].reportLine, /progress: workeralpha lane=2 task=b status=running/);
   assert.match(report.items[2].reportLine, /missing: expected lane 3\/3 has no task record yet/);
 });
 
@@ -135,8 +135,8 @@ test("round report names actual missing parentRoundOrder gaps and sorts ties det
   assert.equal(report.stale, 0);
 
   const gapReport = buildRoundParentAggregateTaskReport([
-    task("lane-1", "succeeded", "gap", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "sogyo" }),
-    task("lane-3", "running", "gap", { parentRoundTotal: 3, parentRoundOrder: 3, assignedWorkerId: "nosuk" }),
+    task("lane-1", "succeeded", "gap", { parentRoundTotal: 3, parentRoundOrder: 1, assignedWorkerId: "workerbeta" }),
+    task("lane-3", "running", "gap", { parentRoundTotal: 3, parentRoundOrder: 3, assignedWorkerId: "workeralpha" }),
   ], "gap", { generatedAt: "2026-06-15T10:30:00.000Z" });
 
   assert.match(gapReport.items[2].reportLine, /missing: expected lane 2\/3 has no task record yet/);
@@ -145,7 +145,7 @@ test("round report names actual missing parentRoundOrder gaps and sorts ties det
 
 test("round report caps missing lane expansion for hostile parentRoundTotal values (#629)", () => {
   const report = buildRoundParentAggregateTaskReport([
-    task("only", "succeeded", "huge", { parentRoundTotal: 10000, assignedWorkerId: "sogyo" }),
+    task("only", "succeeded", "huge", { parentRoundTotal: 10000, assignedWorkerId: "workerbeta" }),
   ], "huge", { generatedAt: "2026-06-15T10:30:00.000Z" });
 
   assert.equal(report.total, 10000);

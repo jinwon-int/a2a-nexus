@@ -4,7 +4,7 @@
  * Parent: jinwon-int/plugin-a2a#290
  * Origin: jinwon-int/a2a-broker#544
  *
- * Verifies the concise title format: "A2A Terminal Brief 완료: dungae(1/7)"
+ * Verifies the concise title format: "A2A Terminal Brief 완료: workerEpsilon(1/7)"
  * for both direct parent-broker tasks and cross-broker projected child tasks.
  * No live send, no terminal ACK, no Gateway restart.
  */
@@ -27,9 +27,9 @@ function roundProgressPayload(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    taskId: "sogyo-290",
+    taskId: "workerBeta-290",
     status: "succeeded",
-    worker: "sogyo",
+    worker: "workerBeta",
     repo: "jinwon-int/plugin-a2a",
     issue: 290,
     testSummary: "concise Terminal Brief title proof",
@@ -58,7 +58,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
   it("renders concise title with worker and round progress", () => {
     const outbox = {
-      id: "outbox:direct:sogyo:1",
+      id: "outbox:direct:workerBeta:1",
       kind: "task.terminal" as const,
       attempts: 1,
       createdAt: "2026-05-13T06:00:00.000Z",
@@ -76,14 +76,14 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope, "expected envelope");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 1/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 1/7)");
     assert.equal(envelope!.roundNum, 1);
     assert.equal(envelope!.roundTotal, 7);
   });
 
   it("renders concise title for mid-round completion", () => {
     const outbox = {
-      id: "outbox:direct:nosuk:4",
+      id: "outbox:direct:workerAlpha:4",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-13T07:00:00.000Z",
@@ -94,7 +94,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T07:00:00.000Z",
       },
       payload: roundProgressPayload({
-        worker: "nosuk",
+        worker: "workerAlpha",
         roundNum: 4,
         roundTotal: 7,
       }),
@@ -102,14 +102,14 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: nosuk(완료 4/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerAlpha(완료 4/7)");
     assert.equal(envelope!.roundNum, 4);
     assert.equal(envelope!.roundTotal, 7);
   });
 
   it("renders concise title for final worker completion", () => {
     const outbox = {
-      id: "outbox:direct:dungae:7",
+      id: "outbox:direct:workerEpsilon:7",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-13T08:00:00.000Z",
@@ -120,7 +120,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T08:00:00.000Z",
       },
       payload: roundProgressPayload({
-        worker: "dungae",
+        worker: "workerEpsilon",
         roundNum: 7,
         roundTotal: 7,
       }),
@@ -128,12 +128,12 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: dungae(완료 7/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEpsilon(완료 7/7)");
   });
 
   it("reads round progress from crossBrokerHandoff metadata", () => {
     const outbox = {
-      id: "outbox:cross:gwakga:3",
+      id: "outbox:cross:brokerBeta:3",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-13T06:30:00.000Z",
@@ -144,16 +144,16 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T06:30:00.000Z",
       },
       payload: {
-        taskId: "gwakga-child-3",
+        taskId: "brokerBeta-child-3",
         status: "succeeded",
-        worker: "gwakga",
+        worker: "brokerBeta",
         repo: "a2a-plane (internal tracker, private)",
         issue: 276,
-        testSummary: "gwakga handoff completed",
+        testSummary: "brokerBeta handoff completed",
         crossBrokerHandoff: {
-          parentRoundId: "parent-seoseo",
-          originBrokerId: "seoseo",
-          handoffBrokerId: "gwakga",
+          parentRoundId: "parent-brokerAlpha",
+          originBrokerId: "brokerAlpha",
+          handoffBrokerId: "brokerBeta",
           originTaskId: "child-3",
           roundNum: 3,
           roundTotal: 7,
@@ -164,7 +164,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: gwakga(완료 3/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: brokerBeta(완료 3/7)");
     assert.equal(envelope!.roundNum, 3);
     assert.equal(envelope!.roundTotal, 7);
   });
@@ -191,7 +191,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
     assert.ok(envelope);
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 5);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 2/5)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 2/5)");
   });
 
   it("reads broker parentRoundProgress with parentRoundTotal", () => {
@@ -233,7 +233,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T09:05:30.000Z",
       },
       payload: roundProgressPayload({
-        worker: "nosuk",
+        worker: "workerAlpha",
         parentRoundOrder: 3,
         parentRoundTotal: 4,
       }),
@@ -243,7 +243,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
     assert.ok(envelope);
     assert.equal(envelope!.roundNum, undefined);
     assert.equal(envelope!.roundTotal, 4);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: nosuk(완료 ?/?)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerAlpha(완료 ?/?)");
   });
 
   it("prefers completed/total progress over parentRoundOrder lane index", () => {
@@ -259,7 +259,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T09:05:40.000Z",
       },
       payload: roundProgressPayload({
-        worker: "nosuk",
+        worker: "workerAlpha",
         parentRoundOrder: 3,
         roundProgress: { completed: 2 },
         parentRoundTotal: 4,
@@ -270,7 +270,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
     assert.ok(envelope);
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 4);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: nosuk(완료 2/4)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerAlpha(완료 2/4)");
   });
 
   it("reads compatible roundProgress.completed with parentRoundTotal", () => {
@@ -312,7 +312,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-13T09:05:50.000Z",
       },
       payload: roundProgressPayload({
-        worker: "work-sogyo",
+        worker: "work-workerBeta",
         parentRoundOrder: 4,
         parentRoundProgress: 1,
         parentRoundTotal: 4,
@@ -324,8 +324,8 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
     // roundNum must come from parentRoundProgress, NOT parentRoundOrder
     assert.equal(envelope!.roundNum, 1);
     assert.equal(envelope!.roundTotal, 4);
-    // Title must label completed progress explicitly, not bare work-sogyo(4/4)
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: work-sogyo(완료 1/4)");
+    // Title must label completed progress explicitly, not bare work-workerBeta(4/4)
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: work-workerBeta(완료 1/4)");
   });
 
   it("falls back without denominator for broker parentRoundProgress", () => {
@@ -366,8 +366,8 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
         updatedAt: "2026-05-17T04:24:18.476Z",
       },
       payload: roundProgressPayload({
-        taskId: "team1-sogyo-322-observation-seoseo-20260517T041718Z",
-        worker: "sogyo",
+        taskId: "team1-workerBeta-322-observation-brokerAlpha-20260517T041718Z",
+        worker: "workerBeta",
         roundNum: 1,
       }),
     };
@@ -376,7 +376,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
     assert.ok(envelope);
     assert.equal(envelope!.roundNum, 1);
     assert.equal(envelope!.roundTotal, undefined);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(1/1)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(1/1)");
   });
 
   it("fails safe to worker-only label when roundTotal is unknown", () => {
@@ -399,7 +399,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta");
     assert.equal(envelope!.roundNum, 3);
     assert.equal(envelope!.roundTotal, undefined);
   });
@@ -424,7 +424,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta");
   });
 
   it("fails safe to worker-only label when roundNum exceeds roundTotal", () => {
@@ -447,7 +447,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta");
   });
 
   it("renders standalone task-based label as 1/1 when round progress is unavailable", () => {
@@ -491,7 +491,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
       payload: {
         taskId: "failed-task",
         status: "failed",
-        worker: "sogyo",
+        worker: "workerBeta",
         roundNum: 5,
         roundTotal: 7,
         testSummary: "task failed",
@@ -500,7 +500,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 실패: sogyo(5/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 실패: workerBeta(5/7)");
     assert.equal(envelope!.type, "failure");
     assert.equal(envelope!.severity, "error");
   });
@@ -520,7 +520,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
       payload: {
         taskId: "blocked-task",
         status: "block",
-        worker: "nosuk",
+        worker: "workerAlpha",
         roundNum: 6,
         roundTotal: 7,
         testSummary: "task blocked awaiting approval",
@@ -529,7 +529,7 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 차단: nosuk(6/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 차단: workerAlpha(6/7)");
     assert.equal(envelope!.type, "block");
     assert.equal(envelope!.severity, "warn");
   });
@@ -540,13 +540,13 @@ describe("buildA2AOperatorTerminalOutboxNotificationEnvelope — concise titles"
 describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () => {
   it("renders concise title from live terminal event", () => {
     const event = {
-      id: "live:seoseo:2",
+      id: "live:brokerAlpha:2",
       name: "operator-summary-update",
       data: {
         terminalEvent: {
           type: "succeeded",
-          taskId: "seoseo-direct-2",
-          worker: "seoseo",
+          taskId: "brokerAlpha-direct-2",
+          worker: "brokerAlpha",
           repo: "jinwon-int/a2a-broker",
           issue: 544,
           summary: "parent round progress",
@@ -560,7 +560,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
 
     const envelope = buildA2AOperatorTerminalNotificationEnvelope(event);
     assert.ok(envelope, "expected envelope");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: seoseo(완료 2/5)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: brokerAlpha(완료 2/5)");
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 5);
   });
@@ -573,7 +573,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
         terminalEvent: {
           type: "succeeded",
           taskId: "metadata-task",
-          worker: "gwakga",
+          worker: "brokerBeta",
           repo: "a2a-plane (internal tracker, private)",
           summary: "metadata progress",
           receiptProjection: "current_session_visible",
@@ -587,7 +587,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
 
     const envelope = buildA2AOperatorTerminalNotificationEnvelope(event);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: gwakga(완료 1/8)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: brokerBeta(완료 1/8)");
   });
 
   it("reads round progress from crossBroker metadata in live event", () => {
@@ -598,12 +598,12 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
         terminalEvent: {
           type: "succeeded",
           taskId: "cross-live",
-          worker: "soonwook",
+          worker: "workerEta",
           repo: "a2a-plane (internal tracker, private)",
           summary: "cross live progress",
           receiptProjection: "current_session_visible",
           crossBrokerHandoff: {
-            parentRoundId: "parent-seoseo",
+            parentRoundId: "parent-brokerAlpha",
             roundNum: 4,
             roundTotal: 7,
           },
@@ -613,7 +613,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
 
     const envelope = buildA2AOperatorTerminalNotificationEnvelope(event);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: soonwook(완료 4/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEta(완료 4/7)");
   });
 
   it("renders standalone live event as 1/1 when round progress is absent", () => {
@@ -624,7 +624,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
         terminalEvent: {
           type: "succeeded",
           taskId: "no-progress-task",
-          worker: "dungae",
+          worker: "workerEpsilon",
           summary: "no progress data",
           receiptProjection: "current_session_visible",
         },
@@ -633,7 +633,7 @@ describe("buildA2AOperatorTerminalNotificationEnvelope — concise titles", () =
 
     const envelope = buildA2AOperatorTerminalNotificationEnvelope(event);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: dungae(1/1)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEpsilon(1/1)");
   });
 });
 
@@ -713,14 +713,14 @@ describe("renderOperatorNotificationText — broker progress fields", () => {
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: sogyo",
+      title: "A2A Terminal Brief 완료: workerBeta",
       text: "single worker no denominator proof",
-      worker: "sogyo",
+      worker: "workerBeta",
       roundProgress: { completed: 1 },
-      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "sogyo" },
+      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "workerBeta" },
     });
 
-    assert.match(text, /^A2A Terminal Brief 완료: sogyo\(1\/1\)$/m);
+    assert.match(text, /^A2A Terminal Brief 완료: workerBeta\(1\/1\)$/m);
   });
 
   it("renders explicit completed progress label when adapter receives parentRoundOrder=4/4 with parentRoundProgress=1/4", () => {
@@ -733,19 +733,19 @@ describe("renderOperatorNotificationText — broker progress fields", () => {
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: work-sogyo",
+      title: "A2A Terminal Brief 완료: work-workerBeta",
       text: "broker parentRoundOrder + parentRoundProgress proof",
-      worker: "work-sogyo",
+      worker: "work-workerBeta",
       parentRoundOrder: 4,
       parentRoundProgress: 1,
       parentRoundTotal: 4,
-      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "work-sogyo" },
+      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "work-workerBeta" },
     });
 
-    // Must show completed progress explicitly, not bare work-sogyo(4/4)
-    assert.match(text, /^A2A Terminal Brief 완료: work-sogyo\(완료 1\/4\)$/m);
+    // Must show completed progress explicitly, not bare work-workerBeta(4/4)
+    assert.match(text, /^A2A Terminal Brief 완료: work-workerBeta\(완료 1\/4\)$/m);
     // Must NOT show bare (4/4) which is lane order, not completed progress
-    assert.doesNotMatch(text, /sogyo\(4\/4\)/);
+    assert.doesNotMatch(text, /workerBeta\(4\/4\)/);
   });
 });
 
@@ -767,7 +767,7 @@ describe("buildA2AOpenClawTelegramOperatorNotification", () => {
         updatedAt: "2026-05-13T10:00:00.000Z",
       },
       payload: roundProgressPayload({
-        worker: "dungae",
+        worker: "workerEpsilon",
         roundNum: 1,
         roundTotal: 7,
       }),
@@ -778,9 +778,9 @@ describe("buildA2AOpenClawTelegramOperatorNotification", () => {
     const telegram = harness.listTelegram();
 
     assert.equal(telegram.length, 1);
-    assert.equal(telegram[0].title, "A2A Terminal Brief 완료: dungae(완료 1/7)");
-    assert.equal(telegram[0].text, "A2A Terminal Brief 완료: dungae(완료 1/7)");
-    assert.equal(telegram[0].evidence.worker, "dungae");
+    assert.equal(telegram[0].title, "A2A Terminal Brief 완료: workerEpsilon(완료 1/7)");
+    assert.equal(telegram[0].text, "A2A Terminal Brief 완료: workerEpsilon(완료 1/7)");
+    assert.equal(telegram[0].evidence.worker, "workerEpsilon");
   });
 });
 
@@ -843,12 +843,12 @@ describe("createA2ATelegramSafeDryRunNotificationHarness", () => {
   });
 });
 
-// ── Seoseo-origin and Gwakga-origin coverage ───────────────────────
+// ── brokerAlpha-origin and brokerBeta-origin coverage ───────────────────────
 
 describe("concise titles — origin coverage", () => {
-  it("renders Seoseo-origin parent round title", () => {
+  it("renders brokerAlpha-origin parent round title", () => {
     const outbox = {
-      id: "outbox:seoseo:parent:1",
+      id: "outbox:brokerAlpha:parent:1",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-13T07:00:00.000Z",
@@ -859,31 +859,31 @@ describe("concise titles — origin coverage", () => {
         updatedAt: "2026-05-13T07:00:00.000Z",
       },
       payload: {
-        taskId: "seoseo-parent",
+        taskId: "brokerAlpha-parent",
         status: "succeeded",
-        worker: "seoseo",
+        worker: "brokerAlpha",
         repo: "jinwon-int/a2a-broker",
         issue: 544,
         roundNum: 1,
         roundTotal: 7,
-        testSummary: "seoseo parent round progress",
+        testSummary: "brokerAlpha parent round progress",
         crossBrokerHandoff: {
-          parentRoundId: "parent-seoseo",
-          originBrokerId: "seoseo",
-          originTaskId: "seoseo-parent",
+          parentRoundId: "parent-brokerAlpha",
+          originBrokerId: "brokerAlpha",
+          originTaskId: "brokerAlpha-parent",
         },
       },
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: seoseo(완료 1/7)");
-    assert.equal(envelope!.worker, "seoseo");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: brokerAlpha(완료 1/7)");
+    assert.equal(envelope!.worker, "brokerAlpha");
   });
 
-  it("renders Gwakga-origin parent round title via cross-broker projection", () => {
+  it("renders brokerBeta-origin parent round title via cross-broker projection", () => {
     const outbox = {
-      id: "outbox:gwakga:synthetic:1",
+      id: "outbox:brokerBeta:synthetic:1",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-13T07:30:00.000Z",
@@ -894,27 +894,27 @@ describe("concise titles — origin coverage", () => {
         updatedAt: "2026-05-13T07:30:00.000Z",
       },
       payload: {
-        taskId: "gwakga-child",
+        taskId: "brokerBeta-child",
         status: "succeeded",
-        worker: "gwakga",
+        worker: "brokerBeta",
         repo: "a2a-plane (internal tracker, private)",
         issue: 276,
         roundNum: 2,
         roundTotal: 7,
-        testSummary: "gwakga cross-broker projection",
+        testSummary: "brokerBeta cross-broker projection",
         crossBrokerHandoff: {
-          parentRoundId: "parent-gwakga",
-          originBrokerId: "gwakga-vps7",
-          handoffBrokerId: "seoseo",
-          originTaskId: "gwakga-child",
+          parentRoundId: "parent-brokerBeta",
+          originBrokerId: "brokerBeta-vps7",
+          handoffBrokerId: "brokerAlpha",
+          originTaskId: "brokerBeta-child",
         },
       },
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: gwakga(완료 2/7)");
-    assert.equal(envelope!.worker, "gwakga");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: brokerBeta(완료 2/7)");
+    assert.equal(envelope!.worker, "brokerBeta");
   });
 });
 
@@ -934,9 +934,9 @@ describe("concise titles — evidence preserved in body", () => {
         updatedAt: "2026-05-13T07:00:00.000Z",
       },
       payload: {
-        taskId: "sogyo-290",
+        taskId: "workerBeta-290",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         repo: "jinwon-int/plugin-a2a",
         issue: 290,
         prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/291",
@@ -950,15 +950,15 @@ describe("concise titles — evidence preserved in body", () => {
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 1/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 1/7)");
     // Detailed evidence remains in body
     assert.ok(envelope!.text.includes("concise Terminal Brief title proof"));
-    assert.ok(envelope!.text.includes("Worker: sogyo"));
+    assert.ok(envelope!.text.includes("Worker: workerBeta"));
     assert.ok(envelope!.text.includes("Repo: jinwon-int/plugin-a2a"));
     assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/plugin-a2a/issues/290"));
     assert.ok(envelope!.text.includes("PR: https://github.com/jinwon-int/plugin-a2a/pull/291"));
     // Evidence object preserves details
-    assert.equal(envelope!.evidence.worker, "sogyo");
+    assert.equal(envelope!.evidence.worker, "workerBeta");
     assert.equal(envelope!.evidence.repo, "jinwon-int/plugin-a2a");
   });
 });
@@ -967,11 +967,11 @@ describe("concise titles — evidence preserved in body", () => {
 
 describe("A2A R13 — real-round guard and aggregation", () => {
   const PARENT_ROUND_ID = "a2a-r13-terminal-brief-realround-20260514T013556Z";
-  const ORIGIN_BROKER_ID = "seoseo";
+  const ORIGIN_BROKER_ID = "brokerAlpha";
 
-  it("renders compact title sogyo(2/7) for real-round metadata", () => {
+  it("renders compact title workerBeta(2/7) for real-round metadata", () => {
     const outbox = {
-      id: "outbox:r13:sogyo:2",
+      id: "outbox:r13:workerBeta:2",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-14T01:35:56.000Z",
@@ -982,9 +982,9 @@ describe("A2A R13 — real-round guard and aggregation", () => {
         updatedAt: "2026-05-14T01:35:56.000Z",
       },
       payload: {
-        taskId: "sogyo-r13-2",
+        taskId: "workerBeta-r13-2",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         repo: "jinwon-int/plugin-a2a",
         issue: 307,
         roundNum: 2,
@@ -998,19 +998,19 @@ describe("A2A R13 — real-round guard and aggregation", () => {
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
-    assert.ok(envelope, "expected envelope for real-round sogyo");
+    assert.ok(envelope, "expected envelope for real-round workerBeta");
     // Compact title verification
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 2/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 2/7)");
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 7);
-    assert.equal(envelope!.worker, "sogyo");
+    assert.equal(envelope!.worker, "workerBeta");
     // Body preserves detailed evidence
     assert.ok(envelope!.text.includes("A2A R13 compact Terminal Brief real-round guard and aggregation verification"));
-    assert.ok(envelope!.text.includes("Worker: sogyo"));
+    assert.ok(envelope!.text.includes("Worker: workerBeta"));
     assert.ok(envelope!.text.includes("Repo: jinwon-int/plugin-a2a"));
     assert.ok(envelope!.text.includes("Issue: https://github.com/jinwon-int/plugin-a2a/issues/307"));
     // Evidence object preserves details
-    assert.equal(envelope!.evidence.worker, "sogyo");
+    assert.equal(envelope!.evidence.worker, "workerBeta");
     assert.equal(envelope!.evidence.repo, "jinwon-int/plugin-a2a");
     assert.ok(
       envelope!.evidence.issueUrl?.includes("issues/307"),
@@ -1018,9 +1018,9 @@ describe("A2A R13 — real-round guard and aggregation", () => {
     );
   });
 
-  it("crossBrokerHandoff with originBrokerId=seoseo renders compact title", () => {
+  it("crossBrokerHandoff with originBrokerId=brokerAlpha renders compact title", () => {
     const outbox = {
-      id: "outbox:r13:sogyo:handoff",
+      id: "outbox:r13:workerBeta:handoff",
       kind: "task.terminal" as const,
       attempts: 0,
       createdAt: "2026-05-14T01:35:56.000Z",
@@ -1031,27 +1031,27 @@ describe("A2A R13 — real-round guard and aggregation", () => {
         updatedAt: "2026-05-14T01:35:56.000Z",
       },
       payload: {
-        taskId: "sogyo-r13-handoff",
+        taskId: "workerBeta-r13-handoff",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         repo: "jinwon-int/plugin-a2a",
         issue: 307,
         roundNum: 2,
         roundTotal: 7,
-        testSummary: "handoff with seoseo origin broker",
+        testSummary: "handoff with brokerAlpha origin broker",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: "broker-racknerd-167be94",
-          originTaskId: "sogyo-r13-origin",
+          originTaskId: "workerBeta-r13-origin",
         },
         completedAt: "2026-05-14T01:35:56.000Z",
       },
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
-    assert.ok(envelope, "expected envelope for cross-broker handoff sogyo");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 2/7)");
+    assert.ok(envelope, "expected envelope for cross-broker handoff workerBeta");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 2/7)");
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 7);
   });
@@ -1063,11 +1063,11 @@ describe("A2A R13 — real-round guard and aggregation", () => {
       data: {
         terminalEvent: {
           type: "succeeded",
-          taskId: "sogyo-r13-live",
-          worker: "sogyo",
+          taskId: "workerBeta-r13-live",
+          worker: "workerBeta",
           repo: "jinwon-int/plugin-a2a",
           issue: 307,
-          summary: "parent-only Terminal Brief ownership — seoseo origin broker",
+          summary: "parent-only Terminal Brief ownership — brokerAlpha origin broker",
           roundNum: 2,
           roundTotal: 7,
           parentRoundId: PARENT_ROUND_ID,
@@ -1079,13 +1079,13 @@ describe("A2A R13 — real-round guard and aggregation", () => {
     });
 
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(완료 2/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(완료 2/7)");
     assert.equal(envelope!.roundNum, 2);
     assert.equal(envelope!.roundTotal, 7);
-    assert.equal(envelope!.worker, "sogyo");
+    assert.equal(envelope!.worker, "workerBeta");
   });
 
-  it("renderOperatorNotificationText produces correct receipt wording for sogyo(2/7)", () => {
+  it("renderOperatorNotificationText produces correct receipt wording for workerBeta(2/7)", () => {
     const text = renderOperatorNotificationText({
       kind: "a2a.operator.notification",
       version: 1,
@@ -1095,16 +1095,16 @@ describe("A2A R13 — real-round guard and aggregation", () => {
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: sogyo",
+      title: "A2A Terminal Brief 완료: workerBeta",
       text: "A2A R13 receipt wording verification",
-      worker: "sogyo",
+      worker: "workerBeta",
       roundNum: 2,
       roundTotal: 7,
-      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "sogyo" },
+      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "workerBeta" },
     });
 
-    assert.match(text, /^A2A Terminal Brief 완료: sogyo\(완료 2\/7\)$/m);
-    assert.ok(text.includes("sogyo"));
+    assert.match(text, /^A2A Terminal Brief 완료: workerBeta\(완료 2\/7\)$/m);
+    assert.ok(text.includes("workerBeta"));
   });
 
   it("fails safe for invalid round progress: roundNum beyond total", () => {
@@ -1120,9 +1120,9 @@ describe("A2A R13 — real-round guard and aggregation", () => {
         updatedAt: "2026-05-14T01:35:56.000Z",
       },
       payload: {
-        taskId: "sogyo-invalid",
+        taskId: "workerBeta-invalid",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         roundNum: 8,
         roundTotal: 7,
         testSummary: "invalid round progress",
@@ -1131,7 +1131,7 @@ describe("A2A R13 — real-round guard and aggregation", () => {
 
     assert.ok(envelope);
     // Invalid roundNum > roundTotal falls back to worker-only label
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta");
   });
 });
 
@@ -1153,18 +1153,18 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       payload: {
         taskId: "r15-brief-title",
         status: "succeeded",
-        worker: "yukson",
+        worker: "workerDelta",
         roundNum: 4,
         roundTotal: 7,
-        terminalBriefTitle: "A2A Terminal Brief 완료: yukson(4/7)",
+        terminalBriefTitle: "A2A Terminal Brief 완료: workerDelta(4/7)",
         summary: "docker runner completed a2a-r15-hardening",
       },
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: yukson(4/7)");
-    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: yukson(4/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerDelta(4/7)");
+    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: workerDelta(4/7)");
   });
 
   it("normalizes standard single-worker terminalBriefTitle to 1/1", () => {
@@ -1182,17 +1182,17 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       payload: {
         taskId: "single-worker-suffix",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         parentRoundProgress: 1,
-        terminalBriefTitle: "A2A Terminal Brief 완료: sogyo",
+        terminalBriefTitle: "A2A Terminal Brief 완료: workerBeta",
         summary: "single-worker suffix proof",
       },
     };
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope);
-    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(1/1)");
+    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: workerBeta");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(1/1)");
   });
 
   it("marks parent-round bare terminalBriefTitle as missing progress when denominator is absent", () => {
@@ -1208,11 +1208,11 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
         updatedAt: "2026-05-20T02:10:00.000Z",
       },
       payload: {
-        taskId: "team1-terminal-brief-round-nosuk",
+        taskId: "team1-terminal-brief-round-workerAlpha",
         status: "succeeded",
-        worker: "nosuk",
+        worker: "workerAlpha",
         roundId: "team1-terminal-brief-round",
-        terminalBriefTitle: "A2A Terminal Brief 완료: nosuk",
+        terminalBriefTitle: "A2A Terminal Brief 완료: workerAlpha",
         summary: "team1 all-hands worker completed without denominator metadata",
       },
     };
@@ -1223,8 +1223,8 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
     assert.equal(envelope!.parentRoundContext, true);
     assert.equal(envelope!.roundNum, undefined);
     assert.equal(envelope!.roundTotal, undefined);
-    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: nosuk");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: nosuk(완료 ?/?)");
+    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: workerAlpha");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerAlpha(완료 ?/?)");
   });
 
   it("terminalBriefTitle wins in live-terminal envelope", () => {
@@ -1234,18 +1234,18 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
         terminalEvent: {
           type: "succeeded",
           taskId: "task-r15-event",
-          worker: "yukson",
+          worker: "workerDelta",
           roundNum: 4,
           roundTotal: 7,
-          terminalBriefTitle: "A2A Terminal Brief 완료: yukson(4/7)",
+          terminalBriefTitle: "A2A Terminal Brief 완료: workerDelta(4/7)",
           receiptProjection: "current_session_visible",
         },
       },
     });
 
     assert.ok(envelope);
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: yukson(4/7)");
-    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: yukson(4/7)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerDelta(4/7)");
+    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: workerDelta(4/7)");
   });
 
   it("terminalBriefTitle takes precedence over worker+round format", () => {
@@ -1263,11 +1263,11 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       payload: {
         taskId: "r15-custom-title",
         status: "succeeded",
-        worker: "nosuk",
+        worker: "workerAlpha",
         roundNum: 3,
         roundTotal: 7,
-        terminalBriefTitle: "A2A Terminal Brief 완료: Team nosuk(3/7) 🎉",
-        summary: "runner completed nosuk r15",
+        terminalBriefTitle: "A2A Terminal Brief 완료: Team workerAlpha(3/7) 🎉",
+        summary: "runner completed workerAlpha r15",
       },
     };
 
@@ -1275,7 +1275,7 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
     assert.ok(envelope);
     assert.equal(
       envelope!.title,
-      "A2A Terminal Brief 완료: Team nosuk(3/7) 🎉",
+      "A2A Terminal Brief 완료: Team workerAlpha(3/7) 🎉",
     );
   });
 
@@ -1294,7 +1294,7 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       payload: {
         taskId: "task-r15-human",
         status: "succeeded",
-        worker: "nosuk",
+        worker: "workerAlpha",
         roundNum: 3,
         roundTotal: 7,
         taskDescription: "deploy marker aware runner doctor",
@@ -1323,21 +1323,21 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: nosuk(3/7)",
-      text: "A2A Terminal Brief 완료: nosuk(3/7)\n업무: deploy marker aware runner doctor",
-      worker: "nosuk",
+      title: "A2A Terminal Brief 완료: workerAlpha(3/7)",
+      text: "A2A Terminal Brief 완료: workerAlpha(3/7)\n업무: deploy marker aware runner doctor",
+      worker: "workerAlpha",
       roundNum: 3,
       roundTotal: 7,
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "nosuk",
+        worker: "workerAlpha",
         taskDescription: "deploy marker aware runner doctor",
         summary: "docker runner completed a2a-r15-hardening-20260514",
       },
     });
 
-    assert.equal(text, "A2A Terminal Brief 완료: nosuk(완료 3/7)");
+    assert.equal(text, "A2A Terminal Brief 완료: workerAlpha(완료 3/7)");
     assert.doesNotMatch(text, /업무:/);
     assert.doesNotMatch(text, /docker runner completed/);
   });
@@ -1352,20 +1352,20 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: yukson(4/7)",
-      text: "A2A Terminal Brief 완료: yukson(4/7)\n업무: docker runner completed",
-      worker: "yukson",
+      title: "A2A Terminal Brief 완료: workerDelta(4/7)",
+      text: "A2A Terminal Brief 완료: workerDelta(4/7)\n업무: docker runner completed",
+      worker: "workerDelta",
       roundNum: 4,
       roundTotal: 7,
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "yukson",
+        worker: "workerDelta",
         summary: "docker runner completed a2a-r15-hardening-20260514",
       },
     });
 
-    assert.equal(text, "A2A Terminal Brief 완료: yukson(완료 4/7)");
+    assert.equal(text, "A2A Terminal Brief 완료: workerDelta(완료 4/7)");
     assert.doesNotMatch(text, /업무:/);
     assert.doesNotMatch(text, /docker runner completed/);
   });
@@ -1380,21 +1380,21 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: yukson(4/7)",
-      text: "A2A Terminal Brief 완료: yukson(4/7)",
-      worker: "yukson",
+      title: "A2A Terminal Brief 완료: workerDelta(4/7)",
+      text: "A2A Terminal Brief 완료: workerDelta(4/7)",
+      worker: "workerDelta",
       roundNum: 4,
       roundTotal: 7,
-      terminalBriefTitle: "A2A Terminal Brief 완료: yukson(4/7)",
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerDelta(4/7)",
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "yukson",
+        worker: "workerDelta",
         taskDescription: "deploy marker aware runner doctor",
       },
     });
 
-    assert.equal(text, "A2A Terminal Brief 완료: yukson(4/7)");
+    assert.equal(text, "A2A Terminal Brief 완료: workerDelta(4/7)");
     assert.doesNotMatch(text, /업무:/);
   });
 
@@ -1408,15 +1408,15 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: sogyo",
-      text: "A2A Terminal Brief 완료: sogyo",
-      worker: "sogyo",
+      title: "A2A Terminal Brief 완료: workerBeta",
+      text: "A2A Terminal Brief 완료: workerBeta",
+      worker: "workerBeta",
       roundProgress: { completed: 1 },
-      terminalBriefTitle: "A2A Terminal Brief 완료: sogyo",
-      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "sogyo" },
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerBeta",
+      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "workerBeta" },
     });
 
-    assert.equal(text, "A2A Terminal Brief 완료: sogyo(1/1)");
+    assert.equal(text, "A2A Terminal Brief 완료: workerBeta(1/1)");
   });
 
   it("renderCompactOperatorNotificationTitle marks parent-round bare terminalBriefTitle as missing progress", () => {
@@ -1429,16 +1429,16 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: nosuk",
-      text: "A2A Terminal Brief 완료: nosuk",
-      worker: "nosuk",
+      title: "A2A Terminal Brief 완료: workerAlpha",
+      text: "A2A Terminal Brief 완료: workerAlpha",
+      worker: "workerAlpha",
       parentRoundId: "team1-terminal-brief-round",
       parentRoundContext: true,
-      terminalBriefTitle: "A2A Terminal Brief 완료: nosuk",
-      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "nosuk" },
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerAlpha",
+      evidence: { schema: "a2a.operator.notification.evidence", version: 1, worker: "workerAlpha" },
     });
 
-    assert.equal(text, "A2A Terminal Brief 완료: nosuk(완료 ?/?)");
+    assert.equal(text, "A2A Terminal Brief 완료: workerAlpha(완료 ?/?)");
   });
 
   it("avoids awkward '작업' fallback when terminalBriefTitle is present", () => {
@@ -1453,12 +1453,12 @@ describe("R15 — terminalBriefTitle and human summary precedence (#311)", () =>
       deliveryTarget: "operator-main-session",
       title: "Custom title",
       text: "Custom title\n업무: deploy runner doctor",
-      worker: "yukson",
+      worker: "workerDelta",
       terminalBriefTitle: "Custom title",
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "yukson",
+        worker: "workerDelta",
         taskDescription: "deploy runner doctor",
       },
     });
@@ -1473,9 +1473,9 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
   it("renders simple template with title and type variables", () => {
     const result = renderA2AOperatorTerminalBriefTemplate(
       "[{type}] {title}",
-      makeTestEnvelope({ type: "success", title: "A2A Terminal Brief 완료: sogyo" }),
+      makeTestEnvelope({ type: "success", title: "A2A Terminal Brief 완료: workerBeta" }),
     );
-    assert.equal(result, "[success] A2A Terminal Brief 완료: sogyo");
+    assert.equal(result, "[success] A2A Terminal Brief 완료: workerBeta");
   });
 
   it("renders worker, taskId, and round progress", () => {
@@ -1483,13 +1483,13 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       "{worker} ({roundNum}/{roundTotal}): {title}",
       makeTestEnvelope({
         type: "success",
-        title: "A2A Terminal Brief 완료: sogyo(3/7)",
-        worker: "sogyo",
+        title: "A2A Terminal Brief 완료: workerBeta(3/7)",
+        worker: "workerBeta",
         roundNum: 3,
         roundTotal: 7,
       }),
     );
-    assert.equal(result, "sogyo (3/7): A2A Terminal Brief 완료: sogyo(3/7)");
+    assert.equal(result, "workerBeta (3/7): A2A Terminal Brief 완료: workerBeta(3/7)");
   });
 
   it("renders repo, issueUrl, and derived issue number", () => {
@@ -1522,21 +1522,21 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       "{summary} | 작업: {taskDescription} | 요약: {taskSummary} | 브리프: {taskBrief}",
       makeTestEnvelope({
         type: "success",
-        title: "A2A Terminal Brief 완료: sogyo",
+        title: "A2A Terminal Brief 완료: workerBeta",
         evidence: {
           schema: "a2a.operator.notification.evidence",
           version: 1,
-          worker: "sogyo",
+          worker: "workerBeta",
           summary: "Fix login bug",
           taskDescription: "Implement OAuth flow",
           taskSummary: "OAuth integration complete",
-          taskBrief: "Broker: seoseo | Worker: sogyo",
+          taskBrief: "Broker: brokerAlpha | Worker: workerBeta",
         },
       }),
     );
     assert.equal(
       result,
-      "Fix login bug | 작업: Implement OAuth flow | 요약: OAuth integration complete | 브리프: Broker: seoseo | Worker: sogyo",
+      "Fix login bug | 작업: Implement OAuth flow | 요약: OAuth integration complete | 브리프: Broker: brokerAlpha | Worker: workerBeta",
     );
   });
 
@@ -1545,7 +1545,7 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       "Run: {runId} | Trace: {traceId} | Status: {status}",
       makeTestEnvelope({
         type: "success",
-        title: "A2A Terminal Brief 완료: sogyo",
+        title: "A2A Terminal Brief 완료: workerBeta",
         doneUrl: "https://github.com/jinwon-int/plugin-a2a/actions/runs/1",
         blockUrl: "https://github.com/jinwon-int/plugin-a2a/issues/2",
         runId: "run-123",
@@ -1594,21 +1594,21 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: sogyo",
+      title: "A2A Terminal Brief 완료: workerBeta",
       text: "",
-      worker: "sogyo",
+      worker: "workerBeta",
       repo: "jinwon-int/plugin-a2a",
       issueUrl: "https://github.com/jinwon-int/plugin-a2a/issues/320",
       terminalBriefTemplate: "{repo} #{issue}: {worker} — {title}",
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "sogyo",
+        worker: "workerBeta",
       },
     });
     assert.equal(
       text,
-      "jinwon-int/plugin-a2a #320: sogyo — A2A Terminal Brief 완료: sogyo",
+      "jinwon-int/plugin-a2a #320: workerBeta — A2A Terminal Brief 완료: workerBeta",
     );
   });
 
@@ -1622,18 +1622,18 @@ describe("renderA2AOperatorTerminalBriefTemplate — template rendering (#320)",
       severity: "info",
       deliveryOwner: "openclaw.plugin-notifier",
       deliveryTarget: "operator-main-session",
-      title: "A2A Terminal Brief 완료: sogyo",
+      title: "A2A Terminal Brief 완료: workerBeta",
       text: "",
-      worker: "sogyo",
+      worker: "workerBeta",
       roundNum: 1,
       roundTotal: 3,
       evidence: {
         schema: "a2a.operator.notification.evidence",
         version: 1,
-        worker: "sogyo",
+        worker: "workerBeta",
       },
     });
-    assert.match(text, /^A2A Terminal Brief 완료: sogyo\(완료 1\/3\)$/m);
+    assert.match(text, /^A2A Terminal Brief 완료: workerBeta\(완료 1\/3\)$/m);
   });
 });
 
@@ -1649,10 +1649,10 @@ describe("cross-broker relay: renderOperatorNotificationText", () => {
     severity: "info" as const,
     deliveryOwner: "openclaw.plugin-notifier",
     deliveryTarget: "operator-main-session",
-    title: "A2A Terminal Brief 완료: sogyo(완료 4/7)",
+    title: "A2A Terminal Brief 완료: workerBeta(완료 4/7)",
     text: "",
-    worker: "sogyo",
-    terminalBriefTitle: "A2A Terminal Brief 완료: sogyo(완료 4/7)",
+    worker: "workerBeta",
+    terminalBriefTitle: "A2A Terminal Brief 완료: workerBeta(완료 4/7)",
     terminalBriefTemplate: "곽가 원문\n{title}\n요약: {summary}",
     parentRoundId: "a2a-cross-broker-round-20260522",
     parentRoundTotal: 7,
@@ -1660,7 +1660,7 @@ describe("cross-broker relay: renderOperatorNotificationText", () => {
     evidence: {
       schema: "a2a.operator.notification.evidence",
       version: 1,
-      worker: "sogyo",
+      worker: "workerBeta",
     },
   };
 
@@ -1668,14 +1668,14 @@ describe("cross-broker relay: renderOperatorNotificationText", () => {
     const text = renderOperatorNotificationText(crossBrokerEnvelope);
     assert.equal(
       text,
-      "A2A Terminal Brief 완료: sogyo(완료 4/7)",
+      "A2A Terminal Brief 완료: workerBeta(완료 4/7)",
     );
   });
 
   it("skips the child-broker terminalBriefTemplate for cross-broker projections", () => {
     const text = renderOperatorNotificationText(crossBrokerEnvelope);
     // The template "곽가 원문\n{title}\n요약: {summary}" would produce
-    // "곽가 원문\nA2A Terminal Brief 완료: sogyo(완료 4/7)\n요약: ",
+    // "곽가 원문\nA2A Terminal Brief 완료: workerBeta(완료 4/7)\n요약: ",
     // but the cross-broker path should return the raw compact title only.
     assert.doesNotMatch(text, /곽가 원문/);
     assert.doesNotMatch(text, /요약/);
@@ -1699,7 +1699,7 @@ describe("cross-broker relay: renderOperatorNotificationText", () => {
     const text = renderOperatorNotificationText(noTemplate);
     assert.equal(
       text,
-      "A2A Terminal Brief 완료: sogyo(완료 4/7)",
+      "A2A Terminal Brief 완료: workerBeta(완료 4/7)",
     );
   });
 
@@ -1796,7 +1796,7 @@ describe("R25 — missing metadata states", () => {
       payload: {
         taskId: "task-r25-ns",
         status: "succeeded",
-        worker: "sogyo",
+        worker: "workerBeta",
         // No testSummary, no summary, no message, no taskDescription/taskSummary/taskBrief
       },
     };
@@ -1808,14 +1808,14 @@ describe("R25 — missing metadata states", () => {
     assert.equal(envelope!.evidence.taskSummary, undefined);
     assert.equal(envelope!.evidence.taskBrief, undefined);
     // Title still renders correctly without summary
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: sogyo(1/1)");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerBeta(1/1)");
   });
 
   it("empty metadata payload still produces valid envelope when receiptProjection exists", () => {
     const payload: Record<string, unknown> = {
       taskId: "task-r25-sparse",
       status: "succeeded",
-      worker: "soonwook",
+      worker: "workerEta",
       receiptProjection: "current_session_visible",
       // No repo, no issue, no summary, no round progress
     };
@@ -1825,8 +1825,8 @@ describe("R25 — missing metadata states", () => {
       data: { terminalEvent: payload },
     });
     assert.ok(envelope, "must produce envelope from minimal terminal event");
-    assert.equal(envelope!.worker, "soonwook");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: soonwook(1/1)");
+    assert.equal(envelope!.worker, "workerEta");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEta(1/1)");
     assert.equal(envelope!.issueUrl, undefined);
     assert.equal(envelope!.repo, undefined);
   });
@@ -1864,7 +1864,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-r25-pa",
-          worker: "soonwook",
+          worker: "workerEta",
           providerAccepted: true,
           summary: "provider accepted send but no operator receipt",
           // No receiptProjection — provider accepted is not operator receipt
@@ -1883,7 +1883,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-r25-sa",
-          worker: "soonwook",
+          worker: "workerEta",
           status: "accepted",
           summary: "status accepted but no operator receipt",
           // No receiptProjection — status 'accepted' is not operator receipt
@@ -1901,7 +1901,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-r25-pas",
-          worker: "soonwook",
+          worker: "workerEta",
           status: "provider_accepted_send",
           summary: "provider accepted send",
           // No receiptProjection — provider accepted send is not operator receipt
@@ -1920,7 +1920,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-r25-mixed",
-          worker: "soonwook",
+          worker: "workerEta",
           providerAccepted: true,
           receiptProjection: "current_session_visible",
           summary: "provider accepted plus operator receipt",
@@ -1950,7 +1950,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
       payload: {
         taskId: "task-r25-rc-ack",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "jinwon-int/plugin-a2a",
         issue: 324,
         testSummary: "accepted receipt but no operator ACK",
@@ -1978,7 +1978,7 @@ describe("R25 — accepted-send / non-ACK states", () => {
       payload: {
         taskId: "task-r25-ack-pending",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "jinwon-int/plugin-a2a",
         issue: 324,
         testSummary: "receipt projection present but ACK still pending",
@@ -2013,7 +2013,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
       payload: {
         taskId: "task-team2-r25",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "jinwon-int/plugin-a2a",
         issue: 324,
         runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
@@ -2049,7 +2049,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
       payload: {
         taskId: "task-team2-piu",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
         // Team2's parentIssueUrl field for the parent lane issue
@@ -2084,7 +2084,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-team2-live",
-          worker: "soonwook",
+          worker: "workerEta",
           repo: "a2a-plane (internal tracker, private)",
           runId: "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
           parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
@@ -2096,7 +2096,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
     });
 
     assert.ok(envelope, "must produce envelope from Team2 live-terminal payload");
-    assert.equal(envelope!.worker, "soonwook");
+    assert.equal(envelope!.worker, "workerEta");
     assert.equal(
       envelope!.runId,
       "a2a-r25-team2-terminal-brief-implementation-20260515T075717Z",
@@ -2122,7 +2122,7 @@ describe("R25 — Team2 runId/parentIssueUrl dispatch shapes", () => {
       payload: {
         taskId: "task-team2-snake",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "jinwon-int/plugin-a2a",
         runId: "a2a-r25-team2-terminal-brief-snake-20260515",
         parent_issue_url: "https://github.com/jinwon-int/plugin-a2a/issues/324",
@@ -2163,14 +2163,14 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
       payload: {
         taskId: "task-team2-cross",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-team2-cross-broker-20260515T075717Z",
         parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
         testSummary: "Team2 cross-broker projection with runId and parentIssueUrl",
         crossBrokerHandoff: {
           parentRoundId: "parent-team2-r25",
-          originBrokerId: "soonwook-vps",
+          originBrokerId: "workerEta-vps",
           handoffBrokerId: "broker-racknerd-167be94",
           originTaskId: "task-team2-cross",
         },
@@ -2180,7 +2180,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope, "must produce envelope for cross-broker Team2 outbox");
-    assert.equal(envelope!.worker, "soonwook");
+    assert.equal(envelope!.worker, "workerEta");
     assert.equal(
       envelope!.runId,
       "a2a-r25-team2-cross-broker-20260515T075717Z",
@@ -2199,7 +2199,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
         terminalEvent: {
           type: "succeeded",
           taskId: "task-team2-cross-live",
-          worker: "soonwook",
+          worker: "workerEta",
           repo: "a2a-plane (internal tracker, private)",
           runId: "a2a-r25-team2-cross-live-20260515T075717Z",
           parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
@@ -2207,7 +2207,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
           summary: "cross-broker live with Team2 runId and parentIssueUrl",
           crossBrokerHandoff: {
             parentRoundId: "parent-team2-r25-live",
-            originBrokerId: "soonwook-vps",
+            originBrokerId: "workerEta-vps",
             handoffBrokerId: "broker-racknerd-167be94",
             originTaskId: "task-team2-cross-live",
           },
@@ -2217,7 +2217,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
     });
 
     assert.ok(envelope, "must produce envelope for cross-broker live Team2 event");
-    assert.equal(envelope!.worker, "soonwook");
+    assert.equal(envelope!.worker, "workerEta");
     assert.equal(
       envelope!.runId,
       "a2a-r25-team2-cross-live-20260515T075717Z",
@@ -2244,13 +2244,13 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
       payload: {
         taskId: "task-team2-no-issue",
         status: "succeeded",
-        worker: "soonwook",
+        worker: "workerEta",
         repo: "a2a-plane (internal tracker, private)",
         runId: "a2a-r25-cross-no-issue-20260515",
         testSummary: "cross-broker with runId only, no parent issue URL",
         crossBrokerHandoff: {
           parentRoundId: "parent-team2-no-issue",
-          originBrokerId: "soonwook-vps",
+          originBrokerId: "workerEta-vps",
           handoffBrokerId: "broker-racknerd-167be94",
           originTaskId: "task-team2-no-issue",
         },
@@ -2260,7 +2260,7 @@ describe("R25 — cross-broker projection shapes with Team2 metadata", () => {
 
     const envelope = buildA2AOperatorTerminalOutboxNotificationEnvelope(outbox);
     assert.ok(envelope, "must produce envelope without issueUrl");
-    assert.equal(envelope!.worker, "soonwook");
+    assert.equal(envelope!.worker, "workerEta");
     assert.equal(
       envelope!.runId,
       "a2a-r25-cross-no-issue-20260515",
@@ -2282,11 +2282,11 @@ describe("R26 — nested Terminal Brief metadata extraction", () => {
             payload: {
               worker: "runner-node",
               parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/350",
-              terminalBriefTitle: "A2A Terminal Brief 완료: dungae(1/3)",
+              terminalBriefTitle: "A2A Terminal Brief 완료: workerEpsilon(1/3)",
               parentRoundProgress: 1,
               parentRoundTotal: 3,
               terminalBrief: {
-                workerLabel: "dungae",
+                workerLabel: "workerEpsilon",
                 summary: "human Terminal Brief summary",
               },
             },
@@ -2298,9 +2298,9 @@ describe("R26 — nested Terminal Brief metadata extraction", () => {
     });
 
     assert.ok(envelope, "must produce envelope from nested task payload");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: dungae(1/3)");
-    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(1/3)");
-    assert.equal(envelope!.worker, "dungae");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEpsilon(1/3)");
+    assert.equal(envelope!.terminalBriefTitle, "A2A Terminal Brief 완료: workerEpsilon(1/3)");
+    assert.equal(envelope!.worker, "workerEpsilon");
     assert.equal(envelope!.roundNum, 1);
     assert.equal(envelope!.roundTotal, 3);
     assert.equal(envelope!.issueUrl, "https://github.com/jinwon-int/a2a-nexus/issues/350");
@@ -2312,23 +2312,23 @@ describe("R26 — nested Terminal Brief metadata extraction", () => {
       data: {
         terminalEvent: {
           type: "succeeded",
-          worker: "gwakga",
+          worker: "brokerBeta",
           parentRoundProgress: 2,
           parentRoundTotal: 3,
           receiptProjection: "current_session_visible",
           crossBrokerHandoff: {
             parentRoundId: "round-r26",
-            originBrokerId: "seoseo",
-            handoffBrokerId: "gwakga",
-            childWorkerId: "dungae",
+            originBrokerId: "brokerAlpha",
+            handoffBrokerId: "brokerBeta",
+            childWorkerId: "workerEpsilon",
           },
         },
       },
     });
 
     assert.ok(envelope, "must produce cross-broker envelope");
-    assert.equal(envelope!.worker, "dungae");
-    assert.equal(envelope!.title, "A2A Terminal Brief 완료: dungae(완료 2/3)");
+    assert.equal(envelope!.worker, "workerEpsilon");
+    assert.equal(envelope!.title, "A2A Terminal Brief 완료: workerEpsilon(완료 2/3)");
   });
 });
 

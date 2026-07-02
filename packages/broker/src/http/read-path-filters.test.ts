@@ -10,25 +10,25 @@ import {
 } from "./read-path-filters.js";
 
 test("read-path filters normalize task status aliases and bounded limits", () => {
-  const filters = taskFiltersFromUrl(new URL("http://broker.local/tasks?status=pending&worker=nosuk&limit=9999&include=stale_read_path"), {
+  const filters = taskFiltersFromUrl(new URL("http://broker.local/tasks?status=pending&worker=workeralpha&limit=9999&include=stale_read_path"), {
     defaultLimit: 25,
   });
 
   assert.equal(filters.status, "queued");
-  assert.equal(filters.assignedWorkerId, "nosuk");
+  assert.equal(filters.assignedWorkerId, "workeralpha");
   assert.equal(filters.includeStaleReadPath, true);
   assert.equal(filters.limit, 500);
   assert.equal(filters.exchangeId, undefined);
 });
 
 test("read-path filters ignore invalid enum values and trim optional strings", () => {
-  const proposal = proposalFiltersFromUrl(new URL("http://broker.local/proposals?status=bogus&kind=patch&sourceNodeId=%20sogyo%20"));
+  const proposal = proposalFiltersFromUrl(new URL("http://broker.local/proposals?status=bogus&kind=patch&sourceNodeId=%20workerbeta%20"));
   const worker = workerFiltersFromUrl(new URL("http://broker.local/workers?role=bogus&environment=research&workspaceId=%20lab%20&providerId=%20xai%20&modelFamily=grok&modelId=grok-4.2&providerAvailability=canary_passed"));
   const audit = auditFiltersFromUrl(new URL("http://broker.local/audit?action=task.claimed&actorId=%20broker%20"));
 
   assert.deepEqual(proposal, {
     status: undefined,
-    sourceNodeId: "sogyo",
+    sourceNodeId: "workerbeta",
     targetNodeId: undefined,
     kind: "patch",
   });

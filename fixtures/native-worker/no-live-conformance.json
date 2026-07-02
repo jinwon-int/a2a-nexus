@@ -2,7 +2,7 @@
   "schema": "a2a.hermesNativeWorker.noLiveConformance.v1",
   "mode": "no-live",
   "fixtureId": "a2a-nexus.fixture.hermes-native-worker-no-live-conformance.v1",
-  "description": "Hermes/Android native A2A worker no-live conformance fixture for Gongyung/Daegyo-style Termux nodes. Covers registration, heartbeat/reconnect, bounded task execution, local redacted evidence manifest, and broker-visible result evidence without contacting any live provider, production broker, or private network.",
+  "description": "Hermes/Android native A2A worker no-live conformance fixture for mobileAlpha/mobileBeta-style Termux nodes. Covers registration, heartbeat/reconnect, bounded task execution, local redacted evidence manifest, and broker-visible result evidence without contacting any live provider, production broker, or private network.",
   "issue": "a2a-plane#465 (internal tracker, private)",
   "parentIssue": "a2a-plane#464 (internal tracker, private)",
   "priorArt": [
@@ -13,8 +13,8 @@
   "runbook": "docs/hermes-android-native-worker-runbook.md",
   "referenceWorker": "examples/workers/hermes-reference-worker/",
   "worker": {
-    "id": "gongyung",
-    "displayName": "Gongyung Hermes Worker",
+    "id": "mobileAlpha",
+    "displayName": "mobileAlpha Hermes Worker",
     "runtime": "hermes-agent",
     "runtimeFlavor": "termux-hermes",
     "openClawRequired": false,
@@ -132,8 +132,8 @@
       "method": "admission function check",
       "expectedOutcome": "NO-GO signal returned, task not claimed",
       "noLive": true,
-      "rejectionReasons": ["gongyung_not_docker_runner", "intent_not_allowed", "mode_not_allowed", "capability_not_satisfied", "at_capacity"],
-      "validationScript": "scripts/check-gongyung-hermes-worker-profile.test.mjs"
+      "rejectionReasons": ["mobileAlpha_not_docker_runner", "intent_not_allowed", "mode_not_allowed", "capability_not_satisfied", "at_capacity"],
+      "validationScript": "scripts/check-mobileAlpha-hermes-worker-profile.test.mjs"
     },
     {
       "step": 10,

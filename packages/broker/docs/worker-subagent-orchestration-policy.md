@@ -83,7 +83,7 @@ Example input:
     "writeSets": ["src/core/planner.ts", "docs/planner.md", "test/planner.test.ts"]
   },
   "host": {
-    "workerId": "bangtong",
+    "workerId": "workergamma",
     "cpuLoadPct": 42,
     "memoryUsedPct": 55,
     "ioPressure": "low",

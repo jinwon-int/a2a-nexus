@@ -1,6 +1,6 @@
-# Team1 Roadmap Input: Sogyo (Protocol Contract & Compatibility Surface)
+# Team1 Roadmap Input: workerBeta (Protocol Contract & Compatibility Surface)
 
-> Worker: `sogyo` | Angle: protocol contract, compatibility surface, docs/API semantics, public/private boundary clarity
+> Worker: `workerBeta` | Angle: protocol contract, compatibility surface, docs/API semantics, public/private boundary clarity
 > Parent: #105 (a2a-plane#105, internal tracker private) | Child: #107 (a2a-plane#107, internal tracker private)
 > Date: 2026-05-09
 

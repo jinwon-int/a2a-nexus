@@ -92,12 +92,12 @@ A complete no-live evidence file looks like:
   },
   "lifecycle": {
     "taskId": "<task-id>",
-    "workerId": "nosuk",
+    "workerId": "workeralpha",
     "resultProjectionObserved": true
   },
   "recovery": {
     "staleTaskId": "<stale-task-id>",
-    "workerId": "nosuk",
+    "workerId": "workeralpha",
     "heartbeatAgeMs": 180000,
     "staleAfterMs": 120000,
     "requeueCountBefore": 0,

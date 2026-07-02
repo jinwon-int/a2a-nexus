@@ -1,6 +1,6 @@
 # Mobile Worker Health Runbook
 
-> **Gongyung**, **Daegyo** — Team1 Hermes/Termux mobile workers running on Android
+> **mobilealpha**, **mobilebeta** — Team1 Hermes/Termux mobile workers running on Android
 > devices. These nodes connect via HTTP poll, may sleep briefly (Android Doze, lid
 > close, network suspend), and have a reduced capacity of 3 concurrent slots.
 
@@ -15,7 +15,7 @@ Mobile workers are typically registered with:
 - `canPromoteLive: false`
 - no Docker runner requirement
 
-Treat Gongyung and Daegyo as **non-docker Hermes research workers**, not as
+Treat mobilealpha and mobilebeta as **non-docker Hermes research workers**, not as
 reference-only special cases. They can receive ordinary no-live/read-only
 `analyze` or `verify` tasks, including A2A/A2AD round tasks, when task policy is
 research-only and the payload is explicitly no-live. They must still reject
@@ -71,8 +71,8 @@ graph LR
 
 | Node ID | Team | Device | Notes |
 |---|---|---|---|
-| `gongyung` | Team1 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
-| `daegyo` | Team2 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
+| `mobilealpha` | Team1 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
+| `mobilebeta` | Team2 | Termux (Android) | Non-docker Hermes research worker; accepts no-live/read-only analysis tasks. |
 
 ## operatorEvents Payload Constraint
 
@@ -103,14 +103,14 @@ to avoid inflating high-churn event streams with per-worker metadata.
     "stale": 1,
     "byNode": [
       {
-        "nodeId": "seoseo",
+        "nodeId": "brokeralpha",
         "role": "hub",
         "status": "online",
         "activeTaskCount": 0,
         "lastSeenAgeSec": 5
       },
       {
-        "nodeId": "gongyung",
+        "nodeId": "mobilealpha",
         "role": "analyst",
         "status": "online",
         "workerMode": "mobile",
@@ -119,7 +119,7 @@ to avoid inflating high-churn event streams with per-worker metadata.
         "lastSeenAgeSec": 12
       },
       {
-        "nodeId": "daegyo",
+        "nodeId": "mobilebeta",
         "role": "analyst",
         "status": "stale",
         "workerMode": "mobile",

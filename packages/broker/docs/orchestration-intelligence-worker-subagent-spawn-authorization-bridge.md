@@ -47,7 +47,7 @@ authorization, create broker tasks, invoke executors, spawn workers/subagents,
 mutate TaskFlow/DB, send providers, ACK/replay Terminal rows, deploy/restart
 services, publish releases, or move credentials.
 
-The bridge keeps runtime spawn, broker dispatch, executor invocation, Daegyo
+The bridge keeps runtime spawn, broker dispatch, executor invocation, mobilebeta
 mobile expansion, provider send, DB/TaskFlow mutation, Terminal ACK/replay,
 deploy/restart, release/publish, and credential movement as separate future
 approval gates.

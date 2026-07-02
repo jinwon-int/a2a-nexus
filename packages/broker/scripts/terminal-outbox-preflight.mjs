@@ -352,7 +352,7 @@ function sampleNoLiveOutboxBody() {
         taskId: 'no-live-task',
         status: 'succeeded',
         run: 'release-dryrun',
-        worker: 'sogyo',
+        worker: 'workerbeta',
         repo: 'jinwon-int/a2a-broker',
         issue: 318,
         taskBrief: 'broker terminal payload no-live proof',

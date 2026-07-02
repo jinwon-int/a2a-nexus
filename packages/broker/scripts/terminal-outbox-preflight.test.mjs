@@ -69,7 +69,7 @@ describe('terminal outbox preflight', () => {
             payload: {
               taskId: 'task-1',
               status: 'succeeded',
-              worker: 'bangtong',
+              worker: 'workergamma',
               repo: 'jinwon-int/a2a-broker',
               issue: 276,
               taskBrief: 'broker receipt/evidence gate',
@@ -130,13 +130,13 @@ describe('terminal outbox preflight', () => {
           {
             id: 'terminal-1',
             receipt: { status: 'accepted', updatedAt: '2026-05-04T00:00:00.000Z' },
-            payload: { status: 'succeeded', worker: 'sogyo', taskBrief: 'terminal readiness unacked proof', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/323#issuecomment-1' },
+            payload: { status: 'succeeded', worker: 'workerbeta', taskBrief: 'terminal readiness unacked proof', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/323#issuecomment-1' },
           },
           {
             id: 'terminal-2',
             ack: { status: 'receipt_confirmed', evidence: 'operator_visible', acknowledgedAt: '2026-05-04T00:00:01.000Z' },
             receipt: { status: 'operator_visible', updatedAt: '2026-05-04T00:00:01.000Z' },
-            payload: { status: 'succeeded', worker: 'bangtong', taskBrief: 'terminal readiness receipt proof', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/323' },
+            payload: { status: 'succeeded', worker: 'workergamma', taskBrief: 'terminal readiness receipt proof', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/323' },
           },
         ],
       });
@@ -189,7 +189,7 @@ describe('terminal outbox preflight', () => {
           receipt: { status: 'operator_visible', updatedAt: '2026-05-04T00:00:01.000Z' },
           payload: {
             status: 'succeeded',
-            worker: 'bangtong',
+            worker: 'workergamma',
             prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/323',
           },
         }],

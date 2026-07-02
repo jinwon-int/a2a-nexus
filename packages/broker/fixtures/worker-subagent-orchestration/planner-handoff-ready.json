@@ -1,13 +1,13 @@
 {
   "now": "2026-05-19T02:05:00.000Z",
-  "finalizer": "seoseo",
+  "finalizer": "brokeralpha",
   "selfAssessment": {
     "kind": "a2a-broker.worker-self-assessment-capacity.packet",
     "version": 1,
     "generatedAt": "2026-05-19T02:05:00.000Z",
     "sourceOnly": true,
     "idempotencyKey": "a2a-worker-self-assessment:fixture-ready",
-    "workerId": "bangtong",
+    "workerId": "workergamma",
     "task": {
       "taskId": "task-large-independent",
       "size": "large",
@@ -16,7 +16,7 @@
       "writeSets": ["src/core/planner.ts", "docs/planner.md", "test/planner.test.ts"]
     },
     "host": {
-      "workerId": "bangtong",
+      "workerId": "workergamma",
       "cpuLoadPct": 42,
       "memoryUsedPct": 55,
       "ioPressure": "low",
@@ -44,7 +44,7 @@
         "writeSets": ["src/core/planner.ts", "docs/planner.md", "test/planner.test.ts"]
       },
       "host": {
-        "workerId": "bangtong",
+        "workerId": "workergamma",
         "cpuLoadPct": 42,
         "memoryUsedPct": 55,
         "ioPressure": "low",
@@ -95,7 +95,7 @@
       "writeSets": ["src/core/planner.ts", "docs/planner.md", "test/planner.test.ts"]
     },
     "host": {
-      "workerId": "bangtong",
+      "workerId": "workergamma",
       "cpuLoadPct": 42,
       "memoryUsedPct": 55,
       "ioPressure": "low",

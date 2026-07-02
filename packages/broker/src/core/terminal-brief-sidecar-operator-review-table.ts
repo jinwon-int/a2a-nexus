@@ -100,7 +100,7 @@ export interface TerminalBriefSidecarOperatorReviewTablePacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesAdapterHandoffApprovalPacket: true;
     rendersOperatorReviewTable: true;
@@ -223,7 +223,7 @@ export function buildTerminalBriefSidecarOperatorReviewTable(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesAdapterHandoffApprovalPacket: true,
       rendersOperatorReviewTable: true,

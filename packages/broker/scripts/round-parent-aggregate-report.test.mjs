@@ -24,9 +24,9 @@ describe('round parent aggregate report CLI', () => {
             id: 'round-task-1',
             intent: 'analyze',
             requester: { id: 'hub', kind: 'node', role: 'hub' },
-            target: { id: 'sogyo', kind: 'node', role: 'analyst' },
-            targetNodeId: 'sogyo',
-            assignedWorkerId: 'sogyo',
+            target: { id: 'workerbeta', kind: 'node', role: 'analyst' },
+            targetNodeId: 'workerbeta',
+            assignedWorkerId: 'workerbeta',
             status: 'succeeded',
             parentRoundId: 'round-629',
             parentRoundTotal: 2,
@@ -45,7 +45,7 @@ describe('round parent aggregate report CLI', () => {
       assert.equal(report.terminal, 1);
       assert.equal(report.active, 1);
       assert.equal(report.reportable, 2);
-      assert.match(report.items[0].reportLine, /terminal: sogyo lane=1 task=round-task-1 status=succeeded/);
+      assert.match(report.items[0].reportLine, /terminal: workerbeta lane=1 task=round-task-1 status=succeeded/);
       assert.match(report.items[1].reportLine, /missing: expected lane 2\/2 has no task record yet/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -59,12 +59,12 @@ describe('round parent aggregate report CLI', () => {
       writeFileSync(tasksPath, JSON.stringify({
         items: [
           {
-            id: 'round-task-dungae',
+            id: 'round-task-workerepsilon',
             intent: 'analyze',
             requester: { id: 'hub', kind: 'node', role: 'hub' },
-            target: { id: 'dungae', kind: 'node', role: 'analyst' },
-            targetNodeId: 'dungae',
-            assignedWorkerId: 'dungae',
+            target: { id: 'workerepsilon', kind: 'node', role: 'analyst' },
+            targetNodeId: 'workerepsilon',
+            assignedWorkerId: 'workerepsilon',
             status: 'succeeded',
             parentRoundId: 'round-758',
             parentRoundTotal: 3,
@@ -89,10 +89,10 @@ describe('round parent aggregate report CLI', () => {
             },
           },
           {
-            id: 'round-task-soonwook',
+            id: 'round-task-workereta',
             intent: 'analyze',
-            target: { id: 'soonwook', kind: 'node', role: 'analyst' },
-            assignedWorkerId: 'soonwook',
+            target: { id: 'workereta', kind: 'node', role: 'analyst' },
+            assignedWorkerId: 'workereta',
             status: 'failed',
             parentRoundId: 'round-758',
             parentRoundTotal: 3,
@@ -111,10 +111,10 @@ describe('round parent aggregate report CLI', () => {
             },
           },
           {
-            id: 'round-task-daegyo',
+            id: 'round-task-mobilebeta',
             intent: 'analyze',
-            target: { id: 'daegyo', kind: 'node', role: 'analyst' },
-            assignedWorkerId: 'daegyo',
+            target: { id: 'mobilebeta', kind: 'node', role: 'analyst' },
+            assignedWorkerId: 'mobilebeta',
             status: 'queued',
             parentRoundId: 'round-758',
             parentRoundTotal: 3,
@@ -132,8 +132,8 @@ describe('round parent aggregate report CLI', () => {
       assert.equal(report.diagnostics.sourceBundle.emptyContentFiles, 1);
       assert.deepEqual(report.diagnostics.sourceProjections, [
         {
-          taskId: 'round-task-dungae',
-          worker: 'dungae',
+          taskId: 'round-task-workerepsilon',
+          worker: 'workerepsilon',
           quality: 'partial',
           budgetReason: 'per_file_truncation',
           canonicalFileCount: 2,
@@ -142,8 +142,8 @@ describe('round parent aggregate report CLI', () => {
       ]);
       assert.deepEqual(report.diagnostics.failureReasons, [
         {
-          taskId: 'round-task-soonwook',
-          worker: 'soonwook',
+          taskId: 'round-task-workereta',
+          worker: 'workereta',
           status: 'failed',
           reasonCode: 'handler_exit_nonzero',
           message: 'Hermes exited with 1: xAI OAuth state is missing access_token. TOKEN=[redacted] Authorization: Bearer [redacted] "access_token":"[redacted]" api_key: [redacted] callback?token=[redacted]&x=1',
@@ -151,8 +151,8 @@ describe('round parent aggregate report CLI', () => {
       ]);
       assert.deepEqual(report.diagnostics.pendingLanes, [
         {
-          taskId: 'round-task-daegyo',
-          worker: 'daegyo',
+          taskId: 'round-task-mobilebeta',
+          worker: 'mobilebeta',
           status: 'queued',
           reasonCode: 'mobile_no_live_queued',
         },

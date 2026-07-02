@@ -20,7 +20,7 @@ It does **not** own task routing, worker lifecycle, stale recovery, or agent gat
 
 Current production baseline as of 2026-04-30:
 
-- deployed on `bangtong`, `sogyo`, `dungae`, `nosuk`
+- deployed on `workerGamma`, `workerBeta`, `workerEpsilon`, `workerAlpha`
 - all generic GitHub patch tasks route Docker-first via the broker worker handler
 - the coding-agent command is configured externally by worker environment, not embedded in this repo
 ## Why
@@ -155,7 +155,7 @@ The full `github-propose-patch` mode task accepts:
   "commands": ["..."],
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/1",
   "reportLanguage": "ko",
-  "requestedBy": "dungae",
+  "requestedBy": "workerEpsilon",
   "timeoutMs": 300000
 }
 ```
@@ -181,7 +181,7 @@ Example task (see `examples/task.github-propose-patch.json`):
   "prompt": "Add a section to README.md.",
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/10",
   "reportLanguage": "ko",
-  "requestedBy": "dungae",
+  "requestedBy": "workerEpsilon",
   "timeoutMs": 600000
 }
 ```
@@ -224,7 +224,7 @@ Example task:
   "repo": "jinwon-int/a2a-docker-runner",
   "allowNoChanges": true,
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/237",
-  "requestedBy": "nosuk",
+  "requestedBy": "workerAlpha",
   "timeoutMs": 600000
 }
 ```
@@ -265,7 +265,7 @@ Example task:
   "repo": "jinwon-int/a2a-docker-runner",
   "readOnlyValidation": true,
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/237",
-  "requestedBy": "nosuk",
+  "requestedBy": "workerAlpha",
   "timeoutMs": 600000
 }
 ```
@@ -338,7 +338,7 @@ This keeps `a2a-docker-runner` as the disposable execution sandbox while `opencl
 The worker-facing integration returns a compact `terminalEvidence` object for broker
 push/SSE/webhook delivery. Broker/workers must treat this as notification data
 only; operator Telegram and main-session delivery stay owned by
-seoseo/OpenClaw `plugin-notifier`, not by this runner.
+brokerAlpha/OpenClaw `plugin-notifier`, not by this runner.
 
 The event is intentionally small and secret-free:
 
@@ -368,7 +368,7 @@ canonical task id, worker, repo/issue, evidence kind, PR/Done/Block URL, tests,
 risks, runner build metadata, and summary. It intentionally omits `runnerRaw`,
 stdout/stderr excerpts, host paths, Telegram message ids, and any provider-send
 receipt. Per-worker live Telegram/message delivery remains out of scope for this
-repo; the runner produces compact evidence, while seoseo/OpenClaw broker/plugin
+repo; the runner produces compact evidence, while brokerAlpha/OpenClaw broker/plugin
 surfaces decide if and when an operator-visible notification is sent and ACKed.
 
 ### Artifact budget/continuation contract
@@ -447,7 +447,7 @@ npm run rollout:receipt-evidence -- \
 ```
 
 The merged evidence must contain exactly the active workers being rolled out
-(`bangtong`, `dungae`, `sogyo`, `nosuk`). For each worker the guard requires the
+(`workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`). For each worker the guard requires the
 runner artifact version and revision, a passing focused test result, an
 operator-visible terminal receipt smoke result, proof that provider-send-only ACK
 would not advance the cursor, and proof that there is no stale terminal-receipt
@@ -499,7 +499,7 @@ WARN runner=v0.1.0 local=ff4c244a38a7 upstreamMain=ff4c244a38a7 branch=feature/d
 To check the four deployed workers from an operator shell, run the doctor in each runner checkout and print only the compact line:
 
 ```bash
-for host in bangtong dungae sogyo nosuk; do
+for host in workerGamma workerEpsilon workerBeta workerAlpha; do
   printf '%s ' "$host"
   ssh "$host" 'cd /opt/a2a-docker-runner && node dist/cli.js doctor | jq -r .runnerRevision.detail.summary'
 done
@@ -755,8 +755,8 @@ The checklist covers:
 
 - GitHub Actions Node runtime deprecation guardrails
 - package `bin` verification for `a2a-docker-runner`
-- active rollout targets: `bangtong`, `dungae`, `sogyo`, `nosuk`
-- explicit exclusion of legacy `yukson` / VPS2 workers
+- active rollout targets: `workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`
+- explicit exclusion of legacy `workerDelta` / VPS2 workers
 - one-target-at-a-time rollout and rollback steps
 
 ## Security model

@@ -85,7 +85,7 @@ export interface TerminalBriefSidecarExecutionGateFinalReviewPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesApprovalGrantEvidenceIngestorPacket: true;
     rendersExecutionGateFinalReview: true;
@@ -208,7 +208,7 @@ export function buildTerminalBriefSidecarExecutionGateFinalReview(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesApprovalGrantEvidenceIngestorPacket: true,
       rendersExecutionGateFinalReview: true,

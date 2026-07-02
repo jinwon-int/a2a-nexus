@@ -26,7 +26,7 @@ function readyHandoff(
     {
       ...extractTerminalBriefSidecarAdapterHandoffApprovalOptions(fixture),
       now: NOW,
-      adapterId: "gongyung-approval-renderer",
+      adapterId: "mobilealpha-approval-renderer",
       deliveryTargetClass: "manual-operator-channel",
       handoffReference: "handoff-743",
     },
@@ -37,14 +37,14 @@ function readyHandoff(
 test("operator review table becomes ready without dispatch or runtime execution", () => {
   const packet = buildTerminalBriefSidecarOperatorReviewTable(readyHandoff(), {
     now: NOW,
-    reviewOwner: "seoseo",
+    reviewOwner: "brokeralpha",
     reviewReference: "operator-review-743",
   });
 
   assert.equal(packet.kind, "a2a-broker.terminal-brief-sidecar-operator-review-table.packet");
   assert.equal(packet.state, "review_table_ready");
   assert.equal(packet.source.adapterHandoffReady, true);
-  assert.equal(packet.source.adapterId, "gongyung-approval-renderer");
+  assert.equal(packet.source.adapterId, "mobilealpha-approval-renderer");
   assert.equal(packet.operatorReview.tableOnly, true);
   assert.equal(packet.operatorReview.rows.length, 8);
   assert.equal(packet.operatorReview.readyRowCount, 8);
@@ -123,14 +123,14 @@ test("operator review table extractors and markdown preserve no-live boundary", 
   const input = {
     adapterHandoffApprovalPacket: source,
     operatorReviewTable: {
-      review_owner: "seoseo",
+      review_owner: "brokeralpha",
       review_reference: "operator-review-743",
       review_rows: ["adapter", "runtime_boundary"],
     },
   };
 
   assert.equal(extractTerminalBriefSidecarOperatorReviewTableHandoff(input).idempotencyKey, source.idempotencyKey);
-  assert.equal(extractTerminalBriefSidecarOperatorReviewTableOptions(input).review_owner, "seoseo");
+  assert.equal(extractTerminalBriefSidecarOperatorReviewTableOptions(input).review_owner, "brokeralpha");
 
   const packet = buildTerminalBriefSidecarOperatorReviewTable(
     extractTerminalBriefSidecarOperatorReviewTableHandoff(input),

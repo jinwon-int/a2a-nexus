@@ -3,7 +3,7 @@
   "description": "CI-safe broker canary payload for Round 4 rollout preparation — does not touch live broker or services. Operator can validate handler-to-runner conversion and evidence contract without Docker or GitHub mutations.",
   "canary": {
     "mode": "github-propose-patch",
-    "requestedBy": "seoseo",
+    "requestedBy": "brokerAlpha",
     "repo": "jinwon-int/a2a-docker-runner",
     "baseBranch": "main",
     "issue": "#30",
@@ -13,13 +13,13 @@
     "focus": "Validate handler-to-runner conversion and evidence contract with a synthetic payload that does not touch live broker, Docker, or GitHub.",
     "acceptance": "buildRunnerTaskFromHandlerPayload conversion test; rollout docs evidence(PR/Done/Block) guide; npm check/build/lint/test pass",
     "activeTargets": [
-      "bangtong",
-      "dungae",
-      "sogyo",
-      "nosuk"
+      "workerGamma",
+      "workerEpsilon",
+      "workerBeta",
+      "workerAlpha"
     ],
     "excludeNodes": [
-      "yukson"
+      "workerDelta"
     ],
     "reportLanguage": "ko",
     "timeoutMs": 300000,
@@ -36,11 +36,11 @@
     "1. Validate conversion: node --test dist/canary-payload.test.js",
     "2. Run full canary: node --test dist/canary.test.js",
     "3. Verify npm check/build/lint/test all pass on the deployed commit",
-    "4. For each active target (bangtong, dungae, sogyo, nosuk): run doctor, one smoke task, and verify evidence fields",
-    "5. yukson is explicitly excluded — do not validate, restart, or deploy to legacy yukson/VPS2"
+    "4. For each active target (workerGamma, workerEpsilon, workerBeta, workerAlpha): run doctor, one smoke task, and verify evidence fields",
+    "5. workerDelta is explicitly excluded — do not validate, restart, or deploy to legacy workerDelta/VPS2"
   ],
   "excludedLegacy": {
-    "reason": "yukson / VPS2 legacy worker is explicitly out of scope for Round 4 rollout",
-    "action": "Do not change, restart, or validate legacy Yukson/VPS2 worker services"
+    "reason": "workerDelta / VPS2 legacy worker is explicitly out of scope for Round 4 rollout",
+    "action": "Do not change, restart, or validate legacy workerDelta/VPS2 worker services"
   }
 }

@@ -336,7 +336,7 @@ test("populates github evidence on github-propose-patch mode success", async () 
     ],
     issueUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/1",
     reportLanguage: "ko",
-    requestedBy: "seoseo",
+    requestedBy: "brokerAlpha",
   };
   const config = { ...baseConfig, defaultTimeoutMs: 5000 };
 

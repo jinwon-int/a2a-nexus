@@ -187,7 +187,7 @@ export function canAckTerminalBriefEvent(evidence: string): boolean {
  */
 export interface TerminalBriefTemplateMetadata {
   /**
-   * Unique template identifier (e.g., "terminal-brief/r23-team2-dungae").
+   * Unique template identifier (e.g., "terminal-brief/r23-team2-workerepsilon").
    * Used for idempotent task creation and template version tracking.
    */
   templateId?: string;

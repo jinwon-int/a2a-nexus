@@ -97,7 +97,7 @@ export function createTaskRequest(id: string): CreateTaskRequest {
   };
 }
 
-export function workerPayload(nodeId: "sogyo" | "bangtong") {
+export function workerPayload(nodeId: "workerbeta" | "workergamma") {
   return {
     nodeId,
     role: "analyst",

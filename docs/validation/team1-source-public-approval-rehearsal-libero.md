@@ -4,7 +4,7 @@ Parent: #211 (a2a-plane#211, internal tracker private)
 Child: #212 (a2a-plane#212, internal tracker private)
 Run: `a2a-source-public-approval-rehearsal-20260511T014240Z`
 Team: `team1`
-Lane: `bangtong`
+Lane: `workerGamma`
 Reviewed at: `2026-05-11T01:42:40Z`
 
 This is a redacted validation artifact only. It does not change repository visibility, import private source history, deploy, restart Gateway/broker/worker services, mutate production databases, send provider or Telegram messages, ACK terminal outbox rows, rotate or disclose credentials, rewrite history, force-push, publish a release, or post to community channels.
@@ -16,7 +16,7 @@ This is a redacted validation artifact only. It does not change repository visib
 - Approval packet schema: `docs/approval-rehearsal/source-public-approval-packet-schema.json`.
 - Approval rehearsal aggregator: `scripts/a2a-source-public-approval-rehearsal.mjs`.
 - Conformance tests: `scripts/a2a-source-public-approval-rehearsal.test.mjs`.
-- Test fixture: `fixtures/approval-rehearsal/team1-bangtong-approval-rehearsal-evidence.json`.
+- Test fixture: `fixtures/approval-rehearsal/team1-workerGamma-approval-rehearsal-evidence.json`.
 - Prior dry-run schema: `docs/dry-run/source-public-dryrun-schema.json`.
 - Prior fail-closed gates: `docs/readiness/fail-closed-gates.json`.
 

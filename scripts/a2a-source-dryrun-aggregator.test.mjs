@@ -119,8 +119,8 @@ test('broker readiness GO validates evidence packet health/workers/queue', () =>
       evidence: ['a2a-plane#198 (internal tracker, private)#broker'],
       evidencePacket: {
         health: { ok: true },
-        expectedWorkers: ['bangtong'],
-        onlineWorkerIds: ['bangtong'],
+        expectedWorkers: ['workerGamma'],
+        onlineWorkerIds: ['workerGamma'],
         queue: { queued: 0, claimed: 0, running: 0 },
         stale: 0,
       },
@@ -371,11 +371,11 @@ test('explicitly missing broker/plugin/runner gates trigger fail-closed', () => 
 
 // ── Fixture validation ───────────────────────────────────────────
 
-test('team1-bangtong dry-run fixture passes with all gates GO', () => {
+test('team1-workerGamma dry-run fixture passes with all gates GO', () => {
   const result = spawnSync(process.execPath, [
     script,
     '--spec', spec,
-    '--input', 'fixtures/dry-run/team1-bangtong-dryrun-evidence.json',
+    '--input', 'fixtures/dry-run/team1-workerGamma-dryrun-evidence.json',
   ], {
     encoding: 'utf8',
     cwd: process.cwd(),

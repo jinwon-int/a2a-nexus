@@ -1,9 +1,9 @@
 import { extractDispatchMetadata, validateTerminalBriefMetadata } from "./terminal-brief-metadata.js";
 import type { CreateTaskRequest } from "./types.js";
 
-export const A2A_ROUND_TEAM1_WORKERS = ["sogyo", "nosuk", "bangtong", "gongyung", "yukson"] as const;
-export const A2A_ROUND_TEAM2_WORKERS = ["dungae", "jingun", "soonwook", "daegyo"] as const;
-export const A2A_NO_LIVE_MOBILE_WORKERS = ["gongyung", "daegyo"] as const;
+export const A2A_ROUND_TEAM1_WORKERS = ["workerbeta", "workeralpha", "workergamma", "mobilealpha", "workerdelta"] as const;
+export const A2A_ROUND_TEAM2_WORKERS = ["workerepsilon", "workerzeta", "workereta", "mobilebeta"] as const;
+export const A2A_NO_LIVE_MOBILE_WORKERS = ["mobilealpha", "mobilebeta"] as const;
 export const A2A_ROUND_MODES = ["ordinary_a2a_lite", "explicit_strong_a2ad"] as const;
 
 export type A2ARoundTeamScope = "team1" | "team2" | "cross-team";

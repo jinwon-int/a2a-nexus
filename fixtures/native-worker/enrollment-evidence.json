@@ -2,7 +2,7 @@
   "schema": "a2a.hermesNativeWorker.enrollmentEvidence.v1",
   "mode": "enrollment-dry-run",
   "fixtureId": "a2a-nexus.fixture.hermes-native-worker-enrollment-evidence.v1",
-  "description": "Hermes/Android native A2A worker enrollment evidence fixture for Gongyung/Daegyo-style Termux nodes. Documents the pre-enrollment state snapshot, GO/NO-GO decision packet, post-enrollment evidence, and rollback evidence schemas. All values are redacted, loopback-only example fixtures — no production broker URL, secret, or device identifier is present.",
+  "description": "Hermes/Android native A2A worker enrollment evidence fixture for mobileAlpha/mobileBeta-style Termux nodes. Documents the pre-enrollment state snapshot, GO/NO-GO decision packet, post-enrollment evidence, and rollback evidence schemas. All values are redacted, loopback-only example fixtures — no production broker URL, secret, or device identifier is present.",
   "issue": "a2a-plane#504 (internal tracker, private)",
   "parentIssue": "a2a-plane#503 (internal tracker, private)",
   "priorArt": [
@@ -134,7 +134,7 @@
 
   "samplePayloads": {
     "valid": {
-      "workerId": "gongyung",
+      "workerId": "mobileAlpha",
       "targetBrokerUrl": "http://127.0.0.1:18787",
       "enrollmentTimestamp": "2026-05-28T13:55:00Z",
       "decision": "GO",

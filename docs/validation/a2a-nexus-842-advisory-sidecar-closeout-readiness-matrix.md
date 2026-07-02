@@ -17,7 +17,7 @@ The matrix is intentionally conservative: it can make #842 closeable after this 
 | Input | Status | Notes |
 |---|---|---|
 | #831 boundary cross-check | `MERGED` / source evidence available | Confirms advisory metadata remains non-operational and routing influence is not permitted. |
-| #840 A2A cleanup round | `CLOSED` | nosuk + bangtong both classified #764 as not closeable without a matrix/decision surface. |
+| #840 A2A cleanup round | `CLOSED` | workerAlpha + workerGamma both classified #764 as not closeable without a matrix/decision surface. |
 | #842 child issue | `OPEN` before this PR | This child exists to record the exact closeout/readiness decision surface. |
 
 ## Closeout readiness matrix

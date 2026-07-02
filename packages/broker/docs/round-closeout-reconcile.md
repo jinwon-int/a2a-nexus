@@ -9,8 +9,8 @@ const report = reconcileRoundCloseout(observations, {
   roundLabel: "a2a-hardening-r1",
   taskIdPrefix: "r1-",
   issueNumbers: [241, 243],
-  expectedWorkers: ["bangtong", "dungae", "sogyo", "nosuk", "yukson"],
-  excludedWorkers: ["yukson"],
+  expectedWorkers: ["workergamma", "workerepsilon", "workerbeta", "workeralpha", "workerdelta"],
+  excludedWorkers: ["workerdelta"],
   staleAfterMs: 30 * 60 * 1000,
 });
 ```
@@ -22,7 +22,7 @@ The report is intentionally compact and safe for operator surfaces. It does not 
 - `missing-evidence` — terminal but no PR/Done/Block/branch evidence.
 - `stuck` — queued/claimed/running beyond the stale threshold.
 - `waiting` — fresh active work or no scoped observation yet.
-- `excluded` — present only for workers excluded from dispatch/closeout, such as `yukson` in Round 1.
+- `excluded` — present only for workers excluded from dispatch/closeout, such as `workerdelta` in Round 1.
 
 Round state precedence is `needs-evidence` before `stuck`, then `blocked`, `waiting`, and finally `ready`. That keeps the operator from re-running or reassigning work when evidence recovery is the safer next action.
 

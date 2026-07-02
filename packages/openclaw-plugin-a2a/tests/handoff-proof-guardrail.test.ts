@@ -93,11 +93,11 @@ describe("handoff-proof-guardrail", () => {
     it("returns ok observation for allowed command", () => {
       const guard = createHandoffProofGuard({
         nowMs: now,
-        nodeProfile: { isMobile: true, nodeId: "gongyung", freeMemoryMb: 600, cpuLoad: 0.2 },
+        nodeProfile: { isMobile: true, nodeId: "mobileAlpha", freeMemoryMb: 600, cpuLoad: 0.2 },
       });
       const obs = guard.submitObservation("observe_ping", { latencyMs: 42, reachable: true }, 15);
       assert.equal(obs.status, "ok");
-      assert.equal(obs.nodeId, "gongyung");
+      assert.equal(obs.nodeId, "mobileAlpha");
       assert.equal(obs.command, "observe_ping");
       assert.equal(obs.observations.latencyMs, 42);
     });
@@ -106,7 +106,7 @@ describe("handoff-proof-guardrail", () => {
       const guard = createHandoffProofGuard({
         nowMs: now,
         delegateTarget: "node-hub",
-        nodeProfile: { isMobile: true, nodeId: "gongyung", freeMemoryMb: 600, cpuLoad: 0.2 },
+        nodeProfile: { isMobile: true, nodeId: "mobileAlpha", freeMemoryMb: 600, cpuLoad: 0.2 },
       });
       const obs = guard.submitObservation("full_gate", { attempted: true }, 5);
       assert.equal(obs.status, "delegated");

@@ -38,8 +38,8 @@ const REQUIRED_BOOTSTRAP_PATHS = [
   ".openclaw",
   "memory",
 ];
-const ACTIVE_WORKERS = ["bangtong", "dungae", "sogyo", "nosuk"];
-const EXCLUDED_WORKERS = ["yukson"];
+const ACTIVE_WORKERS = ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"];
+const EXCLUDED_WORKERS = ["workerDelta"];
 
 function readText(path) {
   return readFileSync(path, "utf8");

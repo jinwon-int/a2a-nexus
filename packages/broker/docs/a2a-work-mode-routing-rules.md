@@ -1,7 +1,7 @@
 # A2A Work Mode Routing Rules
 
 These rules turn the 2026-06-06 work-mode benchmark into default operator
-choices for Seoseo solo work, Team1 orchestration, and hybrid evidence rounds.
+choices for brokeralpha solo work, Team1 orchestration, and hybrid evidence rounds.
 
 This is a source-only routing policy. It does not dispatch workers, deploy or
 restart Gateway or broker services, mutate databases, ACK or replay Terminal
@@ -28,11 +28,11 @@ Use these inputs before choosing a mode:
 | Narrow, well-understood source fix | `solo` | The benchmark's solo small-patch sample closed in 98s with no rework. |
 | Predictable docs or runbook update | `solo` | Solo runbook-policy replay closed in 230s; Team1 policy replay took longer and used much more worker time. |
 | Small or medium RCA with one likely code path | `solo` first | Solo RCA used less wall-clock and total worker time in the current replay set. |
-| Ambiguous RCA with several plausible causes | `team1` evidence, Seoseo finalizer | Parallel lanes can gather broader evidence, but finalizer cleanup remains required. |
+| Ambiguous RCA with several plausible causes | `team1` evidence, brokeralpha finalizer | Parallel lanes can gather broader evidence, but finalizer cleanup remains required. |
 | Multiple candidate PRs, conflicting recommendations, or Block evidence | `team1` | Candidate review is the clearest observed Team1 fit. |
-| Approval-boundary closeout, stale lane cleanup, or cross-lane operational synthesis | `hybrid` or `team1` evidence, Seoseo finalizer | Team1 can reduce Seoseo active effort, but merge/closeout authority stays single-owner. |
+| Approval-boundary closeout, stale lane cleanup, or cross-lane operational synthesis | `hybrid` or `team1` evidence, brokeralpha finalizer | Team1 can reduce brokeralpha active effort, but merge/closeout authority stays single-owner. |
 | Late supplemental review after a Team1 round | `hybrid` | Bounded helper evidence is useful; avoid double-counting the same worker cost in benchmark aggregates. |
-| Live deploy, rollback, DB mutation, Terminal Brief ACK/replay, provider send, release, secret, or visibility change | Seoseo finalizer only; helper evidence only after explicit approval | These actions must not be delegated as independent worker decisions. |
+| Live deploy, rollback, DB mutation, Terminal Brief ACK/replay, provider send, release, secret, or visibility change | brokeralpha finalizer only; helper evidence only after explicit approval | These actions must not be delegated as independent worker decisions. |
 | Urgent operator-facing bug with known fix path | `solo` | Startup and finalizer overhead can dominate the actual fix. |
 
 ## Decision Gate
@@ -59,14 +59,14 @@ Pick `team1` when all of these are true:
 
 Pick `hybrid` when these are true:
 
-- Seoseo owns the implementation or finalizer path.
+- brokeralpha owns the implementation or finalizer path.
 - A bounded helper review would reduce risk, compare alternatives, or validate a
   late supplemental PR.
 - The helper scope is evidence-only and has a clear stop condition.
 
 ## Finalizer Requirements
 
-Every `team1` or `hybrid` round needs exactly one Seoseo finalizer. The finalizer
+Every `team1` or `hybrid` round needs exactly one brokeralpha finalizer. The finalizer
 owns:
 
 - selecting or rejecting worker PRs;
@@ -90,7 +90,7 @@ Before Team1 or hybrid dispatch:
    and `/dashboard`. Do not use `/workers` or `/workers/:id` alone as a dispatch
    GO/NO-GO signal when unchanged heartbeat persistence is throttled.
 3. Define the exact evidence lanes and stop conditions.
-4. Name the Seoseo finalizer and the parent issue.
+4. Name the brokeralpha finalizer and the parent issue.
 5. State whether worker output may include PRs, read-only evidence, or both.
 6. Include no-change/read-only flags for evidence-only lanes.
 7. Require safe parent wording such as `Related issue:` or `Refs`, not
@@ -135,7 +135,7 @@ Observed signals:
 - `solo` average rework: 0.2.
 - `team1` average rework: 3.5.
 - Team1's strongest active-effort reduction signal was operational closeout,
-  where Seoseo active effort fell from 669s solo to 117s with Team1 evidence.
+  where brokeralpha active effort fell from 669s solo to 117s with Team1 evidence.
 
 Use these as routing heuristics, not universal speed claims. The replay set is
 still small, and several task-type comparisons are not same-difficulty pairs.

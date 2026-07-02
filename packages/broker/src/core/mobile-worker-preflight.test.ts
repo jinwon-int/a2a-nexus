@@ -45,7 +45,7 @@ describe("mobile worker preflight fixtures", () => {
 
   it("classifies a healthy Termux mobile worker as ready", () => {
     const result = buildMobileWorkerPreflight(loadFixture("healthy-mobile.json"));
-    assert.equal(result.packet.input.nodeId, "daegyo");
+    assert.equal(result.packet.input.nodeId, "mobilebeta");
     assert.equal(result.packet.state, "ready");
     assert.equal(result.packet.readyForActiveLane, true);
     assert.equal(result.packet.mobileHealth.lastSeenWindow, "fresh");
@@ -54,7 +54,7 @@ describe("mobile worker preflight fixtures", () => {
     assert.equal(result.packet.mobileHealth.workspaceIsolation, "configured");
   });
 
-  it("classifies Daegyo-style slow polling against broker stale windows", () => {
+  it("classifies mobilebeta-style slow polling against broker stale windows", () => {
     const result = buildMobileWorkerPreflight(loadFixture("slow-polling.json"));
     assert.equal(result.packet.state, "poll_interval_too_slow");
     assert.equal(result.packet.readyForActiveLane, false);
@@ -129,7 +129,7 @@ describe("mobile worker preflight fixtures", () => {
     assert.equal(result.packet.readyForActiveLane, true);
     assert.equal(result.packet.mobileHealth.isMobileWorker, true);
     assert.equal(result.packet.mobileHealth.lastSeenWindow, "fresh");
-    assert.equal(result.packet.input.nodeId, "yukson");
+    assert.equal(result.packet.input.nodeId, "workerdelta");
     assert.equal(result.packet.input.workerMode, "hermes-mobile");
   });
 
@@ -165,7 +165,7 @@ describe("mobile worker preflight fixtures", () => {
 });
 
 describe("mobile worker non-docker task acceptance", () => {
-  for (const nodeId of ["daegyo", "gongyung"]) {
+  for (const nodeId of ["mobilebeta", "mobilealpha"]) {
     it(`accepts ${nodeId}-style no-live analysis-only A2AD tasks as non-docker research work`, () => {
       const decision = evaluateMobileWorkerTaskAcceptance({
         worker: {
@@ -201,7 +201,7 @@ describe("mobile worker non-docker task acceptance", () => {
 
   it("keeps Docker runner and live-impact payloads blocked for mobile workers", () => {
     const baseWorker = {
-      nodeId: "gongyung",
+      nodeId: "mobilealpha",
       workerMode: "mobile",
       capabilities: {
         canAnalyze: true,
@@ -239,7 +239,7 @@ describe("normalizeMobileWorkerPreflightInput", () => {
   it("accepts raw mobile worker input and computes lastSeenAgeSec from lastSeenAt", () => {
     const input = normalizeMobileWorkerPreflightInput(
       {
-        nodeId: "daegyo",
+        nodeId: "mobilebeta",
         workerMode: "termux-mobile",
         lastSeenAt: "2026-05-29T10:00:00.000Z",
         pollIntervalSec: 20,
@@ -263,7 +263,7 @@ describe("normalizeMobileWorkerPreflightInput", () => {
   it("rejects impossible stale/disconnected thresholds", () => {
     assert.throws(
       () => normalizeMobileWorkerPreflightInput({
-        nodeId: "daegyo",
+        nodeId: "mobilebeta",
         workerMode: "termux-mobile",
         staleAfterSec: 90,
         disconnectedAfterSec: 30,

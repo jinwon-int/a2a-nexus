@@ -250,31 +250,31 @@ test("operator notification adapter suppresses concurrent sends for the same ded
   const envelope = {
     kind: "a2a.operator.notification",
     version: 1,
-    id: "operator-notify:terminal:team1:sogyo:success",
-    dedupeKey: "terminal:team1:sogyo:success",
+    id: "operator-notify:terminal:team1:workerBeta:success",
+    dedupeKey: "terminal:team1:workerBeta:success",
     type: "success",
     severity: "info",
     deliveryOwner: "openclaw.plugin-notifier",
     deliveryTarget: "operator-main-session",
-    title: "A2A Terminal Brief 완료: sogyo(1/2)",
-    text: "A2A Terminal Brief 완료: sogyo(1/2)",
+    title: "A2A Terminal Brief 완료: workerBeta(1/2)",
+    text: "A2A Terminal Brief 완료: workerBeta(1/2)",
     evidence: {
       schema: "a2a.operator.notification.evidence",
       version: 1,
-      taskId: "terminal-brief-team1-2worker-canary-seoseo-20260516T161541Z-sogyo",
+      taskId: "terminal-brief-team1-2worker-canary-brokerAlpha-20260516T161541Z-workerBeta",
     },
-    taskId: "terminal-brief-team1-2worker-canary-seoseo-20260516T161541Z-sogyo",
+    taskId: "terminal-brief-team1-2worker-canary-brokerAlpha-20260516T161541Z-workerBeta",
   };
 
   const first = adapter.notify(envelope);
-  const second = adapter.notify({ ...envelope, id: "operator-notify:terminal:team1:sogyo:success:duplicate" });
+  const second = adapter.notify({ ...envelope, id: "operator-notify:terminal:team1:workerBeta:success:duplicate" });
   releaseSend();
   const receipts = await Promise.all([first, second]);
 
   assert.equal(sends.length, 1, "same dedupe key must call Telegram send once while first send is in flight");
-  assert.equal(receipts[0].dedupeKey, "terminal:team1:sogyo:success");
-  assert.equal(receipts[1].dedupeKey, "terminal:team1:sogyo:success");
-  assert.deepEqual(adapter.listReceipts().map((receipt) => receipt.dedupeKey), ["terminal:team1:sogyo:success"]);
+  assert.equal(receipts[0].dedupeKey, "terminal:team1:workerBeta:success");
+  assert.equal(receipts[1].dedupeKey, "terminal:team1:workerBeta:success");
+  assert.deepEqual(adapter.listReceipts().map((receipt) => receipt.dedupeKey), ["terminal:team1:workerBeta:success"]);
 });
 
 test("operator notification preflight blocks Gateway restart on config/runtime drift", async () => {

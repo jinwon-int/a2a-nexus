@@ -33,7 +33,7 @@ function acceptedReviewDecision(
 test("approval grant proposal prepares grant metadata without granting approval", () => {
   const packet = buildTerminalBriefSidecarApprovalGrantProposal(acceptedReviewDecision(), {
     now: NOW,
-    grantOwner: "seoseo",
+    grantOwner: "brokeralpha",
     grantReference: "grant-proposal-747",
   });
 
@@ -117,7 +117,7 @@ test("approval grant proposal extractors and markdown preserve no-live boundary"
   const input = {
     reviewDecisionIngestorPacket: reviewDecision,
     approvalGrantProposal: {
-      grant_owner: "seoseo",
+      grant_owner: "brokeralpha",
       grant_reference: "grant-proposal-747",
     },
   };

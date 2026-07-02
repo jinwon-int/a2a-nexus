@@ -95,7 +95,7 @@ export interface TerminalBriefSidecarDefaultOnExecutionApprovalRequestPacket {
     separateOperatorApprovalRequired: true;
     separateExecutorRequired: true;
     approvalCanBeRequestedBy: string;
-    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "gongyung" | "external">;
+    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "mobilealpha" | "external">;
     mustNotTreatProviderAcceptedAsVisibilityProof: true;
     forbiddenBeforeSeparateApproval: string[];
   };
@@ -270,7 +270,7 @@ export function buildTerminalBriefSidecarDefaultOnExecutionApprovalRequest(
       separateOperatorApprovalRequired: true,
       separateExecutorRequired: true,
       approvalCanBeRequestedBy: requestedBy,
-      approvalCanBeDeliveredBy: ["openclaw", "hermes", "gongyung", "external"],
+      approvalCanBeDeliveredBy: ["openclaw", "hermes", "mobilealpha", "external"],
       mustNotTreatProviderAcceptedAsVisibilityProof: true,
       forbiddenBeforeSeparateApproval: forbiddenBeforeSeparateApproval(),
     },
@@ -315,7 +315,7 @@ export function buildTerminalBriefSidecarDefaultOnExecutionApprovalRequest(
       "granting approval or executing an approval grant",
       "writing config or enabling Terminal Brief default-on",
       "starting, stopping, or restarting the Terminal Brief sidecar",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, executor invocation, broker restart, or deploy",
       "GitHub mutation from the packet/route",

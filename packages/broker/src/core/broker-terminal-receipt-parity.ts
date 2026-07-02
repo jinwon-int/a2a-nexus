@@ -43,8 +43,8 @@ export interface BrokerTerminalReceiptParityReport {
   kind: "broker-terminal-receipt.parity";
   ok: boolean;
   receiptGateCanaryVerdict: "pass" | "fail";
-  seoseo: BrokerTerminalReceiptSummary;
-  gwakga: BrokerTerminalReceiptSummary;
+  brokeralpha: BrokerTerminalReceiptSummary;
+  brokerbeta: BrokerTerminalReceiptSummary;
   discrepancies: string[];
   fixProposals: string[];
   safety: {
@@ -191,29 +191,29 @@ function canaryBlockers(matrix: ReceiptGateCanaryMatrix): string[] {
   return blockers;
 }
 
-function bucketDiscrepancies(seoseo: BrokerTerminalReceiptSummary, gwakga: BrokerTerminalReceiptSummary): string[] {
+function bucketDiscrepancies(brokeralpha: BrokerTerminalReceiptSummary, brokerbeta: BrokerTerminalReceiptSummary): string[] {
   const discrepancies: string[] = [];
-  for (const bucket of Object.keys(seoseo.buckets) as TerminalReceiptBucket[]) {
-    const left = seoseo.buckets[bucket];
-    const right = gwakga.buckets[bucket];
+  for (const bucket of Object.keys(brokeralpha.buckets) as TerminalReceiptBucket[]) {
+    const left = brokeralpha.buckets[bucket];
+    const right = brokerbeta.buckets[bucket];
     if ((left === 0) !== (right === 0)) {
-      discrepancies.push(`observed ${bucket} rows differ: seoseo=${left}, gwakga=${right}`);
+      discrepancies.push(`observed ${bucket} rows differ: brokeralpha=${left}, brokerbeta=${right}`);
     }
   }
   return discrepancies;
 }
 
 export function compareBrokerTerminalReceiptParity(options: {
-  seoseo: BrokerTerminalReceiptSummary;
-  gwakga: BrokerTerminalReceiptSummary;
+  brokeralpha: BrokerTerminalReceiptSummary;
+  brokerbeta: BrokerTerminalReceiptSummary;
   receiptGateCanary: ReceiptGateCanaryMatrix;
 }): BrokerTerminalReceiptParityReport {
   const blockers = [
-    ...options.seoseo.blockers,
-    ...options.gwakga.blockers,
+    ...options.brokeralpha.blockers,
+    ...options.brokerbeta.blockers,
     ...canaryBlockers(options.receiptGateCanary),
   ];
-  const discrepancies = bucketDiscrepancies(options.seoseo, options.gwakga);
+  const discrepancies = bucketDiscrepancies(options.brokeralpha, options.brokerbeta);
   const fixProposals = [
     ...blockers.map((blocker) => `Fix ${blocker}.`),
     ...discrepancies.map((discrepancy) => `Investigate ${discrepancy}; rerun terminal_outbox_preflight on both brokers with the same cursor/limit and backfill only after operator-approved receipt evidence.`),
@@ -223,8 +223,8 @@ export function compareBrokerTerminalReceiptParity(options: {
     kind: "broker-terminal-receipt.parity",
     ok: blockers.length === 0,
     receiptGateCanaryVerdict: options.receiptGateCanary.overallVerdict,
-    seoseo: options.seoseo,
-    gwakga: options.gwakga,
+    brokeralpha: options.brokeralpha,
+    brokerbeta: options.brokerbeta,
     discrepancies,
     fixProposals,
     safety: {
@@ -245,8 +245,8 @@ export function renderBrokerTerminalReceiptParityMarkdown(report: BrokerTerminal
     "",
     "| Broker | Events | send accepted/no receipt | receipt confirmed | failed | stale/timed out | missing receipt state |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-    renderBrokerRow(report.seoseo),
-    renderBrokerRow(report.gwakga),
+    renderBrokerRow(report.brokeralpha),
+    renderBrokerRow(report.brokerbeta),
   ];
 
   if (report.discrepancies.length > 0) {

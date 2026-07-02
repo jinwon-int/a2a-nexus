@@ -37,9 +37,9 @@ Current shared-edge-secret worker auth makes the shared secret close to a master
 
 Per-worker signing improves this model:
 
-- the private key for `sogyo` proves only `sogyo`, not `bangtong`, `yukson`, hub, or operator;
+- the private key for `workerbeta` proves only `workerbeta`, not `workergamma`, `workerdelta`, hub, or operator;
 - a captured signed request cannot be replayed after expiry or nonce consumption;
-- a request signed for broker `seoseo` cannot be replayed against broker `gwakga` when audience binding is enforced;
+- a request signed for broker `brokeralpha` cannot be replayed against broker `brokerbeta` when audience binding is enforced;
 - a modified body fails `Content-Digest` verification;
 - route-specific authorization still decides whether the verified identity may perform the action.
 
@@ -54,10 +54,10 @@ POST /tasks/task-123/claim HTTP/1.1
 Host: broker.seoyoon-family.com
 Content-Type: application/json
 Content-Digest: sha-256=:<base64-sha256>:
-X-A2A-Requester-Id: sogyo
+X-A2A-Requester-Id: workerbeta
 X-A2A-Requester-Role: analyst
-X-A2A-Broker-Id: seoseo
-Signature-Input: a2a=("@method" "@authority" "@path" "@query" "content-digest" "x-a2a-requester-id" "x-a2a-requester-role" "x-a2a-broker-id");alg="ed25519";keyid="worker:sogyo:v1";created=1770861600;expires=1770861660;nonce="<random>";tag="a2a-worker-v1"
+X-A2A-Broker-Id: brokeralpha
+Signature-Input: a2a=("@method" "@authority" "@path" "@query" "content-digest" "x-a2a-requester-id" "x-a2a-requester-role" "x-a2a-broker-id");alg="ed25519";keyid="worker:workerbeta:v1";created=1770861600;expires=1770861660;nonce="<random>";tag="a2a-worker-v1"
 Signature: a2a=:<base64-signature>:
 ```
 
@@ -102,8 +102,8 @@ Example static shape:
 ```json
 {
   "workers": {
-    "sogyo": {
-      "keyid": "worker:sogyo:v1",
+    "workerbeta": {
+      "keyid": "worker:workerbeta:v1",
       "alg": "ed25519",
       "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519", "x": "..." },
       "roles": ["analyst"],

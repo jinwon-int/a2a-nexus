@@ -30,8 +30,8 @@ function collector(
       dryRunStartCanaryPlanReady: true,
       requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start_canary",
       operatorTarget: "operator-a",
-      executorName: "gongyung-sidecar-dry-run-executor",
-      adapterName: "gongyung",
+      executorName: "mobilealpha-sidecar-dry-run-executor",
+      adapterName: "mobilealpha",
       monitorIntervalSeconds: 60,
       maxQueueBacklog: 1000,
     },
@@ -99,7 +99,7 @@ function collector(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDryRunStartCanaryPlanPacket: true,
       collectsLiveEvidence: false,
       probesGateway: false,
@@ -159,7 +159,7 @@ test("builds ready chain review without permitting approval or runtime actions",
   assert.equal(packet.readiness.dbMutationPermitted, false);
   assert.equal(packet.integrationContract.openclawMessageSendRequired, false);
   assert.equal(packet.integrationContract.hermesAdapterCompatible, true);
-  assert.equal(packet.integrationContract.gongyungAdapterCompatible, true);
+  assert.equal(packet.integrationContract.mobilealphaAdapterCompatible, true);
   assert.equal(packet.integrationContract.probesGateway, false);
   assert.equal(packet.integrationContract.startsSidecar, false);
   assert.equal(packet.semantics.preflightChainReviewOnly, true);
@@ -232,7 +232,7 @@ test("blocks unsafe collector permission drift", () => {
 test("extractors accept aliases and markdown preserves separate approval boundary", () => {
   const input = {
     preflightEvidenceCollectorPacket: collector(),
-    preflightChainReview: { now: NOW, finalizer: "seoseo" },
+    preflightChainReview: { now: NOW, finalizer: "brokeralpha" },
   };
   const packet = buildTerminalBriefSidecarPreflightChainReview(
     extractTerminalBriefSidecarPreflightChainReviewCollector(input),

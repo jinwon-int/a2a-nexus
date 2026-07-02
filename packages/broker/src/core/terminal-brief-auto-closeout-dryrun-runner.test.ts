@@ -39,8 +39,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: options.parentRoundId ?? "round-833",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-broker",
       issue: 833,
@@ -65,10 +65,10 @@ function eventFor(
 
 function allReadyEvents(): TerminalTaskOutboxEvent[] {
   return [
-    eventFor("bangtong", "succeeded", { progress: 1, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831" }),
-    eventFor("yukson", "succeeded", { progress: 2, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833" }),
-    eventFor("sogyo", "succeeded", { progress: 3, total: 4, doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398" }),
-    eventFor("nosuk", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395" }),
+    eventFor("workergamma", "succeeded", { progress: 1, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831" }),
+    eventFor("workerdelta", "succeeded", { progress: 2, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833" }),
+    eventFor("workerbeta", "succeeded", { progress: 3, total: 4, doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398" }),
+    eventFor("workeralpha", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395" }),
   ];
 }
 
@@ -83,9 +83,9 @@ function buildCandidateInput(policyMode?: AutoCloseoutPolicyMode): TerminalBrief
       ciPassUrls: ["https://github.com/jinwon-int/a2a-broker/actions/runs/100"],
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [
-          { id: "brief-final", text: "Terminal Brief: nosuk final worker (4/4)", createdAt: NOW },
+          { id: "brief-final", text: "Terminal Brief: workeralpha final worker (4/4)", createdAt: NOW },
         ],
         events: allReadyEvents(),
       },
@@ -161,7 +161,7 @@ test("dry-run runner produces plan_waiting for empty evidence input", () => {
       parentRoundId: "round-833",
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [],
         events: [],
       },
@@ -187,13 +187,13 @@ test("dry-run runner includes run metadata in runner field", () => {
   const result = buildAutoCloseoutDryRunRunner(buildCandidateInput("draft"), {
     now: NOW,
     runId: RUN_ID,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     lane: 2,
     laneTotal: 4,
   });
 
   assert.equal(result.runner.runId, RUN_ID);
-  assert.equal(result.runner.requestedBy, "seoseo");
+  assert.equal(result.runner.requestedBy, "brokeralpha");
   assert.equal(result.runner.lane, 2);
   assert.equal(result.runner.laneTotal, 4);
   assert.equal(result.runner.dryRunLabel, "auto-closeout-dryrun-runner");
@@ -252,7 +252,7 @@ test("renderAutoCloseoutDryRunRunnerMarkdown includes blockers when present", ()
       parentRoundId: "round-833",
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [],
         events: [],
       },
@@ -309,7 +309,7 @@ test("partial worker completion produces blocked or waiting state", () => {
       parentRoundId: "round-833",
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [
           { id: "brief-partial", text: "Terminal Brief (2/4)", createdAt: NOW },
         ],
@@ -346,7 +346,7 @@ test("dry-run runner for blocked evidence input includes blockers in markdown", 
       parentRoundId: "round-833",
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [],
         events: allReadyEvents().slice(0, 1),
       },

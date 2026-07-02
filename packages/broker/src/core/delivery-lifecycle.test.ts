@@ -28,7 +28,7 @@ function makeInput(overrides?: Partial<Parameters<DeliveryManager["registerDeliv
   return {
     runId: "run-1",
     originatorSessionKey: "session-main",
-    originatorNodeId: "seoseo",
+    originatorNodeId: "brokeralpha",
     parentTaskId: "task-1",
     artifact: SAMPLE_ARTIFACT,
     ...overrides,
@@ -64,7 +64,7 @@ describe("DeliveryManager", () => {
       assert.equal(d.status, "result_ready");
       assert.equal(d.runId, "run-1");
       assert.equal(d.originatorSessionKey, "session-main");
-      assert.equal(d.originatorNodeId, "seoseo");
+      assert.equal(d.originatorNodeId, "brokeralpha");
       assert.equal(d.attempt, 1);
       assert.equal(d.maxRetries, 3);
       assert.equal(d.acknowledged, false);

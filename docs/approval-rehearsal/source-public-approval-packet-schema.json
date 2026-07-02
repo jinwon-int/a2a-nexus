@@ -4,7 +4,7 @@
   "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
   "parentIssue": "a2a-plane#211 (internal tracker, private)",
   "issue": "a2a-plane#212 (internal tracker, private)",
-  "lane": "team1-bangtong",
+  "lane": "team1-workerGamma",
   "failClosed": true,
   "defaultDecision": "NO_GO",
   "decisionOutputs": ["GO_CANDIDATE", "NO_GO", "NEEDS_OPERATOR_APPROVAL"],

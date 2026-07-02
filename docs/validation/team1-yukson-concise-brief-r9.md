@@ -1,10 +1,10 @@
-# Team1/yukson: concise Terminal Brief contract/runbook gate (R9)
+# Team1/workerDelta: concise Terminal Brief contract/runbook gate (R9)
 
 Issue: a2a-plane#289 (a2a-plane#289, internal tracker private)
 Parent: [a2a-broker#560](https://github.com/jinwon-int/a2a-broker/issues/560)
 Run: `a2a-r9-concise-brief-runtime-20260513T134143Z`
 Contract: `contracts/a2a/parent-terminal-brief-aggregation.md`
-Lane: Team1/yukson
+Lane: Team1/workerDelta
 Snapshot: `2026-05-13T13:41:43Z`
 
 This runbook gate validates that future all-hands/cross-broker rounds require:
@@ -25,12 +25,12 @@ Future all-hands/cross-broker rounds must carry the following metadata in every 
 
 | Field | Required? | Source | Example |
 | --- | --- | --- | --- |
-| `parentRoundId` | Required | Minted by the origin/parent broker before first child handoff. | `round-gwakga-origin-seoseo-handoff-canary-001` |
-| `originBrokerId` | Required | Broker that created the parent round; immutable after minting. | `gwakga` |
-| `parentBrokerId` | Required | Broker rendering the aggregate Terminal Brief notification; must equal `originBrokerId` in v0. | `gwakga` |
-| `handoffBrokerId` | Required when child is a handoff | Broker that received the child handoff. | `seoseo` |
-| `childBrokerId` | Required | Broker of record for child task after handoff. | `seoseo` |
-| `brokerOfRecord` | Required | Same as `childBrokerId`; identifies the broker controlling the child lifecycle. | `seoseo` |
+| `parentRoundId` | Required | Minted by the origin/parent broker before first child handoff. | `round-brokerBeta-origin-brokerAlpha-handoff-canary-001` |
+| `originBrokerId` | Required | Broker that created the parent round; immutable after minting. | `brokerBeta` |
+| `parentBrokerId` | Required | Broker rendering the aggregate Terminal Brief notification; must equal `originBrokerId` in v0. | `brokerBeta` |
+| `handoffBrokerId` | Required when child is a handoff | Broker that received the child handoff. | `brokerAlpha` |
+| `childBrokerId` | Required | Broker of record for child task after handoff. | `brokerAlpha` |
+| `brokerOfRecord` | Required | Same as `childBrokerId`; identifies the broker controlling the child lifecycle. | `brokerAlpha` |
 | `knownTotal` | Recommended | Total number of child tasks in the parent round, when known. May be omitted if unknown. | `7` |
 | `dispatcherId` | Recommended | Identifier for the dispatch origin — e.g. `a2a-r9-concise-brief-runtime`. | `a2a-r9-concise-brief-runtime-20260513T134143Z` |
 
@@ -46,8 +46,8 @@ Every aggregate Terminal Brief notification title must follow one of these forma
 
 | Total known | Format | Max chars | Example |
 | --- | --- | --- | --- |
-| Yes | `A2A Terminal Brief <상태>: <worker>(<completed>/<total>)` | 80 | `A2A Terminal Brief 완료: dungae(1/7)` |
-| No | `A2A Terminal Brief <상태>: <worker>(<completed>)` | 80 | `A2A Terminal Brief 완료: yukson(2)` |
+| Yes | `A2A Terminal Brief <상태>: <worker>(<completed>/<total>)` | 80 | `A2A Terminal Brief 완료: workerEpsilon(1/7)` |
+| No | `A2A Terminal Brief <상태>: <worker>(<completed>)` | 80 | `A2A Terminal Brief 완료: workerDelta(2)` |
 
 **Status labels:** `완료` (success/complete), `실패` (failure), `차단` (block), `PR` (pull request pending).
 
@@ -135,18 +135,18 @@ The following may be verified in read-only mode without operator approval:
 The R9 concise-brief runtime readiness round proves:
 
 1. **Direct Team1 children** (3 tasks, known total):
-   - `A2A Terminal Brief 완료: yukson(1/3)`
-   - `A2A Terminal Brief 완료: bangtong(2/3)`
-   - `A2A Terminal Brief 완료: sogyo(3/3)`
+   - `A2A Terminal Brief 완료: workerDelta(1/3)`
+   - `A2A Terminal Brief 완료: workerGamma(2/3)`
+   - `A2A Terminal Brief 완료: workerBeta(3/3)`
 
 2. **Cross-broker Team2 projected children** (4 handoff tasks, known total):
-   - `A2A Terminal Brief 완료: dungae(1/4)`
-   - `A2A Terminal Brief 완료: gwakga(2/4)`
-   - `A2A Terminal Brief 완료: jingun(3/4)`
-   - `A2A Terminal Brief 완료: soonwook(4/4)`
+   - `A2A Terminal Brief 완료: workerEpsilon(1/4)`
+   - `A2A Terminal Brief 완료: brokerBeta(2/4)`
+   - `A2A Terminal Brief 완료: workerZeta(3/4)`
+   - `A2A Terminal Brief 완료: workerEta(4/4)`
 
 3. **Unknown-total fallback**:
-   - `A2A Terminal Brief 완료: yukson(2)` (no denominator, no `(2/?)`)
+   - `A2A Terminal Brief 완료: workerDelta(2)` (no denominator, no `(2/?)`)
 
 **Fail-closed conditions:**
 
@@ -191,7 +191,7 @@ This runbook gate:
 
 ```bash
 npm run check:layout
-npm run check:team1-yukson-plane-gates
-node --test scripts/archive/check-team1-yukson-concise-brief-r9.test.mjs
+npm run check:team1-workerDelta-plane-gates
+node --test scripts/archive/check-team1-workerDelta-concise-brief-r9.test.mjs
 git status --short --ignored
 ```

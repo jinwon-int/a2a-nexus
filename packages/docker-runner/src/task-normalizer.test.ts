@@ -58,13 +58,13 @@ test("passes through mode, issueUrl, reportLanguage, and requestedBy", () => {
     repo: "jinwon-int/test-repo",
     issueUrl: "https://github.com/jinwon-int/test-repo/issues/5",
     reportLanguage: "ko",
-    requestedBy: "seoseo",
+    requestedBy: "brokerAlpha",
   });
 
   assert.equal(task.mode, "github-propose-patch");
   assert.equal(task.issueUrl, "https://github.com/jinwon-int/test-repo/issues/5");
   assert.equal(task.reportLanguage, "ko");
-  assert.equal(task.requestedBy, "seoseo");
+  assert.equal(task.requestedBy, "brokerAlpha");
   assert.equal(task.repos.length, 1);
   assert.equal(task.repos[0]?.url, "https://github.com/jinwon-int/test-repo.git");
   assert.ok(task.commands.length > 0);
@@ -165,7 +165,7 @@ test("generates PR-producing default commands for github-propose-patch mode with
     baseBranch: "main",
     prompt: "Fix the broken test.",
     issueUrl: "https://github.com/jinwon-int/test-repo/issues/5",
-    requestedBy: "seoseo",
+    requestedBy: "brokerAlpha",
   });
 
   // Must generate commands (not use explicit ones).
@@ -271,7 +271,7 @@ test("generates PR-producing default commands for propose_patch mode", () => {
     repo: "jinwon-int/test-repo",
     baseBranch: "develop",
     prompt: "Update README.",
-    requestedBy: "dungae",
+    requestedBy: "workerEpsilon",
   });
 
   assert.ok(task.commands.length > 0);

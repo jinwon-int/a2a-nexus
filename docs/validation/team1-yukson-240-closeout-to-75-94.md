@@ -1,4 +1,4 @@
-# Team1/yukson #240 closeout route into #75/#94
+# Team1/workerDelta #240 closeout route into #75/#94
 
 Parent lane: a2a-plane#271 (a2a-plane#271, internal tracker private)
 Source issue: a2a-plane#240 (a2a-plane#240, internal tracker private)
@@ -13,7 +13,7 @@ Issue #240 is the user-facing ecosystem/monorepo clarity lane. Its outputs are n
 
 | #240 output | Candidate source | Feeds #75 by | Feeds #94 by |
 | --- | --- | --- | --- |
-| Four-repo/component responsibility map | PR #268 ecosystem guide refresh | Giving #75 reviewers a public-safe component map for plane, broker, runner, and OpenClaw plugin responsibilities before closeout evidence is interpreted. | Separating broker/runtime, runner/evidence, and plugin/adapter claims so compatibility review does not rely on one private Seoseo-only path. |
+| Four-repo/component responsibility map | PR #268 ecosystem guide refresh | Giving #75 reviewers a public-safe component map for plane, broker, runner, and OpenClaw plugin responsibilities before closeout evidence is interpreted. | Separating broker/runtime, runner/evidence, and plugin/adapter claims so compatibility review does not rely on one private brokerAlpha-only path. |
 | Monorepo migration checklist | PR #267 migration checklist | Keeping future consolidation work from weakening #75 gates for runtime/bootstrap hygiene, scanner evidence, and explicit operator approval. | Recording compatibility risks for package boundaries, import paths, contracts, fixtures, and public docs before any monorepo migration. |
 | Correct issue/link hygiene | PR #267 and PR #268 | Ensuring #75 evidence links back to #240 rather than stale or wrong issue references. | Ensuring #94 can cite public-safe docs/checklists rather than raw session history or private runtime artifacts. |
 

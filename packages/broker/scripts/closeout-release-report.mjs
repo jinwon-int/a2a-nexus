@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 
 export const ISSUE = '#342';
 export const PARENT_ISSUE = '#294';
-export const EXPECTED_WORKERS = ['bangtong', 'dungae', 'sogyo', 'nosuk', 'yukson'];
+export const EXPECTED_WORKERS = ['workergamma', 'workerepsilon', 'workerbeta', 'workeralpha', 'workerdelta'];
 export const REQUIRED_RECEIPT_SCENARIOS = [
   'no_notification_configured',
   'send_accepted_no_receipt',

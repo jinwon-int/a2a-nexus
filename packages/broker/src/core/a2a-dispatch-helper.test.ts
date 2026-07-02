@@ -13,7 +13,7 @@ import {
 const BASE_SPEC = {
   teamId: "team2" as const,
   lane: 2,
-  worker: "dungae",
+  worker: "workerepsilon",
   runId: "a2a-team2-common-dispatch-20260602T130000Z",
   parentIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/1032",
   childIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/1137",
@@ -24,7 +24,7 @@ function validTeam1DecisionEvidence() {
   return buildA2AWorkModeDecisionEvidence(
     buildA2AWorkModePreDispatchDecision({
       now: "2026-06-07T06:00:00.000Z",
-      finalizerOwner: "seoseo",
+      finalizerOwner: "brokeralpha",
       task: {
         taskId: "a2a-dispatch-helper-test",
         workProfile: "candidate_review",
@@ -60,14 +60,14 @@ test("buildA2ADispatchPlan supports explicit cross-team totals such as 8 lanes",
     parentRoundId: "a2a-1032-cross-team-round",
     parentRoundTotal: 8,
     parentRoundOrder: 6,
-    brokerOfRecordId: "seoseo",
-    originBrokerId: "seoseo",
+    brokerOfRecordId: "brokeralpha",
+    originBrokerId: "brokeralpha",
     operatorFacingOwner: "parent",
     crossBrokerHandoff: {
-      handoffBrokerId: "gwakga",
-      childWorkerId: "dungae",
-      originBrokerId: "seoseo",
-      originTaskId: "seoseo-parent-task-1",
+      handoffBrokerId: "brokerbeta",
+      childWorkerId: "workerepsilon",
+      originBrokerId: "brokeralpha",
+      originTaskId: "brokeralpha-parent-task-1",
     },
   });
 
@@ -77,10 +77,10 @@ test("buildA2ADispatchPlan supports explicit cross-team totals such as 8 lanes",
   assert.equal(plan.metadata.parentRoundOrder, 6);
   assert.equal(plan.taskPayload?.parentRoundTotal, 8);
   assert.equal(plan.taskPayload?.parentRoundOrder, 6);
-  assert.equal(plan.taskPayload?.brokerOfRecordId, "seoseo");
+  assert.equal(plan.taskPayload?.brokerOfRecordId, "brokeralpha");
   assert.equal(plan.taskPayload?.operatorFacingOwner, "parent");
   assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "a2a-1032-cross-team-round");
-  assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "gwakga");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "brokerbeta");
   assert.equal(plan.roundManifest?.metadata?.parentRoundTotal, "8");
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.parentRoundOrder, "6");
 });
@@ -89,10 +89,10 @@ test("buildA2ADispatchPlan derives round total and order from actual dispatch wo
   const plan = buildA2ADispatchPlan({
     ...BASE_SPEC,
     lane: 5,
-    worker: "yukson",
+    worker: "workerdelta",
     parentRoundTotal: 9,
     parentRoundOrder: 9,
-    dispatchWorkers: ["sogyo", "nosuk", "bangtong", "yukson"],
+    dispatchWorkers: ["workerbeta", "workeralpha", "workergamma", "workerdelta"],
   });
 
   assert.equal(plan.decision.value, "go");
@@ -100,7 +100,7 @@ test("buildA2ADispatchPlan derives round total and order from actual dispatch wo
   assert.equal(plan.metadata.parentRoundOrder, 4);
   assert.equal(plan.metadata.parentRoundTotalSource, "dispatch-workers");
   assert.equal(plan.metadata.parentRoundOrderSource, "dispatch-workers");
-  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["sogyo", "nosuk", "bangtong", "yukson"]);
+  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["workerbeta", "workeralpha", "workergamma", "workerdelta"]);
   assert.equal(plan.taskPayload?.parentRoundTotal, 4);
   assert.equal(plan.taskPayload?.parentRoundOrder, 4);
 });
@@ -161,12 +161,12 @@ test("read-only/evidence lanes carry allowNoChanges and readOnlyValidation with 
   assert.equal(plan.roundManifest?.expectedWorkers[0].metadata?.readOnlyValidation, "true");
 });
 
-test("Team2 execute-mode requires Gwakga broker-of-record handoff evidence", () => {
+test("Team2 execute-mode requires brokerbeta broker-of-record handoff evidence", () => {
   const plan = buildA2ADispatchPlan(
     {
       ...BASE_SPEC,
-      brokerOfRecordId: "seoseo",
-      originBrokerId: "seoseo",
+      brokerOfRecordId: "brokeralpha",
+      originBrokerId: "brokeralpha",
     },
     { dryRun: false, execute: true },
   );
@@ -177,26 +177,26 @@ test("Team2 execute-mode requires Gwakga broker-of-record handoff evidence", () 
   assert.equal(plan.taskPayload, null);
 });
 
-test("Team2 execute-mode allows explicit Gwakga cross-broker handoff", () => {
+test("Team2 execute-mode allows explicit brokerbeta cross-broker handoff", () => {
   const plan = buildA2ADispatchPlan(
     {
       ...BASE_SPEC,
-      brokerOfRecordId: "gwakga",
-      originBrokerId: "seoseo",
+      brokerOfRecordId: "brokerbeta",
+      originBrokerId: "brokeralpha",
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
-        handoffBrokerId: "gwakga",
-        originBrokerId: "seoseo",
-        originTaskId: "seoseo-parent-task-1",
-        childWorkerId: "dungae",
+        handoffBrokerId: "brokerbeta",
+        originBrokerId: "brokeralpha",
+        originTaskId: "brokeralpha-parent-task-1",
+        childWorkerId: "workerepsilon",
       },
     },
     { dryRun: false, execute: true },
   );
 
   assert.equal(plan.decision.value, "warn_go");
-  assert.equal(plan.taskPayload?.brokerOfRecordId, "gwakga");
-  assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "gwakga");
+  assert.equal(plan.taskPayload?.brokerOfRecordId, "brokerbeta");
+  assert.equal(plan.taskPayload?.crossBrokerHandoff?.handoffBrokerId, "brokerbeta");
 });
 
 test("Team1/common execute-mode requires work-mode decision evidence", () => {
@@ -228,7 +228,7 @@ test("Team1/common execute-mode persists work-mode decision evidence", () => {
 
   assert.equal(plan.decision.value, "warn_go");
   assert.equal(plan.taskPayload?.workModeDecision?.idempotencyKey, workModeDecision.idempotencyKey);
-  assert.equal(plan.metadata.workModeDecision?.finalizerOwner, "seoseo");
+  assert.equal(plan.metadata.workModeDecision?.finalizerOwner, "brokeralpha");
   assert.equal(plan.roundManifest?.metadata?.workModeDecisionIdempotencyKey, workModeDecision.idempotencyKey);
   assert.ok(plan.dispatchActions.some((action) => action.includes("[work-mode] decision")));
 });

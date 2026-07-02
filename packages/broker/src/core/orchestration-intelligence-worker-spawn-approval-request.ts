@@ -115,7 +115,7 @@ export interface OIWorkerSpawnApprovalRequestPacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -190,7 +190,7 @@ export function buildOIWorkerSpawnApprovalRequestPacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -386,7 +386,7 @@ function evidencePatchForState(
     explicitRuntimeApprovalPresent: ready,
     brokerDispatchApprovalPresent: ready,
     workerSpawnApprovalPresent: false,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: ready,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: ready,
@@ -404,7 +404,7 @@ function nextActionsForState(state: OIWorkerSpawnApprovalRequestState): string[]
     return [
       "present the worker/subagent spawn approval request to the operator as a separate approval gate",
       "record any operator response in a future source-only worker spawn approval decision evidence packet",
-      "keep worker spawn approval, broker dispatch, runtime executor, and Daegyo/mobile scope expansion disabled until later gates pass",
+      "keep worker spawn approval, broker dispatch, runtime executor, and mobilebeta/mobile scope expansion disabled until later gates pass",
     ];
   }
   if (state === "broker_dispatch_evidence_not_ready") {
@@ -445,7 +445,7 @@ function spawnApprovalRequestFor(
     spawnScope: [
       "record explicit worker/subagent spawn approval evidence in a future source-only packet",
       "keep worker/subagent spawn, broker task creation, executor invocation, and runtime enablement in separate future work",
-      "keep Daegyo/mobile scope expansion and no-live/live execution gates as independent gates",
+      "keep mobilebeta/mobile scope expansion and no-live/live execution gates as independent gates",
     ],
     workerTeamConstraints: [
       "all spawned workers/subagents must remain source-only (no live executor, no DB mutation, no provider send)",
@@ -490,7 +490,7 @@ function spawnApprovalRequestFor(
       "broker task creation or dispatch at runtime",
       "executor invocation",
       "runtime executor enablement",
-      "Daegyo/mobile scope expansion",
+      "mobilebeta/mobile scope expansion",
       "live provider or Telegram canary",
       "deploy, restart, DB mutation, Terminal ACK/replay, release publish, or credential movement",
       "TaskFlow task creation or mutation",

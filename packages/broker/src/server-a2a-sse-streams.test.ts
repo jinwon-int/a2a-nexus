@@ -599,13 +599,13 @@ test("SSE /a2a/tasks/terminal-events streams compact terminal events with replay
 });
 
 test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing metadata", async () => {
-  const server = await startTestServer({ edgeSecret: "test-edge-secret", brokerId: "gwakga", teamId: "team2" });
+  const server = await startTestServer({ edgeSecret: "test-edge-secret", brokerId: "brokerbeta", teamId: "team2" });
   try {
-    await registerTestWorker(server.baseUrl, "jingun", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workerzeta", "analyst", "test-edge-secret");
 
     const hubHeaders = jsonHeaders({
       "x-a2a-edge-secret": "test-edge-secret",
-      "x-a2a-requester-id": "seoseo",
+      "x-a2a-requester-id": "brokeralpha",
       "x-a2a-requester-role": "hub",
     });
     const taskRes = await fetch(`${server.baseUrl}/tasks`, {
@@ -613,24 +613,24 @@ test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing
       headers: hubHeaders,
       body: JSON.stringify({
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
-        brokerOfRecord: "gwakga",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
+        brokerOfRecord: "brokerbeta",
         teamId: "team2",
         payload: {
-          parentRoundId: "seoseo-led-round",
+          parentRoundId: "brokeralpha-led-round",
           parentRoundTotal: 2,
           parentRoundOrder: 2,
-          originBrokerId: "seoseo",
-          brokerOfRecordId: "seoseo",
+          originBrokerId: "brokeralpha",
+          brokerOfRecordId: "brokeralpha",
           operatorFacingOwner: "parent",
           crossBrokerHandoff: {
-            parentRoundId: "seoseo-led-round",
-            originBrokerId: "seoseo",
-            handoffBrokerId: "gwakga",
+            parentRoundId: "brokeralpha-led-round",
+            originBrokerId: "brokeralpha",
+            handoffBrokerId: "brokerbeta",
             originTaskId: "parent-task-1",
-            childWorkerId: "jingun",
+            childWorkerId: "workerzeta",
           },
         },
         message: "do not leak this prompt",
@@ -642,7 +642,7 @@ test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing
     const sseRes = await fetch(`${server.baseUrl}/a2a/tasks/terminal-events`, {
       headers: {
         "x-a2a-edge-secret": "test-edge-secret",
-        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-id": "brokeralpha",
         "x-a2a-requester-role": "hub",
         accept: "text/event-stream",
       },
@@ -651,18 +651,18 @@ test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing
 
     const workerHeaders = jsonHeaders({
       "x-a2a-edge-secret": "test-edge-secret",
-      "x-a2a-requester-id": "jingun",
+      "x-a2a-requester-id": "workerzeta",
       "x-a2a-requester-role": "analyst",
     });
     await fetch(`${server.baseUrl}/tasks/${task.id}/claim`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "jingun" }),
+      body: JSON.stringify({ workerId: "workerzeta" }),
     });
     await fetch(`${server.baseUrl}/tasks/${task.id}/complete`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "jingun", result: { summary: "Team2 child completed" } }),
+      body: JSON.stringify({ workerId: "workerzeta", result: { summary: "Team2 child completed" } }),
     });
 
     const events = await readSseEventsUntil(sseRes, (seen) => seen.some((e) => e.event === "task-terminal"));
@@ -670,21 +670,21 @@ test("SSE /a2a/tasks/terminal-events preserves parent-owned cross-broker routing
     assert.ok(terminal);
     const payload = JSON.parse(terminal.data);
     assert.equal(payload.taskId, task.id);
-    assert.equal(payload.parentRoundId, "seoseo-led-round");
-    assert.equal(payload.originBrokerId, "seoseo");
-    assert.equal(payload.brokerOfRecordId, "seoseo");
+    assert.equal(payload.parentRoundId, "brokeralpha-led-round");
+    assert.equal(payload.originBrokerId, "brokeralpha");
+    assert.equal(payload.brokerOfRecordId, "brokeralpha");
     assert.equal(payload.parentRoundTotal, 2);
     assert.equal(payload.parentRoundOrder, 2);
     assert.equal(payload.parentRoundProgress, 2);
     assert.deepEqual(payload.crossBrokerHandoff, {
-      parentRoundId: "seoseo-led-round",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
+      parentRoundId: "brokeralpha-led-round",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
       originTaskId: "parent-task-1",
-      childWorkerId: "jingun",
+      childWorkerId: "workerzeta",
     });
     assert.deepEqual(payload.notificationOwnership, {
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
@@ -701,20 +701,20 @@ test("terminal outbox diagnostics excludes ACK-ineligible cross-broker projectio
   const server = await startTestServer({
     stateStore: store,
     edgeSecret: "test-edge-secret",
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
   try {
-    await registerTestWorker(server.baseUrl, "jingun", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workerzeta", "analyst", "test-edge-secret");
 
     const hubHeaders = jsonHeaders({
       "x-a2a-edge-secret": "test-edge-secret",
-      "x-a2a-requester-id": "seoseo",
+      "x-a2a-requester-id": "brokeralpha",
       "x-a2a-requester-role": "hub",
     });
     const workerHeaders = jsonHeaders({
       "x-a2a-edge-secret": "test-edge-secret",
-      "x-a2a-requester-id": "jingun",
+      "x-a2a-requester-id": "workerzeta",
       "x-a2a-requester-role": "analyst",
     });
 
@@ -723,24 +723,24 @@ test("terminal outbox diagnostics excludes ACK-ineligible cross-broker projectio
       headers: hubHeaders,
       body: JSON.stringify({
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
-        brokerOfRecord: "gwakga",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
+        brokerOfRecord: "brokerbeta",
         teamId: "team2",
         payload: {
-          parentRoundId: "seoseo-led-round",
+          parentRoundId: "brokeralpha-led-round",
           parentRoundTotal: 2,
           parentRoundOrder: 2,
-          originBrokerId: "seoseo",
-          brokerOfRecordId: "seoseo",
+          originBrokerId: "brokeralpha",
+          brokerOfRecordId: "brokeralpha",
           operatorFacingOwner: "parent",
           crossBrokerHandoff: {
-            parentRoundId: "seoseo-led-round",
-            originBrokerId: "seoseo",
-            handoffBrokerId: "gwakga",
+            parentRoundId: "brokeralpha-led-round",
+            originBrokerId: "brokeralpha",
+            handoffBrokerId: "brokerbeta",
             originTaskId: "parent-task-1",
-            childWorkerId: "jingun",
+            childWorkerId: "workerzeta",
           },
         },
         message: "projection-only child complete",
@@ -752,14 +752,14 @@ test("terminal outbox diagnostics excludes ACK-ineligible cross-broker projectio
     const claimRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/claim", {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "jingun" }),
+      body: JSON.stringify({ workerId: "workerzeta" }),
     });
     assert.equal(claimRes.status, 200);
 
     const completeRes = await fetch(server.baseUrl + "/tasks/" + encodeURIComponent(task.id) + "/complete", {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "jingun", result: { summary: "Team2 child completed" } }),
+      body: JSON.stringify({ workerId: "workerzeta", result: { summary: "Team2 child completed" } }),
     });
     assert.equal(completeRes.status, 200);
 

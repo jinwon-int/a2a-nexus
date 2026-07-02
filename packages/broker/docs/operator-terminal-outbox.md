@@ -47,7 +47,7 @@ The broker code on `origin/main` can be considered deploy-ready for Terminal Bri
 
 ### Telegram/OpenClaw receipt mapping note
 
-In the seoseo OpenClaw checkout inspected for #396, the Telegram outbound provider path is `extensions/telegram/src/send.ts` (`sendMessageTelegram`; bundled dist module `dist/send-*.js`). That function resolves the target, calls Telegram Bot API send methods, records the sent `messageId`/`chatId`, and returns `{ messageId, chatId }`. It is provider-acceptance evidence only; it does not prove that the current OpenClaw session rendered the message and it is not manual operator confirmation.
+In the brokeralpha OpenClaw checkout inspected for #396, the Telegram outbound provider path is `extensions/telegram/src/send.ts` (`sendMessageTelegram`; bundled dist module `dist/send-*.js`). That function resolves the target, calls Telegram Bot API send methods, records the sent `messageId`/`chatId`, and returns `{ messageId, chatId }`. It is provider-acceptance evidence only; it does not prove that the current OpenClaw session rendered the message and it is not manual operator confirmation.
 
 Recommended adapter contract from OpenClaw/plugin-notifier to this broker:
 

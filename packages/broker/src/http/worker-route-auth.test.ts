@@ -16,17 +16,17 @@ function req(headers: IncomingMessage["headers"]): IncomingMessage {
 
 test("worker route auth helpers normalize single and array headers", () => {
   const request = req({
-    "x-a2a-requester-id": " sogyo ",
+    "x-a2a-requester-id": " workerbeta ",
     "signature": [" sig1 ", "sig2"],
     "empty": "   ",
   });
 
-  assert.equal(headerValue(request, "x-a2a-requester-id"), "sogyo");
+  assert.equal(headerValue(request, "x-a2a-requester-id"), "workerbeta");
   assert.equal(headerValue(request, "signature"), "sig1");
   assert.equal(headerValue(request, "empty"), undefined);
 
   assert.deepEqual(requestHeadersForA2AHttpSignature(request), {
-    "x-a2a-requester-id": " sogyo ",
+    "x-a2a-requester-id": " workerbeta ",
     signature: " sig1 ",
     empty: "   ",
   });

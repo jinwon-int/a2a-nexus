@@ -5,7 +5,7 @@ This checklist is for the first useful implementation slice of the trading-partn
 Scope:
 
 - keep the current broker scaffold alive
-- add the minimum domain model needed for `bangtong` and `dengae`
+- add the minimum domain model needed for `workergamma` and `dengae`
 - avoid full persistence and full automation in phase 1
 - prefer auditable proposals over remote mutation
 
@@ -13,10 +13,10 @@ Scope:
 
 Phase 1 is done when all of the following are true:
 
-- `dengae` can submit a patch or parameter proposal for `bangtong`
+- `dengae` can submit a patch or parameter proposal for `workergamma`
 - a proposal can carry artifact metadata
-- `bangtong` can validate and approve or reject a proposal
-- `bangtong` applies the approved change locally instead of receiving direct remote writes
+- `workergamma` can validate and approve or reject a proposal
+- `workergamma` applies the approved change locally instead of receiving direct remote writes
 - the broker records proposal, validation, approval, and apply events
 - dashboard or API clients can inspect the full lifecycle
 

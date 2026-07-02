@@ -110,13 +110,13 @@ test("default-on runtime executor gate blocks unsafe source drift", () => {
 test("default-on runtime executor gate extractors and markdown preserve no-live boundary", () => {
   const input = {
     defaultOnRuntimeExecutionApprovalEvidenceIngestorPacket: acceptedEvidence(),
-    runtimeExecutorGate: { now: NOW, finalizer: "seoseo", runtimeExecutorGateReference: "runtime-executor-gate-790" },
+    runtimeExecutorGate: { now: NOW, finalizer: "brokeralpha", runtimeExecutorGateReference: "runtime-executor-gate-790" },
   };
 
   assert.equal(extractTerminalBriefSidecarDefaultOnRuntimeExecutorGateEvidence(input).state, "accepted");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnRuntimeExecutorGateOptions(input), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     runtimeExecutorGateReference: "runtime-executor-gate-790",
   });
 

@@ -1,9 +1,9 @@
 {
   "schemaVersion": "a2a.runner.residue-cleanup-dry-run-fixtures.v1",
-  "run": "a2a-team1-bangtong-residue-cleanup-dry-run-20260520T125200Z",
+  "run": "a2a-team1-workerGamma-residue-cleanup-dry-run-20260520T125200Z",
   "issueUrl": "https://github.com/jinwon-int/a2a-broker/issues/835",
   "parentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/300",
-  "targetWorker": "bangtong",
+  "targetWorker": "workerGamma",
   "safetyState": {
     "noLiveProviderSend": true,
     "noDbMutationOrPrune": true,
@@ -19,7 +19,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-test",
+        "rootLabel": "runner-root:workerGamma-test",
         "totalTaskRoots": 0,
         "totalRunDirs": 0,
         "staleRuns": 0,
@@ -49,7 +49,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-stale-old",
+        "rootLabel": "runner-root:workerGamma-stale-old",
         "totalTaskRoots": 2,
         "totalRunDirs": 2,
         "staleRuns": 1,
@@ -98,7 +98,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-stale-fresh",
+        "rootLabel": "runner-root:workerGamma-stale-fresh",
         "totalTaskRoots": 2,
         "totalRunDirs": 2,
         "staleRuns": 1,
@@ -147,7 +147,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-orphan",
+        "rootLabel": "runner-root:workerGamma-orphan",
         "totalTaskRoots": 1,
         "totalRunDirs": 0,
         "staleRuns": 0,
@@ -196,7 +196,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-term-malformed",
+        "rootLabel": "runner-root:workerGamma-term-malformed",
         "totalTaskRoots": 1,
         "totalRunDirs": 1,
         "staleRuns": 0,
@@ -245,7 +245,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-nt-malformed",
+        "rootLabel": "runner-root:workerGamma-nt-malformed",
         "totalTaskRoots": 1,
         "totalRunDirs": 1,
         "staleRuns": 0,
@@ -294,7 +294,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-ok-excluded",
+        "rootLabel": "runner-root:workerGamma-ok-excluded",
         "totalTaskRoots": 2,
         "totalRunDirs": 2,
         "staleRuns": 0,
@@ -355,7 +355,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-limit",
+        "rootLabel": "runner-root:workerGamma-limit",
         "totalTaskRoots": 5,
         "totalRunDirs": 5,
         "staleRuns": 5,
@@ -404,7 +404,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-prefix",
+        "rootLabel": "runner-root:workerGamma-prefix",
         "totalTaskRoots": 1,
         "totalRunDirs": 1,
         "staleRuns": 1,
@@ -424,14 +424,14 @@
         ]
       },
       "options": {
-        "candidateIdPrefix": "bangtong-safe-prune"
+        "candidateIdPrefix": "workerGamma-safe-prune"
       },
       "expected": {
         "schemaVersion": "a2a.runner.cleanup-dry-run-plan.v1",
         "totalCandidates": 1,
         "entriesLen": 1,
-        "candidateIdStartsWith": "bangtong-safe-prune:",
-        "planIdStartsWith": "bangtong-safe-prune-",
+        "candidateIdStartsWith": "workerGamma-safe-prune:",
+        "planIdStartsWith": "workerGamma-safe-prune-",
         "byRiskClass": { "low": 0, "medium": 1, "high": 0, "blocked": 0 },
         "byTrigger": { "ok": 0, "stale": 1, "malformed": 0, "orphan": 0 },
         "safety": {
@@ -450,7 +450,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-mixed",
+        "rootLabel": "runner-root:workerGamma-mixed",
         "totalTaskRoots": 4,
         "totalRunDirs": 4,
         "staleRuns": 2,
@@ -525,7 +525,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-sort",
+        "rootLabel": "runner-root:workerGamma-sort",
         "totalTaskRoots": 3,
         "totalRunDirs": 3,
         "staleRuns": 3,
@@ -568,7 +568,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-det",
+        "rootLabel": "runner-root:workerGamma-det",
         "totalTaskRoots": 2,
         "totalRunDirs": 2,
         "staleRuns": 1,
@@ -606,7 +606,7 @@
       "readinessReport": {
         "schemaVersion": "a2a.runner.readiness-report.v1",
         "generatedAt": "1970-01-01T00:00:00.000Z",
-        "rootLabel": "runner-root:bangtong-checklist",
+        "rootLabel": "runner-root:workerGamma-checklist",
         "totalTaskRoots": 1,
         "totalRunDirs": 1,
         "staleRuns": 1,

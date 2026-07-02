@@ -11,7 +11,7 @@
  *   - Deterministic: same inputs → same output.
  *
  * Used by: health endpoint (via store), migration-health-gate, canary gates.
- * Reference: #533 Team1/Bangtong diagnostics for #497/#294 stability gates.
+ * Reference: #533 Team1/workergamma diagnostics for #497/#294 stability gates.
  */
 import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "./store.js";
 

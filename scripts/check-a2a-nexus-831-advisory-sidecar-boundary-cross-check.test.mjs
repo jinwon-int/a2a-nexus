@@ -30,7 +30,7 @@ test('A2A Nexus #831 evidence includes required structured fields', async () => 
 
   assert.match(content, /jinwon-int\/a2a-nexus#831/);
   assert.match(content, /jinwon-int\/a2a-nexus#834/);
-  assert.match(content, /a2a-open-cleanup-20260616T204949Z-yukson-issue-831/);
+  assert.match(content, /a2a-open-cleanup-20260616T204949Z-workerDelta-issue-831/);
   assert.match(content, /5c3c0425b1af133af2fc0a2dc33f5f820983c989/);
 });
 

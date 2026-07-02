@@ -129,7 +129,7 @@ test("live executor extractors can consume raw approval fixture and preserve no-
     ...fixtureInput(),
     defaultOnLiveExecutor: {
       now: NOW,
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       liveExecutorReference: "live-executor-800",
     },
   };
@@ -137,7 +137,7 @@ test("live executor extractors can consume raw approval fixture and preserve no-
   assert.equal(extractTerminalBriefSidecarDefaultOnLiveExecutorGate(input).state, "ready_for_final_runtime_mutation_executor_review");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnLiveExecutorOptions(input), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     liveExecutorReference: "live-executor-800",
   });
 

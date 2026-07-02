@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Task Templates (Team1 nosuk lane, A2A R23)
+// Task Templates (Team1 workerAlpha lane, A2A R23)
 // Parent: a2a-docker-runner#261
 // Parent: a2a-plane#335
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ export function buildTemplateExpansionEvidence(
 export { sha256Json, PROOF_CANONICALIZATION };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Built-in Terminal Brief Ops-Readiness Templates (Team1 nosuk lane, A2A R25)
+// Built-in Terminal Brief Ops-Readiness Templates (Team1 workerAlpha lane, A2A R25)
 // Parent: a2a-docker-runner#270
 // Parent: a2a-plane#351
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ export { sha256Json, PROOF_CANONICALIZATION };
     label: "Terminal Brief Node Health Check",
     mode: "github-propose-patch",
     prompt: [
-      "You are Team1/Seoseo operations checking node health before or after Terminal Brief activation.",
+      "You are Team1/brokerAlpha operations checking node health before or after Terminal Brief activation.",
       "",
       "Perform these no-live checks on the a2a-docker-runner checkout:",
       "",
@@ -275,7 +275,7 @@ export { sha256Json, PROOF_CANONICALIZATION };
     label: "Terminal Brief Latency Diagnostics",
     mode: "github-propose-patch",
     prompt: [
-      "You are Team1/Seoseo operations running latency diagnostics before or after Terminal Brief activation.",
+      "You are Team1/brokerAlpha operations running latency diagnostics before or after Terminal Brief activation.",
       "",
       "Perform these no-live checks on the a2a-docker-runner checkout:",
       "",
@@ -316,7 +316,7 @@ export { sha256Json, PROOF_CANONICALIZATION };
     label: "Terminal Brief Session-Store Residue Check",
     mode: "github-propose-patch",
     prompt: [
-      "You are Team1/Seoseo operations checking OpenClaw session-store residue before or after Terminal Brief activation.",
+      "You are Team1/brokerAlpha operations checking OpenClaw session-store residue before or after Terminal Brief activation.",
       "",
       "Perform these no-live checks on the a2a-docker-runner checkout:",
       "",
@@ -357,7 +357,7 @@ export { sha256Json, PROOF_CANONICALIZATION };
     label: "Terminal Brief Worker Readiness Gate",
     mode: "github-propose-patch",
     prompt: [
-      "You are Team1/Seoseo operations running the full worker readiness gate before or after Terminal Brief activation.",
+      "You are Team1/brokerAlpha operations running the full worker readiness gate before or after Terminal Brief activation.",
       "",
       "Perform these no-live checks on the a2a-docker-runner checkout:",
       "",

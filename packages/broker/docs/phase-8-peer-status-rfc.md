@@ -1,7 +1,7 @@
 # Phase 8 RFC: `a2a.peer.status` — Read-only peer status RPC
 
 > Status: implemented
-> Owner: yukson
+> Owner: workerdelta
 > Tracks: jinwon-int/a2a-broker#42, jinwon-int/a2a-broker#180
 > Epic: jinwon-int/a2a-broker#39
 > Author date: 2026-04-25
@@ -204,7 +204,7 @@ Note: target unreachability is a **data condition**, not an error — callers sh
 3. Implement in `openclaw-plugin-a2a` gateway handler for internal mode.
 4. Gate behind feature flag `a2a.peerStatus.enabled=false` by default.
 5. Phase 1–5 green → enable on one non-critical node pair (<worker-a> ↔ <worker-b>) for canary.
-6. Regression lock on bangtong held throughout; bangtong never serves or polls peer.status until final sign-off.
+6. Regression lock on workergamma held throughout; workergamma never serves or polls peer.status until final sign-off.
 
 ## 11. Open questions
 

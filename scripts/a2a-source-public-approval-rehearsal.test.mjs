@@ -235,8 +235,8 @@ test('broker readiness GO validates evidence packet health/workers/queue', () =>
       evidence: ['a2a-plane#212 (internal tracker, private)#broker'],
       evidencePacket: {
         health: { ok: true },
-        expectedWorkers: ['bangtong'],
-        onlineWorkerIds: ['bangtong'],
+        expectedWorkers: ['workerGamma'],
+        onlineWorkerIds: ['workerGamma'],
         queue: { queued: 0, claimed: 0, running: 0 },
         stale: 0,
       },
@@ -512,11 +512,11 @@ test('null evidence packet is treated as missing', () => {
 
 // ── Fixture validation ───────────────────────────────────────────
 
-test('team1-bangtong approval rehearsal fixture yields GO_CANDIDATE', () => {
+test('team1-workerGamma approval rehearsal fixture yields GO_CANDIDATE', () => {
   const result = spawnSync(process.execPath, [
     script,
     '--spec', spec,
-    '--input', 'fixtures/approval-rehearsal/team1-bangtong-approval-rehearsal-evidence.json',
+    '--input', 'fixtures/approval-rehearsal/team1-workerGamma-approval-rehearsal-evidence.json',
   ], {
     encoding: 'utf8',
     cwd: process.cwd(),

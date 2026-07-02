@@ -7,7 +7,7 @@
  *
  * Pure functions: read-only analysis of task records. No mutation.
  *
- * Reference: a2a-plane#434 / a2a-broker#907 lane 3/4 (nosuk).
+ * Reference: a2a-plane#434 / a2a-broker#907 lane 3/4 (workeralpha).
  */
 
 import {
@@ -68,7 +68,7 @@ export const DEFAULT_REPEATED_ERROR_THRESHOLD = 2;
  * scheduler/control-tower lane.
  */
 export interface SchedulerControlTowerConfig {
-  /** Label for the lane (e.g. "nosuk-lane-3"). */
+  /** Label for the lane (e.g. "workeralpha-lane-3"). */
   laneLabel: string;
   /** Time thresholds for stale detection per phase. */
   staleThresholds: StalePhaseThresholds;

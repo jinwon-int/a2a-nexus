@@ -6,7 +6,7 @@
  * and status imbalance — all read-only, no production mutation.
  *
  * Pure function: takes task records and computes structured hygiene reports.
- * Reference: #533 Team1/Bangtong diagnostics for #497/#294 stability gates.
+ * Reference: #533 Team1/workergamma diagnostics for #497/#294 stability gates.
  */
 import type { TaskRecord, TaskStatus } from "./types.js";
 

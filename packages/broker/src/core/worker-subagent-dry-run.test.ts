@@ -22,7 +22,7 @@ function largePolicy() {
       writeSets: ["packages/broker/src/core/a.ts", "packages/broker/src/core/b.ts"],
     },
     host: {
-      workerId: "bangtong",
+      workerId: "workergamma",
       cpuLoadPct: 25,
       memoryUsedPct: 35,
       ioPressure: "low",
@@ -40,11 +40,11 @@ test("dry-run plan records 3-4 role recommendation while feature gate remains de
   const policy = largePolicy();
   assert.equal(policy.decision.parallelismHint, 4);
 
-  const plan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "seoseo", plannerPolicy: policy });
+  const plan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "brokeralpha", plannerPolicy: policy });
 
   assert.equal(plan.kind, "a2a-broker.worker-subagent-dry-run.plan");
   assert.equal(plan.state, "recommendation_recorded");
-  assert.equal(plan.finalizer, "seoseo");
+  assert.equal(plan.finalizer, "brokeralpha");
   assert.equal(plan.dryRunOnly, true);
   assert.equal(plan.featureGate.enabled, false);
   assert.equal(plan.featureGate.runtimeSpawnAllowed, false);
@@ -67,17 +67,17 @@ test("dry-run plan fails closed to solo/direct for unsafe or low-value fanout ca
   const sensitive = buildA2AWorkerSubagentOrchestrationPolicy({
     now: NOW,
     task: { taskId: "task-sensitive", size: "large", coupling: "low", sensitive: true, hasIndependentSubtasks: true },
-    host: { workerId: "sogyo", cpuLoadPct: 20, memoryUsedPct: 30, activeSubagents: 0, workerSubagentCap: 4 },
+    host: { workerId: "workerbeta", cpuLoadPct: 20, memoryUsedPct: 30, activeSubagents: 0, workerSubagentCap: 4 },
   });
   const small = buildA2AWorkerSubagentOrchestrationPolicy({
     now: NOW,
     task: { taskId: "task-small", size: "small", coupling: "medium", hasIndependentSubtasks: false },
-    host: { workerId: "sogyo", cpuLoadPct: 20, memoryUsedPct: 30, activeSubagents: 0, workerSubagentCap: 4 },
+    host: { workerId: "workerbeta", cpuLoadPct: 20, memoryUsedPct: 30, activeSubagents: 0, workerSubagentCap: 4 },
   });
   const pressure = buildA2AWorkerSubagentOrchestrationPolicy({
     now: NOW,
     task: { taskId: "task-pressure", size: "large", coupling: "low", hasIndependentSubtasks: true, writeSets: ["a", "b"] },
-    host: { workerId: "sogyo", cpuLoadPct: 20, memoryUsedPct: 91, eventLoopDegraded: true, activeSubagents: 0, workerSubagentCap: 4 },
+    host: { workerId: "workerbeta", cpuLoadPct: 20, memoryUsedPct: 91, eventLoopDegraded: true, activeSubagents: 0, workerSubagentCap: 4 },
   });
 
   for (const policy of [sensitive, small, pressure]) {
@@ -96,8 +96,8 @@ test("subagent evidence packet blocks final-decision claims and side effects", (
   const packet = buildA2AWorkerSubagentEvidencePacket({
     now: NOW,
     parentTaskId: "task-large-hybrid",
-    workerId: "bangtong",
-    subagentId: "bangtong-verifier-1",
+    workerId: "workergamma",
+    subagentId: "workergamma-verifier-1",
     role: "verifier",
     status: "done",
     claims: ["tests pass"],
@@ -120,12 +120,12 @@ test("subagent evidence packet blocks final-decision claims and side effects", (
 
 test("synthesis packet requires finalizer ownership and preserves evidence-only boundaries", () => {
   const policy = largePolicy();
-  const plan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "seoseo", plannerPolicy: policy });
+  const plan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "brokeralpha", plannerPolicy: policy });
   const explorer = buildA2AWorkerSubagentEvidencePacket({
     now: NOW,
     parentTaskId: "task-large-hybrid",
-    workerId: "bangtong",
-    subagentId: "bangtong-explorer-1",
+    workerId: "workergamma",
+    subagentId: "workergamma-explorer-1",
     role: "explorer",
     status: "done",
     claims: ["policy scaffold exists but runtime spawn is absent"],
@@ -134,8 +134,8 @@ test("synthesis packet requires finalizer ownership and preserves evidence-only 
   const verifier = buildA2AWorkerSubagentEvidencePacket({
     now: NOW,
     parentTaskId: "task-large-hybrid",
-    workerId: "bangtong",
-    subagentId: "bangtong-verifier-1",
+    workerId: "workergamma",
+    subagentId: "workergamma-verifier-1",
     role: "verifier",
     status: "done",
     claims: ["feature gate remains default-off"],
@@ -145,8 +145,8 @@ test("synthesis packet requires finalizer ownership and preserves evidence-only 
 
   const packet = buildA2AWorkerSubagentSynthesisPacket({
     now: NOW,
-    finalizer: "seoseo",
-    workerId: "bangtong",
+    finalizer: "brokeralpha",
+    workerId: "workergamma",
     parentTaskId: "task-large-hybrid",
     dryRunPlan: plan,
     subagentEvidence: [explorer, verifier],
@@ -154,13 +154,13 @@ test("synthesis packet requires finalizer ownership and preserves evidence-only 
 
   assert.equal(packet.kind, "a2a-broker.worker-subagent-synthesis.packet");
   assert.equal(packet.state, "blocked");
-  assert.equal(packet.finalizer, "seoseo");
+  assert.equal(packet.finalizer, "brokeralpha");
   assert.equal(packet.finalizerDecisionRequired, true);
   assert.equal(packet.subagentsMayNotCloseOrMerge, true);
   assert.equal(packet.boundaries.actualSubagentSpawn, false);
   assert.equal(packet.boundaries.processSpawn, false);
   assert.equal(packet.boundaries.dbMutation, false);
   assert.equal(packet.boundaries.deployOrRestart, false);
-  assert.equal(packet.blockers.includes("subagent bangtong-verifier-1 is blocked"), true);
+  assert.equal(packet.blockers.includes("subagent workergamma-verifier-1 is blocked"), true);
   assert.deepEqual(packet.acceptedEvidenceIds, [explorer.id]);
 });

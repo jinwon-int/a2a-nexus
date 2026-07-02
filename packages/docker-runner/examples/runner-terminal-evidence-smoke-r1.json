@@ -1,9 +1,9 @@
 {
   "$schema": "a2a-runner-terminal-evidence-smoke-r1",
-  "description": "R1 nosuk compact smoke fixture for PR/Done/Block terminal evidence and receipt-gated terminal ack. Synthetic only: no live broker, Telegram, Gateway, or GitHub writes.",
+  "description": "R1 workerAlpha compact smoke fixture for PR/Done/Block terminal evidence and receipt-gated terminal ack. Synthetic only: no live broker, Telegram, Gateway, or GitHub writes.",
   "round": "A2A receipt-confirmed terminal ack rollout R1",
-  "worker": "nosuk",
-  "activeTargets": ["bangtong", "dungae", "sogyo", "nosuk"],
+  "worker": "workerAlpha",
+  "activeTargets": ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"],
   "cases": [
     {
       "name": "pr",
@@ -97,7 +97,7 @@
       "providerSendOk": true,
       "operatorVisible": true,
       "channel": "telegram",
-      "messageId": "synthetic-nosuk-r1-message-1",
+      "messageId": "synthetic-workerAlpha-r1-message-1",
       "receivedAt": "2026-05-02T02:30:00.000Z"
     }
   },

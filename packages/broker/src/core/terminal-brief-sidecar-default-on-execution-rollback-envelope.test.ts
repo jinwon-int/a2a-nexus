@@ -26,7 +26,7 @@ function runtimePlan(
 test("builds a source-only execution rollback envelope from a ready runtime mutation plan", () => {
   const packet = buildTerminalBriefSidecarDefaultOnExecutionRollbackEnvelope(runtimePlan(), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     executorId: "terminal-brief-default-on-runtime-executor",
   });
 
@@ -92,7 +92,7 @@ test("extracts runtime mutation plan and options from envelopes", () => {
     defaultOnRuntimeMutationPlanPacket: runtimePlan(),
     defaultOnExecutionRollbackEnvelope: {
       mode: "fixture",
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       envelopeReference: "envelope-1",
       executorId: "executor-1",
     },
@@ -102,7 +102,7 @@ test("extracts runtime mutation plan and options from envelopes", () => {
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnExecutionRollbackEnvelopeOptions(input), {
     now: undefined,
     mode: "fixture",
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     envelopeReference: "envelope-1",
     operatorInstructionReference: undefined,
     executorId: "executor-1",

@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  BANGTONG_SCHEDULING_POLICY,
-  DAEGYO_STYLE_POLICY,
-  GONGYUNG_HERMES_POLICY,
+  workergamma_SCHEDULING_POLICY,
+  mobilebeta_STYLE_POLICY,
+  mobilealpha_HERMES_POLICY,
   diffResourceAwareWorkerPolicy,
   evaluateWorkerOnboarding,
   getPresetPolicy,
@@ -32,26 +32,26 @@ test("validateResourceAwareWorkerPolicy rejects empty allowedTaskTypes", () => {
 
 test("validateResourceAwareWorkerPolicy rejects non-integer maxConcurrent", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     maxConcurrent: 1.5,
   });
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes("positive integer")));
 });
 
-test("validateResourceAwareWorkerPolicy accepts valid Gongyung/Hermes policy", () => {
-  const result = validateResourceAwareWorkerPolicy(GONGYUNG_HERMES_POLICY);
+test("validateResourceAwareWorkerPolicy accepts valid mobilealpha/Hermes policy", () => {
+  const result = validateResourceAwareWorkerPolicy(mobilealpha_HERMES_POLICY);
   assert.deepEqual(result, { ok: true, errors: [] });
 });
 
-test("validateResourceAwareWorkerPolicy accepts valid Daegyo-style policy", () => {
-  const result = validateResourceAwareWorkerPolicy(DAEGYO_STYLE_POLICY);
+test("validateResourceAwareWorkerPolicy accepts valid mobilebeta-style policy", () => {
+  const result = validateResourceAwareWorkerPolicy(mobilebeta_STYLE_POLICY);
   assert.deepEqual(result, { ok: true, errors: [] });
 });
 
 test("validateResourceAwareWorkerPolicy rejects contradictory readOnly + !noMutation", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     readOnly: true,
     noMutation: false,
   });
@@ -61,7 +61,7 @@ test("validateResourceAwareWorkerPolicy rejects contradictory readOnly + !noMuta
 
 test("validateResourceAwareWorkerPolicy rejects contradictory readOnly + !noLiveSend", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     readOnly: true,
     noLiveSend: false,
   });
@@ -103,7 +103,7 @@ test("validateResourceAwareWorkerPolicy rejects noLiveSend with promote_to_live"
 
 test("validateResourceAwareWorkerPolicy rejects mobileLowPower with high maxConcurrent", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     maxConcurrent: 5,
     mobileLowPower: true,
   });
@@ -113,7 +113,7 @@ test("validateResourceAwareWorkerPolicy rejects mobileLowPower with high maxConc
 
 test("validateResourceAwareWorkerPolicy rejects gatewayRequired + mobileLowPower", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     gatewayRequired: true,
     mobileLowPower: true,
   });
@@ -152,21 +152,21 @@ test("validateResourceAwareWorkerPolicy warns when noLiveSend+noMutation without
 
 test("validateResourceAwareWorkerPolicy accepts maxConcurrent=1 with mobileLowPower", () => {
   const result = validateResourceAwareWorkerPolicy({
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     maxConcurrent: 1,
   });
   assert.deepEqual(result, { ok: true, errors: [] });
 });
 
-// ── GO/NO-GO: Gongyung/Hermes ─────────────────────────────────────────────
+// ── GO/NO-GO: mobilealpha/Hermes ─────────────────────────────────────────────
 
-test("evaluateWorkerOnboarding GO for valid Gongyung/Hermes policy", () => {
-  const evaluation = evaluateWorkerOnboarding("gongyung-hermes", GONGYUNG_HERMES_POLICY);
+test("evaluateWorkerOnboarding GO for valid mobilealpha/Hermes policy", () => {
+  const evaluation = evaluateWorkerOnboarding("mobilealpha-hermes", mobilealpha_HERMES_POLICY);
   assert.equal(evaluation.decision, "go");
   assert.ok(evaluation.reasons.some((r) => r.includes("passed")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Gongyung/Hermes with gatewayRequired=true", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilealpha/Hermes with gatewayRequired=true", () => {
   // Must also clear mobileLowPower to avoid validation contradiction
   const bad: ResourceAwareWorkerPolicy = {
     allowedTaskTypes: ["analyze", "validate_change"],
@@ -177,22 +177,22 @@ test("evaluateWorkerOnboarding NO-GO for Gongyung/Hermes with gatewayRequired=tr
     standby: false,
     readOnly: true,
   };
-  const evaluation = evaluateWorkerOnboarding("gongyung-hermes", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilealpha-hermes", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("gatewayRequired")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Gongyung/Hermes with promote_to_live", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilealpha/Hermes with promote_to_live", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     allowedTaskTypes: ["promote_to_live", "analyze"],
   };
-  const evaluation = evaluateWorkerOnboarding("gongyung-hermes", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilealpha-hermes", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("promote_to_live")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Gongyung/Hermes missing readOnly", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilealpha/Hermes missing readOnly", () => {
   const bad: ResourceAwareWorkerPolicy = {
     allowedTaskTypes: ["analyze"],
     noLiveSend: false,
@@ -202,30 +202,30 @@ test("evaluateWorkerOnboarding NO-GO for Gongyung/Hermes missing readOnly", () =
     standby: false,
     readOnly: false,
   };
-  const evaluation = evaluateWorkerOnboarding("gongyung-hermes", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilealpha-hermes", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("readOnly")));
 });
 
-// ── GO/NO-GO: Daegyo-style ────────────────────────────────────────────────
+// ── GO/NO-GO: mobilebeta-style ────────────────────────────────────────────────
 
-test("evaluateWorkerOnboarding GO for valid Daegyo-style policy", () => {
-  const evaluation = evaluateWorkerOnboarding("daegyo-style", DAEGYO_STYLE_POLICY);
+test("evaluateWorkerOnboarding GO for valid mobilebeta-style policy", () => {
+  const evaluation = evaluateWorkerOnboarding("mobilebeta-style", mobilebeta_STYLE_POLICY);
   assert.equal(evaluation.decision, "go");
   assert.ok(evaluation.reasons.some((r) => r.includes("passed")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Daegyo-style with mobileLowPower=true", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilebeta-style with mobileLowPower=true", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...DAEGYO_STYLE_POLICY,
+    ...mobilebeta_STYLE_POLICY,
     mobileLowPower: true,
   };
-  const evaluation = evaluateWorkerOnboarding("daegyo-style", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilebeta-style", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("mobileLowPower")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Daegyo-style with readOnly=true", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilebeta-style with readOnly=true", () => {
   // Must remove apply_local_change to avoid validation error for noMutation=true
   const bad: ResourceAwareWorkerPolicy = {
     allowedTaskTypes: ["analyze", "validate_change"],
@@ -236,17 +236,17 @@ test("evaluateWorkerOnboarding NO-GO for Daegyo-style with readOnly=true", () =>
     standby: false,
     readOnly: true,
   };
-  const evaluation = evaluateWorkerOnboarding("daegyo-style", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilebeta-style", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("readOnly")));
 });
 
-test("evaluateWorkerOnboarding NO-GO for Daegyo-style missing gatewayRequired", () => {
+test("evaluateWorkerOnboarding NO-GO for mobilebeta-style missing gatewayRequired", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...DAEGYO_STYLE_POLICY,
+    ...mobilebeta_STYLE_POLICY,
     gatewayRequired: false,
   };
-  const evaluation = evaluateWorkerOnboarding("daegyo-style", bad);
+  const evaluation = evaluateWorkerOnboarding("mobilebeta-style", bad);
   assert.equal(evaluation.decision, "no-go");
   assert.ok(evaluation.reasons.some((r) => r.includes("gatewayRequired")));
 });
@@ -283,12 +283,12 @@ test("evaluateWorkerOnboarding NO-GO for standard gateway missing gatewayRequire
   assert.ok(evaluation.reasons.some((r) => r.includes("gatewayRequired")));
 });
 
-// ── GO/NO-GO: Team1 scheduling attribution (bangtong lane) ───────────────
+// ── GO/NO-GO: Team1 scheduling attribution (workergamma lane) ───────────────
 
 test("evaluateWorkerOnboarding GO for valid Team1 scheduling-attribution policy", () => {
   const evaluation = evaluateWorkerOnboarding(
     "team1-scheduling-attribution",
-    BANGTONG_SCHEDULING_POLICY,
+    workergamma_SCHEDULING_POLICY,
   );
   assert.equal(evaluation.decision, "go");
   assert.ok(evaluation.reasons.some((r) => r.includes("passed")));
@@ -296,7 +296,7 @@ test("evaluateWorkerOnboarding GO for valid Team1 scheduling-attribution policy"
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution missing readOnly", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     readOnly: false,
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -306,7 +306,7 @@ test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution missing re
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution with mobileLowPower", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     mobileLowPower: true,
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -316,7 +316,7 @@ test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution with mobil
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution with promote_to_live", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     allowedTaskTypes: ["promote_to_live"],
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -326,7 +326,7 @@ test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution with promo
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution without analyze/validate_change", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     allowedTaskTypes: ["verify", "backfill"],
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -336,7 +336,7 @@ test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution without an
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution missing noLiveSend", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     noLiveSend: false,
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -346,7 +346,7 @@ test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution missing no
 
 test("evaluateWorkerOnboarding NO-GO for Team1 scheduling-attribution missing noMutation", () => {
   const bad: ResourceAwareWorkerPolicy = {
-    ...BANGTONG_SCHEDULING_POLICY,
+    ...workergamma_SCHEDULING_POLICY,
     noMutation: false,
   };
   const evaluation = evaluateWorkerOnboarding("team1-scheduling-attribution", bad);
@@ -400,13 +400,13 @@ test("all policy flags default to false semantics via validation", () => {
 // ── Policy diff ────────────────────────────────────────────────────────────
 
 test("diffResourceAwareWorkerPolicy detects matching policies", () => {
-  const diffs = diffResourceAwareWorkerPolicy(GONGYUNG_HERMES_POLICY, GONGYUNG_HERMES_POLICY);
+  const diffs = diffResourceAwareWorkerPolicy(mobilealpha_HERMES_POLICY, mobilealpha_HERMES_POLICY);
   assert.equal(diffs.length, 8);
   assert.ok(diffs.every((d) => d.match));
 });
 
 test("diffResourceAwareWorkerPolicy detects mismatches", () => {
-  const expected = GONGYUNG_HERMES_POLICY;
+  const expected = mobilealpha_HERMES_POLICY;
   const actual = { ...expected, gatewayRequired: true, readOnly: false };
   const diffs = diffResourceAwareWorkerPolicy(actual, expected);
   const mismatched = diffs.filter((d) => !d.match);
@@ -417,11 +417,11 @@ test("diffResourceAwareWorkerPolicy detects mismatches", () => {
 
 test("diffResourceAwareWorkerPolicy handles allowedTaskTypes order-independently", () => {
   const actual: ResourceAwareWorkerPolicy = {
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     allowedTaskTypes: ["validate_change", "analyze"],
   };
   const expected: ResourceAwareWorkerPolicy = {
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     allowedTaskTypes: ["analyze", "validate_change"],
   };
   const diffs = diffResourceAwareWorkerPolicy(actual, expected);
@@ -431,10 +431,10 @@ test("diffResourceAwareWorkerPolicy handles allowedTaskTypes order-independently
 
 // ── Preset policies ────────────────────────────────────────────────────────
 
-test("getPresetPolicy returns Gongyung/Hermes preset", () => {
-  const preset = getPresetPolicy("gongyung-hermes");
+test("getPresetPolicy returns mobilealpha/Hermes preset", () => {
+  const preset = getPresetPolicy("mobilealpha-hermes");
   assert.ok(preset);
-  assert.deepEqual(preset, GONGYUNG_HERMES_POLICY);
+  assert.deepEqual(preset, mobilealpha_HERMES_POLICY);
   assert.equal(preset?.readOnly, true);
   assert.equal(preset?.noLiveSend, true);
   assert.equal(preset?.noMutation, true);
@@ -442,10 +442,10 @@ test("getPresetPolicy returns Gongyung/Hermes preset", () => {
   assert.equal(preset?.gatewayRequired, false);
 });
 
-test("getPresetPolicy returns Daegyo-style preset", () => {
-  const preset = getPresetPolicy("daegyo-style");
+test("getPresetPolicy returns mobilebeta-style preset", () => {
+  const preset = getPresetPolicy("mobilebeta-style");
   assert.ok(preset);
-  assert.deepEqual(preset, DAEGYO_STYLE_POLICY);
+  assert.deepEqual(preset, mobilebeta_STYLE_POLICY);
   assert.equal(preset?.gatewayRequired, true);
   assert.equal(preset?.mobileLowPower, false);
   assert.equal(preset?.readOnly, false);
@@ -455,7 +455,7 @@ test("getPresetPolicy returns Daegyo-style preset", () => {
 test("getPresetPolicy returns Team1 scheduling-attribution preset", () => {
   const preset = getPresetPolicy("team1-scheduling-attribution");
   assert.ok(preset);
-  assert.deepEqual(preset, BANGTONG_SCHEDULING_POLICY);
+  assert.deepEqual(preset, workergamma_SCHEDULING_POLICY);
   assert.equal(preset?.readOnly, true);
   assert.equal(preset?.noLiveSend, true);
   assert.equal(preset?.noMutation, true);
@@ -490,7 +490,7 @@ test("validateResourceAwareWorkerPolicy rejects undefined allowedTaskTypes witho
 
 test("validateResourceAwareWorkerPolicy rejects string values where booleans expected", () => {
   const policy = {
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     noLiveSend: "true",
   } as unknown as ResourceAwareWorkerPolicy;
   const result = validateResourceAwareWorkerPolicy(policy);
@@ -500,7 +500,7 @@ test("validateResourceAwareWorkerPolicy rejects string values where booleans exp
 
 test("evaluateWorkerOnboarding returns NO-GO for invalid policy regardless of kind", () => {
   const invalid = {
-    ...GONGYUNG_HERMES_POLICY,
+    ...mobilealpha_HERMES_POLICY,
     allowedTaskTypes: [],
   };
   const ev = evaluateWorkerOnboarding("generic-terms", invalid);
@@ -509,6 +509,6 @@ test("evaluateWorkerOnboarding returns NO-GO for invalid policy regardless of ki
 });
 
 test("evaluateWorkerOnboarding handles unknown kind with NO-GO", () => {
-  const ev = evaluateWorkerOnboarding("generic-terms" as never, GONGYUNG_HERMES_POLICY);
+  const ev = evaluateWorkerOnboarding("generic-terms" as never, mobilealpha_HERMES_POLICY);
   assert.equal(ev.decision, "go");
 });

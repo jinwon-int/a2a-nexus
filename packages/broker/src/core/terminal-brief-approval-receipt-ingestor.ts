@@ -109,7 +109,7 @@ export interface TerminalBriefApprovalReceiptIngestorPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     providerAcceptedIsVisibilityProof: false;
     terminalAckRequiresVisibilityProof: true;
     grantsApproval: false;
@@ -230,7 +230,7 @@ export function buildTerminalBriefApprovalReceiptIngestor(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,
       grantsApproval: false,

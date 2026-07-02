@@ -82,7 +82,7 @@ export interface TerminalBriefSidecarApprovalGrantProposalPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesReviewDecisionIngestorPacket: true;
     preparesGrantProposal: true;
@@ -210,7 +210,7 @@ export function buildTerminalBriefSidecarApprovalGrantProposal(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesReviewDecisionIngestorPacket: true,
       preparesGrantProposal: true,

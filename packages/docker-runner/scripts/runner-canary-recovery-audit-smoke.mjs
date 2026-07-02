@@ -9,11 +9,11 @@ import {
 
 const fixturePath = resolve(
   process.cwd(),
-  process.argv[2] ?? "examples/runner-canary-parity-jingun-20260511.json",
+  process.argv[2] ?? "examples/runner-canary-parity-workerZeta-20260511.json",
 );
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
 
-assert.equal(fixture.worker, "jingun");
+assert.equal(fixture.worker, "workerZeta");
 assert.equal(fixture.team, "team2");
 assert.equal(fixture.canaryContract.noLiveProviderSend, true);
 assert.equal(fixture.canaryContract.providerSendSuccessIsReceiptEvidence, false);

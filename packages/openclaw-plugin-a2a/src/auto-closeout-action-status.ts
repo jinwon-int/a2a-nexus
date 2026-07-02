@@ -6,7 +6,7 @@
  * Parent: jinwon-int/a2a-broker#844
  * Run:    a2a-team1-auto-closeout-action-reconcile-20260520T180955Z
  * Round:  3/4
- * Worker: sogyo
+ * Worker: workerBeta
  *
  * Distinguishes seven closeout action states used by operator-facing UX:
  *   pre-action: draft_ready, comment_only_ready, comment_and_close_requires_approval, blocked

@@ -289,7 +289,7 @@ test("broker derives parent-round metadata for Team GitHub patch dispatches", ()
       workModeDecision: {
         mode: "team1",
         idempotencyKey: "a2a-work-mode:team1:github-round",
-        finalizerOwner: "seoseo",
+        finalizerOwner: "brokeralpha",
         generatedAt: "2026-06-07T06:00:00.000Z",
         capacityState: "healthy",
         capacitySnapshotSource: "/workers/capacity",
@@ -306,7 +306,7 @@ test("broker derives parent-round metadata for Team GitHub patch dispatches", ()
   assert.equal(task.payload.parentRoundOrder, 3);
   assert.equal(task.payload.originBrokerId, "hub-a");
   assert.equal(task.payload.runId, "a2a-team1-round-20260606T073100Z");
-  assert.equal((task.payload.workModeDecision as Record<string, unknown>)?.finalizerOwner, "seoseo");
+  assert.equal((task.payload.workModeDecision as Record<string, unknown>)?.finalizerOwner, "brokeralpha");
 });
 
 test("broker rejects parent-routed GitHub patch dispatches with incomplete parent-round metadata", () => {
@@ -1332,7 +1332,7 @@ test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile w
 
   // Register a mobile worker with recent heartbeat
   broker.registerWorker({
-    nodeId: "gongyung",
+    nodeId: "mobilealpha",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
@@ -1340,7 +1340,7 @@ test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile w
   });
 
   // Recent heartbeat (within mobile 30s window)
-  broker.heartbeatWorker("gongyung", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+  broker.heartbeatWorker("mobilealpha", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
 
@@ -1351,7 +1351,7 @@ test("getWorkerCapacitySummary includes workerMode and mobileHealth for mobile w
   assert.equal(persistentItem.mobileHealth, undefined);
 
   // Mobile worker (online): has workerMode and mobileHealth
-  const mobileItem = summary.items.find((i) => i.nodeId === "gongyung");
+  const mobileItem = summary.items.find((i) => i.nodeId === "mobilealpha");
   assert.ok(mobileItem);
   assert.equal(mobileItem.workerMode, "mobile");
   assert.equal(mobileItem.mobileHealth, "health_ok");
@@ -1361,7 +1361,7 @@ test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for pol
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
-    nodeId: "sogyo-poll-only",
+    nodeId: "workerbeta-poll-only",
     role: "analyst",
     capabilities: {
       canAnalyze: true,
@@ -1380,7 +1380,7 @@ test("getWorkerCapacitySummary exposes runtimeFlavor and gatewayRequired for pol
   });
 
   const summary = broker.getWorkerCapacitySummary();
-  const item = summary.items.find((i) => i.nodeId === "sogyo-poll-only");
+  const item = summary.items.find((i) => i.nodeId === "workerbeta-poll-only");
   assert.ok(item);
   assert.equal(item.runtimeFlavor, "openclaw-poll-handler");
   assert.equal(item.gatewayRequired, false);
@@ -1391,7 +1391,7 @@ test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile t
 
   // Register a mobile worker at time zero
   broker.registerWorker({
-    nodeId: "daegyo",
+    nodeId: "mobilebeta",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
@@ -1400,34 +1400,34 @@ test("getWorkerCapacitySummary classifies mobile worker as stale beyond mobile t
 
   // Advance time to 35s after registration — past mobile 30s window, within 90s extended window
   // The broker "now" is set to lastSeenAt + 35_000 ms
-  const worker = broker.getWorker("daegyo");
+  const worker = broker.getWorker("mobilebeta");
   assert.ok(worker);
   const workerSeenMs = Date.parse(worker.lastSeenAt);
   const nowMs = workerSeenMs + 35_000;
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
 
-  const daegyo = summary.items.find((i) => i.nodeId === "daegyo");
-  assert.ok(daegyo);
-  assert.equal(daegyo.workerMode, "mobile");
+  const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta");
+  assert.ok(mobilebeta);
+  assert.equal(mobilebeta.workerMode, "mobile");
   // Mobile past 30s => stale, but not yet disconnected (within 90s)
-  assert.equal(daegyo.mobileHealth, "stale");
+  assert.equal(mobilebeta.mobileHealth, "stale");
   // Brokers' generic status reflects mobile-aware threshold
-  assert.equal(daegyo.status, "stale");
+  assert.equal(mobilebeta.status, "stale");
 });
 
 test("getWorkerCapacitySummary classifies mobile worker as disconnected past extended threshold", () => {
   const broker = new InMemoryA2ABroker();
 
   broker.registerWorker({
-    nodeId: "daegyo-disconnected",
+    nodeId: "mobilebeta-disconnected",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
 
-  const worker = broker.getWorker("daegyo-disconnected");
+  const worker = broker.getWorker("mobilebeta-disconnected");
   assert.ok(worker);
   const workerSeenMs = Date.parse(worker.lastSeenAt);
   // 100s — well beyond both 30s mobile and 90s extended threshold
@@ -1435,11 +1435,11 @@ test("getWorkerCapacitySummary classifies mobile worker as disconnected past ext
 
   const summary = broker.getWorkerCapacitySummary({ nowMs });
 
-  const daegyo = summary.items.find((i) => i.nodeId === "daegyo-disconnected");
-  assert.ok(daegyo);
-  assert.equal(daegyo.workerMode, "mobile");
-  assert.equal(daegyo.mobileHealth, "disconnected");
-  assert.equal(daegyo.status, "stale");
+  const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-disconnected");
+  assert.ok(mobilebeta);
+  assert.equal(mobilebeta.workerMode, "mobile");
+  assert.equal(mobilebeta.mobileHealth, "disconnected");
+  assert.equal(mobilebeta.status, "stale");
 });
 
 test("getDashboard includes workerMode and mobileHealth for mobile workers", () => {
@@ -1452,13 +1452,13 @@ test("getDashboard includes workerMode and mobileHealth for mobile workers", () 
   });
 
   broker.registerWorker({
-    nodeId: "gongyung-dash",
+    nodeId: "mobilealpha-dash",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
-  broker.heartbeatWorker("gongyung-dash", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+  broker.heartbeatWorker("mobilealpha-dash", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
 
   const dashboard = broker.getDashboard({ nowMs: Date.now(), offlineAfterMs: 90_000 });
 
@@ -1469,7 +1469,7 @@ test("getDashboard includes workerMode and mobileHealth for mobile workers", () 
   assert.equal(persistentNode.mobileHealth, undefined);
 
   // Mobile worker (online)
-  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "gongyung-dash");
+  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "mobilealpha-dash");
   assert.ok(mobileNode);
   assert.equal(mobileNode.workerMode, "mobile");
   assert.equal(mobileNode.mobileHealth, "health_ok");
@@ -1486,7 +1486,7 @@ test("getDashboard fleet worker counts use mobile-aware stale thresholds", () =>
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
   });
   broker.registerWorker({
-    nodeId: "gongyung-fleet",
+    nodeId: "mobilealpha-fleet",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
@@ -1494,7 +1494,7 @@ test("getDashboard fleet worker counts use mobile-aware stale thresholds", () =>
   });
 
   const persistentWorker = broker.getWorker("persistent-a");
-  const mobileWorker = broker.getWorker("gongyung-fleet");
+  const mobileWorker = broker.getWorker("mobilealpha-fleet");
   assert.ok(persistentWorker);
   assert.ok(mobileWorker);
 
@@ -1514,7 +1514,7 @@ test("getDashboard fleet worker counts use mobile-aware stale thresholds", () =>
   assert.equal(dashboard.workers.stale, 1, "mobile stale at 45s");
 
   const persistentNode = dashboard.workers.byNode.find((w) => w.nodeId === "persistent-a");
-  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "gongyung-fleet");
+  const mobileNode = dashboard.workers.byNode.find((w) => w.nodeId === "mobilealpha-fleet");
   assert.ok(persistentNode);
   assert.ok(mobileNode);
 
@@ -1547,14 +1547,14 @@ test("getWorkerCapacitySummary mobile fields present for mobile workers, absent 
 
   // Register a mix of mobile and persistent workers
   broker.registerWorker({
-    nodeId: "gongyung-mix",
+    nodeId: "mobilealpha-mix",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
     metadata: { runtime: "hermes-agent", transport: "http-poll" },
   });
   broker.registerWorker({
-    nodeId: "daegyo-mix",
+    nodeId: "mobilebeta-mix",
     role: "analyst",
     workerMode: "mobile",
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] },
@@ -1571,8 +1571,8 @@ test("getWorkerCapacitySummary mobile fields present for mobile workers, absent 
     capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["test"], environments: ["research"] },
   });
 
-  // Heartbeat gongyung so it's fresh; daegyo stays at registration time
-  broker.heartbeatWorker("gongyung-mix", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
+  // Heartbeat mobilealpha so it's fresh; mobilebeta stays at registration time
+  broker.heartbeatWorker("mobilealpha-mix", { capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["hermes-no-live"], environments: ["research"] } });
 
   // Query at the current time — all workers should be online since
   // registration and heartbeat are all within the 90s persistent window
@@ -1580,14 +1580,14 @@ test("getWorkerCapacitySummary mobile fields present for mobile workers, absent 
   assert.equal(summary.totals.workers, 4);
 
   // Mobile items carry workerMode and mobileHealth
-  const gongyung = summary.items.find((i) => i.nodeId === "gongyung-mix");
-  const daegyo = summary.items.find((i) => i.nodeId === "daegyo-mix");
-  assert.ok(gongyung);
-  assert.ok(daegyo);
-  assert.equal(gongyung.workerMode, "mobile");
-  assert.ok(gongyung.mobileHealth); // could be "health_ok" or "stale" depending on timing
-  assert.equal(daegyo.workerMode, "mobile");
-  assert.ok(daegyo.mobileHealth);
+  const mobilealpha = summary.items.find((i) => i.nodeId === "mobilealpha-mix");
+  const mobilebeta = summary.items.find((i) => i.nodeId === "mobilebeta-mix");
+  assert.ok(mobilealpha);
+  assert.ok(mobilebeta);
+  assert.equal(mobilealpha.workerMode, "mobile");
+  assert.ok(mobilealpha.mobileHealth); // could be "health_ok" or "stale" depending on timing
+  assert.equal(mobilebeta.workerMode, "mobile");
+  assert.ok(mobilebeta.mobileHealth);
 
   // Persistent items have neither field
   assert.equal(summary.items.find((i) => i.nodeId === "persistent-c")?.workerMode, undefined);

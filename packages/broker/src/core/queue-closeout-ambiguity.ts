@@ -5,7 +5,7 @@
  * patterns — stale tasks without owners, mixed closeout states, orphaned
  * replays, and requeue loops — without any DB mutation.
  *
- * Reference: #540 Team1/Bangtong stability gates for #497/#294.
+ * Reference: #540 Team1/workergamma stability gates for #497/#294.
  */
 
 // ---------------------------------------------------------------------------

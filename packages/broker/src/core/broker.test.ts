@@ -29,14 +29,14 @@ import { registerWorker, createWorkerTask, createGithubPatchTask, createOwnedTas
 
 test("broker registration stores provider/model capabilities and list filters can target them without secret fields", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
 
   broker.registerWorker({
-    nodeId: "soonwook",
+    nodeId: "workereta",
     role: "analyst",
-    displayName: "Soonwook Grok route",
+    displayName: "workereta Grok route",
     capabilities: {
       canAnalyze: true,
       canBackfill: false,
@@ -57,14 +57,14 @@ test("broker registration stores provider/model capabilities and list filters ca
     },
   });
 
-  const soonwook = broker.getWorker("soonwook");
-  assert.equal(soonwook?.capabilities.providerCapabilities?.[0]?.providerId, "xai");
-  assert.equal(soonwook?.capabilities.providerCapabilities?.[0]?.modelId, "grok-4.2");
-  assert.equal(JSON.stringify(soonwook).includes("oauth.json"), false);
+  const workereta = broker.getWorker("workereta");
+  assert.equal(workereta?.capabilities.providerCapabilities?.[0]?.providerId, "xai");
+  assert.equal(workereta?.capabilities.providerCapabilities?.[0]?.modelId, "grok-4.2");
+  assert.equal(JSON.stringify(workereta).includes("oauth.json"), false);
 
-  broker.heartbeatWorker("soonwook", {
+  broker.heartbeatWorker("workereta", {
     capabilities: {
-      ...soonwook!.capabilities,
+      ...workereta!.capabilities,
       providerCapabilities: [
         {
           providerId: "xai",
@@ -73,7 +73,7 @@ test("broker registration stores provider/model capabilities and list filters ca
           routeKind: "subscription",
           availability: "canary_passed",
           lastVerifiedAt: "2026-06-15T01:00:00.000Z",
-          evidenceId: "gwakga-soonwook-grok-canary-20260615",
+          evidenceId: "brokerbeta-workereta-grok-canary-20260615",
         },
       ],
     },
@@ -82,7 +82,7 @@ test("broker registration stores provider/model capabilities and list filters ca
   assert.deepEqual(
     broker.listWorkers({ providerId: "XAI", modelFamily: "GROK", providerAvailability: "canary_passed" })
       .map((worker) => worker.nodeId),
-    ["soonwook"],
+    ["workereta"],
   );
   assert.deepEqual(broker.listWorkers({ providerId: "openai" }).map((worker) => worker.nodeId), []);
 });
@@ -157,37 +157,37 @@ test("broker annotates tasks with owner metadata and rejects mismatched lifecycl
 
 test("broker normalizes cross-broker child tasks into parent-owned Terminal Brief payloads", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   const task = broker.createTask({
-    id: "seoseo-led-team2-jingun",
+    id: "brokeralpha-led-team2-workerzeta",
     intent: "verify",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "jingun", kind: "node", role: "analyst" },
-    assignedWorkerId: "jingun",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerzeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerzeta",
     message: "audit Family Wiki A2A page",
     payload: {
       parentRoundId: "family-wiki-cleanup-20260522T031233Z",
       parentRoundTotal: 7,
       parentRoundOrder: 2,
-      requestedByBroker: "seoseo",
+      requestedByBroker: "brokeralpha",
     },
   });
 
-  assert.equal(task.payload["originBrokerId"], "seoseo");
+  assert.equal(task.payload["originBrokerId"], "brokeralpha");
   assert.equal(task.payload["operatorFacingOwner"], "parent");
   assert.deepEqual(task.payload["crossBrokerHandoff"], {
     parentRoundId: "family-wiki-cleanup-20260522T031233Z",
-    originBrokerId: "seoseo",
-    handoffBrokerId: "gwakga",
-    childWorkerId: "jingun",
+    originBrokerId: "brokeralpha",
+    handoffBrokerId: "brokerbeta",
+    childWorkerId: "workerzeta",
   });
   assert.deepEqual(task.payload["notificationOwnership"], {
     owner: "parent",
-    ownerBrokerId: "seoseo",
+    ownerBrokerId: "brokeralpha",
     scope: "parent-broker-only",
     providerSendPermittedByProjection: false,
     terminalAckPermittedByProjection: false,
@@ -197,7 +197,7 @@ test("broker normalizes cross-broker child tasks into parent-owned Terminal Brie
     parentOwnedTerminalBrief: true,
     notificationOwnership: {
       owner: "parent",
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
     },
   });
@@ -213,28 +213,28 @@ test("broker preserves raw dispatch metadata when brokerId is not configured (no
   const broker = new InMemoryA2ABroker(undefined, undefined, {
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   // Use parentRoundId with an explicit run alias so hasTerminalBriefMetadata
   // returns false (parentRoundId alone is not a trigger) — this test only
   // validates that raw payload fields survive without cross-broker enrichment
   // when localBrokerId is absent.
   const task = broker.createTask({
-    id: "seoseo-led-unconfigured-broker-jingun",
+    id: "brokeralpha-led-unconfigured-broker-workerzeta",
     intent: "verify",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "jingun", kind: "node", role: "analyst" },
-    assignedWorkerId: "jingun",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerzeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerzeta",
     message: "audit page with missing broker ID",
     payload: {
       parentRoundId: "unconfigured-round-20260522",
-      requestedByBroker: "seoseo",
+      requestedByBroker: "brokeralpha",
     },
   });
 
   // Raw dispatch fields are preserved
   assert.equal(task.payload["parentRoundId"], "unconfigured-round-20260522");
-  assert.equal(task.payload["requestedByBroker"], "seoseo");
+  assert.equal(task.payload["requestedByBroker"], "brokeralpha");
   // No enrichment because localBrokerId is absent
   assert.equal(task.payload["crossBrokerHandoff"], undefined,
     "crossBrokerHandoff enrichment requires a configured brokerId");
@@ -246,10 +246,10 @@ test("broker preserves raw dispatch metadata when brokerId is not configured (no
 
 test("broker hoists payload-only parentRound fields onto the top-level task record (#629)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   // Dispatch paths that only stamp parentRound metadata into payload must still
   // surface it as top-level task.parentRoundId so round-status queries over
@@ -257,15 +257,15 @@ test("broker hoists payload-only parentRound fields onto the top-level task reco
   const task = broker.createTask({
     id: "payload-only-parent-round",
     intent: "verify",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "jingun", kind: "node", role: "analyst" },
-    assignedWorkerId: "jingun",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerzeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerzeta",
     message: "round child with payload-only parent metadata",
     payload: {
       parentRoundId: "round-payload-only-20260614",
       parentRoundTotal: 5,
       parentRoundOrder: 3,
-      requestedByBroker: "seoseo",
+      requestedByBroker: "brokeralpha",
     },
   });
 
@@ -285,23 +285,23 @@ test("broker hoists payload-only parentRound fields onto the top-level task reco
 
 test("broker hoists numeric-string parentRound payload fields using Terminal Brief metadata semantics (#629)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   const task = broker.createTask({
     id: "payload-string-parent-round",
     intent: "verify",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "jingun", kind: "node", role: "analyst" },
-    assignedWorkerId: "jingun",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerzeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerzeta",
     message: "round child with string parent metadata",
     payload: {
       parentRoundId: " round-string-20260615 ",
       parentRoundTotal: "5",
       parentRoundOrder: "3",
-      requestedByBroker: "seoseo",
+      requestedByBroker: "brokeralpha",
     },
   });
 
@@ -316,9 +316,9 @@ test("broker ignores invalid numeric parentRound fields while falling back to va
     tasks: [{
       id: "loaded-invalid-parent-round-number",
       intent: "verify",
-      requester: { id: "seoseo", kind: "node", role: "operator" },
-      target: { id: "jingun", kind: "node", role: "analyst" },
-      targetNodeId: "jingun",
+      requester: { id: "brokeralpha", kind: "node", role: "operator" },
+      target: { id: "workerzeta", kind: "node", role: "analyst" },
+      targetNodeId: "workerzeta",
       status: "queued",
       createdAt: "2026-06-15T00:00:00.000Z",
       updatedAt: "2026-06-15T00:00:00.000Z",
@@ -339,23 +339,23 @@ test("broker ignores invalid numeric parentRound fields while falling back to va
 
 test("broker idempotent createTask returns existing task with same id (duplicate handling)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   const request = {
     id: "duplicate-team2-child-task",
     intent: "verify" as const,
-    requester: { id: "seoseo", kind: "node" as const, role: "operator" as const },
-    target: { id: "jingun", kind: "node" as const, role: "analyst" as const },
-    assignedWorkerId: "jingun",
+    requester: { id: "brokeralpha", kind: "node" as const, role: "operator" as const },
+    target: { id: "workerzeta", kind: "node" as const, role: "analyst" as const },
+    assignedWorkerId: "workerzeta",
     message: "duplicate task for idempotency test",
     payload: {
       parentRoundId: "idempotent-round",
       parentRoundTotal: 3,
       parentRoundOrder: 1,
-      requestedByBroker: "seoseo",
+      requestedByBroker: "brokeralpha",
     },
   };
 
@@ -378,19 +378,19 @@ test("broker idempotent createTask returns existing task with same id (duplicate
 
 test("broker createTask rejects Team1 parent-round task without work-mode decision evidence", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "yukson");
+  registerWorker(broker, "workerdelta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "team1-without-work-mode-evidence",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "yukson", kind: "node", role: "analyst" },
-        assignedWorkerId: "yukson",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerdelta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerdelta",
         message: "Team1 parent-round task without pre-dispatch evidence",
         payload: {
           teamId: "team1",
@@ -409,28 +409,28 @@ test("broker createTask rejects Team1 parent-round task without work-mode decisi
 
 test("broker createTask accepts Team1 parent-round task with valid work-mode decision evidence", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "yukson");
+  registerWorker(broker, "workerdelta");
 
   const task = broker.createTask({
     id: "team1-with-work-mode-evidence",
     intent: "verify",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "yukson", kind: "node", role: "analyst" },
-    assignedWorkerId: "yukson",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerdelta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerdelta",
     message: "Team1 parent-round task with pre-dispatch evidence",
     payload: {
       teamId: "team1",
       parentRoundId: "a2a-work-mode-round",
       parentRoundTotal: 4,
       parentRoundOrder: 1,
-      originBrokerId: "seoseo",
+      originBrokerId: "brokeralpha",
       workModeDecision: {
         mode: "team1",
         idempotencyKey: "a2a-work-mode:team1:test",
-        finalizerOwner: "seoseo",
+        finalizerOwner: "brokeralpha",
         generatedAt: "2026-06-07T06:00:00.000Z",
         capacityState: "healthy",
         capacitySnapshotSource: "/workers/capacity",
@@ -442,29 +442,29 @@ test("broker createTask accepts Team1 parent-round task with valid work-mode dec
   });
 
   assert.equal(task.id, "team1-with-work-mode-evidence");
-  assert.equal((task.payload["workModeDecision"] as Record<string, unknown>)?.["finalizerOwner"], "seoseo");
+  assert.equal((task.payload["workModeDecision"] as Record<string, unknown>)?.["finalizerOwner"], "brokeralpha");
 });
 
 test("broker rejects task workspace metadata missing workspaceId before persistence", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "dungae");
+  registerWorker(broker, "workerepsilon");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "malformed-workspace-task",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "dungae", kind: "node", role: "analyst" },
-        assignedWorkerId: "dungae",
-        workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "dungae" } as any,
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerepsilon", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerepsilon",
+        workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "workerepsilon" } as any,
         message: "malformed workspace metadata should not enter broker_tasks",
         payload: {
           parentRoundId: "cross-team-canary",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundOrder: 1,
           parentRoundTotal: 1,
         },
@@ -481,10 +481,10 @@ test("broker rejects task workspace metadata missing workspaceId before persiste
 
 test("broker fail-closed at createTask when Terminal Brief metadata has missing parentRoundTotal", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   // parentRoundOrder present but parentRoundTotal absent.
   // originBrokerId triggers hasTerminalBriefMetadata.
@@ -493,13 +493,13 @@ test("broker fail-closed at createTask when Terminal Brief metadata has missing 
       broker.createTask({
         id: "fail-closed-missing-total",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
         message: "missing parentRoundTotal",
         payload: {
           parentRoundId: "fail-closed-round",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundOrder: 2,
         },
       }),
@@ -513,10 +513,10 @@ test("broker fail-closed at createTask when Terminal Brief metadata has missing 
 
 test("broker fail-closed at createTask when Terminal Brief metadata has missing parentRoundOrder", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   // parentRoundTotal present but parentRoundOrder absent.
   // originBrokerId triggers hasTerminalBriefMetadata.
@@ -525,13 +525,13 @@ test("broker fail-closed at createTask when Terminal Brief metadata has missing 
       broker.createTask({
         id: "fail-closed-missing-order",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
         message: "missing parentRoundOrder",
         payload: {
           parentRoundId: "fail-closed-round",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundTotal: 5,
         },
       }),
@@ -545,25 +545,25 @@ test("broker fail-closed at createTask when Terminal Brief metadata has missing 
 
 test("broker fail-closed at createTask when parentRoundOrder exceeds parentRoundTotal", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "fail-closed-order-exceeds-total",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
         message: "order exceeds total",
         payload: {
           parentRoundId: "fail-closed-round",
           parentRoundTotal: 3,
           parentRoundOrder: 5,
-          requestedByBroker: "seoseo",
+          requestedByBroker: "brokeralpha",
         },
       }),
     {
@@ -576,25 +576,25 @@ test("broker fail-closed at createTask when parentRoundOrder exceeds parentRound
 
 test("broker rejects A2A round task without parent round total and order", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workerbeta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "a2a-round-missing-terminal-brief-order",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
         message: "A2A task missing parentRoundTotal and parentRoundOrder",
         payload: {
           mode: "ordinary_a2a_lite",
           teamScope: "team1",
           parentRoundId: "a2a-1032-round",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
         },
       }),
     {
@@ -607,25 +607,25 @@ test("broker rejects A2A round task without parent round total and order", () =>
 
 test("broker rejects A2A round task assigned outside the declared team", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "dungae");
+  registerWorker(broker, "workerepsilon");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "a2a-round-wrong-team-worker",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "dungae", kind: "node", role: "analyst" },
-        assignedWorkerId: "dungae",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerepsilon", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerepsilon",
         message: "A2A task assigned to the wrong team worker",
         payload: {
           mode: "ordinary_a2a_lite",
           teamScope: "team1",
           parentRoundId: "a2a-1032-round",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundTotal: 3,
           parentRoundOrder: 1,
         },
@@ -633,59 +633,59 @@ test("broker rejects A2A round task assigned outside the declared team", () => {
     {
       name: "BrokerError",
       code: "bad_request",
-      message: /worker dungae is not in the team1 worker set/,
+      message: /worker workerepsilon is not in the team1 worker set/,
     },
   );
 });
 
 test("broker accepts A2A round task with team worker and complete Terminal Brief metadata", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workerbeta");
 
   const task = broker.createTask({
     id: "a2a-round-valid-team-worker",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "operator" },
-    target: { id: "sogyo", kind: "node", role: "analyst" },
-    assignedWorkerId: "sogyo",
+    requester: { id: "brokeralpha", kind: "node", role: "operator" },
+    target: { id: "workerbeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerbeta",
     message: "A2A task with complete round metadata",
     payload: {
       mode: "ordinary_a2a_lite",
       teamScope: "team1",
       parentRoundId: "a2a-1032-round",
-      originBrokerId: "seoseo",
+      originBrokerId: "brokeralpha",
       parentRoundTotal: 3,
       parentRoundOrder: 1,
     },
   });
 
-  assert.equal(task.assignedWorkerId, "sogyo");
+  assert.equal(task.assignedWorkerId, "workerbeta");
   assert.equal(task.payload.parentRoundTotal, 3);
   assert.equal(task.payload.parentRoundOrder, 1);
 });
 
 test("broker fail-closed at createTask when crossBrokerHandoff has empty parentRoundId", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "fail-closed-missing-parent-round-id",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
         message: "missing parentRoundId",
         payload: {
           // parentRoundId deliberately absent
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundTotal: 5,
           parentRoundOrder: 2,
         },
@@ -700,19 +700,19 @@ test("broker fail-closed at createTask when crossBrokerHandoff has empty parentR
 
 test("broker fail-closed at createTask when crossBrokerHandoff has empty originBrokerId", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "gwakga",
+    brokerId: "brokerbeta",
     teamId: "team2",
   });
-  registerWorker(broker, "jingun");
+  registerWorker(broker, "workerzeta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "fail-closed-missing-origin-broker",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "operator" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
+        requester: { id: "brokeralpha", kind: "node", role: "operator" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
         message: "missing originBrokerId",
         payload: {
           parentRoundId: "fail-closed-round",
@@ -1085,9 +1085,9 @@ test("SQLite hot task poll queries avoid temp b-tree sorts", () => {
           intent: "chat",
           status: "queued",
           requester: { id: "hub", kind: "node", role: "hub" },
-          target: { id: "sogyo", kind: "node", role: "analyst" },
-          targetNodeId: "sogyo",
-          assignedWorkerId: "sogyo",
+          target: { id: "workerbeta", kind: "node", role: "analyst" },
+          targetNodeId: "workerbeta",
+          assignedWorkerId: "workerbeta",
           message: "prove poll query plan",
           payload: {},
           createdAt: "2026-05-05T00:00:00.000Z",
@@ -1106,7 +1106,7 @@ test("SQLite hot task poll queries avoid temp b-tree sorts", () => {
         "EXPLAIN QUERY PLAN SELECT payload FROM broker_tasks WHERE status = 'queued' ORDER BY updated_at DESC, id ASC",
       ).all(),
       db.prepare(
-        "EXPLAIN QUERY PLAN SELECT payload FROM broker_tasks WHERE status = 'queued' AND assigned_worker_id = 'sogyo' ORDER BY updated_at DESC, id ASC",
+        "EXPLAIN QUERY PLAN SELECT payload FROM broker_tasks WHERE status = 'queued' AND assigned_worker_id = 'workerbeta' ORDER BY updated_at DESC, id ASC",
       ).all(),
     ];
     db.close();
@@ -2099,9 +2099,9 @@ test("broker preserves Hermes native worker capability metadata in hot read mode
     });
 
     broker.registerWorker({
-      nodeId: "gongyung",
+      nodeId: "mobilealpha",
       role: "analyst",
-      displayName: "Gongyung Hermes Worker",
+      displayName: "mobilealpha Hermes Worker",
       capabilities: {
         canAnalyze: true,
         canBackfill: false,
@@ -2119,7 +2119,7 @@ test("broker preserves Hermes native worker capability metadata in hot read mode
       },
     });
 
-    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "gongyung" })[0]?.capabilities, {
+    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "mobilealpha" })[0]?.capabilities, {
       canAnalyze: true,
       canBackfill: false,
       canPatchWorkspace: false,
@@ -2130,7 +2130,7 @@ test("broker preserves Hermes native worker capability metadata in hot read mode
       gatewayRequired: false,
     });
 
-    broker.heartbeatWorker("gongyung", {
+    broker.heartbeatWorker("mobilealpha", {
       capabilities: {
         canAnalyze: true,
         canBackfill: false,
@@ -2143,7 +2143,7 @@ test("broker preserves Hermes native worker capability metadata in hot read mode
       },
     });
 
-    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "gongyung" })[0]?.capabilities, {
+    assert.deepEqual(sqliteStore.readHotWorkers({ nodeId: "mobilealpha" })[0]?.capabilities, {
       canAnalyze: true,
       canBackfill: false,
       canPatchWorkspace: false,

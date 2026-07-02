@@ -34,7 +34,7 @@ function acceptedEvidence(
 test("converts accepted advance evidence into a source-only finalizer decision", () => {
   const packet = buildOIValidationFinalizerDecisionPacket({
     generatedAt: NOW,
-    finalizer: "gwakga",
+    finalizer: "brokerbeta",
     operatorDecisionEvidence: acceptedEvidence(),
   });
 

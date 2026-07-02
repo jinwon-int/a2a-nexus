@@ -24,7 +24,7 @@ export type QueueGroupDimension = "worker" | "role" | "repo" | "task_type" | "pr
  */
 export interface QueueGroupEntry {
   /**
-   * The dimension label, e.g. "bangtong", "implementation", "jinwon-int/a2a-broker",
+   * The dimension label, e.g. "workergamma", "implementation", "jinwon-int/a2a-broker",
    * "propose_patch", or "default".
    */
   key: string;

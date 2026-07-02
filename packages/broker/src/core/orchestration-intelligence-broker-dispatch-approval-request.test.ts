@@ -25,7 +25,7 @@ const allDesignEvidence = {
   executorContractDocumented: true,
   brokerDispatchBoundaryDocumented: true,
   workerSpawnBoundaryDocumented: true,
-  daegyoMobileBoundaryDocumented: true,
+  mobilebetaMobileBoundaryDocumented: true,
   rollbackAbortCriteriaDocumented: true,
   liveBoundaryPlanDocumented: true,
   observabilityPlanDocumented: true,
@@ -83,14 +83,14 @@ function finalizerDecision(decision = "advance_to_next_source_step") {
 function runtimeReadinessGate(decision = "advance_to_next_source_step") {
   return buildOIRuntimeReadinessGatePacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     finalizerDecision: finalizerDecision(decision),
     runtimeEvidence: {
       runtimeExecutorDesignReviewed: false,
       explicitRuntimeApprovalPresent: false,
       brokerDispatchApprovalPresent: false,
       workerSpawnApprovalPresent: false,
-      daegyoMobileScopeResolved: false,
+      mobilebetaMobileScopeResolved: false,
       rollbackAbortCriteriaDocumented: false,
       liveBoundaryPlanDocumented: false,
       validationEvidenceFresh: true,
@@ -101,7 +101,7 @@ function runtimeReadinessGate(decision = "advance_to_next_source_step") {
 function runtimeDesignReview(decision = "advance_to_next_source_step") {
   return buildOIRuntimeDesignReviewPacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     runtimeReadinessGate: runtimeReadinessGate(decision),
     designEvidence: allDesignEvidence,
   });
@@ -110,7 +110,7 @@ function runtimeDesignReview(decision = "advance_to_next_source_step") {
 function runtimeApprovalRequest(decision = "advance_to_next_source_step") {
   return buildOIRuntimeApprovalRequestPacket({
     generatedAt: NOW,
-    requester: "gwakga",
+    requester: "brokerbeta",
     operator: "seo-jin-on",
     runtimeDesignReview: runtimeDesignReview(decision),
     approvalEvidence: allApprovalEvidence,
@@ -120,7 +120,7 @@ function runtimeApprovalRequest(decision = "advance_to_next_source_step") {
 function runtimeApprovalDecisionEvidence(decision = "advance_to_next_source_step") {
   return buildOIRuntimeApprovalDecisionEvidencePacket({
     generatedAt: NOW,
-    recorder: "gwakga",
+    recorder: "brokerbeta",
     runtimeApprovalRequest: runtimeApprovalRequest(decision),
     decisionEvidence: {
       kind: "approval_grant",
@@ -133,7 +133,7 @@ function runtimeApprovalDecisionEvidence(decision = "advance_to_next_source_step
       scope: [
         "record explicit operator approval evidence in a future source-only packet",
         "keep runtime executor implementation and enablement in separate future work",
-        "keep broker dispatch, worker spawn, and Daegyo/mobile scope expansion as independent gates",
+        "keep broker dispatch, worker spawn, and mobilebeta/mobile scope expansion as independent gates",
       ],
       conditions: [
         "operator identity must be recorded without secrets",
@@ -152,7 +152,7 @@ function runtimeApprovalDecisionEvidence(decision = "advance_to_next_source_step
 test("builds a broker dispatch approval request without granting approval or dispatch", () => {
   const packet = buildOIBrokerDispatchApprovalRequestPacket({
     generatedAt: NOW,
-    requester: "gwakga",
+    requester: "brokerbeta",
     operator: "seo-jin-on",
     runtimeApprovalDecisionEvidence: runtimeApprovalDecisionEvidence(),
     dispatchEvidence: allDispatchEvidence,
@@ -171,14 +171,14 @@ test("builds a broker dispatch approval request without granting approval or dis
   assert.equal(packet.runtimeReadinessEvidencePatch.explicitRuntimeApprovalPresent, true);
   assert.equal(packet.runtimeReadinessEvidencePatch.brokerDispatchApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.workerSpawnApprovalPresent, false);
-  assert.equal(packet.runtimeReadinessEvidencePatch.daegyoMobileScopeResolved, false);
+  assert.equal(packet.runtimeReadinessEvidencePatch.mobilebetaMobileScopeResolved, false);
   assert.equal(packet.safety.brokerDispatchApprovalRequestOnly, true);
   assert.equal(packet.safety.brokerDispatchApprovalPresent, false);
   assert.equal(packet.safety.approvalGranted, false);
   assert.equal(packet.safety.brokerDispatchCreated, false);
   assert.equal(packet.safety.runtimeExecutorEnabled, false);
   assert.equal(packet.safety.workerSpawned, false);
-  assert.equal(packet.safety.daegyoScopeExpanded, false);
+  assert.equal(packet.safety.mobilebetaScopeExpanded, false);
 });
 
 test("fails closed when dispatch approval request evidence is incomplete", () => {

@@ -224,7 +224,7 @@ export function buildTerminalBriefSidecarDefaultOnEnablementGate(
       "sending approval requests",
       "granting approval or executing an approval grant",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, sidecar start/stop/restart, or deploy",
       "GitHub mutation from the packet/route",

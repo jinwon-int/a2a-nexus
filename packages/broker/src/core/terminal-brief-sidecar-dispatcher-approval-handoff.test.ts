@@ -130,7 +130,7 @@ test("dispatcher approval handoff extractors and markdown preserve source-only b
   const input = {
     dispatcherPreflightSealPacket: source,
     dispatcherApprovalHandoff: {
-      requested_by: "seoseo",
+      requested_by: "brokeralpha",
       operator_channel: "telegram",
       approval_reference: "dispatcher-approval-757",
       required_reply: "approve_terminal_brief_sidecar_dispatcher_path dispatcher-approval-757",
@@ -138,7 +138,7 @@ test("dispatcher approval handoff extractors and markdown preserve source-only b
   };
 
   assert.equal(extractTerminalBriefSidecarDispatcherApprovalHandoffSeal(input).idempotencyKey, source.idempotencyKey);
-  assert.equal(extractTerminalBriefSidecarDispatcherApprovalHandoffOptions(input).requested_by, "seoseo");
+  assert.equal(extractTerminalBriefSidecarDispatcherApprovalHandoffOptions(input).requested_by, "brokeralpha");
 
   const packet = buildTerminalBriefSidecarDispatcherApprovalHandoff(
     extractTerminalBriefSidecarDispatcherApprovalHandoffSeal(input),
@@ -146,7 +146,7 @@ test("dispatcher approval handoff extractors and markdown preserve source-only b
   );
   const markdown = renderTerminalBriefSidecarDispatcherApprovalHandoffMarkdown(packet);
 
-  assert.equal(packet.approvalHandoffDraft.requestedBy, "seoseo");
+  assert.equal(packet.approvalHandoffDraft.requestedBy, "brokeralpha");
   assert.equal(markdown.includes("does not send approval"), true);
   assert.equal(markdown.includes("executorInvocationPermitted=false"), true);
   assert.equal(packet.readiness.approvalRequestDispatchPermitted, false);

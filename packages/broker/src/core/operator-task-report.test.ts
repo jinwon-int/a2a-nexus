@@ -9,13 +9,13 @@ function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
     id: "task-1",
     intent: "propose_patch",
-    requester: { id: "seoseo", role: "hub" },
-    target: { id: "bangtong", role: "analyst" },
+    requester: { id: "brokeralpha", role: "hub" },
+    target: { id: "workergamma", role: "analyst" },
     message: "assignment",
     payload: { pullRequest: "#1", lane: "primary" },
     artifactIds: [],
-    targetNodeId: "bangtong",
-    assignedWorkerId: "bangtong",
+    targetNodeId: "workergamma",
+    assignedWorkerId: "workergamma",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -117,7 +117,7 @@ test("operator task report joins terminal outbox brief state for plugin/operator
       payload: {
         taskId: "brief-1",
         status: "succeeded",
-        worker: "dungae",
+        worker: "workerepsilon",
         repo: "jinwon-int/a2a-broker",
         issue: 384,
         taskBrief: "Broker event/outbox deploy-readiness",
@@ -194,7 +194,7 @@ test("extracts enriched docker-runner evidence from result output", () => {
           repo: "jinwon-int/a2a-broker",
           issue: "#203",
           issueUrl: "https://github.com/jinwon-int/a2a-broker/issues/203",
-          nodeId: "dungae",
+          nodeId: "workerepsilon",
           taskId: "task-docker-1",
           prUrl: "https://github.com/jinwon-int/a2a-broker/pull/100",
         },
@@ -207,7 +207,7 @@ test("extracts enriched docker-runner evidence from result output", () => {
   assert.equal(github?.repo, "jinwon-int/a2a-broker");
   assert.equal(github?.issue, "#203");
   assert.equal(github?.issueUrl, "https://github.com/jinwon-int/a2a-broker/issues/203");
-  assert.equal(github?.nodeId, "dungae");
+  assert.equal(github?.nodeId, "workerepsilon");
   assert.equal(github?.taskId, "task-docker-1");
   assert.equal(github?.prUrl, "https://github.com/jinwon-int/a2a-broker/pull/100");
   // report line surfaces the scoped repo+issue label
@@ -282,7 +282,7 @@ test("surfaces failed task with block evidence and issue scoping", () => {
           repo: "jinwon-int/a2a-broker",
           issue: "#203",
           issueUrl: "https://github.com/jinwon-int/a2a-broker/issues/203",
-          nodeId: "dungae",
+          nodeId: "workerepsilon",
           blockCommentUrl: "https://github.com/jinwon-int/a2a-broker/issues/203#issuecomment-555",
         },
       },

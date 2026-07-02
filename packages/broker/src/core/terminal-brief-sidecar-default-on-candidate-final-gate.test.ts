@@ -13,7 +13,7 @@ const NOW = "2026-05-19T03:31:00.000Z";
 
 function observation(overrides: Partial<TerminalBriefSidecarBoundedDryRunObservationPacket> = {}): TerminalBriefSidecarBoundedDryRunObservationPacket {
   return {
-    kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+    kind: "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation",
     generatedAt: NOW,
     operatorInstructionReference: "telegram:1000000001:53345",
     windowSeconds: 300,
@@ -109,7 +109,7 @@ test("default-on candidate final gate extracts observation and options from enve
     },
   };
 
-  assert.equal(extractTerminalBriefSidecarDefaultOnCandidateFinalGateObservation(input).kind, "seoseo.terminal-brief-sidecar-bounded-dry-run-observation");
+  assert.equal(extractTerminalBriefSidecarDefaultOnCandidateFinalGateObservation(input).kind, "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnCandidateFinalGateOptions(input), input.defaultOnCandidateFinalGate);
 });
 

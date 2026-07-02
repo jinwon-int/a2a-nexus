@@ -1,6 +1,6 @@
-# Team1 roadmap input — bangtong
+# Team1 roadmap input — workerGamma
 
-**Worker:** `bangtong`
+**Worker:** `workerGamma`
 **Angle:** implementation ergonomics, public repo developer experience, release/PR evidence, what should be demo-ready first
 **Parent:** #105 (a2a-plane#105, internal tracker private)
 **Child:** #106 (a2a-plane#106, internal tracker private)

@@ -363,8 +363,8 @@ test('broker readiness GO validates evidence packet', () => {
       evidence: ['a2a-plane#219 (internal tracker, private)#broker'],
       evidencePacket: {
         health: { ok: true },
-        expectedWorkers: ['bangtong'],
-        onlineWorkerIds: ['bangtong'],
+        expectedWorkers: ['workerGamma'],
+        onlineWorkerIds: ['workerGamma'],
         queue: { queued: 0, claimed: 0, running: 0 },
         stale: 0,
       },
@@ -628,11 +628,11 @@ test('dry-run execution plan never contains live actions', () => {
 
 // ── Fixture validation ───────────────────────────────────────────
 
-test('team1-bangtong execution orchestrator fixture yields NEEDS_OPERATOR_APPROVAL', () => {
+test('team1-workerGamma execution orchestrator fixture yields NEEDS_OPERATOR_APPROVAL', () => {
   const result = spawnSync(process.execPath, [
     script,
     '--spec', spec,
-    '--input', 'fixtures/execution-orchestrator/team1-bangtong-execution-plan-evidence.json',
+    '--input', 'fixtures/execution-orchestrator/team1-workerGamma-execution-plan-evidence.json',
   ], {
     encoding: 'utf8',
     cwd: process.cwd(),

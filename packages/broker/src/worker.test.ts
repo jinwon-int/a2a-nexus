@@ -345,7 +345,7 @@ test("worker signs broker requests with configured per-worker A2A HTTP Signature
     httpSignature: {
       keyid: "worker:worker-a:v1",
       privateKeyJwk: workerSignaturePrivateJwk,
-      brokerId: "seoseo",
+      brokerId: "brokeralpha",
       nowEpochSeconds: () => 1770861620,
       nonceFactory: () => "worker-sign-register-nonce",
     },
@@ -357,7 +357,7 @@ test("worker signs broker requests with configured per-worker A2A HTTP Signature
   assert.ok(capturedHeaders);
   assert.equal(capturedHeaders.get("x-a2a-requester-id"), "worker-a");
   assert.equal(capturedHeaders.get("x-a2a-requester-role"), "analyst");
-  assert.equal(capturedHeaders.get("x-a2a-broker-id"), "seoseo");
+  assert.equal(capturedHeaders.get("x-a2a-broker-id"), "brokeralpha");
   assert.equal(
     capturedHeaders.get("content-digest"),
     `sha-256=:${createHash("sha256").update(capturedBody).digest("base64")}:`,
@@ -379,7 +379,7 @@ test("worker signs broker requests with configured per-worker A2A HTTP Signature
     ok: true,
     keyid: "worker:worker-a:v1",
     requesterId: "worker-a",
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     created: 1770861620,
     expires: 1770861680,
     nonce: "worker-sign-register-nonce",
@@ -388,7 +388,7 @@ test("worker signs broker requests with configured per-worker A2A HTTP Signature
 
 test("worker signed requests pass strict broker route gate for register, poll, and lifecycle", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
   });
@@ -396,7 +396,7 @@ test("worker signed requests pass strict broker route gate for register, poll, a
     httpSignature: {
       keyid: "worker:worker-a:v1",
       privateKeyJwk: workerSignaturePrivateJwk,
-      brokerId: "seoseo",
+      brokerId: "brokeralpha",
     },
   });
 
@@ -431,7 +431,7 @@ test("worker signed requests pass strict broker route gate for register, poll, a
 
 test("worker signed requests cannot impersonate a different worker id in strict mode", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
   });
@@ -446,7 +446,7 @@ test("worker signed requests cannot impersonate a different worker id in strict 
     httpSignature: {
       keyid: "worker:worker-a:v1",
       privateKeyJwk: workerSignaturePrivateJwk,
-      brokerId: "seoseo",
+      brokerId: "brokeralpha",
     },
     worker: {
       nodeId: "worker-b",
@@ -482,7 +482,7 @@ test("worker HTTP Signature rejects unsafe key ids before building Signature-Inp
     httpSignature: {
       keyid: 'worker:worker-a:v1";created=1',
       privateKeyJwk: workerSignaturePrivateJwk,
-      brokerId: "seoseo",
+      brokerId: "brokeralpha",
     },
   });
   (worker as unknown as { fetchImpl: typeof fetch }).fetchImpl = async () => {
@@ -510,10 +510,10 @@ test("worker HTTP Signature env config requires key id with private key material
     WORKER_ID: "worker-a",
     A2A_HTTP_SIGNATURE_WORKER_KEY_ID: "worker:worker-a:v1",
     A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
-    A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+    A2A_HTTP_SIGNATURE_BROKER_ID: "brokeralpha",
   });
   assert.equal(config.httpSignature?.keyid, "worker:worker-a:v1");
-  assert.equal(config.httpSignature?.brokerId, "seoseo");
+  assert.equal(config.httpSignature?.brokerId, "brokeralpha");
 
   const aliasConfig = createWorkerConfigFromEnv({
     BROKER_URL: "https://broker.test",
@@ -523,10 +523,10 @@ test("worker HTTP Signature env config requires key id with private key material
     A2A_HTTP_SIGNATURE_BROKER_ID: "",
     WORKER_HTTP_SIGNATURE_KEY_ID: "worker:worker-a:v1",
     WORKER_HTTP_SIGNATURE_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
-    WORKER_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+    WORKER_HTTP_SIGNATURE_BROKER_ID: "brokeralpha",
   });
   assert.equal(aliasConfig.httpSignature?.keyid, "worker:worker-a:v1");
-  assert.equal(aliasConfig.httpSignature?.brokerId, "seoseo");
+  assert.equal(aliasConfig.httpSignature?.brokerId, "brokeralpha");
 
   assert.throws(
     () => createWorkerConfigFromEnv({
@@ -534,7 +534,7 @@ test("worker HTTP Signature env config requires key id with private key material
       WORKER_ID: "worker-a",
       A2A_HTTP_SIGNATURE_WORKER_KEY_ID: 'worker:worker-a:v1";created=1',
       A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
-      A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+      A2A_HTTP_SIGNATURE_BROKER_ID: "brokeralpha",
     }),
     /A2A_HTTP_SIGNATURE_WORKER_KEY_ID contains characters that are not safe/,
   );
@@ -715,7 +715,7 @@ process.stdin.on("end", () => {
     WORKER_HANDLER_ARGS_JSON: JSON.stringify([handlerPath]),
     A2A_HTTP_SIGNATURE_WORKER_KEY_ID: "worker:worker-a:v1",
     A2A_HTTP_SIGNATURE_WORKER_PRIVATE_KEY_JWK: JSON.stringify(workerSignaturePrivateJwk),
-    A2A_HTTP_SIGNATURE_BROKER_ID: "seoseo",
+    A2A_HTTP_SIGNATURE_BROKER_ID: "brokeralpha",
   });
 
   const outcome = await config.handler({

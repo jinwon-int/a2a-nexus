@@ -9,9 +9,9 @@ import {
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 
 const CONFIG = {
-  sourceBrokerId: "gwakga",
+  sourceBrokerId: "brokerbeta",
   sourceBaseUrl: "http://127.0.0.1:8799",
-  destinationBrokerId: "seoseo",
+  destinationBrokerId: "brokeralpha",
   destinationBaseUrl: "http://127.0.0.1:8787",
   edgeSecret: "test-edge-secret",
   cursor: "terminal:old",
@@ -21,21 +21,21 @@ const CONFIG = {
 
 function event(overrides: Partial<TerminalTaskOutboxEvent> = {}): TerminalTaskOutboxEvent {
   return {
-    id: "terminal:gwakga-child-1",
+    id: "terminal:brokerbeta-child-1",
     kind: "task.terminal",
     taskEventId: 42,
     createdAt: "2026-06-02T13:00:00.000Z",
     receipt: { status: "accepted", updatedAt: "2026-06-02T13:00:00.000Z" },
     attempts: 0,
     payload: {
-      taskId: "gwakga-child-1",
+      taskId: "brokerbeta-child-1",
       status: "succeeded",
-      parentRoundId: "seoseo-parent-round",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
-      run: "seoseo-parent-round",
+      parentRoundId: "brokeralpha-parent-round",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
+      run: "brokeralpha-parent-round",
       taskDescription: "Team2 child finished",
-      worker: "jingun",
+      worker: "workerzeta",
       taskBrief: "Cross-broker child",
       doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/1206#issuecomment-done",
       testSummary: "Team2 child completed safely",
@@ -44,16 +44,16 @@ function event(overrides: Partial<TerminalTaskOutboxEvent> = {}): TerminalTaskOu
       completedAt: "2026-06-02T13:00:00.000Z",
       parentRoundTotal: 8,
       parentRoundOrder: 6,
-      terminalBriefTitle: "A2A Terminal Brief 완료: jingun(완료 6/8)",
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerzeta(완료 6/8)",
       crossBrokerHandoff: {
-        parentRoundId: "seoseo-parent-round",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        originTaskId: "seoseo-parent-task-1",
-        childWorkerId: "jingun",
+        parentRoundId: "brokeralpha-parent-round",
+        originBrokerId: "brokeralpha",
+        handoffBrokerId: "brokerbeta",
+        originTaskId: "brokeralpha-parent-task-1",
+        childWorkerId: "workerzeta",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokeralpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -68,16 +68,16 @@ test("buildCrossBrokerTerminalBriefProjectionFromEvent maps child broker event t
   const projection = buildCrossBrokerTerminalBriefProjectionFromEvent(event(), CONFIG);
 
   assert.deepEqual(projection, {
-    parentRoundId: "seoseo-parent-round",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-child-1",
-    childRunId: "seoseo-parent-round",
-    childWorkerId: "jingun",
+    parentRoundId: "brokeralpha-parent-round",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-child-1",
+    childRunId: "brokeralpha-parent-round",
+    childWorkerId: "workerzeta",
     status: "succeeded",
     summary: "Team2 child completed safely",
     taskBrief: "Cross-broker child",
-    terminalBriefTitle: "A2A Terminal Brief 완료: jingun(완료 6/8)",
+    terminalBriefTitle: "A2A Terminal Brief 완료: workerzeta(완료 6/8)",
     evidenceUrl: "https://github.com/jinwon-int/a2a-broker/issues/1206#issuecomment-done",
     completedAt: "2026-06-02T13:00:00.000Z",
     emittedAt: "2026-06-02T13:00:00.000Z",
@@ -92,7 +92,7 @@ test("pollCrossBrokerTerminalBriefReceiver posts parent-owned child events and a
   const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
     calls.push({ url, headers: init?.headers, body: init?.body });
     if (url.includes("/a2a/tasks/terminal-outbox")) {
-      return jsonResponse(200, { events: [event()], cursor: "terminal:gwakga-child-1" });
+      return jsonResponse(200, { events: [event()], cursor: "terminal:brokerbeta-child-1" });
     }
     return jsonResponse(202, { accepted: true, replayed: false, ack: { decision: "accepted" } });
   };
@@ -103,11 +103,11 @@ test("pollCrossBrokerTerminalBriefReceiver posts parent-owned child events and a
   assert.equal(result.fetched, 1);
   assert.equal(result.posted, 1);
   assert.equal(result.accepted, 1);
-  assert.equal(result.cursorToPersist, "terminal:gwakga-child-1");
+  assert.equal(result.cursorToPersist, "terminal:brokerbeta-child-1");
   assert.match(calls[0].url, /after_id=terminal%3Aold/);
   assert.match(calls[0].url, /reconcile_unacked=true/);
   assert.match(calls[1].url, /\/a2a\/cross-broker\/terminal-briefs$/);
-  assert.equal(JSON.parse(calls[1].body ?? "{}").originBrokerId, "gwakga");
+  assert.equal(JSON.parse(calls[1].body ?? "{}").originBrokerId, "brokerbeta");
 });
 
 test("pollCrossBrokerTerminalBriefReceiver can authenticate source and destination with separate edge secrets", async () => {
@@ -115,7 +115,7 @@ test("pollCrossBrokerTerminalBriefReceiver can authenticate source and destinati
   const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url, init) => {
     calls.push({ url, headers: init?.headers, body: init?.body });
     if (url.includes("/a2a/tasks/terminal-outbox")) {
-      return jsonResponse(200, { events: [event()], cursor: "terminal:gwakga-child-1" });
+      return jsonResponse(200, { events: [event()], cursor: "terminal:brokerbeta-child-1" });
     }
     return jsonResponse(202, { accepted: true, replayed: false, ack: { decision: "accepted" } });
   };
@@ -123,13 +123,13 @@ test("pollCrossBrokerTerminalBriefReceiver can authenticate source and destinati
   const result = await pollCrossBrokerTerminalBriefReceiver({
     ...CONFIG,
     edgeSecret: "legacy-fallback-secret",
-    sourceEdgeSecret: "gwakga-source-secret",
-    destinationEdgeSecret: "seoseo-destination-secret",
+    sourceEdgeSecret: "brokerbeta-source-secret",
+    destinationEdgeSecret: "brokeralpha-destination-secret",
   }, fetchImpl);
 
   assert.equal(result.ok, true);
-  assert.equal(calls[0].headers?.["x-a2a-edge-secret"], "gwakga-source-secret");
-  assert.equal(calls[1].headers?.["x-a2a-edge-secret"], "seoseo-destination-secret");
+  assert.equal(calls[0].headers?.["x-a2a-edge-secret"], "brokerbeta-source-secret");
+  assert.equal(calls[1].headers?.["x-a2a-edge-secret"], "brokeralpha-destination-secret");
 });
 
 test("pollCrossBrokerTerminalBriefReceiver ignores non-parent-owned events but keeps source cursor", async () => {
@@ -139,7 +139,7 @@ test("pollCrossBrokerTerminalBriefReceiver ignores non-parent-owned events but k
       ...event().payload,
       notificationOwnership: undefined,
       crossBrokerHandoff: undefined,
-      brokerOfRecordId: "gwakga",
+      brokerOfRecordId: "brokerbeta",
     },
   });
   const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url) => {
@@ -160,13 +160,13 @@ test("pollCrossBrokerTerminalBriefReceiver ignores non-parent-owned events but k
 test("pollCrossBrokerTerminalBriefReceiver does not advance cursor on missing parent", async () => {
   const fetchImpl: CrossBrokerTerminalBriefReceiverFetch = async (url) => {
     if (url.includes("/a2a/tasks/terminal-outbox")) {
-      return jsonResponse(200, { events: [event()], cursor: "terminal:gwakga-child-1" });
+      return jsonResponse(200, { events: [event()], cursor: "terminal:brokerbeta-child-1" });
     }
     return jsonResponse(404, {
       accepted: false,
       ack: {
         code: "missing_parent",
-        reason: "parent round seoseo-parent-round is not present on this broker",
+        reason: "parent round brokeralpha-parent-round is not present on this broker",
       },
     });
   };
@@ -177,9 +177,9 @@ test("pollCrossBrokerTerminalBriefReceiver does not advance cursor on missing pa
   assert.equal(result.posted, 1);
   assert.equal(result.cursorToPersist, "terminal:old");
   assert.deepEqual(result.blocked, [{
-    eventId: "terminal:gwakga-child-1",
+    eventId: "terminal:brokerbeta-child-1",
     code: "missing_parent",
-    reason: "parent round seoseo-parent-round is not present on this broker",
+    reason: "parent round brokeralpha-parent-round is not present on this broker",
   }]);
 });
 

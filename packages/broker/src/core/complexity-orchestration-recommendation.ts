@@ -18,7 +18,7 @@
 //   - No terminal ACK/replay or release operation
 //   - No secret or credential exposure
 //
-// Reference: #971 Team2 (gwakga/soonwook) — no-live orchestration
+// Reference: #971 Team2 (brokerbeta/workereta) — no-live orchestration
 //            recommendation packet after classifier.
 // Parent:    #969  Team2 A2A next implementation lane.
 // ─────────────────────────────────────────────────────────────────────────────

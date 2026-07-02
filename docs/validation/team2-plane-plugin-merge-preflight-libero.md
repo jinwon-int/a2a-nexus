@@ -1,7 +1,7 @@
 # Team2 plane/plugin merge-preflight libero
 
 Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
-Lane: Team2/soonwook merge-preflight
+Lane: Team2/workerEta merge-preflight
 Snapshot: `2026-05-12T01:17:57Z`
 
 This is a local-only merge-preflight artifact for the plane/plugin overlap in the config-schema skew prevention round. It does not deploy, restart Gateway/broker/worker services, send live provider or Telegram messages, mutate a database, ACK terminal evidence, change secrets, rewrite history, force-push, merge PRs, publish releases, or change repository visibility.

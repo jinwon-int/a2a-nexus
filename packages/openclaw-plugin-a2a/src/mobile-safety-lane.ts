@@ -127,7 +127,7 @@ export type MobileSafetyLane = {
 export function createMobileSafetyLane(options: MobileSafetyLaneOptions = {}): MobileSafetyLane {
   const nowMs = options.nowMs ?? Date.now;
   const nodeId = options.nodeId ?? "unknown";
-  const handoffTargets = options.handoffTargets ?? ["seoseo"];
+  const handoffTargets = options.handoffTargets ?? ["brokerAlpha"];
 
   const isMobile = options.profile?.isMobile ?? detectMobile();
   const isLowResource = options.profile?.isLowResource ?? (options.profile?.isLowResource ?? detectLowResource());

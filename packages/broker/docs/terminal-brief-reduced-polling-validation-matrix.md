@@ -3,7 +3,7 @@
 Issue: [#379](https://github.com/jinwon-int/a2a-broker/issues/379)
 Parent: [#376](https://github.com/jinwon-int/a2a-broker/issues/376)
 Run: `terminal-brief-stabilization-20260505T122527Z`
-Worker: `yukson` libero validation lane
+Worker: `workerdelta` libero validation lane
 
 This matrix is the no-live validation boundary for **A2A Terminal Brief** and reduced worker polling. It is intentionally conservative: when an implementation lane has only Start/queued evidence, the row stays `Interim Block / waiting` instead of being counted as a pass.
 
@@ -30,7 +30,7 @@ Snapshot time: `2026-05-05T12:35Z` from GitHub issue evidence only.
 | Broker reduced-polling assignment | `jinwon-int/a2a-broker#377` PR/Done/Block for event-backed assignment, long-poll/SSE, or equivalent reduced polling design | Rerun started and literal `Start` posted: <https://github.com/jinwon-int/a2a-broker/issues/377#issuecomment-4379201653> | Interim Block / waiting |
 | Broker audit/health burn-down | `jinwon-int/a2a-broker#378` PR/Done/Block for warning policy, heartbeat ratio, retention, and cleanup posture | Rerun started and literal `Start` posted: <https://github.com/jinwon-int/a2a-broker/issues/378#issuecomment-4379197463> | Interim Block / waiting |
 | Runner reduced-polling compatibility | `jinwon-int/a2a-docker-runner#146` PR/Done/Block proving worker-side compatibility and bounded artifact evidence | Rerun started and literal `Start` posted: <https://github.com/jinwon-int/a2a-docker-runner/issues/146#issuecomment-4379207536> | Interim Block / waiting |
-| Runner unblockers | Merged runner fixes needed before this rerun | `#147` merged, `#148` rolled out to `bangtong/sogyo/dungae/nosuk/yukson` per parent dispatch: <https://github.com/jinwon-int/a2a-broker/issues/376#issuecomment-4379180016> | Pass as prerequisite only |
+| Runner unblockers | Merged runner fixes needed before this rerun | `#147` merged, `#148` rolled out to `workergamma/workerbeta/workerepsilon/workeralpha/workerdelta` per parent dispatch: <https://github.com/jinwon-int/a2a-broker/issues/376#issuecomment-4379180016> | Pass as prerequisite only |
 
 ## S1-S5 matrix
 

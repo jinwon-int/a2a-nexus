@@ -20,8 +20,8 @@ test("release candidate parity audit passes with public-safe evidence", () => {
   assert.equal(output.terminalAckSent, false);
   assert.equal(output.dbMutationPerformed, false);
   assert.equal(output.deployOrRestartPerformed, false);
-  assert.deepEqual(output.activeWorkers, ["bangtong", "dungae", "sogyo", "nosuk"]);
-  assert.deepEqual(output.excludedWorkers, ["yukson"]);
+  assert.deepEqual(output.activeWorkers, ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"]);
+  assert.deepEqual(output.excludedWorkers, ["workerDelta"]);
   for (const path of ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "IDENTITY.md", ".openclaw", "memory"]) {
     assert.ok(output.bootstrapGuardBannedPaths.includes(path), `missing bootstrap guard path ${path}`);
   }

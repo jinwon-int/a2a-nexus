@@ -5,7 +5,7 @@
  * TrackerCloseoutRecommendation verdicts under healthy, edge, and
  * degraded classifier-report conditions.
  *
- * Reference: #896 Team1/Bangtong Terminal Brief completion lane 1/7.
+ * Reference: #896 Team1/workergamma Terminal Brief completion lane 1/7.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -221,7 +221,7 @@ describe("evaluateTrackerCloseoutRecommendations", () => {
     assert.match(r863.supersedeAction!, /re-drive|re-drive/i);
   });
 
-  it("recommends close for #864 (bangtong harness) unconditionally when classifier exists", () => {
+  it("recommends close for #864 (workergamma harness) unconditionally when classifier exists", () => {
     const map = evaluateTrackerCloseoutRecommendations(healthyReport());
     const r864 = map.recommendations.find((r) => r.trackerId === "#864")!;
     assert.equal(r864.recommendation, "close");

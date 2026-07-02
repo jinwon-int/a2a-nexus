@@ -29,7 +29,7 @@ function approvalEvidence(
       defaultOnApprovalRequestState: "approval_request_draft_ready",
       defaultOnApprovalRequestIdempotencyKey: "tb-sidecar-default-on-approval-request:fixture-772",
       requestedAction: "approve_terminal_brief_default_on_enablement",
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "terminal-brief-default-on",
       operatorChannel: "telegram",
       approvalReference: "tb-sidecar-default-on-approval:fixture-772",
@@ -86,7 +86,7 @@ function approvalEvidence(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDefaultOnApprovalRequestPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,
@@ -131,7 +131,7 @@ function approvalEvidence(
 test("builds a source-only enablement gate from accepted default-on approval evidence", () => {
   const packet = buildTerminalBriefSidecarDefaultOnEnablementGate(approvalEvidence(), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     runtimeTarget: "terminal-brief-sidecar",
   });
 
@@ -191,7 +191,7 @@ test("extracts approval evidence and options from envelopes", () => {
     defaultOnApprovalEvidenceIngestorPacket: approvalEvidence(),
     defaultOnEnablementGate: {
       mode: "fixture",
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       gateReference: "gate-1",
       runtimeTarget: "sidecar",
     },
@@ -201,7 +201,7 @@ test("extracts approval evidence and options from envelopes", () => {
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnEnablementGateOptions(input), {
     now: undefined,
     mode: "fixture",
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     gateReference: "gate-1",
     runtimeTarget: "sidecar",
     operatorInstructionReference: undefined,

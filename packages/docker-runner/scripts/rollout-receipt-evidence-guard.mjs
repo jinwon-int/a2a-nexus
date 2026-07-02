@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 
-const ACTIVE_WORKERS = ["bangtong", "dungae", "sogyo", "nosuk"];
+const ACTIVE_WORKERS = ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"];
 
 function usage(exitCode = 2) {
   const stream = exitCode === 0 ? process.stdout : process.stderr;
-  stream.write(`Usage: node scripts/rollout-receipt-evidence-guard.mjs --input <merged-evidence.json> --expected-commit <sha> [--workers bangtong,dungae,sogyo,nosuk]\n`);
+  stream.write(`Usage: node scripts/rollout-receipt-evidence-guard.mjs --input <merged-evidence.json> --expected-commit <sha> [--workers workerGamma,workerEpsilon,workerBeta,workerAlpha]\n`);
   process.exit(exitCode);
 }
 

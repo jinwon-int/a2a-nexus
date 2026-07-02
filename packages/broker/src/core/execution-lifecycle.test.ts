@@ -27,7 +27,7 @@ function createManager(opts?: Partial<ExecutionManagerOptions>): ExecutionManage
 function baseInput(overrides?: Partial<{ sessionKey: string; peerNodeId: string; parentTaskId: string }>) {
   return {
     sessionKey: overrides?.sessionKey ?? "session-alpha",
-    peerNodeId: overrides?.peerNodeId ?? "sogyo",
+    peerNodeId: overrides?.peerNodeId ?? "workerbeta",
     parentTaskId: overrides?.parentTaskId ?? "task-1",
   };
 }
@@ -513,9 +513,9 @@ describe("cursor replay", () => {
 
   it("filters by peerNodeId", () => {
     const mgr = createManager();
-    mgr.requestExecution(baseInput({ peerNodeId: "sogyo" }));
-    mgr.requestExecution(baseInput({ peerNodeId: "dungae" }));
-    expect(mgr.subscribe({ peerNodeId: "sogyo" })).toHaveLength(1);
+    mgr.requestExecution(baseInput({ peerNodeId: "workerbeta" }));
+    mgr.requestExecution(baseInput({ peerNodeId: "workerepsilon" }));
+    expect(mgr.subscribe({ peerNodeId: "workerbeta" })).toHaveLength(1);
   });
 
   it("filters by parentTaskId", () => {
@@ -755,8 +755,8 @@ describe("audit trail safety", () => {
 describe("multi-run scenarios", () => {
   it("tracks independent runs", () => {
     const mgr = createManager();
-    const r1 = mgr.requestExecution(baseInput({ sessionKey: "s1", peerNodeId: "sogyo" }));
-    const r2 = mgr.requestExecution(baseInput({ sessionKey: "s2", peerNodeId: "dungae" }));
+    const r1 = mgr.requestExecution(baseInput({ sessionKey: "s1", peerNodeId: "workerbeta" }));
+    const r2 = mgr.requestExecution(baseInput({ sessionKey: "s2", peerNodeId: "workerepsilon" }));
 
     mgr.sessionReady(r1.runId);
     mgr.deliverPayload({ runId: r1.runId });

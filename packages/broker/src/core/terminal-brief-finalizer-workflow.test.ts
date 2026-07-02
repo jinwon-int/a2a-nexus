@@ -19,8 +19,8 @@ function handoff(overrides: Partial<TerminalBriefFinalizerHandoffPacket> = {}): 
     decision: "ready",
     idempotencyKey: "tb-finalizer-handoff:ready",
     finalizer: {
-      brokerOfRecordId: "seoseo",
-      owner: "seoseo",
+      brokerOfRecordId: "brokeralpha",
+      owner: "brokeralpha",
       required: true,
       singleFinalizerRequired: true,
     },
@@ -47,8 +47,8 @@ function handoff(overrides: Partial<TerminalBriefFinalizerHandoffPacket> = {}): 
     },
     lanes: [
       {
-        worker: "bangtong",
-        taskId: "task-bangtong",
+        worker: "workergamma",
+        taskId: "task-workergamma",
         status: "succeeded",
         state: "ready",
         evidenceUrl: "https://github.com/jinwon-int/a2a-broker/pull/701",
@@ -57,18 +57,18 @@ function handoff(overrides: Partial<TerminalBriefFinalizerHandoffPacket> = {}): 
         nextAction: "include lane in broker finalizer closeout candidate",
       },
       {
-        worker: "sogyo",
-        taskId: "task-sogyo",
+        worker: "workerbeta",
+        taskId: "task-workerbeta",
         status: "succeeded",
         state: "ready",
-        evidenceUrl: "https://github.com/jinwon-int/a2a-broker/issues/698#issuecomment-sogyo-done",
+        evidenceUrl: "https://github.com/jinwon-int/a2a-broker/issues/698#issuecomment-workerbeta-done",
         receiptStatus: "produced",
         receiptProof: "provider_only_not_ack",
         nextAction: "include lane in broker finalizer closeout candidate",
       },
       {
-        worker: "nosuk",
-        taskId: "task-nosuk",
+        worker: "workeralpha",
+        taskId: "task-workeralpha",
         status: "succeeded",
         state: "ready",
         evidenceUrl: "https://github.com/jinwon-int/a2a-broker/pull/702",
@@ -79,13 +79,13 @@ function handoff(overrides: Partial<TerminalBriefFinalizerHandoffPacket> = {}): 
     ],
     evidenceUrls: [
       "https://github.com/jinwon-int/a2a-broker/pull/701",
-      "https://github.com/jinwon-int/a2a-broker/issues/698#issuecomment-sogyo-done",
+      "https://github.com/jinwon-int/a2a-broker/issues/698#issuecomment-workerbeta-done",
       "https://github.com/jinwon-int/a2a-broker/pull/702",
     ],
     receiptGaps: [
-      "bangtong: receipt=produced is not terminal ACK/read/visibility proof",
-      "sogyo: receipt=produced is not terminal ACK/read/visibility proof",
-      "nosuk: receipt=produced is not terminal ACK/read/visibility proof",
+      "workergamma: receipt=produced is not terminal ACK/read/visibility proof",
+      "workerbeta: receipt=produced is not terminal ACK/read/visibility proof",
+      "workeralpha: receipt=produced is not terminal ACK/read/visibility proof",
     ],
     blockers: [],
     checklist: [

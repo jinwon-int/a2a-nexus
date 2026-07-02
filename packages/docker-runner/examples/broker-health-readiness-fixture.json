@@ -8,7 +8,7 @@
     "runId": "a2a-post-78261-health-readiness-20260510T024701Z"
   },
   "handlerTask": {
-    "id": "health-readiness-fixture-jingun-001",
+    "id": "health-readiness-fixture-workerZeta-001",
     "intent": "propose_patch",
     "payload": {
       "mode": "github-propose-patch",
@@ -20,9 +20,9 @@
       "title": "Runner fixture support for broker /health latency and diagnostics regression",
       "focus": "Validate fixture/tooling support for repeated broker /health latency probes, stage-level diagnostics, and no-live closeout proof without touching production services.",
       "acceptance": "Fixture parses; conversion to RunnerTask preserves issue/run metadata; repeated /health plan requires p95/p99 thresholds and stage diagnostics; no-live proof forbids broker/Gateway restarts, provider sends, DB mutation, and terminal ACK.",
-      "requestedBy": "gwakga-jingun",
+      "requestedBy": "brokerBeta-workerZeta",
       "runId": "a2a-post-78261-health-readiness-20260510T024701Z",
-      "traceId": "fixture-health-readiness-jingun",
+      "traceId": "fixture-health-readiness-workerZeta",
       "timeoutMs": 300000,
       "forbidNewPr": true,
       "commentOnly": true,

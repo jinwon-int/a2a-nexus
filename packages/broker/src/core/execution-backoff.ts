@@ -10,7 +10,7 @@
  * Integration: used by ExecutionManager for retry delay planning and by
  * the scheduler/control-tower for operator-visible backoff schedules.
  *
- * Reference: a2a-plane#434 / a2a-broker#907 lane 3/4 (nosuk).
+ * Reference: a2a-plane#434 / a2a-broker#907 lane 3/4 (workeralpha).
  */
 
 import { createHash } from "node:crypto";

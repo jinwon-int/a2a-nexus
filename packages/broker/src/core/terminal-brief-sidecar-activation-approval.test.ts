@@ -75,7 +75,7 @@ function gate(overrides: Partial<TerminalBriefSidecarDryRunGatePacket> = {}): Te
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesSidecarIntegrationRehearsal: true,
       consumesFinalizerApprovalStatus: true,
       grantsApproval: false,

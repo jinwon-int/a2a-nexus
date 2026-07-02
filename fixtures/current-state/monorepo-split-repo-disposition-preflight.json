@@ -28,7 +28,7 @@
       "futureCandidateDisposition": "active_provenance_mirror",
       "archiveReadOnlyRedirectApproved": false,
       "settingsMutationApproved": false,
-      "rollbackOwner": "seoseo finalizer/operator until repo-specific owner is assigned"
+      "rollbackOwner": "brokerAlpha finalizer/operator until repo-specific owner is assigned"
     },
     {
       "surface": "docker_runner",
@@ -40,7 +40,7 @@
       "futureCandidateDisposition": "active_provenance_mirror",
       "archiveReadOnlyRedirectApproved": false,
       "settingsMutationApproved": false,
-      "rollbackOwner": "seoseo finalizer/operator until repo-specific owner is assigned"
+      "rollbackOwner": "brokerAlpha finalizer/operator until repo-specific owner is assigned"
     },
     {
       "surface": "openclaw_plugin_a2a",
@@ -53,7 +53,7 @@
       "futureCandidateDisposition": "active_provenance_mirror",
       "archiveReadOnlyRedirectApproved": false,
       "settingsMutationApproved": false,
-      "rollbackOwner": "seoseo finalizer/operator until repo-specific owner is assigned"
+      "rollbackOwner": "brokerAlpha finalizer/operator until repo-specific owner is assigned"
     }
   ],
   "repoFactsReadOnly": {
@@ -112,9 +112,9 @@
     "workers": [
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "698ace07-4fa4-478e-a248-a8c6a7dc9fce",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -122,9 +122,9 @@
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "5c3a779a-6ae3-4959-828a-d97b26099340",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -132,9 +132,9 @@
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "529fe5ae-a031-48ea-8ecc-8dadf1fafd6e",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -142,9 +142,9 @@
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "dungae",
+        "worker": "workerEpsilon",
         "taskId": "9f567857-657a-4369-97de-eb542fb32ffc",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -152,9 +152,9 @@
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "5fdd7b86-4a57-4487-9640-f1919890627e",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -162,9 +162,9 @@
       },
       {
         "round": "a2ad-splitdispo-preflight-20260610T150452Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "soonwook",
+        "worker": "workerEta",
         "taskId": "1a4e693d-6a3e-4b2f-9430-97c2da791a75",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -173,14 +173,14 @@
     ],
     "usableAnalysisCount": 6,
     "team1UsableWorkers": [
-      "sogyo",
-      "nosuk",
-      "bangtong"
+      "workerBeta",
+      "workerAlpha",
+      "workerGamma"
     ],
     "team2UsableWorkers": [
-      "dungae",
-      "jingun",
-      "soonwook"
+      "workerEpsilon",
+      "workerZeta",
+      "workerEta"
     ],
     "finalizerSynthesis": "GO for source-only preflight. Future candidate is active_provenance_mirror. Keep archive/read-only/redirect, settings mutation, ownership transfer, release/publish/deploy, DB/secret/provider/Terminal ACK, force-push/history rewrite on HOLD."
   },

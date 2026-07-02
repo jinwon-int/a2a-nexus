@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seoseo A2A skill guard — executable guardpack checks for recurring
+ * brokerAlpha A2A skill guard — executable guardpack checks for recurring
  * A2A/A2AD closeout rules.
  *
  * Read-only: no broker/GitHub writes, no deploy/restart/DB/provider side effects.

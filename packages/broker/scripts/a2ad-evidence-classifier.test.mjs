@@ -57,7 +57,7 @@ test('echo-handler fallback remains degraded even when it echoes substantive pro
 
 test('record classifier keeps echo fallback degraded when status metadata precedes output (#810)', () => {
   const result = classifyEvidenceRecord({
-    workerId: 'nosuk',
+    workerId: 'workeralpha',
     status: 'completed',
     output: [
       'echo handled task: built-in echo fallback responded without invoking external handler.',
@@ -129,10 +129,10 @@ test('substantive outputs can count as A2AD worker opinion', () => {
 test('bundle summary exposes finalizer blockers for mixed evidence', () => {
   const report = classifyEvidenceBundle({
     results: [
-      { workerId: 'sogyo', output: 'analysis bridge blocked: source root unavailable' },
-      { workerId: 'gongyung', output: 'Hermes reference worker completed local dry-run evidence' },
+      { workerId: 'workerbeta', output: 'analysis bridge blocked: source root unavailable' },
+      { workerId: 'mobilealpha', output: 'Hermes reference worker completed local dry-run evidence' },
       {
-        workerId: 'nosuk',
+        workerId: 'workeralpha',
         output: 'Recommendation: staged GO; Risk: issue routing drift; Evidence ref: GitHub issue and CI logs; Implementation: add schema test and rollback acceptance gate.',
       },
     ],
@@ -141,13 +141,13 @@ test('bundle summary exposes finalizer blockers for mixed evidence', () => {
   assert.equal(report.counts.wrapper_only, 1);
   assert.equal(report.counts.substantive, 1);
   assert.equal(report.ok, true);
-  assert.match(report.finalizerBlockers.join('\n'), /sogyo: source mapping/i);
-  assert.match(report.finalizerBlockers.join('\n'), /gongyung: wrapper\/plumbing/i);
+  assert.match(report.finalizerBlockers.join('\n'), /workerbeta: source mapping/i);
+  assert.match(report.finalizerBlockers.join('\n'), /mobilealpha: wrapper\/plumbing/i);
 });
 
 test('record classifier extracts nested invalid-JSON bridge failures without leaking secret-like keys', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'bangtong',
+    workerId: 'workergamma',
     token: 'should-not-matter',
     error: {
       details: {
@@ -156,7 +156,7 @@ test('record classifier extracts nested invalid-JSON bridge failures without lea
       },
     },
   });
-  assert.equal(item.workerId, 'bangtong');
+  assert.equal(item.workerId, 'workergamma');
   assert.equal(item.classification, 'analysis_bridge_invalid_json');
   assert.equal(item.substantive, false);
   assert.equal(item.countsAsWorkerOpinion, false);
@@ -165,7 +165,7 @@ test('record classifier extracts nested invalid-JSON bridge failures without lea
 
 test('record classifier marks empty successful analysis as non-substantive (#983)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'sogyo',
+    workerId: 'workerbeta',
     status: 'succeeded',
     output: {
       analysisStatus: 'done',
@@ -183,7 +183,7 @@ test('record classifier marks empty successful analysis as non-substantive (#983
 
 test('record classifier exposes provider/model failures as infrastructure evidence (#983 #984)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'gongyung',
+    workerId: 'mobilealpha',
     status: 'succeeded',
     output: {
       analysisStatus: 'provider_or_model_failure',
@@ -203,7 +203,7 @@ test('invalid Hermes analysis schema object/array errors classify as analysis_br
     'Hermes analysis bridge response did not contain valid JSON: candidate was not valid JSON: {"status":"done"',
   ]) {
     const item = classifyEvidenceRecord({
-      workerId: 'sogyo',
+      workerId: 'workerbeta',
       status: 'failed',
       error: {
         code: 'handler_exit_nonzero',
@@ -218,7 +218,7 @@ test('invalid Hermes analysis schema object/array errors classify as analysis_br
 
 test('explicit recovered analysis object stays substantive despite diagnostic error stdout (#982)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'nosuk',
+    workerId: 'workeralpha',
     status: 'succeeded',
     result: {
       output: {
@@ -252,7 +252,7 @@ test('record classifier distinguishes source projection failure shapes (#984 #98
     ['source_projection_worker_insufficient', 'worker reported source insufficient for review'],
   ];
   for (const [expected, output] of cases) {
-    const item = classifyEvidenceRecord({ workerId: 'bangtong', output });
+    const item = classifyEvidenceRecord({ workerId: 'workergamma', output });
     assert.equal(item.classification, expected);
     assert.equal(item.substantive, false);
     assert.equal(item.countsAsWorkerOpinion, false);
@@ -263,7 +263,7 @@ test('CLI exits non-zero when required substantive evidence is absent', async ()
   const dir = await mkdtemp(join(tmpdir(), 'a2ad-evidence-classifier-'));
   try {
     const input = join(dir, 'results.json');
-    await writeFile(input, JSON.stringify([{ workerId: 'daegyo', output: 'analysis-only completed' }], null, 2));
+    await writeFile(input, JSON.stringify([{ workerId: 'mobilebeta', output: 'analysis-only completed' }], null, 2));
     const result = spawnSync(process.execPath, [script, '--input', input, '--require-substantive'], { encoding: 'utf8' });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /blocked finalization/);
@@ -279,7 +279,7 @@ test('CLI succeeds when minimum substantive evidence is present', async () => {
     const input = join(dir, 'results.json');
     await writeFile(input, JSON.stringify([
       {
-        workerId: 'soonwook',
+        workerId: 'workereta',
         output: 'Recommendation: staged GO; Risk: release drift; Evidence ref: CI and source evidence; Implementation: update tests and rollback acceptance gate before final GO.',
       },
     ], null, 2));
@@ -293,7 +293,7 @@ test('CLI succeeds when minimum substantive evidence is present', async () => {
 
 test('read-only validation repo mutations are classified as evidence-contract blockers (#868)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'yukson',
+    workerId: 'workerdelta',
     status: 'failed',
     error: {
       code: 'handler_exit_nonzero',
@@ -314,7 +314,7 @@ test('read-only validation repo mutations are classified as evidence-contract bl
 
 test('docker runner missing PR/Done/Block evidence is handler artifact failure, not substantive evidence (#868)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'bangtong',
+    workerId: 'workergamma',
     status: 'failed',
     error: {
       code: 'handler_exit_nonzero',
@@ -332,7 +332,7 @@ test('docker runner missing PR/Done/Block evidence is handler artifact failure, 
 
 test('GitHub comment ledger without substantive findings is classified as runner ledger only (#868)', () => {
   const item = classifyEvidenceRecord({
-    workerId: 'soonwook',
+    workerId: 'workereta',
     status: 'succeeded',
     result: {
       output: {
@@ -357,16 +357,16 @@ test('CLI can emit finalizer Markdown table for mixed evidence (#868)', async ()
   try {
     const input = join(dir, 'results.json');
     await writeFile(input, JSON.stringify([
-      { workerId: 'bangtong', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
-      { workerId: 'yukson', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
-      { workerId: 'nosuk', output: 'Recommendation: staged GO; Risk: routing drift; Evidence ref: source and tests; Implementation: add classifier test; CI: node --test.' },
+      { workerId: 'workergamma', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
+      { workerId: 'workerdelta', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
+      { workerId: 'workeralpha', output: 'Recommendation: staged GO; Risk: routing drift; Evidence ref: source and tests; Implementation: add classifier test; CI: node --test.' },
     ], null, 2));
     const result = spawnSync(process.execPath, [script, '--input', input, '--markdown'], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /\| worker \| classification \| counts \| blocker \|/);
-    assert.match(result.stdout, /bangtong \| handler_artifact_failure/);
-    assert.match(result.stdout, /yukson \| read_only_validation_changed_repo/);
-    assert.match(result.stdout, /nosuk \| substantive/);
+    assert.match(result.stdout, /workergamma \| handler_artifact_failure/);
+    assert.match(result.stdout, /workerdelta \| read_only_validation_changed_repo/);
+    assert.match(result.stdout, /workeralpha \| substantive/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -376,12 +376,12 @@ test('bundle classifier accepts broker polling result objects with items arrays 
   const report = classifyEvidenceBundle({
     runId: 'a2a-skill-guards-open-issues-20260617T110315Z-866',
     items: [
-      { worker: 'bangtong', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
-      { worker: 'yukson', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
+      { worker: 'workergamma', error: { details: { stdout: 'docker_runner_failed: GitHub patch task completed without PR/Done/Block evidence.' } } },
+      { worker: 'workerdelta', error: { details: { stdout: 'read_only_validation_changed_repo: docs/validation/a2a.md' } } },
     ],
   });
   assert.equal(report.counts.handler_artifact_failure, 1);
   assert.equal(report.counts.read_only_validation_changed_repo, 1);
-  assert.equal(report.classifications[0].workerId, 'bangtong');
-  assert.equal(report.classifications[1].workerId, 'yukson');
+  assert.equal(report.classifications[0].workerId, 'workergamma');
+  assert.equal(report.classifications[1].workerId, 'workerdelta');
 });

@@ -15,9 +15,9 @@ import {
 import type { WorkerView } from "./types.js";
 
 const BASE_WORKER: WorkerView = {
-  nodeId: "yukson",
+  nodeId: "workerdelta",
   role: "analyst",
-  displayName: "Yukson libero",
+  displayName: "workerdelta libero",
   brokerUrl: "http://10.0.0.2:3000",
   capabilities: {
     canAnalyze: true,
@@ -51,7 +51,7 @@ const LIBERO_SKILL = {
 test("worker capability card projects Team1 libero metadata without leaking private worker fields", () => {
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["libero"],
     supportedTaskTypes: ["analyze", "validate_change"],
     skills: [LIBERO_SKILL],
@@ -71,8 +71,8 @@ test("worker capability card projects Team1 libero metadata without leaking priv
   });
 
   assert.equal(card.schemaVersion, WORKER_CAPABILITY_CARD_SCHEMA_VERSION);
-  assert.equal(card.worker.id, "yukson");
-  assert.deepEqual(card.team, { teamId: "team1", brokerOfRecord: "seoseo", lane: "team1" });
+  assert.equal(card.worker.id, "workerdelta");
+  assert.deepEqual(card.team, { teamId: "team1", brokerOfRecord: "brokeralpha", lane: "team1" });
   assert.deepEqual(card.assignment.roles, ["libero"]);
   assert.deepEqual(card.assignment.libero?.validatesTeams, ["team1", "team2"]);
   assert.equal(card.visibility.scope, "public");
@@ -86,11 +86,11 @@ test("worker capability card projects Team1 libero metadata without leaking priv
   assert.deepEqual(validateWorkerCapabilityCard(card), { ok: true, errors: [] });
 });
 
-test("worker capability card maps Team2 dungae discovery to public AgentCard-style fields", () => {
-  const dungaeWorker: WorkerView = {
-    nodeId: "dungae",
+test("worker capability card maps Team2 workerepsilon discovery to public AgentCard-style fields", () => {
+  const workerepsilonWorker: WorkerView = {
+    nodeId: "workerepsilon",
     role: "researcher",
-    displayName: "Dungae docs/compat",
+    displayName: "workerepsilon docs/compat",
     brokerUrl: "http://192.0.2.23:3000",
     capabilities: {
       canAnalyze: true,
@@ -114,10 +114,10 @@ test("worker capability card maps Team2 dungae discovery to public AgentCard-sty
     updateEligible: true,
   };
 
-  const card = createWorkerCapabilityCard(dungaeWorker, {
+  const card = createWorkerCapabilityCard(workerepsilonWorker, {
     teamId: "team2",
     lane: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["docs-compat"],
     supportedTaskTypes: ["analyze", "validate_change"],
     skills: [
@@ -144,7 +144,7 @@ test("worker capability card maps Team2 dungae discovery to public AgentCard-sty
     ],
   });
 
-  assert.deepEqual(card.team, { teamId: "team2", brokerOfRecord: "gwakga", lane: "team2" });
+  assert.deepEqual(card.team, { teamId: "team2", brokerOfRecord: "brokerbeta", lane: "team2" });
   assert.deepEqual(card.assignment.roles, ["docs-compat"]);
   assert.deepEqual(card.assignment.supportedTaskTypes, ["analyze", "validate_change"]);
   assert.deepEqual(card.assignment.environments, ["research"]);
@@ -175,7 +175,7 @@ test("worker capability card maps Team2 dungae discovery to public AgentCard-sty
 test("worker capability card query selects valid workers by team, role, task, environment, and skill", () => {
   const team1Impl = createWorkerCapabilityCard({ ...BASE_WORKER, nodeId: "team1-impl" }, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["propose_patch", "apply_local_change"],
     skills: [{ id: "implementation", name: "Implementation", description: "Patch implementation worker." }],
@@ -184,7 +184,7 @@ test("worker capability card query selects valid workers by team, role, task, en
   const team2Docs = createWorkerCapabilityCard({ ...BASE_WORKER, nodeId: "team2-docs", role: "researcher" }, {
     teamId: "team2",
     lane: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["docs-compat"],
     supportedTaskTypes: ["analyze", "validate_change"],
     skills: [{ id: "docs-compat", name: "Docs compat", description: "Documentation and compatibility review." }],
@@ -206,10 +206,10 @@ test("worker capability card query selects valid workers by team, role, task, en
 });
 
 test("worker capability card keeps provider/model capabilities team-private and queryable", () => {
-  const soonwookWorker: WorkerView = {
+  const workeretaWorker: WorkerView = {
     ...BASE_WORKER,
-    nodeId: "soonwook",
-    displayName: "Soonwook Team2 Grok route",
+    nodeId: "workereta",
+    displayName: "workereta Team2 Grok route",
     capabilities: {
       ...BASE_WORKER.capabilities,
       providerCapabilities: [
@@ -220,23 +220,23 @@ test("worker capability card keeps provider/model capabilities team-private and 
           routeKind: "subscription",
           availability: "canary_passed",
           lastVerifiedAt: "2026-06-15T01:00:00.000Z",
-          evidenceId: "gwakga-soonwook-grok-canary-20260615",
+          evidenceId: "brokerbeta-workereta-grok-canary-20260615",
         },
       ],
     },
   };
 
-  const privateCard = createWorkerCapabilityCard(soonwookWorker, {
+  const privateCard = createWorkerCapabilityCard(workeretaWorker, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze"],
     skills: [],
     visibility: { scope: "team", exposeProviderCapabilities: true },
   });
-  const publicCard = createWorkerCapabilityCard(soonwookWorker, {
+  const publicCard = createWorkerCapabilityCard(workeretaWorker, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze"],
     skills: [],
@@ -256,7 +256,7 @@ test("worker capability card keeps provider/model capabilities team-private and 
       modelId: "grok-4.2",
       providerAvailability: "canary_passed",
     }).map((card) => card.worker.id),
-    ["soonwook"],
+    ["workereta"],
   );
   assert.deepEqual(validateWorkerCapabilityCard(privateCard), { ok: true, errors: [] });
   assert.deepEqual(validateWorkerCapabilityCard(publicCard), { ok: true, errors: [] });
@@ -279,7 +279,7 @@ test("worker capability card validation rejects public provider capability expos
     },
   }, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze"],
     skills: [],
@@ -295,7 +295,7 @@ test("worker capability card validation rejects public provider capability expos
 test("worker capability card validation rejects secret-like provider capability fields", () => {
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze"],
     skills: [],
@@ -320,7 +320,7 @@ test("worker capability card validation rejects secret-like provider capability 
 test("worker capability card validation fails closed for unsafe public visibility", () => {
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["propose_patch"],
     skills: [
@@ -349,7 +349,7 @@ test("worker capability card validation fails closed for unsafe public visibilit
 test("worker capability card validation rejects secret-like extension fields", () => {
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["runner-safety"],
     supportedTaskTypes: ["analyze"],
     skills: [
@@ -375,7 +375,7 @@ test("InMemoryWorkerCapabilityCardRepository stores, retrieves, lists, and delet
 
   const card1 = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["libero"],
     supportedTaskTypes: ["analyze"],
     skills: [],
@@ -384,7 +384,7 @@ test("InMemoryWorkerCapabilityCardRepository stores, retrieves, lists, and delet
     { ...BASE_WORKER, nodeId: "team2-docs", role: "researcher" },
     {
       teamId: "team2",
-      brokerOfRecord: "gwakga",
+      brokerOfRecord: "brokerbeta",
       assignmentRoles: ["docs-compat"],
       supportedTaskTypes: ["validate_change"],
       skills: [],
@@ -394,9 +394,9 @@ test("InMemoryWorkerCapabilityCardRepository stores, retrieves, lists, and delet
   repo.store(card1);
   assert.equal(repo.count(), 1);
 
-  const retrieved = repo.get("yukson");
+  const retrieved = repo.get("workerdelta");
   assert.ok(retrieved);
-  assert.equal(retrieved.worker.id, "yukson");
+  assert.equal(retrieved.worker.id, "workerdelta");
   assert.deepEqual(retrieved.assignment.roles, ["libero"]);
 
   assert.equal(repo.get("nonexistent"), null);
@@ -408,12 +408,12 @@ test("InMemoryWorkerCapabilityCardRepository stores, retrieves, lists, and delet
   assert.equal(all.length, 2);
   assert.deepEqual(
     all.map((c) => c.worker.id).sort(),
-    ["team2-docs", "yukson"],
+    ["team2-docs", "workerdelta"],
   );
 
-  repo.delete("yukson");
+  repo.delete("workerdelta");
   assert.equal(repo.count(), 1);
-  assert.equal(repo.get("yukson"), null);
+  assert.equal(repo.get("workerdelta"), null);
 
   repo.delete("nonexistent"); // no-op
   assert.equal(repo.count(), 1);
@@ -427,7 +427,7 @@ test("InMemoryWorkerCapabilityCardRepository overwrites existing card on re-stor
 
   const card = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["propose_patch"],
     skills: [],
@@ -438,7 +438,7 @@ test("InMemoryWorkerCapabilityCardRepository overwrites existing card on re-stor
   repo.store(updated);
 
   assert.equal(repo.count(), 1);
-  assert.deepEqual(repo.get("yukson")?.assignment.roles, ["libero"]);
+  assert.deepEqual(repo.get("workerdelta")?.assignment.roles, ["libero"]);
 });
 
 test("InMemoryWorkerCapabilityCardRepository rejects oversized cards", () => {
@@ -455,7 +455,7 @@ test("InMemoryWorkerCapabilityCardRepository rejects oversized cards", () => {
 
   const bigCard = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["analyze"],
     skills: hugeSkills,
@@ -504,13 +504,13 @@ test("createDefaultCapabilityCard infers role and task type from WorkerView", ()
 test("createDefaultCapabilityCard accepts explicit overrides", () => {
   const card = createDefaultCapabilityCard(BASE_WORKER, {
     teamId: "team2",
-    brokerOfRecord: "gwakga",
+    brokerOfRecord: "brokerbeta",
     assignmentRoles: ["docs-compat"],
     supportedTaskTypes: ["validate_change"],
   });
 
   assert.equal(card.team.teamId, "team2");
-  assert.equal(card.team.brokerOfRecord, "gwakga");
+  assert.equal(card.team.brokerOfRecord, "brokerbeta");
   assert.deepEqual(card.assignment.roles, ["docs-compat"]);
   assert.deepEqual(card.assignment.supportedTaskTypes, ["validate_change"]);
 });
@@ -520,7 +520,7 @@ test("listCapabilityProfiles filters by query parameters", () => {
 
   const impl = createWorkerCapabilityCard(BASE_WORKER, {
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
     assignmentRoles: ["implementation"],
     supportedTaskTypes: ["propose_patch"],
     skills: [],
@@ -529,7 +529,7 @@ test("listCapabilityProfiles filters by query parameters", () => {
     { ...BASE_WORKER, nodeId: "docs-1", role: "researcher" },
     {
       teamId: "team2",
-      brokerOfRecord: "gwakga",
+      brokerOfRecord: "brokerbeta",
       assignmentRoles: ["docs-compat"],
       supportedTaskTypes: ["validate_change"],
       skills: [],

@@ -31,7 +31,7 @@ Use this approval gate as the implementation reference for `a2a-plane#485` and t
     - `npm run lint` (syntax/`node --check` pass on all scripts)
     - `npm test` (unit tests including CI-safe canary fixture — no Docker needed)
     - `node scripts/pre-pr-bootstrap-guard.mjs --repo-dir .` (bootstrap file leak guard)
-    - `npm run audit:release-candidate` (parity audit: CI gate parity, bootstrap guard coverage, chaos/receipt rollout gates, active worker targets, legacy `yukson` exclusion)
+    - `npm run audit:release-candidate` (parity audit: CI gate parity, bootstrap guard coverage, chaos/receipt rollout gates, active worker targets, legacy `workerDelta` exclusion)
     - `npm run chaos:e2e` (CI-safe/mock chaos E2E gate with broker_restart, worker_kill, stale_requeue, duplicate_delivery_tolerance, network_interrupt_reconnect scenarios)
     - `node --test dist/canary.test.js` (CI-safe canary covering PR/Done/Block/malformed/failure/crash paths with fake runner binary)
     - `node dist/cli.js --help` (package bin entry point smoke)
@@ -50,7 +50,7 @@ Use this approval gate as the implementation reference for `a2a-plane#485` and t
   - The `npm run smoke:conformance` script includes a package bin smoke: `node dist/cli.js --help`.
 - Keep GitHub Actions on non-deprecated action runtimes. Current CI uses `actions/checkout@v5` and `actions/setup-node@v5` with Node 22 so Node 20 runtime deprecation warnings do not become release noise.
 
-## Terminal Brief ops-readiness templates (Team1/seoseo lane)
+## Terminal Brief ops-readiness templates (Team1/brokerAlpha lane)
 
 The built-in template registry in `src/task-templates.ts` includes four no-live
 reusable diagnostic/check templates for production operations readiness before
@@ -95,31 +95,31 @@ required `templateVars`. Example task referencing the node-health template:
   "templateVars": {
     "DOCTOR_ARGS": "a2a-docker-runner doctor",
     "EXPECTED_REVISION": "f17072e",
-    "TARGET_NODE": "nosuk"
+    "TARGET_NODE": "workerAlpha"
   },
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/270"
 }
 ```
 
-These templates do **not** implement Terminal Brief core feature logic (Team2/Gwakga
-scope). They are production operations and runbook tools for Team1/Seoseo.
+These templates do **not** implement Terminal Brief core feature logic (Team2/brokerBeta
+scope). They are production operations and runbook tools for Team1/brokerAlpha.
 
 ## Active rollout targets
 
 Active workers for this runner family:
 
-- `bangtong`
-- `dungae`
-- `sogyo`
-- `nosuk`
+- `workerGamma`
+- `workerEpsilon`
+- `workerBeta`
+- `workerAlpha`
 
 Excluded legacy target:
 
-- `yukson` / VPS2 legacy worker is explicitly out of scope. Do not change, restart, or validate legacy Yukson/VPS2 worker services as part of this rollout.
+- `workerDelta` / VPS2 legacy worker is explicitly out of scope. Do not change, restart, or validate legacy workerDelta/VPS2 worker services as part of this rollout.
 
 ## Rollout sequence after merge
 
-1. Seoseo/operator reviews the merged PR and CI result.
+1. brokerAlpha/operator reviews the merged PR and CI result.
 2. Build/package from the merge commit only; do not publish from an issue branch.
 3. **Pre-deploy canary**: Run CI-safe canary fixture on the merge commit: `node --test dist/canary.test.js`.
 4. **Deploy-marker doctor**: Before rollout, run the deploy-marker doctor to confirm the deployed runner revision matches the expected merge commit:
@@ -131,7 +131,7 @@ Excluded legacy target:
    ```
 
    The doctor fails closed when the deployed revision does not match the expected marker, when the checkout is not a git worktree, or when the local SHA cannot be resolved. It produces no-live refresh safety evidence: no provider sends, terminal ACKs, deployments, restarts, or DB mutations are performed. This check is deterministic, CI-safe, and requires no external services.
-5. Collect no-live receipt-smoke evidence for all active workers (`bangtong`, `dungae`, `sogyo`, `nosuk`) into one sanitized JSON file, then run the merged-evidence guard from the merge commit:
+5. Collect no-live receipt-smoke evidence for all active workers (`workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`) into one sanitized JSON file, then run the merged-evidence guard from the merge commit:
 
    ```bash
    npm run rollout:receipt-evidence -- \
@@ -195,7 +195,7 @@ Failure output is intentionally non-silent: each failed scenario includes the fa
 - Revert the worker package/config on the affected target to the last known-good release or commit.
 - Re-run `a2a-docker-runner doctor` and one smoke task on the reverted target.
 - Record the failed target, commit, command, and sanitized logs in the follow-up issue/PR. Do not include tokens, private key material, raw session dumps, or secret file contents.
-- Keep `yukson` excluded during rollback unless a separate operator-approved legacy task explicitly covers it.
+- Keep `workerDelta` excluded during rollback unless a separate operator-approved legacy task explicitly covers it.
 
 ## CI-safe broker canary payload (Round 4+)
 
@@ -219,8 +219,8 @@ Both tests run in CI (no Docker required).
 
 The fixture includes explicit active target and exclusion lists:
 
-- **Active**: `bangtong`, `dungae`, `sogyo`, `nosuk`
-- **Excluded**: `yukson` (legacy VPS2 — do not touch)
+- **Active**: `workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`
+- **Excluded**: `workerDelta` (legacy VPS2 — do not touch)
 
 The `operatorChecklist` inside the payload describes the per-node rollout sequence.
 

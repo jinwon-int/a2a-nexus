@@ -13,7 +13,7 @@
 //   - No terminal ACK/replay or release operation
 //   - No secret or credential exposure
 //
-// Reference: #970 Team2 (gwakga/soonwook) — task-complexity classifier lane.
+// Reference: #970 Team2 (brokerbeta/workereta) — task-complexity classifier lane.
 // Parent:    #969  Team2 A2A next implementation lane.
 // ─────────────────────────────────────────────────────────────────────────────
 

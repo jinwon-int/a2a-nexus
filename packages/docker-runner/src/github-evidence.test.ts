@@ -21,7 +21,7 @@ const baseTask: NormalizedRunnerTask = {
   commands: ["npm test"],
   issueUrl: "https://github.com/jinwon-int/test-repo/issues/1",
   reportLanguage: "ko",
-  requestedBy: "seoseo",
+  requestedBy: "brokerAlpha",
   issueTitle: "Evidence contract proof",
   taskBrief: "Produce compact terminal notice evidence without leaking raw logs.",
 };
@@ -103,7 +103,7 @@ test("extracts prUrl into release-gate evidence on success", async () => {
   assert.equal(evidence?.issue, "jinwon-int/test-repo#1");
   assert.equal(evidence?.issueUrl, "https://github.com/jinwon-int/test-repo/issues/1");
   assert.equal(evidence?.taskId, "test-task");
-  assert.equal(evidence?.worker, "seoseo");
+  assert.equal(evidence?.worker, "brokerAlpha");
   assert.equal(evidence?.issueTitle, "Evidence contract proof");
   assert.equal(evidence?.taskBrief, "Produce compact terminal notice evidence without leaking raw logs.");
   assert.equal(evidence?.runId, "a2a-release-gate-1");
@@ -159,11 +159,11 @@ test("keeps long multiline github-verify prompt safe for release-gate metadata",
     prompt: [
       "A2A GitHub-mode issue assignment",
       "",
-      "Worker: yukson",
+      "Worker: workerDelta",
       "Issue: jinwon-int/a2a-broker#330",
       "Title: A2A no-live integration: verifier matrix",
       "URL: https://github.com/jinwon-int/a2a-broker/issues/330",
-      "Run: a2a-no-live-integration-20260504035026-yukson-rerun-1777875644881",
+      "Run: a2a-no-live-integration-20260504035026-workerDelta-rerun-1777875644881",
       "",
       "This prompt is intentionally long ".repeat(20),
     ].join("\n"),
@@ -680,7 +680,7 @@ test("buildStartCommentBody includes disclaimer that comment is NOT ACK/approval
   const body = buildStartCommentBody(baseTask);
 
   assert.match(body, /## 🟢 Start/);
-  assert.match(body, /\*\*요청 노드\*\*: seoseo/);
+  assert.match(body, /\*\*요청 노드\*\*: brokerAlpha/);
   assert.match(body, /\*\*Task ID\*\*: `test-task`/);
   assert.match(body, /\*\*Issue URL\*\*: https:\/\/github\.com\/jinwon-int\/test-repo\/issues\/1/);
   assert.match(body, /\*\*의도\*\*: propose_patch/);

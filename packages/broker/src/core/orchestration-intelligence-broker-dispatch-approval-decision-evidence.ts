@@ -118,7 +118,7 @@ export interface OIBrokerDispatchApprovalDecisionEvidencePacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -198,7 +198,7 @@ export function buildOIBrokerDispatchApprovalDecisionEvidencePacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -232,7 +232,7 @@ export function renderOIBrokerDispatchApprovalDecisionEvidenceMarkdown(
     ...packet.nextActions.map((action) => `- ${action}`),
     "Safety: source-only broker dispatch approval decision evidence. It may record explicit broker dispatch",
     "approval evidence for a later readiness gate, but it does not grant execution approval, enable or create",
-    "a runtime executor, create broker dispatch tasks, spawn workers/subagents, expand Daegyo/mobile scope,",
+    "a runtime executor, create broker dispatch tasks, spawn workers/subagents, expand mobilebeta/mobile scope,",
     "send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases,",
     "or move credentials. brokerDispatchApprovalPresent remains a source readiness flag only.",
   ].join("\n");
@@ -385,7 +385,7 @@ function nextActionsForState(state: OIBrokerDispatchApprovalDecisionEvidenceStat
   if (state === "broker_dispatch_approval_evidence_accepted") {
     return [
       "feed brokerDispatchApprovalPresent=true into a later readiness gate review",
-      "keep broker task creation, executor invocation, worker/subagent spawn, Daegyo/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
+      "keep broker task creation, executor invocation, worker/subagent spawn, mobilebeta/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
     ];
   }
   if (state === "broker_dispatch_approval_evidence_missing") {
@@ -417,7 +417,7 @@ function evidencePatchForState(
     explicitRuntimeApprovalPresent: accepted,
     brokerDispatchApprovalPresent: accepted,
     workerSpawnApprovalPresent: false,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: false,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: accepted,

@@ -6,8 +6,8 @@
     "sourceOnly": true,
     "idempotencyKey": "a2a-worker-subagent-planner-handoff:fixture766",
     "state": "ready_for_finalizer_review",
-    "finalizer": "seoseo",
-    "workerId": "bangtong",
+    "finalizer": "brokeralpha",
+    "workerId": "workergamma",
     "taskId": "task-large-independent",
     "source": {
       "selfAssessmentIdempotencyKey": "a2a-worker-self-assessment:fixture-ready",
@@ -54,8 +54,8 @@
   },
   "spawnAuthorizationRequest": {
     "now": "2026-05-19T02:20:00.000Z",
-    "finalizer": "seoseo",
-    "requestedBy": "seoseo",
+    "finalizer": "brokeralpha",
+    "requestedBy": "brokeralpha",
     "operatorTarget": "operator",
     "authorizationReference": "subagent-spawn-auth-766",
     "requestReference": "subagent-spawn-request-766",

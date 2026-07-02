@@ -1605,7 +1605,7 @@ test("operator terminal notification carries compact evidence and Telegram adapt
         receiptProjection: "current_session_visible",
         type: "succeeded",
         taskId: "task-146",
-        workerId: "sogyo",
+        workerId: "workerBeta",
         status: "succeeded",
         repo: "jinwon-int/plugin-a2a",
         issueUrl: "https://github.com/jinwon-int/plugin-a2a/issues/146",
@@ -1617,18 +1617,18 @@ test("operator terminal notification carries compact evidence and Telegram adapt
     },
   });
 
-  assert.equal(envelope.worker, "sogyo");
+  assert.equal(envelope.worker, "workerBeta");
   assert.equal(envelope.status, "succeeded");
   assert.equal(envelope.repo, "jinwon-int/plugin-a2a");
   assert.equal(envelope.issueUrl, "https://github.com/jinwon-int/plugin-a2a/issues/146");
   assert.equal(envelope.doneUrl, "https://github.com/jinwon-int/plugin-a2a/pull/147");
-  assert.equal(envelope.evidence.worker, "sogyo");
+  assert.equal(envelope.evidence.worker, "workerBeta");
   assert.equal(envelope.evidence.repo, "jinwon-int/plugin-a2a");
   assert.equal(envelope.evidence.doneUrl, "https://github.com/jinwon-int/plugin-a2a/pull/147");
   assert.equal(envelope.evidence.taskDescription, "Fix Terminal Brief notifications for worker completions");
   assert.doesNotMatch(envelope.evidence.summary, /hide-me|\/root\/private/);
-  assert.match(envelope.text, /Worker sogyo completed task: task-146 — Fix Terminal Brief notifications for worker completions/);
-  assert.match(envelope.text, /Worker: sogyo/);
+  assert.match(envelope.text, /Worker workerBeta completed task: task-146 — Fix Terminal Brief notifications for worker completions/);
+  assert.match(envelope.text, /Worker: workerBeta/);
   assert.match(envelope.text, /Done: https:\/\/github.com\/jinwon-int\/plugin-a2a\/pull\/147/);
 
   const telegram = buildA2AOpenClawTelegramOperatorNotification(envelope);
@@ -1653,7 +1653,7 @@ test("telegram-safe dry-run harness projects bounded Telegram payloads without s
           receiptProjection: "current_session_visible",
           type: "succeeded",
           taskId: "task-148",
-          workerId: "dungae",
+          workerId: "workerEpsilon",
           summary: "dry-run ready token=hide-me /root/private/telegram.log",
           doneUrl: "https://github.com/jinwon-int/plugin-a2a/pull/148",
         },
@@ -1697,16 +1697,16 @@ test("operator release drift renderer summarizes broker and worker current stale
       },
       workers: [
         {
-          workerId: "bangtong",
+          workerId: "workerGamma",
           runnerRevision: "160bd95af6b41234567890",
           expectedRevision: "ff4c244a38a71234567890",
         },
         {
-          workerId: "dungae",
+          workerId: "workerEpsilon",
           runnerRevision: "ff4c244a38a71234567890",
           expectedRevision: "ff4c244a38a71234567890",
         },
-        { workerId: "nosuk", status: "unknown" },
+        { workerId: "workerAlpha", status: "unknown" },
       ],
     },
   });
@@ -1715,11 +1715,11 @@ test("operator release drift renderer summarizes broker and worker current stale
   assert.equal(releaseDrift.broker.status, "current");
   assert.deepEqual(
     releaseDrift.workers.map((worker) => [worker.id, worker.status]),
-    [["bangtong", "stale"], ["dungae", "current"], ["nosuk", "unknown"]],
+    [["workerGamma", "stale"], ["workerEpsilon", "current"], ["workerAlpha", "unknown"]],
   );
   assert.match(releaseDrift.text, /broker current 78b2b42fca6e/);
-  assert.match(releaseDrift.text, /bangtong stale 160bd95af6b4→ff4c244a38a7/);
-  assert.match(releaseDrift.text, /nosuk unknown \?/);
+  assert.match(releaseDrift.text, /workerGamma stale 160bd95af6b4→ff4c244a38a7/);
+  assert.match(releaseDrift.text, /workerAlpha unknown \?/);
 
   const notification = buildA2AOperatorTerminalNotificationEnvelope({
     id: "terminal:pr:1",
@@ -1731,7 +1731,7 @@ test("operator release drift renderer summarizes broker and worker current stale
         prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/139",
         releaseDrift: {
           broker: { revision: "78b2b42fca6e", expectedRevision: "78b2b42fca6e" },
-          workers: { dungae: { runnerRevision: "160bd95af6b4", expectedRevision: "ff4c244a38a7" } },
+          workers: { workerEpsilon: { runnerRevision: "160bd95af6b4", expectedRevision: "ff4c244a38a7" } },
         },
         summary: "Terminal Brief proof saved; token=do-not-leak /home/example/private/session.log",
       },
@@ -1739,7 +1739,7 @@ test("operator release drift renderer summarizes broker and worker current stale
   });
 
   assert.equal(notification.type, "pr");
-  assert.match(notification.text, /Release: broker current 78b2b42fca6e; workers dungae stale 160bd95af6b4→ff4c244a38a7/);
+  assert.match(notification.text, /Release: broker current 78b2b42fca6e; workers workerEpsilon stale 160bd95af6b4→ff4c244a38a7/);
   assert.doesNotMatch(notification.text, /do-not-leak|\/home\/example\/private/);
 });
 
@@ -1755,7 +1755,7 @@ test("operator event bridge exposes compact release drift status from summary sn
               summary: {
                 releaseDrift: {
                   broker: { status: "unknown" },
-                  workers: [{ workerId: "dungae", runnerRevision: "ff4c244a38a7", expectedRevision: "ff4c244a38a7" }],
+                  workers: [{ workerId: "workerEpsilon", runnerRevision: "ff4c244a38a7", expectedRevision: "ff4c244a38a7" }],
                 },
               },
             },
@@ -1776,7 +1776,7 @@ test("operator event bridge exposes compact release drift status from summary sn
 
     assert.equal(state.operator.releaseDrift.status, "unknown");
     assert.equal(state.operator.releaseDrift.broker.status, "unknown");
-    assert.match(state.operator.releaseDrift.text, /dungae current ff4c244a38a7/);
+    assert.match(state.operator.releaseDrift.text, /workerEpsilon current ff4c244a38a7/);
   } finally {
     bridge.shutdown();
     await bridge.waitForIdle();
@@ -1971,27 +1971,27 @@ test("operator event bridge projects compact worker liveness and task progress",
           data: {
             summary: {
               workers: {
-                bangtong: {
+                workerGamma: {
                   status: "healthy",
                   lastHeartbeatAt: "2026-05-02T00:02:30.000Z",
                   activeTaskId: "task-144-a",
                   progress: 0.4,
                   message: "patch in progress",
                 },
-                dungae: {
+                workerEpsilon: {
                   lastSeenAt: "2026-05-01T23:58:00.000Z",
                   currentTaskId: "task-144-b",
                   progressPercent: 75,
                   summary: "token=should-not-leak",
                 },
-                nosuk: {
+                workerAlpha: {
                   status: "online",
                 },
               },
               activeTasks: [
                 {
                   id: "task-144-c",
-                  workerId: "sogyo",
+                  workerId: "workerBeta",
                   status: "running",
                   updatedAt: "2026-05-02T00:02:45.000Z",
                   progress: 0.25,
@@ -2030,10 +2030,10 @@ test("operator event bridge projects compact worker liveness and task progress",
         worker.progress,
       ]),
       [
-        ["bangtong", "live", "task-144-a", 0.4],
-        ["dungae", "stale", "task-144-b", 0.75],
-        ["nosuk", "live", undefined, undefined],
-        ["sogyo", "live", "task-144-c", 0.25],
+        ["workerAlpha", "live", undefined, undefined],
+        ["workerBeta", "live", "task-144-c", 0.25],
+        ["workerEpsilon", "stale", "task-144-b", 0.75],
+        ["workerGamma", "live", "task-144-a", 0.4],
       ],
     );
     assert.doesNotMatch(JSON.stringify(state.operator.workerProgress), /should-not-leak/);
@@ -2081,7 +2081,7 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
     payload: {
       taskId: "task-outbox",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 165,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/165#issuecomment-done",
@@ -2195,7 +2195,7 @@ test("operator terminal outbox polling ACKs only after receipt-confirmed notific
     assert.equal(sent[0].deliveryOwner, "openclaw.plugin-notifier");
     assert.equal(sent[0].taskId, "task-outbox");
     assert.equal(sent[0].evidence.taskDescription, "Verify terminal outbox ACK safety gate");
-    assert.match(sent[0].text, /Worker dungae completed task: task-outbox — Verify terminal outbox ACK safety gate/);
+    assert.match(sent[0].text, /Worker workerEpsilon completed task: task-outbox — Verify terminal outbox ACK safety gate/);
   } finally {
     bridge.shutdown();
     await bridge.waitForIdle();
@@ -2211,7 +2211,7 @@ test("operator terminal outbox cursor stops at the first unacknowledged row", as
     payload: {
       taskId: "first-acked",
       status: "succeeded",
-      worker: "yukson",
+      worker: "workerDelta",
       receiptProjection: "current_session_visible",
       testSummary: "first row receives operator-visible receipt",
       completedAt: "2026-05-06T00:00:01.000Z",
@@ -2224,7 +2224,7 @@ test("operator terminal outbox cursor stops at the first unacknowledged row", as
     payload: {
       taskId: "middle-pending",
       status: "failed",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptProjection: "current_session_visible",
       testSummary: "middle row does not yet have a visible receipt",
       completedAt: "2026-05-06T00:00:02.000Z",
@@ -2237,7 +2237,7 @@ test("operator terminal outbox cursor stops at the first unacknowledged row", as
     payload: {
       taskId: "third-fresh",
       status: "succeeded",
-      worker: "nosuk",
+      worker: "workerAlpha",
       receiptProjection: "current_session_visible",
       testSummary: "third row must not be processed while middle is pending",
       completedAt: "2026-05-06T00:00:03.000Z",
@@ -2314,7 +2314,7 @@ test("monitor status live wiring polls terminal outbox and ACKs OpenClaw receipt
     payload: {
       taskId: "task-live-wiring",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 165,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/165#issuecomment-done",
@@ -2420,7 +2420,7 @@ test("monitor status skips terminal outbox polling when notification is disabled
     payload: {
       taskId: "task-missing-target",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       createdAt: "2026-05-03T13:59:00.000Z",
       updatedAt: "2026-05-03T14:00:00.000Z",
       completedAt: "2026-05-03T14:00:00.000Z",
@@ -2482,15 +2482,15 @@ test("monitor status skips terminal outbox polling when notification is disabled
 
 test("operator terminal outbox duplicate replay is bounded until receipt confirmation", async () => {
   const outboxEvent = {
-    id: "terminal:a2a-plugin-terminal-outbox-rerun-dungae-165-1777703237007-2cbef34e:succeeded:2026-05-02T06%3A42%3A23.031Z",
+    id: "terminal:a2a-plugin-terminal-outbox-rerun-workerEpsilon-165-1777703237007-2cbef34e:succeeded:2026-05-02T06%3A42%3A23.031Z",
     kind: "task.terminal",
     taskEventId: 166,
     createdAt: "2026-05-02T06:42:23.031Z",
     attempts: 0,
     payload: {
-      taskId: "a2a-plugin-terminal-outbox-rerun-dungae-165-1777703237007-2cbef34e",
+      taskId: "a2a-plugin-terminal-outbox-rerun-workerEpsilon-165-1777703237007-2cbef34e",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 168,
       prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/167",
@@ -2562,7 +2562,7 @@ test("operator terminal outbox suppresses stale post-cursor unacked rows by defa
     payload: {
       taskId: "stage2-no-send-task",
       status: "succeeded",
-      worker: "seoseo-terminal-proof",
+      worker: "brokerAlpha-terminal-proof",
       testSummary: "Terminal Brief Stage2 no-send proof completed",
       receiptProjection: "current_session_visible",
       completedAt: "2026-05-05T16:21:38.672Z",
@@ -2626,17 +2626,17 @@ test("standalone client accepts broker-owned task metadata on task responses", a
       return new Response(JSON.stringify({
         id: "task-with-ownership-metadata",
         intent: "chat",
-        requester: { id: "gwakga", kind: "node", role: "operator" },
-        target: { id: "soonwook", kind: "node", role: "operator" },
+        requester: { id: "brokerBeta", kind: "node", role: "operator" },
+        target: { id: "workerEta", kind: "node", role: "operator" },
         message: "schema drift canary",
         payload: {},
         status: "queued",
-        targetNodeId: "soonwook",
-        assignedWorkerId: "soonwook",
+        targetNodeId: "workerEta",
+        assignedWorkerId: "workerEta",
         createdAt: "2026-05-12T22:50:01.000Z",
         updatedAt: "2026-05-12T22:50:01.000Z",
         taskOrigin: "unknown",
-        brokerOfRecord: "gwakga",
+        brokerOfRecord: "brokerBeta",
         teamId: "team2",
       }), {
         status: 201,
@@ -2648,12 +2648,12 @@ test("standalone client accepts broker-owned task metadata on task responses", a
   const task = await client.createTask({
     id: "task-with-ownership-metadata",
     intent: "chat",
-    requester: { id: "gwakga", kind: "node", role: "operator" },
-    target: { id: "soonwook", kind: "node", role: "operator" },
+    requester: { id: "brokerBeta", kind: "node", role: "operator" },
+    target: { id: "workerEta", kind: "node", role: "operator" },
     message: "schema drift canary",
   });
   assert.equal(task.taskOrigin, "unknown");
-  assert.equal(task.brokerOfRecord, "gwakga");
+  assert.equal(task.brokerOfRecord, "brokerBeta");
   assert.equal(task.teamId, "team2");
 });
 
@@ -2703,7 +2703,7 @@ test("operator terminal outbox suppresses historical unacked backlog by default"
     payload: {
       taskId: "e058a492-ae5b-4f86-a6da-fd3a426fb9cc",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/a2a-broker",
       issue: 369,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/373",
@@ -2773,7 +2773,7 @@ test("monitoring handlers can start terminal outbox draining without a monitor.s
     payload: {
       taskId: "task-auto-start",
       status: "succeeded",
-      worker: "nosuk",
+      worker: "workerAlpha",
       repo: "jinwon-int/a2a-broker",
       issue: 286,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/288",
@@ -2851,7 +2851,7 @@ test("monitoring handlers can start terminal outbox draining without a monitor.s
     assert.equal(state.kind, "a2a.operator.monitor");
     await eventually(() => acks, (value) => value.length === 1, "expected activation-started outbox drain to ACK");
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].text, "A2A Terminal Brief 완료: nosuk(1/1)");
+    assert.equal(sent[0].text, "A2A Terminal Brief 완료: workerAlpha(1/1)");
     assert.doesNotMatch(sent[0].text, /PR #288|PR:/);
     assert.equal(acks[0].id, outboxEvent.id);
     assert.equal(acks[0].receipt.evidence, "operator_visible");
@@ -2885,7 +2885,7 @@ test("cross-broker watcher forwards per-broker terminal outbox bounds", () => {
                   terminalOutboxAllowedIds: ["terminal:team2-round"],
                   terminalOutboxCursor: "terminal:team2-cursor",
                   terminalOutboxReconcileUnackedOnStart: false,
-                  handoffBrokerId: "gwakga",
+                  handoffBrokerId: "brokerBeta",
                   maxSummaryChars: 480,
                 },
               ],
@@ -2931,7 +2931,7 @@ test("cross-broker watcher forwards per-broker terminal outbox bounds", () => {
     assert.equal(team2.terminalOutboxCursor, "terminal:team2-cursor");
     assert.equal(team2.readTerminalOutboxCursor(), "terminal:team2-cursor");
     assert.equal(team2.terminalOutboxReconcileUnackedOnStart, false);
-    assert.equal(team2.handoffBrokerId, "gwakga");
+    assert.equal(team2.handoffBrokerId, "brokerBeta");
     assert.equal(team2.terminalProjectionMaxSummaryChars, 480);
     assert.equal(clientOptions.length, 1);
     assert.equal(clientOptions[0].edgeSecret, "test-edge-secret-from-file");
@@ -2951,7 +2951,7 @@ test("release dry-run no-live operator completion notification waits for visible
         id: "terminal:event:dryrun-201",
         status: "succeeded",
         taskId: "a2a-release-dryrun-20260504022511",
-        worker: "dungae",
+        worker: "workerEpsilon",
         repo: "jinwon-int/plugin-a2a",
         issue: 201,
         prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/201",
@@ -2973,7 +2973,7 @@ test("release dry-run no-live operator completion notification waits for visible
     payload: {
       taskId: "a2a-release-dryrun-20260504022511",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 201,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/201#issuecomment-done",
@@ -3022,7 +3022,7 @@ test("release dry-run no-live operator completion notification waits for visible
     assert.equal(outboxEnvelope.deliveryTarget, "operator-main-session");
     assert.match(outboxEnvelope.title, /^A2A Terminal Brief 완료:/, "title should stay Terminal Brief and Korean-friendly for operator scan");
     assert.match(outboxEnvelope.text, /릴리스 드라이런 완료/);
-    assert.match(outboxEnvelope.text, /Worker dungae completed task: a2a-release-dryrun-20260504022511/);
+    assert.match(outboxEnvelope.text, /Worker workerEpsilon completed task: a2a-release-dryrun-20260504022511/);
     assert.match(outboxEnvelope.text, /Issue: https:\/\/github\.com\/jinwon-int\/plugin-a2a\/issues\/201/);
     assert.match(outboxEnvelope.text, /Run: a2a-release-dryrun-20260504022511/);
     assert.match(outboxEnvelope.text, /Trace: trace-dryrun-201/);
@@ -3338,7 +3338,7 @@ test("operator terminal outbox cursor advances past suppressed historical allowe
     payload: {
       taskId: "allowed-history-page",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       receiptProjection: "current_session_visible",
       testSummary: "historical page must not pin terminal-outbox cursor",
       completedAt: "2026-05-14T09:40:00.000Z",
@@ -3353,7 +3353,7 @@ test("operator terminal outbox cursor advances past suppressed historical allowe
     payload: {
       taskId: "allowed-fresh-page",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       receiptProjection: "current_session_visible",
       testSummary: "fresh page should still attempt notification",
       completedAt: "2026-05-14T09:50:00.000Z",
@@ -3430,7 +3430,7 @@ test("operator terminal outbox poller applies hot-reloaded cursor and allowlist 
     payload: {
       taskId: "hot-reload-fresh",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptProjection: "current_session_visible",
       testSummary: "fresh event should send after hot-reloaded allowlist",
       completedAt: "2026-05-17T02:18:00.000Z",
@@ -3498,7 +3498,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
     payload: {
       taskId: "allowed-historical",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       testSummary: "historical allowlisted event must still stay suppressed",
       receiptProjection: "current_session_visible",
       completedAt: "2026-05-05T22:40:00.000Z",
@@ -3513,7 +3513,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
     payload: {
       taskId: "denied-fresh",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptProjection: "current_session_visible",
       testSummary: "fresh event without explicit allowlist must not send",
       completedAt: "2026-05-05T22:58:00.000Z",
@@ -3528,7 +3528,7 @@ test("operator terminal outbox allowlist sends only one fresh allowed event", as
     payload: {
       taskId: "allowed-fresh",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptProjection: "current_session_visible",
       testSummary: "fresh allowed proof event",
       completedAt: "2026-05-05T22:58:00.000Z",
@@ -3595,7 +3595,7 @@ test("cross-broker terminal projection is bounded, redacted, and fail-closed for
     payload: {
       taskId: "child-1",
       status: "succeeded",
-      worker: "jingun",
+      worker: "workerZeta",
       repo: "jinwon-int/plugin-a2a",
       issue: 281,
       prUrl: "https://github.com/jinwon-int/plugin-a2a/pull/999?token=secret-value",
@@ -3605,12 +3605,12 @@ test("cross-broker terminal projection is bounded, redacted, and fail-closed for
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
         parentRoundId: "cross-broker-terminal-brief-team2-20260513T011822Z",
-        originBrokerId: "gwakga-vps7",
-        handoffBrokerId: "seoseo",
+        originBrokerId: "brokerBeta-vps7",
+        handoffBrokerId: "brokerAlpha",
         originTaskId: "parent-task-528",
       },
       notificationOwnership: {
-        ownerBrokerId: "gwakga-vps7",
+        ownerBrokerId: "brokerBeta-vps7",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -3622,9 +3622,9 @@ test("cross-broker terminal projection is bounded, redacted, and fail-closed for
 
   assert.equal(projection.kind, "a2a.crossBroker.terminalProjection");
   assert.equal(projection.parentRoundId, "cross-broker-terminal-brief-team2-20260513T011822Z");
-  assert.equal(projection.originBrokerId, "seoseo");
-  assert.equal(projection.brokerOfRecordId, "gwakga-vps7");
-  assert.equal(projection.handoffBrokerId, "seoseo");
+  assert.equal(projection.originBrokerId, "brokerAlpha");
+  assert.equal(projection.brokerOfRecordId, "brokerBeta-vps7");
+  assert.equal(projection.handoffBrokerId, "brokerAlpha");
   assert.equal(projection.childTaskId, "child-1");
   assert.equal(projection.receipt.providerGatewaySendSuccess, "not_ack_evidence");
   assert.equal(projection.receipt.localReceiptState, "provider_only");
@@ -3652,13 +3652,13 @@ test("operator bridge relays only fresh post-cursor cross-broker terminal outbox
     payload: {
       taskId: "old-child",
       status: "succeeded",
-      worker: "jingun",
+      worker: "workerZeta",
       testSummary: "old event must not replay",
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
-      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "gwakga-vps7" },
+      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "brokerBeta-vps7" },
       notificationOwnership: {
-        ownerBrokerId: "gwakga-vps7",
+        ownerBrokerId: "brokerBeta-vps7",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -3675,16 +3675,16 @@ test("operator bridge relays only fresh post-cursor cross-broker terminal outbox
     payload: {
       taskId: "fresh-child",
       status: "succeeded",
-      worker: "jingun",
+      worker: "workerZeta",
       repo: "jinwon-int/plugin-a2a",
       issue: 281,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/281#issuecomment-done",
       testSummary: "fresh terminal projection",
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
-      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "gwakga-vps7" },
+      crossBrokerHandoff: { parentRoundId: "round-528", originBrokerId: "brokerBeta-vps7" },
       notificationOwnership: {
-        ownerBrokerId: "gwakga-vps7",
+        ownerBrokerId: "brokerBeta-vps7",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -3716,7 +3716,7 @@ test("operator bridge relays only fresh post-cursor cross-broker terminal outbox
         return freshEvent;
       },
     },
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokerAlpha",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "origin accepted" };
@@ -3727,9 +3727,9 @@ test("operator bridge relays only fresh post-cursor cross-broker terminal outbox
     bridge.getState({ cursor: "terminal:previous" });
     await eventually(() => relayed.length, (value) => value === 1, "expected exactly one fresh relay");
     assert.equal(relayed[0].childTaskId, "fresh-child");
-    assert.equal(relayed[0].originBrokerId, "seoseo");
-    assert.equal(relayed[0].brokerOfRecordId, "gwakga-vps7");
-    assert.equal(relayed[0].handoffBrokerId, "seoseo");
+    assert.equal(relayed[0].originBrokerId, "brokerAlpha");
+    assert.equal(relayed[0].brokerOfRecordId, "brokerBeta-vps7");
+    assert.equal(relayed[0].handoffBrokerId, "brokerAlpha");
     assert.equal(relayed[0].receipt.providerGatewaySendSuccess, "not_ack_evidence");
     assert.equal(acks.length, 0, "relay must not ACK terminal outbox without operator-visible origin receipt");
     const state = bridge.getState();
@@ -3760,20 +3760,20 @@ test("operator bridge relays cross-broker child Terminal Briefs without local op
     payload: {
       taskId: "handoff-child",
       status: "succeeded",
-      worker: "soonwook",
+      worker: "workerEta",
       repo: "a2a-plane (internal tracker, private)",
       issue: 276,
       testSummary: "child handoff completed",
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo-round",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        originTaskId: "parent-seoseo-round",
+        parentRoundId: "parent-brokerAlpha-round",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        originTaskId: "parent-brokerAlpha-round",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -3806,7 +3806,7 @@ test("operator bridge relays cross-broker child Terminal Briefs without local op
         return freshEvent;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "parent accepted" };
@@ -3821,8 +3821,8 @@ test("operator bridge relays cross-broker child Terminal Briefs without local op
     bridge.getState({ cursor: "terminal:before-handoff" });
     await eventually(() => relayed.length, (value) => value === 1, "expected child projection relay");
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(relayed[0].brokerOfRecordId, "seoseo");
-    assert.equal(relayed[0].originBrokerId, "gwakga");
+    assert.equal(relayed[0].brokerOfRecordId, "brokerAlpha");
+    assert.equal(relayed[0].originBrokerId, "brokerBeta");
     assert.equal(sent.length, 0, "handoff broker must not send operator-facing Terminal Brief locally");
     assert.equal(acks.length, 0, "handoff broker must not ACK local terminal outbox for parent-owned Brief visibility");
     const state = bridge.getState();
@@ -3850,11 +3850,11 @@ test("operator bridge suppresses child Terminal Briefs when parentOwnerBrokerId 
     payload: {
       taskId: "handoff-child-owner-only",
       status: "succeeded",
-      worker: "jingun",
+      worker: "workerZeta",
       repo: "jinwon-int/a2a-docker-runner",
       issue: 311,
-      parentRoundId: "parent-seoseo-round",
-      parentOwnerBrokerId: "seoseo",
+      parentRoundId: "parent-brokerAlpha-round",
+      parentOwnerBrokerId: "brokerAlpha",
       testSummary: "child handoff completed with parent owner metadata only",
       completedAt: "2026-05-13T05:05:00.000Z",
     },
@@ -3883,7 +3883,7 @@ test("operator bridge suppresses child Terminal Briefs when parentOwnerBrokerId 
         return freshEvent;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     notifyOperator(envelope) {
       sent.push(envelope);
       return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
@@ -3917,9 +3917,9 @@ test("operator bridge suppresses parent-broker-only child Briefs with explicit n
       updatedAt: "2026-05-21T09:38:31.955Z",
     },
     payload: {
-      taskId: "terminal-brief-873-live-proof-20260521T1831KST-team2-jingun",
+      taskId: "terminal-brief-873-live-proof-20260521T1831KST-team2-workerZeta",
       status: "failed",
-      worker: "jingun",
+      worker: "workerZeta",
       repo: "jinwon-int/a2a-broker",
       issue: 871,
       parentRoundId: "terminal-brief-873-live-proof-20260521T1831KST",
@@ -3929,17 +3929,17 @@ test("operator bridge suppresses parent-broker-only child Briefs with explicit n
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
         parentRoundId: "terminal-brief-873-live-proof-20260521T1831KST",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "jingun",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        childWorkerId: "workerZeta",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
-      terminalBriefTitle: "A2A Terminal Brief 실패: jingun(종료 2/2, 성공 0/2)",
+      terminalBriefTitle: "A2A Terminal Brief 실패: workerZeta(종료 2/2, 성공 0/2)",
       completedAt: "2026-05-21T09:38:31.955Z",
     },
   };
@@ -3967,7 +3967,7 @@ test("operator bridge suppresses parent-broker-only child Briefs with explicit n
         return freshEvent;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     notifyOperator(envelope) {
       sent.push(envelope);
       return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
@@ -4001,9 +4001,9 @@ test("operator bridge sends parent-broker-only Briefs when local broker owns not
       updatedAt: "2026-05-21T10:42:56.903Z",
     },
     payload: {
-      taskId: "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-jingun",
+      taskId: "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-workerZeta",
       status: "succeeded",
-      worker: "jingun",
+      worker: "workerZeta",
       repo: "jinwon-int/a2a-docker-runner",
       issue: 311,
       doneUrl: "https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-420",
@@ -4015,17 +4015,17 @@ test("operator bridge sends parent-broker-only Briefs when local broker owns not
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
         parentRoundId: "terminal-brief-419-runner319-live-proof-20260521T193251KST",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "jingun",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        childWorkerId: "workerZeta",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
-      terminalBriefTitle: "A2A Terminal Brief 완료: jingun(완료 2/2)",
+      terminalBriefTitle: "A2A Terminal Brief 완료: workerZeta(완료 2/2)",
       completedAt: "2026-05-21T10:42:56.903Z",
     },
   };
@@ -4053,7 +4053,7 @@ test("operator bridge sends parent-broker-only Briefs when local broker owns not
         return freshEvent;
       },
     },
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokerAlpha",
     notifyOperator(envelope) {
       sent.push(envelope);
       return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
@@ -4063,8 +4063,8 @@ test("operator bridge sends parent-broker-only Briefs when local broker owns not
   try {
     bridge.getState({ cursor: "terminal:before-parent-local-owner" });
     await eventually(() => sent.length, (value) => value === 1, "expected parent owner broker to send Brief");
-    assert.equal(sent[0].taskId, "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-jingun");
-    assert.equal(sent[0].title, "A2A Terminal Brief 완료: jingun(완료 2/2)");
+    assert.equal(sent[0].taskId, "terminal-brief-419-runner319-live-proof-20260521T193251KST-team2-workerZeta");
+    assert.equal(sent[0].title, "A2A Terminal Brief 완료: workerZeta(완료 2/2)");
     await eventually(() => acks.length, (value) => value === 1, "expected parent owner broker to ACK after visible receipt");
     assert.equal(acks[0].receipt.evidence, "operator_visible");
   } finally {
@@ -4089,11 +4089,11 @@ test("operator bridge notifies local broker-owned Terminal Briefs when no handof
     payload: {
       taskId: "local-broker-owned",
       status: "succeeded",
-      worker: "nosuk",
+      worker: "workerAlpha",
       doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/294",
       parentRoundId: "local-broker-owned",
-      brokerOfRecordId: "seoseo",
-      originBrokerId: "seoseo",
+      brokerOfRecordId: "brokerAlpha",
+      originBrokerId: "brokerAlpha",
       testSummary: "local broker-owned canary completed",
       completedAt: "2026-05-13T05:10:00.000Z",
     },
@@ -4144,7 +4144,7 @@ test("operator bridge notifies local broker-owned Terminal Briefs when no handof
 
 test("operator bridge notifies parent-side synthetic cross-broker Terminal Briefs locally", async () => {
   const parentEvent = {
-    id: "terminal:cross-broker%3Aparent-seoseo%3Agwakga%3Achild-1:succeeded:2026-05-13T05%3A30%3A00.000Z",
+    id: "terminal:cross-broker%3Aparent-brokerAlpha%3AbrokerBeta%3Achild-1:succeeded:2026-05-13T05%3A30%3A00.000Z",
     kind: "task.terminal",
     taskEventId: 540,
     createdAt: "2026-05-13T05:30:00.000Z",
@@ -4158,13 +4158,13 @@ test("operator bridge notifies parent-side synthetic cross-broker Terminal Brief
     payload: {
       taskId: "child-1",
       status: "succeeded",
-      run: "parent-seoseo",
-      worker: "gwakga",
+      run: "parent-brokerAlpha",
+      worker: "brokerBeta",
       testSummary: "parent synthetic projection completed",
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        parentRoundId: "parent-brokerAlpha",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
         originTaskId: "child-1",
       },
       completedAt: "2026-05-13T05:30:00.000Z",
@@ -4195,7 +4195,7 @@ test("operator bridge notifies parent-side synthetic cross-broker Terminal Brief
         return { ...parentEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
       },
     },
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokerAlpha",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "should not relay parent synthetic event" };
@@ -4211,7 +4211,7 @@ test("operator bridge notifies parent-side synthetic cross-broker Terminal Brief
     await eventually(() => sent.length, (value) => value === 1, "expected parent-side synthetic Brief notification");
     assert.equal(relayed.length, 0, "parent synthetic cross-broker event must not be relayed back to child broker");
     assert.equal(sent[0].taskId, "child-1");
-    assert.equal(sent[0].runId, "parent-seoseo");
+    assert.equal(sent[0].runId, "parent-brokerAlpha");
     await eventually(() => acks.length, (value) => value === 1, "expected parent-side synthetic Brief ACK");
     assert.equal(acks[0].receipt.evidence, "operator_visible");
   } finally {
@@ -4222,7 +4222,7 @@ test("operator bridge notifies parent-side synthetic cross-broker Terminal Brief
 
 test("operator bridge skips evidence-only cross-broker projection and notifies paired operator row", async () => {
   const projectionEvent = {
-    id: "terminal:cross-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+    id: "terminal:cross-broker%3Aparent-brokerAlpha%3Achild-1%3Asucceeded%3AbrokerAlpha",
     kind: "task.terminal",
     taskEventId: 541,
     createdAt: "2026-05-13T05:35:00.000Z",
@@ -4236,28 +4236,28 @@ test("operator bridge skips evidence-only cross-broker projection and notifies p
     payload: {
       taskId: "child-1",
       status: "succeeded",
-      run: "parent-seoseo",
-      worker: "dungae",
+      run: "parent-brokerAlpha",
+      worker: "workerEpsilon",
       testSummary: "projection evidence only",
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        parentRoundId: "parent-brokerAlpha",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
         originTaskId: "child-1",
-        childWorkerId: "dungae",
+        childWorkerId: "workerEpsilon",
       },
       completedAt: "2026-05-13T05:34:58.000Z",
     },
   };
   const operatorEvent = {
     ...projectionEvent,
-    id: "terminal:cross-broker-operator%3Across-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+    id: "terminal:cross-broker-operator%3Across-broker%3Aparent-brokerAlpha%3Achild-1%3Asucceeded%3AbrokerAlpha",
     taskEventId: 542,
     ackAudit: {
       decision: "pending",
@@ -4303,7 +4303,7 @@ test("operator bridge skips evidence-only cross-broker projection and notifies p
         return { ...operatorEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
       },
     },
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokerAlpha",
     notifyOperator(envelope) {
       sent.push(envelope);
       return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };
@@ -4332,7 +4332,7 @@ test("operator bridge skips evidence-only cross-broker projection and notifies p
   }
 });
 
-test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent round at Gwakga", async () => {
+test("cross-broker suppresses child 1/1 operator Brief for brokerAlpha-owned parent round at brokerBeta", async () => {
   const freshEvent = {
     id: "terminal:child-1-of-1:succeeded:2026-05-22T22%3A58%3A13.000Z",
     kind: "task.terminal",
@@ -4348,24 +4348,24 @@ test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent r
     payload: {
       taskId: "child-1-of-1",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 437,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 child 1/1 completion",
-      parentRoundId: "parent-seoseo-round-1-of-1",
+      parentRoundId: "parent-brokerAlpha-round-1-of-1",
       parentRoundOrder: 1,
       parentRoundTotal: 1,
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo-round-1-of-1",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "dungae",
+        parentRoundId: "parent-brokerAlpha-round-1-of-1",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        childWorkerId: "workerEpsilon",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -4398,7 +4398,7 @@ test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent r
         return freshEvent;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "parent accepted" };
@@ -4412,9 +4412,9 @@ test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent r
   try {
     bridge.getState({ cursor: "terminal:before-child-1-1" });
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for child 1/1 owned by Seoseo");
-    assert.equal(relayed.length, 1, "Gwakga must relay cross-broker projection to Seoseo for child 1/1");
-    assert.equal(acks.length, 0, "Gwakga must not ACK terminal outbox for Seoseo-owned Brief visibility");
+    assert.equal(sent.length, 0, "brokerBeta must not send operator-facing Brief for child 1/1 owned by brokerAlpha");
+    assert.equal(relayed.length, 1, "brokerBeta must relay cross-broker projection to brokerAlpha for child 1/1");
+    assert.equal(acks.length, 0, "brokerBeta must not ACK terminal outbox for brokerAlpha-owned Brief visibility");
     const state = bridge.getState();
     assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
     assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
@@ -4424,7 +4424,7 @@ test("cross-broker suppresses child 1/1 operator Brief for Seoseo-owned parent r
   }
 });
 
-test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent round at Gwakga", async () => {
+test("cross-broker suppresses child 1/2 operator Brief for brokerAlpha-owned parent round at brokerBeta", async () => {
   const freshEvent = {
     id: "terminal:child-1-of-2:succeeded:2026-05-22T22%3A58%3A14.000Z",
     kind: "task.terminal",
@@ -4440,24 +4440,24 @@ test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent r
     payload: {
       taskId: "child-1-of-2",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 437,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 child 1/2 completion",
-      parentRoundId: "parent-seoseo-round-1-of-2",
+      parentRoundId: "parent-brokerAlpha-round-1-of-2",
       parentRoundOrder: 1,
       parentRoundTotal: 2,
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo-round-1-of-2",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "dungae",
+        parentRoundId: "parent-brokerAlpha-round-1-of-2",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        childWorkerId: "workerEpsilon",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -4490,7 +4490,7 @@ test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent r
         return freshEvent;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "parent accepted" };
@@ -4504,9 +4504,9 @@ test("cross-broker suppresses child 1/2 operator Brief for Seoseo-owned parent r
   try {
     bridge.getState({ cursor: "terminal:before-child-1-2" });
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for child 1/2 owned by Seoseo");
-    assert.equal(relayed.length, 1, "Gwakga must relay cross-broker projection to Seoseo for child 1/2");
-    assert.equal(acks.length, 0, "Gwakga must not ACK terminal outbox for Seoseo-owned Brief visibility");
+    assert.equal(sent.length, 0, "brokerBeta must not send operator-facing Brief for child 1/2 owned by brokerAlpha");
+    assert.equal(relayed.length, 1, "brokerBeta must relay cross-broker projection to brokerAlpha for child 1/2");
+    assert.equal(acks.length, 0, "brokerBeta must not ACK terminal outbox for brokerAlpha-owned Brief visibility");
     const state = bridge.getState();
     assert.equal(state.operator.terminalOutbox.crossBrokerRelay.status, "succeeded");
     assert.equal(state.operator.terminalOutbox.cursor, freshEvent.id);
@@ -4532,24 +4532,24 @@ test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sen
     payload: {
       taskId: "dedupe-child-task",
       status: "succeeded",
-      worker: "dungae",
+      worker: "workerEpsilon",
       repo: "jinwon-int/plugin-a2a",
       issue: 437,
       doneUrl: "https://github.com/jinwon-int/plugin-a2a/issues/437#issuecomment-done",
       testSummary: "lane 5/7 dedupe test",
-      parentRoundId: "parent-seoseo-round-dedupe",
+      parentRoundId: "parent-brokerAlpha-round-dedupe",
       parentRoundOrder: 1,
       parentRoundTotal: 2,
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo-round-dedupe",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "dungae",
+        parentRoundId: "parent-brokerAlpha-round-dedupe",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
+        childWorkerId: "workerEpsilon",
       },
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -4590,7 +4590,7 @@ test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sen
         return params;
       },
     },
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerBeta",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "parent accepted" };
@@ -4604,7 +4604,7 @@ test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sen
   try {
     bridge.getState({ cursor: "terminal:before-dedupe" });
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(sent.length, 0, "Gwakga must not send operator-facing Brief for dedupe test (Seoseo-owned)");
+    assert.equal(sent.length, 0, "brokerBeta must not send operator-facing Brief for dedupe test (brokerAlpha-owned)");
     assert.equal(relayed.length, 2, "both original and duplicate relay projections should be forwarded");
     // Both relay projections should reference the same childTaskId from the same parent round
     assert.equal(relayed[0].childTaskId, "dedupe-child-task");
@@ -4617,9 +4617,9 @@ test("cross-broker dedupe via taskNotificationKey prevents duplicate visible sen
   }
 });
 
-test("cross-broker parent-side synthetic Seoseo operator Brief has correct title scoped to parent round", async () => {
+test("cross-broker parent-side synthetic brokerAlpha operator Brief has correct title scoped to parent round", async () => {
   const parentEvent = {
-    id: "terminal:cross-broker%3Aparent-seoseo%3Agwakga%3Achild-1-of-2:succeeded:2026-05-22T22%3A58%3A17.000Z",
+    id: "terminal:cross-broker%3Aparent-brokerAlpha%3AbrokerBeta%3Achild-1-of-2:succeeded:2026-05-22T22%3A58%3A17.000Z",
     kind: "task.terminal",
     taskEventId: 605,
     createdAt: "2026-05-22T22:58:17.000Z",
@@ -4633,18 +4633,18 @@ test("cross-broker parent-side synthetic Seoseo operator Brief has correct title
     payload: {
       taskId: "child-1-of-2",
       status: "succeeded",
-      run: "parent-seoseo-round-synthetic",
-      worker: "dungae",
+      run: "parent-brokerAlpha-round-synthetic",
+      worker: "workerEpsilon",
       testSummary: "parent synthetic projection for child 1/2 completed",
-      parentRoundId: "parent-seoseo-round-synthetic",
+      parentRoundId: "parent-brokerAlpha-round-synthetic",
       parentRoundOrder: 1,
       parentRoundTotal: 2,
       crossBrokerHandoff: {
-        parentRoundId: "parent-seoseo-round-synthetic",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        parentRoundId: "parent-brokerAlpha-round-synthetic",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
         originTaskId: "child-1-of-2",
-        childWorkerId: "dungae",
+        childWorkerId: "workerEpsilon",
       },
       completedAt: "2026-05-22T22:58:17.000Z",
     },
@@ -4674,7 +4674,7 @@ test("cross-broker parent-side synthetic Seoseo operator Brief has correct title
         return { ...parentEvent, ack: { status: "receipt_confirmed", ...params.receipt } };
       },
     },
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokerAlpha",
     relayTerminalProjection(projection) {
       relayed.push(projection);
       return { accepted: true, reason: "should not relay parent synthetic event" };
@@ -4687,17 +4687,17 @@ test("cross-broker parent-side synthetic Seoseo operator Brief has correct title
 
   try {
     bridge.getState({ cursor: "terminal:before-synthetic-brief-title" });
-    await eventually(() => sent.length, (value) => value === 1, "expected Seoseo-side synthetic Brief notification");
-    assert.equal(relayed.length, 0, "Seoseo synthetic cross-broker event must not be relayed back to child broker");
+    await eventually(() => sent.length, (value) => value === 1, "expected brokerAlpha-side synthetic Brief notification");
+    assert.equal(relayed.length, 0, "brokerAlpha synthetic cross-broker event must not be relayed back to child broker");
     assert.equal(sent[0].taskId, "child-1-of-2");
-    assert.equal(sent[0].runId, "parent-seoseo-round-synthetic");
-    assert.equal(sent[0].parentRoundId, "parent-seoseo-round-synthetic");
+    assert.equal(sent[0].runId, "parent-brokerAlpha-round-synthetic");
+    assert.equal(sent[0].parentRoundId, "parent-brokerAlpha-round-synthetic");
     // Title should reflect parent round context with 1/2, not a misleading child-local "1/1"
     assert.ok(
       sent[0].title.includes("1/2") || sent[0].title.includes("완료"),
       `synthetic brief title "${sent[0].title}" must contain parent round order context`,
     );
-    await eventually(() => acks.length, (value) => value === 1, "expected Seoseo synthetic Brief ACK");
+    await eventually(() => acks.length, (value) => value === 1, "expected brokerAlpha synthetic Brief ACK");
     assert.equal(acks[0].receipt.evidence, "operator_visible");
   } finally {
     bridge.shutdown();

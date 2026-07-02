@@ -25,7 +25,7 @@ function createManager(opts?: Partial<WakeAuditManagerOptions>): WakeAuditManage
 function baseInput(overrides?: Partial<{ sessionKey: string; peerNodeId: string; parentTaskId: string; replayCursor: number }>) {
   return {
     sessionKey: overrides?.sessionKey ?? "session-alpha",
-    peerNodeId: overrides?.peerNodeId ?? "sogyo",
+    peerNodeId: overrides?.peerNodeId ?? "workerbeta",
     parentTaskId: overrides?.parentTaskId ?? "task-1",
     replayCursor: overrides?.replayCursor ?? 42,
   };
@@ -417,11 +417,11 @@ describe("cursor replay", () => {
 
   it("filters by peerNodeId", () => {
     const mgr = createManager();
-    mgr.requestWake(baseInput({ sessionKey: "s1", peerNodeId: "sogyo" }));
-    mgr.requestWake(baseInput({ sessionKey: "s2", peerNodeId: "dungae" }));
+    mgr.requestWake(baseInput({ sessionKey: "s1", peerNodeId: "workerbeta" }));
+    mgr.requestWake(baseInput({ sessionKey: "s2", peerNodeId: "workerepsilon" }));
 
-    expect(mgr.subscribe({ peerNodeId: "sogyo" })).toHaveLength(1);
-    expect(mgr.subscribe({ peerNodeId: "dungae" })).toHaveLength(1);
+    expect(mgr.subscribe({ peerNodeId: "workerbeta" })).toHaveLength(1);
+    expect(mgr.subscribe({ peerNodeId: "workerepsilon" })).toHaveLength(1);
   });
 
   it("filters by parentTaskId", () => {
@@ -555,8 +555,8 @@ describe("audit trail safety", () => {
 describe("multi-session scenarios", () => {
   it("tracks multiple independent wake sessions", () => {
     const mgr = createManager();
-    const a = baseInput({ sessionKey: "session-a", peerNodeId: "sogyo" });
-    const b = baseInput({ sessionKey: "session-b", peerNodeId: "dungae" });
+    const a = baseInput({ sessionKey: "session-a", peerNodeId: "workerbeta" });
+    const b = baseInput({ sessionKey: "session-b", peerNodeId: "workerepsilon" });
 
     mgr.requestWake(a);
     mgr.requestWake(b);
@@ -570,12 +570,12 @@ describe("multi-session scenarios", () => {
 
   it("getSessionsForPeer filters correctly", () => {
     const mgr = createManager();
-    mgr.requestWake(baseInput({ sessionKey: "s1", peerNodeId: "sogyo" }));
-    mgr.requestWake(baseInput({ sessionKey: "s2", peerNodeId: "sogyo" }));
-    mgr.requestWake(baseInput({ sessionKey: "s3", peerNodeId: "dungae" }));
+    mgr.requestWake(baseInput({ sessionKey: "s1", peerNodeId: "workerbeta" }));
+    mgr.requestWake(baseInput({ sessionKey: "s2", peerNodeId: "workerbeta" }));
+    mgr.requestWake(baseInput({ sessionKey: "s3", peerNodeId: "workerepsilon" }));
 
-    expect(mgr.getSessionsForPeer("sogyo")).toHaveLength(2);
-    expect(mgr.getSessionsForPeer("dungae")).toHaveLength(1);
+    expect(mgr.getSessionsForPeer("workerbeta")).toHaveLength(2);
+    expect(mgr.getSessionsForPeer("workerepsilon")).toHaveLength(1);
   });
 
   it("getSessionsForTask filters correctly", () => {

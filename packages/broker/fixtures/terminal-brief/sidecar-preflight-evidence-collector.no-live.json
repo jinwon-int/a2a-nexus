@@ -13,8 +13,8 @@
       "invocationRehearsalState": "ready_for_executor_invocation_rehearsal",
       "invocationRehearsalIdempotencyKey": "tb-sidecar-executor-invocation-rehearsal:fixture-724",
       "executorInvocationRehearsalReady": true,
-      "executorName": "gongyung-sidecar-dry-run-executor",
-      "adapterName": "gongyung",
+      "executorName": "mobilealpha-sidecar-dry-run-executor",
+      "adapterName": "mobilealpha",
       "commandShapeKind": "metadata_only"
     },
     "approvalRequestDraft": {
@@ -82,7 +82,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesExecutorInvocationRehearsalPacket": true,
       "sendsApprovalRequest": false,
       "grantsApproval": false,

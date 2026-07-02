@@ -56,7 +56,7 @@
     "source": {
       "dispatchState": "dispatch_draft_ready",
       "dispatchIdempotencyKey": "tb-approval-dispatch:fixture-712",
-      "adapterType": "gongyung",
+      "adapterType": "mobilealpha",
       "targetIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/712"
     },
     "requestedAction": {
@@ -101,7 +101,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesDispatchAdapterPacket": true,
       "consumesReceiptIngestorPacket": true,
       "grantsApproval": false,

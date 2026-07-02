@@ -472,14 +472,14 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
   const server = await startTestServer({ edgeSecret: "s", staleReaperEnabled: false, workerOfflineAfterSec: 0 });
   try {
     const hubHeaders = h("s", { "x-a2a-requester-id": "hub-1", "x-a2a-requester-role": "hub" });
-    const workerHeaders = h("s", { "x-a2a-requester-id": "nosuk", "x-a2a-requester-role": "analyst" });
+    const workerHeaders = h("s", { "x-a2a-requester-id": "workeralpha", "x-a2a-requester-role": "analyst" });
     const operatorHeaders = h("s", { "x-a2a-requester-id": "ops", "x-a2a-requester-role": "operator" });
 
     const regRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: workerHeaders,
       body: JSON.stringify({
-        nodeId: "nosuk",
+        nodeId: "workeralpha",
         role: "analyst",
         capabilities: {
           canAnalyze: true,
@@ -493,7 +493,7 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
     });
     assert.equal(regRes.status, 201);
 
-    const heartbeatRes = await fetch(`${server.baseUrl}/workers/nosuk/heartbeat`, {
+    const heartbeatRes = await fetch(`${server.baseUrl}/workers/workeralpha/heartbeat`, {
       method: "POST",
       headers: workerHeaders,
       body: JSON.stringify({ status: "online" }),
@@ -508,8 +508,8 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
           id,
           intent: "analyze",
           requester: { id: "hub-1", kind: "node", role: "hub" },
-          target: { id: "nosuk", kind: "node", role: "analyst" },
-          assignedWorkerId: "nosuk",
+          target: { id: "workeralpha", kind: "node", role: "analyst" },
+          assignedWorkerId: "workeralpha",
           via: { transport: "openclaw", channel: "github", traceId: "trace-329" },
           payload: {
             githubRepo: "jinwon-int/a2a-broker",
@@ -530,17 +530,17 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
     assert.equal((await fetch(`${server.baseUrl}/tasks/${claimedTask.id}/claim`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "nosuk" }),
+      body: JSON.stringify({ workerId: "workeralpha" }),
     })).status, 200);
     assert.equal((await fetch(`${server.baseUrl}/tasks/${runningTask.id}/claim`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "nosuk" }),
+      body: JSON.stringify({ workerId: "workeralpha" }),
     })).status, 200);
     assert.equal((await fetch(`${server.baseUrl}/tasks/${runningTask.id}/start`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "nosuk" }),
+      body: JSON.stringify({ workerId: "workeralpha" }),
     })).status, 200);
 
     const sweepRes = await fetch(`${server.baseUrl}/tasks/requeue_stale?older_than_seconds=0`, {
@@ -557,7 +557,7 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
       const replayed = await (await fetch(`${server.baseUrl}/tasks/${id}`, { headers: hubHeaders })).json();
       assert.equal(replayed.id, id);
       assert.equal(replayed.status, "queued", "stale task must be replayed instead of silently succeeding");
-      assert.equal(replayed.assignedWorkerId, "nosuk");
+      assert.equal(replayed.assignedWorkerId, "workeralpha");
       assert.equal(replayed.claimedBy, undefined);
       assert.equal(replayed.requeueCount, 1);
       assert.equal(replayed.payload.githubRepo, "jinwon-int/a2a-broker");
@@ -570,16 +570,16 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
     assert.equal((await fetch(`${server.baseUrl}/tasks/${runningTask.id}/claim`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "nosuk" }),
+      body: JSON.stringify({ workerId: "workeralpha" }),
     })).status, 200);
     assert.equal((await fetch(`${server.baseUrl}/tasks/${runningTask.id}/start`, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ workerId: "nosuk" }),
+      body: JSON.stringify({ workerId: "workeralpha" }),
     })).status, 200);
 
     const doneBody = {
-      workerId: "nosuk",
+      workerId: "workeralpha",
       result: {
         summary: "Done: no-live replay/requeue drill passed",
         output: {
@@ -607,7 +607,7 @@ test("E2E: no-live replay drill requeues stale claimed/running tasks and replays
     assert.equal(outbox.count, 1, "duplicate Done evidence must not enqueue duplicate terminal records");
     const [event] = outbox.events;
     assert.equal(event.payload.taskId, runningTask.id);
-    assert.equal(event.payload.worker, "nosuk");
+    assert.equal(event.payload.worker, "workeralpha");
     assert.equal(event.payload.repo, "jinwon-int/a2a-broker");
     assert.equal(event.payload.issue, 329);
     assert.equal(event.payload.run, "a2a-no-live-integration-20260504035026");

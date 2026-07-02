@@ -33,7 +33,7 @@ can be throttled, so those registry/detail read paths may show older persisted
 `lastSeenAt` values even while `/workers/capacity` and `/dashboard` show current
 online capacity.
 
-For Seoseo/Gwakga broker checks, pass the edge secret through an environment
+For brokeralpha/brokerbeta broker checks, pass the edge secret through an environment
 variable or local config reader and never paste, log, or commit the secret value:
 
 ```bash
@@ -65,7 +65,7 @@ npm run team1_dispatch_wrapper -- \
   --run-id a2a-example-20260606T210000Z \
   --parent-issue https://github.com/jinwon-int/a2a-broker/issues/1253 \
   --child-issue https://github.com/jinwon-int/a2a-broker/issues/1276 \
-  --worker yukson \
+  --worker workerdelta \
   --worker-present \
   --work-mode-decision fixtures/work-mode-pre-dispatch/team1-candidate-review.json \
   --markdown
@@ -105,7 +105,7 @@ Team1/hybrid planning when the recorded routing decision says solo.
     "credentialOrSecretChange": false,
     "approvalSensitiveCloseout": false
   },
-  "finalizerOwner": "seoseo"
+  "finalizerOwner": "brokeralpha"
 }
 ```
 
@@ -140,7 +140,7 @@ The packet recommends `team1` when:
 
 The packet recommends `hybrid` when:
 
-- Seoseo should keep implementation or finalizer authority;
+- brokeralpha should keep implementation or finalizer authority;
 - bounded helper evidence can reduce risk without handing off closeout.
 
 ## Output Guarantees

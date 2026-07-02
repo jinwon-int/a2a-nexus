@@ -14,7 +14,7 @@ import {
   type LiberoEvidenceInput,
 } from "./libero-validation-matrix.js";
 
-// yukson (synthesis-risk-libero, a2ad-1032-reused-socket-v2-20260601T2120KST):
+// workerdelta (synthesis-risk-libero, a2ad-1032-reused-socket-v2-20260601T2120KST):
 // These tests validate the #1032 reused-socket RCA libero validation matrix
 // alongside the existing #497/#294 matrices.
 
@@ -48,7 +48,7 @@ test("libero closure criteria cover #497, #294, #1032, and cross-issue evidence 
   assert.match(joined, /providerCalled=false/);
   assert.match(joined, /AGENTS\/SOUL\/USER\/TOOLS\/HEARTBEAT\/IDENTITY\/\.openclaw/);
 
-  // #1032 reused-socket RCA criteria (yukson)
+  // #1032 reused-socket RCA criteria (workerdelta)
   assert.match(joined, /Attributable stall evidence/);
   assert.match(joined, /pre-handler queuing|queuing/);
   assert.match(joined, /cgroup CPU throttling/);
@@ -64,7 +64,7 @@ test("libero no-go traps fail closed on receipt, OOM, cleanup, replay, evidence 
   assert.match(trapsByArea.get("replay_canary")?.trap ?? "", /live provider send/);
   assert.match(trapsByArea.get("evidence_hygiene")?.failClosedResponse ?? "", /repo-relative offending paths/);
 
-  // #1032 reused-socket RCA traps (yukson)
+  // #1032 reused-socket RCA traps (workerdelta)
   // Note: trapsByArea uses area as key, so for areas with multiple traps (scheduling_attribution)
   // it returns the last registration. Use LIBERO_NO_GO_TRAPS.find for specific traps.
   const t6 = LIBERO_NO_GO_TRAPS.find((t) => t.id === "T6");
@@ -140,7 +140,7 @@ test("rendered libero matrix names hot-table, terminal ACK, evidence hygiene blo
   assert.match(markdown, /Provider send acceptance is never treated as operator-visible receipt/);
   assert.match(markdown, /OpenClaw runtime\/bootstrap context files/);
 
-  // #1032 reused-socket RCA gates (yukson)
+  // #1032 reused-socket RCA gates (workerdelta)
   assert.match(markdown, /#1032/);
   assert.match(markdown, /reused_socket_rca/);
   assert.match(markdown, /scheduling_attribution/);
@@ -158,7 +158,7 @@ test("rendered closure criteria and no-go trap tables expose closeout blockers i
   assert.match(criteria, /full-history heap residency/);
   assert.match(criteria, /duplicate provider sends/);
 
-  // #1032 closure criteria (yukson)
+  // #1032 closure criteria (workerdelta)
   assert.match(criteria, /pre-handler queuing|handler delay/);
   assert.match(criteria, /cgroup CPU throttling/);
   assert.match(criteria, /Attributable stall evidence/);
@@ -168,7 +168,7 @@ test("rendered closure criteria and no-go trap tables expose closeout blockers i
   assert.match(traps, /operator-visible receipt/);
   assert.match(traps, /Fail closed before PR creation/);
 
-  // #1032 no-go traps (yukson)
+  // #1032 no-go traps (workerdelta)
   assert.match(traps, /reused_socket_rca/);
   assert.match(traps, /scheduling_attribution/);
   assert.match(traps, /connection_tracking_diagnostics/);
@@ -178,7 +178,7 @@ test("rendered closure criteria and no-go trap tables expose closeout blockers i
   assert.doesNotMatch(`${criteria}\n${traps}`, /secret value|password|file:\/\//i);
 });
 
-// #1032 reused-socket RCA specific tests (yukson, synthesis-risk-libero)
+// #1032 reused-socket RCA specific tests (workerdelta, synthesis-risk-libero)
 
 test("libero #1032 closure criteria include reused-socket stall attribution, accept-queue separation, host-scheduling exclusion, and deploy gate boundaries", () => {
   const joined = LIBERO_CLOSURE_CRITERIA
@@ -217,7 +217,7 @@ test("libero #1032 no-go traps cover incomplete RCA, accept-queue conflation, li
   assert.match(t6?.trap ?? "", /timing.window.*evidence|correlating/);
   assert.match(t6?.failClosedResponse ?? "", /perRequest timing/);
 
-  // T7: attributing stalls without accept-queue exclusion (yukson)
+  // T7: attributing stalls without accept-queue exclusion (workerdelta)
   const t7 = LIBERO_NO_GO_TRAPS.find((t) => t.id === "T7");
   assert.match(t7?.trap ?? "", /handler delay/);
   assert.match(t7?.failClosedResponse ?? "", /correlation matrix/);
@@ -226,7 +226,7 @@ test("libero #1032 no-go traps cover incomplete RCA, accept-queue conflation, li
   const t8 = LIBERO_NO_GO_TRAPS.find((t) => t.id === "T8");
   assert.match(t8?.trap ?? "", /async I\/O|DB reads|unbounded memory/);
 
-  // T9: closing #1032 without keep-alive test proof (yukson)
+  // T9: closing #1032 without keep-alive test proof (workerdelta)
   const t9 = LIBERO_NO_GO_TRAPS.find((t) => t.id === "T9");
   assert.match(t9?.trap ?? "", /keep-alive/);
   assert.match(t9?.failClosedResponse ?? "", /onReusedConnection increments/);
@@ -339,21 +339,21 @@ test("libero #1032 rendered gates include socket lifecycle, O(1) proof, connecti
   assert.match(markdown, /onReusedConnection/);
 });
 
-test("libero #1032 validation matrix includes yukson attribution in all dialectic vector elements", () => {
-  // yukson attribution: the file-level comment in libero-validation-matrix.ts contains
-  // yukson in the thesis (connection-reuse diagnostics instrument the lifecycle),
+test("libero #1032 validation matrix includes workerdelta attribution in all dialectic vector elements", () => {
+  // workerdelta attribution: the file-level comment in libero-validation-matrix.ts contains
+  // workerdelta in the thesis (connection-reuse diagnostics instrument the lifecycle),
   // antithesis (without accept-queue depth the instrumentation is incomplete),
   // and synthesis-risk (extending the matrix with #1032 gates protects liveness safety).
   assert.ok(
     LIBERO_CLOSURE_CRITERIA.filter((c) => c.sourceIssue === "#1032").length >= 4,
-    "expected at least 4 #1032 closure criteria (yukson)",
+    "expected at least 4 #1032 closure criteria (workerdelta)",
   );
   assert.ok(
     LIBERO_NO_GO_TRAPS.filter((t) => t.id === "T6" || t.id === "T7" || t.id === "T8" || t.id === "T9").length === 4,
-    "expected 4 #1032 no-go traps (yukson)",
+    "expected 4 #1032 no-go traps (workerdelta)",
   );
   assert.ok(
     LIBERO_REGRESSION_GATES.filter((g) => g.id === "L8" || g.id === "L9" || g.id === "L10" || g.id === "L11").length === 4,
-    "expected 4 #1032 regression gates (yukson)",
+    "expected 4 #1032 regression gates (workerdelta)",
   );
 });

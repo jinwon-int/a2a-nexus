@@ -22,7 +22,7 @@
     },
     "executorGate": {
       "reviewOnly": true,
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "runtimeExecutorGateReference": "tb-sidecar-default-on-runtime-executor-gate:fixture-790",
       "gateReady": true,
       "prerequisites": [
@@ -134,7 +134,7 @@
       "runtime config write",
       "Terminal Brief default-on enablement",
       "Terminal Brief sidecar start/restart",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "start executor dispatch, executor invocation, or process spawn",
       "GitHub PR merge, issue close, or comment post from the packet/route",
@@ -147,7 +147,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "externalHarnessCompatible": true,
       "consumesRuntimeExecutionApprovalEvidenceIngestorPacket": true,
       "rendersRuntimeExecutorGate": true,
@@ -204,7 +204,7 @@
   "finalLiveExecution": {
     "now": "2026-05-19T09:05:00.000Z",
     "mode": "terminal-brief-default-on-final-live-execution-source-only",
-    "finalizer": "seoseo",
+    "finalizer": "brokeralpha",
     "checkpointReference": "tb-sidecar-default-on-final-live-execution-checkpoint:fixture-792",
     "targetConfigFile": "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
     "backupLocation": "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env.pre-default-on.fixture-792.bak",

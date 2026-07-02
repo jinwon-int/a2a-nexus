@@ -48,25 +48,25 @@ function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
 // ---------------------------------------------------------------------------
 
 test("deriveTaskSessionId produces canonical format a2a-<nodeId>-<taskId>", () => {
-  const sid = deriveTaskSessionId("dungae", "abc-123");
-  assert.equal(sid, "a2a-dungae-abc-123");
+  const sid = deriveTaskSessionId("workerepsilon", "abc-123");
+  assert.equal(sid, "a2a-workerepsilon-abc-123");
 });
 
 test("deriveTaskSessionId is deterministic", () => {
-  const a = deriveTaskSessionId("bangtong", "task-x");
-  const b = deriveTaskSessionId("bangtong", "task-x");
+  const a = deriveTaskSessionId("workergamma", "task-x");
+  const b = deriveTaskSessionId("workergamma", "task-x");
   assert.equal(a, b);
 });
 
 test("deriveTaskSessionId produces different ids for different nodes", () => {
-  const sid1 = deriveTaskSessionId("dungae", "task-1");
-  const sid2 = deriveTaskSessionId("sogyo", "task-1");
+  const sid1 = deriveTaskSessionId("workerepsilon", "task-1");
+  const sid2 = deriveTaskSessionId("workerbeta", "task-1");
   assert.notEqual(sid1, sid2);
 });
 
 test("deriveTaskSessionId produces different ids for different tasks", () => {
-  const sid1 = deriveTaskSessionId("dungae", "task-1");
-  const sid2 = deriveTaskSessionId("dungae", "task-2");
+  const sid1 = deriveTaskSessionId("workerepsilon", "task-1");
+  const sid2 = deriveTaskSessionId("workerepsilon", "task-2");
   assert.notEqual(sid1, sid2);
 });
 
@@ -79,15 +79,15 @@ test("deriveTaskSessionId throws on empty nodeId", () => {
 
 test("deriveTaskSessionId throws on empty taskId", () => {
   assert.throws(
-    () => deriveTaskSessionId("dungae", ""),
+    () => deriveTaskSessionId("workerepsilon", ""),
     /taskId must be a non-empty string/,
   );
 });
 
 test("deriveSessionIdFromTask extracts id from TaskRecord", () => {
   const task = makeTask({ id: "task-uuid-001" });
-  const sid = deriveSessionIdFromTask(task, "dungae");
-  assert.equal(sid, "a2a-dungae-task-uuid-001");
+  const sid = deriveSessionIdFromTask(task, "workerepsilon");
+  assert.equal(sid, "a2a-workerepsilon-task-uuid-001");
 });
 
 // ---------------------------------------------------------------------------
@@ -96,9 +96,9 @@ test("deriveSessionIdFromTask extracts id from TaskRecord", () => {
 
 test("all derived session ids share the a2a- prefix", () => {
   for (const [node, task] of [
-    ["dungae", "t1"],
-    ["sogyo", "t2"],
-    ["bangtong", "t3"],
+    ["workerepsilon", "t1"],
+    ["workerbeta", "t2"],
+    ["workergamma", "t3"],
   ]) {
     assert.ok(deriveTaskSessionId(node, task).startsWith(A2A_SESSION_ID_PREFIX));
   }
@@ -116,7 +116,7 @@ test("FORBIDDEN_SESSION_IDS includes 'main' (shared/Telegram session)", () => {
 
 test("validateSessionIsolation rejects handler using 'main' session", () => {
   const task = makeTask({ id: "task-abc" });
-  const check = validateSessionIsolation(task, "dungae", [
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     "main",
     "--other",
@@ -129,7 +129,7 @@ test("validateSessionIsolation rejects handler using 'main' session", () => {
 
 test("validateSessionIsolation rejects handler using 'telegram' session", () => {
   const task = makeTask({ id: "task-abc" });
-  const check = validateSessionIsolation(task, "dungae", [
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     "telegram",
   ]);
@@ -140,7 +140,7 @@ test("validateSessionIsolation rejects handler using 'telegram' session", () => 
 
 test("validateSessionIsolation rejects handler using 'a2a-worker' shared session", () => {
   const task = makeTask({ id: "task-abc" });
-  const check = validateSessionIsolation(task, "dungae", [
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     "a2a-worker",
   ]);
@@ -155,7 +155,7 @@ test("validateSessionIsolation rejects handler using 'a2a-worker' shared session
 
 test("validateSessionIsolation rejects handler args without --session-id", () => {
   const task = makeTask();
-  const check = validateSessionIsolation(task, "dungae", [
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--model",
     "opus",
     "--message",
@@ -167,7 +167,7 @@ test("validateSessionIsolation rejects handler args without --session-id", () =>
 
 test("validateSessionIsolation rejects empty args array", () => {
   const task = makeTask();
-  const check = validateSessionIsolation(task, "dungae", []);
+  const check = validateSessionIsolation(task, "workerepsilon", []);
   assert.equal(check.valid, false);
   assert.match(check.reason ?? "", /do not include --session-id/);
 });
@@ -178,12 +178,12 @@ test("validateSessionIsolation rejects empty args array", () => {
 
 test("validateSessionIsolation rejects handler with mismatched session id", () => {
   const task = makeTask({ id: "task-abc" });
-  const check = validateSessionIsolation(task, "dungae", [
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
-    "a2a-dungae-different-task",
+    "a2a-workerepsilon-different-task",
   ]);
   assert.equal(check.valid, false);
-  assert.equal(check.foundSessionId, "a2a-dungae-different-task");
+  assert.equal(check.foundSessionId, "a2a-workerepsilon-different-task");
   assert.match(check.reason ?? "", /session id mismatch/);
 });
 
@@ -192,8 +192,8 @@ test("validateSessionIsolation rejects handler using another task's session", ()
   const taskB = makeTask({ id: "task-beta" });
 
   // Handler args derive session from task B, but we validate against task A
-  const argsForB = ["--session-id", deriveTaskSessionId("dungae", "task-beta")];
-  const check = validateSessionIsolation(taskA, "dungae", argsForB);
+  const argsForB = ["--session-id", deriveTaskSessionId("workerepsilon", "task-beta")];
+  const check = validateSessionIsolation(taskA, "workerepsilon", argsForB);
 
   assert.equal(check.valid, false);
   assert.match(check.reason ?? "", /session id mismatch/);
@@ -205,8 +205,8 @@ test("validateSessionIsolation rejects handler using another task's session", ()
 
 test("validateSessionIsolation accepts correctly scoped session id", () => {
   const task = makeTask({ id: "task-abc" });
-  const expectedSid = deriveTaskSessionId("dungae", "task-abc");
-  const check = validateSessionIsolation(task, "dungae", [
+  const expectedSid = deriveTaskSessionId("workerepsilon", "task-abc");
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     expectedSid,
     "--extra",
@@ -218,8 +218,8 @@ test("validateSessionIsolation accepts correctly scoped session id", () => {
 
 test("validateSessionIsolation accepts --sessionId alias", () => {
   const task = makeTask({ id: "task-camel" });
-  const expectedSid = deriveTaskSessionId("dungae", "task-camel");
-  const check = validateSessionIsolation(task, "dungae", [
+  const expectedSid = deriveTaskSessionId("workerepsilon", "task-camel");
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--sessionId",
     expectedSid,
   ]);
@@ -233,35 +233,35 @@ test("validateSessionIsolation accepts --sessionId alias", () => {
 test("buildSessionIsolatedArgs appends --session-id when absent", () => {
   const args = buildSessionIsolatedArgs(
     ["--model", "opus"],
-    "dungae",
+    "workerepsilon",
     "task-x",
   );
   const sidIndex = args.indexOf("--session-id");
   assert.ok(sidIndex >= 0);
-  assert.equal(args[sidIndex + 1], "a2a-dungae-task-x");
+  assert.equal(args[sidIndex + 1], "a2a-workerepsilon-task-x");
 });
 
 test("buildSessionIsolatedArgs replaces existing --session-id", () => {
   const args = buildSessionIsolatedArgs(
     ["--model", "opus", "--session-id", "main"],
-    "dungae",
+    "workerepsilon",
     "task-x",
   );
   const sidIndex = args.indexOf("--session-id");
   assert.ok(sidIndex >= 0);
-  assert.equal(args[sidIndex + 1], "a2a-dungae-task-x");
+  assert.equal(args[sidIndex + 1], "a2a-workerepsilon-task-x");
 });
 
 test("buildSessionIsolatedArgs preserves unrelated args", () => {
   const args = buildSessionIsolatedArgs(
     ["--model", "opus", "--print", "--permission-mode", "bypassPermissions"],
-    "dungae",
+    "workerepsilon",
     "task-999",
   );
   assert.ok(args.includes("--model"));
   assert.ok(args.includes("opus"));
   assert.ok(args.includes("--print"));
-  assert.equal(args[args.indexOf("--session-id") + 1], "a2a-dungae-task-999");
+  assert.equal(args[args.indexOf("--session-id") + 1], "a2a-workerepsilon-task-999");
 });
 
 // ---------------------------------------------------------------------------
@@ -270,24 +270,24 @@ test("buildSessionIsolatedArgs preserves unrelated args", () => {
 
 test("retry of same task produces same session id (task-scoped, not attempt-scoped)", () => {
   const task = makeTask({ id: "task-retry-me" });
-  const attempt1Sid = deriveSessionIdFromTask(task, "dungae");
-  const attempt2Sid = deriveSessionIdFromTask(task, "dungae");
+  const attempt1Sid = deriveSessionIdFromTask(task, "workerepsilon");
+  const attempt2Sid = deriveSessionIdFromTask(task, "workerepsilon");
   assert.equal(attempt1Sid, attempt2Sid);
 });
 
 test("two different tasks produce different session ids (no cross-contamination)", () => {
   const taskA = makeTask({ id: "task-a" });
   const taskB = makeTask({ id: "task-b" });
-  const sidA = deriveSessionIdFromTask(taskA, "dungae");
-  const sidB = deriveSessionIdFromTask(taskB, "dungae");
+  const sidA = deriveSessionIdFromTask(taskA, "workerepsilon");
+  const sidB = deriveSessionIdFromTask(taskB, "workerepsilon");
   assert.notEqual(sidA, sidB);
 });
 
 test("same task across different nodes produces different session ids", () => {
   const task = makeTask({ id: "shared-task" });
-  const dungaeSid = deriveSessionIdFromTask(task, "dungae");
-  const sogyoSid = deriveSessionIdFromTask(task, "sogyo");
-  assert.notEqual(dungaeSid, sogyoSid);
+  const workerepsilonSid = deriveSessionIdFromTask(task, "workerepsilon");
+  const workerbetaSid = deriveSessionIdFromTask(task, "workerbeta");
+  assert.notEqual(workerepsilonSid, workerbetaSid);
 });
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ test("regression: full-handler dispatch without --session-id is detected", () =>
   ];
 
   // This is the regression we want to catch — no session isolation
-  const check = validateSessionIsolation(task, "dungae", bareHandlerArgs);
+  const check = validateSessionIsolation(task, "workerepsilon", bareHandlerArgs);
   assert.equal(check.valid, false, "bare args without --session-id must fail validation");
   assert.match(
     check.reason ?? "",
@@ -329,7 +329,7 @@ test("regression: full-handler dispatch into 'main' session is detected", () => 
     "run task",
   ];
 
-  const check = validateSessionIsolation(task, "dungae", sharedSessionArgs);
+  const check = validateSessionIsolation(task, "workerepsilon", sharedSessionArgs);
   assert.equal(check.valid, false, "shared 'main' session must fail validation");
   assert.equal(check.foundSessionId, "main");
   assert.match(check.reason ?? "", /forbidden shared session/);
@@ -337,7 +337,7 @@ test("regression: full-handler dispatch into 'main' session is detected", () => 
 
 test("regression: full-handler with correct task-scoped session passes", () => {
   const task = makeTask({ id: "task-gh-164" });
-  const expectedSid = deriveSessionIdFromTask(task, "dungae");
+  const expectedSid = deriveSessionIdFromTask(task, "workerepsilon");
 
   const isolatedArgs = [
     "openclaw",
@@ -350,7 +350,7 @@ test("regression: full-handler with correct task-scoped session passes", () => {
     "run task",
   ];
 
-  const check = validateSessionIsolation(task, "dungae", isolatedArgs);
+  const check = validateSessionIsolation(task, "workerepsilon", isolatedArgs);
   assert.equal(check.valid, true, "correctly scoped session must pass validation");
   assert.equal(check.expectedSessionId, expectedSid);
 });
@@ -361,8 +361,8 @@ test("regression: full-handler with correct task-scoped session passes", () => {
 
 test("validateSessionIsolation handles --session-id at end of args", () => {
   const task = makeTask({ id: "edge-case" });
-  const expectedSid = deriveTaskSessionId("dungae", "edge-case");
-  const check = validateSessionIsolation(task, "dungae", [
+  const expectedSid = deriveTaskSessionId("workerepsilon", "edge-case");
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     expectedSid,
   ]);
@@ -371,8 +371,8 @@ test("validateSessionIsolation handles --session-id at end of args", () => {
 
 test("validateSessionIsolation handles --session-id at beginning of args", () => {
   const task = makeTask({ id: "first-arg" });
-  const expectedSid = deriveTaskSessionId("dungae", "first-arg");
-  const check = validateSessionIsolation(task, "dungae", [
+  const expectedSid = deriveTaskSessionId("workerepsilon", "first-arg");
+  const check = validateSessionIsolation(task, "workerepsilon", [
     "--session-id",
     expectedSid,
     "--model",
@@ -384,19 +384,19 @@ test("validateSessionIsolation handles --session-id at beginning of args", () =>
 
 test("validateSessionIsolation returns false for --session-id with no following value", () => {
   const task = makeTask();
-  const check = validateSessionIsolation(task, "dungae", ["--session-id"]);
+  const check = validateSessionIsolation(task, "workerepsilon", ["--session-id"]);
   assert.equal(check.valid, false);
   assert.match(check.reason ?? "", /do not include --session-id/);
 });
 
 test("deriveTaskSessionId handles task IDs with special characters", () => {
   const sid = deriveTaskSessionId(
-    "dungae",
+    "workerepsilon",
     "69ebedd8-0c5e-4386-97b4-273c20281eb1",
   );
   assert.equal(
     sid,
-    "a2a-dungae-69ebedd8-0c5e-4386-97b4-273c20281eb1",
+    "a2a-workerepsilon-69ebedd8-0c5e-4386-97b4-273c20281eb1",
   );
 });
 

@@ -126,7 +126,7 @@ function buildAnalysis({ task, payload }) {
     findings,
     risks: status === "done" ? [] : ["source-only local evidence contract was not fully satisfied"],
     recommendations: [
-      "Keep Gongmyoung source-only health lanes on this deterministic local bridge unless an explicit provider-backed lane is approved.",
+      "Keep workertheta source-only health lanes on this deterministic local bridge unless an explicit provider-backed lane is approved.",
     ],
     evidenceRefs,
     sourceProjection: projection,

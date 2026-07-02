@@ -2,7 +2,7 @@
 
 This is the first-pass analysis for the initial `a2a-work-mode-benchmark-v1`
 records. It summarizes the replay fixtures collected on 2026-06-06 and turns
-them into provisional routing guidance for Seoseo solo work versus Team1 A2A
+them into provisional routing guidance for brokeralpha solo work versus Team1 A2A
 orchestration.
 
 This analysis is source-only. It did not dispatch live workers, deploy, restart
@@ -27,7 +27,7 @@ The headline aggregate excludes the `#1279` hybrid sample because that late
 supplemental PR is already counted as worker cost in the `#1253` Team1
 candidate-review record.
 
-| Slice | n | Median decision wall | Median closeout wall | Median total worker | Median active Seoseo | Avg rework | Merge yield |
+| Slice | n | Median decision wall | Median closeout wall | Median total worker | Median active brokeralpha | Avg rework | Merge yield |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | `small_patch` / `team1` | 2 | 624.5s | 725.5s | 1622s | 210s | 2.0 | 0.33 |
 | `bug_rca` / `solo` | 1 | 825s | 826s | 621s | 621s | 1.0 | 1.00 |
@@ -49,7 +49,7 @@ there is no same-difficulty paired solo candidate-review sample.
 
 Early signals:
 
-- Team1 can lower Seoseo active effort even when it does not lower wall-clock.
+- Team1 can lower brokeralpha active effort even when it does not lower wall-clock.
   In the Team1 RCA and candidate-review records, finalizer active windows are
   under seven minutes.
 - Team1 uses substantially more total worker time. The current Team1 median
@@ -65,7 +65,7 @@ Early signals:
   consumed more total worker time than the operator-visible wall-clock result
   suggests.
 - The hybrid `#1279` sample shows a separate useful pattern: bounded Team1
-  evidence plus Seoseo finalizer cleanup can reduce parallel worker spend, but
+  evidence plus brokeralpha finalizer cleanup can reduce parallel worker spend, but
   it can still have high wall-clock if the finalizer waits on hygiene, branch
   updates, and CI.
 
@@ -75,10 +75,10 @@ Early signals:
 |---|---|---|
 | Narrow, well-understood source fix | `solo` | Current Team1 small-patch samples show non-trivial orchestration cost and low merge yield. |
 | Small or medium RCA with one likely code path | `solo` first | The solo RCA sample had lower wall-clock and far lower total worker time than the Team1 RCA sample. |
-| Ambiguous RCA with several plausible causes | `team1` evidence, Seoseo finalizer | Team1 can collect broader evidence, but the finalizer must control the closeout and rework. |
+| Ambiguous RCA with several plausible causes | `team1` evidence, brokeralpha finalizer | Team1 can collect broader evidence, but the finalizer must control the closeout and rework. |
 | Multiple candidate PRs, conflicting recommendations, or Block evidence | `team1` | The candidate-review sample is the clearest Team1 win shape so far. |
 | Late supplemental review or PR hygiene after a Team1 round | `hybrid` | Bounded helper evidence is useful, but headline aggregate accounting must avoid double-counting. |
-| Live deploy, Gateway or broker restart, DB mutation, Terminal Brief ACK/replay, release, secret, or visibility boundary | Seoseo finalizer only; Team1 evidence if approved | These actions need a single approval-aware owner and must not be delegated as independent closeout decisions. |
+| Live deploy, Gateway or broker restart, DB mutation, Terminal Brief ACK/replay, release, secret, or visibility boundary | brokeralpha finalizer only; Team1 evidence if approved | These actions need a single approval-aware owner and must not be delegated as independent closeout decisions. |
 
 ## Evidence Gaps
 
@@ -123,14 +123,14 @@ candidate-review sample.
 
 Headline mode-level view:
 
-| Mode | n | Median decision wall | Median closeout wall | Median total worker | Median active Seoseo | Median worker/wall | Avg rework | Merge yield |
+| Mode | n | Median decision wall | Median closeout wall | Median total worker | Median active brokeralpha | Median worker/wall | Avg rework | Merge yield |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `solo` | 5 | 421s | 422s | 252s | 252s | 0.7x | 0.2 | 1.00 |
 | `team1` | 6 | 902.5s | 967s | 2836s | 210s | 2.8x | 3.5 | 0.40 |
 
 Task/mode view:
 
-| Slice | n | Median decision wall | Median closeout wall | Median total worker | Median active Seoseo | Avg rework | Merge yield |
+| Slice | n | Median decision wall | Median closeout wall | Median total worker | Median active brokeralpha | Avg rework | Merge yield |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | `small_patch` / `solo` | 1 | 97s | 98s | 38s | 38s | 0.0 | 1.00 |
 | `small_patch` / `team1` | 2 | 624.5s | 725.5s | 1622s | 210s | 2.0 | 0.33 |
@@ -160,7 +160,7 @@ Second-pass readout:
   no rework.
 - Team1 remains expensive in total worker time. Its current median total worker
   cost is 2836 seconds, and average rework is 3.5 per sample.
-- Team1's clearest value is reducing Seoseo active effort for operational
+- Team1's clearest value is reducing brokeralpha active effort for operational
   closeout and some RCA/policy rounds. The `ops_closeout` comparison shows the
   strongest active-effort reduction, but Team1 still took longer wall-clock and
   created more cleanup.
@@ -170,7 +170,7 @@ Second-pass readout:
   this pair-like table.
 - Route future work by risk and ambiguity: use solo for predictable source/docs
   changes, use Team1 for ambiguous multi-candidate or approval-boundary
-  evidence gathering, and keep Seoseo as the single finalizer for all closeout
+  evidence gathering, and keep brokeralpha as the single finalizer for all closeout
   decisions.
 - The executable operator defaults derived from this analysis live in
   `docs/a2a-work-mode-routing-rules.md`.

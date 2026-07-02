@@ -25,8 +25,8 @@ function workflow(overrides: Partial<TerminalBriefFinalizerWorkflowPacket> = {})
     currentStep: "finalizer_review",
     idempotencyKey: "tb-finalizer-workflow:fixture-702",
     finalizer: {
-      brokerOfRecordId: "seoseo",
-      owner: "seoseo",
+      brokerOfRecordId: "brokeralpha",
+      owner: "brokeralpha",
       required: true,
       singleFinalizerRequired: true,
     },

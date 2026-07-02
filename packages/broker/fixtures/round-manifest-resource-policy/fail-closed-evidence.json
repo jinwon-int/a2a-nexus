@@ -4,21 +4,21 @@
   "generatedAt": "2026-05-26T20:11:40.000Z",
   "description": "Fail-closed routing evidence: Mixed round with one succeeded, one missing, one stale. Closeout bundle must contain safety disclaimer and no automatic action assertions.",
   "manifest": {
-    "roundLabel": "a2a-team1-round-coordinator-wiring-04-yukson",
+    "roundLabel": "a2a-team1-round-coordinator-wiring-04-workerdelta",
     "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/937",
     "lanes": [
       {
-        "workerId": "yukson",
+        "workerId": "workerdelta",
         "description": "Combined validator",
         "expectedOutcome": "patch"
       },
       {
-        "workerId": "sogyo",
+        "workerId": "workerbeta",
         "description": "Missing lane",
         "expectedOutcome": "evidence-only"
       },
       {
-        "workerId": "nosuk",
+        "workerId": "workeralpha",
         "description": "Stale lane",
         "expectedOutcome": "analysis"
       }
@@ -27,7 +27,7 @@
     "timeoutAt": "2026-05-27T00:00:00.000Z"
   },
   "workerPolicies": {
-    "yukson": {
+    "workerdelta": {
       "allowedTaskTypes": ["propose_patch", "analyze"],
       "noLiveSend": false,
       "noMutation": false,
@@ -37,7 +37,7 @@
       "readOnly": false,
       "maxConcurrent": 3
     },
-    "sogyo": {
+    "workerbeta": {
       "allowedTaskTypes": ["analyze"],
       "noLiveSend": true,
       "noMutation": true,
@@ -46,7 +46,7 @@
       "standby": false,
       "readOnly": true
     },
-    "nosuk": {
+    "workeralpha": {
       "allowedTaskTypes": ["analyze"],
       "noLiveSend": true,
       "noMutation": true,
@@ -57,14 +57,14 @@
     }
   },
   "evaluations": {
-    "yukson": { "onboardingKind": "daegyo-style", "decision": "go" },
-    "sogyo": { "onboardingKind": "generic-terms", "decision": "go" },
-    "nosuk": { "onboardingKind": "gongyung-hermes", "decision": "go" }
+    "workerdelta": { "onboardingKind": "mobilebeta-style", "decision": "go" },
+    "workerbeta": { "onboardingKind": "generic-terms", "decision": "go" },
+    "workeralpha": { "onboardingKind": "mobilealpha-hermes", "decision": "go" }
   },
   "collectorTasks": [
     {
-      "id": "task-yukson-ok-1",
-      "assignedWorkerId": "yukson",
+      "id": "task-workerdelta-ok-1",
+      "assignedWorkerId": "workerdelta",
       "status": "succeeded",
       "createdAt": "2026-05-26T19:00:00.000Z",
       "updatedAt": "2026-05-26T20:00:00.000Z",
@@ -78,8 +78,8 @@
       }
     },
     {
-      "id": "task-nosuk-stale-1",
-      "assignedWorkerId": "nosuk",
+      "id": "task-workeralpha-stale-1",
+      "assignedWorkerId": "workeralpha",
       "status": "running",
       "createdAt": "2026-05-26T18:00:00.000Z",
       "updatedAt": "2026-05-26T19:25:00.000Z"

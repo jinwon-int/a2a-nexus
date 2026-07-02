@@ -1,7 +1,7 @@
 {
   "$schema": "a2a-runner-budget-limited-fixture-v1",
   "description": "Synthetic, secret-free runner output showing budget_limited artifact-contract fields and an approval-gated continuation recommendation.",
-  "worker": "sogyo",
+  "worker": "workerBeta",
   "emittedAt": "2026-05-04T00:00:00.000Z",
   "handlerTask": {
     "id": "issue-114-budget-limited",

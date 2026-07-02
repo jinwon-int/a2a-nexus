@@ -99,7 +99,7 @@ export interface TerminalBriefSidecarDefaultOnExecutionWindowRequestDraftPacket 
     separateRuntimeMutationRequired: true;
     separateCheckpointRequired: true;
     approvalCanBeRequestedBy: string;
-    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "gongyung" | "external">;
+    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "mobilealpha" | "external">;
     forbiddenFromThisPacket: string[];
   };
   readiness: {
@@ -293,7 +293,7 @@ export function buildTerminalBriefSidecarDefaultOnExecutionWindowRequestDraft(
       separateRuntimeMutationRequired: true,
       separateCheckpointRequired: true,
       approvalCanBeRequestedBy: requestedBy,
-      approvalCanBeDeliveredBy: ["openclaw", "hermes", "gongyung", "external"],
+      approvalCanBeDeliveredBy: ["openclaw", "hermes", "mobilealpha", "external"],
       forbiddenFromThisPacket: approvalSensitiveActionsExcluded(),
     },
     readiness: {
@@ -556,7 +556,7 @@ function approvalSensitiveActionsExcluded(): string[] {
     "runtime config write",
     "Terminal Brief default-on enablement",
     "Terminal Brief sidecar start/restart/apply",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or terminal receipt DB mutation",
     "start executor dispatch, executor invocation, or process spawn",
     "GitHub PR merge, issue close, or comment post from the packet/route",

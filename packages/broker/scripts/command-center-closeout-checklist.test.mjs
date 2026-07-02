@@ -77,7 +77,7 @@ describe('command-center closeout checklist', () => {
       dashboard: {
         operatorSnapshot: {
           taskStatusSummary: { active: 2, byStatus: { blocked: 0, queued: 1, claimed: 1, running: 0 } },
-          recoverySummary: { stale: { staleWorkersWithActiveTasks: ['nosuk'] } },
+          recoverySummary: { stale: { staleWorkersWithActiveTasks: ['workeralpha'] } },
           attentionItems: [{ code: 'stale_task', taskId: 'task-1' }],
         },
       },
@@ -117,7 +117,7 @@ describe('command-center closeout checklist', () => {
           taskId: 'task-ready',
           status: 'succeeded',
           final: true,
-          targetNodeId: 'nosuk',
+          targetNodeId: 'workeralpha',
           github: {
             repo: 'jinwon-int/a2a-broker',
             issue: '#368',
@@ -130,7 +130,7 @@ describe('command-center closeout checklist', () => {
           status: 'running',
           final: false,
           stale: false,
-          targetNodeId: 'bangtong',
+          targetNodeId: 'workergamma',
           github: { repo: 'jinwon-int/a2a-broker', issue: '#369' },
         },
         {
@@ -138,7 +138,7 @@ describe('command-center closeout checklist', () => {
           status: 'claimed',
           final: false,
           stale: true,
-          targetNodeId: 'dungae',
+          targetNodeId: 'workerepsilon',
           github: { repo: 'jinwon-int/a2a-broker', issue: '#370' },
         },
         {
@@ -146,7 +146,7 @@ describe('command-center closeout checklist', () => {
           status: 'failed',
           final: true,
           errorCode: 'tests_failed',
-          targetNodeId: 'sogyo',
+          targetNodeId: 'workerbeta',
           github: {
             repo: 'jinwon-int/a2a-broker',
             issue: '#371',
@@ -175,10 +175,10 @@ describe('command-center closeout checklist', () => {
 
     const markdown = renderCommandCenterRoundCloseoutMarkdown(report);
     assert.match(markdown, /^Block: command-center round closeout/);
-    assert.match(markdown, /nosuk \| jinwon-int\/a2a-broker#368 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/pull\/400 \| ready \| next:/);
-    assert.match(markdown, /bangtong \| jinwon-int\/a2a-broker#369 \| missing-evidence \| waiting \| next: wait for running task update/);
-    assert.match(markdown, /dungae \| jinwon-int\/a2a-broker#370 \| missing-evidence \| stuck \| next: check worker heartbeat or reassign stale claimed task/);
-    assert.match(markdown, /sogyo \| jinwon-int\/a2a-broker#371 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/issues\/371#issuecomment-1 \| blocked \| next: inspect Block evidence and resolve blocker/);
+    assert.match(markdown, /workeralpha \| jinwon-int\/a2a-broker#368 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/pull\/400 \| ready \| next:/);
+    assert.match(markdown, /workergamma \| jinwon-int\/a2a-broker#369 \| missing-evidence \| waiting \| next: wait for running task update/);
+    assert.match(markdown, /workerepsilon \| jinwon-int\/a2a-broker#370 \| missing-evidence \| stuck \| next: check worker heartbeat or reassign stale claimed task/);
+    assert.match(markdown, /workerbeta \| jinwon-int\/a2a-broker#371 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/issues\/371#issuecomment-1 \| blocked \| next: inspect Block evidence and resolve blocker/);
     assert.match(markdown, /haneul \| jinwon-int\/a2a-broker#372 \| missing-evidence \| needs-evidence \| next: recover PR\/Done\/Block evidence before closeout/);
     assert.doesNotMatch(markdown, /ghp_|BROKER_EDGE_SECRET=|\/work\/repo/);
   });
@@ -191,7 +191,7 @@ describe('command-center closeout checklist', () => {
           status: 'failed',
           final: true,
           errorCode: 'pr_create_failed_or_missing_url',
-          targetNodeId: 'nosuk',
+          targetNodeId: 'workeralpha',
           github: {
             repo: 'jinwon-int/a2a-broker',
             issue: '#443',
@@ -203,7 +203,7 @@ describe('command-center closeout checklist', () => {
           taskId: 'task-branch-only-success',
           status: 'succeeded',
           final: true,
-          targetNodeId: 'yukson',
+          targetNodeId: 'workerdelta',
           github: {
             repo: 'jinwon-int/a2a-broker',
             issue: '#448',
@@ -221,7 +221,7 @@ describe('command-center closeout checklist', () => {
     assert.deepEqual(report.counts, { blocked: 1, 'needs-evidence': 1 });
 
     const markdown = renderCommandCenterRoundCloseoutMarkdown(report);
-    assert.match(markdown, /nosuk \| jinwon-int\/a2a-broker#443 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/tree\/a2a-patch-scanner-closeout-evidence-442 \| blocked \| next: inspect recovered branch evidence before retrying or replacing the worker/);
-    assert.match(markdown, /yukson \| jinwon-int\/a2a-broker#448 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/tree\/a2a-patch-no-terminal-marker \| needs-evidence \| next: recover PR\/Done\/Block evidence; branch-only evidence is not completion evidence for succeeded lanes/);
+    assert.match(markdown, /workeralpha \| jinwon-int\/a2a-broker#443 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/tree\/a2a-patch-scanner-closeout-evidence-442 \| blocked \| next: inspect recovered branch evidence before retrying or replacing the worker/);
+    assert.match(markdown, /workerdelta \| jinwon-int\/a2a-broker#448 \| https:\/\/github.com\/jinwon-int\/a2a-broker\/tree\/a2a-patch-no-terminal-marker \| needs-evidence \| next: recover PR\/Done\/Block evidence; branch-only evidence is not completion evidence for succeeded lanes/);
   });
 });

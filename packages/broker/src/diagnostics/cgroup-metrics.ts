@@ -124,7 +124,7 @@ function readCgroupCpuLimit(): CgroupCpuLimit | null {
 }
 
 // Keep /schedz cgroup/PSI reads bounded; live #1032 gates showed that
-// very frequent synchronous sysfs/procfs reads can perturb the probe on Gwakga.
+// very frequent synchronous sysfs/procfs reads can perturb the probe on brokerbeta.
 const CGROUP_PSI_CACHE_TTL_MS = 3000;
 
 // Lazily cached cgroup CPU stats refresh.

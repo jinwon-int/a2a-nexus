@@ -4,7 +4,7 @@
   "run": "terminal-brief-receipt-r4-canonical-20260506T004710Z",
   "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/154",
   "parent": "https://github.com/jinwon-int/a2a-broker/issues/383",
-  "worker": "nosuk",
+  "worker": "workerAlpha",
   "emittedAt": "2026-05-06T00:47:10.000Z",
   "canonicalCloseout": {
     "allowedEvidenceKinds": [

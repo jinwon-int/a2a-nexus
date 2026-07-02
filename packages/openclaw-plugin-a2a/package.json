@@ -32,7 +32,7 @@
   "bin": {
     "a2a-terminal-brief-sidecar": "./dist/terminal-brief-sidecar.js",
     "a2a-terminal-brief-openclaw-message": "./dist/terminal-brief-openclaw-message.js",
-    "a2a-terminal-brief-hermes-gongyung": "./dist/terminal-brief-hermes-gongyung.js"
+    "a2a-terminal-brief-hermes-mobileAlpha": "./dist/terminal-brief-hermes-mobileAlpha.js"
   },
   "types": "./dist/index.d.ts",
   "exports": {

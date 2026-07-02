@@ -205,7 +205,7 @@ externally operated broker.
   — runnable broker + built-in echo worker smoke path.
 - `docs/docker-compose-trading-partners.md` plus
   `examples/docker-compose.trading-partners.yml` — isolation-only
-  reference for `bangtong` and `dengae`. Not a smoke path.
+  reference for `workergamma` and `dengae`. Not a smoke path.
 - `docs/restart-recovery-smoke.md` — restart recovery runbook and
   automation.
 - `docs/a2a-broker-ops-handoff-20260413.md` — deploy and edge-auth

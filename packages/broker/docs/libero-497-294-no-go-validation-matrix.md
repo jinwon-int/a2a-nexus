@@ -5,7 +5,7 @@ Next-round lane: [#514](https://github.com/jinwon-int/a2a-broker/issues/514)
 Parent: [#504](https://github.com/jinwon-int/a2a-broker/issues/504) / [#511](https://github.com/jinwon-int/a2a-broker/issues/511)
 Source lanes: [#497](https://github.com/jinwon-int/a2a-broker/issues/497), [#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 
-This is the Team2/soonwook Libero validation gate for broker hot-table/OOM risk and receipt/canary safety. It is a no-live validation artifact: it can support PR/Done/Block evidence, but it is not approval to deploy, restart, send providers, ACK terminal rows, mutate production SQLite, rotate secrets, release, or force-push.
+This is the Team2/workereta Libero validation gate for broker hot-table/OOM risk and receipt/canary safety. It is a no-live validation artifact: it can support PR/Done/Block evidence, but it is not approval to deploy, restart, send providers, ACK terminal rows, mutate production SQLite, rotate secrets, release, or force-push.
 
 ## Safety boundary
 

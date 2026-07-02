@@ -45,7 +45,7 @@ function reviewRequest(candidateMetrics: typeof baselineMetrics = improvedCandid
       candidateMetrics,
     })),
   });
-  const finalizerReview = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "gwakga" });
+  const finalizerReview = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "brokerbeta" });
   return buildOIValidationOperatorReviewRequestPacket({ generatedAt: NOW, finalizerReview, operator: "seo-jin-on" });
 }
 
@@ -120,7 +120,7 @@ test("accepts revise_candidate for degraded candidate review without granting ap
   const packet = buildOIValidationOperatorDecisionEvidencePacket({
     generatedAt: NOW,
     reviewRequest: request,
-    decisionEvidence: { decision: "revise_candidate", actor: "gwakga" },
+    decisionEvidence: { decision: "revise_candidate", actor: "brokerbeta" },
   });
 
   assert.equal(request.state, "candidate_review_required");

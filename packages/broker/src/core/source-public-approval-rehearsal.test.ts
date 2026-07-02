@@ -9,7 +9,7 @@ test("source-public approval rehearsal produces deterministic no-live approval p
   const options = {
     generatedAt: "2026-05-11T01:42:40.000Z",
     runId: "a2a-source-public-approval-rehearsal-20260511T014240Z",
-    worker: "dungae",
+    worker: "workerepsilon",
     evidence: {
       publicReadinessScan: "pass" as const,
       bootstrapContextExcluded: "pass" as const,
@@ -26,7 +26,7 @@ test("source-public approval rehearsal produces deterministic no-live approval p
   assert.deepEqual(second.approvalPacket, first.approvalPacket);
   assert.equal(first.kind, "a2a-broker.source-public-approval-rehearsal");
   assert.equal(first.runMode, "read-only-no-live");
-  assert.equal(first.worker, "dungae");
+  assert.equal(first.worker, "workerepsilon");
   assert.equal(first.sourceIssue.issueNumber, 484);
   assert.equal(first.approvalPacket.status, "rehearsed-not-executed");
   assert.equal(first.approvalPacket.executionAllowed, false);

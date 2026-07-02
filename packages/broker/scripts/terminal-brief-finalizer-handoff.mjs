@@ -102,7 +102,7 @@ function normalizeIntegrationInput(raw, options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.input) {
-    throw new Error("usage: npm run terminal_brief_finalizer_handoff -- --input fixture.json [--broker seoseo] [--finalizer seoseo] [--markdown|--json]");
+    throw new Error("usage: npm run terminal_brief_finalizer_handoff -- --input fixture.json [--broker brokeralpha] [--finalizer brokeralpha] [--markdown|--json]");
   }
   const raw = JSON.parse(await readFile(options.input, "utf8"));
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal(

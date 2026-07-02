@@ -40,7 +40,7 @@ The module enforces these contradictions as validation errors (fail-closed):
 
 ## GO/NO-GO onboarding gates
 
-### Gongyung/Hermes workers
+### mobilealpha/Hermes workers
 
 - Must be `readOnly`
 - Must set `noLiveSend=true`
@@ -50,7 +50,7 @@ The module enforces these contradictions as validation errors (fail-closed):
 - Must NOT include `promote_to_live` in `allowedTaskTypes`
 - Should limit `maxConcurrent` to ≤ 2
 
-### Daegyo-style workers
+### mobilebeta-style workers
 
 - Must set `gatewayRequired=true`
 - Must NOT set `mobileLowPower=true`
@@ -64,7 +64,7 @@ The module enforces these contradictions as validation errors (fail-closed):
 - Must NOT be `readOnly`
 - Should set `maxConcurrent` to a positive integer
 
-### Team1 scheduling-attribution workers (bangtong lane)
+### Team1 scheduling-attribution workers (workergamma lane)
 
 - Must be `readOnly`
 - Must set `noLiveSend=true`
@@ -82,8 +82,8 @@ The module enforces these contradictions as validation errors (fail-closed):
 import {
   validateResourceAwareWorkerPolicy,
   evaluateWorkerOnboarding,
-  GONGYUNG_HERMES_POLICY,
-  DAEGYO_STYLE_POLICY,
+  mobilealpha_HERMES_POLICY,
+  mobilebeta_STYLE_POLICY,
 } from "./core/resource-aware-worker-policy.js";
 
 // Validate a policy
@@ -99,7 +99,7 @@ const result = validateResourceAwareWorkerPolicy({
 // → { ok: true, errors: [] }
 
 // GO/NO-GO evaluation
-const evaluation = evaluateWorkerOnboarding("gongyung-hermes", {
+const evaluation = evaluateWorkerOnboarding("mobilealpha-hermes", {
   allowedTaskTypes: ["analyze", "validate_change"],
   noLiveSend: true,
   noMutation: true,
@@ -118,13 +118,13 @@ pre-computed GO/NO-GO evaluation examples:
 
 | Fixture | Description |
 | --- | --- |
-| `gongyung-hermes.go.json` | Valid Gongyung/Hermes mobile validation worker |
-| `gongyung-hermes.no-go.json` | Hermes worker incorrectly requiring Gateway |
-| `daegyo-style.go.json` | Valid Daegyo-style gateway worker |
-| `daegyo-style.no-go.json` | Daegyo worker incorrectly set to readOnly |
+| `mobilealpha-hermes.go.json` | Valid mobilealpha/Hermes mobile validation worker |
+| `mobilealpha-hermes.no-go.json` | Hermes worker incorrectly requiring Gateway |
+| `mobilebeta-style.go.json` | Valid mobilebeta-style gateway worker |
+| `mobilebeta-style.no-go.json` | mobilebeta worker incorrectly set to readOnly |
 | `termux-mobile.go.json` | Generic Termux mobile Hermes worker |
-| `bangtong-scheduling.go.json` | Valid bangtong lane Team1 scheduling-attribution worker |
-| `bangtong-scheduling.no-go.json` | Bangtong worker incorrectly configured with promote_to_live |
+| `workergamma-scheduling.go.json` | Valid workergamma lane Team1 scheduling-attribution worker |
+| `workergamma-scheduling.no-go.json` | workergamma worker incorrectly configured with promote_to_live |
 
 Each fixture includes a `boundaries` section confirming the packet is
 source-only and does not perform any live/runtime actions.

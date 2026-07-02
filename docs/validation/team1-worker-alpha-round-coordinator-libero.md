@@ -1,10 +1,10 @@
-# Round Coordinator Spec — Team1/nosuk Libero Validation
+# Round Coordinator Spec — Team1/workerAlpha Libero Validation
 
-**Lane:** Team1 nosuk (3/4)
+**Lane:** Team1 workerAlpha (3/4)
 **Run:** `a2a-team1-round-coordinator-20260526T201140KST`
 **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
 **Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
-**Broker/finalizer of record:** `seoseo`
+**Broker/finalizer of record:** `brokerAlpha`
 
 ---
 
@@ -69,7 +69,7 @@ conventions. It does not execute, deploy, or authorise any live action.
 | 3.2 | Schema defines cursor format | ✅ | cursor with requiredFields |
 | 3.3 | Schema defines closeout bundle format | ✅ | closeoutBundle with requiredBundleFields |
 | 3.4 | Schema defines worker capability policy | ✅ | workerCapabilityPolicy with defaults |
-| 3.5 | Schema defines mobile standby defaults | ✅ | mobileStandbyDefaults for Gongyung/Hermes |
+| 3.5 | Schema defines mobile standby defaults | ✅ | mobileStandbyDefaults for mobileAlpha/Hermes |
 | 3.6 | Schema defines always-refused actions | ✅ | 14 actions listed |
 | 3.7 | Schema defines override-gated actions | ✅ | 3 actions listed |
 | 3.8 | Schema defines runtime bootstrap deny paths | ✅ | matches parent closeout schema |
@@ -101,7 +101,7 @@ conventions. It does not execute, deploy, or authorise any live action.
 | 5.5 | No Gateway/broker/worker restart | ✅ | Explicitly refused |
 | 5.6 | No credential movement or disclosure | ✅ | Explicitly refused |
 | 5.7 | No history rewrite or force-push | ✅ | Explicitly refused |
-| 5.8 | Seoseo retains finalizer authority | ✅ | Explicitly stated §5, §6, Runbook §6 |
+| 5.8 | brokerAlpha retains finalizer authority | ✅ | Explicitly stated §5, §6, Runbook §6 |
 | 5.9 | Runtime/bootstrap hygiene enforced | ✅ | denyPaths in schema |
 | 5.10 | Bundle contents are redacted-safe | ✅ | Bundle confidentiality rules §4.2 |
 | 5.11 | No secrets, private paths, raw dumps in docs | ✅ | Verified by inspection |
@@ -129,7 +129,7 @@ conventions. It does not execute, deploy, or authorise any live action.
 
 The round coordinator spec, runbook, and schema are structurally complete,
 internally consistent, cross-referenced with existing artifacts, and explicitly
-safe (no unapproved live-impact actions, no automatic closeout, Seoseo retains
+safe (no unapproved live-impact actions, no automatic closeout, brokerAlpha retains
 finalizer authority).
 
 ## Safety confirmation
@@ -149,7 +149,7 @@ finalizer authority).
 | No automatic issue close | Yes |
 | No automatic PR merge | Yes |
 | No automatic approval | Yes |
-| Seoseo retains finalizer authority | Yes |
+| brokerAlpha retains finalizer authority | Yes |
 
 ## Related documents
 

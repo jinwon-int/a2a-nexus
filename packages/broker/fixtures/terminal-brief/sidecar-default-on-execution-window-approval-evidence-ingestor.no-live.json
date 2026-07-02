@@ -21,14 +21,14 @@
       "configKey": "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
       "proposedValue": "true",
       "executorId": "terminal-brief-default-on-runtime-executor",
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "executionWindowMinutes": 10
     },
     "executionWindowRequestDraft": {
       "draftOnly": true,
       "status": "draft_not_sent",
       "requestedAction": "request_terminal_brief_default_on_fresh_operator_execution_window",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "executionWindowReference": "tb-sidecar-default-on-execution-window:fixture-794",
       "approvalExpiresAt": "2026-05-19T10:00:00.000Z",
@@ -67,8 +67,8 @@
       "separateOperatorApprovalRequired": true,
       "separateRuntimeMutationRequired": true,
       "separateCheckpointRequired": true,
-      "approvalCanBeRequestedBy": "seoseo",
-      "approvalCanBeDeliveredBy": ["openclaw", "hermes", "gongyung", "external"],
+      "approvalCanBeRequestedBy": "brokeralpha",
+      "approvalCanBeDeliveredBy": ["openclaw", "hermes", "mobilealpha", "external"],
       "forbiddenFromThisPacket": [
         "sending the execution window request",
         "granting approval or executing an approval grant",
@@ -202,6 +202,6 @@
   "executionWindowApprovalEvidenceIngestor": {
     "now": "2026-05-19T10:40:00.000Z",
     "mode": "terminal-brief-default-on-execution-window-approval-evidence-ingestor-source-only",
-    "finalizer": "seoseo"
+    "finalizer": "brokeralpha"
   }
 }

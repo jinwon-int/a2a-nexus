@@ -120,7 +120,7 @@ export function collectReliabilitySourceBundle(sourceFiles, options = {}) {
 
 export function buildReliabilityEvidenceManifest({
   roundId,
-  workerId = 'nosuk',
+  workerId = 'workerAlpha',
   sourceBundle,
   generatedAt = new Date().toISOString(),
 } = {}) {
@@ -238,7 +238,7 @@ function runCli() {
   const sourceBundle = collectReliabilitySourceBundle(sourceFiles);
   const manifest = buildReliabilityEvidenceManifest({
     roundId: 'a2ad-nexus-runtime-reliability-921-source-only-retry',
-    workerId: 'nosuk',
+    workerId: 'workerAlpha',
     sourceBundle,
   });
   process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);

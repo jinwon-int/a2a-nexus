@@ -3,7 +3,7 @@
 Issue: [#486](https://github.com/jinwon-int/a2a-broker/issues/486)
 Parent: a2a-plane#218 (a2a-plane#218, internal tracker private)
 Run: `a2a-source-public-execution-orchestrator-20260511T023207Z`
-Lane: Team2 — dungae
+Lane: Team2 — workerepsilon
 
 This layer sits after the source-public approval rehearsal. It converts a
 sanitized, approved evidence packet into a deterministic final approval packet
@@ -20,7 +20,7 @@ history, or force-pushes.
 npm run source_public_execution_orchestrator -- --json \
   --mode simulate \
   --run-id a2a-source-public-execution-orchestrator-20260511T023207Z \
-  --worker dungae \
+  --worker workerepsilon \
   --repo jinwon-int/a2a-broker \
   --issue 486 \
   --packet-id approval-packet-abc123 \

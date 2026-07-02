@@ -2,7 +2,7 @@
 
 Issue #700 adds the source-only closeout gate after the Terminal Brief finalizer workflow packet from #699.
 
-The gate is the last dry-run planning layer before a broker finalizer performs any real closeout action. It is meant for OpenClaw, Hermes/Gongyung, or another external harness to call with plain JSON and receive the same approval-gated plan.
+The gate is the last dry-run planning layer before a broker finalizer performs any real closeout action. It is meant for OpenClaw, Hermes/mobilealpha, or another external harness to call with plain JSON and receive the same approval-gated plan.
 
 ## Usage
 

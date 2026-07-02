@@ -3,8 +3,8 @@
  * A2A worker readiness preflight — fail-closed, secret-safe (#655, ref #628 #633 #659).
  *
  * `systemctl is-active` returning success does not mean a worker is actually
- * ready: nosuk had a truncated BROKER_EDGE_SECRET (64→13 chars) and still
- * "ran"; yukson sat on a legacy /opt/openclaw-a2a-worker root whose analysis
+ * ready: workerAlpha had a truncated BROKER_EDGE_SECRET (64→13 chars) and still
+ * "ran"; workerDelta sat on a legacy /opt/openclaw-a2a-worker root whose analysis
  * bridge was not executable. This preflight classifies a worker's collected
  * env/artifact record into one machine-readable failure category so a deploy /
  * rollout gate can refuse to mark it ready.
@@ -255,7 +255,7 @@ export function evaluateWorkerReadiness(record, expectations = {}) {
 
   // 4b. dispatch capability — a worker can be "online" but still unsuitable
   // for a given A2AD lane. Classify unsupported modes and missing repo roots
-  // before broker dispatch so mobile/policy-limited workers (notably Daegyo)
+  // before broker dispatch so mobile/policy-limited workers (notably mobileBeta)
   // cannot create queued-but-non-actionable evidence lanes (#958).
   const supportedModes = supportedModesOf(record);
   const requiredModes = requiredModesOf(record, exp);

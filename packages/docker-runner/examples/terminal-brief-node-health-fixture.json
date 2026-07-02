@@ -3,7 +3,7 @@
   "run": "a2a-r25-team1-ops-readiness-terminal-brief-20260515T1656Z",
   "parent": "a2a-plane#351",
   "issue": "a2a-docker-runner#270",
-  "targetNode": "nosuk",
+  "targetNode": "workerAlpha",
   "expectedRevision": "f17072e",
   "noLiveProviderSend": true,
   "terminalOutboxAckPerformed": false,

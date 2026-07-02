@@ -126,7 +126,7 @@ export interface OIWorkerSpawnApprovalDecisionEvidencePacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -211,7 +211,7 @@ export function buildOIWorkerSpawnApprovalDecisionEvidencePacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -246,7 +246,7 @@ export function renderOIWorkerSpawnApprovalDecisionEvidenceMarkdown(
     "Safety: source-only worker/subagent spawn approval decision evidence. It may record explicit worker",
     "spawn approval evidence for a later readiness gate, but it does not grant execution approval, enable",
     "or create a runtime executor, create broker dispatch tasks, spawn workers/subagents, expand",
-    "Daegyo/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart",
+    "mobilebeta/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart",
     "services, publish releases, or move credentials. workerSpawnApprovalPresent remains a source readiness flag only.",
   ].join("\n");
 }
@@ -453,7 +453,7 @@ function nextActionsForState(state: OIWorkerSpawnApprovalDecisionEvidenceState):
   if (state === "worker_spawn_approval_evidence_accepted") {
     return [
       "feed workerSpawnApprovalPresent=true into a later readiness gate review",
-      "keep worker/subagent process spawn, broker task creation, executor invocation, Daegyo/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
+      "keep worker/subagent process spawn, broker task creation, executor invocation, mobilebeta/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
     ];
   }
   if (state === "worker_spawn_approval_evidence_missing") {
@@ -491,7 +491,7 @@ function evidencePatchForState(
     explicitRuntimeApprovalPresent: accepted,
     brokerDispatchApprovalPresent: accepted,
     workerSpawnApprovalPresent: accepted,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: accepted,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: accepted,

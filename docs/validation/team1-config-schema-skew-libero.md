@@ -2,7 +2,7 @@
 
 Run: `a2a-config-schema-skew-prevention-20260511T120400Z`
 Parent: a2a-plane#249 (a2a-plane#249, internal tracker private)
-Lane: Team1/yukson, a2a-plane#251 (a2a-plane#251, internal tracker private)
+Lane: Team1/workerDelta, a2a-plane#251 (a2a-plane#251, internal tracker private)
 Snapshot: `2026-05-11T15:20:00Z`
 
 This is a redacted, no-live libero validation matrix for preventing config/schema skew from breaking Gateway restart. It is evidence-only: it does not deploy code, restart Gateway/broker/worker services, send live provider or Telegram messages, ACK terminal-outbox rows, mutate production data, rotate secrets, change repository visibility, rewrite history, force-push, release, or post community announcements.

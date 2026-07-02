@@ -21,7 +21,7 @@ It does **not** own isolated task execution. Generic GitHub patch execution runs
 
 Current production baseline as of 2026-04-30:
 
-- active workers: `bangtong`, `sogyo`, `dungae`, `nosuk`
+- active workers: `workergamma`, `workerbeta`, `workerepsilon`, `workeralpha`
 - worker handler artifact: `0.2.2`
 - GitHub patch tasks: Docker-first via `A2A_EXECUTOR_MODE=auto`, `A2A_DOCKER_RUNNER_SCOPE=all-github`, `A2A_DOCKER_RUNNER_ALL_GITHUB=1`
 This repo is the canonical home for the A2A task protocol. The
@@ -47,7 +47,7 @@ map.
 - `docs/source-public-risk-audit-20260510.md` for the Team2 independent broker source-public risk audit and parity evidence for the 2026-05-10 gate
 - `SECURITY.md` and `CONTRIBUTING.md` for vulnerability-reporting, contribution, and release-safety boundaries
 - `docs/v1-acceptance-handoff.md` for the v1 acceptance gate, the plugin-facing contract, and the cross-repo handoff bar for `openclaw-plugin-a2a`
-- `docs/trading-partner-refactor-design.md` for the broker evolution plan that supports stateful trading-partner workers such as `bangtong` and `dengae`
+- `docs/trading-partner-refactor-design.md` for the broker evolution plan that supports stateful trading-partner workers such as `workergamma` and `dengae`
 - `docs/phase-1-implementation-checklist.md` for the first implementation slice
 - `docs/api-spec-draft.md` for proposal, validation, approval, and apply routes
 - `docs/smoke-compose.md` plus `examples/docker-compose.smoke.yml` for a runnable single-host smoke stack using the built-in echo worker
@@ -60,12 +60,12 @@ map.
 - `docs/superseded-running-task-policy.md` for the finalizer policy that marks slower sibling lanes as superseded after a winning PR/evidence is selected
 - `docs/hot-table-memory-warning-policy.md` for interpreting hot-table warnings as observe, investigate, or approval-required operator actions
 - `docs/terminal-brief-sidecar-operator-runbook.md` for the Terminal Brief sidecar supervised dry-run/default-on operator approval, observation, and rollback checklist
-- `docs/a2a-work-mode-routing-rules.md` for choosing Seoseo `solo`, Team1, or `hybrid` work modes from the 2026-06-06 benchmark evidence
+- `docs/a2a-work-mode-routing-rules.md` for choosing brokeralpha `solo`, Team1, or `hybrid` work modes from the 2026-06-06 benchmark evidence
 - `docs/a2a-work-mode-pre-dispatch-decision.md` plus `npm run work_mode_pre_dispatch_decision` for a source-only packet that records the selected work mode before any worker dispatch
 - `docs/a2a-adaptive-work-mode-selector.md` plus `npm run adaptive_work_mode_selector` for a source-only record that selects `solo`, `a2a_direct`, `a2a_hybrid`, `a2a_team`, or `a2ad` after planning and output estimation
 - `docs/a2a-hybrid-worker-mode-design.md` plus `npm run a2a_hybrid_worker_mode_benchmark` for `a2a_hybrid` worker-internal role semantics, evidence format, finalizer ownership, and no-live benchmark gates
-- `docs/team2-gwakga-worker-onboarding-retargeting.md` plus `examples/team2-gwakga.worker.env.example` for the Team2/Gwakga worker onboarding and Seoseo→Gwakga retarget safety runbook
-- `docs/gwakga-seoseo-handoff-receiver-ops.md` plus `examples/gwakga-seoseo.receiver.env.example` and the `gwakga_seoseo_receiver_*` npm scripts for default-off Gwakga→Seoseo handoff receiver operations
+- `docs/team2-brokerbeta-worker-onboarding-retargeting.md` plus `examples/team2-brokerbeta.worker.env.example` for the Team2/brokerbeta worker onboarding and brokeralpha→brokerbeta retarget safety runbook
+- `docs/brokerbeta-brokeralpha-handoff-receiver-ops.md` plus `examples/brokerbeta-brokeralpha.receiver.env.example` and the `brokerbeta_brokeralpha_receiver_*` npm scripts for default-off brokerbeta→brokeralpha handoff receiver operations
 - `docs/complexity-execution-plan-draft.md` plus `npm run complexity_execution_plan_draft` for source-only complexity orchestration execution-plan draft artifacts
 - `docs/docker-broker-live-smoke.md` for the repeatable live Docker broker no-op smoke script and <broker-host> run command
 - `docs/edge-secret-rotation-runbook.md` for the no-secret-values rotation checklist after an edge secret exposure
@@ -164,13 +164,13 @@ for (const worker of workers) {
 
 `GET /terminal-brief/inbox` returns the operator-facing Terminal Brief inbox summary plus a bounded unacked event page. The summary separates raw unacked rows from actionable unacked rows, ACK-eligible rows, provider-send-only rows, and parent-broker-only projection rows that are ACK-ineligible.
 
-For the Team2/Gwakga R8 comparison against Team1/Seoseo, see [`docs/team2-gwakga-ops-dashboard-capacity-parity.md`](docs/team2-gwakga-ops-dashboard-capacity-parity.md) for the bounded dashboard/capacity semantics and GO/NO-GO checklist.
+For the Team2/brokerbeta R8 comparison against Team1/brokeralpha, see [`docs/team2-brokerbeta-ops-dashboard-capacity-parity.md`](docs/team2-brokerbeta-ops-dashboard-capacity-parity.md) for the bounded dashboard/capacity semantics and GO/NO-GO checklist.
 
-Before a seoseo → gwakga broker cutover, run the read-only two-broker guard to fail closed if the same worker id is online in both broker worker lists:
+Before a brokeralpha → brokerbeta broker cutover, run the read-only two-broker guard to fail closed if the same worker id is online in both broker worker lists:
 
 ```bash
-SEOSEO_BROKER_URL=http://127.0.0.1:8787 \
-GWAKGA_BROKER_URL=http://127.0.0.1:8788 \
+brokeralpha_BROKER_URL=http://127.0.0.1:8787 \
+brokerbeta_BROKER_URL=http://127.0.0.1:8788 \
 npm run two_broker_worker_preflight
 ```
 
@@ -185,7 +185,7 @@ curl -s "$BROKER_URL/workers/capacity?stale_after_ms=120000" \
 
 If the command exits non-zero, pause dispatch and inspect the compact response instead of repeatedly fetching large `/tasks?detail=full` snapshots.
 
-For Termux/mobile workers such as Daegyo, use the source-only mobile preflight
+For Termux/mobile workers such as mobilebeta, use the source-only mobile preflight
 packet before active lane assignment:
 
 ```bash
@@ -196,7 +196,7 @@ npm run mobile_worker_preflight -- \
 See [`docs/mobile-worker-preflight.md`](docs/mobile-worker-preflight.md). This
 is separate from Docker-runner doctor: it evaluates supplied mobile signals such
 as poll interval, broker stale windows, tmux supervisor presence, local-forward
-presence, and wake-lock state. It does not change live Daegyo settings, execute
+presence, and wake-lock state. It does not change live mobilebeta settings, execute
 `termux-wake-lock`, dispatch work, restart services, mutate DB state, send
 providers, or ACK/replay Terminal Brief rows.
 
@@ -454,7 +454,7 @@ over HTTP, and hand each task to a stdin/stdout handler.
 
 ```bash
 BROKER_URL=http://127.0.0.1:8787 \
-WORKER_ID=yukson \
+WORKER_ID=workerdelta \
 WORKER_ROLE=analyst \
 A2A_WORKER_PROFILE=broker-poll-only \
 A2A_EXECUTOR_MODE=auto \
@@ -493,7 +493,7 @@ curl -X POST http://127.0.0.1:8787/exchanges \
   -H 'content-type: application/json' \
   -d '{
     "requester": { "id": "<hub-node>", "kind": "node" },
-    "target": { "id": "gongyung", "kind": "node" },
+    "target": { "id": "mobilealpha", "kind": "node" },
     "message": "ping",
     "maxTurns": 8
   }'

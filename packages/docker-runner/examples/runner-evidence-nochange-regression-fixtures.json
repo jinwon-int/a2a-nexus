@@ -23,7 +23,7 @@
           "title": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "focus": "no-change Done evidence",
           "evidenceOnly": true,
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-evidence-nochange-hardening-20260510T100150Z"
         }
       },
@@ -54,7 +54,7 @@
           "issue": "jinwon-int/a2a-docker-runner#170",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "taskId": "fixture-nochange-done-170",
-          "worker": "jingun",
+          "worker": "workerZeta",
           "issueTitle": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "taskBrief": "no-change Done evidence",
           "outcome": "done",
@@ -96,7 +96,7 @@
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "title": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "focus": "no-change Block evidence",
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-evidence-nochange-hardening-20260510T100150Z"
         }
       },
@@ -128,7 +128,7 @@
           "issue": "jinwon-int/a2a-docker-runner#170",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "taskId": "fixture-nochange-block-170",
-          "worker": "jingun",
+          "worker": "workerZeta",
           "issueTitle": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "taskBrief": "no-change Block evidence",
           "outcome": "block",
@@ -170,7 +170,7 @@
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "title": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "focus": "true image/container failure",
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-evidence-nochange-hardening-20260510T100150Z"
         }
       },
@@ -215,7 +215,7 @@
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "title": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "focus": "PR-producing success",
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-evidence-nochange-hardening-20260510T100150Z"
         }
       },
@@ -247,7 +247,7 @@
           "issue": "jinwon-int/a2a-docker-runner#170",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/170",
           "taskId": "fixture-pr-success-170",
-          "worker": "jingun",
+          "worker": "workerZeta",
           "issueTitle": "Team2 runner regression fixtures for evidence-only and no-change tasks",
           "taskBrief": "PR-producing success",
           "outcome": "pr",

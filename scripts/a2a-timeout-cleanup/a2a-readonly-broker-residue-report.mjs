@@ -22,7 +22,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     if (!args[required]) throw new Error(`--${required.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)} is required`);
   }
   args.officialWorkers = String(args.officialWorkers ?? '').split(',').map((item) => item.trim()).filter(Boolean);
-  args.team2Workers = String(args.team2Workers ?? 'dungae,jingun,soonwook,daegyo,gongmyoung,gongyung').split(',').map((item) => item.trim()).filter(Boolean);
+  args.team2Workers = String(args.team2Workers ?? 'workerEpsilon,workerZeta,workerEta,mobileBeta,workerTheta,mobileAlpha').split(',').map((item) => item.trim()).filter(Boolean);
   args.queuedLimit = Number(args.queuedLimit ?? 200);
   args.outboxLimit = Number(args.outboxLimit ?? 200);
   return args;

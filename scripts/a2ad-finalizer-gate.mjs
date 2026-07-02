@@ -157,19 +157,19 @@ function classifyLaneEvidence(lane) {
     };
   }
 
-  if (statusBucket === 'pending' && worker === 'daegyo') {
+  if (statusBucket === 'pending' && worker === 'mobileBeta') {
     const laneStatus = String(lane.status || '').trim().toLowerCase();
     if (laneStatus === 'claimed' || laneStatus === 'running') {
       return {
         evidenceClass: 'nonterminal_claimed_missing_evidence',
         countsTowardQuorum: false,
-        reason: 'Daegyo/mobile lane is claimed or running without terminal result; classify as missing evidence rather than waiting indefinitely.',
+        reason: 'mobileBeta/mobile lane is claimed or running without terminal result; classify as missing evidence rather than waiting indefinitely.',
       };
     }
     return {
       evidenceClass: 'mobile_limited',
       countsTowardQuorum: false,
-      reason: 'Daegyo lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
+      reason: 'mobileBeta lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
     };
   }
   if (analysisStatus === 'provider_or_model_failure' || /provider_or_model_failure|provider\s+failure|model\s+failure/i.test(evidenceText)) {

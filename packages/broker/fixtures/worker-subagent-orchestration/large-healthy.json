@@ -10,7 +10,7 @@
     "requiresSingleDesignDecision": false
   },
   "host": {
-    "workerId": "bangtong",
+    "workerId": "workergamma",
     "cpuLoadPct": 42,
     "memoryUsedPct": 55,
     "ioPressure": "low",

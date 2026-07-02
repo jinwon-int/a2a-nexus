@@ -44,18 +44,18 @@
     "primaryEvidencePath": "/tmp/a2a-canonicalflip-20260610T131555Z-evidence.json",
     "supplementalRounds": [
       "a2a-canonicalflip-retry-20260610T132021Z",
-      "a2a-canonicalflip-sogyo-retry-20260610T132313Z"
+      "a2a-canonicalflip-workerBeta-retry-20260610T132313Z"
     ],
     "supplementalEvidencePaths": [
       "/tmp/a2a-canonicalflip-retry-20260610T132021Z-evidence.json",
-      "/tmp/a2a-canonicalflip-sogyo-retry-20260610T132313Z-evidence.json"
+      "/tmp/a2a-canonicalflip-workerBeta-retry-20260610T132313Z-evidence.json"
     ],
     "workers": [
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "df0c2e71-8b78-41b0-bc0f-c2519067add9",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -63,9 +63,9 @@
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "b997a57c-b0b6-4c6d-b445-6fe4af0af558",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -73,9 +73,9 @@
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "c439b2b1-91fc-45bf-aa31-4124dd48fe20",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -83,9 +83,9 @@
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "dungae",
+        "worker": "workerEpsilon",
         "taskId": "26394e42-b149-42a1-84c7-29b986f2e934",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -93,9 +93,9 @@
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "4244fa19-e5cd-4afe-b277-d7409632e5a8",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -103,9 +103,9 @@
       },
       {
         "round": "a2a-canonicalflip-20260610T131555Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "soonwook",
+        "worker": "workerEta",
         "taskId": "a9dd22d7-ed78-43fb-8832-27b50bc67dae",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -113,9 +113,9 @@
       },
       {
         "round": "a2a-canonicalflip-retry-20260610T132021Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "9e3a4b93-62bf-40d6-bf34-98cb6c687f14",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -124,9 +124,9 @@
       },
       {
         "round": "a2a-canonicalflip-retry-20260610T132021Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "ca63c06d-2ebc-4d66-8361-7f40c83bf72a",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -134,10 +134,10 @@
         "supplemental": true
       },
       {
-        "round": "a2a-canonicalflip-sogyo-retry-20260610T132313Z",
-        "broker": "seoseo",
+        "round": "a2a-canonicalflip-workerBeta-retry-20260610T132313Z",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "930f0f6f-e467-46fd-bea0-8bdb7114b991",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -148,7 +148,7 @@
     ],
     "usableAnalysisCount": 5,
     "dissentRecorded": true,
-    "finalizerSynthesis": "Advance only a PR-first execution handoff packet. Do not perform actual execution-sensitive action. Record Sogyo dissent as a guard that execution-sensitive actions remain HOLD until a separate approval."
+    "finalizerSynthesis": "Advance only a PR-first execution handoff packet. Do not perform actual execution-sensitive action. Record workerBeta dissent as a guard that execution-sensitive actions remain HOLD until a separate approval."
   },
   "goNoGoFields": {
     "finalOperatorSignoffPacketMerged": true,

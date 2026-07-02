@@ -45,7 +45,7 @@ function finalizerReviewForAllCandidateMetrics(candidateMetrics: typeof baseline
       evidenceUrls: [`https://example.test/${id}`],
     })),
   });
-  return buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "gwakga" });
+  return buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "brokerbeta" });
 }
 
 test("builds a source-only operator review request from a review-ready packet", () => {
@@ -115,7 +115,7 @@ test("routes degraded candidates to operator review without dispatching work", (
 test("renders markdown without implying approval or runtime execution", () => {
   const fixture = JSON.parse(readFileSync("fixtures/orchestration-intelligence/validation-operator-review-request.ready.json", "utf8"));
   const score = buildOIValidationScorePacket({ generatedAt: NOW, ...fixture.scoreInput });
-  const finalizerReview = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "gwakga" });
+  const finalizerReview = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "brokerbeta" });
   const packet = buildOIValidationOperatorReviewRequestPacket({
     generatedAt: NOW,
     finalizerReview,

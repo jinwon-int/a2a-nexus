@@ -72,11 +72,11 @@ function makeTerminalEvent(
 function seedOutbox(): TerminalTaskEventOutbox {
   const outbox = new TerminalTaskEventOutbox();
   const tasks: TaskRecord[] = [
-    makeTask({ id: "task-1", status: "succeeded", payload: { worker: "seoseo", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 1, run: "round-a" } }),
-    makeTask({ id: "task-2", status: "succeeded", payload: { worker: "dungae", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 2, run: "round-a" } }),
-    makeTask({ id: "task-3", status: "failed", payload: { worker: "bangtong", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 3, run: "round-a" } }),
-    makeTask({ id: "task-4", status: "succeeded", payload: { worker: "gwakga", parentRoundId: "round-b", parentRoundTotal: 1, parentRoundOrder: 1, run: "round-b" } }),
-    makeTask({ id: "task-5", status: "canceled", payload: { worker: "seoseo", parentRoundId: "round-c", parentRoundTotal: 2, parentRoundOrder: 1, run: "round-c" } }),
+    makeTask({ id: "task-1", status: "succeeded", payload: { worker: "brokeralpha", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 1, run: "round-a" } }),
+    makeTask({ id: "task-2", status: "succeeded", payload: { worker: "workerepsilon", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 2, run: "round-a" } }),
+    makeTask({ id: "task-3", status: "failed", payload: { worker: "workergamma", parentRoundId: "round-a", parentRoundTotal: 3, parentRoundOrder: 3, run: "round-a" } }),
+    makeTask({ id: "task-4", status: "succeeded", payload: { worker: "brokerbeta", parentRoundId: "round-b", parentRoundTotal: 1, parentRoundOrder: 1, run: "round-b" } }),
+    makeTask({ id: "task-5", status: "canceled", payload: { worker: "brokeralpha", parentRoundId: "round-c", parentRoundTotal: 2, parentRoundOrder: 1, run: "round-c" } }),
   ];
 
   for (const task of tasks) {
@@ -135,10 +135,10 @@ test("queryTerminalBriefEvents filters by parentRoundId", () => {
 
 test("queryTerminalBriefEvents filters by worker", () => {
   const outbox = seedOutbox();
-  const result = queryTerminalBriefEvents(outbox, { worker: "seoseo" });
+  const result = queryTerminalBriefEvents(outbox, { worker: "brokeralpha" });
   assert.equal(result.events.length, 2);
   for (const event of result.events) {
-    assert.equal(event.worker, "seoseo");
+    assert.equal(event.worker, "brokeralpha");
   }
 });
 
@@ -177,7 +177,7 @@ test("summarizeTerminalBriefInbox separates actionable backlog from projection r
           createdAt: now,
           updatedAt: now,
           notificationOwnership: {
-            ownerBrokerId: "seoseo",
+            ownerBrokerId: "brokeralpha",
             scope: "parent-broker-only",
             providerSendPermittedByProjection: false,
             terminalAckPermittedByProjection: false,
@@ -244,7 +244,7 @@ test("countTerminalBriefEvents returns correct counts", () => {
   const outbox = seedOutbox();
   assert.equal(countTerminalBriefEvents(outbox), 5);
   assert.equal(countTerminalBriefEvents(outbox, { parentRoundId: "round-a" }), 3);
-  assert.equal(countTerminalBriefEvents(outbox, { worker: "gwakga" }), 1);
+  assert.equal(countTerminalBriefEvents(outbox, { worker: "brokerbeta" }), 1);
 });
 
 test("getTerminalBriefEvent returns event by id", () => {
@@ -282,7 +282,7 @@ test("exportTerminalBriefEvents produces compact-round-up format", () => {
   assert.ok(output.includes("✅"));
   assert.ok(output.includes("❌"));
   assert.ok(output.includes("○")); // unacked
-  assert.ok(output.includes("seoseo") || output.includes("dungae") || output.includes("bangtong"));
+  assert.ok(output.includes("brokeralpha") || output.includes("workerepsilon") || output.includes("workergamma"));
 });
 
 test("exportTerminalBriefEvents produces markdown-summary format", () => {
@@ -340,10 +340,10 @@ test("summarizeTerminalBriefRounds respects maxRounds", () => {
 test("listTerminalBriefWorkers returns unique workers", () => {
   const outbox = seedOutbox();
   const workers = listTerminalBriefWorkers(outbox);
-  assert.ok(workers.includes("seoseo"));
-  assert.ok(workers.includes("dungae"));
-  assert.ok(workers.includes("bangtong"));
-  assert.ok(workers.includes("gwakga"));
+  assert.ok(workers.includes("brokeralpha"));
+  assert.ok(workers.includes("workerepsilon"));
+  assert.ok(workers.includes("workergamma"));
+  assert.ok(workers.includes("brokerbeta"));
   assert.equal(workers.length, 4);
 });
 
@@ -351,10 +351,10 @@ test("listTerminalBriefWorkers filters by parentRoundId", () => {
   const outbox = seedOutbox();
   const workers = listTerminalBriefWorkers(outbox, { parentRoundId: "round-a" });
   assert.equal(workers.length, 3);
-  assert.ok(workers.includes("seoseo"));
-  assert.ok(workers.includes("dungae"));
-  assert.ok(workers.includes("bangtong"));
-  assert.equal(workers.includes("gwakga"), false);
+  assert.ok(workers.includes("brokeralpha"));
+  assert.ok(workers.includes("workerepsilon"));
+  assert.ok(workers.includes("workergamma"));
+  assert.equal(workers.includes("brokerbeta"), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ test("getTerminalBriefEvent fields are populated", () => {
   assert.ok(result);
   assert.equal(result!.status, "succeeded");
   assert.equal(result!.receiptConfirmed, true);
-  assert.equal(result!.worker, "seoseo");
+  assert.equal(result!.worker, "brokeralpha");
   assert.equal(result!.parentRoundId, "round-a");
 });
 
@@ -421,7 +421,7 @@ test("countTerminalBriefEvents does not mutate outbox state", () => {
   const outbox = seedOutbox();
   const before = outbox.snapshot().length;
   countTerminalBriefEvents(outbox);
-  countTerminalBriefEvents(outbox, { worker: "seoseo" });
+  countTerminalBriefEvents(outbox, { worker: "brokeralpha" });
   countTerminalBriefEvents(outbox, { errored: true });
   assert.equal(outbox.snapshot().length, before, "count must not add/remove events");
 });
@@ -497,7 +497,7 @@ test("re-enqueuing the same task event returns existing event (no duplicate)", (
   const task = makeTask({
     id: "task-replay",
     status: "succeeded",
-    payload: { worker: "seoseo", parentRoundId: "round-replay", run: "round-replay" },
+    payload: { worker: "brokeralpha", parentRoundId: "round-replay", run: "round-replay" },
   });
   const event = {
     id: 1,
@@ -533,7 +533,7 @@ test("replayed event same idempotency key is not double-counted in inbox summary
   const task = makeTask({
     id: "task-replay-2",
     status: "succeeded",
-    payload: { worker: "bangtong", parentRoundId: "round-dupe", run: "round-dupe" },
+    payload: { worker: "workergamma", parentRoundId: "round-dupe", run: "round-dupe" },
   });
   const event = {
     id: 1,
@@ -565,10 +565,10 @@ test("cross-broker projection re-enqueue is idempotent in query output", () => {
   const projection = {
     id: "proj-1",
     parentRoundId: "round-proj-replay",
-    originBrokerId: "seoseo",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokeralpha",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: "child-1",
-    childWorkerId: "sogyo",
+    childWorkerId: "workerbeta",
     status: "succeeded" as const,
     completedAt: new Date().toISOString(),
     emittedAt: new Date().toISOString(),
@@ -619,7 +619,7 @@ test("replayed event after ACK shows correct receipt state", () => {
   const task = makeTask({
     id: "task-ack-replay",
     status: "succeeded",
-    payload: { worker: "gwakga", parentRoundId: "round-ack-rp", run: "round-ack-rp" },
+    payload: { worker: "brokerbeta", parentRoundId: "round-ack-rp", run: "round-ack-rp" },
   });
   const event = {
     id: 1,

@@ -10,14 +10,14 @@ import {
 
 const completeDecision: A2AFinalizerDecision = {
   finalizerDecisionId: "fd-001",
-  finalizerOwner: "seoseo",
+  finalizerOwner: "brokeralpha",
   parentRoundId: "round-42",
   parentRoundTotal: 3,
   parentRoundOrder: 3,
-  brokerOfRecordId: "seoseo",
+  brokerOfRecordId: "brokeralpha",
   executionLane: "a2ad",
   allowedActions: ["pr_merge"],
-  workerEvidenceIds: ["ev-sogyo-1"],
+  workerEvidenceIds: ["ev-workerbeta-1"],
 };
 
 test("non-A2A context is allowed without a finalizer decision", () => {
@@ -151,7 +151,7 @@ test("substantive evidence alongside wrapper-only evidence still authorizes", ()
   const result = evaluateA2AExecutionPolicy({
     intent: "A2A로 진행",
     requestedAction: "pr_merge",
-    finalizerDecision: { ...completeDecision, workerEvidenceIds: ["ev-wrapper-1", "ev-sogyo-2"] },
+    finalizerDecision: { ...completeDecision, workerEvidenceIds: ["ev-wrapper-1", "ev-workerbeta-2"] },
     wrapperOnlyEvidenceIds: ["ev-wrapper-1"],
   });
   assert.equal(result.allowed, true);

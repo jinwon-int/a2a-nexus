@@ -1,13 +1,13 @@
-# R26 Team1/bangtong no-live Terminal Brief integration rehearsal
+# R26 Team1/workerGamma no-live Terminal Brief integration rehearsal
 
 Parent: a2a-plane#360 (a2a-plane#360, internal tracker private)
 Lane: a2a-plane#361 (a2a-plane#361, internal tracker private)
 Run: `a2a-r26-team1-no-live-terminal-brief-integration-rehearsal-20260515T1832Z`
-Broker of record: Seoseo
-Worker: `bangtong`
+Broker of record: brokerAlpha
+Worker: `workerGamma`
 Team: Team1
 
-This is the **no-live activation rehearsal packet** for receiving Team2/Gwakga Terminal Brief output into Seoseo/Bangtong operations. It defines the concrete rehearsal steps, pass/fail criteria, rollback triggers, default-off verification, and operator approval blockers that will gate the final activation when Team2 implementation PRs arrive.
+This is the **no-live activation rehearsal packet** for receiving Team2/brokerBeta Terminal Brief output into brokerAlpha/workerGamma operations. It defines the concrete rehearsal steps, pass/fail criteria, rollback triggers, default-off verification, and operator approval blockers that will gate the final activation when Team2 implementation PRs arrive.
 
 ---
 
@@ -17,10 +17,10 @@ This rehearsal builds on merged R25 artifacts:
 
 | Artifact | Description |
 |----------|-------------|
-| a2a-plane#359 (a2a-plane PR #359, internal tracker private) | R25 Team1 ops-readiness gate framework (bangtong lane) |
-| a2a-plane#353 (a2a-plane#353, internal tracker private) / a2a-plane#351 (a2a-plane#351, internal tracker private) | R25 yukson validation matrix and parent |
+| a2a-plane#359 (a2a-plane PR #359, internal tracker private) | R25 Team1 ops-readiness gate framework (workerGamma lane) |
+| a2a-plane#353 (a2a-plane#353, internal tracker private) / a2a-plane#351 (a2a-plane#351, internal tracker private) | R25 workerDelta validation matrix and parent |
 | [a2a-docker-runner#275](https://github.com/jinwon-int/a2a-docker-runner/pull/275) | R25 docker-runner integration evidence |
-| `team1-bangtong-r25-ops-readiness-terminal-brief.md` | R25 ops-readiness gate definition (Domains G1&#8211;G5) |
+| `team1-workerGamma-r25-ops-readiness-terminal-brief.md` | R25 ops-readiness gate definition (Domains G1&#8211;G5) |
 
 The R25 gate framework defines **what** must be true. This rehearsal document defines **how to verify it in a no-live rehearsal**.
 
@@ -57,14 +57,14 @@ Verify that the R25 G1 preconditions are structurally satisfied for a no-live re
 | R1.2 | Verify Terminal Brief routing guard does not accept live routes | `npm run check:terminal-brief-routing` passes | Routing guard allows `telegram_bot_api`, `telegram_curl`, or `direct_provider_send` |
 | R1.3 | Verify ACK-boundary conformance | `check-terminal-evidence-ack-boundary.mjs` and `check-message-id-ack-boundary.mjs` pass | Provider `accepted`-send is promoted to terminal ACK |
 | R1.4 | Verify no live-provider path in Terminal Brief code | PR diff scan: no `bot.sendMessage`, `provider.send`, `notifier.send` outside OpenClaw adapter | Live-provider path bypasses OpenClaw outbound adapter |
-| R1.5 | Verify Seoseo broker image pinning plan | Pinned image tag recorded (even if dummy `r26-rehearsal`); `latest` is never the deploy target | No image tag recorded; `latest` is allowed |
+| R1.5 | Verify brokerAlpha broker image pinning plan | Pinned image tag recorded (even if dummy `r26-rehearsal`); `latest` is never the deploy target | No image tag recorded; `latest` is allowed |
 | R1.6 | Verify Terminal Brief is default-off (see R3) | Config audit of broker/worker/plugin default-off surfaces | Any surface shows `terminalBriefEnabled: true` without explicit operator approval |
 
 **Rehearsal command:**
 
 ```bash
-node --test scripts/archive/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
-node --test scripts/archive/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
+node --test scripts/archive/check-team1-workerGamma-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
+node --test scripts/archive/check-team1-workerGamma-r25-ops-readiness-terminal-brief.test.mjs
 npm run check:terminal-brief-routing
 node test/conformance/check-contract-fixtures.mjs
 node test/conformance/check-terminal-evidence-ack-boundary.mjs
@@ -133,10 +133,10 @@ Run from the repository root after a clean checkout:
 
 ```bash
 # Core rehearsal test suite
-node --test scripts/archive/check-team1-bangtong-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
+node --test scripts/archive/check-team1-workerGamma-r26-no-live-terminal-brief-integration-rehearsal.test.mjs
 
 # R25 gate framework conformance (prerequisite pass)
-node --test scripts/archive/check-team1-bangtong-r25-ops-readiness-terminal-brief.test.mjs
+node --test scripts/archive/check-team1-workerGamma-r25-ops-readiness-terminal-brief.test.mjs
 
 # Terminal Brief routing guard
 npm run check:terminal-brief-routing
@@ -164,7 +164,7 @@ After completing all rehearsal steps, capture the evidence in a structured outpu
 ```json
 {
   "rehearsalRun": "a2a-r26-team1-no-live-terminal-brief-integration-rehearsal-20260515T1832Z",
-  "lane": "team1-bangtong",
+  "lane": "team1-workerGamma",
   "round": "R26",
   "state": "NO-LIVE_REHEARSAL",
   "domains": {
@@ -258,4 +258,4 @@ This rehearsal:
 
 ## Closeout boundary
 
-This lane produces the R26 no-live integration rehearsal packet. The packet itself does not activate Terminal Brief, accept Team2 code into Seoseo production, grant operator approval, replace the R25 gate framework, or unblock live activation without a separate operator approval round.
+This lane produces the R26 no-live integration rehearsal packet. The packet itself does not activate Terminal Brief, accept Team2 code into brokerAlpha production, grant operator approval, replace the R25 gate framework, or unblock live activation without a separate operator approval round.

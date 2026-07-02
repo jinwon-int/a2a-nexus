@@ -9,7 +9,7 @@ test("broker rehearsal manifest composes no-live contracts for runner lanes", ()
   const manifest = buildBrokerRehearsalManifest({
     generatedAt: "2026-05-04T03:50:26.000Z",
     runId: "a2a-no-live-integration-20260504035026",
-    worker: "sogyo",
+    worker: "workerbeta",
   });
 
   assert.equal(manifest.kind, "a2a-broker.rehearsal-manifest");

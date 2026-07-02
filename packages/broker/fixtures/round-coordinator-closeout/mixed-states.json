@@ -4,21 +4,21 @@
     "roundLabel": "a2a-team1-round-coordinator-20260526T201140KST",
     "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/934",
     "lanes": [
-      { "workerId": "sogyo", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
-      { "workerId": "bangtong", "description": "Round manifest foundation" },
-      { "workerId": "nosuk", "description": "A2A definitions and types" },
-      { "workerId": "yukson", "description": "Validation and tests" }
+      { "workerId": "workerbeta", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
+      { "workerId": "workergamma", "description": "Round manifest foundation" },
+      { "workerId": "workeralpha", "description": "A2A definitions and types" },
+      { "workerId": "workerdelta", "description": "Validation and tests" }
     ],
     "staleAfterMs": 1800000,
     "timeoutAt": "2026-05-27T06:00:00.000Z"
   },
   "tasks": [
     {
-      "id": "task-sogyo-936",
+      "id": "task-workerbeta-936",
       "intent": "propose_patch",
       "status": "succeeded",
       "targetNodeId": "default",
-      "assignedWorkerId": "sogyo",
+      "assignedWorkerId": "workerbeta",
       "requester": { "id": "broker", "kind": "service" },
       "target": { "id": "default", "kind": "node" },
       "payload": {},
@@ -35,11 +35,11 @@
       }
     },
     {
-      "id": "task-bangtong-928",
+      "id": "task-workergamma-928",
       "intent": "propose_patch",
       "status": "blocked",
       "targetNodeId": "default",
-      "assignedWorkerId": "bangtong",
+      "assignedWorkerId": "workergamma",
       "requester": { "id": "broker", "kind": "service" },
       "target": { "id": "default", "kind": "node" },
       "payload": {},
@@ -54,11 +54,11 @@
       }
     },
     {
-      "id": "task-nosuk-1",
+      "id": "task-workeralpha-1",
       "intent": "propose_patch",
       "status": "running",
       "targetNodeId": "default",
-      "assignedWorkerId": "nosuk",
+      "assignedWorkerId": "workeralpha",
       "requester": { "id": "broker", "kind": "service" },
       "target": { "id": "default", "kind": "node" },
       "payload": {},

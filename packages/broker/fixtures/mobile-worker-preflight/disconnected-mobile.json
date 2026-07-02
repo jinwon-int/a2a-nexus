@@ -1,10 +1,10 @@
 {
   "kind": "a2a-broker.mobile-worker-preflight.fixture",
   "version": 1,
-  "description": "Daegyo-style Termux worker past the disconnected threshold. Supervisor and forward are present but worker cannot receive fresh work until heartbeat re-establishes connectivity.",
+  "description": "mobilebeta-style Termux worker past the disconnected threshold. Supervisor and forward are present but worker cannot receive fresh work until heartbeat re-establishes connectivity.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "online",
     "lastSeenAgeSec": 120,

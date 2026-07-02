@@ -1,16 +1,16 @@
 {
   "$schema": "a2a.runner.openclaw-profile-readiness.v1",
-  "run": "a2a-team1-post-bangtong-readiness-20260520T110014Z",
+  "run": "a2a-team1-post-workerGamma-readiness-20260520T110014Z",
   "parent": "a2a-broker#829",
   "issue": "a2a-docker-runner#297",
-  "worker": "bangtong",
+  "worker": "workerGamma",
   "parentRound": {
-    "parentRoundId": "a2a-team1-post-bangtong-readiness-20260520T110014Z",
+    "parentRoundId": "a2a-team1-post-workerGamma-readiness-20260520T110014Z",
     "parentRoundTotal": 4,
     "parentRoundOrder": 1,
     "parentRoundProgress": 0,
-    "originBrokerId": "seoseo",
-    "brokerOfRecordId": "seoseo"
+    "originBrokerId": "brokerAlpha",
+    "brokerOfRecordId": "brokerAlpha"
   },
   "overallReady": true,
   "checks": [

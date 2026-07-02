@@ -8,7 +8,7 @@ After the winning evidence is accepted, a hub/operator may cancel non-terminal s
 
 ```json
 {
-  "actor": { "id": "seoseo", "kind": "node", "role": "hub" },
+  "actor": { "id": "brokeralpha", "kind": "node", "role": "hub" },
   "reason": "finalizer selected and merged PR #356",
   "supersededByTaskId": "round-selected-pr",
   "supersededByPrUrl": "https://github.com/jinwon-int/a2a-docker-runner/pull/356",

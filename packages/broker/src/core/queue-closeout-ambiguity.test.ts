@@ -1,7 +1,7 @@
 /**
  * Tests for queue closeout ambiguity detector (issue #540).
  *
- * Reference: #540 Team1/Bangtong stability gates for #497/#294.
+ * Reference: #540 Team1/workergamma stability gates for #497/#294.
  */
 import { describe, it } from "node:test";
 import * as assert from "node:assert";

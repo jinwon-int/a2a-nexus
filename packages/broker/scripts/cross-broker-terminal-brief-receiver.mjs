@@ -39,9 +39,9 @@ async function writeCursor(path, cursor) {
 
 function buildConfig(cursor) {
   return {
-    sourceBrokerId: process.env.CROSS_BROKER_SOURCE_BROKER_ID ?? "gwakga",
+    sourceBrokerId: process.env.CROSS_BROKER_SOURCE_BROKER_ID ?? "brokerbeta",
     sourceBaseUrl: process.env.CROSS_BROKER_SOURCE_BASE_URL ?? "http://127.0.0.1:8799",
-    destinationBrokerId: process.env.CROSS_BROKER_DEST_BROKER_ID ?? "seoseo",
+    destinationBrokerId: process.env.CROSS_BROKER_DEST_BROKER_ID ?? "brokeralpha",
     destinationBaseUrl: process.env.CROSS_BROKER_DEST_BASE_URL ?? "http://127.0.0.1:8787",
     cursor,
     limit: envNumber("CROSS_BROKER_LIMIT", 50),

@@ -3,9 +3,9 @@
 Parent: #197 (a2a-plane#197, internal tracker private)
 Child: #199 (a2a-plane#199, internal tracker private)
 Run: `a2a-source-dryrun-orchestrator-20260510T133022Z`
-Broker of record: `seoseo`
+Broker of record: `brokerAlpha`
 Team: `team1`
-Worker: `yukson`
+Worker: `workerDelta`
 Reviewed at: `2026-05-10T13:34:06Z`
 
 This is a redacted validation artifact only. It validates dry-run/evidence orchestration and approval separation. It does not change repository visibility, import private source history, deploy, restart Gateway/broker/worker services, mutate production databases, send provider or Telegram messages, ACK terminal outbox rows, rotate or disclose credentials, rewrite history, force-push, publish a release, or post to community channels.

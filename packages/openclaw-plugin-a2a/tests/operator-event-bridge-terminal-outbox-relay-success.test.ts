@@ -14,28 +14,28 @@ function terminalEvent(): A2ATerminalOutboxEvent {
     payload: {
       taskId: "relay-success-canary",
       status: "succeeded",
-      worker: "soonwook",
+      worker: "workerEta",
       completedAt: "2026-05-14T10:44:49.752Z",
       summary: "relay success should suppress duplicate child local operator notification",
-      parentRoundId: "terminal-brief-r19-parent-seeded-seoseo-20260514",
-      originBrokerId: "gwakga",
-      brokerOfRecordId: "seoseo",
+      parentRoundId: "terminal-brief-r19-parent-seeded-brokerAlpha-20260514",
+      originBrokerId: "brokerBeta",
+      brokerOfRecordId: "brokerAlpha",
       parentRoundOrder: 1,
       parentRoundTotal: 1,
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
       crossBrokerHandoff: {
-        parentRoundId: "terminal-brief-r19-parent-seeded-seoseo-20260514",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        parentRoundId: "terminal-brief-r19-parent-seeded-brokerAlpha-20260514",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
         originTaskId: "relay-success-canary",
-        childWorkerId: "soonwook",
+        childWorkerId: "workerEta",
       },
     },
     receipt: { status: "accepted", updatedAt: "2026-05-14T10:44:49.757Z" },
@@ -44,7 +44,7 @@ function terminalEvent(): A2ATerminalOutboxEvent {
       reason: "terminal event accepted; awaiting current-session-visible/operator-visible/provider-delivery evidence before ACK",
       updatedAt: "2026-05-14T10:44:49.757Z",
       taskId: "relay-success-canary",
-      worker: "soonwook",
+      worker: "workerEta",
       receiptStatus: "accepted",
     },
     ack: null,
@@ -92,7 +92,7 @@ describe("operator event bridge terminal outbox cross-broker relay success", () 
         projections.push(projection);
         return { decision: "accepted", reason: "parent broker accepted projection" };
       },
-      handoffBrokerId: "gwakga",
+      handoffBrokerId: "brokerBeta",
       notifyOperator: async (envelope) => {
         notifications.push(envelope);
         return {
@@ -110,11 +110,11 @@ describe("operator event bridge terminal outbox cross-broker relay success", () 
     bridge.shutdown();
 
     assert.equal(projections.length, 1, "relay success must emit one parent projection");
-    assert.equal(projections[0]?.parentRoundId, "terminal-brief-r19-parent-seeded-seoseo-20260514");
-    assert.equal(projections[0]?.originBrokerId, "gwakga", "child/handoff broker remains explicit");
-    assert.equal(projections[0]?.brokerOfRecordId, "seoseo");
-    assert.equal(projections[0]?.parentOriginBrokerId, "seoseo");
-    assert.equal(projections[0]?.parentBrokerId, "seoseo");
+    assert.equal(projections[0]?.parentRoundId, "terminal-brief-r19-parent-seeded-brokerAlpha-20260514");
+    assert.equal(projections[0]?.originBrokerId, "brokerBeta", "child/handoff broker remains explicit");
+    assert.equal(projections[0]?.brokerOfRecordId, "brokerAlpha");
+    assert.equal(projections[0]?.parentOriginBrokerId, "brokerAlpha");
+    assert.equal(projections[0]?.parentBrokerId, "brokerAlpha");
     assert.equal(notifications.length, 0, "successful relay must suppress duplicate child-local notification");
     assert.equal(acked.length, 0, "child broker must not ACK a parent-owned Terminal Brief after relay success");
     assert.equal(state.operator.terminalOutbox?.crossBrokerRelay?.status, "succeeded");

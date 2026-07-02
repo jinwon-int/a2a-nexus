@@ -8,13 +8,13 @@ secrets, private keys, tokens, and raw SSH details out of this file.
 
 Active A2A full-handler workers:
 
-- `bangtong`
-- `dungae`
-- `sogyo`
+- `workergamma`
+- `workerepsilon`
+- `workerbeta`
 
 Explicitly excluded from active all-worker operations:
 
-- `yukson` — old VPS2 / legacy echo-worker remnant. Do not treat it as a
+- `workerdelta` — old VPS2 / legacy echo-worker remnant. Do not treat it as a
   current full-handler worker unless the operator makes a new explicit decision.
 
 ## Stabilized production shape
@@ -147,9 +147,9 @@ secrets and host-specific noise. This document is the sanitized GitHub record.
 - `openclaw status` can still hang or time out on active worker nodes. Treat that
   as an OpenClaw/Gateway status-path issue, not as proof that the A2A broker is
   down.
-- `bangtong` previously showed high gateway CPU while status checks hung; keep
+- `workergamma` previously showed high gateway CPU while status checks hung; keep
   it under observation during long worker runs.
-- Old `yukson` broker records may remain visible until they age out or are
+- Old `workerdelta` broker records may remain visible until they age out or are
   explicitly cleaned. They must not be selected by active all-worker dispatch.
 - The worker session-isolation patch is currently an operational runtime
   standard. If the full-handler runtime is promoted into a shared source repo,
@@ -217,7 +217,7 @@ explicit regression tests that verify:
 
 Before dispatching a broad A2A operation:
 
-1. Confirm active targets are exactly `bangtong`, `dungae`, and `sogyo` unless a
+1. Confirm active targets are exactly `workergamma`, `workerepsilon`, and `workerbeta` unless a
    newer operator decision says otherwise.
 2. Confirm broker health:
 
@@ -230,4 +230,4 @@ Before dispatching a broad A2A operation:
 4. Confirm `staleReaper.olderThanSec >= 1200` while worker handler timeout stays
    around `900s`.
 5. Confirm worker handlers use task-scoped OpenClaw `--session-id` values.
-6. Exclude `yukson` from active A2A all-worker operations.
+6. Exclude `workerdelta` from active A2A all-worker operations.

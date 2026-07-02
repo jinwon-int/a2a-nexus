@@ -36,7 +36,7 @@ const allRuntimeEvidence = {
   explicitRuntimeApprovalPresent: true,
   brokerDispatchApprovalPresent: true,
   workerSpawnApprovalPresent: true,
-  daegyoMobileScopeResolved: true,
+  mobilebetaMobileScopeResolved: true,
   rollbackAbortCriteriaDocumented: true,
   liveBoundaryPlanDocumented: true,
   validationEvidenceFresh: true,
@@ -45,7 +45,7 @@ const allRuntimeEvidence = {
 test("defaults to NO-GO for runtime executor even when source chain can advance", () => {
   const packet = buildOIRuntimeReadinessGatePacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     finalizerDecision: finalizerDecision(),
   });
 
@@ -54,7 +54,7 @@ test("defaults to NO-GO for runtime executor even when source chain can advance"
   assert.equal(packet.runtimeDisposition, "no_go");
   assert.ok(packet.blockers.some((blocker) => blocker.includes("runtime_executor_design_reviewed")));
   assert.ok(packet.blockers.some((blocker) => blocker.includes("explicit_runtime_approval_present")));
-  assert.ok(packet.blockers.some((blocker) => blocker.includes("daegyo_mobile_scope_resolved")));
+  assert.ok(packet.blockers.some((blocker) => blocker.includes("mobilebeta_mobile_scope_resolved")));
   assert.equal(packet.safety.runtimeReadinessGateOnly, true);
   assert.equal(packet.safety.grantsExecutionApproval, false);
   assert.equal(packet.safety.runtimeExecutorEnabled, false);

@@ -12,7 +12,7 @@ operatorEvents, dry-run, and secret-boundary evidence.
 ## Purpose
 
 The collector creates a harness-neutral review packet before any supervised
-dry-run sidecar start is requested. This lets OpenClaw, Hermes/Gongyung, or an
+dry-run sidecar start is requested. This lets OpenClaw, Hermes/mobilealpha, or an
 external harness present the same evidence shape without binding A2A to
 `openclaw message send`.
 

@@ -74,12 +74,12 @@ test('all-hands closeout gates keep #497 and #294 as approval-gated residual tra
   assert.doesNotMatch(content, /a2a-broker#294.*closed/i);
 });
 
-test('all-hands closeout gates define Seoseo-origin cross-broker Terminal Brief evidence rules', async () => {
+test('all-hands closeout gates define brokerAlpha-origin cross-broker Terminal Brief evidence rules', async () => {
   const content = await doc();
 
   for (const phrase of [
-    'Seoseo is the initiating parent broker',
-    'handed off through Gwakga',
+    'brokerAlpha is the initiating parent broker',
+    'handed off through brokerBeta',
     'stable projection key or idempotency marker',
     'child issue or PR/Done/Block evidence URL',
     'no provider send',

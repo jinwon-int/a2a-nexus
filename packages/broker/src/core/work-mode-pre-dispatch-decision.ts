@@ -32,7 +32,7 @@ export interface A2AWorkModeTaskProfile {
   hasMultipleCandidates?: boolean;
   hasConflictingRecommendations?: boolean;
   tightlyCoupledWriteSet?: boolean;
-  seoseoOwnsImplementation?: boolean;
+  brokeralphaOwnsImplementation?: boolean;
   boundedHelperScope?: string[];
 }
 
@@ -133,7 +133,7 @@ export function buildA2AWorkModePreDispatchDecision(
   const boundariesInput = normalizeBoundaries(input.boundaries);
   const workers = normalizeWorkers(input.workers);
   if (workers.snapshotAt === "unknown") workers.snapshotAt = generatedAt;
-  const finalizerOwner = input.finalizerOwner ?? "seoseo";
+  const finalizerOwner = input.finalizerOwner ?? "brokeralpha";
   const context = buildDecisionContext(task, boundariesInput, workers);
   const recommendation = recommendMode(context);
 
@@ -293,7 +293,7 @@ function buildDecisionContext(
     || task.tightlyCoupledWriteSet === true;
   const hybridUseful = task.workProfile === "late_supplemental_review"
     || task.workProfile === "approval_closeout"
-    || (task.seoseoOwnsImplementation === true && (task.boundedHelperScope?.length ?? 0) > 0);
+    || (task.brokeralphaOwnsImplementation === true && (task.boundedHelperScope?.length ?? 0) > 0);
 
   return { task, boundaries, workers, hardBoundary, workerHealthy, broadEvidenceUseful, soloDefault, hybridUseful };
 }
@@ -327,7 +327,7 @@ function recommendMode(context: DecisionContext): Recommendation {
       mode: "hybrid",
       confidence: "medium",
       reasons: [
-        "Seoseo should own implementation/finalizer path",
+        "brokeralpha should own implementation/finalizer path",
         "bounded helper evidence can reduce risk without handing off closeout authority",
       ],
       blockers,
@@ -383,9 +383,9 @@ function nextActionFor(mode: A2AWorkMode, blockers: string[]): string {
       : "run solo and record the decision packet in the issue or round notes";
   }
   if (mode === "team1") {
-    return "prepare a Team1 dispatch plan with independent evidence lanes, safe parent wording, and Seoseo as finalizer";
+    return "prepare a Team1 dispatch plan with independent evidence lanes, safe parent wording, and brokeralpha as finalizer";
   }
-  return "prepare a bounded hybrid helper request; Seoseo keeps implementation, merge, and closeout authority";
+  return "prepare a bounded hybrid helper request; brokeralpha keeps implementation, merge, and closeout authority";
 }
 
 function extractTask(value: unknown): A2AWorkModeTaskProfile {
@@ -414,7 +414,7 @@ function extractTask(value: unknown): A2AWorkModeTaskProfile {
     hasMultipleCandidates: optionalBoolean(value.hasMultipleCandidates ?? value.has_multiple_candidates),
     hasConflictingRecommendations: optionalBoolean(value.hasConflictingRecommendations ?? value.has_conflicting_recommendations),
     tightlyCoupledWriteSet: optionalBoolean(value.tightlyCoupledWriteSet ?? value.tightly_coupled_write_set),
-    seoseoOwnsImplementation: optionalBoolean(value.seoseoOwnsImplementation ?? value.seoseo_owns_implementation),
+    brokeralphaOwnsImplementation: optionalBoolean(value.brokeralphaOwnsImplementation ?? value.brokeralpha_owns_implementation),
     boundedHelperScope: stringList(value.boundedHelperScope ?? value.bounded_helper_scope),
   };
 }

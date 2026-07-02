@@ -32,7 +32,7 @@ describe("gateway monitoring operator event cursor", () => {
               config: {
                 baseUrl: "http://127.0.0.1:8787",
                 edgeSecret: "test-secret",
-                requester: { id: "gwakga", kind: "node", role: "operator" },
+                requester: { id: "brokerBeta", kind: "node", role: "operator" },
                 operatorEvents: {
                   enabled: true,
                   cursor: "operator:14",
@@ -85,10 +85,10 @@ describe("gateway monitoring operator event cursor", () => {
               config: {
                 baseUrl: "http://127.0.0.1:8787",
                 edgeSecret: "test-secret",
-                requester: { id: "seoseo", kind: "node", role: "operator" },
+                requester: { id: "brokerAlpha", kind: "node", role: "operator" },
                 operatorEvents: {
                   enabled: true,
-                  localBrokerId: "seoseo",
+                  localBrokerId: "brokerAlpha",
                   terminalOutboxCursor: "terminal:latest",
                   terminalOutboxReconcileUnackedOnStart: false,
                 },
@@ -113,7 +113,7 @@ describe("gateway monitoring operator event cursor", () => {
 
     try {
       handlers.startOperatorEventBridge();
-      assert.equal(bridgeParams?.handoffBrokerId, "seoseo");
+      assert.equal(bridgeParams?.handoffBrokerId, "brokerAlpha");
     } finally {
       handlers.shutdownOperatorEventBridge();
     }
@@ -165,17 +165,17 @@ describe("gateway monitoring operator event cursor", () => {
               config: {
                 baseUrl: "http://127.0.0.1:8787",
                 edgeSecret: "test-secret",
-                requester: { id: "seoseo", kind: "node", role: "operator" },
+                requester: { id: "brokerAlpha", kind: "node", role: "operator" },
                 operatorEvents: {
                   enabled: true,
-                  localBrokerId: "seoseo",
+                  localBrokerId: "brokerAlpha",
                   terminalOutboxCursor: "terminal:local-latest",
                   terminalOutboxReconcileUnackedOnStart: false,
                   crossBrokers: [
                     {
-                      label: "gwakga",
+                      label: "brokerBeta",
                       baseUrl: "https://team2-broker.example.test",
-                      localBrokerId: "seoseo",
+                      localBrokerId: "brokerAlpha",
                       terminalOutboxCursor: "terminal:remote-previous",
                       terminalOutboxReconcileUnackedOnStart: false,
                     },
@@ -206,9 +206,9 @@ describe("gateway monitoring operator event cursor", () => {
       assert.equal(bridgeParams.length, 2);
       const primary = bridgeParams[0];
       const cross = bridgeParams[1];
-      assert.equal(primary?.handoffBrokerId, "seoseo");
+      assert.equal(primary?.handoffBrokerId, "brokerAlpha");
       assert.equal(cross?.broker, remoteBroker);
-      assert.equal(cross?.handoffBrokerId, "gwakga");
+      assert.equal(cross?.handoffBrokerId, "brokerBeta");
       assert.equal(cross?.notifyOperator, false);
       assert.equal(typeof cross?.relayTerminalProjection, "function");
 
@@ -273,17 +273,17 @@ describe("gateway monitoring operator event cursor", () => {
               config: {
                 baseUrl: "http://127.0.0.1:8787",
                 edgeSecret: "test-secret",
-                requester: { id: "seoseo", kind: "node", role: "operator" },
+                requester: { id: "brokerAlpha", kind: "node", role: "operator" },
                 operatorEvents: {
                   enabled: true,
-                  localBrokerId: "seoseo",
+                  localBrokerId: "brokerAlpha",
                   terminalOutboxCursor: "terminal:local-latest",
                   terminalOutboxReconcileUnackedOnStart: false,
                   crossBrokers: [
                     {
-                      label: "gwakga",
+                      label: "brokerBeta",
                       baseUrl: "https://team2-broker.example.test",
-                      localBrokerId: "seoseo",
+                      localBrokerId: "brokerAlpha",
                       terminalOutboxCursor: "terminal:remote-previous",
                       terminalOutboxReconcileUnackedOnStart: false,
                     },
@@ -327,11 +327,11 @@ describe("gateway monitoring operator event cursor", () => {
 
       assert.equal(response?.success, true);
       assert.equal(bridgeParams.length, 2);
-      assert.equal(bridgeParams[1]?.handoffBrokerId, "gwakga");
+      assert.equal(bridgeParams[1]?.handoffBrokerId, "brokerBeta");
       assert.equal(bridgeParams[1]?.notifyOperator, false);
-      assert.deepEqual(Object.keys(response?.data?.crossBrokers as Record<string, unknown>), ["gwakga"]);
+      assert.deepEqual(Object.keys(response?.data?.crossBrokers as Record<string, unknown>), ["brokerBeta"]);
       assert.deepEqual(response?.data?.crossBrokers, {
-        gwakga: {
+        brokerBeta: {
           kind: "cross",
           operator: {
             terminalOutbox: {
@@ -381,10 +381,10 @@ describe("gateway monitoring operator event cursor", () => {
                 config: {
                   baseUrl: "http://127.0.0.1:8787",
                   edgeSecret: "test-secret",
-                  requester: { id: "seoseo", kind: "node", role: "operator" },
+                  requester: { id: "brokerAlpha", kind: "node", role: "operator" },
                   operatorEvents: {
                     enabled: true,
-                    localBrokerId: "seoseo",
+                    localBrokerId: "brokerAlpha",
                     terminalOutboxCursor: "terminal:local-latest",
                     terminalOutboxReconcileUnackedOnStart: false,
                     ...operatorEvents,
@@ -418,7 +418,7 @@ describe("gateway monitoring operator event cursor", () => {
     try {
       team1Only.handlers.startOperatorEventBridge();
       assert.equal(team1Only.bridgeParams.length, 1);
-      assert.equal(team1Only.bridgeParams[0]?.handoffBrokerId, "seoseo");
+      assert.equal(team1Only.bridgeParams[0]?.handoffBrokerId, "brokerAlpha");
       assert.equal(team1Only.bridgeParams[0]?.notifyOperator, undefined);
       assert.equal(team1Only.bridgeParams[0]?.relayTerminalProjection, undefined);
     } finally {
@@ -429,9 +429,9 @@ describe("gateway monitoring operator event cursor", () => {
       notification: { enabled: false },
       crossBrokers: [
         {
-          label: "gwakga",
+          label: "brokerBeta",
           baseUrl: "https://team2-broker.example.test",
-          handoffBrokerId: "gwakga",
+          handoffBrokerId: "brokerBeta",
           terminalOutboxCursor: "terminal:team2-cursor",
           terminalOutboxReconcileUnackedOnStart: false,
         },
@@ -440,7 +440,7 @@ describe("gateway monitoring operator event cursor", () => {
     try {
       team2Only.handlers.startOperatorEventBridge();
       assert.equal(team2Only.bridgeParams.length, 2);
-      assert.equal(team2Only.bridgeParams[1]?.handoffBrokerId, "gwakga");
+      assert.equal(team2Only.bridgeParams[1]?.handoffBrokerId, "brokerBeta");
       assert.equal(team2Only.bridgeParams[1]?.notifyOperator, false);
       assert.equal(typeof team2Only.bridgeParams[1]?.relayTerminalProjection, "function");
     } finally {
@@ -451,9 +451,9 @@ describe("gateway monitoring operator event cursor", () => {
       terminalOutboxAllowedIds: ["terminal:team1"],
       crossBrokers: [
         {
-          label: "gwakga",
+          label: "brokerBeta",
           baseUrl: "https://team2-broker.example.test",
-          handoffBrokerId: "gwakga",
+          handoffBrokerId: "brokerBeta",
           terminalOutboxCursor: "terminal:team2-cursor",
           terminalOutboxReconcileUnackedOnStart: false,
         },
@@ -462,8 +462,8 @@ describe("gateway monitoring operator event cursor", () => {
     try {
       team1AndTeam2.handlers.startOperatorEventBridge();
       assert.equal(team1AndTeam2.bridgeParams.length, 2);
-      assert.equal(team1AndTeam2.bridgeParams[0]?.handoffBrokerId, "seoseo");
-      assert.equal(team1AndTeam2.bridgeParams[1]?.handoffBrokerId, "gwakga");
+      assert.equal(team1AndTeam2.bridgeParams[0]?.handoffBrokerId, "brokerAlpha");
+      assert.equal(team1AndTeam2.bridgeParams[1]?.handoffBrokerId, "brokerBeta");
       assert.equal(team1AndTeam2.bridgeParams[1]?.notifyOperator, false);
     } finally {
       team1AndTeam2.handlers.shutdownOperatorEventBridge();
@@ -473,14 +473,14 @@ describe("gateway monitoring operator event cursor", () => {
       crossBrokers: [
         {
           label: "missing-base-url",
-          handoffBrokerId: "gwakga",
+          handoffBrokerId: "brokerBeta",
         },
       ],
     });
     try {
       invalidRoute.handlers.startOperatorEventBridge();
       assert.equal(invalidRoute.bridgeParams.length, 1);
-      assert.equal(invalidRoute.bridgeParams[0]?.handoffBrokerId, "seoseo");
+      assert.equal(invalidRoute.bridgeParams[0]?.handoffBrokerId, "brokerAlpha");
     } finally {
       invalidRoute.handlers.shutdownOperatorEventBridge();
     }

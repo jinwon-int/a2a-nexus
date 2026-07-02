@@ -305,7 +305,7 @@ export interface TerminalEvidenceEvent {
  */
 export interface TerminalBriefContext {
   schemaVersion: "a2a.runner.terminal-brief-context.v1";
-  /** Operator-facing concise title, e.g. "A2A Terminal Brief 완료: dungae(1/7)". */
+  /** Operator-facing concise title, e.g. "A2A Terminal Brief 완료: workerEpsilon(1/7)". */
   title: string;
   /** Stable worker/node label used in the title. */
   worker: string;

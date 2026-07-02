@@ -10,7 +10,7 @@ import {
 } from "./build-metadata-sanitize.js";
 
 test("build metadata sanitize helpers preserve safe broker ids and reject unsafe ids (#798)", () => {
-  assert.equal(sanitizeBrokerId(" seoseo-broker:v1 "), "seoseo-broker:v1");
+  assert.equal(sanitizeBrokerId(" brokeralpha-broker:v1 "), "brokeralpha-broker:v1");
   assert.equal(sanitizeBrokerId(undefined), undefined);
   assert.equal(sanitizeBrokerId("   "), undefined);
   assert.throws(

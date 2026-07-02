@@ -601,7 +601,7 @@ function approvalSensitiveActionsExcluded(): string[] {
     "Terminal Brief default-on enablement",
     "Terminal Brief sidecar start/restart/apply",
     "start executor dispatch, executor invocation, or process spawn",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or terminal receipt DB mutation",
     "GitHub PR merge, issue close, or comment post from the packet/route",
     "TaskFlow record creation or broker DB mutation",

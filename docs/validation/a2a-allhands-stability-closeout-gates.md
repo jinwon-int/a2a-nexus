@@ -5,14 +5,14 @@ Plane lane: a2a-plane#276 (a2a-plane#276, internal tracker private)
 Primary trackers: [a2a-broker#527](https://github.com/jinwon-int/a2a-broker/issues/527), [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497), [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Snapshot: `2026-05-13T04:49Z`
 
-This is a redacted, no-live Team2/Soonwook libero validation artifact for the Seoseo-origin all-hands round. It is documentation/spec evidence only. It does not deploy, restart, mutate production databases or terminal-outbox rows, replay or ACK Terminal Brief outbox items, send provider or Telegram messages, expose secrets, publish a release, force-push, rewrite history, or approve repository visibility changes.
+This is a redacted, no-live Team2/workerEta libero validation artifact for the brokerAlpha-origin all-hands round. It is documentation/spec evidence only. It does not deploy, restart, mutate production databases or terminal-outbox rows, replay or ACK Terminal Brief outbox items, send provider or Telegram messages, expose secrets, publish a release, force-push, rewrite history, or approve repository visibility changes.
 
 ## Decision summary
 
 - `a2a-broker#527` is a valid broker hardening requirement: GitHub read-only validation/libero work needs a first-class evidence lane that can finish with Start plus Done/Block comments without requiring a PR or repository diff.
 - The existing no-diff false-Done guard must remain mandatory for patch-producing lanes such as `github-propose-patch`. A patch task that produces no commits and no PR is still Block evidence, not Done.
 - `a2a-broker#497` and `a2a-broker#294` remain open residual-risk trackers. This plane patch defines operator closeout gates; it does not close broker OOM/state-growth, receipt-semantics, queue-hygiene, canary, deploy, cleanup, or ACK work.
-- Seoseo-origin cross-broker Terminal Brief aggregation may be used as redacted evidence only when it is idempotent, bounded, and explicitly non-ACK/non-read-receipt/non-approval.
+- brokerAlpha-origin cross-broker Terminal Brief aggregation may be used as redacted evidence only when it is idempotent, bounded, and explicitly non-ACK/non-read-receipt/non-approval.
 
 ## `#527` read-only GitHub validation lane gate
 
@@ -27,7 +27,7 @@ The lane passes only if broker/runner evidence proves all of the following:
 | Terminal Brief classification | Terminal Brief reports read-only validation Done/Block accurately and does not convert provider send success into receipt or ACK. | Completion/failure is hidden, duplicated, replayed from historical outbox, or treated as operator-visible receipt/terminal ACK. |
 | Artifact hygiene | Branch diff, PR body, issue comments, and artifacts exclude secrets, raw logs, host-private paths, provider payloads, session dumps, and OpenClaw runtime/bootstrap context. | Any unsafe payload enters success evidence. |
 
-The `a2a-plane#240` observed case in `a2a-broker#527` is the regression fixture: Soonwook performed read-only validation, found the stale `issues/239` link for `a2a-plane#240`, and passed `npm run check:layout` plus `npm run check:no-diff-closeout-guidance`, but the runner failed because the task had been forced into the patch lane. A future broker fix should allow that exact validation shape to close with read-only Done/Block evidence while preserving patch-lane no-diff protection.
+The `a2a-plane#240` observed case in `a2a-broker#527` is the regression fixture: workerEta performed read-only validation, found the stale `issues/239` link for `a2a-plane#240`, and passed `npm run check:layout` plus `npm run check:no-diff-closeout-guidance`, but the runner failed because the task had been forced into the patch lane. A future broker fix should allow that exact validation shape to close with read-only Done/Block evidence while preserving patch-lane no-diff protection.
 
 Suggested read-only validation commands for this plane-side gate:
 
@@ -61,9 +61,9 @@ Before anyone claims roadmap closure, require all of:
 - queue hygiene shows no stale claimed/running work, no unbounded terminal-outbox backlog, and a clear no-change/evidence-only outcome path for validation/libero tasks;
 - all GitHub evidence comments are bounded summaries, not raw logs, provider payloads, secrets, host-specific private paths, OpenClaw runtime/bootstrap context, or manual ACK/replay transcripts.
 
-## Seoseo-origin cross-broker Terminal Brief evidence gate
+## brokerAlpha-origin cross-broker Terminal Brief evidence gate
 
-For the all-hands round, Seoseo is the initiating parent broker while Team2 work may be handed off through Gwakga. Accept a cross-broker Terminal Brief projection only if it includes:
+For the all-hands round, brokerAlpha is the initiating parent broker while Team2 work may be handed off through brokerBeta. Accept a cross-broker Terminal Brief projection only if it includes:
 
 - a stable projection key or idempotency marker;
 - parent and lane references for `a2a-broker#539` and `a2a-plane#276` or the specific child lane;

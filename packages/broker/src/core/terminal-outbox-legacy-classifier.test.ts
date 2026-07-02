@@ -5,7 +5,7 @@
  * vs unclassifiable terminal_outbox rows using cutoff age, payload
  * completeness, receipt vocabulary, and ACK evidence vocabulary signals.
  *
- * Reference: #886 Team1/Bangtong Terminal Brief hardening lane 1/4.
+ * Reference: #886 Team1/workergamma Terminal Brief hardening lane 1/4.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

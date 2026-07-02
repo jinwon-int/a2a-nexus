@@ -14,13 +14,13 @@ async function doc() {
 test('Team1 source-only parent-round dispatch guardrails doc covers round metadata', async () => {
   const content = await doc();
 
-  assert.match(content, /a2a-team1-post-bangtong-readiness-20260520T110014Z/);
+  assert.match(content, /a2a-team1-post-workerGamma-readiness-20260520T110014Z/);
   assert.match(content, /parentRoundId=/);
   assert.match(content, /parentRoundTotal=4/);
   assert.match(content, /parentRoundOrder=4/);
   assert.match(content, /parentRoundProgress=0/);
-  assert.match(content, /originBrokerId=seoseo/);
-  assert.match(content, /brokerOfRecordId=seoseo/);
+  assert.match(content, /originBrokerId=brokerAlpha/);
+  assert.match(content, /brokerOfRecordId=brokerAlpha/);
   assert.match(content, /team1/);
 });
 

@@ -22,9 +22,9 @@ describe('a2a round artifact scanner', () => {
       writeFileSync(tasksPath, JSON.stringify({
         items: [
           {
-            id: 'round-1129-bangtong',
+            id: 'round-1129-workergamma',
             intent: 'propose_patch',
-            assignedWorkerId: 'bangtong',
+            assignedWorkerId: 'workergamma',
             status: 'succeeded',
             result: {
               output: {
@@ -38,9 +38,9 @@ describe('a2a round artifact scanner', () => {
             },
           },
           {
-            id: 'round-1132-gongmyoung',
+            id: 'round-1132-workertheta',
             intent: 'analyze',
-            assignedWorkerId: 'gongmyoung',
+            assignedWorkerId: 'workertheta',
             status: 'succeeded',
             result: { summary: 'source-only validation done' },
           },
@@ -49,8 +49,8 @@ describe('a2a round artifact scanner', () => {
       writeFileSync(openPrsPath, JSON.stringify([
         {
           number: 1134,
-          title: 'Patch: round-1129-bangtong',
-          headRefName: 'a2a-patch-20260629-round-1129-bangtong',
+          title: 'Patch: round-1129-workergamma',
+          headRefName: 'a2a-patch-20260629-round-1129-workergamma',
           url: 'https://github.com/jinwon-int/a2a-nexus/pull/1134',
           state: 'OPEN',
         },
@@ -67,8 +67,8 @@ describe('a2a round artifact scanner', () => {
       });
       assert.deepEqual(report.crossRepoEvidence, [
         {
-          taskId: 'round-1129-bangtong',
-          worker: 'bangtong',
+          taskId: 'round-1129-workergamma',
+          worker: 'workergamma',
           status: 'succeeded',
           key: 'prUrl',
           url: 'https://github.com/jinwon-int/example/pull/1',
@@ -90,9 +90,9 @@ describe('a2a round artifact scanner', () => {
       writeFileSync(tasksPath, JSON.stringify({
         items: [
           {
-            id: 'round-1123-nosuk',
+            id: 'round-1123-workeralpha',
             intent: 'analyze',
-            assignedWorkerId: 'nosuk',
+            assignedWorkerId: 'workeralpha',
             status: 'failed',
             error: { details: { stdout: JSON.stringify({ repo: 'https://github.com/jinwon-int/a2a-nexus.git' }) } },
           },
@@ -113,15 +113,15 @@ describe('a2a round artifact scanner', () => {
       const tasksPath = join(tmp, 'tasks.json');
       writeFileSync(tasksPath, JSON.stringify({
         tasks: [
-          { id: 'round-1125-yukson', intent: 'propose_patch', assignedWorkerId: 'yukson', status: 'succeeded', result: { summary: 'done but no urls' } },
+          { id: 'round-1125-workerdelta', intent: 'propose_patch', assignedWorkerId: 'workerdelta', status: 'succeeded', result: { summary: 'done but no urls' } },
         ],
       }), 'utf8');
       const report = JSON.parse(runArtifactScan(['--input', tasksPath, '--repo', 'jinwon-int/a2a-nexus', '--json']));
       assert.equal(report.ok, false);
       assert.deepEqual(report.missingCompletionEvidence, [
         {
-          taskId: 'round-1125-yukson',
-          worker: 'yukson',
+          taskId: 'round-1125-workerdelta',
+          worker: 'workerdelta',
           status: 'succeeded',
           intent: 'propose_patch',
           reason: 'propose_patch terminal lane lacks canonical prUrl/doneCommentUrl/blockCommentUrl evidence',

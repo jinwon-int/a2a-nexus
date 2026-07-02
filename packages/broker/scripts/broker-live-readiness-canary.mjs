@@ -338,11 +338,11 @@ function sampleNoLivePayload() {
     workers: {
       status: 200,
       body: { items: [
-        { nodeId: 'bangtong', status: 'online' },
-        { nodeId: 'dungae', status: 'online' },
-        { nodeId: 'sogyo', status: 'online' },
-        { nodeId: 'nosuk', status: 'online' },
-        { nodeId: 'yukson', status: 'online' },
+        { nodeId: 'workergamma', status: 'online' },
+        { nodeId: 'workerepsilon', status: 'online' },
+        { nodeId: 'workerbeta', status: 'online' },
+        { nodeId: 'workeralpha', status: 'online' },
+        { nodeId: 'workerdelta', status: 'online' },
       ] },
     },
     diagnostics: {
@@ -355,9 +355,9 @@ function sampleNoLivePayload() {
         kind: 'task.terminal.outbox',
         count: 3,
         events: [
-          { id: 'terminal-pr', payload: { worker: 'sogyo', status: 'succeeded', issue: 334, prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receipt: { status: 'operator_visible', evidence: 'operator_visible' } } },
-          { id: 'terminal-done', payload: { worker: 'sogyo', status: 'succeeded', issue: 330, doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/330#issuecomment-github-verify-done', receiptStatus: 'accepted' } },
-          { id: 'terminal-block', payload: { worker: 'sogyo', status: 'blocked', issue: 334, blockUrl: 'https://github.com/jinwon-int/a2a-broker/issues/334#issuecomment-block', receipt: { status: 'failed' } } },
+          { id: 'terminal-pr', payload: { worker: 'workerbeta', status: 'succeeded', issue: 334, prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receipt: { status: 'operator_visible', evidence: 'operator_visible' } } },
+          { id: 'terminal-done', payload: { worker: 'workerbeta', status: 'succeeded', issue: 330, doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/330#issuecomment-github-verify-done', receiptStatus: 'accepted' } },
+          { id: 'terminal-block', payload: { worker: 'workerbeta', status: 'blocked', issue: 334, blockUrl: 'https://github.com/jinwon-int/a2a-broker/issues/334#issuecomment-block', receipt: { status: 'failed' } } },
         ],
       },
     },
@@ -370,7 +370,7 @@ export function runNoLiveCanary(options = {}) {
     ok('run mode', 'no-live synthetic proof; no broker HTTP request, deploy, Gateway restart, Telegram send, DB mutation, or terminal ACK attempted'),
     evaluateHealth(sample.health.body, sample.health.status),
     evaluateTerminalOutboxDiagnostics(sample.health.body, sample.health.status),
-    evaluateWorkers(sample.workers.body, sample.workers.status, options.expectedWorkers ?? ['bangtong', 'dungae', 'sogyo', 'nosuk', 'yukson']),
+    evaluateWorkers(sample.workers.body, sample.workers.status, options.expectedWorkers ?? ['workergamma', 'workerepsilon', 'workerbeta', 'workeralpha', 'workerdelta']),
     evaluateQueue(sample.diagnostics.body, sample.diagnostics.status),
     evaluateEvidenceAcceptance(sample.outbox.body, sample.outbox.status),
     projectOneShotLiveEligibility(sample.outbox.body, sample.outbox.status),

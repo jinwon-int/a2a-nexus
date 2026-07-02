@@ -4,7 +4,7 @@
   "description": "Mobile worker is alive enough to inspect, but poll interval cannot satisfy broker stale threshold.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "stale",
     "lastSeenAgeSec": 50,

@@ -23,8 +23,8 @@ function taskReport(overrides = {}) {
     reportable: 2,
     allTerminal: false,
     items: [
-      { taskId: 'task-1', status: 'succeeded', final: true, stale: false, reportable: true, reportLine: '완료: dungae / #369 — https://github.com/jinwon-int/a2a-broker/pull/370' },
-      { taskId: 'task-2', status: 'running', final: false, stale: true, reportable: true, reportLine: '중간보고 필요: nosuk / #371 — running 상태 20m 동안 갱신 없음' },
+      { taskId: 'task-1', status: 'succeeded', final: true, stale: false, reportable: true, reportLine: '완료: workerepsilon / #369 — https://github.com/jinwon-int/a2a-broker/pull/370' },
+      { taskId: 'task-2', status: 'running', final: false, stale: true, reportable: true, reportLine: '중간보고 필요: workeralpha / #371 — running 상태 20m 동안 갱신 없음' },
     ],
     ...overrides,
   };
@@ -62,7 +62,7 @@ describe('parent aggregate comment helper', () => {
     assert.match(markdown, new RegExp(DEFAULT_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.match(markdown, /Parent issue: jinwon-int\/a2a-broker#364/);
     assert.match(markdown, /Tasks: total=2 active=1 terminal=1 stale=1 reportable=2/);
-    assert.match(markdown, /완료: dungae \/ #369/);
+    assert.match(markdown, /완료: workerepsilon \/ #369/);
     assert.match(markdown, /Done: closeout/);
     assert.doesNotMatch(markdown, /fake-token-placeholder/);
     assert.doesNotMatch(markdown, /TOKEN=<fake-token-placeholder>/);
@@ -132,14 +132,14 @@ describe('parent aggregate comment helper', () => {
         requestedAction: 'issue_closeout_comment',
         finalizerDecision: {
           finalizerDecisionId: 'fd-753',
-          finalizerOwner: 'seoseo',
+          finalizerOwner: 'brokeralpha',
           parentRoundId: 'a2ad-nexus-open-backlog-20260615T0958Z',
           parentRoundTotal: 9,
           parentRoundOrder: 9,
-          brokerOfRecordId: 'seoseo',
+          brokerOfRecordId: 'brokeralpha',
           executionLane: 'a2ad',
           allowedActions: ['issue_closeout_comment'],
-          workerEvidenceIds: ['bangtong', 'yukson', 'dungae'],
+          workerEvidenceIds: ['workergamma', 'workerdelta', 'workerepsilon'],
         },
       },
     });

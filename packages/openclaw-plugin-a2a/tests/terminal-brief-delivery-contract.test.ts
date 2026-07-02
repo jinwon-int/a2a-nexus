@@ -83,15 +83,15 @@ describe("Terminal Brief delivery adapter contract", () => {
     const decision = normalizeTerminalBriefDeliveryReceiptDecision({
       ackTerminalEvent: false,
       terminal_receipt_status: "produced",
-      receipt_id: "hermes-gongyung:gongyung:1",
-      reason: "spooled for Gongyung worker",
+      receipt_id: "hermes-mobileAlpha:mobileAlpha:1",
+      reason: "spooled for mobileAlpha worker",
     });
 
     assert.deepEqual(decision, {
       ackTerminalEvent: false,
       terminalReceiptStatus: "produced",
-      receiptId: "hermes-gongyung:gongyung:1",
-      reason: "spooled for Gongyung worker",
+      receiptId: "hermes-mobileAlpha:mobileAlpha:1",
+      reason: "spooled for mobileAlpha worker",
     });
   });
 

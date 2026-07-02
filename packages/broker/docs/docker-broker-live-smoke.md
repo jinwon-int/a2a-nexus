@@ -5,7 +5,7 @@ Use `scripts/docker-broker-live-smoke.mjs` to repeat the operator Docker broker 
 The script:
 
 - loads the broker edge secret from a local secret file or environment variable
-- selects the first online worker from `bangtong,dungae,sogyo,nosuk`, or uses `--worker <id>`
+- selects the first online worker from `workergamma,workerepsilon,workerbeta,workeralpha`, or uses `--worker <id>`
 - optionally checks the whole expected worker fleet for registration/status drift with `--fleet` / `--require-workers`
 - creates safe `analyze` no-op tasks assigned to selected worker(s)
 - waits for claim/start evidence and a terminal task status
@@ -34,7 +34,7 @@ Optional worker override:
 ```bash
 A2A_BROKER_URL="http://127.0.0.1:<broker-port>" \
 A2A_EDGE_SECRET_FILE="<local-edge-secret-file>" \
-npm run smoke:docker-broker -- --live --worker bangtong
+npm run smoke:docker-broker -- --live --worker workergamma
 ```
 
 Fleet rollout/drift check:
@@ -45,7 +45,7 @@ A2A_EDGE_SECRET_FILE="<local-edge-secret-file>" \
 npm run smoke:docker-broker:fleet -- --live
 ```
 
-This verifies `bangtong,dungae,sogyo,nosuk` are all registered online and then runs the no-op smoke once per online worker. Use `--allowed-workers <csv>` to change the smoke target list and `--require-workers <csv>` to make a specific fleet mandatory.
+This verifies `workergamma,workerepsilon,workerbeta,workeralpha` are all registered online and then runs the no-op smoke once per online worker. Use `--allowed-workers <csv>` to change the smoke target list and `--require-workers <csv>` to make a specific fleet mandatory.
 
 Expected successful output shape:
 
@@ -54,7 +54,7 @@ Expected successful output shape:
   "mode": "live",
   "ok": true,
   "taskId": "...",
-  "workerId": "bangtong",
+  "workerId": "workergamma",
   "finalStatus": "succeeded",
   "observedStatuses": ["queued", "running", "succeeded"],
   "lifecycle": {
@@ -77,13 +77,13 @@ Expected fleet output adds drift and per-worker smoke evidence:
   "ok": true,
   "drift": {
     "ok": true,
-    "expected": ["bangtong", "dungae", "sogyo", "nosuk"],
+    "expected": ["workergamma", "workerepsilon", "workerbeta", "workeralpha"],
     "missing": [],
     "offline": []
   },
-  "smokeTargets": ["bangtong", "dungae", "sogyo", "nosuk"],
+  "smokeTargets": ["workergamma", "workerepsilon", "workerbeta", "workeralpha"],
   "smokes": [
-    { "ok": true, "workerId": "bangtong", "taskId": "...", "finalStatus": "succeeded" }
+    { "ok": true, "workerId": "workergamma", "taskId": "...", "finalStatus": "succeeded" }
   ]
 }
 ```

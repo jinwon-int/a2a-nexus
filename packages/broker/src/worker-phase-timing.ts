@@ -52,7 +52,7 @@ export function workerRegisterPhaseTimingSnapshot(): Record<WorkerRegisterPhase,
   return snapshot;
 }
 
-// Per-worker register phase timing (#1032 / Team2 jingun attribution).
+// Per-worker register phase timing (#1032 / Team2 workerzeta attribution).
 const MAX_PER_WORKER_REGISTER_WORKERS = 500;
 const PER_WORKER_REGISTER_STALE_AFTER_MS = 30 * 60 * 1000;
 const _perWorkerRegisterPhaseTiming = new Map<string, Map<WorkerRegisterPhase, RequestTimingWindow>>();
@@ -127,7 +127,7 @@ export function workerHeartbeatPhaseTimingSnapshot(): Record<WorkerHeartbeatPhas
   return snapshot;
 }
 
-// Per-worker heartbeat phase timing (#1032 / Team1 sogyo attribution)
+// Per-worker heartbeat phase timing (#1032 / Team1 workerbeta attribution)
 // Distinguishes individual worker timing from the aggregate above.
 const MAX_PER_WORKER_HEARTBEAT_WORKERS = 500;
 const PER_WORKER_HEARTBEAT_STALE_AFTER_MS = 30 * 60 * 1000;

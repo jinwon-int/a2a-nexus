@@ -513,8 +513,8 @@ describe("audit trail", () => {
       conferenceRoomId: "room-42",
       summary: "s",
       participants: [
-        { nodeId: "sogyo", role: "chair" },
-        { nodeId: "dungae", role: "reviewer" },
+        { nodeId: "workerbeta", role: "chair" },
+        { nodeId: "workerepsilon", role: "reviewer" },
       ],
     });
     mgr.approve(p.id);
@@ -523,8 +523,8 @@ describe("audit trail", () => {
 
     expect(applied.conferenceRoomId).toBe("room-42");
     expect(applied.participants).toEqual([
-      { nodeId: "sogyo", role: "chair" },
-      { nodeId: "dungae", role: "reviewer" },
+      { nodeId: "workerbeta", role: "chair" },
+      { nodeId: "workerepsilon", role: "reviewer" },
     ]);
     // No raw prompt/session leakage in events
     const events = mgr.subscribe();

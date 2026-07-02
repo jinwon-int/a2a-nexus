@@ -88,7 +88,7 @@ test("clean-main no-change smoke distinguishes marker-only output from terminal 
   for (const entry of fixture.cases) {
     const parsed = parseRunnerOutput(JSON.stringify(entry.runnerOutput));
     const evidence = extractGitHubEvidence(parsed);
-    const handlerResult = buildHandlerResult(parsed, entry.task, "seoseo");
+    const handlerResult = buildHandlerResult(parsed, entry.task, "brokerAlpha");
 
     seenKinds.add(handlerResult.terminalEvidence.evidenceKind);
     assert.equal(handlerResult.status, entry.expected.handlerStatus, entry.name);

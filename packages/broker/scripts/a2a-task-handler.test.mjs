@@ -23,13 +23,13 @@ function task(overrides = {}) {
   return {
     id: "task-853",
     intent: "noop",
-    assignedWorkerId: "yukson",
+    assignedWorkerId: "workerdelta",
     message: "source-only test",
     payload: {
       mode: "docker-broker-noop-smoke",
       noOp: true,
       runId: "run-853",
-      worker: "yukson",
+      worker: "workerdelta",
       sourceOnly: true,
       ...overrides.payload,
     },
@@ -624,7 +624,7 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
     const result = handleTask({
       id: "task-readonly-bridge",
       intent: "analyze",
-      assignedWorkerId: "sogyo",
+      assignedWorkerId: "workerbeta",
       message: "Analyze #884 read-only evidence",
       payload: {
         mode: "github-read-only-validation",
@@ -641,7 +641,7 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
       A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
       A2A_OPENCLAW_ANALYSIS_BIN: bin,
       A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
-      A2A_NODE_ID: "sogyo",
+      A2A_NODE_ID: "workerbeta",
     });
 
     assert.equal(result.error, undefined);
@@ -708,7 +708,7 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     const result = handleTask({
       id: "task-claude-telemetry",
       intent: "analyze",
-      assignedWorkerId: "nosuk",
+      assignedWorkerId: "workeralpha",
       message: "Analyze Claude bridge sourceOnly evidence",
       payload: {
         mode: "analysis-only",
@@ -721,7 +721,7 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
       A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
       A2A_OPENCLAW_ANALYSIS_BIN: bin,
       A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
-      A2A_NODE_ID: "nosuk",
+      A2A_NODE_ID: "workeralpha",
     });
 
     assert.equal(result.error, undefined);
@@ -765,7 +765,7 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
     const result = handleTask({
       id: "task-claude-prose-recovery",
       intent: "analyze",
-      assignedWorkerId: "soonwook",
+      assignedWorkerId: "workereta",
       message: "Analyze Claude Code prose recovery evidence",
       payload: {
         mode: "analysis-only",
@@ -778,7 +778,7 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
       A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
       A2A_OPENCLAW_ANALYSIS_BIN: bin,
       A2A_CLAUDE_CODE_BIN: "/usr/bin/claude",
-      A2A_NODE_ID: "soonwook",
+      A2A_NODE_ID: "workereta",
     });
 
     assert.equal(result.error, undefined);
@@ -791,11 +791,11 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
   }
 });
 test("analysis bridge fails closed with missing bridge artifact before Node spawn (#1147)", () => {
-  const missingBin = join(tmpdir(), `missing-gongmyoung-source-analysis-bridge-${Date.now()}.mjs`);
+  const missingBin = join(tmpdir(), `missing-workertheta-source-analysis-bridge-${Date.now()}.mjs`);
   const result = handleTask({
-    id: "task-gongmyoung-missing-bridge",
+    id: "task-workertheta-missing-bridge",
     intent: "analyze",
-    assignedWorkerId: "gongmyoung",
+    assignedWorkerId: "workertheta",
     message: "Analyze no-live bundle",
     payload: {
       mode: "analysis-only",
@@ -808,7 +808,7 @@ test("analysis bridge fails closed with missing bridge artifact before Node spaw
     A2A_EXECUTOR_MODE: "builtin",
     A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
     A2A_OPENCLAW_ANALYSIS_BIN: missingBin,
-    A2A_NODE_ID: "gongmyoung",
+    A2A_NODE_ID: "workertheta",
   });
 
   assert.equal(result.error?.code, "openclaw_analysis_bridge_missing");
@@ -818,7 +818,7 @@ test("analysis bridge fails closed with missing bridge artifact before Node spaw
 
 test("Hermes source-only analysis bridge receives structured task files when prompt payload is truncated", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-hermes-structured-analysis-"));
-  const bin = join(dir, "gongmyoung-source-analysis-bridge.mjs");
+  const bin = join(dir, "workertheta-source-analysis-bridge.mjs");
   writeFileSync(bin, `#!/usr/bin/env node
 import { readFileSync } from "node:fs";
 const payload = JSON.parse(readFileSync(process.env.A2A_ANALYSIS_PAYLOAD_FILE, "utf8"));
@@ -843,9 +843,9 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
   chmodSync(bin, 0o755);
   try {
     const result = handleTask({
-      id: "task-gongmyoung-hermes-source-only",
+      id: "task-workertheta-hermes-source-only",
       intent: "analyze",
-      assignedWorkerId: "gongmyoung",
+      assignedWorkerId: "workertheta",
       message: "Analyze large source-only bundle",
       payload: {
         mode: "analysis-only",
@@ -868,14 +868,14 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
       A2A_HERMES_ANALYSIS_ENABLED: "1",
       A2A_HERMES_ANALYSIS_BIN: bin,
       A2A_WORKER_RUNTIME_FLAVOR: "hermes-agent-source-only",
-      A2A_NODE_ID: "gongmyoung",
+      A2A_NODE_ID: "workertheta",
       A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
     });
 
     assert.equal(result.error, undefined);
     assert.equal(result.result.output.analysisKind, "analysis_bridge");
     assert.equal(result.result.output.bridgeAdapter, "hermes");
-    assert.equal(result.result.output.bridgeCommand, "gongmyoung-source-analysis-bridge.mjs");
+    assert.equal(result.result.output.bridgeCommand, "workertheta-source-analysis-bridge.mjs");
     assert.equal(result.result.output.bridgeReportedAdapter, "hermes");
     assert.equal(result.result.output.analysisStatus, "done");
     assert.equal(result.result.output.noLive, true);

@@ -361,9 +361,9 @@ test("reconciliation fixture parses and matches the Team1 auto-closeout action r
   assert.equal(fixture.parentRoundTotal, 4);
   assert.equal(fixture.parentRoundOrder, 1);
   assert.equal(fixture.parentRoundProgress, 0);
-  assert.equal(fixture.originBrokerId, "bangtong");
-  assert.equal(fixture.brokerOfRecordId, "bangtong");
-  assert.equal(fixture.parentBrokerId, "bangtong");
+  assert.equal(fixture.originBrokerId, "workerGamma");
+  assert.equal(fixture.brokerOfRecordId, "workerGamma");
+  assert.equal(fixture.parentBrokerId, "workerGamma");
 });
 
 test("reconciliation fixture enforces no-live safety proof; production auto-closeout is never enabled", () => {
@@ -419,9 +419,9 @@ test("reconciliation fixture source metadata matches the assignment round contex
   assert.equal(source.parentRoundTotal, 4);
   assert.equal(source.parentRoundOrder, 1);
   assert.equal(source.parentRoundProgress, 0);
-  assert.equal(source.originBrokerId, "bangtong");
-  assert.equal(source.brokerOfRecordId, "bangtong");
-  assert.equal(source.parentBrokerId, "bangtong");
+  assert.equal(source.originBrokerId, "workerGamma");
+  assert.equal(source.brokerOfRecordId, "workerGamma");
+  assert.equal(source.parentBrokerId, "workerGamma");
 });
 
 test("reconciliation fixture covers all 7 required reconciliation scenarios", () => {
@@ -434,7 +434,7 @@ test("reconciliation fixture covers all 7 required reconciliation scenarios", ()
     const handlerResult = buildHandlerResult(
       entry.runnerOutput,
       entry.handlerTask,
-      "bangtong",
+      "workerGamma",
     );
 
     assertReconcileKind(entry, handlerResult);
@@ -519,7 +519,7 @@ test("reconciliation fixture handler task converts to safe RunnerTask when confi
 
     // No task should have auto-closeout enabled.
     assert.equal(runnerTask.reportLanguage, "ko");
-    assert.equal(runnerTask.originBrokerId, "bangtong");
+    assert.equal(runnerTask.originBrokerId, "workerGamma");
 
     // Parent round metadata must flow through.
     assert.equal(
@@ -537,7 +537,7 @@ test("reconciliation fixture produces consistent idempotency event IDs across al
     const handlerResult = buildHandlerResult(
       entry.runnerOutput,
       entry.handlerTask,
-      "bangtong",
+      "workerGamma",
     );
 
     const event = handlerResult.terminalEvidence;
@@ -564,7 +564,7 @@ test("reconciliation fixture no-close-implied semantics: Done evidence must not 
     const handlerResult = buildHandlerResult(
       entry.runnerOutput,
       entry.handlerTask,
-      "bangtong",
+      "workerGamma",
     );
 
     // Done evidence must not carry a PR URL.

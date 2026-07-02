@@ -326,9 +326,9 @@ describe("PostDispatchVerifier: crossBrokerHandoff", () => {
       crossBrokerHandoff: {
         parentRoundId: "round-parent",
         originBrokerId: "parent-broker",
-        handoffBrokerId: "gwakga",
+        handoffBrokerId: "brokerbeta",
         originTaskId: "child-task-1",
-        childWorkerId: "dungae",
+        childWorkerId: "workerepsilon",
       },
     });
     const nonValid = fields.filter((f) => f.status !== "valid");
@@ -464,29 +464,29 @@ describe("PostDispatchVerifier: persisted terminal event snapshots", () => {
     const tick = clockProvider();
     const v = new PostDispatchVerifier(undefined, { now: tick.now });
     const payload = {
-      taskId: "gwakga-child-05",
+      taskId: "brokerbeta-child-05",
       status: "succeeded" as const,
-      run: "seoseo-parent-round",
-      worker: "dungae",
+      run: "brokeralpha-parent-round",
+      worker: "workerepsilon",
       parentRoundTotal: 7,
       parentRoundProgress: 5,
       createdAt: "2026-05-13T01:00:00.000Z",
       updatedAt: "2026-05-13T01:00:00.000Z",
       completedAt: "2026-05-13T01:00:00.000Z",
       crossBrokerHandoff: {
-        parentRoundId: "seoseo-parent-round",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        originTaskId: "gwakga-child-05",
-        childWorkerId: "dungae",
+        parentRoundId: "brokeralpha-parent-round",
+        originBrokerId: "brokeralpha",
+        handoffBrokerId: "brokerbeta",
+        originTaskId: "brokerbeta-child-05",
+        childWorkerId: "workerepsilon",
       },
     };
 
     const verified = v.verifyPersistedTerminalBriefEvent(payload, {
-      parentRoundId: "seoseo-parent-round",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
-      childWorkerId: "dungae",
+      parentRoundId: "brokeralpha-parent-round",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
+      childWorkerId: "workerepsilon",
       parentRoundTotal: 7,
       parentRoundIndex: 5,
     });
@@ -494,17 +494,17 @@ describe("PostDispatchVerifier: persisted terminal event snapshots", () => {
 
     v.snapshotPersistedTerminalBriefEvent(payload);
     tick.advanceMs(35_000);
-    const checked = v.checkSnapshot("seoseo-parent-round", {
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
-      childWorkerId: "dungae",
+    const checked = v.checkSnapshot("brokeralpha-parent-round", {
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
+      childWorkerId: "workerepsilon",
       parentRoundTotal: 7,
       parentRoundIndex: 5,
       crossBrokerHandoff: payload.crossBrokerHandoff,
     });
     assert.equal(checked.verdict, "consistent");
     assert.equal(checked.snapshot.parentRoundIndex, 5);
-    assert.equal(checked.snapshot.crossBrokerHandoff?.handoffBrokerId, "gwakga");
+    assert.equal(checked.snapshot.crossBrokerHandoff?.handoffBrokerId, "brokerbeta");
   });
 
   it("fails closed with a diagnostic when persisted routing metadata is missing", () => {
@@ -530,39 +530,39 @@ describe("PostDispatchVerifier: persisted terminal event snapshots", () => {
     const v = new PostDispatchVerifier(store);
 
     v.snapshotPersistedTerminalBriefEvent({
-      taskId: "gwakga-child-05",
+      taskId: "brokerbeta-child-05",
       status: "succeeded",
-      run: "seoseo-parent-round",
+      run: "brokeralpha-parent-round",
       parentRoundTotal: 7,
       parentRoundProgress: 5,
       createdAt: "2026-05-13T01:00:00.000Z",
       updatedAt: "2026-05-13T01:00:00.000Z",
       crossBrokerHandoff: {
-        parentRoundId: "seoseo-parent-round",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
-        childWorkerId: "dungae",
+        parentRoundId: "brokeralpha-parent-round",
+        originBrokerId: "brokeralpha",
+        handoffBrokerId: "brokerbeta",
+        childWorkerId: "workerepsilon",
       },
     });
     v.snapshotPersistedTerminalBriefEvent({
-      taskId: "nosuk-child-06",
+      taskId: "workeralpha-child-06",
       status: "succeeded",
-      run: "seoseo-parent-round",
+      run: "brokeralpha-parent-round",
       parentRoundTotal: 7,
       parentRoundProgress: 6,
       createdAt: "2026-05-13T01:00:01.000Z",
       updatedAt: "2026-05-13T01:00:01.000Z",
       crossBrokerHandoff: {
-        parentRoundId: "seoseo-parent-round",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "nosuk",
-        childWorkerId: "jingun",
+        parentRoundId: "brokeralpha-parent-round",
+        originBrokerId: "brokeralpha",
+        handoffBrokerId: "workeralpha",
+        childWorkerId: "workerzeta",
       },
     });
 
     assert.equal(store.entries().length, 2);
-    assert.equal(store.get("seoseo-parent-round", { handoffBrokerId: "gwakga" })?.childWorkerId, "dungae");
-    assert.equal(store.get("seoseo-parent-round", { handoffBrokerId: "nosuk" })?.parentRoundIndex, 6);
+    assert.equal(store.get("brokeralpha-parent-round", { handoffBrokerId: "brokerbeta" })?.childWorkerId, "workerepsilon");
+    assert.equal(store.get("brokeralpha-parent-round", { handoffBrokerId: "workeralpha" })?.parentRoundIndex, 6);
   });
 });
 
