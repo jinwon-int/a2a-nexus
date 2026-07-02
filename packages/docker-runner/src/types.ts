@@ -649,6 +649,12 @@ export interface RunnerDiffHygienePolicy {
   allowLockfileChanges?: boolean;
   /** Block a pure whitespace/re-serialization diff after patch generation. */
   blockWhitespaceOnly?: boolean;
+  /** Warn when whitespace-churn lines / total changed lines reaches this ratio (default 0.5). */
+  churnWarnRatio?: number;
+  /** Block when the churn ratio reaches this value (default 0.9)... */
+  churnBlockRatio?: number;
+  /** ...and at least this many whitespace-churn lines exist (default 100). */
+  churnMinLines?: number;
 }
 
 export interface RunnerPostPatchVerificationEvidence {
@@ -669,6 +675,13 @@ export interface RunnerDiffHygieneEvidence {
   blockedPaths: string[];
   lockfileChanges: string[];
   whitespaceOnly: boolean;
+  /** Two-stage reformat churn measurement (#1225): whitespace-ignored diff delta. */
+  churn?: {
+    totalLines: number;
+    whitespaceLines: number;
+    ratio: number;
+    level: "none" | "warn" | "block";
+  };
 }
 
 export interface RunnerReproducibilityMetadata {

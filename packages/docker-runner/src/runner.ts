@@ -694,7 +694,18 @@ function isDiffHygieneEvidence(value: unknown): value is RunnerDiffHygieneEviden
     && entry.blockedPaths.every((part) => typeof part === "string")
     && Array.isArray(entry.lockfileChanges)
     && entry.lockfileChanges.every((part) => typeof part === "string")
-    && typeof entry.whitespaceOnly === "boolean";
+    && typeof entry.whitespaceOnly === "boolean"
+    && isDiffHygieneChurn(entry.churn);
+}
+
+function isDiffHygieneChurn(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const churn = value as Record<string, unknown>;
+  return Number.isInteger(churn.totalLines) && (churn.totalLines as number) >= 0
+    && Number.isInteger(churn.whitespaceLines) && (churn.whitespaceLines as number) >= 0
+    && typeof churn.ratio === "number" && churn.ratio >= 0 && churn.ratio <= 1
+    && (churn.level === "none" || churn.level === "warn" || churn.level === "block");
 }
 
 async function buildReproducibilityMetadata(config: RunnerConfig, task: NormalizedRunnerTask, workDir: string): Promise<RunnerReproducibilityMetadata> {
