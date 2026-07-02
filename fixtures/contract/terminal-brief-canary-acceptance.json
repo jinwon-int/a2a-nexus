@@ -1,17 +1,17 @@
 {
   "fixtureId": "a2a-nexus.contract.terminal-brief-canary-acceptance.v1",
   "contract": "docs/specs/a2a-terminal-brief-canary/spec.md",
-  "description": "Acceptance contract for A2A Terminal Brief live-canary hardening. Defines frozen assertions for the five hardening gaps (backlog false suppression, sessionKey requirement, config shape flexibility, cursor selection safety, operatorEvents restore) discovered during the Seoseo fleet canary. Redacted, no-live, fixture-only conformance evidence.",
+  "description": "Acceptance contract for A2A Terminal Brief live-canary hardening. Defines frozen assertions for the five hardening gaps (backlog false suppression, sessionKey requirement, config shape flexibility, cursor selection safety, operatorEvents restore) discovered during the broker-alpha fleet canary. Redacted, no-live, fixture-only conformance evidence.",
   "parentIssue": "a2a-plane#364 (internal tracker, private)",
   "issue": "a2a-plane#365 (internal tracker, private)",
-  "team": "team1-bangtong",
-  "brokerOfRecord": "seoseo",
+  "team": "team1-worker-gamma",
+  "brokerOfRecord": "broker-alpha",
   "round": "R27",
-  "passingCanaryRef": "terminal-brief-live-fleet-seoseo-20260516T114832Z",
+  "passingCanaryRef": "terminal-brief-live-fleet-broker-alpha-20260516T114832Z",
   "v0Freeze": {
     "frozenAt": "2026-05-16",
     "round": "a2a-r27-team1-terminal-brief-canary-hardening-20260516T121247Z",
-    "note": "Five hardening gaps are frozen as acceptance criteria. No new gap may be added without a v0→v1 plan. Gap assertions are derived from the Seoseo fleet canary evidence."
+    "note": "Five hardening gaps are frozen as acceptance criteria. No new gap may be added without a v0→v1 plan. Gap assertions are derived from the broker-alpha fleet canary evidence."
   },
   "hardeningGaps": {
     "gap1BacklogFalseSuppression": {

@@ -41,7 +41,7 @@
         },
         {
           "id": "root-routing-dispatch-finalizer",
-          "pattern": "^(dispatch:|finalizer:|fleet:|routing:|safety:|pr-review:|round:|check:team|check:gongyung|check:native|check:hermes|worker:|a2a:team|a2a:skill|a2a:taskflow|a2a:team1|a2a:team2).*$",
+          "pattern": "^(dispatch:|finalizer:|fleet:|routing:|safety:|pr-review:|round:|check:team|check:mobile-alpha|check:native|check:hermes|worker:|a2a:team|a2a:skill|a2a:taskflow|a2a:team1|a2a:team2).*$",
           "tier": "a2a-routing-and-rounds",
           "kind": "standard-gate",
           "note": "A2A routing, dispatch, finalizer, worker readiness, and team-round scripts stay visible as standard validation surfaces."

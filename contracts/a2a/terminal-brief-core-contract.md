@@ -32,7 +32,7 @@
 A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(완료 3/7)`
+Example: `A2A Terminal Brief 완료: worker-delta(완료 3/7)`
 
 ### Unknown-total fallback
 
@@ -40,7 +40,7 @@ Example: `A2A Terminal Brief 완료: yukson(완료 3/7)`
 A2A Terminal Brief <상태>: <worker>(<상태> <n>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(완료 2)` (no denominator)
+Example: `A2A Terminal Brief 완료: worker-delta(완료 2)` (no denominator)
 
 ### Non-completed status
 
@@ -63,30 +63,30 @@ Example: `A2A Terminal Brief 완료: yukson(완료 2)` (no denominator)
 
 | Case | Initiator | Scope | Parent/origin broker | Execution path | Operator-facing sender |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `seoseo` | Team1 only | `seoseo` | Team1 local only | `seoseo` |
-| 2 | `seoseo` | Team1 + Team2 | `seoseo` | Team1 local + Team2 handoff through `gwakga` | `seoseo` |
-| 3 | `gwakga` | Team2 only | `gwakga` | Team2 local only | `gwakga` |
-| 4 | `gwakga` | Team1 + Team2 | `gwakga` | Team2 local + Team1 handoff through `seoseo` | `gwakga` |
+| 1 | `broker-alpha` | Team1 only | `broker-alpha` | Team1 local only | `broker-alpha` |
+| 2 | `broker-alpha` | Team1 + Team2 | `broker-alpha` | Team1 local + Team2 handoff through `broker-beta` | `broker-alpha` |
+| 3 | `broker-beta` | Team2 only | `broker-beta` | Team2 local only | `broker-beta` |
+| 4 | `broker-beta` | Team1 + Team2 | `broker-beta` | Team2 local + Team1 handoff through `broker-alpha` | `broker-beta` |
 
 ### Finalizer assignment
 
 | Round origin | Finalizer | Finalizer broker ID |
 | --- | --- | --- |
-| Team1-origin (Seoseo) | Seoseo operator or automated finalizer | `seoseo` |
-| Team2-origin (Gwakga) | Gwakga operator or automated finalizer | `gwakga` |
+| Team1-origin (broker-alpha) | broker-alpha operator or automated finalizer | `broker-alpha` |
+| Team2-origin (broker-beta) | broker-beta operator or automated finalizer | `broker-beta` |
 
 **Invariant:** The broker matching `parentBrokerId` (which equals `originBrokerId` for standard operator-facing cases) is the only broker that may render and dispatch the parent-round aggregate Terminal Brief notification. The other broker is a child/handoff broker and must not render or dispatch that round's aggregate notification.
 
 ### Network of ownership
 
 ```
-Team1-origin round (Seoseo finalizer):
-  Team1 children → Seoseo renders Terminal Brief (local send OK)
-  Team2 children → Gwakga relays evidence back → Seoseo renders Terminal Brief (Gwakga: no local send)
+Team1-origin round (broker-alpha finalizer):
+  Team1 children → broker-alpha renders Terminal Brief (local send OK)
+  Team2 children → broker-beta relays evidence back → broker-alpha renders Terminal Brief (broker-beta: no local send)
 
-Team2-origin round (Gwakga finalizer):
-  Team2 children → Gwakga renders Terminal Brief (local send OK)
-  Team1 children → Seoseo relays evidence back → Gwakga renders Terminal Brief (Seoseo: no local send)
+Team2-origin round (broker-beta finalizer):
+  Team2 children → broker-beta renders Terminal Brief (local send OK)
+  Team1 children → broker-alpha relays evidence back → broker-beta renders Terminal Brief (broker-alpha: no local send)
 ```
 
 ---
@@ -106,11 +106,11 @@ Team2-origin round (Gwakga finalizer):
 
 ### No-local-send rule (critical ownership invariant)
 
-> **Gwakga must never send a parent-round aggregate notification for a round where `originBrokerId != gwakga`.**
-> **Seoseo must never send a parent-round aggregate notification for a round where `originBrokerId != seoseo`.**
+> **broker-beta must never send a parent-round aggregate notification for a round where `originBrokerId != broker-beta`.**
+> **broker-alpha must never send a parent-round aggregate notification for a round where `originBrokerId != broker-alpha`.**
 
 Enforcement:
-- Gwakga detects `originBrokerId != gwakga` in handoff metadata → must NOT render/send/update parent-round Terminal Brief → Block if attempted
+- broker-beta detects `originBrokerId != broker-beta` in handoff metadata → must NOT render/send/update parent-round Terminal Brief → Block if attempted
 - Evidence relay must reach the parent broker's projection ledger **before** any local notification (if any)
 - Relay-failure fallback must be explicitly labeled as "Terminal Brief relay failure", never as a parent-round Terminal Brief
 
@@ -199,8 +199,8 @@ This checklist must be evaluated before any PR/Done/Block evidence publication f
 | P3 | Body/evidence separation | Verifiable separation in projection schema: title and body are distinct fields | Block if concatenated |
 | P4 | Parent-only ownership | No fixture, spec, or contract states that a handoff/child broker may send the parent-round aggregate notification | Block if ownership ambiguous |
 | P5 | ACK boundary | Every reference to provider send success, message IDs, `providerAccepted` is labeled as accepted-send-only, never ACK | Block if promotion detected |
-| P6 | Four-case routing invariant | All four routing cases (Seoseo-local, Seoseo-handoff, Gwakga-local, Gwakga-handoff) produce correct assignments | Block if any case violates invariant |
-| P7 | No-local-send rule | Gwakga must not send Seoseo-origin parent notification; Seoseo must not send Gwakga-origin parent notification | Block if violation detected |
+| P6 | Four-case routing invariant | All four routing cases (broker-alpha-local, broker-alpha-handoff, broker-beta-local, broker-beta-handoff) produce correct assignments | Block if any case violates invariant |
+| P7 | No-local-send rule | broker-beta must not send broker-alpha-origin parent notification; broker-alpha must not send broker-beta-origin parent notification | Block if violation detected |
 | P8 | Runtime/bootstrap hygiene | `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**` absent from branch diff and artifacts | Block if any found (report exact paths) |
 | P9 | Redacted evidence | No secrets, host-private paths, token-shaped literals, raw session dumps in evidence | Block if identified |
 | P10 | Safety confirmation block | Evidence states all prohibited actions were avoided (see §7) | Block if absent |
@@ -212,7 +212,7 @@ This checklist must be evaluated before any PR/Done/Block evidence publication f
 | D1 | Conformance tests pass | `npm run test:conformance` exits 0 | Block if any failure |
 | D2 | Terminal Brief routing guard | `npm run check:terminal-brief-routing` exits 0 | Block if any failure |
 | D3 | Message ID ACK boundary | `npm run check:message-id-ack-boundary` exits 0 | Block if any failure |
-| D4 | Plane gate validation | Relevant `npm run check:team1-yukson-plane-gates` or equivalent exits 0 | Block if any failure |
+| D4 | Plane gate validation | Relevant `npm run check:team1-worker-delta-plane-gates` or equivalent exits 0 | Block if any failure |
 | D5 | Full release gate | `npm run check` exits 0 | Block if any failure |
 | D6 | Hygiene scan clean | Guard path find exits 0 | Block if paths found |
 | D7 | operator approval | Fresh explicit operator approval naming the exact deploy scope, target, and run ID | Block if approval missing or stale (>1 business day) |
@@ -223,7 +223,7 @@ This checklist must be evaluated before any PR/Done/Block evidence publication f
 | --- | --- | --- | --- |
 | V1 | Metadata propagation | Spot-check 3 child tasks: all carry correct `parentRoundId`, `originBrokerId`, `parentBrokerId`, `parentRoundTotal`, `parentRoundOrder` | Block if any mismatch |
 | V2 | Title rendering | Spot-check 3 titles: follow format, ≤80 chars, forbidden content absent | Block if any violation |
-| V3 | No-local-send | Verify no Gwakga-origin parent notification for Seoseo-origin round (and vice versa) | BLOCK — ownership violation |
+| V3 | No-local-send | Verify no broker-beta-origin parent notification for broker-alpha-origin round (and vice versa) | BLOCK — ownership violation |
 | V4 | ACK boundary preserved | Verify provider accepted-send is not promoted to ACK | Block if promotion detected |
 | V5 | Legacy residue scan | Run read-only residue scan; no unexpected orphan or stale projections | Block if anomaly found |
 | V6 | Rollback capability | Rollback steps documented and verifiable | Block if rollback undefined |

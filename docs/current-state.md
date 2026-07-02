@@ -145,7 +145,7 @@ documented in
 [`docs/history/monorepo-canonical-source-flip-execution-handoff.md`](history/monorepo-canonical-source-flip-execution-handoff.md)
 and validated by
 `scripts/check-monorepo-canonical-source-flip-execution-handoff.mjs`. It records
-`GO_PR_FIRST_SOURCE_ONLY` for the handoff PR while actual canonical flip execution remains separate `NO_GO / Waiting`. Sogyo's dissent is recorded as a
+`GO_PR_FIRST_SOURCE_ONLY` for the handoff PR while actual canonical flip execution remains separate `NO_GO / Waiting`. worker-beta's dissent is recorded as a
 safety guardrail: if the packet is interpreted as actual execution, it is
 blocked; only the source-only handoff may advance.
 

@@ -1,34 +1,34 @@
 # Parent Terminal Brief Aggregation Contract (v1)
 
-> **v0 (2026-05-13):** Parent-broker Terminal Brief aggregation defined the Gwakga-origin + Seoseo-handoff canary path with the constraint `parentBrokerId == originBrokerId`. The v0 contract is preserved below; v1 lifts this constraint and defines symmetric origin-broker behavior.
+> **v0 (2026-05-13):** Parent-broker Terminal Brief aggregation defined the broker-beta-origin + broker-alpha-handoff canary path with the constraint `parentBrokerId == originBrokerId`. The v0 contract is preserved below; v1 lifts this constraint and defines symmetric origin-broker behavior.
 >
 > **v1 (2026-05-13, R12):** The origin-broker relationship is symmetric: any registered broker may be the origin broker, and a different broker may be the parent broker. The v0 constraint `parentBrokerId` must equal `originBrokerId` is removed. All v0 lifecycle rules, projection fields, redaction boundaries, title semantics, body/evidence separation, and safety gates remain in effect unless explicitly superseded by a v1 section.
 
-This contract covers the Gwakga-origin + Seoseo-handoff canary path and its symmetric counterpart (Seoseo-origin + Gwakga-handoff). A broker owns the parent round and aggregation ledger, while a different broker may own a handoff child task and publish redacted terminal evidence back to the parent aggregation view. The relationship is symmetric: either broker can be the origin.
+This contract covers the broker-beta-origin + broker-alpha-handoff canary path and its symmetric counterpart (broker-alpha-origin + broker-beta-handoff). A broker owns the parent round and aggregation ledger, while a different broker may own a handoff child task and publish redacted terminal evidence back to the parent aggregation view. The relationship is symmetric: either broker can be the origin.
 
 ## Actors
 
-- **Parent broker**: broker that owns the parent round and renders the aggregate Terminal Brief. In the Gwakga-origin canary, this is `gwakga`; in the Seoseo-origin canary, this is `seoseo`.
-- **Origin broker**: broker that created the parent round metadata. In v0 it must equal the parent broker; in v1 (symmetric) it may differ from the parent broker. For the Gwakga-origin canary the origin broker is `gwakga`; for the Seoseo-origin canary it is `seoseo`.
-- **Handoff broker**: broker that owns a child task created through handoff. In the Gwakga-origin canary, this is `seoseo`; in the Seoseo-origin canary, this is `gwakga`.
+- **Parent broker**: broker that owns the parent round and renders the aggregate Terminal Brief. In the broker-beta-origin canary, this is `broker-beta`; in the broker-alpha-origin canary, this is `broker-alpha`.
+- **Origin broker**: broker that created the parent round metadata. In v0 it must equal the parent broker; in v1 (symmetric) it may differ from the parent broker. For the broker-beta-origin canary the origin broker is `broker-beta`; for the broker-alpha-origin canary it is `broker-alpha`.
+- **Handoff broker**: broker that owns a child task created through handoff. In the broker-beta-origin canary, this is `broker-alpha`; in the broker-alpha-origin canary, this is `broker-beta`.
 - **Child task broker of record**: the broker that controls child task lifecycle, worker assignment, and terminal evidence production.
 - **Projection**: the parent broker's redacted, bounded record of the child terminal result.
 
 ## Four-case parent-origin routing matrix
 
-For normal Seoseo/Team1 and Gwakga/Team2 Terminal Brief routing, the initiating broker is always the parent/origin broker and the only operator-facing Terminal Brief sender.
+For normal broker-alpha/Team1 and broker-beta/Team2 Terminal Brief routing, the initiating broker is always the parent/origin broker and the only operator-facing Terminal Brief sender.
 
 | Case | Initiator | Requested scope | Parent/origin broker | Execution path | Operator-facing sender |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `seoseo` | Team1 only | `seoseo` | Team1 local only | `seoseo` |
-| 2 | `seoseo` | Team1 + Team2 | `seoseo` | Team1 local + Team2 child/handoff through `gwakga` | `seoseo` |
-| 3 | `gwakga` | Team2 only | `gwakga` | Team2 local only | `gwakga` |
-| 4 | `gwakga` | Team1 + Team2 | `gwakga` | Team2 local + Team1 child/handoff through `seoseo` | `gwakga` |
+| 1 | `broker-alpha` | Team1 only | `broker-alpha` | Team1 local only | `broker-alpha` |
+| 2 | `broker-alpha` | Team1 + Team2 | `broker-alpha` | Team1 local + Team2 child/handoff through `broker-beta` | `broker-alpha` |
+| 3 | `broker-beta` | Team2 only | `broker-beta` | Team2 local only | `broker-beta` |
+| 4 | `broker-beta` | Team1 + Team2 | `broker-beta` | Team2 local + Team1 child/handoff through `broker-alpha` | `broker-beta` |
 
 Routing gates:
 
-1. Team1-only work stays Seoseo-local; Gwakga is not involved.
-2. Team2-only work stays Gwakga-local; Seoseo is not involved.
+1. Team1-only work stays broker-alpha-local; broker-beta is not involved.
+2. Team2-only work stays broker-beta-local; broker-alpha is not involved.
 3. Cross-team work is parent-seeded: the opposite broker acts only as child/handoff broker and relays projections back to the initiating parent broker.
 4. A parentless child projection must fail closed with `missing_parent`; it must not create an implicit parent round.
 5. Relay success suppresses duplicate child-local parent notifications; relay failure may fall back to local operator notification as a failure-safety path, not as normal parent ownership.
@@ -42,10 +42,10 @@ The parent broker creates these metadata fields before child dispatch:
 
 ```json
 {
-  "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
-  "originBrokerId": "gwakga",
-  "parentBrokerId": "gwakga",
-  "handoffBrokerId": "seoseo"
+  "parentRoundId": "round-broker-beta-origin-broker-alpha-handoff-canary-001",
+  "originBrokerId": "broker-beta",
+  "parentBrokerId": "broker-beta",
+  "handoffBrokerId": "broker-alpha"
 }
 ```
 
@@ -66,16 +66,16 @@ Every parent aggregation projection must carry these fields:
 | --- | --- |
 | `projectionKey` | Stable idempotency key derived from `parentRoundId`, `originBrokerId`, `childTaskId`, and terminal kind. |
 | `parentRoundId` | Stable parent round id minted by `originBrokerId`. |
-| `originBrokerId` | Broker that created the parent round; `gwakga` for the canary. |
+| `originBrokerId` | Broker that created the parent round; `broker-beta` for the canary. |
 | `parentBrokerId` | Broker rendering the aggregate Terminal Brief. In v0 must equal `originBrokerId`; in v1 (symmetric) may differ from `originBrokerId`. |
-| `handoffBrokerId` | Broker that received/owns the child handoff; `seoseo` for the canary. |
+| `handoffBrokerId` | Broker that received/owns the child handoff; `broker-alpha` for the canary. |
 | `childBrokerId` | Broker of record for the child terminal task. |
 | `childTaskId` | Child task id under the child broker of record. |
 | `childIssueUrl` | Public-safe issue URL for child evidence, when available. |
 | `terminalKind` | One of `pr`, `done`, or `block`. |
 | `terminalEvidenceUrl` | URL of redacted PR/Done/Block evidence. |
 | `terminalSummary` | Bounded human-readable summary suitable for the parent Terminal Brief. |
-| `terminalBriefTitle` | Concise parent/origin-broker-rendered title. The default operator-facing completed-worker title with known total is `A2A Terminal Brief 완료: <worker>(<completed>/<total>)`, equivalently `A2A Terminal Brief 완료: worker(n/N)`; for example `A2A Terminal Brief 완료: dungae(1/7)`. If the round total is genuinely unavailable, omit the denominator rather than rendering `?`, for example `A2A Terminal Brief 완료: yukson(2)`. |
+| `terminalBriefTitle` | Concise parent/origin-broker-rendered title. The default operator-facing completed-worker title with known total is `A2A Terminal Brief 완료: <worker>(<completed>/<total>)`, equivalently `A2A Terminal Brief 완료: worker(n/N)`; for example `A2A Terminal Brief 완료: worker-epsilon(1/7)`. If the round total is genuinely unavailable, omit the denominator rather than rendering `?`, for example `A2A Terminal Brief 완료: worker-delta(2)`. |
 | `projectionState` | `pending`, `projected`, `blocked`, or `conflict`. |
 | `redacted` | Must be `true`. |
 | `projectedAt` | ISO-8601 timestamp when the parent projection was recorded. |
@@ -102,13 +102,13 @@ Title gates:
 - default known-total completed-worker format: `A2A Terminal Brief 완료: <worker>(<completed>/<total>)` (`A2A Terminal Brief 완료: worker(n/N)` as the placeholder form);
 - non-completed status format: `A2A Terminal Brief <상태>: <worker>(<completed>/<total>)`, using the bounded status labels defined by the parent contract;
 - unknown-total fallback: `A2A Terminal Brief <상태>: <worker>(<completed>)`; the parent broker must never render an incorrect denominator such as `(2/?)`;
-- example success title: `A2A Terminal Brief 완료: dungae(1/7)`;
+- example success title: `A2A Terminal Brief 완료: worker-epsilon(1/7)`;
 - title source: parent/origin broker ledger fields for terminal status, worker id, completed count, total count when known, `parentRoundId`, `originBrokerId`, `parentBrokerId`, and `operatorFacingTerminalBriefSender`;
 - max length: 80 characters;
 - forbidden title content: task id, child issue URL, PR/Done/Block URL, terminal summary/body, child broker id, handoff broker id, provider message id, receipt status, ACK status, raw logs, secrets, private paths, and runtime/bootstrap file names;
 - the title is not proof of provider delivery, operator receipt, approval, or terminal-outbox ACK.
 
-The concise title policy is broker-neutral and symmetric for evidence projection compatibility. The operator-facing default notification path is stricter: the initiating broker remains both parent and origin, and is the only sender. The canary fixture includes one known-total Gwakga-origin title, one unknown-total Seoseo-origin title, and one symmetric Seoseo-origin + Gwakga-parent compatibility title to prevent regressions to verbose or ambiguous title text; the four-case parent-origin routing fixture separately enforces the default operator-facing title and sender rule.
+The concise title policy is broker-neutral and symmetric for evidence projection compatibility. The operator-facing default notification path is stricter: the initiating broker remains both parent and origin, and is the only sender. The canary fixture includes one known-total broker-beta-origin title, one unknown-total broker-alpha-origin title, and one symmetric broker-alpha-origin + broker-beta-parent compatibility title to prevent regressions to verbose or ambiguous title text; the four-case parent-origin routing fixture separately enforces the default operator-facing title and sender rule.
 
 ## Body/evidence separation
 
@@ -147,26 +147,26 @@ Ownership gates:
 
 The only exception is a handoff broker acting as a pure evidence relay (projecting child evidence back to the parent ledger as projection input, not as parent-round notification).
 
-## Gwakga-origin + Seoseo-handoff canary contract (v0)
+## broker-beta-origin + broker-alpha-handoff canary contract (v0)
 
 The v0 canary proves only this path (parent-broker-equals-origin):
 
-1. Gwakga mints `parentRoundId` and `originBrokerId` for a parent aggregation round.
-2. Gwakga creates a child handoff envelope for Seoseo that carries the parent metadata.
-3. Seoseo owns the child task as broker of record and produces redacted terminal PR/Done/Block evidence.
-4. Gwakga records a single projection row in the parent Terminal Brief aggregation ledger.
+1. broker-beta mints `parentRoundId` and `originBrokerId` for a parent aggregation round.
+2. broker-beta creates a child handoff envelope for broker-alpha that carries the parent metadata.
+3. broker-alpha owns the child task as broker of record and produces redacted terminal PR/Done/Block evidence.
+4. broker-beta records a single projection row in the parent Terminal Brief aggregation ledger.
 5. The aggregate brief links to the child terminal evidence but does not claim provider delivery, human receipt, approval, or ACK.
 
 This canary does not permit cross-worker registration, parent-broker worker dispatch on the child broker, provider sends, production database mutation, terminal-outbox ACK mutation, repository visibility changes, force-pushes, or automatic merges.
 
-## Seoseo-origin + Gwakga-handoff canary contract (v1 symmetric)
+## broker-alpha-origin + broker-beta-handoff canary contract (v1 symmetric)
 
 The v1 symmetric canary proves the reverse path (origin-broker-differs-from-parent):
 
-1. Seoseo mints `parentRoundId` and `originBrokerId` for a parent aggregation round where Seoseo is the origin broker.
-2. Seoseo creates a child handoff envelope for Gwakga that carries the parent metadata.
-3. Gwakga owns the child task as broker of record and produces redacted terminal PR/Done/Block evidence.
-4. Seoseo records a single projection row in the parent Terminal Brief aggregation ledger.
+1. broker-alpha mints `parentRoundId` and `originBrokerId` for a parent aggregation round where broker-alpha is the origin broker.
+2. broker-alpha creates a child handoff envelope for broker-beta that carries the parent metadata.
+3. broker-beta owns the child task as broker of record and produces redacted terminal PR/Done/Block evidence.
+4. broker-alpha records a single projection row in the parent Terminal Brief aggregation ledger.
 5. The aggregate brief links to the child terminal evidence but does not claim provider delivery, human receipt, approval, or ACK.
 6. `parentBrokerId` may equal `originBrokerId` (v0-style) or differ (v1 symmetric). When they differ, the parent broker is the broker rendering the aggregate Terminal Brief; the origin broker is the broker that created the parent round metadata. Title ownership, notification dispatch, and evidence projection follow the same v0 rules, with `parentBrokerId` replacing `originBrokerId` as the authoritative renderer.
 
@@ -196,9 +196,9 @@ When origin and parent differ, the parent broker renders a title that follows th
 
 | Origin | Parent | Handoff | Worker | Completed | Total | Title |
 | --- | --- | --- | --- | --- | --- | --- |
-| `gwakga` | `gwakga` | `seoseo` | `dungae` | 1 | 7 | `A2A Terminal Brief \uc644\ub8cc: dungae(1/7)` (v0 style, known-total) |
-| `seoseo` | `seoseo` | `gwakga` | `yukson` | 2 | unknown | `A2A Terminal Brief \uc644\ub8cc: yukson(2)` (v0 style, unknown-total) |
-| `seoseo` | `gwakga` | `seoseo` | `dungae` | 1 | 3 | `A2A Terminal Brief \uc644\ub8cc: dungae(1/3)` (v1 symmetric, origin differs from parent) |
+| `broker-beta` | `broker-beta` | `broker-alpha` | `worker-epsilon` | 1 | 7 | `A2A Terminal Brief \uc644\ub8cc: worker-epsilon(1/7)` (v0 style, known-total) |
+| `broker-alpha` | `broker-alpha` | `broker-beta` | `worker-delta` | 2 | unknown | `A2A Terminal Brief \uc644\ub8cc: worker-delta(2)` (v0 style, unknown-total) |
+| `broker-alpha` | `broker-beta` | `broker-alpha` | `worker-epsilon` | 1 | 3 | `A2A Terminal Brief \uc644\ub8cc: worker-epsilon(1/3)` (v1 symmetric, origin differs from parent) |
 
 All titles must satisfy the same 80-char max, forbidden-content, and separation gates defined in the Concise title semantics section.
 
@@ -216,9 +216,9 @@ All titles must satisfy the same 80-char max, forbidden-content, and separation 
 
 The R9 concise-brief runtime readiness round uses a 7-child parent round fixture with known-total and unknown-total fallback coverage. The fixture includes:
 
-1. **Direct Team1 children**: 3 direct child tasks with known total (completed=N/3), producing concise titles such as `A2A Terminal Brief 완료: yukson(1/3)`, `A2A Terminal Brief 완료: bangtong(2/3)`, `A2A Terminal Brief 완료: sogyo(3/3)`.
-2. **Cross-broker Team2 projected children**: 4 handoff child tasks projected back to the parent broker, with known total (completed=N/4), producing titles such as `A2A Terminal Brief 완료: dungae(1/4)`, `A2A Terminal Brief 완료: gwakga(2/4)`, `A2A Terminal Brief 완료: jingun(3/4)`, `A2A Terminal Brief 완료: soonwook(4/4)`.
-3. **Unknown-total fallback**: A scenario with `totalKnown: false` producing title `A2A Terminal Brief 완료: yukson(2)` (no denominator).
+1. **Direct Team1 children**: 3 direct child tasks with known total (completed=N/3), producing concise titles such as `A2A Terminal Brief 완료: worker-delta(1/3)`, `A2A Terminal Brief 완료: worker-gamma(2/3)`, `A2A Terminal Brief 완료: worker-beta(3/3)`.
+2. **Cross-broker Team2 projected children**: 4 handoff child tasks projected back to the parent broker, with known total (completed=N/4), producing titles such as `A2A Terminal Brief 완료: worker-epsilon(1/4)`, `A2A Terminal Brief 완료: broker-beta(2/4)`, `A2A Terminal Brief 완료: worker-zeta(3/4)`, `A2A Terminal Brief 완료: worker-eta(4/4)`.
+3. **Unknown-total fallback**: A scenario with `totalKnown: false` producing title `A2A Terminal Brief 완료: worker-delta(2)` (no denominator).
 
 ### Activation plan (approval-gated, not executed)
 

@@ -109,7 +109,7 @@ No repo settings mutation is performed by this hardening record.
 
 ## A2A evidence
 
-Formal Seoseo broker A2AD source-only/no-live rounds were dispatched for #1163. The useful finalizer lane identified two concrete requirements before closeout:
+Formal broker-alpha broker A2AD source-only/no-live rounds were dispatched for #1163. The useful finalizer lane identified two concrete requirements before closeout:
 
 - stale current promotional wording must be reconciled now that the repository is public;
 - a general feature request template is needed so bug, feature, security, and public-readiness feedback all have public-safe routes.

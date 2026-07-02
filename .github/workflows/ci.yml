@@ -193,6 +193,7 @@ jobs:
       - run: npm ci --include=dev
       - run: npm run test:conformance
       - run: npm run scan:external-secrets
+      - run: npm run check:approval-records
       - run: npm run check:compatibility-baselines
 
   # ── Docs-only validation (no code build required) ───────────────────

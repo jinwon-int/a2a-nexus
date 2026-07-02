@@ -115,10 +115,10 @@ Brokers and closeout reporters MUST NOT conflate capacity-limited latency with s
 
 | Scenario | Terminal summary phrasing |
 | --- | --- |
-| Worker at high memory pressure, task completes 2x slower than baseline | `"worker yukson was capacity-limited: memoryPressureClass=high, leading to increased task latency. Task completed within expected bounds given the capacity state."` |
-| Worker with no Docker cache, build task completes but slow | `"worker gwakga was capacity-limited: dockerCachePressure=high (cold cache), leading to increased build latency. Task completed."` |
-| Worker stuck due to segfault, no output produced | `"worker dungae stuck/failed: process crashed (segfault) during build step. No output produced."` |
-| Worker at max concurrency, additional task queued | `"worker bangtong blocked on capacity: at maxConcurrentTasks (8). Task re-queued for different worker."` |
+| Worker at high memory pressure, task completes 2x slower than baseline | `"worker worker-delta was capacity-limited: memoryPressureClass=high, leading to increased task latency. Task completed within expected bounds given the capacity state."` |
+| Worker with no Docker cache, build task completes but slow | `"worker broker-beta was capacity-limited: dockerCachePressure=high (cold cache), leading to increased build latency. Task completed."` |
+| Worker stuck due to segfault, no output produced | `"worker worker-epsilon stuck/failed: process crashed (segfault) during build step. No output produced."` |
+| Worker at max concurrency, additional task queued | `"worker worker-gamma blocked on capacity: at maxConcurrentTasks (8). Task re-queued for different worker."` |
 
 ## Fixture
 

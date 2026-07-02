@@ -6,7 +6,7 @@
 
 ## 0. Approval gate
 
-- [ ] Record the explicit approval from 진원님 in the operator thread or issue, including timestamp, approver, repository, and approved target visibility.
+- [ ] Record the explicit approval from the operator in the operator thread or issue, including timestamp, approver, repository, and approved target visibility.
 - [ ] Confirm the approval is for `a2a-plane (internal tracker, private)` only and does not include source repository histories, npm/Docker publishing, releases, deploys, production database work, provider sends, terminal ACKs, secret rotation, history rewrites, or force-pushes.
 - [ ] If approval is absent, ambiguous, scoped to a different repository, or bundled with any live action, stop: public visibility remains **NO-GO**.
 
@@ -40,7 +40,7 @@ Also verify:
 
 ## 3. Human-approved visibility change
 
-Only after Sections 0-2 pass and 진원님 explicitly approves the exact transition:
+Only after Sections 0-2 pass and the operator explicitly approves the exact transition:
 
 - [ ] A human repository administrator changes GitHub visibility for `a2a-plane (internal tracker, private)` from private to public in GitHub settings.
 - [ ] The administrator records who performed the change, timestamp, and GitHub metadata evidence showing `private: false` after the change.

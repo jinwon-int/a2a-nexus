@@ -1,11 +1,11 @@
 # Termux proot-distro A2A Runner (Development/Testing)
 
 **Status**: Experimental / Testing only
-**Last updated**: 2026-06-15 by gongyung
+**Last updated**: 2026-06-15 by mobile-alpha
 
 ## Overview
 
-Termux nodes (gongyung, daegyo) can run development/test A2A worker experiments using `proot-distro` Ubuntu container + Hermes. Treat this as a research/test lane, not a Docker-runner or production deployment lane.
+Termux nodes (mobile-alpha, mobile-beta) can run development/test A2A worker experiments using `proot-distro` Ubuntu container + Hermes. Treat this as a research/test lane, not a Docker-runner or production deployment lane.
 
 This is **not recommended for production** but excellent for development, testing, and rapid prototyping of A2A workers without needing a full VPS.
 
@@ -63,7 +63,7 @@ Use the native Hermes worker loop for mobile/no-live lanes. For broker-side refe
 ## Recommendation
 
 - **Development/Testing**: Use this proot-distro method on Termux nodes
-- **Production A2A Runners**: Use real Linux VPS (yukson, soonwook, gwakga, seoseo)
+- **Production A2A Runners**: Use real Linux VPS (worker-delta, worker-eta, broker-beta, broker-alpha)
 
 ## See Also
 - [A2A Nexus main runbook](./a2a-constitution.md)

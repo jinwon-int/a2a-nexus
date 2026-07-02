@@ -18,22 +18,16 @@ For external readers, start here first:
 
 > **Status:** public alpha — the repository is publicly readable, but public visibility is not a production deployment, stable release, tag, package publish, homepage/docs-site launch, broad promotion, or live-action authorization. See [Current public alpha state](#current-public-alpha-state) for the remaining approval-gated actions.
 
-`a2a-nexus` is now the canonical implementation source. An operator-approved, source-state-only canonical flip (recorded in [`fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json`](fixtures/current-state/monorepo-actual-canonical-flip-execution-result.json)) made `packages/broker`, `packages/openclaw-plugin-a2a`, and `packages/docker-runner` the canonical A2A source of truth in this repository. The former split repositories (`a2a-broker`, `openclaw-plugin-a2a`/`plugin-a2a`, `a2a-docker-runner`) remain **active provenance mirrors only** — unchanged, not archived, not redirected, with package ownership not transferred. Package publication, releases, production deployment, and any future visibility transfer remain separately approval-gated and are not implied by this source-state flip. For historical context, see the [topology decision record](docs/topology-decision-record.md) and the monorepo re-entry decision in [`docs/history/monorepo-reentry-decision.md`](docs/history/monorepo-reentry-decision.md) (originally tracked as historical provenance in a2a-plane#511 (a2a-plane#511, internal tracker private)).
+`a2a-nexus` is now the canonical implementation source for the broker, adapter plugin, Docker runner, contracts, docs, examples, and readiness gates. Former split repositories remain active provenance mirrors; package publication, releases, deployment, and visibility-related actions stay separately approval-gated. See the [topology decision record](docs/topology-decision-record.md), [migration index](docs/history/monorepo-migration-index.md), and [history index](docs/history/README.md) for completed migration records.
 
 Additional project docs:
 
-- [A2A current state](docs/current-state.md) - active #536 monorepo phase-3 package CI parity jobs, completed #506/#511/#513/#514/#515/#517/#528/#530/#534 groundwork, ownership boundaries, and checkout hygiene.
-- [A2A monorepo re-entry decision](docs/history/monorepo-reentry-decision.md) - #511 staged umbrella workspace decision, target layout, gates, and no-live boundaries.
-- [A2A monorepo migration guide](docs/migration.md) - phase 0 migration states, no-live boundaries, provenance, and backlink policy.
-- [A2A operator guide](docs/operators.md) - operator approval points and finalizer boundaries.
+- [A2A current state](docs/current-state.md) - current source state, ownership boundaries, and checkout hygiene.
+- [A2A operator guide](docs/operators.md) - approval points and finalizer boundaries.
 - [A2A developer guide](docs/developers.md) - package surfaces and local validation for rehearsal work.
-- [A2A issue routing policy](docs/issue-routing.md) - source labels, split repo provenance, and future cutover backlinks.
-- [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, implementation boundaries, and first local docs path.
-- [A2A Ecosystem Guide](docs/ecosystem-guide.md) - bilingual component guide and historical consolidation context.
+- [Public umbrella quickstart](docs/quickstart/public-umbrella.md) - repository map, issue routing, and local docs path.
 - [A2A Nexus positioning](docs/positioning.md) - landscape comparison, differentiators, and public-safe framing.
-- [a2a-js adapter mapping](docs/interop/a2a-js-adapter.md) - first source-only standard SDK interop mapping.
-- [External listing tracker](docs/external-listings.md) - operator-gated discoverability workflow and PR body template.
-- [External publicization roadmap](docs/publicization-roadmap.md) - #1166 public-surface, settings-proposal, feedback, and release-readiness plan.
+- [External publicization roadmap](docs/publicization-roadmap.md) - gated publicization and release-readiness plan.
 
 ## Current public alpha state
 
@@ -64,30 +58,8 @@ Then follow the public docs path in this order:
 
 This path uses safe placeholders only. Do not paste real broker URLs, tokens, private node IDs, provider IDs, Telegram IDs, host-local paths, raw session dumps, or production data into public issues, pull requests, docs, or artifacts.
 
-Historical coordination (pre-flip provenance, now superseded by the canonical `a2a-nexus` source state):
+Historical coordination and completed migration records are summarized in [`docs/history/README.md`](docs/history/README.md), [`docs/public-readiness.md`](docs/public-readiness.md), and [`docs/current-state.md`](docs/current-state.md).
 
-- a2a-plane#536 (a2a-plane#536, internal tracker private) — monorepo phase-3 package CI parity job implementation that preceded the source-state canonical flip.
-
-Completed groundwork:
-
-- a2a-plane#506 (a2a-plane#506, internal tracker private) — current-state integration and A2A effectiveness wave.
-- a2a-plane#507 (a2a-plane#507, internal tracker private) — current-state docs and checkout hygiene.
-- a2a-plane#508 (a2a-plane#508, internal tracker private) — no-live cross-repo integration smoke spec.
-- a2a-plane#511 (a2a-plane#511, internal tracker private) — monorepo re-entry decision after the #506 wave.
-- a2a-plane#513 (a2a-plane#513, internal tracker private) — monorepo import rehearsal and mirror freshness checks.
-- a2a-plane#514 (a2a-plane#514, internal tracker private) — monorepo CI parity and package boundary matrix.
-- a2a-plane#515 (a2a-plane#515, internal tracker private) — monorepo docs, CODEOWNERS, and issue-routing policy.
-- a2a-plane#517 (a2a-plane#517, internal tracker private) — branch protection and release/package policy.
-- a2a-plane#528 (a2a-plane#528, internal tracker private) — phase-1 import rehearsal gate refresh after the all-repo audit.
-- a2a-plane#530 (a2a-plane#530, internal tracker private) — phase-2 fresh prefix import rehearsal and equal-or-stricter package CI parity gate evidence.
-- a2a-plane#534 (a2a-plane#534, internal tracker private) — phase-3 package CI gate before package mirror refresh.
-- a2a-plane#473 (a2a-plane#473, internal tracker private) — adopted split-repo topology decision.
-- a2a-plane#478 (a2a-plane#478, internal tracker private) — public-source security, secret-history, license, and provenance scan groundwork.
-- a2a-plane#479 (a2a-plane#479, internal tracker private) — release, version, and provenance checklist groundwork.
-- a2a-plane#480 (a2a-plane#480, internal tracker private) — local public demo and quickstart scenario.
-
-See [`docs/public-readiness.md`](docs/public-readiness.md) for the full readiness gate record.
-See [`docs/current-state.md`](docs/current-state.md) for the live issue index and completed #506/#511/#513/#514/#515 groundwork.
 
 ## What A2A Nexus does
 
@@ -152,21 +124,7 @@ Open issues in `a2a-nexus`, the canonical source repository. Use the `source:*` 
 - Container worker execution, repository patch workflow, artifact capture, and PR/Done/Block worker evidence map to `packages/docker-runner` (`source:a2a-docker-runner`).
 - Cross-repo compatibility, public docs, release/provenance gates, security/readiness policy, and topology decisions are project-level (`source:a2a-plane`).
 
-Historical completed trackers:
-
-- #506 (a2a-plane#506, internal tracker private) — current-state integration and A2A effectiveness wave.
-- #507 (a2a-plane#507, internal tracker private) — current-state docs and checkout hygiene.
-- #508 (a2a-plane#508, internal tracker private) — no-live cross-repo integration smoke spec.
-- #511 (a2a-plane#511, internal tracker private) — monorepo re-entry decision. Decision recorded in [`docs/history/monorepo-reentry-decision.md`](docs/history/monorepo-reentry-decision.md).
-- #513 (a2a-plane#513, internal tracker private) — monorepo import rehearsal and mirror freshness checks. Plan recorded in [`docs/history/monorepo-import-rehearsal.md`](docs/history/monorepo-import-rehearsal.md).
-- #514 (a2a-plane#514, internal tracker private) — monorepo CI parity and package boundary matrix. Matrix recorded in [`docs/history/monorepo-ci-parity-matrix.md`](docs/history/monorepo-ci-parity-matrix.md).
-- #515 (a2a-plane#515, internal tracker private) — monorepo docs, CODEOWNERS, and issue-routing policy. Drafts recorded in [`docs/migration.md`](docs/migration.md), [`docs/operators.md`](docs/operators.md), [`docs/developers.md`](docs/developers.md), [`docs/issue-routing.md`](docs/issue-routing.md), and [`.github/CODEOWNERS`](.github/CODEOWNERS).
-- #534 (a2a-plane#534, internal tracker private) — monorepo phase-3 package CI gate before package mirror refresh. Gate recorded in [`fixtures/current-state/monorepo-phase3-package-ci-gate.json`](fixtures/current-state/monorepo-phase3-package-ci-gate.json).
-- #473 (a2a-plane#473, internal tracker private) — adopted topology decision. Decision recorded in [`docs/topology-decision-record.md`](docs/topology-decision-record.md).
-- #477 (a2a-plane#477, internal tracker private) — public repo map and umbrella docs. Merged via #484.
-- #478 (a2a-plane#478, internal tracker private) — public-source security, secret-history, license, and provenance scan groundwork.
-- #479 (a2a-plane#479, internal tracker private) — release, version, and provenance checklist groundwork.
-- #480 (a2a-plane#480, internal tracker private) — local public demo and quickstart scenario.
+Historical completed trackers are consolidated in [`docs/history/README.md`](docs/history/README.md) and related migration records.
 
 ## Five-minute local quickstart
 

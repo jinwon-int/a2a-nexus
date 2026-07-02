@@ -6,7 +6,7 @@
 >
 > **Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
 > **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
-> **Broker/finalizer of record:** `seoseo`
+> **Broker/finalizer of record:** `broker-alpha`
 
 ---
 
@@ -59,8 +59,8 @@ node scripts/a2a-round-coordinator-collect.mjs \
 > Example — validate the round coordinator spec against the libero checklist:
 >
 > ```bash
-> node --test scripts/check-team1-nosuk-round-coordinator-libero.test.mjs 2>/dev/null || \
->   echo "Use the libero validation checklist in docs/validation/team1-nosuk-round-coordinator-libero.md"
+> node --test scripts/check-team1-worker-alpha-round-coordinator-libero.test.mjs 2>/dev/null || \
+>   echo "Use the libero validation checklist in docs/validation/team1-worker-alpha-round-coordinator-libero.md"
 > ```
 
 ### 1.2 Default behavior
@@ -82,9 +82,9 @@ the dispatch wrapper or manually by the operator.
   "roundId": "a2a-team1-<descriptor>-<timestamp>",
   "parentIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "team": "team1",
-  "originBrokerId": "seoseo",
-  "brokerOfRecordId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "originBrokerId": "broker-alpha",
+  "brokerOfRecordId": "broker-alpha",
+  "parentBrokerId": "broker-alpha",
   "deadline": "2026-05-27T20:11:40Z",
   "staleAfterMs": 1800000,
   "policyContext": "source-only",
@@ -92,7 +92,7 @@ the dispatch wrapper or manually by the operator.
   "workers": [
     {
       "order": 1,
-      "workerId": "bangtong",
+      "workerId": "worker-gamma",
       "repo": "a2a-plane (internal tracker, private)",
       "role": "broker",
       "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
@@ -105,7 +105,7 @@ the dispatch wrapper or manually by the operator.
     },
     {
       "order": 2,
-      "workerId": "sogyo",
+      "workerId": "worker-beta",
       "repo": "a2a-plane (internal tracker, private)",
       "role": "plugin",
       "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
@@ -116,7 +116,7 @@ the dispatch wrapper or manually by the operator.
     },
     {
       "order": 3,
-      "workerId": "nosuk",
+      "workerId": "worker-alpha",
       "repo": "a2a-plane (internal tracker, private)",
       "role": "runner",
       "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
@@ -127,7 +127,7 @@ the dispatch wrapper or manually by the operator.
     },
     {
       "order": 4,
-      "workerId": "yukson",
+      "workerId": "worker-delta",
       "repo": "a2a-plane (internal tracker, private)",
       "role": "validation",
       "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
@@ -149,29 +149,29 @@ For a cross-team round, set `team: "cross-team"` and list workers from both team
 {
   "roundId": "a2a-cross-team-terminal-brief-20260522T140000Z",
   "team": "cross-team",
-  "originBrokerId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "originBrokerId": "broker-alpha",
+  "parentBrokerId": "broker-alpha",
   "workers": [
-    { "order": 1, "workerId": "bangtong", "repo": "a2a-plane (internal tracker, private)", "role": "broker" },
-    { "order": 2, "workerId": "sogyo",   "repo": "a2a-plane (internal tracker, private)", "role": "plugin" },
-    { "order": 3, "workerId": "soonwook","repo": "a2a-plane (internal tracker, private)", "role": "broker" },
-    { "order": 4, "workerId": "gwakga",  "repo": "a2a-plane (internal tracker, private)", "role": "worker" }
+    { "order": 1, "workerId": "worker-gamma", "repo": "a2a-plane (internal tracker, private)", "role": "broker" },
+    { "order": 2, "workerId": "worker-beta",   "repo": "a2a-plane (internal tracker, private)", "role": "plugin" },
+    { "order": 3, "workerId": "worker-eta","repo": "a2a-plane (internal tracker, private)", "role": "broker" },
+    { "order": 4, "workerId": "broker-beta",  "repo": "a2a-plane (internal tracker, private)", "role": "worker" }
   ]
 }
 ```
 
 ### 2.3 Mobile standby lanes
 
-Workers with `mobileStandby: true` (e.g., Gongyung/Hermes) are tracked but their
+Workers with `mobileStandby: true` (e.g., mobile-alpha/Hermes) are tracked but their
 absence does not block the round from reaching `READY`. Their status is included
 in the bundle for awareness.
 
-### 2.4 Gongyung/Hermes example manifest entry
+### 2.4 mobile-alpha/Hermes example manifest entry
 
 ```json
 {
   "order": 5,
-  "workerId": "gongyung",
+  "workerId": "mobile-alpha",
   "repo": "a2a-plane (internal tracker, private)",
   "role": "mobile-standby",
   "githubIssueUrl": "a2a-plane (internal tracker, private)issues/N",
@@ -302,18 +302,18 @@ cat closeout-bundle.json | jq '.finalizerAction'
 
 | Bundle state | Meaning | Near-term action |
 |---|---|---|
-| `READY` | All lanes terminal, bundle complete | Hand off to Seoseo for final closeout |
-| `READY_PARTIAL` | Some lanes terminal, some timed out or stale | Seoseo decides retry or partial close |
+| `READY` | All lanes terminal, bundle complete | Hand off to broker-alpha for final closeout |
+| `READY_PARTIAL` | Some lanes terminal, some timed out or stale | broker-alpha decides retry or partial close |
 | `TRACKING` | Still collecting (bundle written mid-poll for snapshot) | Wait for completion |
 
 ## 6. Handoff to finalizer
 
 ### 6.1 When to hand off
 
-Hand the closeout bundle to Seoseo when:
+Hand the closeout bundle to broker-alpha when:
 
 - Bundle state is `READY` (all lanes terminal), OR
-- Bundle state is `READY_PARTIAL` and Seoseo approves partial closeout, OR
+- Bundle state is `READY_PARTIAL` and broker-alpha approves partial closeout, OR
 - Bundle contains a `BLOCKED` lane that needs operator escalation.
 
 ### 6.2 Handoff packet
@@ -327,7 +327,7 @@ The handoff packet includes:
 
 ### 6.3 Finalizer review steps
 
-Seoseo reviews the bundle, then runs the existing parent-round closeout go/no-go
+broker-alpha reviews the bundle, then runs the existing parent-round closeout go/no-go
 matrix (documented in `docs/specs/a2a-parent-round-closeout-go-nogo/runbook.md`):
 
 ```bash
@@ -336,7 +336,7 @@ node scripts/check-parent-round-closeout-go-nogo-matrix.mjs \
   --fixture <path-to-bundle-derived-fixture.json>
 ```
 
-The matrix produces the final GO/NO_GO/BLOCKED decision. Seoseo then:
+The matrix produces the final GO/NO_GO/BLOCKED decision. broker-alpha then:
 
 - **GO:** Posts a Go decision comment and closes the parent issue.
 - **NO_GO:** Posts a No-Go comment explaining what must be resolved.
@@ -344,7 +344,7 @@ The matrix produces the final GO/NO_GO/BLOCKED decision. Seoseo then:
 
 ### 6.4 Finalizer of record
 
-`seoseo` is the broker/finalizer of record for all Team1 parent rounds.
+`broker-alpha` is the broker/finalizer of record for all Team1 parent rounds.
 No other entity may close the parent issue or render the aggregate decision.
 The coordinator does not post comments, close issues, or produce final decisions.
 
@@ -496,7 +496,7 @@ and `dryRunDefault: true`), the coordinator's closeout flow behaves as follows:
 | Lane classification | Emulates classification from synthetic or replay data | Real classification from broker observations |
 | Closeout bundle | Generates bundle template with all fields, using placeholder evidence | Full bundle with real evidence URLs |
 | Bundle confidentiality | Same redaction rules apply | Same redaction rules apply |
-| Finalizer handoff | Bundle is informational only; no finalizer action required | Seoseo must review and decide |
+| Finalizer handoff | Bundle is informational only; no finalizer action required | broker-alpha must review and decide |
 | Post-run artifacts | Writes dry-run bundle to stdout or `--bundle` path | Writes final bundle to `--bundle` path |
 | State transition | Does not transition the round state | Transitions through the lifecycle |
 
@@ -536,7 +536,7 @@ unless fed from synthetic fixture data.
 
 Since `scripts/a2a-round-coordinator-collect.mjs` is not yet implemented, the
 dry-run closeout flow can be validated via the existing libero validation
-checklist at [`docs/validation/team1-nosuk-round-coordinator-libero.md`](../../validation/team1-nosuk-round-coordinator-libero.md)
+checklist at [`docs/validation/team1-worker-alpha-round-coordinator-libero.md`](../../validation/team1-worker-alpha-round-coordinator-libero.md)
 and via the parent-round closeout go/no-go matrix:
 
 ```bash
@@ -579,5 +579,5 @@ produces informational artifacts only, never live side effects.
 - [Parent-round closeout go/no-go runbook](../a2a-parent-round-closeout-go-nogo/runbook.md)
 - [Dry-run tooling docs](../../dry-run/README.md)
 - [Team1 dispatch-wrapper runbook](../a2a-team1-dispatch-wrapper/runbook.md)
-- [Round coordinator libero validation checklist](../../validation/team1-nosuk-round-coordinator-libero.md)
+- [Round coordinator libero validation checklist](../../validation/team1-worker-alpha-round-coordinator-libero.md)
 - [Docker runner README](../../../packages/docker-runner/README.md)

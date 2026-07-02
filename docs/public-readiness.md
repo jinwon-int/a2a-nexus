@@ -73,13 +73,13 @@ This R4 closeout refresh performed only redacted repository evidence updates and
 
 ## Team1 P0 libero aggregate closeout framework
 
-Issue `#44` uses the read-only `npm run libero:public-preflight-closeout -- --input <redacted-evidence.json> --markdown` framework to aggregate the required `bangtong`, `sogyo`, and `nosuk` lanes before any public visibility decision. The framework fails closed as `Waiting` when any sibling lane is still active or missing, and as `Block` when terminal lane evidence, scanner evidence, safety flags, or approval separation are unresolved.
+Issue `#44` uses the read-only `npm run libero:public-preflight-closeout -- --input <redacted-evidence.json> --markdown` framework to aggregate the required `worker-gamma`, `worker-beta`, and `worker-alpha` lanes before any public visibility decision. The framework fails closed as `Waiting` when any sibling lane is still active or missing, and as `Block` when terminal lane evidence, scanner evidence, safety flags, or approval separation are unresolved.
 
-A promotion **GO** must not be declared unless both local public-readiness and external secret/history scanner evidence are clean, and operator approval is explicitly separated from any promotion execution step. Without explicit promotion approval from 진원님, the aggregate decision remains **NO-GO** for promotion even when all lanes and scanners are clean.
+A promotion **GO** must not be declared unless both local public-readiness and external secret/history scanner evidence are clean, and operator approval is explicitly separated from any promotion execution step. Without explicit promotion approval from the operator, the aggregate decision remains **NO-GO** for promotion even when all lanes and scanners are clean.
 
 > **Note:** This document was written for public-readiness while the repository is private. The NO-GO criteria below apply to **visibility and promotion/stable-release readiness** unless a separate operator approval explicitly narrows or resolves a gate.
 
-## Post-R5 A2A dispatch synthesis (Bangtong lane)
+## Post-R5 A2A dispatch synthesis (worker-gamma lane)
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 
@@ -91,9 +91,9 @@ A follow-on A2A dispatch round cross-repo synthesis (post-merge state after `ope
 
 | Lane | Repo | Issue | PR | Status |
 |---|---|---|---|---|
-| Sogyo (A2A Inspector conformance gate) | `jinwon-int/openclaw-plugin-a2a` | [#234](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/234) | [#235](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/235) | Merged |
-| Nosuk (broker lifecycle → A2A 1.0 task mapping) | `jinwon-int/a2a-broker` | [#431](https://github.com/jinwon-int/a2a-broker/issues/431) | [#434](https://github.com/jinwon-int/a2a-broker/pull/434) | Merged |
-| Yukson (Worker Capability/AgentCard registry) | `jinwon-int/a2a-broker` | [#432](https://github.com/jinwon-int/a2a-broker/issues/432) | [#433](https://github.com/jinwon-int/a2a-broker/pull/433) | Merged |
+| worker-beta (A2A Inspector conformance gate) | `jinwon-int/openclaw-plugin-a2a` | [#234](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/234) | [#235](https://github.com/jinwon-int/openclaw-plugin-a2a/pull/235) | Merged |
+| worker-alpha (broker lifecycle → A2A 1.0 task mapping) | `jinwon-int/a2a-broker` | [#431](https://github.com/jinwon-int/a2a-broker/issues/431) | [#434](https://github.com/jinwon-int/a2a-broker/pull/434) | Merged |
+| worker-delta (Worker Capability/AgentCard registry) | `jinwon-int/a2a-broker` | [#432](https://github.com/jinwon-int/a2a-broker/issues/432) | [#433](https://github.com/jinwon-int/a2a-broker/pull/433) | Merged |
 
 **Synthesis decision (historical): NO-GO / Waiting** at the time for visibility. Visibility remains approval-gated unless a separate operator-approved action is executed and evidenced; remaining blockers are visibility/promotion/stable-release.
 
@@ -110,31 +110,31 @@ Relevant cross-repo guardrail docs:
 - `contracts/a2a/terminal-semantics.md` — Terminal ACK boundary.
 - `docs/history/r6-terminal-brief-openclaw-routing-synthesis.md` — R6 upstream gate and no-bypass rules.
 
-## R10 Team1/yukson public-readiness gate synthesis for #75/#294/#497
+## R10 Team1/worker-delta public-readiness gate synthesis for #75/#294/#497
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 Operational risk signal: [a2a-broker#497](https://github.com/jinwon-int/a2a-broker/issues/497).
 Lane: #263 (a2a-plane#263, internal tracker private).
 
-Team1/yukson added a no-live gate synthesis at `docs/validation/team1-yukson-public-readiness-gate-synthesis.md`. The aggregate decision remains **NO-GO / Waiting**: provider message ids and send success are accepted-send evidence only; terminal evidence, replay-safe canary proof, scanner/readiness evidence, broker state-growth/backlog risk disposition, runtime/bootstrap artifact hygiene, and explicit operator approvals remain separate gates.
+Team1/worker-delta added a no-live gate synthesis at `docs/validation/team1-worker-delta-public-readiness-gate-synthesis.md`. The aggregate decision remains **NO-GO / Waiting**: provider message ids and send success are accepted-send evidence only; terminal evidence, replay-safe canary proof, scanner/readiness evidence, broker state-growth/backlog risk disposition, runtime/bootstrap artifact hygiene, and explicit operator approvals remain separate gates.
 
 This synthesis does not authorize repository visibility changes, live provider/Telegram sends, terminal ACKs, deploys/restarts, production DB mutation, secret changes, releases, or force-pushes.
 
-## R11 Team1/yukson #240 closeout route for #75/#94
+## R11 Team1/worker-delta #240 closeout route for #75/#94
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 Compatibility follow-up: #94 (a2a-plane#94, internal tracker private).
 Ecosystem/monorepo clarity lane: #240 (a2a-plane#240, internal tracker private).
 Review lane: #271 (a2a-plane#271, internal tracker private).
 
-Team1/yukson added `docs/validation/team1-yukson-240-closeout-to-75-94.md` as the checklist for reviewing #240 PRs #267 (a2a-plane PR #267, internal tracker private) and #268 (a2a-plane PR #268, internal tracker private) before citing them from #75 or #94.
+Team1/worker-delta added `docs/validation/team1-worker-delta-240-closeout-to-75-94.md` as the checklist for reviewing #240 PRs #267 (a2a-plane PR #267, internal tracker private) and #268 (a2a-plane PR #268, internal tracker private) before citing them from #75 or #94.
 
 The route is deliberately narrow: #267/#268 may clarify component boundaries, migration risks, and issue/link hygiene for public-safe review. They do **not** provide terminal receipt, replay-safe canary proof, external scanner evidence, operator visibility approval, runtime readiness, live-send approval, or release approval.
 
 ## R7 public-readiness closeout refresh (post-merge)
 
-Bangtong lane closeout refresh after merged round `a2a-plane#92/#95`, `openclaw-plugin-a2a#235`, `a2a-broker#433/#434`.
+worker-gamma lane closeout refresh after merged round `a2a-plane#92/#95`, `openclaw-plugin-a2a#235`, `a2a-broker#433/#434`.
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
@@ -158,7 +158,7 @@ Decision: **NO-GO / Waiting.**
 
 This closeout refresh performed redacted documentation evidence updates and local validation only. It did **not** perform any repository visibility change, release, deploy, Gateway/broker/worker restart, production database mutation, live provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, or force-push.
 
-## R9 Preflight Refresh: Upstream Conflict Gate (Bangtong lane)
+## R9 Preflight Refresh: Upstream Conflict Gate (worker-gamma lane)
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
@@ -182,9 +182,9 @@ The conflict adds a prerequisite: even if rollout and receipt proof were ready, 
 
 **NO-GO / Waiting.** All three gates remain NO-GO. G1 is now gated on A2A terminal evidence plus replay-safe canary proof, not upstream #78261 merge. G2 requires external scanner tooling and clean output. G3 requires explicit operator approval separated from execution. Until all three gates are GO, `#75` must remain open.
 
-### Seoseo Evidence Collection Checklist (updated for conflict gate)
+### broker-alpha Evidence Collection Checklist (updated for conflict gate)
 
-Seoseo is responsible for collecting and linking the following evidence before requesting `#75` closeout. Items marked **(new)** are added for the CONFLICTING/DIRTY preflight state.
+broker-alpha is responsible for collecting and linking the following evidence before requesting `#75` closeout. Items marked **(new)** are added for the CONFLICTING/DIRTY preflight state.
 
 1. **G1 evidence (terminal evidence / replay-safe gate):**
    - [ ] Confirm `openclaw/openclaw#78261` is recorded as closed/superseded, not a merge gate.
@@ -199,7 +199,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] Confirm the scanner evidence postdates the last commit touching secrets-adjacent paths.
 
 3. **G3 evidence:**
-   - [ ] Link to an explicit operator (진원님) approval comment in the `#75` issue or a linked decision issue.
+   - [ ] Link to an explicit operator (the operator) approval comment in the `#75` issue or a linked decision issue.
    - [ ] The approval text must reference repository visibility/publication explicitly (not just "docs look good" or "checks passed").
    - [ ] Approval must be separate from any automation that would execute the visibility change.
 
@@ -211,18 +211,18 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] Runtime/bootstrap hygiene confirmed: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, and `.openclaw/**` are not entering the branch or evidence.
    - [ ] Repository visibility remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. This document does not grant visibility approval.
 
-Seoseo must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
+broker-alpha must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
 
 This preflight refresh performed redacted documentation evidence updates and local validation only. It did **not** perform any repository visibility change, release, deploy, Gateway/broker/worker restart, production database mutation, live provider/Telegram send, terminal-outbox ACK, secret rotation, secret disclosure, history rewrite, force-push, or upstream maintainer action.
 
 ---
 
-## R8 Operator Decision Packet: Public-Readiness GO/NO-GO Matrix (Bangtong lane) [SUPERSEDED by R9 above]
+## R8 Operator Decision Packet: Public-Readiness GO/NO-GO Matrix (worker-gamma lane) [SUPERSEDED by R9 above]
 
 Parent: #75 (a2a-plane#75, internal tracker private).
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294).
 
-This packet is the Team1 next-round operator decision surface for `bangtong`. It distills the three remaining public-readiness gates into a single GO/NO-GO matrix and defines exactly what evidence `seoseo` must collect before closing `#75`. All sibling cross-repo lanes are merged (`openclaw-plugin-a2a#235`, `a2a-broker#433`, `a2a-broker#434`). Do **not** mark `#75` complete unless all three gates in this matrix are met.
+This packet is the Team1 next-round operator decision surface for `worker-gamma`. It distills the three remaining public-readiness gates into a single GO/NO-GO matrix and defines exactly what evidence `broker-alpha` must collect before closing `#75`. All sibling cross-repo lanes are merged (`openclaw-plugin-a2a#235`, `a2a-broker#433`, `a2a-broker#434`). Do **not** mark `#75` complete unless all three gates in this matrix are met.
 
 ### GO/NO-GO Decision Matrix
 
@@ -236,9 +236,9 @@ This packet is the Team1 next-round operator decision surface for `bangtong`. It
 
 **NO-GO / Waiting.** All three gates are NO-GO. G1 requires A2A terminal evidence and replay-safe canary proof. G2 requires external scanner tooling and clean output. G3 requires explicit operator approval separated from execution. Until all three gates are GO, `#75` must remain open.
 
-### Seoseo Evidence Collection Checklist (must complete before closing `#75`)
+### broker-alpha Evidence Collection Checklist (must complete before closing `#75`)
 
-Seoseo is responsible for collecting and linking the following evidence before requesting `#75` closeout:
+broker-alpha is responsible for collecting and linking the following evidence before requesting `#75` closeout:
 
 1. **G1 evidence:**
    - [ ] Link to `openclaw/openclaw#78261` close/superseded decision.
@@ -252,7 +252,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] Confirm the scanner evidence postdates the last commit touching secrets-adjacent paths.
 
 3. **G3 evidence:**
-   - [ ] Link to an explicit operator (진원님) approval comment in the `#75` issue or a linked decision issue.
+   - [ ] Link to an explicit operator (the operator) approval comment in the `#75` issue or a linked decision issue.
    - [ ] The approval text must reference repository visibility/publication explicitly (not just "docs look good" or "checks passed").
    - [ ] Approval must be separate from any automation that would execute the visibility change.
 
@@ -264,7 +264,7 @@ Seoseo is responsible for collecting and linking the following evidence before r
    - [ ] Runtime/bootstrap hygiene confirmed: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, and `.openclaw/**` are not entering the branch or evidence.
    - [ ] Repository visibility remains private unless a separate operator-approved GitHub visibility change is executed and evidenced. Future visibility transfers or publication actions remain approval-gated.
 
-Seoseo must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
+broker-alpha must link each piece of evidence in a comment on `#75`. Only when all checkboxes in this checklist are satisfied and the three GO/NO-GO gates are all GO may `#75` be considered for closeout.
 
 > **Note:** These gates were defined while the repository was private. They remain visibility and promotion/stable-release gates unless a separate operator approval explicitly narrows or resolves them.
 

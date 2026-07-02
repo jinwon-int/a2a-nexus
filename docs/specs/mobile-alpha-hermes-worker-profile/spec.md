@@ -1,8 +1,8 @@
-# Feature Spec: Gongyung Hermes Lightweight A2A Worker Profile
+# Feature Spec: mobile-alpha Hermes Lightweight A2A Worker Profile
 
 ## Problem
 
-Gongyung runs as an Android/Termux Hermes-style worker on a mobile-constrained
+mobile-alpha runs as an Android/Termux Hermes-style worker on a mobile-constrained
 node (limited memory, Doze/suspend windows, no Docker, no direct GitHub push).
 The existing Hermes broker-agnostic worker contract
 (`docs/specs/hermes-worker-integration/`, a2a-plane#384 (internal tracker, private)) defines the base HTTP transport but
@@ -12,7 +12,7 @@ it cannot safely execute.
 
 ## Worker identity
 
-- **NodeId in practice:** `gongyung` (Android Termux)
+- **NodeId in practice:** `mobile-alpha` (Android Termux)
 - **Runtime:** Hermes Agent (non-OpenClaw, non-Docker-runner)
 - **Transport:** HTTP polling over Tailscale or local loopback
 - **workerMode:** `mobile` (30 s stale threshold, 1-3 capacity slots)
@@ -20,7 +20,7 @@ it cannot safely execute.
 - **openClawRequired:** `false`
 - **mustTreatAsDockerRunner:** `false`
 
-Gongyung MUST NOT be treated as a Docker Runner patch/build/test worker.
+mobile-alpha MUST NOT be treated as a Docker Runner patch/build/test worker.
 Any task whose intent, payload, or target implies `executorMode=docker`,
 `runnerScope=github`, `WORKER_HANDLER_COMMAND=docker`, or
 `A2A_EXECUTOR_MODE=auto-with-docker-fallback` MUST be rejected at admission
@@ -30,7 +30,7 @@ time.
 
 ### In scope
 
-- Define the Gongyung Hermes worker capability profile.
+- Define the mobile-alpha Hermes worker capability profile.
 - Specify allowed lightweight task classes.
 - Specify rejected/handoff task classes.
 - Specify fixed artifact/evidence manifest requirements.
@@ -41,19 +41,19 @@ time.
 
 ### Out of scope
 
-- Live registration of a Gongyung worker against a production broker.
+- Live registration of a mobile-alpha worker against a production broker.
 - Production broker/Gateway/worker restart or deploy.
 - Live provider or Telegram canary.
 - Production database, queue, or terminal-outbox mutation (DB mutation/prune/replay).
 - Manual terminal ACK/replay or historical replay.
 - OpenClaw plugin SDK changes.
 - Secret movement, credential disclosure, release/tag, repository visibility.
-- Actual Hermes Agent native tooling implementation for Gongyung.
+- Actual Hermes Agent native tooling implementation for mobile-alpha.
 - Docker-runner worker or CI worker profile changes.
 
 ## Allowed lightweight task classes
 
-A task is admissible for Gongyung only when **all** of the following hold.
+A task is admissible for mobile-alpha only when **all** of the following hold.
 
 ### Admissible intents
 
@@ -99,11 +99,11 @@ capable target when any of the following match.
 
 | Pattern | Reason |
 |---------|--------|
-| `intent` includes `docker`, `patch_repo`, `build_repo`, `test_repo` | Gongyung is not a Docker Runner |
-| `executorMode` is `docker` or `auto-with-docker-fallback` | Gongyung has no Docker daemon |
-| `runnerScope` is `all-github` or `github-patch` | Gongyung has no GitHub push capability |
+| `intent` includes `docker`, `patch_repo`, `build_repo`, `test_repo` | mobile-alpha is not a Docker Runner |
+| `executorMode` is `docker` or `auto-with-docker-fallback` | mobile-alpha has no Docker daemon |
+| `runnerScope` is `all-github` or `github-patch` | mobile-alpha has no GitHub push capability |
 | `intent` is `split` or `swarm` (non-observe) | Mobile profile blocks these at lane level |
-| `canRunHeavyProof` required by task metadata | Gongyung cannot run full E2E gates |
+| `canRunHeavyProof` required by task metadata | mobile-alpha cannot run full E2E gates |
 | Task payload contains `forceFullGate: true` | Explicit heavy gate not allowed |
 | Task requires `capabilities.canPatchWorkspace` with workspace type `docker` | Docker workspace not available |
 | Task requires `capabilities.canPromoteLive` | No live promotion from mobile |
@@ -126,8 +126,8 @@ execution:
 
 | Pattern | Handoff target | Rationale |
 |---------|----------------|-----------|
-| `intent` is `propose_patch` or `propose_params` | `node-hub`, `seoseo`, or `soonwook` | Proposal creation needs a persistent writer |
-| `intent` is `apply_local_change` targeting a workspace Gongyung cannot reach | Configured handoff target | Workspace not on mobile filesystem |
+| `intent` is `propose_patch` or `propose_params` | `node-hub`, `broker-alpha`, or `worker-eta` | Proposal creation needs a persistent writer |
+| `intent` is `apply_local_change` targeting a workspace mobile-alpha cannot reach | Configured handoff target | Workspace not on mobile filesystem |
 | GitHub write required (commit, push, PR create) | Configured `githubWriteHandoff` | `canPushToGitHub: false` |
 | Full proof gate (`full_gate`, `full_proof_loop`, `full_regression`) | `node-hub` or CI runner | Heavy proof delegated |
 
@@ -145,10 +145,10 @@ Then the task MUST be **rejected** (not silently ignored). The rejection MUST
 include a structured NO-GO signal with reason
 `"gongyung_not_docker_runner"`.
 
-This is a **hard boundary**: Gongyung runs on Android/Termux with no Docker
+This is a **hard boundary**: mobile-alpha runs on Android/Termux with no Docker
 daemon, no `docker` CLI, and no GitHub credential store. Any task that expects
 Docker execution, GitHub patch/build/test workflow, or CI-level runner semantics
-cannot execute on Gongyung and must not be admitted.
+cannot execute on mobile-alpha and must not be admitted.
 
 ### Base contract rejection semantics
 
@@ -181,18 +181,18 @@ Admission evidence manifest:
 The admission evidence manifest MUST include:
 
 - `taskId`
-- `workerId` set to `gongyung`
+- `workerId` set to `mobile-alpha`
 - `status` set to `accepted`, `rejected`, or `handoff`
 - `files`
 - `redactionStatement`
 - `limitations` when relevant
 - `timestamp`
 
-Every Gongyung worker evidence submission MUST include exactly these fields:
+Every mobile-alpha worker evidence submission MUST include exactly these fields:
 
 ```json
 {
-  "workerId": "gongyung",
+  "workerId": "mobile-alpha",
   "outcome": "done" | "blocked" | "failed",
   "result": {
     "summary": "<one-line human-readable summary>",
@@ -215,9 +215,9 @@ Every Gongyung worker evidence submission MUST include exactly these fields:
 
 ### Requirements
 
-1. **`workerId`** MUST match the registered Gongyung node id.
+1. **`workerId`** MUST match the registered mobile-alpha node id.
 2. **`outcome`** MUST be one of `done`, `blocked`, or `failed`. `pr` is not
-   supported because Gongyung cannot push GitHub branches.
+   supported because mobile-alpha cannot push GitHub branches.
 3. **`openClawRequired`** MUST be `false`.
 4. **`runtimeFlavor`** MUST be `"termux-hermes"`.
 5. **`profileVersion`** MUST be `1` for this profile.
@@ -259,7 +259,7 @@ a structured `blocked` outcome with `summary` describing the manifest failure.
 
 ### Must keep (safe evidence content)
 
-- `nodeId` (`gongyung` is a public-safe handle).
+- `nodeId` (`mobile-alpha` is a public-safe handle).
 - Outcome, summary, artifact paths, artifact kinds, profile metadata.
 - Test output summaries, exit codes, assertion results.
 - `manifest ok` or manifest failure descriptions without raw values.
@@ -274,7 +274,7 @@ a structured `blocked` outcome with `summary` describing the manifest failure.
 
 ## Fail-closed admission semantics
 
-The Gongyung Hermes worker SHALL implement a fail-closed admission function
+The mobile-alpha Hermes worker SHALL implement a fail-closed admission function
 with the following semantics.
 
 ### Signature
@@ -303,7 +303,7 @@ type AdmissionDecision =
 3. **Mode guard:** Evaluate the team mode against the mobile profile (see
    `mobile-safety-lane.ts`). If the mode is not in `allowedModes` or
    `observeOnlyModes`, return NO-GO.
-4. **Capability guard:** If the task requires capabilities Gongyung does not
+4. **Capability guard:** If the task requires capabilities mobile-alpha does not
    have (heavy proof, GitHub push, Docker workspace, live promotion), return NO-GO.
 5. **Resource guard:** If the task would exceed `maxConcurrentTasks`, return NO-GO
    with reason `"at_capacity"`.
@@ -311,12 +311,12 @@ type AdmissionDecision =
 
 ### Rejection does not destroy the task
 
-NO-GO from Gongyung is NOT a terminal task failure at the broker level. The
-broker's existing stale-reaper logic handles requeueing. Gongyung does not
+NO-GO from mobile-alpha is NOT a terminal task failure at the broker level. The
+broker's existing stale-reaper logic handles requeueing. mobile-alpha does not
 mark the task as `failed`; it simply refuses to claim it. If the broker has
-already assigned the task to Gongyung, Gongyung MUST call
+already assigned the task to mobile-alpha, mobile-alpha MUST call
 `POST /tasks/:id/evidence` with `outcome: "blocked"` and
-`summary: "Gongyung Hermes worker: task not admitted (gongyung_not_docker_runner)"`
+`summary: "mobile-alpha Hermes worker: task not admitted (gongyung_not_docker_runner)"`
 (adjusted for the specific rejection reason).
 
 ### Unknown mode default
@@ -327,12 +327,12 @@ classes are not silently accepted by an out-of-date worker profile.
 
 ## Success criteria
 
-- [ ] The Gongyung profile gives a clear answer for every task class:
+- [ ] The mobile-alpha profile gives a clear answer for every task class:
       admit with lightweight proof, observe only, handoff, or reject.
 - [ ] The admission function rejects Docker runner tasks before any other check.
 - [ ] The artifact/evidence manifest schema is validated by a local test.
 - [ ] Redaction rules are documented and enforceable.
-- [ ] All profile spec, plan, and tasks are under `docs/specs/gongyung-hermes-worker-profile/`.
+- [ ] All profile spec, plan, and tasks are under `docs/specs/mobile-alpha-hermes-worker-profile/`.
 - [ ] The change performs no live production action.
 
 ## Safety and approval boundaries

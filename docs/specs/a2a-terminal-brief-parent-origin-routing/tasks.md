@@ -6,7 +6,7 @@
 - [x] Implementation plan is linked and accepted for trial use.
 - [x] Size classification is recorded: Large.
 - [x] Approval-sensitive actions are out of scope for source PRs.
-- [x] Broker of record / finalizer is identified: Gwakga unless explicitly handed off.
+- [x] Broker of record / finalizer is identified: broker-beta unless explicitly handed off.
 
 ## Task group 0 — spec-first trial in `a2a-plane`
 
@@ -45,8 +45,8 @@ Evidence required:
 - [ ] Normalize team/scope fields: Team1-only, Team2-only, Team1+Team2.
 - [ ] Normalize parent/origin broker and handoff broker fields.
 - [ ] Preserve parent existence guard and `missing_parent` behavior.
-- [ ] Ensure Team2-only cannot route through Seoseo.
-- [ ] Ensure Team1-only cannot route through Gwakga.
+- [ ] Ensure Team2-only cannot route through broker-alpha.
+- [ ] Ensure Team1-only cannot route through broker-beta.
 - [ ] Add broker tests for all four cases.
 - [ ] Run focused tests.
 - [ ] Run full `npm test`.
@@ -103,8 +103,8 @@ Do not start this group without fresh explicit approval.
 - [ ] Restart Gateway/broker/worker if required.
 - [ ] Run bounded local-only Terminal Brief canary if needed.
 - [ ] Run bounded cross-team parent-seeded canary in both directions if needed:
-  - Seoseo parent + Gwakga child;
-  - Gwakga parent + Seoseo child.
+  - broker-alpha parent + broker-beta child;
+  - broker-beta parent + broker-alpha child.
 - [ ] Cleanup relay windows, cursors, and allowlists.
 - [ ] Report GO/NO-GO.
 

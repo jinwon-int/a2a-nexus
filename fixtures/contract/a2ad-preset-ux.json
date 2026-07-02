@@ -9,7 +9,7 @@
       "description": "Official broker A2AD review for operational risk decisions.",
       "executionMode": "broker-a2ad",
       "reportLabel": "broker A2AD",
-      "brokerOfRecord": "seoseo",
+      "brokerOfRecord": "broker-alpha",
       "workerInventorySource": "broker-workers-read-model",
       "sideEffectPolicy": "finalizer-only",
       "sideEffectAllowlist": [],
@@ -18,7 +18,7 @@
         {
           "role": "thesis",
           "participants": [
-            "bangtong"
+            "worker-gamma"
           ],
           "toolPolicy": "read-only",
           "sideEffects": "forbidden",
@@ -27,7 +27,7 @@
         {
           "role": "antithesis",
           "participants": [
-            "sogyo"
+            "worker-beta"
           ],
           "toolPolicy": "read-only",
           "sideEffects": "forbidden",
@@ -36,7 +36,7 @@
         {
           "role": "synthesis",
           "participants": [
-            "yukson"
+            "worker-delta"
           ],
           "toolPolicy": "finalizer-only",
           "sideEffects": "forbidden",
@@ -45,7 +45,7 @@
       ],
       "finalizer": {
         "role": "synthesis",
-        "owner": "yukson",
+        "owner": "worker-delta",
         "sideEffects": "approval-gated",
         "requiresEvidenceRefs": true,
         "quorum": 2

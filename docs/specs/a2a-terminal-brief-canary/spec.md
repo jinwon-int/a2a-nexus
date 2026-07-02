@@ -2,7 +2,7 @@
 
 ## Problem
 
-The A2A Terminal Brief live-canary path was validated on Seoseo fleet with a passing canary named `terminal-brief-live-fleet-seoseo-20260516T114832Z`. That canary exposed five hardening gaps in the live-canary/`operatorEvents` path that must be closed before the next real canary can run without depending on hand-written sequencing:
+The A2A Terminal Brief live-canary path was validated on broker-alpha fleet with a passing canary named `terminal-brief-live-fleet-broker-alpha-20260516T114832Z`. That canary exposed five hardening gaps in the live-canary/`operatorEvents` path that must be closed before the next real canary can run without depending on hand-written sequencing:
 
 1. **Backlog false suppression** — canary scripts can accidentally start the poller after the task has completed, producing a false backlog suppression signal.
 2. **Session key requirement** — `a2a.monitor.status` requires `sessionKey`; ad hoc scripts that omit it miss poller state entirely.
@@ -31,7 +31,7 @@ The A2A Terminal Brief live-canary path was validated on Seoseo fleet with a pas
 ### Out of scope
 
 - Production deploy, restart, or canary execution unless explicitly approved.
-- Plugin/implementation source code changes (covered by sibling lanes sogyo, nosuk, yukson).
+- Plugin/implementation source code changes (covered by sibling lanes worker-beta, worker-alpha, worker-delta).
 - Live provider/Telegram send.
 - Terminal-outbox ACK mutation.
 - Database mutation, prune, migration, or replay.
@@ -187,4 +187,4 @@ This spec, fixture, and conformance test are small, local-only operations. They 
 | Acceptance contract fixture | `fixtures/contract/terminal-brief-canary-acceptance.json` | Frozen assertions for the five hardening gaps |
 | Conformance test | `test/conformance/check-terminal-brief-canary-acceptance.mjs` | Validates fixture against spec acceptance criteria |
 | Parent issue | `a2a-plane#364` | A2A R27 Team1: Terminal Brief live-canary hardening |
-| Current issue | `a2a-plane#365` | R27 Team1/bangtong: Terminal Brief canary spec and acceptance contract |
+| Current issue | `a2a-plane#365` | R27 Team1/worker-gamma: Terminal Brief canary spec and acceptance contract |

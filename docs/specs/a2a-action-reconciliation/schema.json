@@ -21,7 +21,7 @@
     },
     "brokerId": {
       "type": "string",
-      "description": "Broker identifier (e.g. seoseo, gwakga).",
+      "description": "Broker identifier (e.g. broker-alpha, broker-beta).",
       "pattern": "^[a-z]+$"
     },
     "actionRecord": {

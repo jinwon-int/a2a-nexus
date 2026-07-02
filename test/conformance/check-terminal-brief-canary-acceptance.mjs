@@ -47,8 +47,8 @@ assert.equal(fixture.fixtureId, 'a2a-nexus.contract.terminal-brief-canary-accept
 assert.equal(fixture.contract, 'docs/specs/a2a-terminal-brief-canary/spec.md');
 assert.equal(fixture.parentIssue, 'a2a-plane#364 (internal tracker, private)');
 assert.equal(fixture.issue, 'a2a-plane#365 (internal tracker, private)');
-assert.equal(fixture.team, 'team1-bangtong');
-assert.equal(fixture.brokerOfRecord, 'seoseo');
+assert.equal(fixture.team, 'team1-worker-gamma');
+assert.equal(fixture.brokerOfRecord, 'broker-alpha');
 assert.equal(fixture.round, 'R27');
 
 // --- v0Freeze marker ---

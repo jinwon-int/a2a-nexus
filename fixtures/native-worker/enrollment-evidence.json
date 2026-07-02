@@ -12,7 +12,7 @@
     "a2a-plane#504 (internal tracker, private)"
   ],
   "profiles": [
-    "docs/specs/gongyung-hermes-worker-profile/spec.md",
+    "docs/specs/mobile-alpha-hermes-worker-profile/spec.md",
     "docs/hermes-native-worker-conformance-checklist.md"
   ],
   "runbook": "docs/hermes-native-worker-enrollment-runbook.md",

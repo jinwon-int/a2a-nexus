@@ -8,13 +8,13 @@ This review is documentation and fixture evidence only. It does not deploy or re
 
 ## Finding
 
-The public compatibility policy can be reviewed from public-safe A2A Nexus files without relying on private Seoseo-only assumptions. Seoseo may appear as a source-broker example in a cross-broker fixture, but it is not required as broker of record, worker dispatcher, terminal-evidence authority, or visibility approver.
+The public compatibility policy can be reviewed from public-safe A2A Nexus files without relying on private broker-alpha-only assumptions. broker-alpha may appear as a source-broker example in a cross-broker fixture, but it is not required as broker of record, worker dispatcher, terminal-evidence authority, or visibility approver.
 
 ## Reproducible evidence
 
 - `contracts/compatibility/matrix.md` bounds public compatibility claims to named candidate paths and baselines.
-- `fixtures/contract/public-compatibility-policy.json` links #94 to this #166 review and records forbidden assumptions such as requiring Seoseo as broker of record or treating provider message IDs as terminal ACK evidence.
-- `fixtures/contract/gwakga-cross-broker-handoff.json` keeps Gwakga as broker of record for Team2 and shows that the source broker does not dispatch destination workers.
+- `fixtures/contract/public-compatibility-policy.json` links #94 to this #166 review and records forbidden assumptions such as requiring broker-alpha as broker of record or treating provider message IDs as terminal ACK evidence.
+- `fixtures/contract/broker-beta-cross-broker-handoff.json` keeps broker-beta as broker of record for Team2 and shows that the source broker does not dispatch destination workers.
 - `test/conformance/check-contract-fixtures.mjs` validates both fixtures with no live provider send, terminal ACK mutation, private topology, or runtime/bootstrap evidence.
 
 ## Safe validation

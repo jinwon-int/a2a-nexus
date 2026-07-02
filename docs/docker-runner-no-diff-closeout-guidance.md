@@ -7,7 +7,7 @@ Failed evidence lane: [jinwon-int/a2a-broker#443](https://github.com/jinwon-int/
 
 ## Decision
 
-**Active guidance / class documented.** This document defines the plane-side operator closeout procedure for the Docker Runner branch ownership mismatch class observed in the nosuk lane. It does not authorize deploys, service restarts, production database mutations, live provider/Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
+**Active guidance / class documented.** This document defines the plane-side operator closeout procedure for the Docker Runner branch ownership mismatch class observed in the worker-alpha lane. It does not authorize deploys, service restarts, production database mutations, live provider/Telegram sends, terminal-outbox ACK mutations, secret rotation, secret disclosure, history rewrites, or force-pushes.
 
 ## Classification: No-Commits / Branch Ownership Mismatch
 
@@ -15,7 +15,7 @@ When a Docker Runner `github-propose-patch` task completes with `ok: true` but p
 
 ### Failure signature
 
-| Signal | Expected | Observed in nosuk lane |
+| Signal | Expected | Observed in worker-alpha lane |
 |---|---|---|
 | Runner exit status | `ok: true`, `status: "completed"` | Matches |
 | PR URL in evidence | Present (expected in propose_patch mode) | Absent |
@@ -41,7 +41,7 @@ Before closing the lane or accepting the runner result as terminal evidence, col
 
 | Evidence field | Source | Example |
 |---|---|---|
-| **task ID** | `task.json` → `id`, runner `result.taskId` | `"task-nosuk-042"` |
+| **task ID** | `task.json` → `id`, runner `result.taskId` | `"task-worker-alpha-042"` |
 | **runner branch** | `result.github.branch`, artifact `branch=` line | `"fix/issue-42"` or `"main"` |
 | **current branch** (if different) | Container logs or `git branch` output in artifacts | `"a2a-patch-20260509-..."` |
 | **HEAD SHA** | `result.github.commit`, artifact `commit=` / `sha=` line | `"9ac8228..."` |
@@ -73,7 +73,7 @@ if (HEAD SHA == origin/main SHA) {
 | **ZERO_DIFF** | Block the lane. The patch command produced no changes. Verify patch command configuration (`A2A_DOCKER_RUNNER_PATCH_COMMAND_SCRIPT` / `A2A_DOCKER_RUNNER_PATCH_COMMAND_JSON`). | `no-diff` |
 | **MISSING_PR** | Block the lane. Commits exist but PR creation failed. Review runner logs for GitHub API failures. | `missing-pr` |
 
-> **Important**: None of these outcomes should be classified as `Done`. They are all Block evidence that requires operator (seoseo) attention before the lane can close.
+> **Important**: None of these outcomes should be classified as `Done`. They are all Block evidence that requires operator (broker-alpha) attention before the lane can close.
 
 ### Step 3: Post evidence
 
@@ -120,7 +120,7 @@ The public-readiness decision matrix in [docs/public-readiness.md](./public-read
 | Reference | Description |
 |---|---|
 | [jinwon-int/a2a-broker#446](https://github.com/jinwon-int/a2a-broker/issues/446) | Parent broker hardening issue for branch ownership mismatch fix |
-| [jinwon-int/a2a-broker#443](https://github.com/jinwon-int/a2a-broker/issues/443) | Failed evidence lane for nosuk no-diff PR failure |
+| [jinwon-int/a2a-broker#443](https://github.com/jinwon-int/a2a-broker/issues/443) | Failed evidence lane for worker-alpha no-diff PR failure |
 | [jinwon-int/a2a-broker#294](https://github.com/jinwon-int/a2a-broker/issues/294) | A2A broker roadmap |
 | a2a-plane#102 (internal tracker, private) (a2a-plane#102, internal tracker private) | This plane closeout issue |
 | [openclaw/openclaw#78261](https://github.com/openclaw/openclaw/pull/78261) | Closed/superseded upstream context; no longer a merge gate |
@@ -132,5 +132,5 @@ The public-readiness decision matrix in [docs/public-readiness.md](./public-read
 
 - **Schema version**: `a2a.plane.closeout-guidance.v1`
 - **Created**: 2026-05-09
-- **Lane**: nosuk
+- **Lane**: worker-alpha
 - **Round**: R8 (post-R7 closeout refresh)

@@ -8,8 +8,8 @@
 > **Lane issue:** a2a-plane#467 (a2a-plane#467, internal tracker private)
 > **Parent tracker:** [a2a-broker#927](https://github.com/jinwon-int/a2a-broker/issues/927)
 > **Run:** `a2a-team1-round-coordinator-20260526T201140KST`
-> **Lane owner:** nosuk (Team1)
-> **Broker/finalizer of record:** `seoseo`
+> **Lane owner:** worker-alpha (Team1)
+> **Broker/finalizer of record:** `broker-alpha`
 
 ---
 
@@ -18,7 +18,7 @@
 Replace repeated human-driven broker polling and worker-result transcription with
 a deterministic, source-controlled broker-side projection that collects round
 state, classifies lane status (pending/running/succeeded/failed/stale/timeout),
-and emits a review bundle that the human finalizer (`seoseo`) can act upon —
+and emits a review bundle that the human finalizer (`broker-alpha`) can act upon —
 without performing any approval-sensitive action automatically.
 
 ## 2. Round coordinator lifecycle
@@ -56,7 +56,7 @@ broker tasks; the coordinator tracks them.
                     ┌──────────┐
                     │  READY   │ finalizer-review bundle prepared; human reviews
                     └────┬─────┘
-                         │ Seoseo performs final closeout via existing Go/No-Go matrix
+                         │ broker-alpha performs final closeout via existing Go/No-Go matrix
                          ▼
                     ┌──────────┐
                     │ CLOSED   │ (terminal — managed by closeout reconciler)
@@ -75,7 +75,7 @@ broker tasks; the coordinator tracks them.
 | TIMED_OUT → PARTIAL | Some lanes terminal, some stuck/timeout | Include missing-lane notes |
 | COLLECTED → READY | Closeout bundle emitted for human review | Set `readyForFinalizer: true` |
 | PARTIAL → READY | Partial bundle emitted for human review | Set `readyForFinalizer: true`, add `partial: true` flag |
-| READY → CLOSED | Seoseo executes closeout via Go/No-Go matrix | No automatic transition; coordinated externally |
+| READY → CLOSED | broker-alpha executes closeout via Go/No-Go matrix | No automatic transition; coordinated externally |
 
 ### 2.3 Cursor-based polling
 
@@ -204,7 +204,7 @@ human finalizer's review.
   "lanes": [
     {
       "order": 1,
-      "worker": "bangtong",
+      "worker": "worker-gamma",
       "repo": "a2a-plane (internal tracker, private)",
       "role": "broker",
       "status": "succeeded",
@@ -232,7 +232,7 @@ human finalizer's review.
     {
       "lane": 3,
       "severity": "info",
-      "description": "Worker nosuk still running; last update 2 min ago."
+      "description": "Worker worker-alpha still running; last update 2 min ago."
     }
   ],
   "finalizerAction": {
@@ -282,14 +282,14 @@ It must never contain:
 ## 5. Human finalizer boundary
 
 The coordinator explicitly stops short of performing approval-sensitive actions.
-The human finalizer (`seoseo`) retains exclusive control over:
+The human finalizer (`broker-alpha`) retains exclusive control over:
 
 ### 5.1 Finalizer-owned actions
 
 | Action | Finalizer Only | Notes |
 |---|---|---|
 | Post Go/No-Go decision on parent issue | Yes | Must use existing closeout go/no-go matrix |
-| Close parent issue | Yes | Only `seoseo` may close |
+| Close parent issue | Yes | Only `broker-alpha` may close |
 | Review closeout bundle and approve retry | Yes | Operator comments override |
 | Escalate blocked or unsafe conditions | Yes | Human judgment required |
 | Override stale/timeout classification | Yes | Manual intervention path |
@@ -349,7 +349,7 @@ policy metadata that the collector uses to interpret results correctly.
 
 ```json
 {
-  "workerId": "bangtong",
+  "workerId": "worker-gamma",
   "role": "broker",
   "maxConcurrency": 1,
   "allowedTaskTypes": ["propose_patch", "analyze", "verify"],
@@ -362,13 +362,13 @@ policy metadata that the collector uses to interpret results correctly.
 }
 ```
 
-### 7.2 Gongyung/Hermes — mobile standby profile
+### 7.2 mobile-alpha/Hermes — mobile standby profile
 
-The Gongyung/Hermes worker is treated as a read-only evidence source by default:
+The mobile-alpha/Hermes worker is treated as a read-only evidence source by default:
 
 ```json
 {
-  "workerId": "gongyung",
+  "workerId": "mobile-alpha",
   "role": "mobile-standby",
   "maxConcurrency": 1,
   "allowedTaskTypes": ["monitor", "notify"],
@@ -384,13 +384,13 @@ The Gongyung/Hermes worker is treated as a read-only evidence source by default:
 The coordinator treats mobile-standby lanes as advisory — their absence does not
 block a round closeout, but their evidence is included for awareness.
 
-### 7.3 Daegyo — Team2 worker candidate
+### 7.3 mobile-beta — Team2 worker candidate
 
-Daegyo follows the same resource policy model as other Team1/Team2 workers:
+mobile-beta follows the same resource policy model as other Team1/Team2 workers:
 
 ```json
 {
-  "workerId": "daegyo",
+  "workerId": "mobile-beta",
   "role": "worker",
   "maxConcurrency": 1,
   "allowedTaskTypes": ["propose_patch", "analyze", "verify"],
@@ -403,7 +403,7 @@ Daegyo follows the same resource policy model as other Team1/Team2 workers:
 }
 ```
 
-The coordinator does not distinguish Daegyo from other workers for lane tracking
+The coordinator does not distinguish mobile-beta from other workers for lane tracking
 and classification purposes.
 
 ## 8. Transition path: human polling → broker-side collection
@@ -455,13 +455,13 @@ If at any stage the automated collection produces incorrect results:
 ```json
 {
   "roundId": "a2a-team1-scheduler-dispatch-20260520T120000Z",
-  "workers": ["bangtong", "sogyo", "nosuk", "yukson"],
+  "workers": ["worker-gamma", "worker-beta", "worker-alpha", "worker-delta"],
   "deadline": "20260521T120000Z",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
-    "nosuk":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #451 (internal tracker, private)" },
-    "yukson":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
+    "worker-gamma": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
+    "worker-beta":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
+    "worker-alpha":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #451 (internal tracker, private)" },
+    "worker-delta":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
   },
   "summary": {
     "decision": "READY",
@@ -477,16 +477,16 @@ If at any stage the automated collection produces incorrect results:
 ```json
 {
   "roundId": "a2a-team1-round-coordinator-20260526T201140KST",
-  "workers": ["bangtong", "sogyo", "nosuk", "yukson"],
+  "workers": ["worker-gamma", "worker-beta", "worker-alpha", "worker-delta"],
   "deadline": "20260527T201140KST",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
-    "nosuk":   { "status": "running", "lastUpdate": "20260526T201140Z", "ageMs": 1800000 },
-    "yukson":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
+    "worker-gamma": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #449 (internal tracker, private)" },
+    "worker-beta":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #450 (internal tracker, private)" },
+    "worker-alpha":   { "status": "running", "lastUpdate": "20260526T201140Z", "ageMs": 1800000 },
+    "worker-delta":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #452 (internal tracker, private)" }
   },
   "risks": [
-    { "lane": 3, "worker": "nosuk", "severity": "warning", "description": "No update for 30 min (stale threshold exceeded)." }
+    { "lane": 3, "worker": "worker-alpha", "severity": "warning", "description": "No update for 30 min (stale threshold exceeded)." }
   ],
   "summary": {
     "decision": "READY_PARTIAL",
@@ -502,16 +502,16 @@ If at any stage the automated collection produces incorrect results:
 ```json
 {
   "roundId": "a2a-team2-hermes-integration-20260525T090000Z",
-  "workers": ["soonwook", "gwakga", "gongyung"],
+  "workers": ["worker-eta", "broker-beta", "mobile-alpha"],
   "deadline": "20260526T090000Z",
   "laneResults": {
-    "soonwook": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #440 (internal tracker, private)" },
-    "gwakga":   { "status": "blocked", "evidenceUrl": "a2a-plane#441 (internal tracker, private)" },
-    "gongyung": { "status": "succeeded", "evidenceUrl": null, "mobileStandby": true }
+    "worker-eta": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #440 (internal tracker, private)" },
+    "broker-beta":   { "status": "blocked", "evidenceUrl": "a2a-plane#441 (internal tracker, private)" },
+    "mobile-alpha": { "status": "succeeded", "evidenceUrl": null, "mobileStandby": true }
   },
   "risks": [
-    { "lane": 2, "worker": "gwakga", "severity": "blocker", "description": "Cross-broker handoff blocked due to config mismatch." },
-    { "lane": 3, "worker": "gongyung", "severity": "info", "description": "Mobile-standby lane: evidence advisory only." }
+    { "lane": 2, "worker": "broker-beta", "severity": "blocker", "description": "Cross-broker handoff blocked due to config mismatch." },
+    { "lane": 3, "worker": "mobile-alpha", "severity": "info", "description": "Mobile-standby lane: evidence advisory only." }
   ],
   "summary": {
     "decision": "BLOCKED",
@@ -527,16 +527,16 @@ If at any stage the automated collection produces incorrect results:
 ```json
 {
   "roundId": "a2a-cross-team-terminal-brief-20260522T140000Z",
-  "workers": ["bangtong", "sogyo", "soonwook", "gwakga"],
+  "workers": ["worker-gamma", "worker-beta", "worker-eta", "broker-beta"],
   "deadline": "20260524T140000Z",
   "laneResults": {
-    "bangtong": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #445 (internal tracker, private)" },
-    "sogyo":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #446 (internal tracker, private)" },
-    "soonwook": { "status": "timeout", "lastUpdate": "20260523T100000Z" },
-    "gwakga":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #447 (internal tracker, private)" }
+    "worker-gamma": { "status": "succeeded", "evidenceUrl": "a2a-plane PR #445 (internal tracker, private)" },
+    "worker-beta":   { "status": "succeeded", "evidenceUrl": "a2a-plane PR #446 (internal tracker, private)" },
+    "worker-eta": { "status": "timeout", "lastUpdate": "20260523T100000Z" },
+    "broker-beta":  { "status": "succeeded", "evidenceUrl": "a2a-plane PR #447 (internal tracker, private)" }
   },
   "risks": [
-    { "lane": 3, "worker": "soonwook", "severity": "blocker", "description": "Team2 worker timed out before deadline." }
+    { "lane": 3, "worker": "worker-eta", "severity": "blocker", "description": "Team2 worker timed out before deadline." }
   ],
   "summary": {
     "decision": "READY_PARTIAL",
@@ -646,7 +646,7 @@ Detailed operator guidance for dry-run closeout is in the
 | No automatic issue close | Yes |
 | No automatic PR merge | Yes |
 | No automatic approval | Yes |
-| Seoseo retains finalizer authority | Yes |
+| broker-alpha retains finalizer authority | Yes |
 | Source-only dispatch manifest consumed without mutation | Yes |
 | Dry-run closeout bundle is informational only | Yes |
 | Dry-run mode does not transition round state | Yes |

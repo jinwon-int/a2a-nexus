@@ -17,10 +17,10 @@ Any cleanup mutation needs a separate operator approval naming exact task IDs or
 
 ## Official broker ownership
 
-- Team1 evidence/capacity of record: **Seoseo broker**.
-- Team2 evidence/capacity of record: **Gwakga broker**.
-- Stale Team2-ish rows on Seoseo capacity are treated as historical/cross-team residue until proven otherwise.
-- Do not use stale Seoseo rows for official Team2 health. Use Gwakga capacity and Gwakga task evidence unless an explicit break-glass cross-broker handoff is approved.
+- Team1 evidence/capacity of record: **broker-alpha broker**.
+- Team2 evidence/capacity of record: **broker-beta broker**.
+- Stale Team2-ish rows on broker-alpha capacity are treated as historical/cross-team residue until proven otherwise.
+- Do not use stale broker-alpha rows for official Team2 health. Use broker-beta capacity and broker-beta task evidence unless an explicit break-glass cross-broker handoff is approved.
 
 ## No-live A2A/A2AD health check
 
@@ -29,10 +29,10 @@ Use the checked-in helper instead of ad-hoc curl snippets:
 ```sh
 node scripts/a2a-timeout-cleanup/no-live-a2a-a2ad-health-check.mjs \
   --team team2 \
-  --broker-id gwakga \
+  --broker-id broker-beta \
   --base-url http://127.0.0.1:8787 \
-  --a2a-worker gongmyoung \
-  --a2ad-workers dungae,jingun,soonwook \
+  --a2a-worker worker-theta \
+  --a2ad-workers worker-epsilon,worker-zeta,worker-eta \
   --execute
 ```
 
@@ -45,23 +45,23 @@ The helper:
 
 ## Read-only residue classification
 
-For Seoseo stale Team2-ish queued rows or Gwakga terminal outbox backlog, use:
+For broker-alpha stale Team2-ish queued rows or broker-beta terminal outbox backlog, use:
 
 ```sh
 node scripts/a2a-timeout-cleanup/a2a-readonly-broker-residue-report.mjs \
-  --broker-id seoseo \
+  --broker-id broker-alpha \
   --official-team team1 \
-  --official-workers bangtong,nosuk,sogyo,yukson,gongyung \
+  --official-workers worker-gamma,worker-alpha,worker-beta,worker-delta,mobile-alpha \
   --base-url http://127.0.0.1:8787
 ```
 
-For Gwakga outbox diagnostics:
+For broker-beta outbox diagnostics:
 
 ```sh
 node scripts/a2a-timeout-cleanup/a2a-readonly-broker-residue-report.mjs \
-  --broker-id gwakga \
+  --broker-id broker-beta \
   --official-team team2 \
-  --official-workers dungae,jingun,soonwook,daegyo,gongmyoung \
+  --official-workers worker-epsilon,worker-zeta,worker-eta,mobile-beta,worker-theta \
   --base-url http://127.0.0.1:8787
 ```
 
@@ -77,6 +77,6 @@ The report classifies:
 
 Safe next step is to classify destination/task/round with bounded reads and then ask for explicit cleanup approval if a targeted ACK/replay/prune is still needed.
 
-## Daegyo/Termux diagnostics
+## mobile-beta/Termux diagnostics
 
-Daegyo-class mobile workers are Termux/mobile workers, not normal systemd Ubuntu workers. Prefer Termux/tmux/process/env/file checks over `/etc/default` and `journalctl` routines. Mobile/reference workers must not call `/workers/register` on every polling tick; they should re-register only on first boot, TTL expiry, or heartbeat 404/410.
+mobile-beta-class mobile workers are Termux/mobile workers, not normal systemd Ubuntu workers. Prefer Termux/tmux/process/env/file checks over `/etc/default` and `journalctl` routines. Mobile/reference workers must not call `/workers/register` on every polling tick; they should re-register only on first boot, TTL expiry, or heartbeat 404/410.

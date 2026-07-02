@@ -13,7 +13,7 @@ This governance note defines who may turn public-readiness evidence into a visib
 
 | Gate | Owner | GO condition | NO-GO / Block condition |
 | --- | --- | --- | --- |
-| Public/private boundary | Broker of record (`gwakga`) prepares evidence; operator decides | Public; materials contain no private context. Historical private-readiness evidence is archived. | Any private endpoint, provider ID, host-specific path, raw session dump, or OpenClaw runtime/bootstrap file would enter branch/artifact/evidence |
+| Public/private boundary | Broker of record (`broker-beta`) prepares evidence; operator decides | Public; materials contain no private context. Historical private-readiness evidence is archived. | Any private endpoint, provider ID, host-specific path, raw session dump, or OpenClaw runtime/bootstrap file would enter branch/artifact/evidence |
 | Terminal evidence | Lane owner links redacted terminal evidence | Candidate flow has requester/operator-visible terminal receipt evidence; provider message IDs or accepted-send results are labeled non-terminal | Terminal evidence is missing, stale, ambiguous, or replaced by provider send success/IDs |
 | Replay safety | Lane owner links redacted replay/canary proof | Duplicate sends/retries cannot mint a false terminal ACK, and replay controls are described without secrets/provider IDs | Replay-safety proof is absent, stale, disputed, or exposes sensitive identifiers |
 | Scanner output | Lane owner links redacted scanner output | Supported external scanner evidence is clean or explicitly dispositioned, and local readiness scans pass | External scanner unavailable, stale, or replaced by local-only checks |

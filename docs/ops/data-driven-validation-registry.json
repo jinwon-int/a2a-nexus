@@ -29,12 +29,12 @@
         { "path": "a2adEvidence.primaryRound", "equals": "a2ad-active-provenance-mirror-20260610T155109Z", "message": "primary A2AD round" },
         { "path": "a2adEvidence.focusedTeam1RetryRound", "equals": "a2ad-active-provenance-mirror-team1-retry-20260610T155535Z", "message": "focused retry round" },
         { "path": "a2adEvidence.usableAnalysisCount", "equals": 6, "message": "usable analysis count" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-beta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-beta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-alpha", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-alpha evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-gamma", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-gamma evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-epsilon", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-epsilon evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-zeta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-zeta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-eta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-eta evidence" },
         { "path": "executionGates.operatorApprovalPhraseMatched", "equals": true, "message": "approval gate" },
         { "path": "executionGates.splitRepoPrsMerged", "equals": true, "message": "split repo PR merge gate" },
         { "path": "executionGates.externalSettingsMutationPerformed", "equals": false, "message": "settings mutation gate" },
@@ -66,19 +66,19 @@
         { "path": "operatorApproval", "equals": "승인: actual canonical flip execution 진행", "message": "operator approval phrase" },
         { "path": "actualCanonicalFlipExecution", "equals": "EXECUTED_SOURCE_STATE_ONLY", "message": "execution state" },
         { "path": "canonicalSourceState", "equals": "MONOREPO_PACKAGES_CANONICAL", "message": "canonical state" },
-        { "path": "executionOwner", "equals": "seoseo finalizer/operator", "message": "execution owner" },
+        { "path": "executionOwner", "equals": "broker-alpha finalizer/operator", "message": "execution owner" },
         { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/broker", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "broker canonical source" },
         { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/docker-runner", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "docker-runner canonical source" },
         { "path": "canonicalSources", "arraySome": { "canonicalPath": "packages/openclaw-plugin-a2a", "state": "canonical_source", "packageOwnershipTransferred": false }, "message": "plugin canonical source" },
         { "path": "a2adEvidence.primaryRound", "equals": "a2ad-actualflip-exec-retry-20260610T143021Z", "message": "primary A2AD round" },
-        { "path": "a2adEvidence.supplementalSogyoRound", "equals": "a2ad-actualflip-sogyo-retry-20260610T143538Z", "message": "supplemental A2AD round" },
+        { "path": "a2adEvidence.supplementalSogyoRound", "equals": "a2ad-actualflip-worker-beta-retry-20260610T143538Z", "message": "supplemental A2AD round" },
         { "path": "a2adEvidence.usableAnalysisCount", "min": 6, "message": "usable analysis count" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-beta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-beta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-alpha", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-alpha evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-gamma", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-gamma evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-epsilon", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-epsilon evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-zeta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-zeta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-eta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-eta evidence" },
         { "path": "executionGates.actualCanonicalFlipSourceStateExecuted", "equals": true, "message": "source-state execution gate" },
         { "path": "executionGates.externalMutationPerformed", "equals": false, "message": "external mutation boundary" },
         { "path": "boundaries.sourceStateCanonicalFlip", "equals": true, "message": "source-state boundary" },
@@ -118,12 +118,12 @@
         { "path": "repoFactsReadOnly.deduplicationCheck", "matches": "openclaw-plugin-a2a resolves to jinwon-int/plugin-a2a", "message": "plugin alias dedupe" },
         { "path": "a2adEvidence.primaryRound", "equals": "a2ad-splitdispo-preflight-20260610T150452Z", "message": "primary A2AD round" },
         { "path": "a2adEvidence.usableAnalysisCount", "min": 6, "message": "usable analysis count" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "sogyo", "status": "succeeded", "analysisStatus": "done" }, "message": "sogyo evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "nosuk", "status": "succeeded", "analysisStatus": "done" }, "message": "nosuk evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "bangtong", "status": "succeeded", "analysisStatus": "done" }, "message": "bangtong evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "dungae", "status": "succeeded", "analysisStatus": "done" }, "message": "dungae evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "jingun", "status": "succeeded", "analysisStatus": "done" }, "message": "jingun evidence" },
-        { "path": "a2adEvidence.workers", "arraySome": { "worker": "soonwook", "status": "succeeded", "analysisStatus": "done" }, "message": "soonwook evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-beta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-beta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-alpha", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-alpha evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-gamma", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-gamma evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-epsilon", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-epsilon evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-zeta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-zeta evidence" },
+        { "path": "a2adEvidence.workers", "arraySome": { "worker": "worker-eta", "status": "succeeded", "analysisStatus": "done" }, "message": "worker-eta evidence" },
         { "path": "preflightGates.preflightOnly", "equals": true, "message": "preflight-only gate" },
         { "path": "preflightGates.externalRepoMutationPerformed", "equals": false, "message": "external mutation boundary" },
         { "path": "boundaries.sourceOnlyPreflight", "equals": true, "message": "source-only boundary" },
@@ -231,50 +231,50 @@
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "sogyo",
+                        "worker": "worker-beta",
                         "status": "succeeded"
                   },
-                  "message": "sogyo evidence"
+                  "message": "worker-beta evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "nosuk",
+                        "worker": "worker-alpha",
                         "status": "succeeded"
                   },
-                  "message": "nosuk evidence"
+                  "message": "worker-alpha evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "bangtong",
+                        "worker": "worker-gamma",
                         "status": "succeeded"
                   },
-                  "message": "bangtong evidence"
+                  "message": "worker-gamma evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "dungae",
+                        "worker": "worker-epsilon",
                         "status": "succeeded"
                   },
-                  "message": "dungae evidence"
+                  "message": "worker-epsilon evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "jingun",
+                        "worker": "worker-zeta",
                         "status": "succeeded"
                   },
-                  "message": "jingun evidence"
+                  "message": "worker-zeta evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "soonwook",
+                        "worker": "worker-eta",
                         "status": "succeeded"
                   },
-                  "message": "soonwook evidence"
+                  "message": "worker-eta evidence"
             },
             {
                   "path": "a2aEvidence.team1UsableWorkers",
@@ -617,7 +617,7 @@
                   "path": "a2aEvidence.supplementalRounds",
                   "includesAll": [
                         "a2a-canonicalflip-retry-20260610T132021Z",
-                        "a2a-canonicalflip-sogyo-retry-20260610T132313Z"
+                        "a2a-canonicalflip-worker-beta-retry-20260610T132313Z"
                   ],
                   "message": "supplemental rounds"
             },
@@ -634,52 +634,52 @@
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "sogyo"
+                        "worker": "worker-beta"
                   },
-                  "message": "sogyo worker evidence"
+                  "message": "worker-beta worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "nosuk"
+                        "worker": "worker-alpha"
                   },
-                  "message": "nosuk worker evidence"
+                  "message": "worker-alpha worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "bangtong"
+                        "worker": "worker-gamma"
                   },
-                  "message": "bangtong worker evidence"
+                  "message": "worker-gamma worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "dungae"
+                        "worker": "worker-epsilon"
                   },
-                  "message": "dungae worker evidence"
+                  "message": "worker-epsilon worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "jingun"
+                        "worker": "worker-zeta"
                   },
-                  "message": "jingun worker evidence"
+                  "message": "worker-zeta worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "soonwook"
+                        "worker": "worker-eta"
                   },
-                  "message": "soonwook worker evidence"
+                  "message": "worker-eta worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "sogyo",
+                        "worker": "worker-beta",
                         "dissent": true
                   },
-                  "message": "Sogyo dissent evidence"
+                  "message": "worker-beta dissent evidence"
             },
             {
                   "path": "a2aEvidence.finalizerSynthesis",
@@ -1403,8 +1403,8 @@
             },
             {
                   "path": "a2aEvidence.supplementalRetryRound",
-                  "equals": "a2a-finalpacket-jingun-retry-20260610T123834Z",
-                  "message": "supplemental Jingun retry round"
+                  "equals": "a2a-finalpacket-worker-zeta-retry-20260610T123834Z",
+                  "message": "supplemental worker-zeta retry round"
             },
             {
                   "path": "a2aEvidence.sourceOnly",
@@ -1424,62 +1424,62 @@
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "sogyo",
+                        "worker": "worker-beta",
                         "team": "Team1",
                         "analysisStatus": "done",
                         "taskId": "83607748-813f-47c9-a9de-edab7e44cad2"
                   },
-                  "message": "sogyo A2A worker evidence"
+                  "message": "worker-beta A2A worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "nosuk",
+                        "worker": "worker-alpha",
                         "team": "Team1",
                         "analysisStatus": "done",
                         "taskId": "04f8b5b0-bf19-471b-9794-e87647f83ca9"
                   },
-                  "message": "nosuk A2A worker evidence"
+                  "message": "worker-alpha A2A worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "bangtong",
+                        "worker": "worker-gamma",
                         "team": "Team1",
                         "analysisStatus": "done",
                         "taskId": "5fc18add-d580-4bec-940b-42c924148011"
                   },
-                  "message": "bangtong A2A worker evidence"
+                  "message": "worker-gamma A2A worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "dungae",
+                        "worker": "worker-epsilon",
                         "team": "Team2",
                         "analysisStatus": "done",
                         "taskId": "506d9d8a-d652-495c-bc7c-75da1aba6425"
                   },
-                  "message": "dungae A2A worker evidence"
+                  "message": "worker-epsilon A2A worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "jingun",
+                        "worker": "worker-zeta",
                         "team": "Team2",
                         "analysisStatus": "done",
                         "taskId": "8abf24cb-4a91-4126-8b86-98e5a252a26f"
                   },
-                  "message": "jingun A2A worker evidence"
+                  "message": "worker-zeta A2A worker evidence"
             },
             {
                   "path": "a2aEvidence.workers",
                   "arraySome": {
-                        "worker": "soonwook",
+                        "worker": "worker-eta",
                         "team": "Team2",
                         "analysisStatus": "done",
                         "taskId": "0c5e41be-fe6d-4d78-aaf8-a903f9ad1d9b"
                   },
-                  "message": "soonwook A2A worker evidence"
+                  "message": "worker-eta A2A worker evidence"
             },
             {
                   "path": "priorPackets.activeDriftCloseoutPr",
@@ -2280,7 +2280,7 @@
             },
             {
                   "path": "executionPacket.rollbackOwner",
-                  "matches": "seoseo finalizer",
+                  "matches": "broker-alpha finalizer",
                   "message": "rollback owner"
             },
             {
@@ -3255,92 +3255,92 @@
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "sogyo",
-                        "broker": "seoseo",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-sogyo",
+                        "worker": "worker-beta",
+                        "broker": "broker-alpha",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-beta",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence sogyo"
+                  "message": "worker evidence worker-beta"
             },
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "nosuk",
-                        "broker": "seoseo",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-nosuk",
+                        "worker": "worker-alpha",
+                        "broker": "broker-alpha",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-alpha",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence nosuk"
+                  "message": "worker evidence worker-alpha"
             },
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "bangtong",
-                        "broker": "seoseo",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-bangtong",
+                        "worker": "worker-gamma",
+                        "broker": "broker-alpha",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-gamma",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence bangtong"
+                  "message": "worker evidence worker-gamma"
             },
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "dungae",
-                        "broker": "gwakga",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-dungae",
+                        "worker": "worker-epsilon",
+                        "broker": "broker-beta",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-epsilon",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence dungae"
+                  "message": "worker evidence worker-epsilon"
             },
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "jingun",
-                        "broker": "gwakga",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-jingun",
+                        "worker": "worker-zeta",
+                        "broker": "broker-beta",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-zeta",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence jingun"
+                  "message": "worker evidence worker-zeta"
             },
             {
                   "path": "workerEvidence",
                   "arraySome": {
-                        "worker": "soonwook",
-                        "broker": "gwakga",
-                        "taskId": "a2a-splitdisposition-20260610T110759Z-soonwook",
+                        "worker": "worker-eta",
+                        "broker": "broker-beta",
+                        "taskId": "a2a-splitdisposition-20260610T110759Z-worker-eta",
                         "status": "succeeded"
                   },
-                  "message": "worker evidence soonwook"
+                  "message": "worker evidence worker-eta"
             },
             {
                   "path": "workerEvidence.0.summary",
                   "minLength": 21,
-                  "message": "worker summary length sogyo"
+                  "message": "worker summary length worker-beta"
             },
             {
                   "path": "workerEvidence.1.summary",
                   "minLength": 21,
-                  "message": "worker summary length nosuk"
+                  "message": "worker summary length worker-alpha"
             },
             {
                   "path": "workerEvidence.2.summary",
                   "minLength": 21,
-                  "message": "worker summary length bangtong"
+                  "message": "worker summary length worker-gamma"
             },
             {
                   "path": "workerEvidence.3.summary",
                   "minLength": 21,
-                  "message": "worker summary length dungae"
+                  "message": "worker summary length worker-epsilon"
             },
             {
                   "path": "workerEvidence.4.summary",
                   "minLength": 21,
-                  "message": "worker summary length jingun"
+                  "message": "worker summary length worker-zeta"
             },
             {
                   "path": "workerEvidence.5.summary",
                   "minLength": 21,
-                  "message": "worker summary length soonwook"
+                  "message": "worker summary length worker-eta"
             },
             {
                   "path": "acceptedRiskRegister.trackedTreeImportNotHistoryPreserving",
@@ -3644,33 +3644,33 @@
             },
             {
                   "source": "doc",
-                  "includes": "`sogyo`",
-                  "message": "doc worker sogyo"
+                  "includes": "`worker-beta`",
+                  "message": "doc worker worker-beta"
             },
             {
                   "source": "doc",
-                  "includes": "`nosuk`",
-                  "message": "doc worker nosuk"
+                  "includes": "`worker-alpha`",
+                  "message": "doc worker worker-alpha"
             },
             {
                   "source": "doc",
-                  "includes": "`bangtong`",
-                  "message": "doc worker bangtong"
+                  "includes": "`worker-gamma`",
+                  "message": "doc worker worker-gamma"
             },
             {
                   "source": "doc",
-                  "includes": "`dungae`",
-                  "message": "doc worker dungae"
+                  "includes": "`worker-epsilon`",
+                  "message": "doc worker worker-epsilon"
             },
             {
                   "source": "doc",
-                  "includes": "`jingun`",
-                  "message": "doc worker jingun"
+                  "includes": "`worker-zeta`",
+                  "message": "doc worker worker-zeta"
             },
             {
                   "source": "doc",
-                  "includes": "`soonwook`",
-                  "message": "doc worker soonwook"
+                  "includes": "`worker-eta`",
+                  "message": "doc worker worker-eta"
             },
             {
                   "source": "doc",
@@ -6270,8 +6270,8 @@
             },
             {
                   "path": "route.finalizer",
-                  "equals": "seoseo",
-                  "message": "finalizer seoseo"
+                  "equals": "broker-alpha",
+                  "message": "finalizer broker-alpha"
             },
             {
                   "path": "route.workerMutationAllowed",

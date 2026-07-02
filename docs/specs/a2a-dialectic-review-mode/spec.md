@@ -408,6 +408,6 @@ provides the implementation pattern for A2AD:
 | `json-schema.ts` | JSON Schema for phase input/output validation | Generalized schema under `a2ad/review-schema.ts` |
 | `read-model.ts` | Read model projection from stored task payload | Generalized projection for review packet |
 | `summary.ts` | Headline and decision summary generation | Generalized summary for review outcome |
-| `bangtong.ts` | Thesis agent prompt spec | Reviewer prompt spec |
+| `worker-gamma.ts` | Thesis agent prompt spec | Reviewer prompt spec |
 | `dengae.ts` | Antithesis agent prompt spec | Critic/libero prompt spec |
-| `seoseo.ts` | Synthesis agent prompt spec | Finalizer prompt spec |
+| `broker-alpha.ts` | Synthesis agent prompt spec | Finalizer prompt spec |

@@ -3,7 +3,7 @@
   "contract": "contracts/a2a/embedded-execution-stability-policy.md",
   "description": "Machine-readable fixture for the embedded execution stability policy: container isolation (E1), config domain sanitization (E2), workspace hygiene (E3), session store guard (E4), and post-completion fail-closed checks (E5).",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/838",
-  "originWorker": "Team1/nosuk",
+  "originWorker": "Team1/worker-alpha",
   "targetPackage": "packages/docker-runner/",
   "v0Freeze": {
     "frozenAt": "2026-05-20",

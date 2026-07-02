@@ -3,13 +3,13 @@
 A pure-offline preflight that enforces fleet worker routing before a rollout is
 declared healthy:
 
-- **Team1 → `seoseo` broker**
-- **Team2 → `gwakga` broker**
+- **Team1 → `broker-alpha` broker**
+- **Team2 → `broker-beta` broker**
 
 It exists because, during a fleet rollout, routing drifted: some workers ran the
-old `openclaw-a2a-worker` service instead of `a2a-hermes-worker`, node `yukson`
+old `openclaw-a2a-worker` service instead of `a2a-hermes-worker`, node `worker-delta`
 used `/opt/openclaw-a2a-worker` instead of `/opt/a2a-broker-worker`, Team2 was
-briefly mispointed at the `seoseo` broker, and `EDGE_SECRET` mismatches silently
+briefly mispointed at the `broker-alpha` broker, and `EDGE_SECRET` mismatches silently
 left workers polling the wrong broker.
 
 The guard validates **operator-collected evidence**. It runs no live SSH, opens
@@ -35,13 +35,13 @@ npm run fleet:routing-guard -- collect
 ```json
 {
   "teams": {
-    "team1": { "broker": "seoseo", "brokerUrl": "https://seoseo.broker.internal", "edgeSecretSha256": "<64-hex>" },
-    "team2": { "broker": "gwakga", "brokerUrl": "https://gwakga.broker.internal", "edgeSecretSha256": "<64-hex>" }
+    "team1": { "broker": "broker-alpha", "brokerUrl": "https://broker-alpha.broker.internal", "edgeSecretSha256": "<64-hex>" },
+    "team2": { "broker": "broker-beta", "brokerUrl": "https://broker-beta.broker.internal", "edgeSecretSha256": "<64-hex>" }
   },
   "nodes": {
-    "yukson":   { "team": "team1" },
-    "bangtong": { "team": "team1" },
-    "soonwook": { "team": "team2", "exemptRoot": true }
+    "worker-delta":   { "team": "team1" },
+    "worker-gamma": { "team": "team1" },
+    "worker-eta": { "team": "team2", "exemptRoot": true }
   },
   "expectedService": "a2a-hermes-worker",
   "expectedRoot": "/opt/a2a-broker-worker",
@@ -62,8 +62,8 @@ An array of entries, one per node, produced by the `collect` one-liner:
 ```json
 [
   {
-    "node": "yukson",
-    "brokerUrl": "https://seoseo.broker.internal",
+    "node": "worker-delta",
+    "brokerUrl": "https://broker-alpha.broker.internal",
     "edgeSecretSha256": "<64-hex>",
     "service": "a2a-hermes-worker",
     "root": "/opt/a2a-broker-worker",

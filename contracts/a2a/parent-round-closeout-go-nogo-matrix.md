@@ -24,7 +24,7 @@ evidence must accompany each outcome.
 - **Broker of record**: broker that owns the specific child lane's lifecycle, worker assignment,
   and terminal evidence production. Metadata field: `brokerOfRecordId`.
 - **Worker**: execution surface that produces a terminal PR/Done/Block result for one lane.
-- **Seoseo**: designated finalizer broker. No other broker may close the parent issue.
+- **broker-alpha**: designated finalizer broker. No other broker may close the parent issue.
 
 ## State machine
 
@@ -43,7 +43,7 @@ evidence must accompany each outcome.
                     ┌────────────┐                                          │
                     │ CANDIDATE  │── Go decision ──► ┌──────────┐           │
                     └─────┬──────┘                    │ CLOSEOUT │           │
-                          │                           │(Seoseo   │           │
+                          │                           │(broker-alpha   │           │
                           │ No-Go: missing lanes,     │ only)    │           │
                           │ pending evidence,         └──────────┘           │
                           │ or blocked projection                           │
@@ -58,7 +58,7 @@ evidence must accompany each outcome.
 |---|---|---|
 | `ACTIVE` | Parent round is open; child lanes are being dispatched and worked. `parentRoundProgress < parentRoundTotal`. | `CANDIDATE`, `BLOCKED` |
 | `CANDIDATE` | All N lanes have terminal results (PR/Done/Block/cancelled). The parent round is eligible for closeout evaluation. | `CLOSEOUT`, `WAITING`, `BLOCKED` |
-| `CLOSEOUT` | Seoseo has approved and executed the closeout: a Go/comment/close action on the parent issue. Terminal. | — |
+| `CLOSEOUT` | broker-alpha has approved and executed the closeout: a Go/comment/close action on the parent issue. Terminal. | — |
 | `WAITING` | At CANDIDATE, the go/no-go matrix returned No-Go. The round waits for missing lanes, retries, or operator intervention. | `ACTIVE` |
 | `BLOCKED` | At any state, the go/no-go matrix returned Blocked (unsafe evidence, permission failure, or redaction violation). Terminal. | — |
 
@@ -80,12 +80,12 @@ or are explicitly cancelled), the parent round transitions from `ACTIVE` to `CAN
 
 1. Verify `parentRoundProgress >= parentRoundTotal` (all lanes accounted for).
 2. Compute the go/no-go matrix from all lane projections.
-3. If Go → Seoseo (and only Seoseo) may close the parent issue:
+3. If Go → broker-alpha (and only broker-alpha) may close the parent issue:
    a. Post a Go decision comment with the matrix summary.
    b. Close the parent issue.
    c. Transition to `CLOSEOUT`.
 4. If No-Go → transition to `WAITING`. The round stay open for retries or new lanes.
-5. If Blocked → transition to `BLOCKED`. Seoseo reviews and either overrides (Go) or leaves
+5. If Blocked → transition to `BLOCKED`. broker-alpha reviews and either overrides (Go) or leaves
    blocked.
 
 ## Go/No-Go matrix
@@ -94,7 +94,7 @@ or are explicitly cancelled), the parent round transitions from `ACTIVE` to `CAN
 
 | Output | Meaning |
 |---|---|
-| `GO` | All gates pass; the parent round may be closed by Seoseo. |
+| `GO` | All gates pass; the parent round may be closed by broker-alpha. |
 | `NO_GO` | One or more gates have not passed, but the round is not unsafe. Wait for resolution. |
 | `BLOCKED` | A gate detected unsafe evidence, permission failure, or redaction violation. Requires operator review. |
 
@@ -114,7 +114,7 @@ decision to `BLOCKED`. A single `FAIL` with no `BLOCKED` gates sets the overall 
 | G6 | **No live action leak** | Any lane's terminal evidence shows `liveProviderSend: true`, `terminalOutboxAckMutated: true`, `isApproval: true`, `isTerminalAck: true`, `isReadReceipt: true`, or an unapproved production-side effect | — | Yes (read-only check of evidence booleans) |
 | G7 | **GitHub permission check** | — | GitHub API returns 403 on comment post or issue close attempt | No — always requires operator approval |
 | G8 | **Idempotency check** | Duplicate closeout already recorded with the same `parentRoundId` | Conflicting idempotency key (same key, different payload) | Yes (read-only check); conflict requires operator |
-| G9 | **Seoseo finalizer** | The broker attempting closeout is not Seoseo | — | Always operator-gated; Seoseo is never automated |
+| G9 | **broker-alpha finalizer** | The broker attempting closeout is not broker-alpha | — | Always operator-gated; broker-alpha is never automated |
 | G10 | **Cross-lane projection status** | Any lane's parent projection has state `pending` or `conflict` | Any lane's parent projection has state `blocked` | Yes (read-only check); blocked requires operator |
 
 ### Decision algorithm
@@ -128,7 +128,7 @@ else:
     decision = GO
 
 default decision (no input / startup): NO_GO
-source-only execution mode: NO_GO (must be overridden by Seoseo operator decision)
+source-only execution mode: NO_GO (must be overridden by broker-alpha operator decision)
 ```
 
 ### Gate actionibility matrix
@@ -143,7 +143,7 @@ source-only execution mode: NO_GO (must be overridden by Seoseo operator decisio
 | G6 No live action leak | Yes | Yes | No | No (live action leak is permanent fail) |
 | G7 GitHub permission check | Yes (read-only 403 probe) | Yes | Yes (403 = auto-block) | Yes (operator must review and approve) |
 | G8 Idempotency check | Yes | Yes | Yes (conflict = auto-block) | Yes (operator reviews conflict) |
-| G9 Seoseo finalizer | Yes (read-only check) | Yes | No | Only Seoseo can close; non-Seoseo cannot override |
+| G9 broker-alpha finalizer | Yes (read-only check) | Yes | No | Only broker-alpha can close; non-broker-alpha cannot override |
 | G10 Cross-lane projection status | Yes | Yes | Yes (blocked projection) | Yes (operator reviews blocked lane) |
 
 ## Required metadata
@@ -268,7 +268,7 @@ to the nearest hour (to allow re-evaluation within the same hour window without 
 | Multiple lanes post PR/Done/Block at the same time | Each projection has its own `projectionKey`. The parent aggregation ledger deduplicates by `projectionKey`. No duplicate parent notifications. |
 | Same lane reaches terminal twice (replay) | Replay with identical `projectionKey` returns existing projection; `newProjectionCreated: false`. |
 | Parent round reaches CANDIDATE multiple times | Only the first evaluation that returns Go produces a closeout action (comment + close). All subsequent evaluations are suppressed by the idempotency key. |
-| Same parent round evaluated by different brokers | Each broker has its own idempotency key scope (includes `brokerOfRecordId`). Only Seoseo's evaluation may result in closeout. Other brokers' evaluations are informational only. |
+| Same parent round evaluated by different brokers | Each broker has its own idempotency key scope (includes `brokerOfRecordId`). Only broker-alpha's evaluation may result in closeout. Other brokers' evaluations are informational only. |
 | GitHub webhook re-delivers the same event | The idempotency key is computed from the event payload, not the webhook delivery id. Same event → same key → suppressed. |
 | Broker restarts mid-evaluation | The idempotency key check is performed atomically before any irreversible action. A restart causes the evaluation to retry with the same key; the existing record is returned. |
 
@@ -366,7 +366,7 @@ approval gate requirement from #437 (a2a-plane#437, internal tracker private).
 
 - Operator wants a human-readable draft before committing to close.
 - Preflight review of the closeout evidence and matrix decision.
-- Cross-team visibility before the finalizer (Seoseo) closes the issue.
+- Cross-team visibility before the finalizer (broker-alpha) closes the issue.
 - Catching permission errors before attempting full closeout.
 
 ### What comment_only does
@@ -505,7 +505,7 @@ Any evidence showing any of these flags as `true` causes gate G6 (no live action
    disclosure, automatic PR merge, or parent issue close.
 3. **comment_only gate**: Even in comment_only mode, the draft must be operator-visible before
    posting. No close/merge/ACK/replay/DB mutation/restart/deploy is performed.
-4. **Seoseo finalizer**: Only Seoseo may close the parent issue. No other broker, worker, or
+4. **broker-alpha finalizer**: Only broker-alpha may close the parent issue. No other broker, worker, or
    automated process may issue the close command.
 5. **Provider accepted/message-id evidence**: Provider accepted/message-id evidence is
    accepted-send only (receipt level 1). It is never read/visibility proof (level 3), terminal
@@ -515,7 +515,7 @@ Any evidence showing any of these flags as `true` causes gate G6 (no live action
    comment, or artifact evidence. If detected, block the closeout with exact repo-relative
    offending paths.
 7. **Default NO_GO**: The default decision without explicit input is `NO_GO`. Source-only
-   execution mode is `NO_GO` until overridden by a Seoseo operator decision.
+   execution mode is `NO_GO` until overridden by a broker-alpha operator decision.
 
 ## Activation plan (approval-gated, not executed)
 
@@ -530,4 +530,4 @@ the future activation plan:
 | A4 | Enable the closeout evaluator in a staging environment with read-only mode | Staging config | Yes (operator approval naming staging env) |
 | A5 | Execute one staging round: dispatch synthetic lanes, verify CANDIDATE→Go matrix, verify the evaluator produces correct evidence but does not close the issue | One-shot staging run | Yes (separate approval naming task id and round id) |
 | A6 | Verify no live actions, no unapproved GitHub API calls outside the synthetic round | Audit | No (read-only post-action check) |
-| A7 | Present GO decision to Seoseo operator for production activation | — | Yes (explicit GO approval naming production round, scope, and provider target) |
+| A7 | Present GO decision to broker-alpha operator for production activation | — | Yes (explicit GO approval naming production round, scope, and provider target) |

@@ -4,7 +4,7 @@
 > and terminal evidence relay are frozen as the Contract v0 handoff baseline.
 > Changes to envelope fields or peer permission scopes require a v0→v1 plan.
 
-This contract defines the safe handoff boundary between the Seoseo/Team1 broker and the Gwakga/Team2 broker.
+This contract defines the safe handoff boundary between the broker-alpha/Team1 broker and the broker-beta/Team2 broker.
 
 It is intentionally peer-to-peer: brokers exchange handoff envelopes, status, and redacted terminal evidence. They do **not** register each other as workers, attach the other team's workers, or gain normal task execution rights on the peer broker.
 
@@ -30,9 +30,9 @@ A peer missing the required scope fails closed before task creation or evidence 
 
 ```json
 {
-  "sourceBrokerId": "seoseo",
-  "destinationBrokerId": "gwakga",
-  "brokerOfRecord": "gwakga",
+  "sourceBrokerId": "broker-alpha",
+  "destinationBrokerId": "broker-beta",
+  "brokerOfRecord": "broker-beta",
   "idempotencyKey": "issue-23:team2:work-slice",
   "sourceIssueUrl": "a2a-plane#23 (internal tracker, private)",
   "sourceTaskUrl": "a2a-plane#23 (internal tracker, private)#issuecomment-redacted",
@@ -104,7 +104,7 @@ Allowed terminal kinds are PR, Done, and Block. Evidence relay does not ACK term
 
 - Keep the repository private.
 - No repository visibility change, deploy, Gateway/broker/worker restart, production DB mutation, live provider/Telegram message, terminal-outbox ACK, secret rotation/disclosure, history rewrite, or force-push without explicit operator approval.
-- No cross-worker registration: Seoseo does not register Gwakga as a worker, Gwakga does not register Seoseo as a worker, and Team2 workers are not attached to the Seoseo broker.
+- No cross-worker registration: broker-alpha does not register broker-beta as a worker, broker-beta does not register broker-alpha as a worker, and Team2 workers are not attached to the broker-alpha broker.
 - Evidence must be redacted and bounded; no raw session dumps or OpenClaw runtime/bootstrap files.
 - Parent Terminal Brief metadata in handoff envelopes is symmetric: either broker may be the origin. The destination broker must respect `parentBrokerId` as the notification renderer, even when it differs from `originBrokerId`.
 

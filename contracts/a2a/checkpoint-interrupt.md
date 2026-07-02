@@ -187,7 +187,7 @@ state. It is a debugging and compliance artifact, not a production database view
 {
   "taskId": "task-redacted-example",
   "idempotencyKey": "issue-NNN:teamN:scope",
-  "brokerOfRecord": "gwakga",
+  "brokerOfRecord": "broker-beta",
   "events": [
     {
       "sequence": 1,

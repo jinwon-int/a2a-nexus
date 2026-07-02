@@ -13,8 +13,8 @@ or implying production mutation.
 
 Parent round: [a2a-broker#636](https://github.com/jinwon-int/a2a-broker/issues/636)
 Plane lane: a2a-plane#327 (a2a-plane#327, internal tracker private)
-Origin coordinator: Gwakga
-Receiving broker for this Team1 task: Seoseo
+Origin coordinator: broker-beta
+Receiving broker for this Team1 task: broker-alpha
 Snapshot: `2026-05-15T08:18Z`
 
 This contract builds on the existing [terminal result semantics](./terminal-semantics.md),

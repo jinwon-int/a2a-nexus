@@ -22,9 +22,25 @@ test('private a2a-plane URL fails closed', () => {
 });
 
 test('internal identifiers warn by default and fail in strict mode', () => {
-  const warn = run({ 'docs/operators.md': 'seoseo broker placeholder' });
+  const warn = run({ 'docs/operators.md': 'broker-alpha broker placeholder' });
   assert.equal(warn.status, 0, warn.stderr);
   assert.match(warn.stdout, /internal-node-identifier/);
-  const fail = run({ 'docs/operators.md': 'seoseo broker placeholder' }, { PUBLIC_READINESS_STRICT_INTERNAL: '1' });
+  const fail = run({ 'docs/operators.md': 'broker-alpha broker placeholder' }, { PUBLIC_READINESS_STRICT_INTERNAL: '1' });
   assert.notEqual(fail.status, 0);
+});
+
+
+test('operator honorific variants fail closed', () => {
+  const r = run({ 'docs/public-readiness.md': '\uC9C4\uC6D0\uB2D8 approval placeholder' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /operator-personal-name/);
+});
+
+test('internal identifier baseline ratchet fails when warnings exceed baseline', () => {
+  const r = run({
+    'docs/operators.md': 'broker-alpha broker placeholder',
+    'docs/readiness/public-readiness-baseline.json': JSON.stringify({ internalNodeIdentifier: { warningCount: 0, fileCount: 0 } }),
+  });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /internal-node-baseline-exceeded/);
 });

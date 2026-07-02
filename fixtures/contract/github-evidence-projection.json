@@ -10,8 +10,8 @@
   "runId": "a2a-terminal-brief-github-evidence-20260511T000448Z",
   "parentIssue": "a2a-plane#204 (internal tracker, private)",
   "issue": "a2a-plane#205 (internal tracker, private)",
-  "team": "team1-bangtong",
-  "brokerOfRecord": "gwakga",
+  "team": "team1-worker-gamma",
+  "brokerOfRecord": "broker-beta",
   "evidenceCommentKinds": ["start", "pr", "done", "block"],
   "nonAckSignals": [
     "githubCommentUrl",
@@ -38,7 +38,7 @@
       "name": "start-comment-is-evidence-ledger-not-ack",
       "given": {
         "evidenceKind": "start",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection",
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection",
         "envelopeHash": "sha256:fixture-github-evidence-v1",
         "issueUrl": "a2a-plane#205 (internal tracker, private)"
       },
@@ -67,7 +67,7 @@
       "name": "pr-comment-is-evidence-not-approval",
       "given": {
         "evidenceKind": "pr",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection",
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection",
         "envelopeHash": "sha256:fixture-github-evidence-v1",
         "prUrl": "a2a-plane (internal tracker, private)pull/redacted"
       },
@@ -98,12 +98,12 @@
       "name": "duplicate-evidence-key-returns-existing-comment",
       "given": {
         "existingCommentUrl": "a2a-plane#205 (internal tracker, private)#issuecomment-fixture-start",
-        "existingEvidenceKey": "issue-205:team1-bangtong:github-evidence-projection:sha256:fixture-github-evidence-v1:start"
+        "existingEvidenceKey": "issue-205:team1-worker-gamma:github-evidence-projection:sha256:fixture-github-evidence-v1:start"
       },
       "when": {
         "action": "post-evidence-comment",
         "evidenceKind": "start",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection",
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection",
         "envelopeHash": "sha256:fixture-github-evidence-v1"
       },
       "then": {
@@ -123,13 +123,13 @@
       "name": "same-key-different-payload-conflicts",
       "given": {
         "existingCommentUrl": "a2a-plane#205 (internal tracker, private)#issuecomment-fixture-start",
-        "existingEvidenceKey": "issue-205:team1-bangtong:github-evidence-projection:sha256:fixture-github-evidence-v1:start",
+        "existingEvidenceKey": "issue-205:team1-worker-gamma:github-evidence-projection:sha256:fixture-github-evidence-v1:start",
         "existingSummary": "Start: original message"
       },
       "when": {
         "action": "post-evidence-comment",
         "evidenceKind": "start",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection",
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection",
         "envelopeHash": "sha256:different-fixture-envelope",
         "summary": "Start: different message"
       },
@@ -161,7 +161,7 @@
       },
       "when": {
         "action": "replay-terminal-task",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection"
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection"
       },
       "then": {
         "newCommentsPosted": 0,
@@ -183,7 +183,7 @@
       "name": "block-comment-is-evidence-not-terminal-ack",
       "given": {
         "evidenceKind": "block",
-        "idempotencyKey": "issue-205:team1-bangtong:github-evidence-projection",
+        "idempotencyKey": "issue-205:team1-worker-gamma:github-evidence-projection",
         "envelopeHash": "sha256:fixture-github-evidence-v1",
         "blockerCategory": "safety"
       },

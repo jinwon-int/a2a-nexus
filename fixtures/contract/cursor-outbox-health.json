@@ -79,9 +79,9 @@
       "description": "Parent-owned projection visible on child broker. Does not show as actionable blocker.",
       "given": {
         "projections": [
-          { "parentBrokerId": "seoseo", "childBrokerId": "gwakga", "projectionState": "projected" }
+          { "parentBrokerId": "broker-alpha", "childBrokerId": "broker-beta", "projectionState": "projected" }
         ],
-        "viewingBroker": "gwakga"
+        "viewingBroker": "broker-beta"
       },
       "when": {
         "operation": "inbox.query"
@@ -97,7 +97,7 @@
       "name": "duplicate-replay-suppressed-after-restart",
       "description": "Duplicate outbox row after restart returns existing projection, does not create new notification.",
       "given": {
-        "existingProjectionKey": "proj-round-001-seoseo-task-abc-pr",
+        "existingProjectionKey": "proj-round-001-broker-alpha-task-abc-pr",
         "existingPayload": "identical",
         "brokerRestartOccurred": true
       },
@@ -115,7 +115,7 @@
       "name": "outbox-health-summary-produces-counts",
       "description": "Per-broker outbox health summary produces all required counts without live side effects.",
       "given": {
-        "brokerId": "seoseo",
+        "brokerId": "broker-alpha",
         "totalOutboxRows": 25,
         "ackedRows": 15,
         "rawUnacked": 10,

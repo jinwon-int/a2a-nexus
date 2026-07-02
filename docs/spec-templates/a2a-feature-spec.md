@@ -54,6 +54,14 @@ What operational, developer, broker, worker, or operator problem are we solving?
 - Could this overload a broker Telegram/DM foreground session?
 - What work will be detached into subagents, TaskFlow, scripts, or evidence workers?
 
+## Verification design
+
+- What oracle/check proves the change?
+- Is the oracle independent from the implementation lane? If not, what finalizer coverage review breaks the loop?
+- For new gates/scanners/CI wiring, what red-to-green evidence will be captured?
+- For removal/cleanup tasks, where is the discovery inventory recorded before edits begin?
+- For multi-stage work, which follow-up issues/tasks materialize later stages before closeout?
+
 ## Evidence contract
 
 Each worker/finalizer must produce the relevant evidence packet:

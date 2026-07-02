@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({
   options: {
-    spec: { type: 'string', default: 'docs/approval-rehearsal/team2-soonwook-source-public-approval-rehearsal-schema.json' },
+    spec: { type: 'string', default: 'docs/approval-rehearsal/team2-worker-eta-source-public-approval-rehearsal-schema.json' },
     input: { type: 'string' },
     format: { type: 'string', default: 'json' },
   },

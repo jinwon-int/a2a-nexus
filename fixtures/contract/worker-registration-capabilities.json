@@ -23,14 +23,14 @@
       "currentTaskId": null
     },
     {
-      "workerName": "worker-jingun-second-worker",
+      "workerName": "worker-worker-zeta-second-worker",
       "capabilities": ["contracts", "compatibility-proof", "repo-inspection", "tests"],
       "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-10T00:00:00Z",
       "currentTaskId": "task-second-worker-compatibility-152"
     },
     {
-      "workerName": "worker-soonwook-second-reference",
+      "workerName": "worker-worker-eta-second-reference",
       "capabilities": ["replay-safety", "no-duplicate-proof", "trace-redaction", "fixtures"],
       "policyVersion": "a2a-nexus-safety-v1",
       "lastSeenAt": "2026-05-09T16:51:08Z",
@@ -39,11 +39,11 @@
   ],
   "compatibilityProofs": [
     {
-      "proofId": "second-worker-compatibility-jingun-20260510",
+      "proofId": "second-worker-compatibility-worker-zeta-20260510",
       "issue": "a2a-plane#152 (internal tracker, private)",
       "round": "a2a-vnext-contract-smoke-crossbroker-20260510",
-      "brokerOfRecord": "gwakga",
-      "workerName": "worker-jingun-second-worker",
+      "brokerOfRecord": "broker-beta",
+      "workerName": "worker-worker-zeta-second-worker",
       "proofType": "worker-registration-fixture",
       "validationCommand": "node test/conformance/check-contract-fixtures.mjs",
       "requiresPrivateTopology": false,
@@ -51,12 +51,12 @@
       "terminalAckMutation": false
     },
     {
-      "proofId": "second-worker-replay-trace-soonwook-20260509",
+      "proofId": "second-worker-replay-trace-worker-eta-20260509",
       "issue": "a2a-plane#168 (internal tracker, private)",
       "parentIssue": "a2a-plane#163 (internal tracker, private)",
       "run": "a2a-public-readiness-next-20260509T165108Z",
-      "brokerOfRecord": "gwakga",
-      "workerName": "worker-soonwook-second-reference",
+      "brokerOfRecord": "broker-beta",
+      "workerName": "worker-worker-eta-second-reference",
       "proofType": "replay-no-duplicate-fixture",
       "validationCommand": "node test/conformance/check-contract-fixtures.mjs",
       "requiresPrivateTopology": false,

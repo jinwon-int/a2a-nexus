@@ -1,8 +1,8 @@
 {
   "fixtureId": "a2a-nexus.contract.worker-card-team2-analysis.v1",
-  "workerId": "dungae",
+  "workerId": "worker-epsilon",
   "teamId": "team2",
-  "homeBrokerId": "gwakga",
+  "homeBrokerId": "broker-beta",
   "workerPlane": "docker-runner",
   "supportedModes": [
     "analysis-only",

@@ -11,7 +11,7 @@
 Parent issue: [a2a-broker#844](https://github.com/jinwon-int/a2a-broker/issues/844)
 Child issue: a2a-plane#402 (a2a-plane#402, internal tracker private)
 Parent round: `a2a-team1-auto-closeout-action-reconcile-20260520T180955Z` (4/4)
-Worker: `nosuk`
+Worker: `worker-alpha`
 
 This contract builds on the existing:
 - [Parent-round closeout go/no-go matrix](./parent-round-closeout-go-nogo-matrix.md)
@@ -64,7 +64,7 @@ It covers:
 | **Go/no-go matrix** | Plane-level evaluation (`parent-round-closeout-go-nogo-matrix.md`) that determines if a parent round passes all gates. |
 | **Action reconciliation layer** | The broker/plane coordination layer defined by this contract. Produces a reconciliation record that maps go/no-go decisions to concrete closeout actions. |
 | **Operator** | Human who reviews reconciliation records and grants or denies explicit approval for each reconciliation action batch. |
-| **Broker of record** | The broker instance responsible for executing approved closeout actions (seoseo for Team1, gwakga for Team2). |
+| **Broker of record** | The broker instance responsible for executing approved closeout actions (broker-alpha for Team1, broker-beta for Team2). |
 
 ### 1.4 Action types
 
@@ -167,7 +167,7 @@ Every reconciliation action carries an idempotency key of the form:
 reconcile:<parentRoundId>:<actionKind>:<brokerOfRecord>
 ```
 
-Example: `reconcile:a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z:comment_post:seoseo`
+Example: `reconcile:a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z:comment_post:broker-alpha`
 
 The same parent round + action kind + broker of record always produces the same key.
 
@@ -343,7 +343,7 @@ A PR/Done closeout for this contract must provide:
 | Canary gate spec path | `docs/specs/a2a-action-reconciliation/canary-gate.md` |
 | Runbook path | `docs/specs/a2a-action-reconciliation/runbook.md` |
 | `parentRoundId` used in synthetic proof | `a2a-team1-auto-closeout-action-reconcile-20260520T180955Z` |
-| Broker of record for the synthetic proof | `seoseo` |
+| Broker of record for the synthetic proof | `broker-alpha` |
 | Redacted conformance output | Validation script output for all 8 canary scenarios |
 | All gates pass claim | Matrix showing RECONCILED → APPROVED with operator approval |
 | NO_GO / BLOCKED blocking proof | Matrix showing actions stay PENDING when matrix says NO_GO or BLOCKED |

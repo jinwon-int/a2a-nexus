@@ -1,19 +1,19 @@
 # A2A Team1 Dispatch-Wrapper Operator Runbook
 
-> **Operator runbook** for the Seoseo-operated Team1 dispatch wrapper (`team1-dispatch`).
+> **Operator runbook** for the broker-alpha-operated Team1 dispatch wrapper (`team1-dispatch`).
 > Covers round spec shape, parent-round metadata propagation, dry-run vs execute mode,
 > approval boundaries, sanitized run record, idempotency expectations, worker-online
 > preflight, read-only follow-up check, and finalizer closeout handoff.
 >
 > **Lane issue:** a2a-plane#404 (a2a-plane#404, internal tracker private)
 > **Parent tracker:** [a2a-broker#847](https://github.com/jinwon-int/a2a-broker/issues/847)
-> **Broker/finalizer of record:** `seoseo`
+> **Broker/finalizer of record:** `broker-alpha`
 
 ---
 
 ## 1. Overview
 
-The Team1 dispatch wrapper is a deterministic script/command that reduces the Seoseo
+The Team1 dispatch wrapper is a deterministic script/command that reduces the broker-alpha
 operator's front-end orchestration friction for A2A Team1 parent rounds. It replaces
 the manual 4-step process (create parent issue, create 4 child issues, add metadata
 comments, dispatch broker `/tasks` calls) with a single command invocation.
@@ -66,9 +66,9 @@ exactly four child lanes by default.
   "$schemaVersion": "a2a.team1.dispatch-round.v1",
   "runId": "a2a-team1-<descriptor>-<timestamp>",
   "team": "team1",
-  "brokerOfRecordId": "seoseo",
-  "originBrokerId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "brokerOfRecordId": "broker-alpha",
+  "originBrokerId": "broker-alpha",
+  "parentBrokerId": "broker-alpha",
   "parentTitle": "Short parent round title",
   "parentBody": "Parent GitHub issue body (markdown)",
   "policyContext": "source-only",
@@ -144,9 +144,9 @@ The wrapper enforces that these fields are present and non-empty before any writ
   "parentRoundTotal": <lane count>,
   "parentRoundOrder": <1-based lane index>,
   "parentRoundProgress": "<order>/<total>",
-  "originBrokerId": "seoseo",
-  "brokerOfRecordId": "seoseo",
-  "parentBrokerId": "seoseo"
+  "originBrokerId": "broker-alpha",
+  "brokerOfRecordId": "broker-alpha",
+  "parentBrokerId": "broker-alpha"
 }
 ```
 
@@ -309,10 +309,10 @@ The expected workers for Team1 are:
 
 | Worker | Role | Capability |
 |---|---|---|
-| `bangtong` | Broker source lane | GitHub patch, docs, typescript |
-| `sogyo` | Plugin source lane | OpenClaw plugin, typescript |
-| `nosuk` | Runner/libero lane | Docker runner, docs, validation |
-| `yukson` | Sibling validation | Cross-check, validation |
+| `worker-gamma` | Broker source lane | GitHub patch, docs, typescript |
+| `worker-beta` | Plugin source lane | OpenClaw plugin, typescript |
+| `worker-alpha` | Runner/libero lane | Docker runner, docs, validation |
+| `worker-delta` | Sibling validation | Cross-check, validation |
 
 The preflight should verify at least three of four workers show `ok` status
 (one may be intentionally offline for maintenance without blocking the round).
@@ -352,10 +352,10 @@ Each follow-up status comment contains:
 
 | Lane | Worker | Status | Evidence |
 |---|---|---|---|
-| 1/4 | bangtong | running | — |
-| 2/4 | sogyo | pr | PR #123 |
-| 3/4 | nosuk | queued | — |
-| 4/4 | yukson | done | Done |
+| 1/4 | worker-gamma | running | — |
+| 2/4 | worker-beta | pr | PR #123 |
+| 3/4 | worker-alpha | queued | — |
+| 4/4 | worker-delta | done | Done |
 
 3/4 lanes terminal. Follow-up continues every 60s.
 ```
@@ -373,19 +373,19 @@ sanitized JSON run record:
   "runId": "a2a-team1-<descriptor>-<timestamp>",
   "executionMode": "dry-run|execute",
   "policyContext": "source-only",
-  "brokerOfRecordId": "seoseo",
-  "originBrokerId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "brokerOfRecordId": "broker-alpha",
+  "originBrokerId": "broker-alpha",
+  "parentBrokerId": "broker-alpha",
   "parentRoundTotal": 4,
   "parentIssueUrl": "a2a-plane (internal tracker, private)issues/N",
   "startedAt": "<ISO-8601>",
   "completedAt": "<ISO-8601>",
-  "idempotencyKey": "a2a-team1-dispatch:<runId>:seoseo:<timestamp>",
+  "idempotencyKey": "a2a-team1-dispatch:<runId>:broker-alpha:<timestamp>",
   "idempotencyConflict": false,
   "lanes": [
     {
       "order": 1,
-      "worker": "bangtong",
+      "worker": "worker-gamma",
       "repo": "a2a-plane (internal tracker, private)",
       "issueUrl": "a2a-plane (internal tracker, private)issues/N",
       "brokerTaskId": "task-uuid-1",
@@ -395,7 +395,7 @@ sanitized JSON run record:
     }
   ],
   "preflight": {
-    "workerStatus": { "bangtong": "ok", "sogyo": "ok", "nosuk": "ok", "yukson": "ok" },
+    "workerStatus": { "worker-gamma": "ok", "worker-beta": "ok", "worker-alpha": "ok", "worker-delta": "ok" },
     "brokerHealth": true,
     "queueStale": false,
     "specValid": true,
@@ -447,7 +447,7 @@ The run record is written to:
 ### 10.1 Closeout trigger
 
 When all lanes have reached a terminal state (done, pr, blocked, or cancelled),
-the finalizer (`seoseo`) is responsible for parent-round closeout.
+the finalizer (`broker-alpha`) is responsible for parent-round closeout.
 
 ### 10.2 Handoff packet
 
@@ -459,21 +459,21 @@ The wrapper emits a closeout handoff packet containing:
   "parentRoundId": "<runId>",
   "runRecordPath": "/work/artifacts/dispatch-run-record.json",
   "laneStatuses": {
-    "bangtong": { "status": "pr", "evidenceUrl": "https://github.com/.../pull/N" },
-    "sogyo": { "status": "done", "evidenceUrl": "..." },
-    "nosuk": { "status": "pr", "evidenceUrl": "..." },
-    "yukson": { "status": "done", "evidenceUrl": "..." }
+    "worker-gamma": { "status": "pr", "evidenceUrl": "https://github.com/.../pull/N" },
+    "worker-beta": { "status": "done", "evidenceUrl": "..." },
+    "worker-alpha": { "status": "pr", "evidenceUrl": "..." },
+    "worker-delta": { "status": "done", "evidenceUrl": "..." }
   },
   "closeoutRequired": true,
   "closeoutUrl": "https://github.com/jinwon-int/a2a-broker/issues/847",
-  "finalizerId": "seoseo",
+  "finalizerId": "broker-alpha",
   "aggregateDecision": "WAITING"
 }
 ```
 
 ### 10.3 Finalizer responsibilities
 
-The finalizer (`seoseo`) must:
+The finalizer (`broker-alpha`) must:
 
 1. Review all lane evidence (PR URLs, Done comments, Block reasons).
 2. Run the [parent-round closeout go/nogo matrix](#11-closeout-go-nogo-matrix).
@@ -484,7 +484,7 @@ The finalizer (`seoseo`) must:
 
 ### 10.4 Finalizer of record
 
-`seoseo` is the broker/finalizer of record for all Team1 parent rounds.
+`broker-alpha` is the broker/finalizer of record for all Team1 parent rounds.
 No other entity may close the parent issue or render the aggregate decision.
 
 ## 11. Closeout go/nogo matrix
@@ -499,7 +499,7 @@ No other entity may close the parent issue or render the aggregate decision.
 | G6 | No false success | No generic handler accepted pattern | Broker task resultSummary | Block if generic accepted |
 | G7 | Redacted evidence | No secrets, private paths, raw dumps in evidence | Run record, lane comments | Block if secret-like values |
 | G8 | Approval separation | No evidence entry claims approval authority | Issue comment review | Block if approval claimed |
-| G9 | Finalizer of record | Only `seoseo` may close | Closeout comment | Block if non-Seoseo close |
+| G9 | Finalizer of record | Only `broker-alpha` may close | Closeout comment | Block if non-broker-alpha close |
 
 ### 11.1 Aggregate decision
 

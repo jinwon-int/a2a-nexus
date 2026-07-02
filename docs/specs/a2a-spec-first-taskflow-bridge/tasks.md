@@ -6,7 +6,7 @@
 - [x] Implementation plan is linked and accepted for design work.
 - [x] Size classification is recorded: Medium for design-only PR.
 - [x] Approval-sensitive actions are explicitly out of scope.
-- [x] Broker of record / finalizer is identified: Gwakga.
+- [x] Broker of record / finalizer is identified: broker-beta.
 
 ## Design tasks
 

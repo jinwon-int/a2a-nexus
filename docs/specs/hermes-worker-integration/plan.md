@@ -24,8 +24,8 @@ Reason: Phase 1 changes source contracts, broker HTTP surface, docs, and tests. 
 
 ## Execution lane
 
-- [x] Seoseo direct Phase 1 source PR.
-- [x] Seoseo direct Phase 2 reference dry-run package.
+- [x] broker-alpha direct Phase 1 source PR.
+- [x] broker-alpha direct Phase 2 reference dry-run package.
 - [ ] Live Hermes registration/canary.
 
 Why this lane is safe: it modifies local source/docs/tests only and does not touch production broker state.

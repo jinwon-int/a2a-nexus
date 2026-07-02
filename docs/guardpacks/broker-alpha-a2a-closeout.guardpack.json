@@ -1,9 +1,9 @@
 {
   "$schema": "https://a2a-nexus.local/schemas/a2a-guardpack.v1.json",
   "kind": "a2a.guardpack.v1",
-  "name": "seoseo-a2a-closeout",
+  "name": "broker-alpha-a2a-closeout",
   "version": 1,
-  "summary": "Executable guard rules promoted from Seoseo A2A/A2AD closeout skills.",
+  "summary": "Executable guard rules promoted from broker-alpha A2A/A2AD closeout skills.",
   "commands": [
     {
       "name": "manifest",

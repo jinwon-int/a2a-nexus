@@ -6,9 +6,9 @@
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/844",
   "issue": "a2a-plane#402 (internal tracker, private)",
   "run": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
-  "lane": "team1-nosuk",
+  "lane": "team1-worker-alpha",
   "parentRoundId": "a2a-team1-auto-closeout-action-reconcile-20260520T180955Z",
-  "brokerOfRecord": "seoseo",
+  "brokerOfRecord": "broker-alpha",
   "canaryMode": "synthetic",
   "scenarios": [
     {
@@ -23,8 +23,8 @@
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": false
       },
       "when": {
@@ -54,8 +54,8 @@
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": false
       },
       "when": {
@@ -87,8 +87,8 @@
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": false
       },
       "when": {
@@ -119,8 +119,8 @@
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": false,
         "actionsReconciled": true
       },
@@ -149,14 +149,14 @@
             "actionKind": "comment_post",
             "payloadHash": "sha256:0000000000000000000000000000000000000000000000000000terminalEvidence1",
             "existingState": "CONFIRMED",
-            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:broker-alpha"
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": true,
-        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:broker-alpha"
       },
       "when": {
         "operation": "reconciliation.replay"
@@ -183,14 +183,14 @@
             "actionKind": "comment_post",
             "payloadHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffconflictingPayload",
             "existingState": "CONFIRMED",
-            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo"
+            "existingKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:broker-alpha"
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": true,
-        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:seoseo",
+        "replayKey": "reconcile:a2a-team1-auto-closeout-action-reconcile-20260520T180955Z:comment_post:broker-alpha",
         "conflictingPayload": true
       },
       "when": {
@@ -226,8 +226,8 @@
         "gitHubPermissionOk": false,
         "github403Operation": "issue_comment_create",
         "github403Summary": "HTTP 403: token lacks issue:write scope",
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "seoseo",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-alpha",
         "operatorApproved": false
       },
       "when": {
@@ -246,7 +246,7 @@
     },
     {
       "name": "broker-of-record-mismatch",
-      "description": "Reconciling broker (gwakga) differs from brokerOfRecord (seoseo). All actions remain PENDING. Mismatch surfaced for operator resolution.",
+      "description": "Reconciling broker (broker-beta) differs from brokerOfRecord (broker-alpha). All actions remain PENDING. Mismatch surfaced for operator resolution.",
       "given": {
         "matrixDecision": "GO",
         "actions": [
@@ -256,8 +256,8 @@
           }
         ],
         "gitHubPermissionOk": true,
-        "brokerOfRecord": "seoseo",
-        "reconcilingBroker": "gwakga",
+        "brokerOfRecord": "broker-alpha",
+        "reconcilingBroker": "broker-beta",
         "operatorApproved": false
       },
       "when": {

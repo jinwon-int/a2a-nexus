@@ -11,7 +11,7 @@ const fixtureFiles = {
   cancellation: 'cancellation-idempotency.json',
   evidence: 'terminal-evidence.json',
   githubEvidenceProjection: 'github-evidence-projection.json',
-  crossBroker: 'gwakga-cross-broker-handoff.json',
+  crossBroker: 'broker-beta-cross-broker-handoff.json',
   parentTerminalBriefAggregation: 'parent-terminal-brief-aggregation.json',
   terminalBriefParentOriginRouting: 'terminal-brief-parent-origin-routing.json',
   checkpointInterrupt: 'checkpoint-interrupt.json',
@@ -112,7 +112,7 @@ for (const event of lifecycle.events) {
     );
   }
 }
-assert.equal(lifecycle.task.brokerOfRecord, 'gwakga');
+assert.equal(lifecycle.task.brokerOfRecord, 'broker-beta');
 assert.ok(lifecycle.events.some((event) => event.state === 'pr' && event.evidenceRef === 'terminal-pr-evidence'));
 
 // Contract v0: cancellation states must not be terminal (cancelling) and terminal (cancelled)
@@ -206,12 +206,12 @@ assert.equal(workers.readModelExpectations.secondReferenceReplayProofIsPublicSaf
 
 const workerNames = new Set(workers.workers.map((worker) => worker.workerName));
 const secondWorkerProof = workers.compatibilityProofs?.find(
-  (proof) => proof.proofId === 'second-worker-compatibility-jingun-20260510',
+  (proof) => proof.proofId === 'second-worker-compatibility-worker-zeta-20260510',
 );
-assert.ok(secondWorkerProof, 'expected jingun second-worker compatibility proof');
+assert.ok(secondWorkerProof, 'expected worker-zeta second-worker compatibility proof');
 assert.equal(secondWorkerProof.issue, 'a2a-plane#152 (internal tracker, private)');
 assert.equal(secondWorkerProof.round, 'a2a-vnext-contract-smoke-crossbroker-20260510');
-assert.equal(secondWorkerProof.brokerOfRecord, 'gwakga');
+assert.equal(secondWorkerProof.brokerOfRecord, 'broker-beta');
 assert.ok(workerNames.has(secondWorkerProof.workerName), 'second-worker proof must reference a registered worker');
 assert.equal(secondWorkerProof.validationCommand, 'node test/conformance/check-contract-fixtures.mjs');
 assert.equal(secondWorkerProof.requiresPrivateTopology, false);
@@ -219,13 +219,13 @@ assert.equal(secondWorkerProof.liveProviderSend, false);
 assert.equal(secondWorkerProof.terminalAckMutation, false);
 
 const soonwookReplayProof = workers.compatibilityProofs?.find(
-  (proof) => proof.proofId === 'second-worker-replay-trace-soonwook-20260509',
+  (proof) => proof.proofId === 'second-worker-replay-trace-worker-eta-20260509',
 );
-assert.ok(soonwookReplayProof, 'expected soonwook second-reference replay proof');
+assert.ok(soonwookReplayProof, 'expected worker-eta second-reference replay proof');
 assert.equal(soonwookReplayProof.issue, 'a2a-plane#168 (internal tracker, private)');
 assert.equal(soonwookReplayProof.parentIssue, 'a2a-plane#163 (internal tracker, private)');
 assert.equal(soonwookReplayProof.run, 'a2a-public-readiness-next-20260509T165108Z');
-assert.equal(soonwookReplayProof.brokerOfRecord, 'gwakga');
+assert.equal(soonwookReplayProof.brokerOfRecord, 'broker-beta');
 assert.ok(workerNames.has(soonwookReplayProof.workerName), 'replay proof must reference a registered worker');
 assert.equal(soonwookReplayProof.validationCommand, 'node test/conformance/check-contract-fixtures.mjs');
 assert.equal(soonwookReplayProof.requiresPrivateTopology, false);
@@ -267,8 +267,8 @@ const gep = githubEvidenceProjection;
 assert.equal(gep.contract, 'contracts/a2a/github-evidence-projection.md');
 assert.equal(gep.parentIssue, 'a2a-plane#204 (internal tracker, private)');
 assert.equal(gep.issue, 'a2a-plane#205 (internal tracker, private)');
-assert.equal(gep.team, 'team1-bangtong');
-assert.equal(gep.brokerOfRecord, 'gwakga');
+assert.equal(gep.team, 'team1-worker-gamma');
+assert.equal(gep.brokerOfRecord, 'broker-beta');
 assert.deepEqual(gep.evidenceCommentKinds.sort(), ['block', 'done', 'pr', 'start']);
 assert.ok(gep.nonAckSignals.includes('githubCommentUrl'));
 assert.ok(gep.nonAckSignals.includes('githubCommentId'));
@@ -310,12 +310,12 @@ for (const [key, value] of Object.entries(gep.safetyConfirmations)) {
 assert.equal(crossBroker.contract, 'contracts/a2a/broker-handoff-protocol.md');
 assert.equal(crossBroker.round, 'a2a-vnext-contract-smoke-crossbroker-20260510');
 assert.equal(crossBroker.team, 'team2');
-assert.equal(crossBroker.worker, 'dungae');
-assert.equal(crossBroker.sourceBrokerId, 'seoseo');
-assert.equal(crossBroker.destinationBrokerId, 'gwakga');
-assert.equal(crossBroker.brokerOfRecord, 'gwakga');
-assert.equal(crossBroker.handoffEnvelope.brokerOfRecord, 'gwakga');
-assert.equal(crossBroker.handoffEnvelope.destinationBrokerId, 'gwakga');
+assert.equal(crossBroker.worker, 'worker-epsilon');
+assert.equal(crossBroker.sourceBrokerId, 'broker-alpha');
+assert.equal(crossBroker.destinationBrokerId, 'broker-beta');
+assert.equal(crossBroker.brokerOfRecord, 'broker-beta');
+assert.equal(crossBroker.handoffEnvelope.brokerOfRecord, 'broker-beta');
+assert.equal(crossBroker.handoffEnvelope.destinationBrokerId, 'broker-beta');
 assert.equal(crossBroker.policyInvariants.sourceBrokerDoesNotDispatchDestinationWorkers, true);
 assert.equal(crossBroker.policyInvariants.destinationBrokerOwnsWorkerAssignment, true);
 assert.equal(crossBroker.policyInvariants.providerSendIsAcceptedSendOnly, true);
@@ -323,19 +323,19 @@ assert.equal(crossBroker.policyInvariants.providerSendIsAcceptedSendOnly, true);
 const crossBrokerScenarioByName = new Map(
   crossBroker.scenarios.map((scenario) => [scenario.name, scenario]),
 );
-const acceptedHandoff = crossBrokerScenarioByName.get('gwakga-accepts-handoff-and-assigns-team2-worker');
+const acceptedHandoff = crossBrokerScenarioByName.get('broker-beta-accepts-handoff-and-assigns-team2-worker');
 assert.equal(acceptedHandoff?.then.state, 'accepted');
-assert.equal(acceptedHandoff?.then.brokerOfRecord, 'gwakga');
+assert.equal(acceptedHandoff?.then.brokerOfRecord, 'broker-beta');
 assert.equal(acceptedHandoff?.then.workerPool, 'team2');
-assert.equal(acceptedHandoff?.then.assignedByBroker, 'gwakga');
+assert.equal(acceptedHandoff?.then.assignedByBroker, 'broker-beta');
 assert.equal(acceptedHandoff?.then.sourceBrokerDispatchedWorker, false);
 assert.equal(acceptedHandoff?.then.terminalOutboxAckMutated, false);
 assert.equal(acceptedHandoff?.then.liveProviderSend, false);
 
-const duplicateHandoff = crossBrokerScenarioByName.get('duplicate-handoff-returns-existing-gwakga-task');
+const duplicateHandoff = crossBrokerScenarioByName.get('duplicate-handoff-returns-existing-broker-beta-task');
 assert.equal(duplicateHandoff?.then.status, 'deduplicated');
 assert.equal(duplicateHandoff?.then.newTaskCreated, false);
-assert.equal(duplicateHandoff?.then.brokerOfRecord, 'gwakga');
+assert.equal(duplicateHandoff?.then.brokerOfRecord, 'broker-beta');
 
 const refusedHandoff = crossBrokerScenarioByName.get('missing-create-scope-refuses-before-task-creation');
 assert.equal(refusedHandoff?.then.status, 'refused');
@@ -365,17 +365,17 @@ assert.equal(
   'contracts/a2a/parent-terminal-brief-aggregation.md',
 );
 assert.equal(parentTerminalBriefAggregation.parentIssue, 'a2a-plane#269 (internal tracker, private)');
-assert.equal(parentTerminalBriefAggregation.originBrokerId, 'gwakga');
-assert.equal(parentTerminalBriefAggregation.parentBrokerId, 'gwakga');
-assert.equal(parentTerminalBriefAggregation.handoffBrokerId, 'seoseo');
-assert.equal(parentTerminalBriefAggregation.childBrokerId, 'seoseo');
-assert.equal(parentTerminalBriefAggregation.brokerOfRecord, 'seoseo');
+assert.equal(parentTerminalBriefAggregation.originBrokerId, 'broker-beta');
+assert.equal(parentTerminalBriefAggregation.parentBrokerId, 'broker-beta');
+assert.equal(parentTerminalBriefAggregation.handoffBrokerId, 'broker-alpha');
+assert.equal(parentTerminalBriefAggregation.childBrokerId, 'broker-alpha');
+assert.equal(parentTerminalBriefAggregation.brokerOfRecord, 'broker-alpha');
 assert.equal(parentTerminalBriefAggregation.canaryMode, 'no-live-synthetic-projection');
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.scope, 'parent-broker-only');
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.rendererBrokerId, parentTerminalBriefAggregation.parentBrokerId);
-assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.exampleTitle, 'A2A Terminal Brief 완료: dungae(1/7)');
-assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.knownTotalExampleTitle, 'A2A Terminal Brief 완료: dungae(1/7)');
-assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.unknownTotalExampleTitle, 'A2A Terminal Brief 완료: yukson(2)');
+assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.exampleTitle, 'A2A Terminal Brief 완료: worker-epsilon(1/7)');
+assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.knownTotalExampleTitle, 'A2A Terminal Brief 완료: worker-epsilon(1/7)');
+assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.unknownTotalExampleTitle, 'A2A Terminal Brief 완료: worker-delta(2)');
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.unknownTotalDenominatorForbidden, true);
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.parentBrokerOnly, true);
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.liveProviderSend, false);
@@ -384,16 +384,16 @@ assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.isApproval,
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.isTerminalAck, false);
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.isReadReceipt, false);
 assert.ok(parentTerminalBriefAggregation.terminalBriefTitlePolicy.forbiddenTitleFields.includes('runtimeBootstrapPath'));
-assert.deepEqual(parentTerminalBriefAggregation.terminalBriefTitlePolicy.coveredOriginBrokerIds, ['gwakga', 'seoseo']);
+assert.deepEqual(parentTerminalBriefAggregation.terminalBriefTitlePolicy.coveredOriginBrokerIds, ['broker-beta', 'broker-alpha']);
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.symmetricMode, true);
 assert.equal(parentTerminalBriefAggregation.terminalBriefTitlePolicy.parentBrokerMayDifferFromOrigin, true);
 assert.ok(parentTerminalBriefAggregation.v1Symmetric, 'v1Symmetric section must exist');
 assert.equal(parentTerminalBriefAggregation.v1Symmetric.parentBrokerMayDifferFromOrigin, true);
 assert.ok(
   parentTerminalBriefAggregation.v1Symmetric.coveredSymmetricPairs.some(
-    (pair) => pair[0] === 'seoseo' && pair[1] === 'gwakga',
+    (pair) => pair[0] === 'broker-alpha' && pair[1] === 'broker-beta',
   ),
-  'v1Symmetric must cover seoseo→gwakga pair',
+  'v1Symmetric must cover broker-alpha→broker-beta pair',
 );
 
 const parentProjection = parentTerminalBriefAggregation.projection;
@@ -401,10 +401,10 @@ for (const field of parentTerminalBriefAggregation.requiredProjectionFields) {
   assert.ok(field in parentProjection, `parent projection must include ${field}`);
 }
 assert.equal(parentProjection.parentRoundId, parentTerminalBriefAggregation.parentRoundId);
-assert.equal(parentProjection.originBrokerId, 'gwakga');
-assert.equal(parentProjection.parentBrokerId, 'gwakga');
-assert.equal(parentProjection.handoffBrokerId, 'seoseo');
-assert.equal(parentProjection.childBrokerId, 'seoseo');
+assert.equal(parentProjection.originBrokerId, 'broker-beta');
+assert.equal(parentProjection.parentBrokerId, 'broker-beta');
+assert.equal(parentProjection.handoffBrokerId, 'broker-alpha');
+assert.equal(parentProjection.childBrokerId, 'broker-alpha');
 assert.equal(parentProjection.terminalKind, 'pr');
 assert.equal(parentProjection.projectionState, 'projected');
 assert.equal(parentProjection.redacted, true);
@@ -413,10 +413,10 @@ assert.equal(parentProjection.liveProviderSend, false);
 assert.equal(parentProjection.isApproval, false);
 assert.equal(parentProjection.isTerminalAck, false);
 assert.equal(parentProjection.isReadReceipt, false);
-assert.equal(parentProjection.terminalBriefTitle, 'A2A Terminal Brief 완료: dungae(1/7)');
+assert.equal(parentProjection.terminalBriefTitle, 'A2A Terminal Brief 완료: worker-epsilon(1/7)');
 assert.equal(parentProjection.terminalBriefTitleOwnerBrokerId, parentTerminalBriefAggregation.parentBrokerId);
 assert.equal(parentProjection.terminalBriefTitleRenderedByParentBrokerOnly, true);
-assert.equal(parentProjection.workerId, 'dungae');
+assert.equal(parentProjection.workerId, 'worker-epsilon');
 assert.deepEqual(parentProjection.roundProgress, { completed: 1, total: 7, totalKnown: true });
 assert.ok(parentProjection.terminalBriefTitle.length <= parentTerminalBriefAggregation.terminalBriefTitlePolicy.maxChars);
 assert.match(
@@ -447,7 +447,7 @@ for (const example of parentTerminalBriefAggregation.parentRoundTitleExamples) {
     if (!existing) parentTitleExamplesByOrigin.set(example.originBrokerId, example);
   }
 }
-assert.deepEqual([...parentTitleExamplesByOrigin.keys()].sort(), ['gwakga', 'seoseo']);
+assert.deepEqual([...parentTitleExamplesByOrigin.keys()].sort(), ['broker-alpha', 'broker-beta']);
 assert.ok(symmetricExamplesSeen.length >= 1, 'at least one symmetric origin-broker title example is required');
 for (const example of parentTerminalBriefAggregation.parentRoundTitleExamples) {
   if (!example.originDiffersFromParent) {
@@ -485,17 +485,17 @@ for (const example of parentTerminalBriefAggregation.parentRoundTitleExamples) {
   }
 }
 assert.equal(
-  parentTitleExamplesByOrigin.get('seoseo')?.terminalBriefTitle,
+  parentTitleExamplesByOrigin.get('broker-alpha')?.terminalBriefTitle,
   parentTerminalBriefAggregation.terminalBriefTitlePolicy.unknownTotalExampleTitle,
 );
-assert.equal(parentTitleExamplesByOrigin.get('seoseo')?.forbiddenUnknownDenominator, '(2/?)');
+assert.equal(parentTitleExamplesByOrigin.get('broker-alpha')?.forbiddenUnknownDenominator, '(2/?)');
 
 const parentLifecycleSteps = new Map(
   parentTerminalBriefAggregation.metadataLifecycle.map((step) => [step.step, step]),
 );
-assert.equal(parentLifecycleSteps.get('mint-parent-round')?.ownerBrokerId, 'gwakga');
+assert.equal(parentLifecycleSteps.get('mint-parent-round')?.ownerBrokerId, 'broker-beta');
 assert.equal(parentLifecycleSteps.get('mint-parent-round')?.immutableAfterWrite, true);
-assert.equal(parentLifecycleSteps.get('handoff-envelope-created')?.destinationBrokerId, 'seoseo');
+assert.equal(parentLifecycleSteps.get('handoff-envelope-created')?.destinationBrokerId, 'broker-alpha');
 assert.equal(parentLifecycleSteps.get('child-task-terminal-evidence')?.parentMetadataRewritten, false);
 assert.equal(parentLifecycleSteps.get('parent-projection-recorded')?.childLifecycleMutated, false);
 
@@ -503,17 +503,17 @@ const parentAggregationScenarioByName = new Map(
   parentTerminalBriefAggregation.scenarios.map((scenario) => [scenario.name, scenario]),
 );
 const metadataScenario = parentAggregationScenarioByName.get(
-  'gwakga-origin-metadata-is-carried-through-seoseo-handoff',
+  'broker-beta-origin-metadata-is-carried-through-broker-alpha-handoff',
 );
 assert.equal(metadataScenario?.then.metadataCopiedToChildEnvelope, true);
 assert.equal(metadataScenario?.then.originBrokerIdRewritten, false);
 assert.equal(metadataScenario?.then.parentRoundIdRewritten, false);
-assert.equal(metadataScenario?.then.childBrokerOfRecord, 'seoseo');
+assert.equal(metadataScenario?.then.childBrokerOfRecord, 'broker-alpha');
 
 const titleScenario = parentAggregationScenarioByName.get(
-  'gwakga-origin-parent-brief-title-is-concise-parent-broker-only',
+  'broker-beta-origin-parent-brief-title-is-concise-parent-broker-only',
 );
-assert.equal(titleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: dungae(1/7)');
+assert.equal(titleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: worker-epsilon(1/7)');
 assert.equal(titleScenario?.then.rendererBrokerId, parentTerminalBriefAggregation.parentBrokerId);
 assert.equal(titleScenario?.then.parentBrokerOnly, true);
 assert.equal(titleScenario?.then.titleDoesNotContainUnknownDenominator, true);
@@ -532,43 +532,43 @@ assert.equal(titleScenario?.then.isTerminalAck, false);
 assert.equal(titleScenario?.then.isReadReceipt, false);
 
 const seoseoOriginUnknownTotalTitleScenario = parentAggregationScenarioByName.get(
-  'seoseo-origin-parent-brief-title-uses-unknown-total-fallback',
+  'broker-alpha-origin-parent-brief-title-uses-unknown-total-fallback',
 );
-assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.originBrokerId, 'seoseo');
-assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.parentBrokerId, 'seoseo');
-assert.notEqual(seoseoOriginUnknownTotalTitleScenario?.given.parentBrokerId, 'gwakga',
-  'seoseo-origin non-symmetric scenario must have parentBrokerId equal originBrokerId');
+assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.originBrokerId, 'broker-alpha');
+assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.parentBrokerId, 'broker-alpha');
+assert.notEqual(seoseoOriginUnknownTotalTitleScenario?.given.parentBrokerId, 'broker-beta',
+  'broker-alpha-origin non-symmetric scenario must have parentBrokerId equal originBrokerId');
 
-/* R12 symmetric origin-broker scenario: seoseo-origin, gwakga-parent with known total */
+/* R12 symmetric origin-broker scenario: broker-alpha-origin, broker-beta-parent with known total */
 const symmetricOriginBrokerTitleScenario = parentAggregationScenarioByName.get(
-  'symmetric-seoseo-origin-gwakga-parent-title-known-total',
+  'symmetric-broker-alpha-origin-broker-beta-parent-title-known-total',
 );
-assert.ok(symmetricOriginBrokerTitleScenario, 'symmetric-seoseo-origin-gwakga-parent-title-known-total scenario must exist');
-assert.equal(symmetricOriginBrokerTitleScenario?.given.originBrokerId, 'seoseo');
-assert.equal(symmetricOriginBrokerTitleScenario?.given.parentBrokerId, 'gwakga');
+assert.ok(symmetricOriginBrokerTitleScenario, 'symmetric-broker-alpha-origin-broker-beta-parent-title-known-total scenario must exist');
+assert.equal(symmetricOriginBrokerTitleScenario?.given.originBrokerId, 'broker-alpha');
+assert.equal(symmetricOriginBrokerTitleScenario?.given.parentBrokerId, 'broker-beta');
 assert.notEqual(symmetricOriginBrokerTitleScenario?.given.originBrokerId,
   symmetricOriginBrokerTitleScenario?.given.parentBrokerId,
   'symmetric scenario must have different originBrokerId and parentBrokerId');
 assert.equal(symmetricOriginBrokerTitleScenario?.given.total, 3);
 assert.equal(symmetricOriginBrokerTitleScenario?.given.totalKnown, true);
-assert.equal(symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: dungae(1/3)');
-assert.equal(symmetricOriginBrokerTitleScenario?.then.rendererBrokerId, 'gwakga');
+assert.equal(symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: worker-epsilon(1/3)');
+assert.equal(symmetricOriginBrokerTitleScenario?.then.rendererBrokerId, 'broker-beta');
 assert.equal(symmetricOriginBrokerTitleScenario?.then.parentBrokerOnly, true);
 assert.equal(symmetricOriginBrokerTitleScenario?.then.originDiffersFromParent, true);
-assert.equal(symmetricOriginBrokerTitleScenario?.then.originBrokerId, 'seoseo');
+assert.equal(symmetricOriginBrokerTitleScenario?.then.originBrokerId, 'broker-alpha');
 assert.equal(symmetricOriginBrokerTitleScenario?.then.liveProviderSend, false);
 assert.equal(symmetricOriginBrokerTitleScenario?.then.terminalOutboxAckMutated, false);
 assert.equal(symmetricOriginBrokerTitleScenario?.then.isApproval, false);
 assert.equal(symmetricOriginBrokerTitleScenario?.then.isTerminalAck, false);
 assert.equal(symmetricOriginBrokerTitleScenario?.then.isReadReceipt, false);
-assert.ok(!symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle.includes('seoseo'),
-  'title must not include childBrokerId (seoseo)');
-assert.ok(!symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle.includes('gwakga'),
-  'title must not included handoffBrokerId (gwakga)');
+assert.ok(!symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle.includes('broker-alpha'),
+  'title must not include childBrokerId (broker-alpha)');
+assert.ok(!symmetricOriginBrokerTitleScenario?.then.terminalBriefTitle.includes('broker-beta'),
+  'title must not included handoffBrokerId (broker-beta)');
 assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.total, null);
 assert.equal(seoseoOriginUnknownTotalTitleScenario?.given.totalKnown, false);
-assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: yukson(2)');
-assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.rendererBrokerId, 'seoseo');
+assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.terminalBriefTitle, 'A2A Terminal Brief 완료: worker-delta(2)');
+assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.rendererBrokerId, 'broker-alpha');
 assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.parentBrokerOnly, true);
 assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.titleOmitsUnknownDenominator, true);
 assert.equal(seoseoOriginUnknownTotalTitleScenario?.then.titleDoesNotContainUnknownDenominator, true);
@@ -680,17 +680,17 @@ assert.deepEqual(terminalBriefParentOriginRouting.allowedTeamScopes.sort(), ['te
 const registeredBrokerById = new Map(
   terminalBriefParentOriginRouting.registeredBrokers.map((broker) => [broker.brokerId, broker]),
 );
-assert.equal(registeredBrokerById.get('seoseo')?.teamId, 'team1');
-assert.equal(registeredBrokerById.get('gwakga')?.teamId, 'team2');
+assert.equal(registeredBrokerById.get('broker-alpha')?.teamId, 'team1');
+assert.equal(registeredBrokerById.get('broker-beta')?.teamId, 'team2');
 assert.equal(terminalBriefParentOriginRouting.routingCases.length, 4, 'exactly four routing cases are required');
 const routingCaseById = new Map(
   terminalBriefParentOriginRouting.routingCases.map((routingCase) => [routingCase.caseId, routingCase]),
 );
 for (const requiredCase of [
-  'seoseo-team1-local',
-  'seoseo-allteams-gwakga-child',
-  'gwakga-team2-local',
-  'gwakga-allteams-seoseo-child',
+  'broker-alpha-team1-local',
+  'broker-alpha-allteams-broker-beta-child',
+  'broker-beta-team2-local',
+  'broker-beta-allteams-broker-alpha-child',
 ]) {
   assert.ok(routingCaseById.has(requiredCase), `missing routing case ${requiredCase}`);
 }
@@ -730,40 +730,40 @@ for (const routingCase of terminalBriefParentOriginRouting.routingCases) {
   }
   assert.ok(['local-only', 'local-plus-cross-team-child-projection'].includes(routingCase.expectedPath));
 }
-const seoseoTeam1 = routingCaseById.get('seoseo-team1-local');
+const seoseoTeam1 = routingCaseById.get('broker-alpha-team1-local');
 assert.equal(seoseoTeam1.requestedTeamScope, 'team1-only');
 assert.deepEqual(seoseoTeam1.localTeamIds, ['team1']);
 assert.equal(seoseoTeam1.handoffBrokerId, null);
 assert.equal(seoseoTeam1.childProjectionRequired, false);
 assert.equal(seoseoTeam1.parentSeedRequired, false);
-assert.ok(seoseoTeam1.forbiddenBrokerInvolvement.includes('gwakga'));
+assert.ok(seoseoTeam1.forbiddenBrokerInvolvement.includes('broker-beta'));
 
-const gwakgaTeam2 = routingCaseById.get('gwakga-team2-local');
+const gwakgaTeam2 = routingCaseById.get('broker-beta-team2-local');
 assert.equal(gwakgaTeam2.requestedTeamScope, 'team2-only');
 assert.deepEqual(gwakgaTeam2.localTeamIds, ['team2']);
 assert.equal(gwakgaTeam2.handoffBrokerId, null);
 assert.equal(gwakgaTeam2.childProjectionRequired, false);
 assert.equal(gwakgaTeam2.parentSeedRequired, false);
-assert.ok(gwakgaTeam2.forbiddenBrokerInvolvement.includes('seoseo'));
+assert.ok(gwakgaTeam2.forbiddenBrokerInvolvement.includes('broker-alpha'));
 
-const seoseoAllTeams = routingCaseById.get('seoseo-allteams-gwakga-child');
+const seoseoAllTeams = routingCaseById.get('broker-alpha-allteams-broker-beta-child');
 assert.equal(seoseoAllTeams.requestedTeamScope, 'team1+team2');
 assert.deepEqual(seoseoAllTeams.localTeamIds, ['team1']);
-assert.equal(seoseoAllTeams.handoffBrokerId, 'gwakga');
+assert.equal(seoseoAllTeams.handoffBrokerId, 'broker-beta');
 assert.deepEqual(seoseoAllTeams.handoffTeamIds, ['team2']);
-assert.equal(seoseoAllTeams.projectionDestinationBrokerId, 'seoseo');
+assert.equal(seoseoAllTeams.projectionDestinationBrokerId, 'broker-alpha');
 assert.equal(seoseoAllTeams.childProjectionRequired, true);
 assert.equal(seoseoAllTeams.parentSeedRequired, true);
 assert.equal(seoseoAllTeams.terminalBriefNotification.childLocalNotificationSuppressed, true);
 assert.equal(seoseoAllTeams.terminalBriefNotification.relaySuccessSuppressesChildLocalNotification, true);
 assert.equal(seoseoAllTeams.terminalBriefNotification.relayFailureFallsBackToLocalNotification, true);
 
-const gwakgaAllTeams = routingCaseById.get('gwakga-allteams-seoseo-child');
+const gwakgaAllTeams = routingCaseById.get('broker-beta-allteams-broker-alpha-child');
 assert.equal(gwakgaAllTeams.requestedTeamScope, 'team1+team2');
 assert.deepEqual(gwakgaAllTeams.localTeamIds, ['team2']);
-assert.equal(gwakgaAllTeams.handoffBrokerId, 'seoseo');
+assert.equal(gwakgaAllTeams.handoffBrokerId, 'broker-alpha');
 assert.deepEqual(gwakgaAllTeams.handoffTeamIds, ['team1']);
-assert.equal(gwakgaAllTeams.projectionDestinationBrokerId, 'gwakga');
+assert.equal(gwakgaAllTeams.projectionDestinationBrokerId, 'broker-beta');
 assert.equal(gwakgaAllTeams.childProjectionRequired, true);
 assert.equal(gwakgaAllTeams.parentSeedRequired, true);
 assert.equal(gwakgaAllTeams.terminalBriefNotification.childLocalNotificationSuppressed, true);
@@ -791,8 +791,8 @@ for (const field of [
 }
 for (const forbidden of [
   'originBrokerId means child broker',
-  'Team2-only work routes through Seoseo',
-  'Team1-only work routes through Gwakga',
+  'Team2-only work routes through broker-alpha',
+  'Team1-only work routes through broker-beta',
   'provider accepted/send evidence must be treated as non-ACK only',
   'child broker sends an operator-facing parent Terminal Brief after relay success',
   'child or handoff broker renders the operator-facing default Terminal Brief title',
@@ -821,20 +821,20 @@ assert.ok(
   'issue #94 public follow-up proof must reference the compatibility matrix',
 );
 assert.ok(
-  publicPolicy.requiredPublicEvidence.includes('fixtures/contract/gwakga-cross-broker-handoff.json'),
-  'issue #94 public follow-up proof must reference Gwakga-owned handoff evidence',
+  publicPolicy.requiredPublicEvidence.includes('fixtures/contract/broker-beta-cross-broker-handoff.json'),
+  'issue #94 public follow-up proof must reference broker-beta-owned handoff evidence',
 );
 const portableBrokerIds = new Set(
   publicPolicy.portableBrokerExamples.map((example) => example.brokerId),
 );
-assert.ok(portableBrokerIds.has('gwakga'), 'policy proof must include a non-Seoseo broker example');
+assert.ok(portableBrokerIds.has('broker-beta'), 'policy proof must include a non-broker-alpha broker example');
 assert.ok(
   portableBrokerIds.has('generic-public-broker'),
   'policy proof must include a generic public broker example',
 );
 assert.ok(
-  publicPolicy.forbiddenAssumptions.includes('requires-seoseo-as-broker-of-record'),
-  'policy proof must forbid Seoseo-only broker-of-record assumptions',
+  publicPolicy.forbiddenAssumptions.includes('requires-broker-alpha-as-broker-of-record'),
+  'policy proof must forbid broker-alpha-only broker-of-record assumptions',
 );
 assert.ok(
   publicPolicy.forbiddenAssumptions.includes('requires-provider-message-id-as-terminal-ack'),
@@ -849,7 +849,7 @@ for (const [key, value] of Object.entries(publicPolicy.safetyConfirmations)) {
 
 assert.equal(replayTrace.childIssue, 'a2a-plane#168 (internal tracker, private)');
 assert.equal(replayTrace.parentIssue, 'a2a-plane#163 (internal tracker, private)');
-assert.equal(replayTrace.brokerOfRecord, 'gwakga');
+assert.equal(replayTrace.brokerOfRecord, 'broker-beta');
 assert.ok(workerNames.has(replayTrace.workerName), 'replay fixture must reference a registered worker');
 assert.equal(replayTrace.replayProof.totals.terminalResultsCreated, 1);
 assert.equal(replayTrace.replayProof.totals.providerSendsProduced, 0);
@@ -887,7 +887,7 @@ for (const [key, value] of Object.entries(replayTrace.safetyConfirmations)) {
 assert.equal(liveCanaryApprovalBoundary.parentIssue, 'a2a-plane#174 (internal tracker, private)');
 assert.equal(liveCanaryApprovalBoundary.childIssue, 'a2a-plane#177 (internal tracker, private)');
 assert.equal(liveCanaryApprovalBoundary.v0Freeze.round, 'a2a-live-canary-readiness-20260509T173917Z');
-assert.equal(liveCanaryApprovalBoundary.brokerOfRecord, 'gwakga');
+assert.equal(liveCanaryApprovalBoundary.brokerOfRecord, 'broker-beta');
 assert.ok(workerNames.has(liveCanaryApprovalBoundary.workerName), 'live-canary proof must reference a registered worker');
 assert.equal(liveCanaryApprovalBoundary.canaryMode, 'no-live-redacted-replay');
 assert.equal(liveCanaryApprovalBoundary.replayNoDuplicateProof.totals.terminalResultsCreated, 1);
@@ -923,7 +923,7 @@ for (const [key, value] of Object.entries(liveCanaryApprovalBoundary.safetyConfi
 
 const examplePath = path.join(root, 'examples', 'compatibility', 'cross-team-conformance.json');
 const example = JSON.parse(fs.readFileSync(examplePath, 'utf8'));
-assert.equal(example.brokerOfRecord, 'gwakga');
+assert.equal(example.brokerOfRecord, 'broker-beta');
 assert.equal(example.publicFollowupIssue, 'a2a-plane#94 (internal tracker, private)');
 assert.equal(example.independentReviewIssue, 'a2a-plane#166 (internal tracker, private)');
 assert.ok(!example.fixtures.some((fixture) => fixture.startsWith('examples/local/')));
@@ -1096,7 +1096,7 @@ assert.equal(checkpointInterrupt.auditTraceExport.exportSafety.noTerminalOutboxA
 assert.equal(checkpointInterrupt.auditTraceExport.exportSafety.deterministicEventSequence, true);
 assert.equal(checkpointInterrupt.auditTraceExport.exportSafety.redacted, true);
 assert.equal(checkpointInterrupt.auditTraceExport.schema.redacted, true);
-assert.equal(checkpointInterrupt.auditTraceExport.schema.brokerOfRecord, 'gwakga');
+assert.equal(checkpointInterrupt.auditTraceExport.schema.brokerOfRecord, 'broker-beta');
 assert.ok(
   checkpointInterrupt.auditTraceExport.schema.events.some((e) => e.type === 'task.paused'),
   'audit trace must include pause event',
@@ -1168,9 +1168,9 @@ assert.equal(
   stabilityGate.issue,
   'a2a-plane#327 (internal tracker, private)',
 );
-assert.equal(stabilityGate.originCoordinator, 'gwakga');
-assert.equal(stabilityGate.receivingBrokerId, 'seoseo');
-assert.equal(stabilityGate.team, 'team1-yukson');
+assert.equal(stabilityGate.originCoordinator, 'broker-beta');
+assert.equal(stabilityGate.receivingBrokerId, 'broker-alpha');
+assert.equal(stabilityGate.team, 'team1-worker-delta');
 
 // Gate H1: hot-table persistence
 assert.ok(stabilityGate.hotTablePersistence, 'stabilityGate must contain hotTablePersistence');
@@ -1262,7 +1262,7 @@ assert.ok(embeddedExecutionStability.fixtureId, 'embeddedExecutionStability fixt
 assert.match(embeddedExecutionStability.fixtureId, /^a2a-nexus\.contract\.embedded-execution-stability-policy\.v0$/, 'fixtureId must match a2a-nexus.contract.embedded-execution-stability-policy.v0');
 assert.equal(embeddedExecutionStability.contract, 'contracts/a2a/embedded-execution-stability-policy.md');
 assert.equal(embeddedExecutionStability.parentIssue, 'https://github.com/jinwon-int/a2a-broker/issues/838');
-assert.equal(embeddedExecutionStability.originWorker, 'Team1/nosuk');
+assert.equal(embeddedExecutionStability.originWorker, 'Team1/worker-alpha');
 assert.equal(embeddedExecutionStability.targetPackage, 'packages/docker-runner/');
 assert.ok(embeddedExecutionStability.v0Freeze, 'embeddedExecutionStability must carry v0Freeze marker');
 assert.ok(embeddedExecutionStability.v0Freeze.frozenAt, 'v0Freeze must include frozenAt');

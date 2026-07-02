@@ -2,7 +2,7 @@
 
 > **Current-state note:** This page is a historical fail-closed readiness gate record. Live GitHub still reports `jinwon-int/a2a-nexus` as private unless a separately approved visibility action changes it; the residual gates now apply to promotion/stable-release readiness and public-transition evidence hygiene, not as proof that repository visibility has already changed. Historical NO-GO evidence is preserved intentionally.
 
-This lane defines the Team2/Gwakga handoff for public/private boundary readiness. It is intentionally conservative: missing or ambiguous evidence is a **NO-GO**, not a warning.
+This lane defines the Team2/broker-beta handoff for public/private boundary readiness. It is intentionally conservative: missing or ambiguous evidence is a **NO-GO**, not a warning.
 
 Scope: `a2a-plane#136 (internal tracker, private)`, parent `#130`, run `a2a-plane-post78261-next-20260509T142546Z`.
 

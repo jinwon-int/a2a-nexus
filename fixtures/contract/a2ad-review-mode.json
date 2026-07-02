@@ -12,16 +12,16 @@
       "submittedAt": "2026-05-25T12:00:00Z",
       "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
-        "reviewer": { "agentId": "bangtong" },
+        "reviewer": { "agentId": "worker-gamma" },
         "critic": { "agentId": "dengae" },
-        "defender": { "agentId": "bangtong" },
-        "finalizer": { "agentId": "seoseo" }
+        "defender": { "agentId": "worker-gamma" },
+        "finalizer": { "agentId": "broker-alpha" }
       },
       "phases": {
         "thesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T10:00:00Z",
             "title": "Migrate workflow engine to state-machine model",
             "summary": "Replace the current callback-chain workflow engine with an explicit state-machine model for better observability, testability, and error recovery.",
@@ -91,7 +91,7 @@
         "rebuttal": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T11:30:00Z",
             "response": "The critic raises valid concerns about dual-engine complexity and migration scope. However, the end-of-life concern is addressed by excluding EOL workflows from migration scope.",
             "defendedClaims": [
@@ -115,7 +115,7 @@
         "synthesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "seoseo" },
+            "author": { "agentId": "broker-alpha" },
             "submittedAt": "2026-05-25T12:00:00Z",
             "preserved": [
               "State-machine model improves observability (consensus position)",
@@ -195,16 +195,16 @@
       "submittedAt": "2026-05-25T14:00:00Z",
       "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
-        "reviewer": { "agentId": "bangtong" },
+        "reviewer": { "agentId": "worker-gamma" },
         "critic": { "agentId": "dengae" },
         "defender": null,
-        "finalizer": { "agentId": "seoseo" }
+        "finalizer": { "agentId": "broker-alpha" }
       },
       "phases": {
         "thesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T13:00:00Z",
             "title": "Increase broker default task timeout to 15 minutes",
             "summary": "Heavy analysis tasks regularly exceed the 10-minute default timeout. A 15-minute default reduces failure retries without operator intervention.",
@@ -262,7 +262,7 @@
         "synthesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "seoseo" },
+            "author": { "agentId": "broker-alpha" },
             "submittedAt": "2026-05-25T14:00:00Z",
             "preserved": [
               "15-minute timeout covers 95% of current tasks",
@@ -322,7 +322,7 @@
       "submittedAt": "2026-05-25T09:00:00Z",
       "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
-        "reviewer": { "agentId": "bangtong" },
+        "reviewer": { "agentId": "worker-gamma" },
         "critic": { "agentId": "dengae" },
         "defender": null,
         "finalizer": null
@@ -331,7 +331,7 @@
         "thesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T08:00:00Z",
             "title": "Migrate exchange connectivity to new provider API",
             "summary": "Move from legacy provider X to provider Y for lower latency and better reliability.",
@@ -386,16 +386,16 @@
       "submittedAt": "2026-05-25T16:00:00Z",
       "operatorRef": "a2a-plane#0000 (internal tracker, private)",
       "roles": {
-        "reviewer": { "agentId": "bangtong" },
+        "reviewer": { "agentId": "worker-gamma" },
         "critic": { "agentId": "dengae" },
-        "defender": { "agentId": "bangtong" },
-        "finalizer": { "agentId": "seoseo" }
+        "defender": { "agentId": "worker-gamma" },
+        "finalizer": { "agentId": "broker-alpha" }
       },
       "phases": {
         "thesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T15:00:00Z",
             "title": "Root cause analysis: DB pool exhaustion",
             "summary": "A sudden spike in connection requests due to a misconfigured connection leak detector caused the pool to exhaust.",
@@ -445,7 +445,7 @@
         "rebuttal": {
           "present": true,
           "data": {
-            "author": { "agentId": "bangtong" },
+            "author": { "agentId": "worker-gamma" },
             "submittedAt": "2026-05-25T15:45:00Z",
             "response": "The critic's concern about masking is valid. However, increasing the pool size is a safety margin, not a fix. The leak detector re-deployment with safe defaults is the actual fix.",
             "defendedClaims": [
@@ -467,7 +467,7 @@
         "synthesis": {
           "present": true,
           "data": {
-            "author": { "agentId": "seoseo" },
+            "author": { "agentId": "broker-alpha" },
             "submittedAt": "2026-05-25T16:00:00Z",
             "preserved": [
               "Leak detector thresholds were aggressive — this contributed to the incident",

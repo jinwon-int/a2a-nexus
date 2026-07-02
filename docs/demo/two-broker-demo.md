@@ -19,7 +19,7 @@ This guide walks through a local two-broker A2A Nexus demo using Docker Compose.
 │  broker-a    │     │  broker-b    │
 └──────┬───────┘     └──────┬───────┘
        │                    │
-       │  bangtong-worker   │  sogyo-worker
+       │  worker-gamma-worker   │  worker-beta-worker
        │  (echo)            │  (echo)
        └────────────────────┘
 ```
@@ -66,11 +66,11 @@ Expected fields:
 ## 4. Register a worker with each broker
 
 ```bash
-# Register bangtong worker with broker A
+# Register worker-gamma worker with broker A
 curl -s -X POST http://127.0.0.1:8787/workers/register \
   -H 'Content-Type: application/json' \
   -d '{
-    "nodeId": "bangtong-worker",
+    "nodeId": "worker-gamma-worker",
     "role": "analyst",
     "kind": "node",
     "capabilities": {
@@ -83,11 +83,11 @@ curl -s -X POST http://127.0.0.1:8787/workers/register \
     "homeBrokerId": "broker-a"
   }'
 
-# Register sogyo worker with broker B
+# Register worker-beta worker with broker B
 curl -s -X POST http://127.0.0.1:8788/workers/register \
   -H 'Content-Type: application/json' \
   -d '{
-    "nodeId": "sogyo-worker",
+    "nodeId": "worker-beta-worker",
     "role": "analyst",
     "kind": "node",
     "capabilities": {
@@ -115,11 +115,11 @@ curl -s -X POST http://127.0.0.1:8787/tasks \
       "role": "operator"
     },
     "target": {
-      "id": "bangtong-worker",
+      "id": "worker-gamma-worker",
       "kind": "node",
       "role": "analyst"
     },
-    "assignedWorkerId": "bangtong-worker",
+    "assignedWorkerId": "worker-gamma-worker",
     "message": "two-broker demo task",
     "payload": {
       "mode": "local-echo-smoke",

@@ -25,7 +25,7 @@ Reason: this PR is design/docs-only in one repo. Broker runtime implementation o
 
 ## Broker / worker / finalizer roles
 
-- Broker of record / finalizer for this docs PR: Seoseo.
+- Broker of record / finalizer for this docs PR: broker-alpha.
 - Workers: none required.
 - Libero/validator: GitHub Actions and local release-gate validation.
 - Human approval owner: the operator for any future runtime automation.
