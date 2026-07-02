@@ -99,7 +99,7 @@ export interface TerminalBriefFinalizerApprovalStatusPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesDispatchAdapterPacket: true;
     consumesReceiptIngestorPacket: true;
     grantsApproval: false;
@@ -187,7 +187,7 @@ export function buildTerminalBriefFinalizerApprovalStatus(
     nextActions: nextActionsFor(state),
     approvalSensitiveActionsExcluded: [
       "GitHub PR merge, issue close, or comment post",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "TaskFlow record creation or broker DB mutation",
       "production deploy/restart, historical replay, release, publish, or secret movement",
@@ -198,7 +198,7 @@ export function buildTerminalBriefFinalizerApprovalStatus(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDispatchAdapterPacket: true,
       consumesReceiptIngestorPacket: true,
       grantsApproval: false,

@@ -69,7 +69,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesActivationApprovalPacket": true,
       "providerAcceptedIsVisibilityProof": false,
       "terminalAckRequiresVisibilityProof": true,
@@ -102,9 +102,9 @@
     }
   },
   "startExecutorGate": {
-    "requestedExecutor": "gongyung-sidecar-dry-run-executor",
+    "requestedExecutor": "mobilealpha-sidecar-dry-run-executor",
     "operatorApprovalReference": "operator-visible-approval-1",
-    "dryRunReason": "sidecar-gongyung-spool-dry-run",
+    "dryRunReason": "sidecar-mobilealpha-spool-dry-run",
     "commandName": "terminal-brief-sidecar",
     "commandArgs": [
       "--dry-run",

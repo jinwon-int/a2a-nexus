@@ -25,7 +25,7 @@ function readyTable(
     extractTerminalBriefSidecarOperatorReviewTableHandoff(fixture),
     {
       now: NOW,
-      reviewOwner: "seoseo",
+      reviewOwner: "brokeralpha",
       reviewReference: "operator-review-745",
     },
   );

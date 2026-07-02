@@ -13,7 +13,7 @@ function terminalEvent(id: string): A2ATerminalOutboxEvent {
     attempts: 0,
     payload: {
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       completedAt: "2026-05-17T00:05:00.000Z",
       summary: "dedupe regression should notify the operator once",
       parentRoundProgress: 1,
@@ -24,7 +24,7 @@ function terminalEvent(id: string): A2ATerminalOutboxEvent {
       decision: "pending",
       reason: "terminal event accepted; awaiting current-session-visible/operator-visible evidence before ACK",
       updatedAt: "2026-05-17T00:05:00.000Z",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptStatus: "accepted",
     },
     ack: null,

@@ -4,10 +4,10 @@
   "generatedAt": "2026-05-26T20:11:40.000Z",
   "description": "NO-GO: Hermes worker with contradictory resource policy (readOnly=true but noMutation=false). Evaluation returns no-go. Collector snapshot shows blocked.",
   "manifest": {
-    "roundLabel": "a2a-team1-round-coordinator-wiring-04-yukson",
+    "roundLabel": "a2a-team1-round-coordinator-wiring-04-workerdelta",
     "lanes": [
       {
-        "workerId": "yukson",
+        "workerId": "workerdelta",
         "description": "Broken policy detection",
         "expectedOutcome": "analysis"
       }
@@ -22,24 +22,24 @@
     "standby": false,
     "readOnly": true
   },
-  "onboardingKind": "gongyung-hermes",
+  "onboardingKind": "mobilealpha-hermes",
   "evaluation": {
     "decision": "no-go",
     "reasons": [
       "Policy validation failed: readOnly=true requires noMutation=true; readOnly=true requires noLiveSend=true",
-      "Gongyung/Hermes workers must set noMutation=true",
-      "Gongyung/Hermes workers must set noLiveSend=true"
+      "mobilealpha/Hermes workers must set noMutation=true",
+      "mobilealpha/Hermes workers must set noLiveSend=true"
     ]
   },
   "blockedBy": [
     "readOnly flag requires noMutation and noLiveSend but they are false",
-    "Gongyung/Hermes workers require noMutation, noLiveSend, mobileLowPower"
+    "mobilealpha/Hermes workers require noMutation, noLiveSend, mobileLowPower"
   ],
   "resolution": "Set noMutation=true, noLiveSend=true, and keep readOnly=true, mobileLowPower=true",
   "collectorTasks": [
     {
-      "id": "task-yukson-bad-1",
-      "assignedWorkerId": "yukson",
+      "id": "task-workerdelta-bad-1",
+      "assignedWorkerId": "workerdelta",
       "status": "blocked",
       "createdAt": "2026-05-26T19:00:00.000Z",
       "updatedAt": "2026-05-26T19:30:00.000Z",

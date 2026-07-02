@@ -3,7 +3,7 @@
 This example shows the intended isolation model for:
 
 - `<broker-host>` or another host running the broker service
-- `bangtong` as the live-trading worker
+- `workergamma` as the live-trading worker
 - `dengae` as the research and backfill worker
 
 Reference file:
@@ -16,7 +16,7 @@ The compose example encodes the main operating rules:
 
 - each worker runs in its own container
 - each worker gets its own workspace mount
-- `bangtong` gets a live workspace mount only
+- `workergamma` gets a live workspace mount only
 - `dengae` gets a research workspace mount and read-only datasets
 - broker storage stays separate from worker storage
 - broker persistence is written to `/var/lib/a2a-broker/state.json` by default
@@ -24,7 +24,7 @@ The compose example encodes the main operating rules:
 
 ## Mount rationale
 
-### `bangtong-worker`
+### `workergamma-worker`
 
 Writable:
 
@@ -35,7 +35,7 @@ Read-only:
 
 - `/config`
 
-This keeps live logic editable only inside the `bangtong` context.
+This keeps live logic editable only inside the `workergamma` context.
 
 ### `dengae-worker`
 
@@ -54,9 +54,9 @@ This supports aggressive experimentation while avoiding accidental dataset corru
 
 Replace these placeholders with your real paths or volume strategy:
 
-- `/srv/trading/bangtong/live`
-- `/srv/trading/bangtong/config`
-- `/srv/trading/bangtong/artifacts`
+- `/srv/trading/workergamma/live`
+- `/srv/trading/workergamma/config`
+- `/srv/trading/workergamma/artifacts`
 - `/srv/trading/dengae/research`
 - `/srv/trading/dengae/datasets`
 - `/srv/trading/dengae/artifacts`
@@ -67,7 +67,7 @@ This compose file is not a turnkey smoke stack.
 
 Current breakpoints:
 
-- `bangtong-worker` uses a placeholder command and does not start `npm run start:worker`
+- `workergamma-worker` uses a placeholder command and does not start `npm run start:worker`
 - `dengae-worker` also uses a placeholder command
 - the compose file does not seed a task lifecycle by itself
 - the `/srv/trading/...` mounts are placeholders that must be replaced before real use
@@ -78,8 +78,8 @@ For a runnable copy/paste smoke path, use `docs/smoke-compose.md` plus `examples
 
 Do not change the example into any of the following:
 
-- a shared writable volume for both `bangtong` and `dengae`
-- a writable mount of `bangtong` live workspace into `dengae`
+- a shared writable volume for both `workergamma` and `dengae`
+- a writable mount of `workergamma` live workspace into `dengae`
 - one combined config volume used by all workers
 - one combined artifacts volume without node separation
 

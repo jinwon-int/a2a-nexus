@@ -47,8 +47,8 @@ request.
 An A2A round is not valid evidence unless it runs through the declared
 team workers:
 
-- `team1`: `sogyo`, `nosuk`, `yukson`.
-- `team2`: `dungae`, `jingun`, `soonwook`, with `daegyo` limited to
+- `team1`: `workerbeta`, `workeralpha`, `workerdelta`.
+- `team2`: `workerepsilon`, `workerzeta`, `workereta`, with `mobilebeta` limited to
   separately constrained mobile/no-live work.
 - `cross-team`: parent broker dispatches its own team locally and opens
   the other team only through that team's broker of record.
@@ -124,7 +124,7 @@ secrets, long transcripts, or full debate text.
 
 ```json
 {
-  "workerId": "sogyo",
+  "workerId": "workerbeta",
   "claim": "What this lane believes is true.",
   "evidence": ["Concise source, test, CI, or runtime facts."],
   "counterRisk": ["What could make this claim wrong or unsafe."],

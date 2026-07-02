@@ -22,7 +22,7 @@
     },
     "finalLiveExecution": {
       "reviewOnly": true,
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "executionWindowMinutes": 10,
       "checkpoint": {
         "required": true,
@@ -99,7 +99,7 @@
       "runtime config write",
       "Terminal Brief default-on enablement",
       "Terminal Brief sidecar start/restart",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "start executor dispatch, executor invocation, or process spawn",
       "GitHub PR merge, issue close, or comment post from the packet/route",
@@ -112,7 +112,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "externalHarnessCompatible": true,
       "consumesRuntimeExecutorGatePacket": true,
       "rendersFinalLiveExecutionPacket": true,
@@ -175,7 +175,7 @@
   "executionWindowRequestDraft": {
     "now": "2026-05-19T09:50:00.000Z",
     "mode": "terminal-brief-default-on-execution-window-request-draft-source-only",
-    "requestedBy": "seoseo",
+    "requestedBy": "brokeralpha",
     "operatorTarget": "terminal-brief-default-on",
     "executionWindowReference": "tb-sidecar-default-on-execution-window:fixture-794",
     "approvalWindowMinutes": 10

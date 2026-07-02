@@ -41,8 +41,8 @@ test('collectReliabilitySourceBundle keeps the source-only bundle focused and bu
 test('buildReliabilityEvidenceManifest is a no-live analysis bridge retry for #921/#922', () => {
   const sourceBundle = collectReliabilitySourceBundle(sourceFiles, { maxChars: 2_000 });
   const manifest = buildReliabilityEvidenceManifest({
-    roundId: 'a2ad-nexus-runtime-reliability-921-nosuk-retry',
-    workerId: 'nosuk',
+    roundId: 'a2ad-nexus-runtime-reliability-921-workerAlpha-retry',
+    workerId: 'workerAlpha',
     sourceBundle,
   });
 

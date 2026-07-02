@@ -29,9 +29,9 @@
     "workers": [
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "sogyo",
+        "worker": "workerBeta",
         "taskId": "d6e199b2-3a0b-40a2-8ce5-307e73f4dc7c",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -39,9 +39,9 @@
       },
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "75582f5f-488f-4dad-ac62-256f7d203113",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -49,9 +49,9 @@
       },
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "1bef40b6-7cf2-437b-b517-3098f0afa12c",
         "status": "succeeded",
         "analysisStatus": "blocked",
@@ -59,9 +59,9 @@
       },
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "dungae",
+        "worker": "workerEpsilon",
         "taskId": "9435076c-2d47-4b03-840b-f13dbe1749b1",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -69,9 +69,9 @@
       },
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "b24fb494-ba39-42c7-920d-c5df3e7271d4",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -79,9 +79,9 @@
       },
       {
         "round": "a2a-actualflip-preflight-20260610T135405Z",
-        "broker": "gwakga",
+        "broker": "brokerBeta",
         "team": "Team2",
-        "worker": "soonwook",
+        "worker": "workerEta",
         "taskId": "acaa3ebd-17dd-4113-9dcc-581c6a43cacb",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -89,9 +89,9 @@
       },
       {
         "round": "a2a-actualflip-team1-retry-20260610T135812Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "nosuk",
+        "worker": "workerAlpha",
         "taskId": "5f9e65c1-abf6-44b1-8abf-06f60bb17ed4",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -100,9 +100,9 @@
       },
       {
         "round": "a2a-actualflip-team1-retry-20260610T135812Z",
-        "broker": "seoseo",
+        "broker": "brokerAlpha",
         "team": "Team1",
-        "worker": "bangtong",
+        "worker": "workerGamma",
         "taskId": "573d5398-651b-492f-901e-7c9a008f3d74",
         "status": "succeeded",
         "analysisStatus": "done",
@@ -112,14 +112,14 @@
     ],
     "usableAnalysisCount": 6,
     "team1UsableWorkers": [
-      "sogyo",
-      "nosuk",
-      "bangtong"
+      "workerBeta",
+      "workerAlpha",
+      "workerGamma"
     ],
     "team2UsableWorkers": [
-      "dungae",
-      "jingun",
-      "soonwook"
+      "workerEpsilon",
+      "workerZeta",
+      "workerEta"
     ],
     "finalizerSynthesis": "Advance only the source-only actual execution preflight packet. Actual canonical flip execution remains blocked until final explicit approval and a separate execution run."
   },

@@ -24,13 +24,13 @@ test("normalizes Terminal Brief team scopes", () => {
   assert.equal(normalizeTerminalBriefTeamScope("unknown"), undefined);
 });
 
-test("case 1: Seoseo initiates Team1-only local Terminal Brief", () => {
-  const route = expectRoute({ initiatingBrokerId: "seoseo", requestedTeamScope: "team1-only" });
-  assert.equal(route.initiatingBrokerId, "seoseo");
+test("case 1: brokeralpha initiates Team1-only local Terminal Brief", () => {
+  const route = expectRoute({ initiatingBrokerId: "brokeralpha", requestedTeamScope: "team1-only" });
+  assert.equal(route.initiatingBrokerId, "brokeralpha");
   assert.equal(route.requestedTeamScope, "team1-only");
-  assert.equal(route.parentBrokerId, "seoseo");
-  assert.equal(route.originBrokerId, "seoseo");
-  assert.equal(route.operatorFacingTerminalBriefSender, "seoseo");
+  assert.equal(route.parentBrokerId, "brokeralpha");
+  assert.equal(route.originBrokerId, "brokeralpha");
+  assert.equal(route.operatorFacingTerminalBriefSender, "brokeralpha");
   assert.deepEqual(route.localTeamIds, ["team1"]);
   assert.equal(route.handoff, null);
   assert.equal(route.executionPath, "local-only");
@@ -41,16 +41,16 @@ test("case 1: Seoseo initiates Team1-only local Terminal Brief", () => {
   assert.equal(route.notification.relayFailureFallsBackToLocalNotification, false);
 });
 
-test("case 2: Seoseo initiates Team1+Team2 with Gwakga child projections back to Seoseo", () => {
-  const route = expectRoute({ initiatingBrokerId: "seoseo", requestedTeamScope: "team1+team2" });
-  assert.equal(route.parentBrokerId, "seoseo");
-  assert.equal(route.originBrokerId, "seoseo");
-  assert.equal(route.operatorFacingTerminalBriefSender, "seoseo");
+test("case 2: brokeralpha initiates Team1+Team2 with brokerbeta child projections back to brokeralpha", () => {
+  const route = expectRoute({ initiatingBrokerId: "brokeralpha", requestedTeamScope: "team1+team2" });
+  assert.equal(route.parentBrokerId, "brokeralpha");
+  assert.equal(route.originBrokerId, "brokeralpha");
+  assert.equal(route.operatorFacingTerminalBriefSender, "brokeralpha");
   assert.deepEqual(route.localTeamIds, ["team1"]);
   assert.deepEqual(route.handoff, {
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerbeta",
     handoffTeamIds: ["team2"],
-    projectionDestinationBrokerId: "seoseo",
+    projectionDestinationBrokerId: "brokeralpha",
   });
   assert.equal(route.executionPath, "local-plus-cross-team-child-projection");
   assert.equal(route.childProjectionRequired, true);
@@ -59,12 +59,12 @@ test("case 2: Seoseo initiates Team1+Team2 with Gwakga child projections back to
   assert.equal(route.notification.relayFailureFallsBackToLocalNotification, true);
 });
 
-test("case 3: Gwakga initiates Team2-only local Terminal Brief", () => {
-  const route = expectRoute({ initiatingBrokerId: "gwakga", requestedTeamScope: "team2-only" });
-  assert.equal(route.initiatingBrokerId, "gwakga");
-  assert.equal(route.parentBrokerId, "gwakga");
-  assert.equal(route.originBrokerId, "gwakga");
-  assert.equal(route.operatorFacingTerminalBriefSender, "gwakga");
+test("case 3: brokerbeta initiates Team2-only local Terminal Brief", () => {
+  const route = expectRoute({ initiatingBrokerId: "brokerbeta", requestedTeamScope: "team2-only" });
+  assert.equal(route.initiatingBrokerId, "brokerbeta");
+  assert.equal(route.parentBrokerId, "brokerbeta");
+  assert.equal(route.originBrokerId, "brokerbeta");
+  assert.equal(route.operatorFacingTerminalBriefSender, "brokerbeta");
   assert.deepEqual(route.localTeamIds, ["team2"]);
   assert.equal(route.handoff, null);
   assert.equal(route.executionPath, "local-only");
@@ -72,16 +72,16 @@ test("case 3: Gwakga initiates Team2-only local Terminal Brief", () => {
   assert.equal(route.parentSeedRequired, false);
 });
 
-test("case 4: Gwakga initiates Team1+Team2 with Seoseo child projections back to Gwakga", () => {
-  const route = expectRoute({ initiatingBrokerId: "gwakga", requestedTeamScope: "both" });
-  assert.equal(route.parentBrokerId, "gwakga");
-  assert.equal(route.originBrokerId, "gwakga");
-  assert.equal(route.operatorFacingTerminalBriefSender, "gwakga");
+test("case 4: brokerbeta initiates Team1+Team2 with brokeralpha child projections back to brokerbeta", () => {
+  const route = expectRoute({ initiatingBrokerId: "brokerbeta", requestedTeamScope: "both" });
+  assert.equal(route.parentBrokerId, "brokerbeta");
+  assert.equal(route.originBrokerId, "brokerbeta");
+  assert.equal(route.operatorFacingTerminalBriefSender, "brokerbeta");
   assert.deepEqual(route.localTeamIds, ["team2"]);
   assert.deepEqual(route.handoff, {
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokeralpha",
     handoffTeamIds: ["team1"],
-    projectionDestinationBrokerId: "gwakga",
+    projectionDestinationBrokerId: "brokerbeta",
   });
   assert.equal(route.executionPath, "local-plus-cross-team-child-projection");
   assert.equal(route.childProjectionRequired, true);
@@ -90,15 +90,15 @@ test("case 4: Gwakga initiates Team1+Team2 with Seoseo child projections back to
   assert.equal(route.notification.relayFailureFallsBackToLocalNotification, true);
 });
 
-test("Team2-only work cannot accidentally route through Seoseo", () => {
-  const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "seoseo", requestedTeamScope: "team2-only" });
+test("Team2-only work cannot accidentally route through brokeralpha", () => {
+  const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "brokeralpha", requestedTeamScope: "team2-only" });
   assert.equal(result.ok, false);
   assert.equal(result.code, "team_scope_not_owned_by_initiator");
   assert.match(result.reason, /Team2-only/);
 });
 
-test("Team1-only work cannot accidentally route through Gwakga", () => {
-  const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "gwakga", requestedTeamScope: "team1-only" });
+test("Team1-only work cannot accidentally route through brokerbeta", () => {
+  const result = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "brokerbeta", requestedTeamScope: "team1-only" });
   assert.equal(result.ok, false);
   assert.equal(result.code, "team_scope_not_owned_by_initiator");
   assert.match(result.reason, /Team1-only/);
@@ -106,10 +106,10 @@ test("Team1-only work cannot accidentally route through Gwakga", () => {
 
 test("all resolved routes preserve no-live and non-ACK safety boundaries", () => {
   for (const [initiatingBrokerId, requestedTeamScope] of [
-    ["seoseo", "team1-only"],
-    ["seoseo", "team1+team2"],
-    ["gwakga", "team2-only"],
-    ["gwakga", "team1+team2"],
+    ["brokeralpha", "team1-only"],
+    ["brokeralpha", "team1+team2"],
+    ["brokerbeta", "team2-only"],
+    ["brokerbeta", "team1+team2"],
   ] as const) {
     const route = expectRoute({ initiatingBrokerId, requestedTeamScope });
     assert.deepEqual(route.requiredMetadataFields, TERMINAL_BRIEF_PARENT_ORIGIN_METADATA_FIELDS);
@@ -128,7 +128,7 @@ test("unknown broker and unsupported scope fail closed", () => {
   assert.equal(unknownBroker.ok, false);
   assert.equal(unknownBroker.code, "unknown_initiating_broker");
 
-  const badScope = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "seoseo", requestedTeamScope: "team3" });
+  const badScope = resolveTerminalBriefParentOriginRoute({ initiatingBrokerId: "brokeralpha", requestedTeamScope: "team3" });
   assert.equal(badScope.ok, false);
   assert.equal(badScope.code, "unsupported_team_scope");
 });

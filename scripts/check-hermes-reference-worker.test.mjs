@@ -108,7 +108,7 @@ print(json.dumps({'runOnce': result, 'evidenceBody': body}, ensure_ascii=False, 
     env: {
       ...process.env,
       A2A_HERMES_ARTIFACT_ROOT: dir,
-      A2A_WORKER_ID: 'gongyung',
+      A2A_WORKER_ID: 'mobileAlpha',
       A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
     },
   });
@@ -164,15 +164,15 @@ print(json.dumps({
       ...process.env,
       A2A_HERMES_ARTIFACT_ROOT: fallbackArtifactRoot,
       A2A_MOBILE_WORK_ROOT: workRoot,
-      A2A_HOME_BROKER_ID: 'gwakga',
-      A2A_WORKER_ID: 'daegyo',
+      A2A_HOME_BROKER_ID: 'brokerBeta',
+      A2A_WORKER_ID: 'mobileBeta',
       A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
     },
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const output = JSON.parse(result.stdout);
-  assert.deepEqual(output.artifactIds, ['~/.hermes/a2a-workspaces/gwakga/mobile_workspace_task_1/evidence/evidence.json']);
-  assert.equal(output.artifactPath, '~/.hermes/a2a-workspaces/gwakga/mobile_workspace_task_1/evidence/evidence.json');
+  assert.deepEqual(output.artifactIds, ['~/.hermes/a2a-workspaces/brokerBeta/mobile_workspace_task_1/evidence/evidence.json']);
+  assert.equal(output.artifactPath, '~/.hermes/a2a-workspaces/brokerBeta/mobile_workspace_task_1/evidence/evidence.json');
   assert.equal(output.workspaceExists, true);
   assert.deepEqual(output.subdirs, { repo: true, artifacts: true, evidence: true, tmp: true });
   assert.equal(output.manifestExists, true);
@@ -214,7 +214,7 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
       ...process.env,
       A2A_HERMES_REFERENCE_ANALYSIS_ENABLED: '1',
       A2A_HERMES_REFERENCE_ANALYSIS_COMMAND_JSON: JSON.stringify(['python3', fakeBridge]),
-      A2A_WORKER_ID: 'gongyung',
+      A2A_WORKER_ID: 'mobileAlpha',
       A2A_HERMES_RUNTIME_FLAVOR: 'termux-hermes',
       CAPTURE_PATH: capturePath,
     },
@@ -228,7 +228,7 @@ print(json.dumps(result, ensure_ascii=False, sort_keys=True))
   assert.deepEqual(output.findings, ['mobile worker inspected the no-live task context']);
   const captured = JSON.parse(readFileSync(capturePath, 'utf8'));
   assert.equal(captured.task.id, 'mobile-model-task-1');
-  assert.equal(captured.workerId, 'gongyung');
+  assert.equal(captured.workerId, 'mobileAlpha');
   assert.equal(captured.runtimeFlavor, 'termux-hermes');
 });
 
@@ -308,7 +308,7 @@ print(json.dumps({
     encoding: 'utf8',
     env: {
       ...process.env,
-      A2A_WORKER_ID: 'daegyo',
+      A2A_WORKER_ID: 'mobileBeta',
       A2A_BROKER_URL: 'http://127.0.0.1:18787',
       A2A_WORKER_REGISTRATION_STATE_PATH: join(dir, 'registration.json'),
       A2A_WORKER_REGISTER_REFRESH_SEC: '3600',
@@ -348,9 +348,9 @@ finally:
     encoding: 'utf8',
     env: {
       ...process.env,
-      A2A_WORKER_ID: 'daegyo',
+      A2A_WORKER_ID: 'mobileBeta',
       A2A_BROKER_URL: 'http://127.0.0.1:18787',
-      A2A_WORKER_LOCK_PATH: join(dir, 'daegyo.lock'),
+      A2A_WORKER_LOCK_PATH: join(dir, 'mobileBeta.lock'),
     },
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);

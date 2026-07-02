@@ -1,11 +1,11 @@
 /**
- * Residue Cleanup Dry-Run Fixture Harness (Team1/bangtong).
+ * Residue Cleanup Dry-Run Fixture Harness (Team1/workerGamma).
  *
  * Validates that `buildCleanupDryRunPlan` produces correct deterministic
  * dry-run plans from a structured fixture of readiness-report scenarios.
  *
  * Parent: https://github.com/jinwon-int/a2a-broker/issues/835
- * Run: a2a-team1-bangtong-residue-cleanup-dry-run-20260520T125200Z
+ * Run: a2a-team1-workerGamma-residue-cleanup-dry-run-20260520T125200Z
  *
  * Safety gates enforced for every case:
  * - No DB mutation / prune / migration
@@ -174,7 +174,7 @@ test("residue cleanup dry-run fixture has valid schema and safety state", () => 
     fixture.schemaVersion,
     "a2a.runner.residue-cleanup-dry-run-fixtures.v1",
   );
-  assert.equal(fixture.targetWorker, "bangtong");
+  assert.equal(fixture.targetWorker, "workerGamma");
   assert.equal(
     fixture.issueUrl,
     "https://github.com/jinwon-int/a2a-broker/issues/835",
@@ -538,10 +538,10 @@ test("residue dry-run: all cases share consistent issue metadata", () => {
   for (const entry of fixture.cases) {
     assert.equal(
       fixture.run,
-      "a2a-team1-bangtong-residue-cleanup-dry-run-20260520T125200Z",
+      "a2a-team1-workerGamma-residue-cleanup-dry-run-20260520T125200Z",
       `${entry.name}: run metadata mismatch`,
     );
-    assert.strictEqual(fixture.targetWorker, "bangtong", `${entry.name}: targetWorker mismatch`);
+    assert.strictEqual(fixture.targetWorker, "workerGamma", `${entry.name}: targetWorker mismatch`);
   }
 });
 

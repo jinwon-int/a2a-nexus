@@ -149,19 +149,19 @@ test("worker registration still records material metadata changes", async () => 
 
 test("server surfaces duplicate nodeId identity churn warnings on worker capacity", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
-  const nodeId = "daegyo";
+  const nodeId = "mobilebeta";
   const capabilities = {
     canAnalyze: true,
     canBackfill: false,
     canPatchWorkspace: false,
     canPromoteLive: false,
-    workspaceIds: ["team2-gwakga"],
+    workspaceIds: ["team2-brokerbeta"],
     environments: ["research"],
   };
   const baseRegistration = {
     nodeId,
     role: "analyst",
-    displayName: "Daegyo mobile worker",
+    displayName: "mobilebeta mobile worker",
     brokerUrl: "http://127.0.0.1:18787",
     workerMode: "mobile",
     capabilities,
@@ -172,7 +172,7 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
       baseRegistration,
       {
         ...baseRegistration,
-        displayName: "Daegyo JS-pinned worker",
+        displayName: "mobilebeta JS-pinned worker",
         brokerUrl: "http://127.0.0.1:18790",
         workerMode: "persistent",
         metadata: { runtime: "claude-code", transport: "node-worker" },
@@ -194,9 +194,9 @@ test("server surfaces duplicate nodeId identity churn warnings on worker capacit
     const capacityRes = await fetch(`${server.baseUrl}/workers/capacity`);
     assert.equal(capacityRes.status, 200);
     const capacity = await capacityRes.json() as { items: Array<{ nodeId: string; identityWarning?: { code: string; lastChangedFields: string[] } }> };
-    const daegyo = capacity.items.find((item) => item.nodeId === nodeId);
-    assert.equal(daegyo?.identityWarning?.code, "worker_identity_churn");
-    assert.ok(daegyo?.identityWarning?.lastChangedFields.includes("workerMode"));
+    const mobilebeta = capacity.items.find((item) => item.nodeId === nodeId);
+    assert.equal(mobilebeta?.identityWarning?.code, "worker_identity_churn");
+    assert.ok(mobilebeta?.identityWarning?.lastChangedFields.includes("workerMode"));
   } finally {
     await server.close();
   }
@@ -360,16 +360,16 @@ test("server requires a real PUBLIC_BASE_URL", () => {
 });
 
 test("server rejects task creation when brokerOfRecord targets another broker", async () => {
-  const server = await startTestServer({ brokerId: "gwakga" });
+  const server = await startTestServer({ brokerId: "brokerbeta" });
   try {
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "soonwook",
+        "x-a2a-requester-id": "workereta",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
-        nodeId: "soonwook",
+        nodeId: "workereta",
         role: "analyst",
         capabilities: {
           canAnalyze: true,
@@ -391,9 +391,9 @@ test("server rejects task creation when brokerOfRecord targets another broker", 
         id: "wrong-broker-of-record-task",
         intent: "validate_change",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "soonwook", kind: "node", role: "analyst" },
-        assignedWorkerId: "soonwook",
-        brokerOfRecord: "seoseo",
+        target: { id: "workereta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workereta",
+        brokerOfRecord: "brokeralpha",
         teamId: "team2",
         message: "should fail at creation before it can become queued",
       }),
@@ -402,7 +402,7 @@ test("server rejects task creation when brokerOfRecord targets another broker", 
     assert.deepEqual(await createRes.json(), {
       error: {
         code: "policy_denied",
-        message: "create cannot set brokerOfRecord seoseo on broker gwakga",
+        message: "create cannot set brokerOfRecord brokeralpha on broker brokerbeta",
       },
     });
 
@@ -416,16 +416,16 @@ test("server rejects task creation when brokerOfRecord targets another broker", 
 });
 
 test("server accepts local brokerOfRecord with parent-owned cross-broker Terminal Brief metadata", async () => {
-  const server = await startTestServer({ brokerId: "gwakga", teamId: "team2" });
+  const server = await startTestServer({ brokerId: "brokerbeta", teamId: "team2" });
   try {
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "jingun",
+        "x-a2a-requester-id": "workerzeta",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
-        nodeId: "jingun",
+        nodeId: "workerzeta",
         role: "analyst",
         capabilities: {
           canAnalyze: true,
@@ -440,33 +440,33 @@ test("server accepts local brokerOfRecord with parent-owned cross-broker Termina
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-id": "brokeralpha",
         "x-a2a-requester-role": "hub",
       }),
       body: JSON.stringify({
-        id: "seoseo-led-team2-parent-owned-task",
+        id: "brokeralpha-led-team2-parent-owned-task",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
-        brokerOfRecord: "gwakga",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
+        brokerOfRecord: "brokerbeta",
         teamId: "team2",
-        message: "source-only Team2 handoff with Seoseo parent ownership",
+        message: "source-only Team2 handoff with brokeralpha parent ownership",
         payload: {
           parentRoundId: "terminal-brief-contract-round",
           parentRoundTotal: 7,
           parentRoundOrder: 6,
-          parentBrokerId: "seoseo",
-          brokerOfRecordId: "seoseo",
+          parentBrokerId: "brokeralpha",
+          brokerOfRecordId: "brokeralpha",
           crossBrokerHandoff: {
             parentRoundId: "terminal-brief-contract-round",
-            originBrokerId: "seoseo",
-            handoffBrokerId: "gwakga",
-            childWorkerId: "jingun",
+            originBrokerId: "brokeralpha",
+            handoffBrokerId: "brokerbeta",
+            childWorkerId: "workerzeta",
           },
           notificationOwnership: {
             owner: "parent",
-            ownerBrokerId: "seoseo",
+            ownerBrokerId: "brokeralpha",
             scope: "parent-broker-only",
             providerSendPermittedByProjection: false,
             terminalAckPermittedByProjection: false,
@@ -475,7 +475,7 @@ test("server accepts local brokerOfRecord with parent-owned cross-broker Termina
             parentOwnedTerminalBrief: true,
             notificationOwnership: {
               owner: "parent",
-              ownerBrokerId: "seoseo",
+              ownerBrokerId: "brokeralpha",
               scope: "parent-broker-only",
             },
           },
@@ -488,18 +488,18 @@ test("server accepts local brokerOfRecord with parent-owned cross-broker Termina
       teamId?: string;
       payload?: Record<string, unknown>;
     };
-    assert.equal(created.brokerOfRecord, "gwakga", "top-level brokerOfRecord is the local accepting broker");
+    assert.equal(created.brokerOfRecord, "brokerbeta", "top-level brokerOfRecord is the local accepting broker");
     assert.equal(created.teamId, "team2");
-    assert.equal(created.payload?.["brokerOfRecordId"], "seoseo", "parent/finalizer owner remains payload metadata");
+    assert.equal(created.payload?.["brokerOfRecordId"], "brokeralpha", "parent/finalizer owner remains payload metadata");
     assert.deepEqual(created.payload?.["crossBrokerHandoff"], {
       parentRoundId: "terminal-brief-contract-round",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
-      childWorkerId: "jingun",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
+      childWorkerId: "workerzeta",
     });
     assert.deepEqual(created.payload?.["notificationOwnership"], {
       owner: "parent",
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
@@ -511,16 +511,16 @@ test("server accepts local brokerOfRecord with parent-owned cross-broker Termina
 });
 
 test("server rejects parent-owned handoff metadata for a different accepting broker", async () => {
-  const server = await startTestServer({ brokerId: "gwakga", teamId: "team2" });
+  const server = await startTestServer({ brokerId: "brokerbeta", teamId: "team2" });
   try {
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "jingun",
+        "x-a2a-requester-id": "workerzeta",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
-        nodeId: "jingun",
+        nodeId: "workerzeta",
         role: "analyst",
         capabilities: {
           canAnalyze: true,
@@ -535,27 +535,27 @@ test("server rejects parent-owned handoff metadata for a different accepting bro
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "seoseo",
+        "x-a2a-requester-id": "brokeralpha",
         "x-a2a-requester-role": "hub",
       }),
       body: JSON.stringify({
         id: "wrong-handoff-broker-parent-owned-task",
         intent: "verify",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "jingun", kind: "node", role: "analyst" },
-        assignedWorkerId: "jingun",
-        brokerOfRecord: "gwakga",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerzeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerzeta",
+        brokerOfRecord: "brokerbeta",
         teamId: "team2",
         message: "contradictory handoff metadata should fail closed",
         payload: {
           parentRoundId: "terminal-brief-contract-round",
           parentRoundTotal: 7,
           parentRoundOrder: 6,
-          parentBrokerId: "seoseo",
+          parentBrokerId: "brokeralpha",
           crossBrokerHandoff: {
             parentRoundId: "terminal-brief-contract-round",
-            originBrokerId: "seoseo",
-            handoffBrokerId: "seoseo",
+            originBrokerId: "brokeralpha",
+            handoffBrokerId: "brokeralpha",
           },
         },
       }),
@@ -842,11 +842,11 @@ test("server redacts provider capabilities from non-SQLite worker read paths", a
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "soonwook",
+        "x-a2a-requester-id": "workereta",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
-        nodeId: "soonwook",
+        nodeId: "workereta",
         role: "analyst",
         capabilities: {
           canAnalyze: true,
@@ -877,10 +877,10 @@ test("server redacts provider capabilities from non-SQLite worker read paths", a
     assert.equal(JSON.stringify(listBody).includes("xai"), false);
     assert.equal(JSON.stringify(listBody).includes("grok"), false);
 
-    const detailRes = await fetch(`${server.baseUrl}/workers/soonwook`);
+    const detailRes = await fetch(`${server.baseUrl}/workers/workereta`);
     assert.equal(detailRes.status, 200);
     const detailBody = await detailRes.json();
-    assert.equal(detailBody.nodeId, "soonwook");
+    assert.equal(detailBody.nodeId, "workereta");
     assert.equal(JSON.stringify(detailBody).includes("xai"), false);
     assert.equal(JSON.stringify(detailBody).includes("grok"), false);
   } finally {
@@ -1792,7 +1792,7 @@ test("GET /release/evidence returns read-only dry-run release evidence without m
   const server = await startTestServer({ edgeSecret: "test-edge-secret" });
   try {
     server.runtime.broker.registerWorker({
-      nodeId: "dungae",
+      nodeId: "workerepsilon",
       role: "analyst",
       capabilities: {
         canAnalyze: true,
@@ -1807,7 +1807,7 @@ test("GET /release/evidence returns read-only dry-run release evidence without m
       id: "release-evidence-task-1",
       intent: "propose_patch",
       requester: { id: "operator-a", kind: "user", role: "operator" },
-      target: { id: "dungae", kind: "node", role: "analyst" },
+      target: { id: "workerepsilon", kind: "node", role: "analyst" },
       payload: {
         mode: "github-propose-patch",
         issue: 479,
@@ -1815,9 +1815,9 @@ test("GET /release/evidence returns read-only dry-run release evidence without m
       },
       taskOrigin: "github",
     });
-    server.runtime.broker.claimTask(created.id, "dungae");
-    server.runtime.broker.startTask(created.id, "dungae");
-    server.runtime.broker.completeTask(created.id, "dungae", {
+    server.runtime.broker.claimTask(created.id, "workerepsilon");
+    server.runtime.broker.startTask(created.id, "workerepsilon");
+    server.runtime.broker.completeTask(created.id, "workerepsilon", {
       output: {
         github: {
           repo: "jinwon-int/a2a-broker",

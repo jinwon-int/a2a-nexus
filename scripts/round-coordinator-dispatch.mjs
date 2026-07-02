@@ -7,15 +7,15 @@
  * fail-closed classification and queue-drain handling. The missing piece (this
  * script) is the round-level fan-out: expand a small set of PRs across each
  * team's workers, stamp parent-round provenance, and split lanes per team's
- * home broker (team1 → seoseo, team2 → gwakga by default; #633) since a single
+ * home broker (team1 → brokerAlpha, team2 → brokerBeta by default; #633) since a single
  * manifest targets a single brokerUrl.
  *
  * Usage:
  *   node scripts/round-coordinator-dispatch.mjs \
  *     --round-id pr-review-001 --prs 615,617,618,620 \
- *     --workers-team1 sogyo,nosuk --workers-team2 dungae,jingun \
+ *     --workers-team1 workerBeta,workerAlpha --workers-team2 workerEpsilon,workerZeta \
  *     --repo jinwon-int/a2a-nexus \
- *     --team1-broker-url https://seoseo.example --team2-broker-url https://gwakga.example \
+ *     --team1-broker-url https://brokerAlpha.example --team2-broker-url https://brokerBeta.example \
  *     --out-dir /tmp/round --dry-run
  *
  * --dry-run (default) writes the per-team manifests and prints the exact
@@ -32,7 +32,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULT_REPO = "jinwon-int/a2a-nexus";
 // Team → home broker id mapping (BROKER_ID is the routing key of record, #633).
-const DEFAULT_TEAM_BROKER_IDS = { team1: "seoseo", team2: "gwakga" };
+const DEFAULT_TEAM_BROKER_IDS = { team1: "brokerAlpha", team2: "brokerBeta" };
 
 function csv(value) {
   return typeof value === "string"

@@ -122,7 +122,7 @@ test("final runtime mutation executor gate extractors can consume raw approval f
     ...fixtureInput(),
     finalRuntimeMutationExecutorGate: {
       now: NOW,
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       finalRuntimeMutationExecutorGateReference: "final-runtime-mutation-executor-gate-798",
     },
   };
@@ -130,7 +130,7 @@ test("final runtime mutation executor gate extractors can consume raw approval f
   assert.equal(extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateEvidence(input).state, "accepted");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnFinalRuntimeMutationExecutorGateOptions(input), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     finalRuntimeMutationExecutorGateReference: "final-runtime-mutation-executor-gate-798",
   });
 

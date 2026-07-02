@@ -204,9 +204,9 @@ test('docker-runner evidence-contract failure is classified separately from A2AD
 
 test('analysis bridge invalid JSON failure is classified separately from worker opinion evidence', () => {
   const tasks = [
-    lane('t1', 'succeeded', { worker: 'nosuk' }),
+    lane('t1', 'succeeded', { worker: 'workerAlpha' }),
     lane('t2', 'failed', {
-      worker: 'bangtong',
+      worker: 'workerGamma',
       payload: { mode: 'analysis-only' },
       top: {
         error: {
@@ -223,7 +223,7 @@ test('analysis bridge invalid JSON failure is classified separately from worker 
         },
       },
     }),
-    lane('t3', 'succeeded', { worker: 'sogyo' }),
+    lane('t3', 'succeeded', { worker: 'workerBeta' }),
   ];
 
   const result = computeVerdict(tasks, {
@@ -235,16 +235,16 @@ test('analysis bridge invalid JSON failure is classified separately from worker 
 
   assert.equal(result.verdict, 'BLOCKED');
   const t2 = result.missingLanes.find((l) => l.taskId === 't2');
-  assert.equal(t2?.worker, 'bangtong');
+  assert.equal(t2?.worker, 'workerGamma');
   assert.equal(t2?.evidenceClass, 'analysis_bridge_invalid_json');
   assert.match(t2?.reason ?? '', /valid JSON|analysis bridge/i);
 });
 
-test('queued Daegyo lane is labeled mobile_limited and cannot satisfy quorum (#958)', () => {
+test('queued mobileBeta lane is labeled mobile_limited and cannot satisfy quorum (#958)', () => {
   const tasks = [
-    lane('t1', 'succeeded', { worker: 'dungae' }),
-    lane('t2', 'succeeded', { worker: 'jingun' }),
-    lane('t3', 'queued', { worker: 'daegyo', payload: { mode: 'analysis-only' } }),
+    lane('t1', 'succeeded', { worker: 'workerEpsilon' }),
+    lane('t2', 'succeeded', { worker: 'workerZeta' }),
+    lane('t3', 'queued', { worker: 'mobileBeta', payload: { mode: 'analysis-only' } }),
   ];
   const result = computeVerdict(tasks, {
     round: ROUND,
@@ -255,16 +255,16 @@ test('queued Daegyo lane is labeled mobile_limited and cannot satisfy quorum (#9
 
   assert.equal(result.verdict, 'BLOCKED');
   const t3 = result.missingLanes.find((l) => l.taskId === 't3');
-  assert.equal(t3?.worker, 'daegyo');
+  assert.equal(t3?.worker, 'mobileBeta');
   assert.equal(t3?.evidenceClass, 'mobile_limited');
 });
 
 
-test('claimed/running Daegyo lane is classified as nonterminal missing evidence (#985 #986)', () => {
+test('claimed/running mobileBeta lane is classified as nonterminal missing evidence (#985 #986)', () => {
   const tasks = [
-    lane('t1', 'succeeded', { worker: 'dungae' }),
-    lane('t2', 'succeeded', { worker: 'jingun' }),
-    lane('t3', 'claimed', { worker: 'daegyo', payload: { mode: 'analysis-only' } }),
+    lane('t1', 'succeeded', { worker: 'workerEpsilon' }),
+    lane('t2', 'succeeded', { worker: 'workerZeta' }),
+    lane('t3', 'claimed', { worker: 'mobileBeta', payload: { mode: 'analysis-only' } }),
   ];
   const result = computeVerdict(tasks, {
     round: ROUND,
@@ -275,14 +275,14 @@ test('claimed/running Daegyo lane is classified as nonterminal missing evidence 
 
   assert.equal(result.verdict, 'BLOCKED');
   const t3 = result.missingLanes.find((l) => l.taskId === 't3');
-  assert.equal(t3?.worker, 'daegyo');
+  assert.equal(t3?.worker, 'mobileBeta');
   assert.equal(t3?.evidenceClass, 'nonterminal_claimed_missing_evidence');
   assert.match(t3?.reason ?? '', /claimed|missing evidence/i);
 });
 
 test('empty analysisStatus=done success is non-substantive (#983)', () => {
   const tasks = [
-    lane('t1', 'succeeded', { worker: 'sogyo', top: { output: {
+    lane('t1', 'succeeded', { worker: 'workerBeta', top: { output: {
       analysisStatus: 'done',
       summary: 'analysis complete',
       findings: [],
@@ -290,8 +290,8 @@ test('empty analysisStatus=done success is non-substantive (#983)', () => {
       recommendations: [],
       evidenceRefs: [],
     } } }),
-    lane('t2', 'succeeded', { worker: 'dungae' }),
-    lane('t3', 'succeeded', { worker: 'soonwook' }),
+    lane('t2', 'succeeded', { worker: 'workerEpsilon' }),
+    lane('t3', 'succeeded', { worker: 'workerEta' }),
   ];
   const result = computeVerdict(tasks, {
     round: ROUND,
@@ -307,15 +307,15 @@ test('empty analysisStatus=done success is non-substantive (#983)', () => {
 
 test('provider/model failure success is non-substantive (#983 #984)', () => {
   const tasks = [
-    lane('t1', 'succeeded', { worker: 'gongyung', top: { output: {
+    lane('t1', 'succeeded', { worker: 'mobileAlpha', top: { output: {
       analysisStatus: 'provider_or_model_failure',
       evidenceClass: 'provider_or_model_failure',
       summary: 'provider_or_model_failure: model failure before usable findings',
       findings: [],
       recommendations: [],
     } } }),
-    lane('t2', 'succeeded', { worker: 'dungae' }),
-    lane('t3', 'succeeded', { worker: 'soonwook' }),
+    lane('t2', 'succeeded', { worker: 'workerEpsilon' }),
+    lane('t3', 'succeeded', { worker: 'workerEta' }),
   ];
   const result = computeVerdict(tasks, {
     round: ROUND,
@@ -338,12 +338,12 @@ test('source projection blocked lanes expose detailed source bundle classes (#98
   ];
   for (const [suffix, summary, expected] of cases) {
     const tasks = [
-      lane(`t-${suffix}`, 'succeeded', { worker: 'bangtong', top: { output: {
+      lane(`t-${suffix}`, 'succeeded', { worker: 'workerGamma', top: { output: {
         analysisStatus: 'blocked',
         summary,
       } } }),
-      lane(`ok-${suffix}-1`, 'succeeded', { worker: 'dungae' }),
-      lane(`ok-${suffix}-2`, 'succeeded', { worker: 'soonwook' }),
+      lane(`ok-${suffix}-1`, 'succeeded', { worker: 'workerEpsilon' }),
+      lane(`ok-${suffix}-2`, 'succeeded', { worker: 'workerEta' }),
     ];
     const result = computeVerdict(tasks, {
       round: ROUND,
@@ -360,7 +360,7 @@ test('source projection blocked lanes expose detailed source bundle classes (#98
 test('source projection telemetry with insufficient quality is non-substantive even if status is done (#1145)', () => {
   const tasks = [
     lane('t1', 'succeeded', {
-      worker: 'nosuk',
+      worker: 'workerAlpha',
       top: { output: {
         analysisStatus: 'done',
         analysisKind: 'analysis_bridge',
@@ -373,8 +373,8 @@ test('source projection telemetry with insufficient quality is non-substantive e
         },
       } },
     }),
-    lane('t2', 'succeeded', { worker: 'sogyo' }),
-    lane('t3', 'succeeded', { worker: 'bangtong' }),
+    lane('t2', 'succeeded', { worker: 'workerBeta' }),
+    lane('t3', 'succeeded', { worker: 'workerGamma' }),
   ];
   const result = computeVerdict(tasks, {
     round: ROUND,
@@ -432,11 +432,11 @@ test('citedEvidenceIds returns only ids present in the draft', () => {
 test('analysis bridge blocked source-projection lane is non-substantive and listed with reason (#960)', () => {
   const tasks = [
     lane('t1', 'succeeded', {
-      worker: 'nosuk',
+      worker: 'workerAlpha',
       top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'source reviewed' } },
     }),
     lane('t2', 'succeeded', {
-      worker: 'bangtong',
+      worker: 'workerGamma',
       top: {
         output: {
           analysisStatus: 'blocked',
@@ -447,7 +447,7 @@ test('analysis bridge blocked source-projection lane is non-substantive and list
       },
     }),
     lane('t3', 'succeeded', {
-      worker: 'sogyo',
+      worker: 'workerBeta',
       top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'source reviewed' } },
     }),
   ];
@@ -463,7 +463,7 @@ test('analysis bridge blocked source-projection lane is non-substantive and list
   assert.equal(result.succeeded, 2);
   assert.equal(result.nonSubstantive, 1);
   const blocked = result.missingLanes.find((l) => l.taskId === 't2');
-  assert.equal(blocked?.worker, 'bangtong');
+  assert.equal(blocked?.worker, 'workerGamma');
   assert.equal(blocked?.status, 'succeeded');
   assert.equal(blocked?.evidenceClass, 'source_projection_prompt_budget_truncated');
   assert.match(blocked?.reason ?? '', /prompt.*budget|budget.*truncated/i);
@@ -503,11 +503,11 @@ test('classifier ignores wrapper phrases embedded inside sourceBundle payload co
 test('compact supplement supersedes a source-projection blocked lane without hiding it (#960)', () => {
   const tasks = [
     lane('t1', 'succeeded', {
-      worker: 'nosuk',
+      worker: 'workerAlpha',
       top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'primary source reviewed' } },
     }),
     lane('t2', 'succeeded', {
-      worker: 'bangtong',
+      worker: 'workerGamma',
       top: {
         output: {
           analysisStatus: 'blocked',
@@ -518,11 +518,11 @@ test('compact supplement supersedes a source-projection blocked lane without hid
       },
     }),
     lane('t3', 'succeeded', {
-      worker: 'sogyo',
+      worker: 'workerBeta',
       top: { output: { analysisStatus: 'done', analysisKind: 'analysis_bridge', summary: 'primary source reviewed' } },
     }),
     lane('t2-supplement', 'succeeded', {
-      worker: 'bangtong',
+      worker: 'workerGamma',
       payload: {
         parentRoundOrder: 4,
         supplementOf: 't2',
@@ -552,7 +552,7 @@ test('compact supplement supersedes a source-projection blocked lane without hid
   assert.deepEqual(result.supersededLanes, [{
     taskId: 't2',
     status: 'succeeded',
-    worker: 'bangtong',
+    worker: 'workerGamma',
     evidenceClass: 'superseded_by_supplement',
     reason: 'source_projection_prompt_budget_truncated superseded by compact supplement t2-supplement',
     supersededBy: 't2-supplement',

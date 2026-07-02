@@ -3,7 +3,7 @@
 Issue: [#356](https://github.com/jinwon-int/a2a-broker/issues/356)
 Parent: [#353](https://github.com/jinwon-int/a2a-broker/issues/353)
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294)
-Worker: `yukson` libero validation lane
+Worker: `workerdelta` libero validation lane
 
 This is the no-live validation plan for the operator receipt bridge / canary gate round. It is safe to attach to the #356 PR or issue before all implementation PRs exist, then re-run as each linked lane reaches PR/Done evidence.
 

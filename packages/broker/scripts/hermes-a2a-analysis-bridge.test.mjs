@@ -71,7 +71,7 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
     chmodSync(fakeHermesPath, 0o755);
 
     const message = [
-      "You are A2A worker sogyo. Complete this read-only A2A analysis task.",
+      "You are A2A worker workerbeta. Complete this read-only A2A analysis task.",
       "Task message:\nseo-web-bridge 우측 사이드바를 좌측 sidebar처럼 고정 rail로 바꿀지 판단해줘.",
       "Payload JSON:\n" + JSON.stringify({
         mode: "analysis-only",
@@ -129,7 +129,7 @@ test("Hermes A2A analysis bridge honors explicit analysis provider/model env (#7
     chmodSync(fakeHermesPath, 0o755);
 
     const message = [
-      "You are A2A worker dungae. Complete this read-only A2A analysis task.",
+      "You are A2A worker workerepsilon. Complete this read-only A2A analysis task.",
       "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true }),
     ].join("\n\n");
 

@@ -7,10 +7,10 @@
  * (the terminal-brief-all-hands-20260521-863 canary and its child lanes).
  *
  * All logic is pure and source-only. No GitHub API calls, DB mutation, or
- * manual ACK/replay is attempted. The broker/finalizer (Seoseo) uses these
+ * manual ACK/replay is attempted. The broker/finalizer (brokeralpha) uses these
  * recommendations as evidence for closeout decisions.
  *
- * Reference: #896 Team1/Bangtong Terminal Brief completion lane 1/7.
+ * Reference: #896 Team1/workergamma Terminal Brief completion lane 1/7.
  */
 import type {
   OutboxLegacyResidueReport,
@@ -97,19 +97,19 @@ export const KNOWN_TRACKERS: readonly KnownTracker[] = Object.freeze([
     id: "#864",
     number: 864,
     url: `${TRACKER_BROKER_BASE}/864`,
-    label: "bangtong broker parent-owned Terminal Brief canary harness (lane 1/7)",
+    label: "workergamma broker parent-owned Terminal Brief canary harness (lane 1/7)",
   },
   {
     id: "#865",
     number: 865,
     url: `${TRACKER_BROKER_BASE}/865`,
-    label: "yukson libero validation of live all-hands Terminal Brief evidence (lane 4/7)",
+    label: "workerdelta libero validation of live all-hands Terminal Brief evidence (lane 4/7)",
   },
   {
     id: "#866",
     number: 866,
     url: `${TRACKER_BROKER_BASE}/866`,
-    label: "dungae cross-broker projection receiver no-duplicate harness (lane 5/7)",
+    label: "workerepsilon cross-broker projection receiver no-duplicate harness (lane 5/7)",
   },
 ]);
 
@@ -130,18 +130,18 @@ export const KNOWN_TRACKERS: readonly KnownTracker[] = Object.freeze([
  *   is expected and tolerated as long as it is exclusively "pre-cutoff"
  *   rows — live-round rows are all post-cutoff by definition.
  *
- * #864 (bangtong harness — lane 1/7):
+ * #864 (workergamma harness — lane 1/7):
  *   **Close** when the classifier itself exists and has test coverage.
  *   The harness is the existence of
  *   terminal-outbox-legacy-classifier.ts + its tests. No classifier
  *   report dependency — the module's presence IS the deliverable.
  *
- * #865 (yukson libero validation — lane 4/7):
+ * #865 (workerdelta libero validation — lane 4/7):
  *   **Close** when the classifier has zero unsafe-evidence failures in
  *   its test suite and no current-window row has unsafe evidence URLs
  *   in the report. Zero unsafe-evidence tests is the gate.
  *
- * #866 (dungae cross-broker dedupe — lane 5/7):
+ * #866 (workerepsilon cross-broker dedupe — lane 5/7):
  *   **Close** when the cross-broker projection lifecycle handles
  *   duplicates via ingest idempotency (parentRoundId/originBrokerId
  *   dedupe) and parent-ownership metadata. The cross-broker-terminal-
@@ -253,7 +253,7 @@ export function evaluateTrackerCloseoutRecommendations(
     };
   })();
 
-  // ── #864: Bangtong harness ───────────────────────────────────────────
+  // ── #864: workergamma harness ───────────────────────────────────────────
 
   const r864: TrackerCloseoutRecommendation = {
     trackerId: "#864",
@@ -261,7 +261,7 @@ export function evaluateTrackerCloseoutRecommendations(
     recommendation: "close",
     confidence: "high",
     rationale:
-      "The bangtong lane deliverable is the terminal-outbox legacy residue classifier " +
+      "The workergamma lane deliverable is the terminal-outbox legacy residue classifier " +
       "implementation (terminal-outbox-legacy-classifier.ts) with 34+ passing tests. " +
       "The classifier exists, is tested, and is embedded in the terminal-outbox-preflight " +
       "script (#886 reference). No classifier-report dependency — the module's presence " +
@@ -270,7 +270,7 @@ export function evaluateTrackerCloseoutRecommendations(
       "classifier implementation + tests exist; preflight script embeds the classifier",
   };
 
-  // ── #865: Yukson libero validation ───────────────────────────────────
+  // ── #865: workerdelta libero validation ───────────────────────────────────
 
   const r865: TrackerCloseoutRecommendation = (() => {
     if (hasUnsafeUrls) {
@@ -304,7 +304,7 @@ export function evaluateTrackerCloseoutRecommendations(
     };
   })();
 
-  // ── #866: Dungae cross-broker dedupe ─────────────────────────────────
+  // ── #866: workerepsilon cross-broker dedupe ─────────────────────────────────
 
   const r866: TrackerCloseoutRecommendation = {
     trackerId: "#866",
@@ -316,7 +316,7 @@ export function evaluateTrackerCloseoutRecommendations(
       "(verified in cross-broker-terminal-brief.test.ts test 1: 'ingest is idempotent by " +
       "parentRoundId/originBrokerId'). The cross-broker routing helper " +
       "(resolveTerminalBriefParentOriginRoute) and dedupe validation in the projection store " +
-      "prevent duplicate Gwakga-local operator-facing briefs. Parent ownership metadata is " +
+      "prevent duplicate brokerbeta-local operator-facing briefs. Parent ownership metadata is " +
       "preserved through the projection lifecycle. No additional harness needed.",
     conditionSummary:
       "cross-broker ingest idempotency test passes; parent ownership metadata preserved",

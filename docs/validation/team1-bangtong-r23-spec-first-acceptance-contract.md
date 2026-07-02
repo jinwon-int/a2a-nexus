@@ -1,16 +1,16 @@
-# Team1 bangtong R23: Terminal Brief spec-first acceptance contract
+# Team1 workerGamma R23: Terminal Brief spec-first acceptance contract
 
 Issue: a2a-plane#336 (a2a-plane#336, internal tracker private)
 Parent: a2a-plane#335 (a2a-plane#335, internal tracker private)
 Run: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
 Parent round: `a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z`
-Origin broker / finalizer: `seoseo`
-Lane: Team1/bangtong
+Origin broker / finalizer: `brokerAlpha`
+Lane: Team1/workerGamma
 Order: 7/7
 Round: A2A R23 — Terminal Brief spec-first TaskFlow automation and monorepo plan
 Snapshot: `2026-05-15T06:08Z`
 
-This is the Team1/bangtong spec-first acceptance contract for Terminal Brief. It defines the canonical acceptance criteria for implementation lanes covering: states, ACK boundaries, provider-accepted evidence, concise titles, evidence body templates, fixtures, and compatibility gates. It references frozen contracts, fixtures, and conformance tests as binding acceptance evidence.
+This is the Team1/workerGamma spec-first acceptance contract for Terminal Brief. It defines the canonical acceptance criteria for implementation lanes covering: states, ACK boundaries, provider-accepted evidence, concise titles, evidence body templates, fixtures, and compatibility gates. It references frozen contracts, fixtures, and conformance tests as binding acceptance evidence.
 
 ## Safety boundary
 
@@ -98,7 +98,7 @@ The spec-first acceptance contract is organized into seven domains. Each domain 
 
 | Criterion | Acceptance edge | Source contract | Acceptance evidence |
 |-----------|----------------|-----------------|---------------------|
-| Cross-broker handoff carries `parentRoundId`, `originBrokerId`, `brokerOfRecord`, `destinationBrokerId` | Missing any required handoff metadata field fails compatibility | `contracts/a2a/broker-handoff-protocol.md` | `fixtures/contract/gwakga-cross-broker-handoff.json` |
+| Cross-broker handoff carries `parentRoundId`, `originBrokerId`, `brokerOfRecord`, `destinationBrokerId` | Missing any required handoff metadata field fails compatibility | `contracts/a2a/broker-handoff-protocol.md` | `fixtures/contract/brokerBeta-cross-broker-handoff.json` |
 | Second-worker compatibility proofs must reference registered workers | Proof without matching registered worker name fails | `fixtures/contract/worker-registration-capabilities.json` | `check-contract-fixtures.mjs` validates `workerNames` |
 | Compatibility proofs must not require `liveProviderSend`, `terminalAckMutation`, or `privateTopology` | Proof with any of these set `true` fails compatibility gate | `contracts/a2a/worker-registration.md` | Worker conformance checks `requiresPrivateTopology`, `liveProviderSend`, `terminalAckMutation` |
 | Public compatibility policy enumerates safe boundaries | Missing policy or policy with undefined boundaries fails | `contracts/a2a/r20-stability-gate.md` | `fixtures/contract/public-compatibility-policy.json` |
@@ -118,7 +118,7 @@ The spec-first acceptance contract is organized into seven domains. Each domain 
 | A4 | Concise title acceptance | Title matches format `A2A Terminal Brief <상태>: <worker>(<order>/<total>)`; ≤80 chars; Korean status; correct per-round total; no forbidden content; title separate from body | Format deviation, length violation, wrong language, wrong total, forbidden content, concatenated title+body | `contracts/a2a/parent-terminal-brief-aggregation.md`, `parent-terminal-brief-aggregation.json` |
 | A5 | Evidence body template acceptance | Each evidence kind has required fields present; body is redacted; body separate from title; GitHub comment body manifest-bound | Missing required field, unredacted data, concatenated body, unbound comment | `contracts/a2a/fixtures/terminal-evidence-examples.json`, `github-evidence-projection.md` |
 | A6 | Fixture acceptance | v0Freeze present on all fixtures; registered in conformance checker; hygiene scans pass; invariants match contract | Missing v0Freeze, unregistered fixture, hygiene failure, invariant mismatch | `test/conformance/check-contract-fixtures.mjs` pass, `test/conformance/check-terminal-evidence-ack-boundary.mjs` pass |
-| A7 | Compatibility gate acceptance | Handoff metadata fields present; workers registered; no live/sensitive operations required; policy enumerated; all samples conformance-checked | Missing metadata, unregistered worker, live-sensitive requirement, missing policy, conformance failure | `fixtures/contract/gwakga-cross-broker-handoff.json`, `worker-registration-capabilities.json`, conformance pass |
+| A7 | Compatibility gate acceptance | Handoff metadata fields present; workers registered; no live/sensitive operations required; policy enumerated; all samples conformance-checked | Missing metadata, unregistered worker, live-sensitive requirement, missing policy, conformance failure | `fixtures/contract/brokerBeta-cross-broker-handoff.json`, `worker-registration-capabilities.json`, conformance pass |
 | A8 | Runtime/bootstrap hygiene | No OpenClaw context files in branch diff; no secrets in evidence | Any bootstrap file or secret pattern in diff | Pre-publication scan |
 | A9 | Safety confirmation | No approval-gated action performed without explicit operator approval | Any unapproved live action | This document |
 
@@ -147,16 +147,16 @@ This acceptance contract serves as the authoritative acceptance criteria for Ter
 
 | Order | Worker | Team | Broker of record | Concise title |
 |-------|--------|------|------------------|---------------|
-| 1 | `soonwook` | Team2 | `gwakga` (handoff) | `A2A Terminal Brief 완료: soonwook(1/7)` |
-| 2 | `dungae` | Team2 | `gwakga` (handoff) | `A2A Terminal Brief 완료: dungae(2/7)` |
-| 3 | `jingun` | Team2 | `gwakga` (handoff) | `A2A Terminal Brief 완료: jingun(3/7)` |
-| 4 | `n/a` | Team1 | `seoseo` | `A2A Terminal Brief 완료: n/a(4/7)` |
-| 5 | `n/a` | Team1 | `seoseo` | `A2A Terminal Brief 완료: n/a(5/7)` |
-| 6 | `n/a` | Team1 | `seoseo` | `A2A Terminal Brief 완료: n/a(6/7)` |
-| 7 | `bangtong` | Team1 | `seoseo` | `A2A Terminal Brief 완료: bangtong(7/7)` |
+| 1 | `workerEta` | Team2 | `brokerBeta` (handoff) | `A2A Terminal Brief 완료: workerEta(1/7)` |
+| 2 | `workerEpsilon` | Team2 | `brokerBeta` (handoff) | `A2A Terminal Brief 완료: workerEpsilon(2/7)` |
+| 3 | `workerZeta` | Team2 | `brokerBeta` (handoff) | `A2A Terminal Brief 완료: workerZeta(3/7)` |
+| 4 | `n/a` | Team1 | `brokerAlpha` | `A2A Terminal Brief 완료: n/a(4/7)` |
+| 5 | `n/a` | Team1 | `brokerAlpha` | `A2A Terminal Brief 완료: n/a(5/7)` |
+| 6 | `n/a` | Team1 | `brokerAlpha` | `A2A Terminal Brief 완료: n/a(6/7)` |
+| 7 | `workerGamma` | Team1 | `brokerAlpha` | `A2A Terminal Brief 완료: workerGamma(7/7)` |
 
 Title constraints verified for every row:
-- Source: parent broker (`seoseo`) aggregation ledger, not child issue body or child broker local state.
+- Source: parent broker (`brokerAlpha`) aggregation ledger, not child issue body or child broker local state.
 - Maximum length: ≤80 characters.
 - Forbidden content: no task IDs, child issue URLs, PR/Done/Block URLs, evidence body, child broker ID, handoff broker ID, provider message ID, receipt state, ACK state, raw logs, secrets, private paths, or runtime/bootstrap file names.
 - Status label: `완료` (Korean).
@@ -221,7 +221,7 @@ Result: **PASS** — no guard paths detected in branch diff or staged changes.
 | Concise titles | `contracts/a2a/parent-terminal-brief-aggregation.md` | `fixtures/contract/parent-terminal-brief-aggregation.json` | `test/conformance/check-contract-fixtures.mjs` |
 | Evidence templates | `contracts/a2a/terminal-semantics.md`, `contracts/a2a/github-evidence-projection.md` | `contracts/a2a/fixtures/terminal-evidence-examples.json` | N/A (structural reference) |
 | Fixtures | `contracts/a2a/README.md` | All `fixtures/contract/*.json`, `fixtures/terminal-evidence/*.json` | `test/conformance/check-contract-fixtures.mjs`, `check-terminal-evidence-ack-boundary.mjs` |
-| Compatibility gates | `contracts/a2a/broker-handoff-protocol.md`, `contracts/a2a/worker-registration.md` | `fixtures/contract/gwakga-cross-broker-handoff.json`, `worker-registration-capabilities.json` | `test/conformance/check-contract-fixtures.mjs` |
+| Compatibility gates | `contracts/a2a/broker-handoff-protocol.md`, `contracts/a2a/worker-registration.md` | `fixtures/contract/brokerBeta-cross-broker-handoff.json`, `worker-registration-capabilities.json` | `test/conformance/check-contract-fixtures.mjs` |
 
 ## Local validation commands
 

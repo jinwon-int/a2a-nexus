@@ -269,7 +269,7 @@ export function buildTerminalBriefSidecarDefaultOnRuntimeMutationPlan(
       "sending approval requests",
       "granting approval or executing an approval grant",
       "writing config or enabling Terminal Brief default-on",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, sidecar start/stop/restart, broker restart, or deploy",
       "GitHub mutation from the packet/route",

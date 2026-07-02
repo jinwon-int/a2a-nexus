@@ -1,7 +1,7 @@
 {
   "$schema": "a2a-runner-redacted-log-proof-v1",
   "description": "Synthetic, secret-free example showing a redacted log/artifact proof bundle produced by the scanner. Demonstrates the redacted manifest, redacted log content, deterministic timestamps, and no-live-impact safety markers. This is a stand-alone reference; no Docker, live broker, or GitHub writes are required.",
-  "worker": "bangtong",
+  "worker": "workerGamma",
   "emittedAt": "1970-01-01T00:00:00.000Z",
   "handlerTask": {
     "id": "redacted-log-proof-example-335",
@@ -133,7 +133,7 @@
       "url": "https://github.com/jinwon-int/a2a-docker-runner/issues/335#issuecomment-PLACEHOLDER",
       "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/335",
       "manifestPath": "artifacts/manifest.json",
-      "dedupeKey": "a2a-team1-release-blocker-proof-pack-20260526T0628KST-01-bangtong",
+      "dedupeKey": "a2a-team1-release-blocker-proof-pack-20260526T0628KST-01-workerGamma",
       "commentIsTerminalAck": false,
       "commentIsVisibilityReceipt": false,
       "commentIsOperatorApproval": false

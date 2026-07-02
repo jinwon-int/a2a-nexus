@@ -144,9 +144,9 @@ test("auto-closeout fixture parses and matches the Team1 source-only design run"
   assert.equal(fixture.parentRoundTotal, 4);
   assert.equal(fixture.parentRoundOrder, 1);
   assert.equal(fixture.parentRoundProgress, 0);
-  assert.equal(fixture.originBrokerId, "seoseo");
-  assert.equal(fixture.brokerOfRecordId, "seoseo");
-  assert.equal(fixture.parentBrokerId, "seoseo");
+  assert.equal(fixture.originBrokerId, "brokerAlpha");
+  assert.equal(fixture.brokerOfRecordId, "brokerAlpha");
+  assert.equal(fixture.parentBrokerId, "brokerAlpha");
 });
 
 test("auto-closeout fixture enforces no-live safety proof; production auto-closeout is never enabled", () => {
@@ -191,9 +191,9 @@ test("auto-closeout fixture source metadata matches the assignment round context
   assert.equal(source.parentRoundTotal, 4);
   assert.equal(source.parentRoundOrder, 1);
   assert.equal(source.parentRoundProgress, 0);
-  assert.equal(source.originBrokerId, "seoseo");
-  assert.equal(source.brokerOfRecordId, "seoseo");
-  assert.equal(source.parentBrokerId, "seoseo");
+  assert.equal(source.originBrokerId, "brokerAlpha");
+  assert.equal(source.brokerOfRecordId, "brokerAlpha");
+  assert.equal(source.parentBrokerId, "brokerAlpha");
 });
 
 test("auto-closeout fixture covers PR, Done, and Block evidence kinds", () => {
@@ -204,7 +204,7 @@ test("auto-closeout fixture covers PR, Done, and Block evidence kinds", () => {
     const handlerResult = buildHandlerResult(
       entry.runnerOutput,
       entry.handlerTask,
-      "seoseo",
+      "brokerAlpha",
     );
     const terminalEvidence = handlerResult.terminalEvidence;
 

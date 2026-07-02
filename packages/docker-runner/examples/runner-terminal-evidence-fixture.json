@@ -2,15 +2,15 @@
   "$schema": "a2a-runner-terminal-evidence-fixture-v1",
   "description": "CI-safe runner-to-broker terminal evidence integration fixture. It validates the compact terminalEvidence event shape produced by the worker handler from a synthetic a2a-docker-runner result without Docker, live broker, Telegram, or GitHub writes.",
   "round": "A2A Hardening Round 3",
-  "worker": "sogyo",
+  "worker": "workerBeta",
   "activeTargets": [
-    "bangtong",
-    "dungae",
-    "sogyo",
-    "nosuk"
+    "workerGamma",
+    "workerEpsilon",
+    "workerBeta",
+    "workerAlpha"
   ],
   "excludeNodes": [
-    "yukson"
+    "workerDelta"
   ],
   "handlerTask": {
     "id": "round3-terminal-evidence-94",
@@ -66,14 +66,14 @@
     "taskId": "round3-terminal-evidence-94",
     "status": "succeeded",
     "evidenceKind": "PR",
-    "worker": "sogyo",
+    "worker": "workerBeta",
     "repo": "jinwon-int/a2a-docker-runner",
     "issue": "https://github.com/jinwon-int/a2a-docker-runner/issues/94",
     "issueTitle": "Add runner-to-broker terminal evidence integration fixture",
     "prUrl": "https://github.com/jinwon-int/a2a-docker-runner/pull/94",
     "alert": {
       "title": "A2A PR: jinwon-int/a2a-docker-runner",
-      "body": "task=round3-terminal-evidence-94 · worker=sogyo · status=succeeded · exit=0 · timeout=false · artifacts=2 · issue=jinwon-int/a2a-docker-runner#94 · title=Add runner-to-broker terminal evidence integration fixture · changes=2 · reason=PR evidence is available for operator review.",
+      "body": "task=round3-terminal-evidence-94 · worker=workerBeta · status=succeeded · exit=0 · timeout=false · artifacts=2 · issue=jinwon-int/a2a-docker-runner#94 · title=Add runner-to-broker terminal evidence integration fixture · changes=2 · reason=PR evidence is available for operator review.",
       "url": "https://github.com/jinwon-int/a2a-docker-runner/pull/94"
     },
     "reason": "PR evidence is available for operator review.",
@@ -134,6 +134,6 @@
     "1. Build and run integration tests before enabling broker terminal notifications.",
     "2. Use this fixture as Telegram-safe dry-run input; do not live deploy without explicit operator approval.",
     "3. Confirm broker outbox/dedupe keys match expectedTerminalEvidence.dedupeKey before replay.",
-    "4. Validate active targets bangtong, dungae, sogyo, and nosuk only; yukson remains excluded."
+    "4. Validate active targets workerGamma, workerEpsilon, workerBeta, and workerAlpha only; workerDelta remains excluded."
   ]
 }

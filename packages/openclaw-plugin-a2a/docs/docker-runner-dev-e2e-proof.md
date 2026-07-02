@@ -38,7 +38,7 @@ npm test
 - Checkout: clean per-task checkout
 - Commands: `npm ci && npm test`
 - Expected terminal result: success / exit code `0`
-- Observed canary: Sogyo clean private clone + `npm ci` + `npm test` smoke passed
+- Observed canary: workerBeta clean private clone + `npm ci` + `npm test` smoke passed
 - Round: `runner-evidence-split-20260430`
 
 로컬 재검증 결과(노숙, 컨테이너 런타임은 없음):

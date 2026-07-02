@@ -16,7 +16,7 @@ DB, or ACK terminal outbox rows.
 
 ## Required gates
 
-- [ ] **Operator approval boundary:** seoseo explicitly approves the intended
+- [ ] **Operator approval boundary:** brokeralpha explicitly approves the intended
   public/stable action after reviewing this checklist and all lane evidence.
 - [ ] **No action creep:** this gate only records readiness. Do not change repo
   visibility, publish packages/images, deploy production, restart Gateway, send
@@ -30,7 +30,7 @@ DB, or ACK terminal outbox rows.
   is approved.
 - [ ] **Secret/history scan:** run a fresh scan of committed history and the
   working tree. Findings must be redacted (`<redacted>`/placeholders only) and
-  either remediated or accepted by seoseo before visibility changes.
+  either remediated or accepted by brokeralpha before visibility changes.
 - [ ] **Repository visibility review:** confirm branch protection, CODEOWNERS or
   review owners if used, issue/PR templates, default branch, and public-facing
   metadata before changing visibility.

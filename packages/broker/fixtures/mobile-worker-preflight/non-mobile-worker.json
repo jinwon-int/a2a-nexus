@@ -4,7 +4,7 @@
   "description": "Docker worker should be skipped by mobile worker preflight.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "dungae",
+    "nodeId": "workerepsilon",
     "workerMode": "docker-runner",
     "status": "online",
     "lastSeenAgeSec": 5,

@@ -6,7 +6,7 @@ import type {
   TerminalBriefApprovalExecutorState,
 } from "./terminal-brief-approval-executor.js";
 
-export type TerminalBriefApprovalDispatchAdapterType = "generic" | "openclaw" | "hermes" | "gongyung";
+export type TerminalBriefApprovalDispatchAdapterType = "generic" | "openclaw" | "hermes" | "mobilealpha";
 
 export type TerminalBriefApprovalDispatchAdapterState =
   | "dispatch_draft_ready"
@@ -87,7 +87,7 @@ export interface TerminalBriefApprovalDispatchAdapterPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     sendsApprovalRequest: false;
     producesLiveReceipt: false;
     grantsApproval: false;
@@ -180,7 +180,7 @@ export function buildTerminalBriefApprovalDispatchAdapter(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       sendsApprovalRequest: false,
       producesLiveReceipt: false,
       grantsApproval: false,
@@ -253,7 +253,7 @@ export function renderTerminalBriefApprovalDispatchAdapterMarkdown(
     "Targets: issue=" + (packet.source.targetIssueUrl ?? "none") + " pr=" + (packet.source.targetPrUrl ?? "none"),
     "Selected action: " + (packet.source.selectedAction ?? "none")
       + " target=" + (packet.source.selectedTarget ?? "none"),
-    "Harness contract: JSON transport; OpenClaw message send required=false; Hermes compatible=true; Gongyung compatible=true; sendsApprovalRequest=false; grantsApproval=false; executesAction=false.",
+    "Harness contract: JSON transport; OpenClaw message send required=false; Hermes compatible=true; mobilealpha compatible=true; sendsApprovalRequest=false; grantsApproval=false; executesAction=false.",
     "",
     "Transcript draft:",
     "- target=" + (packet.transcript.target ?? "none")
@@ -286,7 +286,7 @@ function normalizeAdapter(adapter?: string): TerminalBriefApprovalDispatchAdapte
 
 function isSupportedAdapter(adapter: string): adapter is TerminalBriefApprovalDispatchAdapterType {
   const value = adapter.toLowerCase();
-  return value === "openclaw" || value === "hermes" || value === "gongyung" || value === "generic";
+  return value === "openclaw" || value === "hermes" || value === "mobilealpha" || value === "generic";
 }
 
 function buildBlockers(
@@ -296,7 +296,7 @@ function buildBlockers(
 ): string[] {
   const blockers = [...executor.blockers];
   if (options.adapter && !isSupportedAdapter(options.adapter)) {
-    blockers.push("unsupported adapter; expected generic, openclaw, hermes, or gongyung");
+    blockers.push("unsupported adapter; expected generic, openclaw, hermes, or mobilealpha");
   }
   if (executor.state === "blocked") {
     blockers.push("approval executor is blocked; dispatch adapter cannot prepare a transcript");

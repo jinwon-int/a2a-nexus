@@ -26,7 +26,7 @@ function readySynthesis() {
       writeSets: ["packages/broker/src/core/a.ts", "packages/broker/src/core/b.ts"],
     },
     host: {
-      workerId: "bangtong",
+      workerId: "workergamma",
       cpuLoadPct: 25,
       memoryUsedPct: 35,
       ioPressure: "low",
@@ -38,12 +38,12 @@ function readySynthesis() {
       brokerSubagentCap: 12,
     },
   });
-  const dryRunPlan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "seoseo", plannerPolicy: policy });
+  const dryRunPlan = buildA2AWorkerSubagentDryRunPlan({ now: NOW, finalizer: "brokeralpha", plannerPolicy: policy });
   const evidence = dryRunPlan.recommendation.roles.map((role, index) => buildA2AWorkerSubagentEvidencePacket({
     now: NOW,
     parentTaskId: "task-large-hybrid",
-    workerId: "bangtong",
-    subagentId: `bangtong-${role.role}-${index + 1}`,
+    workerId: "workergamma",
+    subagentId: `workergamma-${role.role}-${index + 1}`,
     role: role.role,
     status: "done",
     claims: [`${role.role} evidence accepted`],
@@ -51,8 +51,8 @@ function readySynthesis() {
   }));
   const synthesis = buildA2AWorkerSubagentSynthesisPacket({
     now: NOW,
-    finalizer: "seoseo",
-    workerId: "bangtong",
+    finalizer: "brokeralpha",
+    workerId: "workergamma",
     parentTaskId: "task-large-hybrid",
     dryRunPlan,
     subagentEvidence: evidence,
@@ -145,15 +145,15 @@ test("adapter boundary blocks recursive depth, exhausted caps, and blocked synth
   });
   const blockedSynthesis = buildA2AWorkerSubagentSynthesisPacket({
     now: NOW,
-    finalizer: "seoseo",
-    workerId: "bangtong",
+    finalizer: "brokeralpha",
+    workerId: "workergamma",
     parentTaskId: "task-large-hybrid",
     dryRunPlan,
     subagentEvidence: [buildA2AWorkerSubagentEvidencePacket({
       now: NOW,
       parentTaskId: "task-large-hybrid",
-      workerId: "bangtong",
-      subagentId: "bangtong-verifier-blocked",
+      workerId: "workergamma",
+      subagentId: "workergamma-verifier-blocked",
       role: "verifier",
       status: "done",
       finalDecisionClaim: "merge_pr",

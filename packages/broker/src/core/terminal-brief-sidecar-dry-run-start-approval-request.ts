@@ -80,7 +80,7 @@ export interface TerminalBriefSidecarDryRunStartApprovalRequestPacket {
     separateExecutorRequired: true;
     defaultOnCandidate: false;
     approvalCanBeRequestedBy: string;
-    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "gongyung" | "external">;
+    approvalCanBeDeliveredBy: Array<"openclaw" | "hermes" | "mobilealpha" | "external">;
     mustNotTreatProviderAcceptedAsVisibilityProof: true;
     forbiddenBeforeSeparateApproval: string[];
   };
@@ -112,7 +112,7 @@ export interface TerminalBriefSidecarDryRunStartApprovalRequestPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesPreflightChainReviewPacket: true;
     producesApprovalRequestDraft: true;
     sendsApprovalRequest: false;
@@ -242,7 +242,7 @@ export function buildTerminalBriefSidecarDryRunStartApprovalRequest(
       separateExecutorRequired: true,
       defaultOnCandidate: false,
       approvalCanBeRequestedBy: requestedBy,
-      approvalCanBeDeliveredBy: ["openclaw", "hermes", "gongyung", "external"],
+      approvalCanBeDeliveredBy: ["openclaw", "hermes", "mobilealpha", "external"],
       mustNotTreatProviderAcceptedAsVisibilityProof: true,
       forbiddenBeforeSeparateApproval: forbiddenBeforeSeparateApproval(),
     },
@@ -280,7 +280,7 @@ export function buildTerminalBriefSidecarDryRunStartApprovalRequest(
       "dispatching or invoking a start executor",
       "spawning a process or starting/stopping the sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "GitHub PR merge, issue close, or comment post from the packet/route",
       "TaskFlow record creation or broker DB mutation",
@@ -292,7 +292,7 @@ export function buildTerminalBriefSidecarDryRunStartApprovalRequest(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesPreflightChainReviewPacket: true,
       producesApprovalRequestDraft: true,
       sendsApprovalRequest: false,
@@ -418,7 +418,7 @@ function buildBlockers(chainReview: TerminalBriefSidecarPreflightChainReviewPack
     ...(chainReview.table.requiredRowsReady !== chainReview.table.requiredRows ? ["preflight chain required rows are incomplete"] : []),
     ...(chainReview.integrationContract.openclawMessageSendRequired ? ["chain review unexpectedly requires OpenClaw message send"] : []),
     ...(!chainReview.integrationContract.hermesAdapterCompatible ? ["chain review is not Hermes adapter compatible"] : []),
-    ...(!chainReview.integrationContract.gongyungAdapterCompatible ? ["chain review is not Gongyung adapter compatible"] : []),
+    ...(!chainReview.integrationContract.mobilealphaAdapterCompatible ? ["chain review is not mobilealpha adapter compatible"] : []),
     ...(hasUnsafeNoLiveViolation(chainReview) ? ["preflight chain review contains unsafe live-action permission or semantic flag"] : []),
   ].filter(Boolean));
 }
@@ -520,7 +520,7 @@ function forbiddenBeforeSeparateApproval(): string[] {
     "dispatch or invoke the start executor",
     "spawn a process or start/stop the sidecar",
     "enable Terminal Brief default-on",
-    "send via Telegram/OpenClaw/Hermes/Gongyung/provider",
+    "send via Telegram/OpenClaw/Hermes/mobilealpha/provider",
     "ACK/replay terminal rows or mutate terminal receipt state",
     "mutate broker DB, TaskFlow, GitHub issue/PR state, or outbox history",
     "restart/deploy production services",

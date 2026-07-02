@@ -887,8 +887,8 @@ test("SqliteBrokerStateStore skips invalid task hot rows and reports diagnostics
     store.upsertHotTasks([validTask]);
 
     const invalidTask = {
-      ...makeTask("task-invalid", "queued", "dungae"),
-      workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "dungae" },
+      ...makeTask("task-invalid", "queued", "workerepsilon"),
+      workspace: { id: "openclaw-ops", kind: "filesystem", nodeId: "workerepsilon" },
     };
     const db = new DatabaseSync(temp.filePath);
     try {

@@ -125,7 +125,7 @@ The `duplicateSuppression.doctorDiagnostics` object provides:
   activity if the sidecar is running in continuous mode.
 - For a point-in-time snapshot, use `--doctor` on an idle sidecar or with `--once`.
 
-The package also includes a Hermes/Gongyung skeleton adapter for non-OpenClaw
+The package also includes a Hermes/mobileAlpha skeleton adapter for non-OpenClaw
 harness integration. It defaults to dry-run/spool-only and does not ACK terminal
 outbox rows unless a separate approved path supplies explicit current-session
 visible or manual operator receipt evidence. In spool-only mode it returns
@@ -136,9 +136,9 @@ terminal ACK evidence:
 a2a-terminal-brief-sidecar \
   --base-url http://127.0.0.1:8787 \
   --cursor-file ~/.openclaw/a2a-terminal-brief-sidecar/cursor.json \
-  --delivery-command a2a-terminal-brief-hermes-gongyung \
+  --delivery-command a2a-terminal-brief-hermes-mobileAlpha \
   --delivery-command-arg --operator \
-  --delivery-command-arg gongyung \
+  --delivery-command-arg mobileAlpha \
   --delivery-command-arg --spool-file \
   --delivery-command-arg ~/.hermes/a2a-terminal-brief-spool.jsonl \
   --allow-id terminal-brief-canary-task-id
@@ -158,9 +158,9 @@ Relevant environment variables:
 - `A2A_TERMINAL_BRIEF_OPENCLAW_TIMEOUT_MS`: notifier send timeout.
 - `OPENCLAW_BIN`: OpenClaw CLI path. Defaults to `openclaw`.
 
-Hermes/Gongyung skeleton environment variables:
+Hermes/mobileAlpha skeleton environment variables:
 
-- A2A_TERMINAL_BRIEF_HERMES_OPERATOR: operator id. Defaults to gongyung.
+- A2A_TERMINAL_BRIEF_HERMES_OPERATOR: operator id. Defaults to mobileAlpha.
 - A2A_TERMINAL_BRIEF_HERMES_SPOOL_FILE: optional dry-run JSONL spool path.
 - A2A_TERMINAL_BRIEF_HERMES_MANUAL_RECEIPT_ID: explicit manual receipt projection for approved adapter integration.
 - A2A_TERMINAL_BRIEF_HERMES_VISIBLE_RECEIPT_ID: explicit current-session-visible receipt projection for approved adapter integration.

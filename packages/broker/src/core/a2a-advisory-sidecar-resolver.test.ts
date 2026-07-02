@@ -13,7 +13,7 @@ import {
 const validRawRecommendation = {
   schemaVersion: 1,
   taskType: "github-issue-cleanup",
-  recommendedWorkerIds: ["sogyo"],
+  recommendedWorkerIds: ["workerbeta"],
   recommendedModel: "minimax/minimax-m3",
   confidence: 0.72,
   reason: "Read-only issue cleanup; finalizer remains authoritative.",
@@ -75,7 +75,7 @@ test("default-off advisory resolver validates caller-supplied output only when e
   assert.equal(resolved.fallbackReason, undefined);
   assert.equal(resolved.effectiveStatus, "enabled");
   assert.equal(resolved.recommendation.taskType, "github-issue-cleanup");
-  assert.deepEqual(resolved.recommendation.recommendedWorkerIds, ["sogyo"]);
+  assert.deepEqual(resolved.recommendation.recommendedWorkerIds, ["workerbeta"]);
   assert.equal(resolved.recommendation.advisoryOnly, true);
 });
 

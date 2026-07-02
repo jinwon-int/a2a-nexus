@@ -4,7 +4,7 @@
   "description": "Termux mobile worker path is not assignment-ready because supervisor and tunnel listener are gone.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "android-termux",
     "status": "online",
     "lastSeenAgeSec": 10,

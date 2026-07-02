@@ -123,7 +123,7 @@ mobile health when `workerMode === "mobile"`:
 
 ```json
 {
-  "nodeId": "gongyung",
+  "nodeId": "mobilealpha",
   "status": "online",
   "workerMode": "mobile",
   "mobileHealth": "health_ok",
@@ -198,7 +198,7 @@ Hermes evidence is always **source-only, redacted**:
 
 ```json
 {
-  "workerId": "gongyung",
+  "workerId": "mobilealpha",
   "outcome": "blocked",
   "error": {
     "code": "blocked",
@@ -213,7 +213,7 @@ Hermes evidence is always **source-only, redacted**:
 
 ## Resource-Aware Policy (GO/NO-GO)
 
-Hermes workers must comply with the `gongyung-hermes` preset policy:
+Hermes workers must comply with the `mobilealpha-hermes` preset policy:
 
 - `readOnly=true`
 - `noLiveSend=true`
@@ -235,7 +235,7 @@ Hermes/native worker contract tests are in:
 | `src/server.test.ts` | End-to-end HTTP poll + evidence flow (`server accepts a broker-agnostic Hermes-style worker poll and evidence flow`) |
 | `src/core/broker.test.ts` | Capability metadata preservation, stale/offline mobile health, redacted evidence |
 | `src/core/worker.test.ts` | Daemon-level Hermes worker env variables and registration |
-| `src/core/resource-aware-worker-policy.test.ts` | GO/NO-GO onboarding for Gongyung/Hermes workers |
+| `src/core/resource-aware-worker-policy.test.ts` | GO/NO-GO onboarding for mobilealpha/Hermes workers |
 
 ## Related
 

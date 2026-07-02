@@ -33,8 +33,8 @@ function validPacket(overrides = {}) {
       reason: 'cross-repo Terminal Brief routing contract',
     },
     ownership: {
-      brokerOfRecord: 'gwakga',
-      finalizer: 'gwakga',
+      brokerOfRecord: 'brokerBeta',
+      finalizer: 'brokerBeta',
       humanApprovalOwner: 'operator',
     },
     affectedRepos: ['a2a-plane', 'a2a-broker', 'openclaw-plugin-a2a'],

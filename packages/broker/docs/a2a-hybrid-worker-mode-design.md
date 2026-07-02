@@ -39,7 +39,7 @@ decisions.
 ```json
 {
   "workMode": "a2a_hybrid",
-  "workerId": "soonwook",
+  "workerId": "workereta",
   "taskId": "example",
   "roles": ["implement", "validate", "evidence"],
   "synthesizedEvidence": {

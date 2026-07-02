@@ -7,8 +7,8 @@
  * Pure and dependency-free — no SSH, network, or runtime side effects.
  */
 
-// Canonical team ↔ home-broker invariant (#633 / #630): team1 → seoseo, team2 → gwakga.
-export const TEAM_BROKER_INVARIANT = { team1: "seoseo", team2: "gwakga" };
+// Canonical team ↔ home-broker invariant (#633 / #630): team1 → brokerAlpha, team2 → brokerBeta.
+export const TEAM_BROKER_INVARIANT = { team1: "brokerAlpha", team2: "brokerBeta" };
 
 export function hasText(value) {
   return typeof value === "string" && value.trim().length > 0;

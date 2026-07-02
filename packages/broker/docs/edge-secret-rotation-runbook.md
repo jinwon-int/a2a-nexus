@@ -11,8 +11,8 @@ mutation may happen until the operator explicitly approves the exact window and
 scope, for example:
 
 > Approve rotating the A2A broker edge secret now for the production broker and
-> active workers listed in the current production baseline (`bangtong`, `sogyo`,
-> `dungae`, `nosuk`). Update only edge secret env/drop-ins, restart the broker
+> active workers listed in the current production baseline (`workergamma`, `workerbeta`,
+> `workerepsilon`, `workeralpha`). Update only edge secret env/drop-ins, restart the broker
 > once, then restart workers one at a time, and record only rotation time,
 > affected nodes, and redacted validation results.
 
@@ -37,10 +37,10 @@ Update every place that supplies the broker edge secret. Known config names are:
 - Service manager drop-ins or env files for the broker and active workers.
 - Any deployment/orchestration secret store that templates those files.
 
-Active workers from the current README production baseline are `bangtong`,
-`sogyo`, `dungae`, and `nosuk`. Older handoff notes list `bangtong`, `dungae`,
-and `sogyo`; include `nosuk` unless the operator confirms it is out of service.
-`yukson` is explicitly excluded unless the operator makes a new decision to
+Active workers from the current README production baseline are `workergamma`,
+`workerbeta`, `workerepsilon`, and `workeralpha`. Older handoff notes list `workergamma`, `workerepsilon`,
+and `workerbeta`; include `workeralpha` unless the operator confirms it is out of service.
+`workerdelta` is explicitly excluded unless the operator makes a new decision to
 bring it back into the active worker fleet.
 
 ## Planning diagnostics, secret-safe only
@@ -129,8 +129,8 @@ Do not run broad `env`, `printenv`, `systemctl show -p Environment`, or raw file
    curl -fsS "$BROKER_URL/health" | jq '{ok, service, persistence}'
    ```
 
-5. For each active worker, one at a time in this order: `bangtong`, `sogyo`,
-   `dungae`, `nosuk`:
+5. For each active worker, one at a time in this order: `workergamma`, `workerbeta`,
+   `workerepsilon`, `workeralpha`:
    - update only that worker's edge secret source;
    - restart only that worker service;
    - wait for it to register/heartbeat with the broker;

@@ -12,7 +12,7 @@ action is allowed.
 - optional a2a-broker.terminal-brief-approval-receipt-ingestor.packet
 
 The status table is harness-neutral. It can be used by OpenClaw, Hermes,
-Gongyung, or another public A2A harness as JSON. It does not require
+mobilealpha, or another public A2A harness as JSON. It does not require
 openclaw message send.
 
 ## Output states
@@ -44,7 +44,7 @@ The packet includes five rows:
 
 This packet does not:
 
-- send via OpenClaw, Hermes, Gongyung, Telegram, or another provider;
+- send via OpenClaw, Hermes, mobilealpha, Telegram, or another provider;
 - grant real approval;
 - post comments, merge PRs, or close issues;
 - ACK/replay terminal rows or mutate terminal receipt DB state;

@@ -101,7 +101,7 @@ export interface TerminalBriefSidecarStartExecutorGatePacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesActivationReceiptIngestorPacket: boolean;
     consumesDryRunStartApprovalReceiptIngestorPacket: boolean;
     dispatchesStartExecutor: false;
@@ -217,7 +217,7 @@ export function buildTerminalBriefSidecarStartExecutorGate(
     approvalSensitiveActionsExcluded: [
       "starting/enabling always-on sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "operator approval grant mutation or execution",
       "GitHub PR merge, issue close, or comment post from the gate",
@@ -230,7 +230,7 @@ export function buildTerminalBriefSidecarStartExecutorGate(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesActivationReceiptIngestorPacket: receipt.kind === "a2a-broker.terminal-brief-sidecar-activation-receipt-ingestor.packet",
       consumesDryRunStartApprovalReceiptIngestorPacket: receipt.kind === "a2a-broker.terminal-brief-sidecar-dry-run-start-approval-receipt-ingestor.packet",
       dispatchesStartExecutor: false,

@@ -30,7 +30,7 @@ readiness evidence patch:
 - `runtimeExecutorDesignReviewed=true`
 - `validationEvidenceFresh=true`
 - `explicitRuntimeApprovalPresent=false`
-- all broker dispatch, worker-spawn, Daegyo/mobile expansion, rollback, and
+- all broker dispatch, worker-spawn, mobilebeta/mobile expansion, rollback, and
   live-boundary readiness booleans remain `false`
 
 The next step may present the request to the operator and record the response in
@@ -48,6 +48,6 @@ Use `--json` for the raw packet.
 ## Boundary
 
 This packet is source/docs/tests only. It does not grant runtime approval, enable
-a runtime executor, create broker dispatch, spawn workers, expand Daegyo/mobile
+a runtime executor, create broker dispatch, spawn workers, expand mobilebeta/mobile
 GitHub scope, send providers, perform Terminal ACK/replay, mutate a database,
 deploy or restart services, publish releases, or move credentials.

@@ -18,7 +18,7 @@ export type HandoffReceiverSkippedReason =
   | "wrong_target_team"
   | "missing_idempotency_key";
 
-export interface GwakgaSeoseoHandoffManifest {
+export interface brokerbetabrokeralphaHandoffManifest {
   brokerOfRecord?: string;
   requestedByBroker?: string;
   requestingAgent?: string;
@@ -39,11 +39,11 @@ export interface GwakgaSeoseoHandoffManifest {
 
 export interface HandoffReceiverOptions {
   broker: InMemoryA2ABroker;
-  /** Local broker expected to own created tasks. Defaults to `seoseo`. */
+  /** Local broker expected to own created tasks. Defaults to `brokeralpha`. */
   brokerOfRecord?: string;
   /** Local team/tenant expected to own created tasks. Defaults to `team1`. */
   targetTeam?: string;
-  /** Remote broker allowed to request this handoff. Defaults to `gwakga`. */
+  /** Remote broker allowed to request this handoff. Defaults to `brokerbeta`. */
   requestedByBroker?: string;
   /** Intent used when a `/a2a assign` command omits `--intent`. */
   defaultIntent?: A2AExchangeIntent;
@@ -72,7 +72,7 @@ export interface HandoffReceiveResult {
   accepted: boolean;
   replayed: boolean;
   skippedReason?: HandoffReceiverSkippedReason;
-  manifest?: GwakgaSeoseoHandoffManifest;
+  manifest?: brokerbetabrokeralphaHandoffManifest;
   targetTaskIds: string[];
   evidence: HandoffEvidenceEntry[];
   evidenceCommentBody?: string;
@@ -96,7 +96,7 @@ const MANIFEST_KEYS = new Set([
   "parentRoundTotal",
 ]);
 
-export class GwakgaSeoseoHandoffReceiver {
+export class brokerbetabrokeralphaHandoffReceiver {
   private readonly broker: InMemoryA2ABroker;
   private readonly brokerOfRecord: string;
   private readonly targetTeam: string;
@@ -106,11 +106,11 @@ export class GwakgaSeoseoHandoffReceiver {
 
   constructor(options: HandoffReceiverOptions) {
     this.broker = options.broker;
-    this.brokerOfRecord = options.brokerOfRecord ?? "seoseo";
+    this.brokerOfRecord = options.brokerOfRecord ?? "brokeralpha";
     this.targetTeam = options.targetTeam ?? "team1";
-    this.requestedByBroker = options.requestedByBroker ?? "gwakga";
+    this.requestedByBroker = options.requestedByBroker ?? "brokerbeta";
     this.defaultIntent = options.defaultIntent ?? "propose_patch";
-    this.requesterId = options.requesterId ?? "gwakga-seoseo-handoff-receiver";
+    this.requesterId = options.requesterId ?? "brokerbeta-brokeralpha-handoff-receiver";
   }
 
   receiveIssueComment(event: GitHubIssueCommentEvent, ctx: GitHubDeliveryContext): HandoffReceiveResult {
@@ -126,7 +126,7 @@ export class GwakgaSeoseoHandoffReceiver {
   }
 
   receive(input: HandoffReceiveInput): HandoffReceiveResult {
-    const manifest = parseGwakgaSeoseoHandoffManifest(input.body);
+    const manifest = parsebrokerbetabrokeralphaHandoffManifest(input.body);
     if (!manifest) {
       return emptyResult("no_handoff_manifest");
     }
@@ -201,7 +201,7 @@ export class GwakgaSeoseoHandoffReceiver {
 
   private createTask(args: {
     input: HandoffReceiveInput;
-    manifest: GwakgaSeoseoHandoffManifest;
+    manifest: brokerbetabrokeralphaHandoffManifest;
     intent: AssignmentIntent;
     taskId: string;
     index: number;
@@ -220,7 +220,7 @@ export class GwakgaSeoseoHandoffReceiver {
       brokerOfRecord: this.brokerOfRecord,
       teamId: this.targetTeam,
       payload: {
-        handoffKind: "gwakga-seoseo",
+        handoffKind: "brokerbeta-brokeralpha",
         brokerOfRecord: this.brokerOfRecord,
         requestedByBroker: normalizeString(manifest.requestedByBroker),
         requestingAgent: requesterId,
@@ -242,11 +242,11 @@ export class GwakgaSeoseoHandoffReceiver {
         workMode: "team1",
         workModeDecision: {
           mode: "team1",
-          idempotencyKey: `gwakga-seoseo-handoff:${normalizeString(manifest.idempotencyKey) ?? taskId}`,
+          idempotencyKey: `brokerbeta-brokeralpha-handoff:${normalizeString(manifest.idempotencyKey) ?? taskId}`,
           finalizerOwner: this.brokerOfRecord,
           generatedAt: input.ctx.receivedAt,
           capacityState: "unknown",
-          capacitySnapshotSource: "gwakga-seoseo-handoff-manifest",
+          capacitySnapshotSource: "brokerbeta-brokeralpha-handoff-manifest",
           capacitySnapshotAt: input.ctx.receivedAt,
           sourceOnlyDecision: true,
           workerDispatchAllowedByThisPacket: false,
@@ -265,7 +265,7 @@ export class GwakgaSeoseoHandoffReceiver {
   }
 }
 
-export function parseGwakgaSeoseoHandoffManifest(text: string | null | undefined): GwakgaSeoseoHandoffManifest | null {
+export function parsebrokerbetabrokeralphaHandoffManifest(text: string | null | undefined): brokerbetabrokeralphaHandoffManifest | null {
   if (!text) return null;
   for (const block of manifestCandidateBlocks(text)) {
     const parsed = parseManifestBlock(block);
@@ -276,7 +276,7 @@ export function parseGwakgaSeoseoHandoffManifest(text: string | null | undefined
 
 export function renderHandoffEvidenceComment(result: Pick<HandoffReceiveResult, "manifest" | "evidence">): string {
   const manifest = result.manifest;
-  const header = "[a2a:Gwakga→Seoseo handoff]";
+  const header = "[a2a:brokerbeta→brokeralpha handoff]";
   const lines = [header];
   if (manifest) {
     lines.push(`brokerOfRecord: ${redactHandoffText(manifest.brokerOfRecord ?? "")}`);
@@ -312,7 +312,7 @@ function manifestCandidateBlocks(text: string): string[] {
   return blocks;
 }
 
-function parseManifestBlock(block: string): GwakgaSeoseoHandoffManifest | null {
+function parseManifestBlock(block: string): brokerbetabrokeralphaHandoffManifest | null {
   const fields: Record<string, string> = {};
   const evidence: string[] = [];
   let inEvidence = false;
@@ -373,7 +373,7 @@ function stripValue(value: string): string {
   return trimmed;
 }
 
-function intentFromManifest(manifest: GwakgaSeoseoHandoffManifest): AssignmentIntent {
+function intentFromManifest(manifest: brokerbetabrokeralphaHandoffManifest): AssignmentIntent {
   return {
     raw: `structured handoff for ${manifest.targetWorker}`,
     target: manifest.targetWorker!,
@@ -384,7 +384,7 @@ function intentFromManifest(manifest: GwakgaSeoseoHandoffManifest): AssignmentIn
 }
 
 function taskIdForHandoff(
-  manifest: GwakgaSeoseoHandoffManifest,
+  manifest: brokerbetabrokeralphaHandoffManifest,
   workerId: string,
   index: number,
   count: number,
@@ -446,7 +446,7 @@ function slugForId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "handoff";
 }
 
-function emptyResult(reason: HandoffReceiverSkippedReason, manifest?: GwakgaSeoseoHandoffManifest): HandoffReceiveResult {
+function emptyResult(reason: HandoffReceiverSkippedReason, manifest?: brokerbetabrokeralphaHandoffManifest): HandoffReceiveResult {
   return {
     accepted: false,
     replayed: false,

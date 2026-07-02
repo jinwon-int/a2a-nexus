@@ -3,7 +3,7 @@
  *
  * Issue:  jinwon-int/plugin-a2a#454
  * Parent: a2a-plane#492 (internal tracker, private)
- * Worker: sogyo
+ * Worker: workerBeta
  *
  * Verifies that buildBrokerProtocolProfile() correctly extracts the
  * broker-advertised A2A protocol profile from the health endpoint

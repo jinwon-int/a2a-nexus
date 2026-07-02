@@ -1,7 +1,7 @@
 # A2A Work Mode Benchmark v1
 
 This source-only benchmark measures when a Team1 A2A round is better than a
-solo Seoseo implementation path, and when the orchestration overhead is not
+solo brokeralpha implementation path, and when the orchestration overhead is not
 worth it.
 
 The benchmark is a measurement runbook only. It must not dispatch live workers,
@@ -13,9 +13,9 @@ credentials, publish releases, or change repository visibility.
 
 | Mode | Definition | Normal owner |
 |---|---|---|
-| `solo` | One Seoseo implementation/review path from issue intake to PR/decision. | Seoseo |
-| `team1` | Four evidence lanes (`sogyo`, `nosuk`, `yukson`, `bangtong`) plus one Seoseo finalizer. | Seoseo finalizer |
-| `hybrid` | Seoseo implements or finalizes while Team1 supplies bounded evidence on risk, tests, or alternatives. | Seoseo finalizer |
+| `solo` | One brokeralpha implementation/review path from issue intake to PR/decision. | brokeralpha |
+| `team1` | Four evidence lanes (`workerbeta`, `workeralpha`, `workerdelta`, `workergamma`) plus one brokeralpha finalizer. | brokeralpha finalizer |
+| `hybrid` | brokeralpha implements or finalizes while Team1 supplies bounded evidence on risk, tests, or alternatives. | brokeralpha finalizer |
 
 Benchmark v1 compares `solo` and `team1`. `hybrid` is recorded when a run starts
 as one mode but needs targeted helper evidence.
@@ -73,7 +73,7 @@ This separates implementation/review speed from operational closeout cost.
 | Metric | Formula or source | Why it matters |
 |---|---|---|
 | `solo_or_team_wall_seconds` | milestone deltas | Operator-visible latency. |
-| `active_agent_seconds` | foreground agent/tool active time | Actual Seoseo effort. |
+| `active_agent_seconds` | foreground agent/tool active time | Actual brokeralpha effort. |
 | `total_worker_seconds` | sum of Team1 lane durations | Total compute/work spent. |
 | `speedup_ratio` | `solo_wall / team1_wall` | Parallel wall-clock gain. |
 | `work_amplification_ratio` | `team1_total_worker / solo_active` | Cost of parallelism. |
@@ -142,7 +142,7 @@ entry. Minimum columns:
 | `validity` | `valid`, `paired`, `replay`, `contaminated`, or `excluded`. |
 | `decision_wall_seconds` | Time to finalizer decision. |
 | `closeout_wall_seconds` | Time to finished closeout. |
-| `active_agent_seconds` | Seoseo active effort estimate. |
+| `active_agent_seconds` | brokeralpha active effort estimate. |
 | `total_worker_seconds` | Sum of Team1 worker durations. |
 | `speedup_pair_id` | Pair identifier for matched comparisons. |
 | `work_amplification_ratio` | Cost ratio versus paired solo sample. |
@@ -197,7 +197,7 @@ Use the v1 measurements to refine these defaults:
 | Ambiguous root cause with several plausible fixes | `team1` |
 | Multiple worker PRs or conflicting recommendations | `team1` |
 | Live deploy, rollback, DB, ACK/replay, or secret boundary | `solo` finalizer; Team1 evidence only if needed |
-| Policy/runbook with several stakeholder perspectives | `team1` then Seoseo synthesis |
+| Policy/runbook with several stakeholder perspectives | `team1` then brokeralpha synthesis |
 | Urgent operator-facing bug with known fix path | `solo` |
 
 ## Stop Conditions

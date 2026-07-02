@@ -99,7 +99,7 @@ export interface TerminalBriefSidecarDefaultOnApprovalEvidenceIngestorPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesDefaultOnApprovalRequestPacket: true;
     providerAcceptedIsVisibilityProof: false;
     terminalAckRequiresVisibilityProof: true;
@@ -232,7 +232,7 @@ export function buildTerminalBriefSidecarDefaultOnApprovalEvidenceIngestor(
       "sending the default-on approval request",
       "granting approval or executing an approval grant",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, sidecar start/stop/restart, or deploy",
       "GitHub PR merge, issue close, or comment post from the ingestor",
@@ -245,7 +245,7 @@ export function buildTerminalBriefSidecarDefaultOnApprovalEvidenceIngestor(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDefaultOnApprovalRequestPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,

@@ -127,7 +127,7 @@ test("extractors accept aliases and markdown keeps request-only boundary", () =>
     executionRollbackEnvelopePacket: readyEnvelope(),
     executionApprovalRequest: {
       now: NOW,
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "jinwon",
       approvalWindowMinutes: 20,
     },
@@ -138,7 +138,7 @@ test("extractors accept aliases and markdown keeps request-only boundary", () =>
   );
   const markdown = renderTerminalBriefSidecarDefaultOnExecutionApprovalRequestMarkdown(packet);
 
-  assert.equal(packet.approvalRequestDraft.requestedBy, "seoseo");
+  assert.equal(packet.approvalRequestDraft.requestedBy, "brokeralpha");
   assert.equal(packet.approvalRequestDraft.operatorTarget, "jinwon");
   assert.equal(packet.approvalRequestDraft.approvalExpiresAt, "2026-05-19T06:30:00.000Z");
   assert.match(markdown, /execution approval request draft/);

@@ -29,8 +29,8 @@ function canaryPlan(
       invocationRehearsalState: "ready_for_executor_invocation_rehearsal",
       invocationRehearsalIdempotencyKey: "tb-sidecar-executor-invocation-rehearsal:fixture-724",
       executorInvocationRehearsalReady: true,
-      executorName: "gongyung-sidecar-dry-run-executor",
-      adapterName: "gongyung",
+      executorName: "mobilealpha-sidecar-dry-run-executor",
+      adapterName: "mobilealpha",
       commandShapeKind: "metadata_only",
     },
     approvalRequestDraft: {
@@ -83,7 +83,7 @@ function canaryPlan(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesExecutorInvocationRehearsalPacket: true,
       sendsApprovalRequest: false,
       grantsApproval: false,
@@ -176,7 +176,7 @@ test("builds ready source-only preflight evidence packet without permitting runt
   assert.equal(packet.table.requiredRowsReady, packet.table.requiredRows);
   assert.equal(packet.integrationContract.openclawMessageSendRequired, false);
   assert.equal(packet.integrationContract.hermesAdapterCompatible, true);
-  assert.equal(packet.integrationContract.gongyungAdapterCompatible, true);
+  assert.equal(packet.integrationContract.mobilealphaAdapterCompatible, true);
   assert.equal(packet.integrationContract.collectsLiveEvidence, false);
   assert.equal(packet.integrationContract.probesGateway, false);
   assert.equal(packet.integrationContract.startsSidecar, false);

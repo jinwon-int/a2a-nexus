@@ -1184,15 +1184,15 @@ function sampleSchedzBody(index, total) {
       topWorkers: [{ key: "worker-slow", count: 8 }],
       topStatuses: [{ key: "succeeded", count: 24 }],
       topReceiptStatuses: [{ key: "accepted", count: 7 }],
-      topBrokersOfRecord: [{ key: "seoseo", count: 42 }],
+      topBrokersOfRecord: [{ key: "brokeralpha", count: 42 }],
       topPendingAckWorkers: [{ key: "worker-slow", count: 7 }],
       topPendingAckStatuses: [{ key: "succeeded", count: 7 }],
       topPendingAckReceiptStatuses: [{ key: "accepted", count: 7 }],
-      topPendingAckBrokersOfRecord: [{ key: "seoseo", count: 7 }],
+      topPendingAckBrokersOfRecord: [{ key: "brokeralpha", count: 7 }],
       oldestPendingAckWorker: "worker-slow",
       oldestPendingAckStatus: "succeeded",
       oldestPendingAckReceiptStatus: "accepted",
-      oldestPendingAckBrokerOfRecord: "seoseo",
+      oldestPendingAckBrokerOfRecord: "brokeralpha",
     },
     container: {
       cgroup: {

@@ -20,7 +20,7 @@
       "draftOnly": true,
       "status": "draft_not_sent",
       "requestedAction": "approve_terminal_brief_default_on_enablement",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "operatorChannel": "telegram",
       "approvalReference": "tb-sidecar-default-on-approval:fixture-772",

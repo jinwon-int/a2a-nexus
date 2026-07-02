@@ -43,8 +43,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: options.parentRoundId ?? "round-833",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-broker",
       issue: 833,
@@ -70,22 +70,22 @@ function eventFor(
 
 function allReadyEvents(): TerminalTaskOutboxEvent[] {
   return [
-    eventFor("bangtong", "succeeded", {
+    eventFor("workergamma", "succeeded", {
       progress: 1,
       total: 4,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831",
     }),
-    eventFor("yukson", "succeeded", {
+    eventFor("workerdelta", "succeeded", {
       progress: 2,
       total: 4,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833",
     }),
-    eventFor("sogyo", "succeeded", {
+    eventFor("workerbeta", "succeeded", {
       progress: 3,
       total: 4,
       doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398",
     }),
-    eventFor("nosuk", "succeeded", {
+    eventFor("workeralpha", "succeeded", {
       progress: 4,
       total: 4,
       prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395",
@@ -97,11 +97,11 @@ function buildApprovedInput(policyMode: AutoCloseoutPolicyMode = "draft"): Termi
   return {
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [
         {
           id: "brief-final",
-          text: "Terminal Brief: nosuk final worker (4/4)",
+          text: "Terminal Brief: workeralpha final worker (4/4)",
           createdAt: NOW,
         },
       ],
@@ -183,7 +183,7 @@ test("partial final count blocks closeout", () => {
     ...buildApprovedInput("draft"),
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [
         { id: "brief-partial", text: "Terminal Brief partial (2/4)", createdAt: NOW },
       ],
@@ -195,7 +195,7 @@ test("partial final count blocks closeout", () => {
 
   assert.equal(plan.decision, "blocked");
   assert.ok(plan.blockers.some((b) => b.includes("2/4") || b.includes("not reached")));
-  assert.ok(plan.closeoutCandidate.missingWorkers.some((w) => w === "sogyo" || w === "nosuk"));
+  assert.ok(plan.closeoutCandidate.missingWorkers.some((w) => w === "workerbeta" || w === "workeralpha"));
 });
 
 test("conflicting totals fail closed", () => {
@@ -203,7 +203,7 @@ test("conflicting totals fail closed", () => {
     ...buildApprovedInput("draft"),
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [
         { id: "brief-3", text: "Terminal Brief (3/3)", createdAt: NOW },
         { id: "brief-4", text: "Terminal Brief (4/4)", createdAt: NOW },
@@ -225,7 +225,7 @@ test("duplicate N/N signals produce identical idempotency key", () => {
     ...baseInput,
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [
         { id: "brief-a", text: "Terminal Brief complete (4/4)", createdAt: NOW },
         { id: "brief-b", text: "Terminal Brief complete (4/4)", createdAt: "2026-05-20T11:31:00.000Z" },
@@ -238,7 +238,7 @@ test("duplicate N/N signals produce identical idempotency key", () => {
     ...baseInput,
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [
         { id: "brief-a", text: "Terminal Brief complete (4/4)", createdAt: NOW },
       ],
@@ -256,11 +256,11 @@ test("evidence revisions change idempotency key", () => {
   const base = buildApprovedInput("draft");
 
   const planA = buildAutoCloseoutPlan(
-    { ...base, evidenceRevisions: { "bangtong": "abc" } },
+    { ...base, evidenceRevisions: { "workergamma": "abc" } },
     { now: NOW },
   );
   const planB = buildAutoCloseoutPlan(
-    { ...base, evidenceRevisions: { "bangtong": "xyz" } },
+    { ...base, evidenceRevisions: { "workergamma": "xyz" } },
     { now: NOW },
   );
 
@@ -284,7 +284,7 @@ test("waiting decision when no final-count signal observed", () => {
     parentRoundId: "round-833",
     finalCountInput: {
       parentRoundId: "round-833",
-      expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+      expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
       finalCountSignals: [],
       events: [],
     },
@@ -301,7 +301,7 @@ test("operator override unblocks a blocked candidate", () => {
   const plan = buildAutoCloseoutPlan(
     {
       ...buildApprovedInput("draft"),
-      operatorOverride: "seoseo: manual unblock for test",
+      operatorOverride: "brokeralpha: manual unblock for test",
     },
     { now: NOW },
   );
@@ -362,7 +362,7 @@ test("blocked plan gets recover_evidence operator_review actions", () => {
       ...buildApprovedInput("draft"),
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [],
         events: allReadyEvents().slice(0, 1),
       },
@@ -389,7 +389,7 @@ test("no CI evidence produces warning not blocker", () => {
 test("pre-built candidate can be passed instead of raw input", () => {
   const candidate = buildTerminalBriefFinalCountCloseoutCandidate({
     parentRoundId: "round-833",
-    expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
     finalCountSignals: [
       { id: "brief-final", text: "Terminal Brief: complete (4/4)", createdAt: NOW },
     ],

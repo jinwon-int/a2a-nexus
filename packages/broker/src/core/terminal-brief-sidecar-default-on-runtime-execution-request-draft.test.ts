@@ -36,7 +36,7 @@ function readyFinalGate(): TerminalBriefSidecarDefaultOnRuntimeExecutionFinalGat
 test("default-on runtime execution request draft becomes ready from final gate without permitting execution", () => {
   const packet = buildTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraft(readyFinalGate(), {
     now: NOW,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     operatorTarget: "terminal-brief-default-on",
     operatorChannel: "telegram-direct",
     executionRequestReference: "tb-sidecar-default-on-runtime-execution-request:fixture-786",
@@ -120,7 +120,7 @@ test("default-on runtime execution request draft extractors and markdown preserv
     defaultOnRuntimeExecutionFinalGatePacket: readyFinalGate(),
     runtimeExecutionRequestDraft: {
       now: NOW,
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "terminal-brief-default-on",
       executionRequestReference: "runtime-execution-request-786",
       approvalWindowMinutes: 30,
@@ -130,7 +130,7 @@ test("default-on runtime execution request draft extractors and markdown preserv
   assert.equal(extractTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraftFinalGate(input).state, "ready_for_runtime_execution_final_review");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnRuntimeExecutionRequestDraftOptions(input), {
     now: NOW,
-    requestedBy: "seoseo",
+    requestedBy: "brokeralpha",
     operatorTarget: "terminal-brief-default-on",
     executionRequestReference: "runtime-execution-request-786",
     approvalWindowMinutes: 30,

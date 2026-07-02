@@ -3,9 +3,9 @@
 Parent: #218 (a2a-plane#218, internal tracker private)
 Child: #219 (a2a-plane#219, internal tracker private)
 Run: `a2a-source-public-execution-orchestrator-20260511T023207Z`
-Broker of record: `seoseo`
+Broker of record: `brokerAlpha`
 Team: `team1`
-Worker: `bangtong`
+Worker: `workerGamma`
 Reviewed at: `2026-05-11T02:35:00Z`
 
 This is a redacted validation artifact only. It validates the execution orchestrator and final approval packet layer in dry-run/simulate mode. It does not change repository visibility, import private source history, deploy, restart Gateway/broker/worker services, mutate production databases, send provider or Telegram messages, ACK terminal outbox rows, rotate or disclose credentials, rewrite history, force-push, publish a release, or post to community channels.
@@ -15,7 +15,7 @@ This is a redacted validation artifact only. It validates the execution orchestr
 - Parent dispatch: a2a-plane#218 (a2a-plane#218, internal tracker private).
 - Libero lane: a2a-plane#219 (a2a-plane#219, internal tracker private).
 - Approval rehearsal closeout: a2a-plane#212 (a2a-plane#212, internal tracker private).
-- Local execution-orchestrator surfaces: `docs/execution-orchestrator/source-public-execution-orchestrator-schema.json`, `scripts/a2a-source-public-execution-orchestrator.mjs`, `scripts/a2a-source-public-execution-orchestrator.test.mjs`, `fixtures/execution-orchestrator/team1-bangtong-execution-plan-evidence.json`.
+- Local execution-orchestrator surfaces: `docs/execution-orchestrator/source-public-execution-orchestrator-schema.json`, `scripts/a2a-source-public-execution-orchestrator.mjs`, `scripts/a2a-source-public-execution-orchestrator.test.mjs`, `fixtures/execution-orchestrator/team1-workerGamma-execution-plan-evidence.json`.
 
 ## Execution orchestrator validation matrix
 

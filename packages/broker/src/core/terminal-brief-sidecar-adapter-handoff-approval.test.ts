@@ -34,7 +34,7 @@ function readyApproval(
 test("adapter handoff approval packet becomes ready without sending approval", () => {
   const packet = buildTerminalBriefSidecarAdapterHandoffApproval(readyApproval(), {
     now: NOW,
-    adapterId: "gongyung-approval-renderer",
+    adapterId: "mobilealpha-approval-renderer",
     deliveryTargetClass: "manual-operator-channel",
     handoffReference: "handoff-741",
   });
@@ -44,7 +44,7 @@ test("adapter handoff approval packet becomes ready without sending approval", (
   assert.equal(packet.source.runtimePreflightApprovalReady, true);
   assert.equal(packet.source.adapterContractReady, true);
   assert.equal(packet.adapterHandoff.draftOnly, true);
-  assert.equal(packet.adapterHandoff.adapterId, "gongyung-approval-renderer");
+  assert.equal(packet.adapterHandoff.adapterId, "mobilealpha-approval-renderer");
   assert.equal(packet.adapterHandoff.messageBody.includes("Terminal Brief sidecar supervised dry-run start approval request"), true);
   assert.equal(packet.adapterHandoff.dispatchPermitted, false);
   assert.equal(packet.adapterHandoff.providerSendPermitted, false);

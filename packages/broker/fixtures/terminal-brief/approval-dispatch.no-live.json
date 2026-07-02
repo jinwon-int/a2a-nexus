@@ -19,8 +19,8 @@
     "singleFinalizerRequired": true
   },
   "adapter": {
-    "id": "gongyung",
-    "type": "gongyung",
+    "id": "mobilealpha",
+    "type": "mobilealpha",
     "harnessNeutral": true,
     "protocol": "json-transcript",
     "requiresOpenClawMessageSend": false,
@@ -40,7 +40,7 @@
   },
   "transcript": {
     "mode": "draft-only",
-    "target": "hermes://gongyung/approval",
+    "target": "hermes://mobilealpha/approval",
     "channel": "operator",
     "requestedBy": "broker-finalizer",
     "title": "Draft approval dispatch: Terminal Brief closeout - round-708",
@@ -56,7 +56,7 @@
     "terminalAck": false,
     "approvalGranted": false,
     "actionExecuted": false,
-    "reason": "dispatch transcript draft only for gongyung; no provider send exists"
+    "reason": "dispatch transcript draft only for mobilealpha; no provider send exists"
   },
   "blockers": [],
   "nextActions": [],
@@ -66,7 +66,7 @@
     "harnessNeutral": true,
     "openclawMessageSendRequired": false,
     "hermesAdapterCompatible": true,
-    "gongyungAdapterCompatible": true,
+    "mobilealphaAdapterCompatible": true,
     "sendsApprovalRequest": false,
     "producesLiveReceipt": false,
     "grantsApproval": false,

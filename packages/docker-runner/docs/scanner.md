@@ -115,7 +115,7 @@ The output directory contains:
 | Malformed input handling | ✅ graceful fallback | ✅ graceful fallback |
 | Source-public rehearsal no-live flags | ✅ compact projection | ✅ sanitized manifest copy |
 
-## Artifact Hygiene Assertions  (GO/NO-GO evidence, Team1/bangtong)
+## Artifact Hygiene Assertions  (GO/NO-GO evidence, Team1/workerGamma)
 
 The scanner and bundle enforce the following hygiene invariants. These
 assertions are covered by unit tests at `src/scanner.test.ts` and apply to

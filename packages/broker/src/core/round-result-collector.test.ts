@@ -27,7 +27,7 @@ function makeTask(overrides: Partial<TaskRecord> & { id: string }): TaskRecord {
     intent: "propose_patch",
     status: "queued",
     targetNodeId: "default",
-    assignedWorkerId: "sogyo",
+    assignedWorkerId: "workerbeta",
     requester: { id: "broker", kind: "service" },
     target: { id: "default", kind: "node" },
     payload: {},
@@ -47,10 +47,10 @@ function makeResult(overrides: Partial<TaskResult> & { output?: Record<string, u
 const DEFAULT_MANIFEST: RoundManifest = {
   roundLabel: "test-round",
   lanes: [
-    { workerId: "sogyo" },
-    { workerId: "bangtong", description: "Round manifest" },
-    { workerId: "nosuk", description: "A2A definitions" },
-    { workerId: "yukson", description: "Validation" },
+    { workerId: "workerbeta" },
+    { workerId: "workergamma", description: "Round manifest" },
+    { workerId: "workeralpha", description: "A2A definitions" },
+    { workerId: "workerdelta", description: "Validation" },
   ],
   staleAfterMs: 30 * 60 * 1000,
   timeoutAt: "2026-05-26T23:00:00.000Z",
@@ -69,10 +69,10 @@ describe("collectRoundResults", () => {
     equal(output.summary.pending, 4);
     equal(output.summary.completed, 0);
     equal(output.missingLanes.length, 4);
-    equal(output.missingLanes.includes("sogyo"), true);
-    equal(output.missingLanes.includes("bangtong"), true);
-    equal(output.missingLanes.includes("nosuk"), true);
-    equal(output.missingLanes.includes("yukson"), true);
+    equal(output.missingLanes.includes("workerbeta"), true);
+    equal(output.missingLanes.includes("workergamma"), true);
+    equal(output.missingLanes.includes("workeralpha"), true);
+    equal(output.missingLanes.includes("workerdelta"), true);
 
     for (const lane of output.lanes) {
       equal(lane.laneState, "pending");
@@ -84,28 +84,28 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         updatedAt: "2026-05-26T11:55:00.000Z", // 5 min ago < 30 min stale threshold
       }),
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const sogyoLane = output.lanes.find((l) => l.workerId === "sogyo")!;
-    ok(sogyoLane);
-    equal(sogyoLane.laneState, "running");
-    equal(sogyoLane.latestStatus, "running");
-    equal(sogyoLane.taskIds.length, 1);
-    equal(sogyoLane.taskIds[0], "task-sogyo-1");
+    const workerbetaLane = output.lanes.find((l) => l.workerId === "workerbeta")!;
+    ok(workerbetaLane);
+    equal(workerbetaLane.laneState, "running");
+    equal(workerbetaLane.latestStatus, "running");
+    equal(workerbetaLane.taskIds.length, 1);
+    equal(workerbetaLane.taskIds[0], "task-workerbeta-1");
   });
 
   it("classifies a lane as succeeded with pr evidence", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -116,7 +116,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "succeeded");
     equal(lane.outcomeClass, "pr_success");
     equal(lane.prUrl, "https://github.com/example/repo/pull/42");
@@ -128,8 +128,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -140,7 +140,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "succeeded");
     equal(lane.outcomeClass, "no_change_done");
     equal(lane.doneUrl, "https://github.com/example/repo/issues/1#issuecomment-123");
@@ -150,8 +150,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: makeResult({}),
@@ -159,7 +159,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "succeeded");
     equal(lane.outcomeClass, undefined); // can't classify without evidence
     equal(lane.evidenceUrls.length, 0);
@@ -169,8 +169,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "failed",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -181,7 +181,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "failed");
     equal(lane.outcomeClass, "no_change_block");
     equal(lane.blockUrl, "https://github.com/example/repo/issues/1#issuecomment-456");
@@ -191,8 +191,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "blocked",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: makeResult({
@@ -202,7 +202,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "blocked");
     equal(lane.outcomeClass, "no_change_block");
     equal(lane.blockUrl, "https://github.com/example/repo/issues/1#issuecomment-789");
@@ -212,8 +212,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z"); // noon
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         // updated 35 min ago > 30 min stale threshold
         updatedAt: "2026-05-26T11:25:00.000Z",
@@ -222,18 +222,18 @@ describe("collectRoundResults", () => {
     // Using default staleAfterMs = 30 min
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "stale");
     ok(lane.ageMs! >= 30 * 60 * 1000);
-    equal(output.staleLanes.includes("sogyo"), true);
+    equal(output.staleLanes.includes("workerbeta"), true);
   });
 
   it("classifies a lane as running when non-terminal and fresh", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         // updated 5 min ago < 30 min stale threshold
         updatedAt: "2026-05-26T11:55:00.000Z",
@@ -241,50 +241,50 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "running");
-    equal(output.staleLanes.includes("sogyo"), false);
+    equal(output.staleLanes.includes("workerbeta"), false);
   });
 
   it("classifies a lane as timeout when past deadline", () => {
     const nowMs = Date.parse("2026-05-27T01:00:00.000Z"); // next day, past timeoutAt
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         updatedAt: "2026-05-26T23:30:00.000Z",
       }),
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "timeout");
-    equal(output.timeoutLanes.includes("sogyo"), true);
+    equal(output.timeoutLanes.includes("workerbeta"), true);
   });
 
   it("excludes workers listed in excludedWorkerIds", () => {
     const manifest: RoundManifest = {
       roundLabel: "test-round",
       lanes: [
-        { workerId: "sogyo" },
+        { workerId: "workerbeta" },
         { workerId: "excluded-worker" },
       ],
       excludedWorkerIds: ["excluded-worker"],
     };
     const output = collectRoundResults(manifest, [], { nowMs: Date.parse("2026-05-26T12:00:00.000Z") });
 
-    equal(output.summary.totalLanes, 1); // only sogyo
+    equal(output.summary.totalLanes, 1); // only workerbeta
     equal(output.missingLanes.length, 1);
-    equal(output.missingLanes[0], "sogyo");
+    equal(output.missingLanes[0], "workerbeta");
   });
 
   it("handles mixed lane states correctly", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -293,8 +293,8 @@ describe("collectRoundResults", () => {
         }),
       }),
       makeTask({
-        id: "task-bangtong-1",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-1",
+        assignedWorkerId: "workergamma",
         status: "failed",
         updatedAt: "2026-05-26T11:00:00.000Z",
         completedAt: "2026-05-26T11:00:00.000Z",
@@ -303,39 +303,39 @@ describe("collectRoundResults", () => {
         }),
       }),
       makeTask({
-        id: "task-nosuk-1",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-1",
+        assignedWorkerId: "workeralpha",
         status: "running",
         updatedAt: "2026-05-26T11:55:00.000Z",
       }),
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    equal(output.summary.completed, 1); // sogyo succeeded
-    equal(output.summary.blocked, 1); // bangtong failed → counts as blocked
-    equal(output.summary.running, 1); // nosuk running and fresh
-    equal(output.summary.pending, 1); // yukson has no tasks
+    equal(output.summary.completed, 1); // workerbeta succeeded
+    equal(output.summary.blocked, 1); // workergamma failed → counts as blocked
+    equal(output.summary.running, 1); // workeralpha running and fresh
+    equal(output.summary.pending, 1); // workerdelta has no tasks
 
-    const sogyo = output.lanes.find((l) => l.workerId === "sogyo")!;
-    equal(sogyo.laneState, "succeeded");
-    equal(sogyo.prUrl, "https://github.com/example/repo/pull/42");
+    const workerbeta = output.lanes.find((l) => l.workerId === "workerbeta")!;
+    equal(workerbeta.laneState, "succeeded");
+    equal(workerbeta.prUrl, "https://github.com/example/repo/pull/42");
 
-    const bangtong = output.lanes.find((l) => l.workerId === "bangtong")!;
-    equal(bangtong.laneState, "failed");
+    const workergamma = output.lanes.find((l) => l.workerId === "workergamma")!;
+    equal(workergamma.laneState, "failed");
 
-    const nosuk = output.lanes.find((l) => l.workerId === "nosuk")!;
-    equal(nosuk.laneState, "running");
+    const workeralpha = output.lanes.find((l) => l.workerId === "workeralpha")!;
+    equal(workeralpha.laneState, "running");
 
-    const yukson = output.lanes.find((l) => l.workerId === "yukson")!;
-    equal(yukson.laneState, "pending");
+    const workerdelta = output.lanes.find((l) => l.workerId === "workerdelta")!;
+    equal(workerdelta.laneState, "pending");
   });
 
   it("extracts evidence from multiple task output fields", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: makeResult({
@@ -350,7 +350,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.evidenceUrls.length, 2);
     ok(lane.evidenceUrls.some((url) => url.includes("pull/42")));
     ok(lane.evidenceUrls.some((url) => url.includes("comment-456")));
@@ -362,15 +362,15 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "queued",
         createdAt: "2026-05-26T10:00:00.000Z",
         updatedAt: "2026-05-26T10:00:00.000Z",
       }),
       makeTask({
-        id: "task-sogyo-2",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-2",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         createdAt: "2026-05-26T10:30:00.000Z",
         updatedAt: "2026-05-26T11:30:00.000Z",
@@ -382,13 +382,13 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     // Lane should use the latest task's status (succeeded) and evidence
     equal(lane.laneState, "succeeded");
     equal(lane.prUrl, "https://github.com/example/repo/pull/43");
     equal(lane.taskIds.length, 2);
     // Latest task should be sorted by createdAt desc
-    equal(lane.taskIds[0], "task-sogyo-2");
+    equal(lane.taskIds[0], "task-workerbeta-2");
   });
 
   it("skips lanes for workers not in manifest", () => {
@@ -414,8 +414,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: makeResult({
@@ -428,7 +428,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.evidenceUrls.length, 0); // Both URLs are not https
     equal(lane.prUrl, undefined);
     equal(lane.doneUrl, undefined);
@@ -438,8 +438,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "canceled",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -447,7 +447,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "failed");
     equal(lane.outcomeClass, "infra_failure");
   });
@@ -456,8 +456,8 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "failed",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -466,7 +466,7 @@ describe("collectRoundResults", () => {
     ];
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
 
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.errorSummary, "Timeout after 300s");
   });
 
@@ -475,22 +475,22 @@ describe("collectRoundResults", () => {
     const message = "Review PR #653 and return JSON-like evidence";
     const manifest: RoundManifest = {
       roundLabel: "a2a-pr-review-test",
-      lanes: [{ workerId: "nosuk", expectedOutcome: "review" }],
+      lanes: [{ workerId: "workeralpha", expectedOutcome: "review" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-nosuk-wrapper-only",
+        id: "task-workeralpha-wrapper-only",
         intent: "analyze",
-        assignedWorkerId: "nosuk",
-        targetNodeId: "nosuk",
+        assignedWorkerId: "workeralpha",
+        targetNodeId: "workeralpha",
         message,
         status: "succeeded",
         updatedAt: "2026-06-13T01:21:23.197Z",
         completedAt: "2026-06-13T01:21:23.197Z",
         result: makeResult({
           summary: message,
-          note: "echo handled task task-nosuk-wrapper-only",
-          output: { taskId: "task-nosuk-wrapper-only", intent: "analyze", message },
+          note: "echo handled task task-workeralpha-wrapper-only",
+          output: { taskId: "task-workeralpha-wrapper-only", intent: "analyze", message },
         }),
       }),
     ];
@@ -509,14 +509,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-18T05:20:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2ad-open-issue-test",
-      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+      lanes: [{ workerId: "workerbeta", expectedOutcome: "review" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-generic-analyze",
+        id: "task-workerbeta-generic-analyze",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
-        targetNodeId: "sogyo",
+        assignedWorkerId: "workerbeta",
+        targetNodeId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-18T05:18:00.000Z",
         completedAt: "2026-06-18T05:18:00.000Z",
@@ -545,14 +545,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-pr-review-test",
-      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+      lanes: [{ workerId: "workerbeta", expectedOutcome: "review" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-eacces",
+        id: "task-workerbeta-eacces",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
-        targetNodeId: "sogyo",
+        assignedWorkerId: "workerbeta",
+        targetNodeId: "workerbeta",
         status: "failed",
         updatedAt: "2026-06-13T01:21:07.905Z",
         completedAt: "2026-06-13T01:21:07.905Z",
@@ -584,17 +584,17 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-pr-review-test",
-      lanes: [{ workerId: "daegyo", expectedOutcome: "review" }],
+      lanes: [{ workerId: "mobilebeta", expectedOutcome: "review" }],
       staleAfterMs: 30 * 60 * 1000,
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-daegyo-queued",
+        id: "task-mobilebeta-queued",
         intent: "analyze",
         assignedWorkerId: undefined,
         claimedBy: undefined,
-        targetNodeId: "daegyo",
-        target: { id: "daegyo", kind: "node", role: "analyst" },
+        targetNodeId: "mobilebeta",
+        target: { id: "mobilebeta", kind: "node", role: "analyst" },
         status: "queued",
         updatedAt: "2026-06-13T01:22:34.449Z",
       }),
@@ -613,14 +613,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-13T01:30:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-pr-review-test",
-      lanes: [{ workerId: "sogyo", expectedOutcome: "review" }],
+      lanes: [{ workerId: "workerbeta", expectedOutcome: "review" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-review-done",
+        id: "task-workerbeta-review-done",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
-        targetNodeId: "sogyo",
+        assignedWorkerId: "workerbeta",
+        targetNodeId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-13T01:21:07.905Z",
         completedAt: "2026-06-13T01:21:07.905Z",
@@ -649,14 +649,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-15T15:40:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-nexus-open-issues-continue-20260615T153154Z",
-      lanes: [{ workerId: "sogyo", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workerbeta", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "a2a-nexus-open-issues-continue-20260615T153154Z-sogyo",
+        id: "a2a-nexus-open-issues-continue-20260615T153154Z-workerbeta",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
-        targetNodeId: "sogyo",
+        assignedWorkerId: "workerbeta",
+        targetNodeId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-15T15:35:00.000Z",
         completedAt: "2026-06-15T15:35:00.000Z",
@@ -664,8 +664,8 @@ describe("collectRoundResults", () => {
           parentRoundId: "a2a-nexus-open-issues-continue-20260615T153154Z",
           parentRoundOrder: 1,
           parentRoundTotal: 6,
-          originBrokerId: "seoseo",
-          brokerOfRecordId: "seoseo",
+          originBrokerId: "brokeralpha",
+          brokerOfRecordId: "brokeralpha",
         },
         result: makeResult({
           output: {
@@ -681,9 +681,9 @@ describe("collectRoundResults", () => {
     equal(lane.parentRoundId, "a2a-nexus-open-issues-continue-20260615T153154Z");
     equal(lane.parentRoundOrder, 1);
     equal(lane.parentRoundTotal, 6);
-    equal(lane.originBrokerId, "seoseo");
-    equal(lane.brokerOfRecordId, "seoseo");
-    equal(lane.assignedWorkerId, "sogyo");
+    equal(lane.originBrokerId, "brokeralpha");
+    equal(lane.brokerOfRecordId, "brokeralpha");
+    equal(lane.assignedWorkerId, "workerbeta");
     ok(output.closeoutBundle.body.includes("parent=a2a-nexus-open-issues-continue-20260615T153154Z"));
     ok(output.closeoutBundle.body.includes("order=1/6"));
   });
@@ -692,14 +692,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-15T15:40:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-provider-mismatch-test",
-      lanes: [{ workerId: "dungae", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workerepsilon", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-dungae-model-mismatch",
+        id: "task-workerepsilon-model-mismatch",
         intent: "analyze",
-        assignedWorkerId: "dungae",
-        targetNodeId: "dungae",
+        assignedWorkerId: "workerepsilon",
+        targetNodeId: "workerepsilon",
         status: "failed",
         updatedAt: "2026-06-15T15:34:23.000Z",
         completedAt: "2026-06-15T15:34:23.000Z",
@@ -857,14 +857,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-15T16:10:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-round-metadata-test",
-      lanes: [{ workerId: "sogyo", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workerbeta", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-no-parent-round",
+        id: "task-workerbeta-no-parent-round",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
-        targetNodeId: "sogyo",
+        assignedWorkerId: "workerbeta",
+        targetNodeId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-15T16:05:00.000Z",
         completedAt: "2026-06-15T16:05:00.000Z",
@@ -885,14 +885,14 @@ describe("collectRoundResults", () => {
     const nowMs = Date.parse("2026-06-15T16:10:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2a-source-blocked-success-test",
-      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workergamma", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-empty-source",
+        id: "task-workergamma-empty-source",
         intent: "analyze",
-        assignedWorkerId: "bangtong",
-        targetNodeId: "bangtong",
+        assignedWorkerId: "workergamma",
+        targetNodeId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-15T16:05:00.000Z",
         completedAt: "2026-06-15T16:05:00.000Z",
@@ -924,19 +924,19 @@ describe("collectRoundResults", () => {
 
 describe("buildRoundManifest", () => {
   it("builds a manifest from worker IDs", () => {
-    const manifest = buildRoundManifest("test-round", ["sogyo", "bangtong"], {
-      descriptions: { sogyo: "Result collector", bangtong: "Round manifest" },
-      expectedOutcomes: { sogyo: "patch", bangtong: "analysis" },
+    const manifest = buildRoundManifest("test-round", ["workerbeta", "workergamma"], {
+      descriptions: { workerbeta: "Result collector", workergamma: "Round manifest" },
+      expectedOutcomes: { workerbeta: "patch", workergamma: "analysis" },
       parentIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/927",
       staleAfterMs: 60000,
     });
 
     equal(manifest.roundLabel, "test-round");
     equal(manifest.lanes.length, 2);
-    equal(manifest.lanes[0]!.workerId, "sogyo");
+    equal(manifest.lanes[0]!.workerId, "workerbeta");
     equal(manifest.lanes[0]!.description, "Result collector");
     equal(manifest.lanes[0]!.expectedOutcome, "patch");
-    equal(manifest.lanes[1]!.workerId, "bangtong");
+    equal(manifest.lanes[1]!.workerId, "workergamma");
     equal(manifest.lanes[1]!.description, "Round manifest");
     equal(manifest.lanes[1]!.expectedOutcome, "analysis");
     equal(manifest.parentIssueUrl, "https://github.com/jinwon-int/a2a-broker/issues/927");
@@ -959,8 +959,8 @@ describe("closeout bundle", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         completedAt: "2026-05-26T11:30:00.000Z",
@@ -972,7 +972,7 @@ describe("closeout bundle", () => {
 
     const manifest: RoundManifest = {
       roundLabel: "test-round",
-      lanes: [{ workerId: "sogyo" }],
+      lanes: [{ workerId: "workerbeta" }],
     };
     const output = collectRoundResults(manifest, tasks, { nowMs });
 
@@ -986,8 +986,8 @@ describe("closeout bundle", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "blocked",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: makeResult({
@@ -998,7 +998,7 @@ describe("closeout bundle", () => {
 
     const manifest: RoundManifest = {
       roundLabel: "test-round",
-      lanes: [{ workerId: "sogyo" }],
+      lanes: [{ workerId: "workerbeta" }],
     };
     const output = collectRoundResults(manifest, tasks, { nowMs });
 
@@ -1012,8 +1012,8 @@ describe("closeout bundle", () => {
     const nowMs = Date.parse("2026-05-27T01:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         updatedAt: "2026-05-26T22:00:00.000Z",
       }),
@@ -1021,7 +1021,7 @@ describe("closeout bundle", () => {
 
     const manifest: RoundManifest = {
       roundLabel: "test-round",
-      lanes: [{ workerId: "sogyo" }],
+      lanes: [{ workerId: "workerbeta" }],
       timeoutAt: "2026-05-26T23:00:00.000Z",
     };
     const output = collectRoundResults(manifest, tasks, { nowMs });
@@ -1061,8 +1061,8 @@ describe("edge cases", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-05-26T11:30:00.000Z",
         result: undefined as unknown as TaskResult,
@@ -1070,7 +1070,7 @@ describe("edge cases", () => {
     ];
     // Should not throw
     const output = collectRoundResults(DEFAULT_MANIFEST, tasks, { nowMs });
-    const lane = output.lanes.find((l) => l.workerId === "sogyo")!;
+    const lane = output.lanes.find((l) => l.workerId === "workerbeta")!;
     equal(lane.laneState, "succeeded");
     equal(lane.evidenceUrls.length, 0);
   });
@@ -1079,13 +1079,13 @@ describe("edge cases", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "test-round",
-      lanes: [{ workerId: "sogyo" }],
+      lanes: [{ workerId: "workerbeta" }],
       staleAfterMs: 1, // essentially immediate
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         updatedAt: "2026-05-26T11:59:59.000Z", // 1s ago
       }),
@@ -1099,13 +1099,13 @@ describe("edge cases", () => {
     const nowMs = Date.parse("2026-05-27T01:00:00.000Z"); // day after
     const manifest: RoundManifest = {
       roundLabel: "test-round",
-      lanes: [{ workerId: "sogyo" }],
+      lanes: [{ workerId: "workerbeta" }],
       // no timeoutAt set
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-1",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-1",
+        assignedWorkerId: "workerbeta",
         status: "running",
         updatedAt: "2026-05-26T11:30:00.000Z",
       }),
@@ -1148,10 +1148,10 @@ describe("gateVerdict", () => {
   it("BLOCKED when some lanes are running (not all terminal)", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
-      makeTask({ id: "t-bangtong-1", assignedWorkerId: "bangtong", status: "running", updatedAt: "2026-05-26T11:50:00.000Z" }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-workergamma-1", assignedWorkerId: "workergamma", status: "running", updatedAt: "2026-05-26T11:50:00.000Z" }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "bangtong" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }, { workerId: "workergamma" }] };
     const output = collectRoundResults(manifest, tasks, { nowMs });
     equal(output.gateVerdict!.verdict, "BLOCKED");
     equal(output.gateVerdict!.pending, 1);
@@ -1161,9 +1161,9 @@ describe("gateVerdict", () => {
   it("BLOCKED when succeeded lane lacks evidence URLs", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
     const output = collectRoundResults(manifest, tasks, { nowMs });
     equal(output.gateVerdict!.verdict, "BLOCKED");
     ok(output.gateVerdict!.reason!.includes("evidence URLs"));
@@ -1172,26 +1172,26 @@ describe("gateVerdict", () => {
   it("FINAL when all lanes terminal with evidence", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
-      makeTask({ id: "t-bangtong-1", assignedWorkerId: "bangtong", status: "succeeded", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1" } }) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-workergamma-1", assignedWorkerId: "workergamma", status: "succeeded", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { doneCommentUrl: "https://github.com/o/r/issues/1#issuecomment-1" } }) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "bangtong" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }, { workerId: "workergamma" }] };
     const output = collectRoundResults(manifest, tasks, { nowMs });
     equal(output.gateVerdict!.verdict, "FINAL");
     equal(output.gateVerdict!.succeeded, 2);
     equal(output.gateVerdict!.pending, 0);
     equal(output.gateVerdict!.evidenceIdsCitedCount, 2);
-    ok(output.gateVerdict!.evidenceIdsCited.includes("t-sogyo-1"));
-    ok(output.gateVerdict!.evidenceIdsCited.includes("t-bangtong-1"));
+    ok(output.gateVerdict!.evidenceIdsCited.includes("t-workerbeta-1"));
+    ok(output.gateVerdict!.evidenceIdsCited.includes("t-workergamma-1"));
   });
 
   it("BLOCKED when a terminal lane failed even if another lane succeeded", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
-      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-workeralpha-1", assignedWorkerId: "workeralpha", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "nosuk" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }, { workerId: "workeralpha" }] };
     const output = collectRoundResults(manifest, tasks, { nowMs });
     equal(output.gateVerdict!.verdict, "BLOCKED");
     equal(output.gateVerdict!.succeeded, 1);
@@ -1203,9 +1203,9 @@ describe("gateVerdict", () => {
   it("BLOCKED when a lane times out", () => {
     const nowMs = Date.parse("2026-05-27T01:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "running", updatedAt: "2026-05-26T11:30:00.000Z" }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "running", updatedAt: "2026-05-26T11:30:00.000Z" }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }], timeoutAt: "2026-05-26T23:00:00.000Z" };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }], timeoutAt: "2026-05-26T23:00:00.000Z" };
     const output = collectRoundResults(manifest, tasks, { nowMs });
     equal(output.gateVerdict!.verdict, "BLOCKED");
     equal(output.gateVerdict!.failed, 1);
@@ -1224,34 +1224,34 @@ describe("gateVerdict", () => {
   it("exposes failedLanes (worker ids) for failed/blocked/timeout lanes", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
-      makeTask({ id: "t-nosuk-1", assignedWorkerId: "nosuk", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-workeralpha-1", assignedWorkerId: "workeralpha", status: "failed", updatedAt: "2026-05-26T11:00:00.000Z", completedAt: "2026-05-26T11:00:00.000Z", result: makeResult({ output: { blockCommentUrl: "https://github.com/o/r/issues/1#issuecomment-2" } }) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }, { workerId: "nosuk" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }, { workerId: "workeralpha" }] };
     const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
     equal(gv.verdict, "BLOCKED");
-    deepEqual(gv.failedLanes, ["nosuk"]);
+    deepEqual(gv.failedLanes, ["workeralpha"]);
     deepEqual(gv.missingEvidenceLanes, []);
   });
 
   it("exposes missingEvidenceLanes for terminal-success lanes lacking evidence", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", result: makeResult({}) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
     const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
     equal(gv.verdict, "BLOCKED");
-    deepEqual(gv.missingEvidenceLanes, ["sogyo"]);
+    deepEqual(gv.missingEvidenceLanes, ["workerbeta"]);
     deepEqual(gv.failedLanes, []);
   });
 
   it("FINAL verdict has empty failedLanes and missingEvidenceLanes", () => {
     const nowMs = Date.parse("2026-05-26T12:00:00.000Z");
     const tasks: TaskRecord[] = [
-      makeTask({ id: "t-sogyo-1", assignedWorkerId: "sogyo", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
+      makeTask({ id: "t-workerbeta-1", assignedWorkerId: "workerbeta", status: "succeeded", updatedAt: "2026-05-26T11:30:00.000Z", completedAt: "2026-05-26T11:30:00.000Z", result: makeResult({ output: { prUrl: "https://github.com/o/r/pull/1" } }) }),
     ];
-    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "sogyo" }] };
+    const manifest: RoundManifest = { roundLabel: "test", lanes: [{ workerId: "workerbeta" }] };
     const gv = collectRoundResults(manifest, tasks, { nowMs }).gateVerdict!;
     equal(gv.verdict, "FINAL");
     deepEqual(gv.failedLanes, []);
@@ -1267,17 +1267,17 @@ describe("#920 evidence quality and closeout UX", () => {
   it("classifies succeeded analysis tasks as substantive evidence", () => {
     const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
     const manifest: RoundManifest = {
-      roundLabel: "a2ad-nexus-roadmap-supp-20260619-915-seoseo-operator-ux-bangtong",
+      roundLabel: "a2ad-nexus-roadmap-supp-20260619-915-brokeralpha-operator-ux-workergamma",
       lanes: [
-        { workerId: "bangtong", description: "Supplement UX lane", expectedOutcome: "analysis" },
+        { workerId: "workergamma", description: "Supplement UX lane", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-920",
+        id: "task-workergamma-920",
         intent: "analyze",
-        assignedWorkerId: "bangtong",
-        targetNodeId: "bangtong",
+        assignedWorkerId: "workergamma",
+        targetNodeId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",
@@ -1303,15 +1303,15 @@ describe("#920 evidence quality and closeout UX", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-supplement-source-budget-test",
       lanes: [
-        { workerId: "nosuk", description: "Source budget supplement", expectedOutcome: "analysis" },
+        { workerId: "workeralpha", description: "Source budget supplement", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-nosuk-supplement",
+        id: "task-workeralpha-supplement",
         intent: "analyze",
-        assignedWorkerId: "nosuk",
-        targetNodeId: "nosuk",
+        assignedWorkerId: "workeralpha",
+        targetNodeId: "workeralpha",
         status: "failed",
         updatedAt: "2026-06-19T11:50:00.000Z",
         completedAt: "2026-06-19T11:50:00.000Z",
@@ -1343,14 +1343,14 @@ describe("#920 evidence quality and closeout UX", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-evidence-class-column-test",
       lanes: [
-        { workerId: "sogyo", expectedOutcome: "analysis" },
-        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "workerbeta", expectedOutcome: "analysis" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-substantive",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-substantive",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-19T11:30:00.000Z",
         completedAt: "2026-06-19T11:30:00.000Z",
@@ -1362,16 +1362,16 @@ describe("#920 evidence quality and closeout UX", () => {
         }),
       }),
       makeTask({
-        id: "task-bangtong-wrapper",
+        id: "task-workergamma-wrapper",
         intent: "analyze",
-        assignedWorkerId: "bangtong",
+        assignedWorkerId: "workergamma",
         message: "Analyze and return evidence",
         status: "succeeded",
         updatedAt: "2026-06-19T11:00:00.000Z",
         completedAt: "2026-06-19T11:00:00.000Z",
         result: makeResult({
           summary: "Analyze and return evidence",
-          note: "echo handled task task-bangtong-wrapper",
+          note: "echo handled task task-workergamma-wrapper",
           output: { message: "Analyze and return evidence" },
         }),
       }),
@@ -1391,14 +1391,14 @@ describe("#920 evidence quality and closeout UX", () => {
       roundLabel: "a2ad-dissent-preservation-test",
       parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
       lanes: [
-        { workerId: "sogyo", expectedOutcome: "patch" },
-        { workerId: "nosuk", expectedOutcome: "analysis" },
+        { workerId: "workerbeta", expectedOutcome: "patch" },
+        { workerId: "workeralpha", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-pr",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-pr",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-19T11:30:00.000Z",
         completedAt: "2026-06-19T11:30:00.000Z",
@@ -1409,8 +1409,8 @@ describe("#920 evidence quality and closeout UX", () => {
         }),
       }),
       makeTask({
-        id: "task-nosuk-dissent",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-dissent",
+        assignedWorkerId: "workeralpha",
         status: "failed",
         updatedAt: "2026-06-19T11:20:00.000Z",
         completedAt: "2026-06-19T11:20:00.000Z",
@@ -1424,7 +1424,7 @@ describe("#920 evidence quality and closeout UX", () => {
 
     const output = collectRoundResults(manifest, tasks, { nowMs });
     const body = output.closeoutBundle.body;
-    ok(body.includes("Dissent") || body.includes("dissent") || body.includes("nosuk"), "Dissent should be preserved in closeout body");
+    ok(body.includes("Dissent") || body.includes("dissent") || body.includes("workeralpha"), "Dissent should be preserved in closeout body");
     ok(body.includes("Unsafe") || body.includes("live deploy"), "Dissent error message should appear");
   });
 
@@ -1434,13 +1434,13 @@ describe("#920 evidence quality and closeout UX", () => {
       roundLabel: "a2ad-child-issue-links-test",
       parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
       lanes: [
-        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-child",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-child",
+        assignedWorkerId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:30:00.000Z",
         completedAt: "2026-06-19T11:30:00.000Z",
@@ -1465,15 +1465,15 @@ describe("#920 evidence quality and closeout UX", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-requeue-action-plan-test",
       lanes: [
-        { workerId: "nosuk", expectedOutcome: "analysis" },
-        { workerId: "sogyo", expectedOutcome: "analysis" },
-        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "workeralpha", expectedOutcome: "analysis" },
+        { workerId: "workerbeta", expectedOutcome: "analysis" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-nosuk-substantive",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-substantive",
+        assignedWorkerId: "workeralpha",
         status: "succeeded",
         updatedAt: "2026-06-21T11:30:00.000Z",
         completedAt: "2026-06-21T11:30:00.000Z",
@@ -1486,22 +1486,22 @@ describe("#920 evidence quality and closeout UX", () => {
         }),
       }),
       makeTask({
-        id: "task-sogyo-wrapper",
+        id: "task-workerbeta-wrapper",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
+        assignedWorkerId: "workerbeta",
         message: "Analyze #970",
         status: "succeeded",
         updatedAt: "2026-06-21T11:20:00.000Z",
         completedAt: "2026-06-21T11:20:00.000Z",
         result: makeResult({
           summary: "Analyze #970",
-          note: "echo handled task task-sogyo-wrapper",
+          note: "echo handled task task-workerbeta-wrapper",
           output: { message: "Analyze #970" },
         }),
       }),
       makeTask({
-        id: "task-bangtong-failed",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-failed",
+        assignedWorkerId: "workergamma",
         status: "failed",
         updatedAt: "2026-06-21T11:10:00.000Z",
         completedAt: "2026-06-21T11:10:00.000Z",
@@ -1515,10 +1515,10 @@ describe("#920 evidence quality and closeout UX", () => {
     equal(output.verdictActionPlan.kind, "reject_feedback_requeue");
     equal(output.verdictActionPlan.sourceOnly, true);
     equal(output.verdictActionPlan.requiresExternalDispatcher, true);
-    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.workerId), ["sogyo", "bangtong"]);
-    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.taskId), ["task-sogyo-wrapper", "task-bangtong-failed"]);
+    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.workerId), ["workerbeta", "workergamma"]);
+    deepEqual(output.verdictActionPlan.lanes.map((lane) => lane.taskId), ["task-workerbeta-wrapper", "task-workergamma-failed"]);
     ok(output.verdictActionPlan.lanes[0]!.rejectionReason.includes("wrapper_only"));
-    ok(output.verdictActionPlan.lanes[0]!.priorAttemptEvidenceRef.includes("task-sogyo-wrapper"));
+    ok(output.verdictActionPlan.lanes[0]!.priorAttemptEvidenceRef.includes("task-workerbeta-wrapper"));
     ok(output.verdictActionPlan.lanes[1]!.rejectionReason.includes("terminal_failed"));
     ok(output.closeoutBundle.body.includes("Reject-feedback requeue plan"));
   });
@@ -1527,12 +1527,12 @@ describe("#920 evidence quality and closeout UX", () => {
     const nowMs = Date.parse("2026-06-21T12:00:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2ad-final-action-plan-test",
-      lanes: [{ workerId: "nosuk", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workeralpha", expectedOutcome: "analysis" }],
     };
     const output = collectRoundResults(manifest, [
       makeTask({
-        id: "task-nosuk-substantive",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-substantive",
+        assignedWorkerId: "workeralpha",
         status: "succeeded",
         updatedAt: "2026-06-21T11:30:00.000Z",
         completedAt: "2026-06-21T11:30:00.000Z",
@@ -1555,12 +1555,12 @@ describe("#920 evidence quality and closeout UX", () => {
     const nowMs = Date.parse("2026-06-21T12:00:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2ad-oracle-mismatch-test",
-      lanes: [{ workerId: "nosuk", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workeralpha", expectedOutcome: "analysis" }],
     };
     const output = collectRoundResults(manifest, [
       makeTask({
-        id: "task-nosuk-oracle-mismatch",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-oracle-mismatch",
+        assignedWorkerId: "workeralpha",
         status: "succeeded",
         updatedAt: "2026-06-21T11:30:00.000Z",
         completedAt: "2026-06-21T11:30:00.000Z",
@@ -1602,14 +1602,14 @@ describe("A2AD evidence summary report (#920)", () => {
       roundLabel: "a2ad-summary-test",
       parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
       lanes: [
-        { workerId: "bangtong", description: "UX supplement", expectedOutcome: "analysis" },
-        { workerId: "nosuk", description: "Reliability lane", expectedOutcome: "analysis" },
+        { workerId: "workergamma", description: "UX supplement", expectedOutcome: "analysis" },
+        { workerId: "workeralpha", description: "Reliability lane", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-substantive",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-substantive",
+        assignedWorkerId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",
@@ -1622,8 +1622,8 @@ describe("A2AD evidence summary report (#920)", () => {
         }),
       }),
       makeTask({
-        id: "task-nosuk-timeout",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-timeout",
+        assignedWorkerId: "workeralpha",
         status: "running",
         updatedAt: "2026-06-19T10:00:00.000Z",
       }),
@@ -1632,7 +1632,7 @@ describe("A2AD evidence summary report (#920)", () => {
     const output = collectRoundResults(manifest, tasks, { nowMs });
     const summary = renderCompactEvidenceSummary(output, { parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920" });
 
-    ok(summary.includes("bangtong"), "Summary should include bangtong worker");
+    ok(summary.includes("workergamma"), "Summary should include workergamma worker");
     ok(summary.includes("substantive"), "Substantive classification should appear");
     ok(summary.includes("pull/922"), "Evidence PR URL should appear");
   });
@@ -1642,15 +1642,15 @@ describe("A2AD evidence summary report (#920)", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-classification-coverage-test",
       lanes: [
-        { workerId: "bangtong", expectedOutcome: "analysis" },
-        { workerId: "nosuk", expectedOutcome: "analysis" },
-        { workerId: "sogyo", expectedOutcome: "analysis" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
+        { workerId: "workeralpha", expectedOutcome: "analysis" },
+        { workerId: "workerbeta", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-substantive",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-substantive",
+        assignedWorkerId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",
@@ -1659,8 +1659,8 @@ describe("A2AD evidence summary report (#920)", () => {
         }),
       }),
       makeTask({
-        id: "task-nosuk-source-blocked",
-        assignedWorkerId: "nosuk",
+        id: "task-workeralpha-source-blocked",
+        assignedWorkerId: "workeralpha",
         status: "failed",
         updatedAt: "2026-06-19T11:50:00.000Z",
         completedAt: "2026-06-19T11:50:00.000Z",
@@ -1675,16 +1675,16 @@ describe("A2AD evidence summary report (#920)", () => {
         },
       }),
       makeTask({
-        id: "task-sogyo-wrapper",
+        id: "task-workerbeta-wrapper",
         intent: "analyze",
-        assignedWorkerId: "sogyo",
+        assignedWorkerId: "workerbeta",
         message: "Analyze",
         status: "succeeded",
         updatedAt: "2026-06-19T11:00:00.000Z",
         completedAt: "2026-06-19T11:00:00.000Z",
         result: makeResult({
           summary: "Analyze",
-          note: "echo handled task task-sogyo-wrapper",
+          note: "echo handled task task-workerbeta-wrapper",
           output: { message: "Analyze" },
         }),
       }),
@@ -1702,12 +1702,12 @@ describe("A2AD evidence summary report (#920)", () => {
     const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
     const manifest: RoundManifest = {
       roundLabel: "a2ad-non-actions-test",
-      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workergamma", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma",
+        assignedWorkerId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",
@@ -1733,12 +1733,12 @@ describe("roundCompletePayload (#920)", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-notification-test",
       parentIssueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/920",
-      lanes: [{ workerId: "bangtong", expectedOutcome: "analysis" }],
+      lanes: [{ workerId: "workergamma", expectedOutcome: "analysis" }],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-notif",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-notif",
+        assignedWorkerId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",
@@ -1772,14 +1772,14 @@ describe("roundCompletePayload (#920)", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-notification-full-test",
       lanes: [
-        { workerId: "sogyo", expectedOutcome: "patch" },
-        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "workerbeta", expectedOutcome: "patch" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
       ],
     };
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-sogyo-pr",
-        assignedWorkerId: "sogyo",
+        id: "task-workerbeta-pr",
+        assignedWorkerId: "workerbeta",
         status: "succeeded",
         updatedAt: "2026-06-19T11:30:00.000Z",
         completedAt: "2026-06-19T11:30:00.000Z",
@@ -1790,8 +1790,8 @@ describe("roundCompletePayload (#920)", () => {
         }),
       }),
       makeTask({
-        id: "task-bangtong-blocked",
-        assignedWorkerId: "bangtong",
+        id: "task-workergamma-blocked",
+        assignedWorkerId: "workergamma",
         status: "blocked",
         updatedAt: "2026-06-19T11:00:00.000Z",
         result: makeResult({
@@ -1804,10 +1804,10 @@ describe("roundCompletePayload (#920)", () => {
     const payload = buildRoundCompletePayload(output);
 
     equal(payload.verdict, "BLOCKED");
-    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "sogyo"));
-    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "bangtong"));
-    const bangtongLane = payload.lanes.find((l: { workerId: string }) => l.workerId === "bangtong")!;
-    ok(bangtongLane.evidenceUrls?.length > 0 || bangtongLane.blockUrl, "Blocked lane should have evidence URL");
+    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "workerbeta"));
+    ok(payload.lanes.find((l: { workerId: string }) => l.workerId === "workergamma"));
+    const workergammaLane = payload.lanes.find((l: { workerId: string }) => l.workerId === "workergamma")!;
+    ok(workergammaLane.evidenceUrls?.length > 0 || workergammaLane.blockUrl, "Blocked lane should have evidence URL");
   });
 });
 
@@ -1831,17 +1831,17 @@ describe("sourceBundle prompt-budget regression (#920/#922)", () => {
     const manifest: RoundManifest = {
       roundLabel: "a2ad-source-budget-test",
       lanes: [
-        { workerId: "bangtong", expectedOutcome: "analysis" },
+        { workerId: "workergamma", expectedOutcome: "analysis" },
       ],
     };
     // Simulate a task that produced substantive findings targeting a specific file
     // despite having a large source bundle
     const tasks: TaskRecord[] = [
       makeTask({
-        id: "task-bangtong-source-budget",
+        id: "task-workergamma-source-budget",
         intent: "analyze",
-        assignedWorkerId: "bangtong",
-        targetNodeId: "bangtong",
+        assignedWorkerId: "workergamma",
+        targetNodeId: "workergamma",
         status: "succeeded",
         updatedAt: "2026-06-19T11:55:00.000Z",
         completedAt: "2026-06-19T11:55:00.000Z",

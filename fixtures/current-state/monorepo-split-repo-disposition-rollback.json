@@ -60,7 +60,7 @@
   "approvedDispositionChanges": [],
   "candidateOnlyDisposition": "active_mirrored",
   "rollbackOwnerFields": {
-    "beforeFlipPackageCandidateRegression": "seoseo_finalizer_normal_pr_revert_or_follow_up_restore",
+    "beforeFlipPackageCandidateRegression": "brokerAlpha_finalizer_normal_pr_revert_or_follow_up_restore",
     "activeMirroredConflict": "unassigned_candidate_only",
     "afterFlipPackageRegression": "unassigned",
     "misappliedSplitRepoDisposition": "unassigned",
@@ -68,44 +68,44 @@
   },
   "workerEvidence": [
     {
-      "broker": "seoseo",
-      "worker": "sogyo",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-sogyo",
+      "broker": "brokerAlpha",
+      "worker": "workerBeta",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerBeta",
       "status": "succeeded",
       "summary": "analysis bridge done: split-disposition 문서는 active_canonical 기본 상태를 유지하고 있으며 어떤 disposition 변경도 승인되지 않음. 모든 차단 조건(롤백 소유자 미할당, 브랜치 보호 미적용, 릴리스 게이트 미통과)이 해소되지 않아 active_mirrored나 read_only_archive 모두 조기 적용 위험. active_mirrored는 분할 저장소를 계속 활성 상태로 유지해 작업 연속성을 보장하지만 운용 복잡성 증가. read_only_archive는 정식 전환 전에 유일한 실구현 저장소를 동결시켜 긴급 패치 경로를 차단하므로 더 위험. 다음 패킷으로는 둘 다 승인하지 않고 active_canonical을 유지하며, 선행 게이트(브랜치 보호, 롤백 소유자)를 먼저 해소해야 함. 불가피하게 선택해야 한다면 active_mirrored가 read_only_archive보다 덜 위험하지만, 여전히 권장되지 않음."
     },
     {
-      "broker": "seoseo",
-      "worker": "nosuk",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-nosuk",
+      "broker": "brokerAlpha",
+      "worker": "workerAlpha",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerAlpha",
       "status": "succeeded",
       "summary": "analysis bridge done: a2a-nexus 분할 저장소(disposition) 및 롤백 소유자 패킷 분석: 현재 모든 결정은 NO_GO/Waiting 상태이며, 롤백 소유자 필드는 정의되었으나 할당되지 않았습니다. 분할 저장소는 active_canonical 상태를 유지하고 있고, archive/read-only/redirect 승인은 없습니다. 브랜치 보호 패킷은 준비되었지만 실제 설정 변경은 보류 중입니다."
     },
     {
-      "broker": "seoseo",
-      "worker": "bangtong",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-bangtong",
+      "broker": "brokerAlpha",
+      "worker": "workerGamma",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerGamma",
       "status": "succeeded",
       "summary": "analysis bridge done: 증거 묶음에 포함된 a2a-nexus 분할 레포지션 처리/롤백 소유자 패킷 문서를 분석했습니다. 이 패킷은 분할 레포지션 결정과 롤백 소유자 할당을 기록하기 위한 문서용 게이트로, 아직 어떤 변경도 승인하지 않습니다. 실시간 안전 경계는 분할 레포지션의 보존 상태(archive/read-only/redirect 금지), 브랜치 보호 및 규칙셋 적용 금지, 릴리스/패키지/태그 발행 금지, 캐노니컬 플립 금지, 그리고 롤백 소유자 미할당 상태를 유지하는 것입니다. 모든 'HOLD' 항목은 명시적으로 문서화되어 있으며, 추후 단계에서 운영자 승인이 필요합니다."
     },
     {
-      "broker": "gwakga",
-      "worker": "dungae",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-dungae",
+      "broker": "brokerBeta",
+      "worker": "workerEpsilon",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerEpsilon",
       "status": "succeeded",
-      "summary": "analysis bridge done: Team2(dungae) 관점에서 평가한 split repo disposition: 현재 active_canonical이 유일하게 안전한 상태이며, active_mirrored 및 ownership transfer는 4개의 해결되지 않은 리스크로 인해 NO_GO. tracked-tree import는 history-preserving이 아니므로 ownership transfer 시 git 계보가 단절됨. 모든 split repo는 active_canonical 유지, rollback owner는 미지정 상태 유지 권고."
+      "summary": "analysis bridge done: Team2(workerEpsilon) 관점에서 평가한 split repo disposition: 현재 active_canonical이 유일하게 안전한 상태이며, active_mirrored 및 ownership transfer는 4개의 해결되지 않은 리스크로 인해 NO_GO. tracked-tree import는 history-preserving이 아니므로 ownership transfer 시 git 계보가 단절됨. 모든 split repo는 active_canonical 유지, rollback owner는 미지정 상태 유지 권고."
     },
     {
-      "broker": "gwakga",
-      "worker": "jingun",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-jingun",
+      "broker": "brokerBeta",
+      "worker": "workerZeta",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerZeta",
       "status": "succeeded",
       "summary": "analysis bridge done: a2a-nexus 분할 저장소 처리(disposition) 현황 분석 결과: 3개 분할 저장소(a2a-broker, a2a-docker-runner, plugin-a2a) 모두 active_canonical 기본 상태 유지 중, 모든 주요 결정(NO_GO/Waiting)은 보류 상태. 롤백 소유자 미지정, 정식 전환(canonical flip) 차단, 출처(provenance) 분산, 증거 품질 이슈 존재. 총 4개 위험 항목과 7개 권장사항 도출."
     },
     {
-      "broker": "gwakga",
-      "worker": "soonwook",
-      "taskId": "a2a-splitdisposition-20260610T110759Z-soonwook",
+      "broker": "brokerBeta",
+      "worker": "workerEta",
+      "taskId": "a2a-splitdisposition-20260610T110759Z-workerEta",
       "status": "succeeded",
       "summary": "analysis bridge done: a2a-nexus 분할 저장소 처분(disposition) 및 롤백 소유자 패킷에 대한 source-only 검증 완료. 현재 모든 GO/NO-GO 필드는 일관되게 NO_GO/Waiting으로 설정되어 있으며, 이는 적절한 보수적 자세다. 다만 main 브랜치 CI 실패(자동병합 워크플로우), 브랜치 보호 미적용, 롤백 소유자 미지정, plugin-a2a 중복 등재 등 4건의 주목할 만한 이슈가 확인되었다. 증거는 충분히 구조화되어 있고 판독 가능하다."
     }

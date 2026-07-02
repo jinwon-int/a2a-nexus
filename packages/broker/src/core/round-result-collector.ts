@@ -23,7 +23,7 @@ import type { TaskRecord, TaskResult, TaskStatus, BrokerExitCondition } from "./
 export type RoundLaneExpectedOutcome = "patch" | "evidence-only" | "analysis" | "review";
 
 export interface RoundManifestLane {
-  /** Worker identifier, e.g. "sogyo", "bangtong", "nosuk". */
+  /** Worker identifier, e.g. "workerbeta", "workergamma", "workeralpha". */
   workerId: string;
   /** Optional human-readable label for the lane. */
   description?: string;

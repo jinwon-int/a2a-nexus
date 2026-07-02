@@ -46,7 +46,7 @@ runtime readiness evidence patch:
 - `brokerDispatchApprovalPresent=true` (source readiness flag only)
 - `validationEvidenceFresh=true`
 - `workerSpawnApprovalPresent=false`
-- `daegyoMobileScopeResolved=false`
+- `mobilebetaMobileScopeResolved=false`
 - `rollbackAbortCriteriaDocumented=false`
 - `liveBoundaryPlanDocumented=false`
 
@@ -55,7 +55,7 @@ runtime readiness evidence patch:
 - actual broker task dispatch
 - worker or subagent spawn
 - live provider send
-- Daegyo/mobile expansion
+- mobilebeta/mobile expansion
 - rollback or live readiness
 - deployment permission
 

@@ -882,14 +882,14 @@ test("createArtifactBundle preserves sanitized source-public execution preflight
 // Readiness evidence: taskId slash sanitisation (a2a-docker-runner#215)
 // ---------------------------------------------------------------------------
 
-test("scanHistory handles task IDs containing slashes (Team1/nosuk pattern)", async () => {
+test("scanHistory handles task IDs containing slashes (Team1/workerAlpha pattern)", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-scanner-slash-id-"));
   try {
     // This simulates a real A2A round task where the worker ID contains a
-    // slash, e.g. "Team1/nosuk".  The runner safeId converts it to
-    // "Team1_nosuk" for the directory name, but the original id is kept in
+    // slash, e.g. "Team1/workerAlpha".  The runner safeId converts it to
+    // "Team1_workerAlpha" for the directory name, but the original id is kept in
     // task.json metadata.  The scanner must produce both faithfully.
-    const taskId = "[Team1/nosuk] Runner scanner/readiness evidence and CI ownership regression hardening";
+    const taskId = "[Team1/workerAlpha] Runner scanner/readiness evidence and CI ownership regression hardening";
     const safeTaskId = taskId.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const runDir = join(rootDir, safeTaskId, "20260512T030000Z-run1");
     mkdirSync(runDir, { recursive: true });
@@ -930,12 +930,12 @@ test("scanHistory handles task IDs containing slashes (Team1/nosuk pattern)", as
     // The safeTaskId must use underscore instead of slash (filesystem-safe).
     assert.equal(entry.safeTaskId, safeTaskId);
     assert.ok(!entry.safeTaskId.includes("/"), "safeTaskId must not contain slash");
-    assert.ok(entry.safeTaskId.includes("Team1_nosuk"), `Expected safeTaskId to contain Team1_nosuk, got: ${entry.safeTaskId}`);
+    assert.ok(entry.safeTaskId.includes("Team1_workerAlpha"), `Expected safeTaskId to contain Team1_workerAlpha, got: ${entry.safeTaskId}`);
 
     // The profile JSON must not contain raw slashes in safeTaskId field.
     const profileJson = JSON.stringify(profile);
-    assert.ok(profileJson.includes("Team1_nosuk"), "safeTaskId should use underscore");
-    assert.ok(!/safeTaskId[^"]*\/[^"]*nosuk/.test(profileJson), "safeTaskId must not contain slash");
+    assert.ok(profileJson.includes("Team1_workerAlpha"), "safeTaskId should use underscore");
+    assert.ok(!/safeTaskId[^"]*\/[^"]*workerAlpha/.test(profileJson), "safeTaskId must not contain slash");
   } finally {
     rmSync(rootDir, { recursive: true, force: true });
   }
@@ -944,7 +944,7 @@ test("scanHistory handles task IDs containing slashes (Team1/nosuk pattern)", as
 test("scanHistory readiness evidence: all required fields populated for slash-containing task IDs", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-scanner-readiness-"));
   try {
-    const taskId = "[Team1/nosuk] A2A round task";
+    const taskId = "[Team1/workerAlpha] A2A round task";
     const safeTaskId = taskId.replace(/[^a-zA-Z0-9_.-]/g, "_");
     // Create multiple runs to exercise sort/dedupe readiness.
     for (const runToken of ["run-B", "run-A", "run-C"]) {
@@ -1264,10 +1264,10 @@ test("readinessScan does not mutate task root on disk", async () => {
   }
 });
 
-test("readinessScan handles task IDs containing slashes (Team1/nosuk pattern)", async () => {
+test("readinessScan handles task IDs containing slashes (Team1/workerAlpha pattern)", async () => {
   const rootDir = mkdtempSync(join(tmpdir(), "a2a-readiness-slash-"));
   try {
-    const taskId = "[Team1/nosuk] Readiness lane task";
+    const taskId = "[Team1/workerAlpha] Readiness lane task";
     const safeTaskId = taskId.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const runDir = join(rootDir, safeTaskId, "20260512T030000Z-run1");
     mkdirSync(runDir, { recursive: true });
@@ -1927,7 +1927,7 @@ test("createArtifactBundle omits externalScannerEvidence when source has none", 
 });
 
 // ---------------------------------------------------------------------------
-// Artifact hygiene assertions  (GO/NO-GO evidence pack, Team1/bangtong)
+// Artifact hygiene assertions  (GO/NO-GO evidence pack, Team1/workerGamma)
 // Parent: a2a-docker-runner#337
 // ---------------------------------------------------------------------------
 

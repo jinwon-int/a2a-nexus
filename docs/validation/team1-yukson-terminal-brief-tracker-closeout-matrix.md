@@ -1,19 +1,19 @@
-# Team1/yukson Terminal Brief open tracker closeout matrix
+# Team1/workerDelta Terminal Brief open tracker closeout matrix
 
 - **Lane issue**: a2a-plane#429 (internal tracker, private)
 - **Parent**: a2a-plane#427 (internal tracker, private)
 - **Run**: `a2a-terminal-brief-completion-20260523T015723Z`
 - **Team**: Team1
-- **Worker**: yukson
+- **Worker**: workerDelta
 - **Lane**: 4/7
-- **Origin broker/finalizer**: `seoseo`
+- **Origin broker/finalizer**: `brokerAlpha`
 - **Parent round progress**: 4/7
 - **Snapshot**: `2026-05-23T01:57Z` (round creation), inspected `2026-05-23T02:00Z` (dispatch)
-- **Parent metadata**: `parentRoundId=a2a-terminal-brief-completion-20260523T015723Z`, `parentRoundTotal=7`, `parentRoundOrder=4`, `originBrokerId=seoseo`, `brokerOfRecordId=seoseo`, `parentBrokerId=seoseo`
+- **Parent metadata**: `parentRoundId=a2a-terminal-brief-completion-20260523T015723Z`, `parentRoundTotal=7`, `parentRoundOrder=4`, `originBrokerId=brokerAlpha`, `brokerOfRecordId=brokerAlpha`, `parentBrokerId=brokerAlpha`
 
 This document is the final closeout matrix for all open Terminal Brief trackers referenced in this lane.
 Close/supersede/defer/keep-open recommendations are evidence-backed. Markers are recommendations
-only — Seoseo remains broker/finalizer of record and makes the final closeout decision.
+only — brokerAlpha remains broker/finalizer of record and makes the final closeout decision.
 
 > ⚠️ This document is **evidence only**, not operator approval for any action beyond normal A2A
 > task completion evidence publication. See the safety gate below.
@@ -23,7 +23,7 @@ only — Seoseo remains broker/finalizer of record and makes the final closeout 
 ## Target compact title (known total, 4/7)
 
 ```
-A2A Terminal Brief 완료: yukson(4/7)
+A2A Terminal Brief 완료: workerDelta(4/7)
 ```
 
 This follows the known-total format defined in `contracts/a2a/parent-terminal-brief-aggregation.md`
@@ -38,58 +38,58 @@ operator receipt, approval, or terminal-outbox ACK.
 
 | # | Title | Current state | Recommended disposition | Evidence |
 | --- | --- | --- | --- | --- |
-| #414 (a2a-plane#414, internal tracker private) | [terminal-brief-all-hands-20260521-863] soonwook: libero validation of Team2 Terminal Brief ownership docs | **OPEN** — Last comment is a runner-produced Block (context overflow) on 2026-05-21T08:14Z | **Supersede** — The validation content (parent-owned Terminal Brief ownership docs, four-case routing, title format) was delivered and merged via a2a-plane#418/#415 and the Terminal Brief core contract v1 (`contracts/a2a/terminal-brief-core-contract.md`). The runner context-overflow Block is a runner infrastructure failure, not a source finding. Seoseo finalizer chose to supersede this lane with merged PRs #415 and #418 (confirmed in #416 closeout comments). | Lane was Blocked by runner context overflow on the `soonwook` Agent-as-worker after the handler sync. The substantive validation (Team2 Terminal Brief ownership docs) was covered by a2a-plane#415 (Terminal Brief ownership canary doc/test) and a2a-plane#418 (Terminal Brief core feature spec + conformance test), both merged by Seoseo on 2026-05-22. |
-| #416 (a2a-plane#416, internal tracker private) | A2A all-hands development round: Terminal Brief hardening | **OPEN** — Seoseo posted a finalizer closeout summary on 2026-05-22T07:05Z noting 6 merged PRs and superseded/closed lanes, but did not close the issue | **Close** — All 7 lanes reached terminal state (merged PRs, block superseded, or Done evidence). Seoseo finalizer confirmed: #415 merged, openclaw-plugin-a2a#430 merged, #418 merged, a2a-broker#881 merged, openclaw-plugin-a2a#431 merged, a2a-docker-runner#322 merged. a2a-docker-runner#312 closed as superseded. a2a-broker#882 held but was later merged in a subsequent round. | Finalizer closeout: [#416#issuecomment-4516137018](a2a-plane#416 (internal tracker, private)#issuecomment-4516137018) — 6 merged PRs, 1 superseded, 1 held-then-merged (a2a-broker#882). Carry-over items tracked in #419. |
-| #419 (a2a-plane#419, internal tracker private) | A2A next round prep: Terminal Brief ownership follow-ups after a2a-allhands-dev-20260522T064600Z | **OPEN** — Body lists carry-over items: a2a-broker#882 wording fix, a2a-broker#880 create-policy contract, bangtong lane closeout, stale PR triage | **Close** — All four carry-over items have been addressed: (1) a2a-broker#882 merged in follow-up round, (2) a2a-broker#880 closed by #883, (3) a2a-broker#877 closed as resolved/superseded by #324/#882/#883, (4) a2a-plane#412 already merged; openclaw-plugin-a2a#414 superseded by smaller PRs. Seoseo confirmed closeout and started #420 next round. | Seoseo update on #419: [#419#issuecomment-4516738642](a2a-plane#419 (internal tracker, private)#issuecomment-4516738642) confirming #882/#883/#324 merged. #420 started with `a2a-terminal-brief-core-v1-hardening-20260522T113238Z` round: [#419#issuecomment-4518298909](a2a-plane#419 (internal tracker, private)#issuecomment-4518298909). |
+| #414 (a2a-plane#414, internal tracker private) | [terminal-brief-all-hands-20260521-863] workerEta: libero validation of Team2 Terminal Brief ownership docs | **OPEN** — Last comment is a runner-produced Block (context overflow) on 2026-05-21T08:14Z | **Supersede** — The validation content (parent-owned Terminal Brief ownership docs, four-case routing, title format) was delivered and merged via a2a-plane#418/#415 and the Terminal Brief core contract v1 (`contracts/a2a/terminal-brief-core-contract.md`). The runner context-overflow Block is a runner infrastructure failure, not a source finding. brokerAlpha finalizer chose to supersede this lane with merged PRs #415 and #418 (confirmed in #416 closeout comments). | Lane was Blocked by runner context overflow on the `workerEta` Agent-as-worker after the handler sync. The substantive validation (Team2 Terminal Brief ownership docs) was covered by a2a-plane#415 (Terminal Brief ownership canary doc/test) and a2a-plane#418 (Terminal Brief core feature spec + conformance test), both merged by brokerAlpha on 2026-05-22. |
+| #416 (a2a-plane#416, internal tracker private) | A2A all-hands development round: Terminal Brief hardening | **OPEN** — brokerAlpha posted a finalizer closeout summary on 2026-05-22T07:05Z noting 6 merged PRs and superseded/closed lanes, but did not close the issue | **Close** — All 7 lanes reached terminal state (merged PRs, block superseded, or Done evidence). brokerAlpha finalizer confirmed: #415 merged, openclaw-plugin-a2a#430 merged, #418 merged, a2a-broker#881 merged, openclaw-plugin-a2a#431 merged, a2a-docker-runner#322 merged. a2a-docker-runner#312 closed as superseded. a2a-broker#882 held but was later merged in a subsequent round. | Finalizer closeout: [#416#issuecomment-4516137018](a2a-plane#416 (internal tracker, private)#issuecomment-4516137018) — 6 merged PRs, 1 superseded, 1 held-then-merged (a2a-broker#882). Carry-over items tracked in #419. |
+| #419 (a2a-plane#419, internal tracker private) | A2A next round prep: Terminal Brief ownership follow-ups after a2a-allhands-dev-20260522T064600Z | **OPEN** — Body lists carry-over items: a2a-broker#882 wording fix, a2a-broker#880 create-policy contract, workerGamma lane closeout, stale PR triage | **Close** — All four carry-over items have been addressed: (1) a2a-broker#882 merged in follow-up round, (2) a2a-broker#880 closed by #883, (3) a2a-broker#877 closed as resolved/superseded by #324/#882/#883, (4) a2a-plane#412 already merged; openclaw-plugin-a2a#414 superseded by smaller PRs. brokerAlpha confirmed closeout and started #420 next round. | brokerAlpha update on #419: [#419#issuecomment-4516738642](a2a-plane#419 (internal tracker, private)#issuecomment-4516738642) confirming #882/#883/#324 merged. #420 started with `a2a-terminal-brief-core-v1-hardening-20260522T113238Z` round: [#419#issuecomment-4518298909](a2a-plane#419 (internal tracker, private)#issuecomment-4518298909). |
 | #420 (a2a-plane#420, internal tracker private) | A2A Team1 development round: Terminal Brief core v1 hardening | **OPEN** — 4/4 lanes hit runner OpenClaw CLI provisioning blocker. Source guard PRs merged (a2a-broker#888, a2a-docker-runner#326). Remaining blocker: worker runner OpenClaw CLI/provisioning path. | **Defer** — The Team1 source-hardening goal (Terminal Brief core v1 contract, parent-owned title preservation, cross-broker harness) is now covered by merged source hardening across a2a-broker#888 (dispatch wrapper fail-closed guard) and a2a-docker-runner#326 (runner doctor validation). The substantive Terminal Brief core contract v1 spec was produced in a subsequent lane (#421 merged as a2a-plane#421). The remaining blocker (runner OpenClaw CLI provisioning, a2a-docker-runner#325) was resolved in productization round #423 / #327. The round's original 4-lane dispatch was effectively superseded by source guard PRs and subsequent rounds. | Lanes all Blocked with openclaw_cli_missing: [#420#issuecomment-4518326508](a2a-plane#420 (internal tracker, private)#issuecomment-4518326508). Source guards merged: a2a-broker#888 (dispatch fail-closed), a2a-docker-runner#326 (runner doctor). Runner CLI provisioning fixed in a2a-docker-runner#327 (productization round). Core v1 spec: a2a-plane#421 (closed). |
-| #423 (a2a-plane#423, internal tracker private) | A2A Terminal Brief productization hardening round | **CLOSED** — Seoseo finalizer closed on 2026-05-23T00:09Z. All 7 lanes closed with 6 code PRs merged and 1 validation Done lane. | **Close** (already closed by finalizer) — 7/7 lanes closed: a2a-broker#894 merged, a2a-broker#895 merged, a2a-docker-runner#327 merged, a2a-plane#426 merged, openclaw-plugin-a2a#438 merged, openclaw-plugin-a2a#439 merged, a2a-plane#425 closed by finalizer accepting Done evidence. | Finalizer closeout: [#423#issuecomment-4523457438](a2a-plane#423 (internal tracker, private)#issuecomment-4523457438) confirming all lanes closed with merged PRs and Done evidence. |
-| #428 (a2a-plane#428, internal tracker private) | Cursor-safe final live canary plan and pass criteria | **OPEN** — Lane 3/7 of this completion round; assigned to nosuk | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the nosuk worker (3/7). This closeout matrix records it as a pending sibling lane that Seoseo must evaluate independently. | Current round parent issue #427 comments list 428 as nosuk's lane in this run. Evaluation is pending the nosuk output. |
+| #423 (a2a-plane#423, internal tracker private) | A2A Terminal Brief productization hardening round | **CLOSED** — brokerAlpha finalizer closed on 2026-05-23T00:09Z. All 7 lanes closed with 6 code PRs merged and 1 validation Done lane. | **Close** (already closed by finalizer) — 7/7 lanes closed: a2a-broker#894 merged, a2a-broker#895 merged, a2a-docker-runner#327 merged, a2a-plane#426 merged, openclaw-plugin-a2a#438 merged, openclaw-plugin-a2a#439 merged, a2a-plane#425 closed by finalizer accepting Done evidence. | Finalizer closeout: [#423#issuecomment-4523457438](a2a-plane#423 (internal tracker, private)#issuecomment-4523457438) confirming all lanes closed with merged PRs and Done evidence. |
+| #428 (a2a-plane#428, internal tracker private) | Cursor-safe final live canary plan and pass criteria | **OPEN** — Lane 3/7 of this completion round; assigned to workerAlpha | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the workerAlpha worker (3/7). This closeout matrix records it as a pending sibling lane that brokerAlpha must evaluate independently. | Current round parent issue #427 comments list 428 as workerAlpha's lane in this run. Evaluation is pending the workerAlpha output. |
 
 ### A2A Docker Runner issues
 
 | # | Title | Current state | Recommended disposition | Evidence |
 | --- | --- | --- | --- | --- |
-| [#311](https://github.com/jinwon-int/a2a-docker-runner/issues/311) | [terminal-brief-all-hands-20260521-863] jingun: runner metadata preservation for Terminal Brief parent lane | **OPEN** — Has Done evidence posted (multiple live proof lanes: initial patch lane #312, post-fix live proof lane with 762/762 tests passed, localbroker live proof lane with 197/197 tests passed). | **Close** — The task asked to "verify or patch" metadata preservation. Multiple verification rounds produced Done evidence: (1) Initial PR #312 opened, (2) Post-fix live proof confirmed no regressions (762/762 pass), parent-broker-only ownership hardcoded in `src/integration.ts`, (3) Localbroker live proof confirmed parent lane counting and cross-broker handoff preservation (197/197 pass). The original issue scope is fully satisfied with Done evidence. | Initial PR: a2a-docker-runner#312. Post-fix Done: [#311#issuecomment-4507324875](https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-4507324875) confirming 762/762 tests pass, parent-broker-only ownership, cross-broker handoff. Localbroker proof: [#311#issuecomment-4507777417](https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-4507777417) confirming 197/197 pass. |
-| [#330](https://github.com/jinwon-int/a2a-docker-runner/issues/330) | Post-#329 runner readiness closeout for Terminal Brief workers | **OPEN** — Lane 6/7 of this completion round; assigned to jingun | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the jingun worker (6/7). This closeout matrix records it as a pending sibling lane. | Current round parent issue #427 comments list 330 as jingun's lane. Evaluation is pending the jingun output. |
+| [#311](https://github.com/jinwon-int/a2a-docker-runner/issues/311) | [terminal-brief-all-hands-20260521-863] workerZeta: runner metadata preservation for Terminal Brief parent lane | **OPEN** — Has Done evidence posted (multiple live proof lanes: initial patch lane #312, post-fix live proof lane with 762/762 tests passed, localbroker live proof lane with 197/197 tests passed). | **Close** — The task asked to "verify or patch" metadata preservation. Multiple verification rounds produced Done evidence: (1) Initial PR #312 opened, (2) Post-fix live proof confirmed no regressions (762/762 pass), parent-broker-only ownership hardcoded in `src/integration.ts`, (3) Localbroker live proof confirmed parent lane counting and cross-broker handoff preservation (197/197 pass). The original issue scope is fully satisfied with Done evidence. | Initial PR: a2a-docker-runner#312. Post-fix Done: [#311#issuecomment-4507324875](https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-4507324875) confirming 762/762 tests pass, parent-broker-only ownership, cross-broker handoff. Localbroker proof: [#311#issuecomment-4507777417](https://github.com/jinwon-int/a2a-docker-runner/issues/311#issuecomment-4507777417) confirming 197/197 pass. |
+| [#330](https://github.com/jinwon-int/a2a-docker-runner/issues/330) | Post-#329 runner readiness closeout for Terminal Brief workers | **OPEN** — Lane 6/7 of this completion round; assigned to workerZeta | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the workerZeta worker (6/7). This closeout matrix records it as a pending sibling lane. | Current round parent issue #427 comments list 330 as workerZeta's lane. Evaluation is pending the workerZeta output. |
 
 ### A2A Broker tracker issues
 
 | # | Title | Current state | Recommended disposition | Evidence |
 | --- | --- | --- | --- | --- |
-| [#863](https://github.com/jinwon-int/a2a-broker/issues/863) | A2A Terminal Brief live all-hands ownership canary | **OPEN** — Parent of the `terminal-brief-all-hands-20260521-863` run. Last comment: post-fix 2-lane live proof dispatched (sogyo + jingun). | **Close** — This was the parent round for the all-hands canary (7 lanes: #413/#414/#415/#864/#865/#866/#311). All child lanes are terminal: #413 (nosuk, superseded by #418), #414 (soonwook, superseded), #415 (MERGED), #864 (bangtong, Block from runner context overflow), #865 (yukson, Done), #866 (dungae, Block from runner no-diff), #311 (jingun, Done). The canary's technical goal (validate parent-owned Terminal Brief routing) was proven by the merged PRs (#415/#418), the hardcoded `ownership: "parent-broker-only"` in docker-runner, and the cross-broker handoff contract. The parent issue can be closed. | Child lane terminal states confirmed in #416 closeout, the terminal-brief-core-contract.md, parent-terminal-brief-aggregation.md v1 contract, and docker-runner#311 Done evidence. |
-| [#864](https://github.com/jinwon-int/a2a-broker/issues/864) | [terminal-brief-all-hands-20260521-863] bangtong: broker parent-owned Terminal Brief canary | **OPEN** — Last comment is a runner-produced Block (handler-sync context overflow) on 2026-05-21 | **Supersede** — The substantive canary work (parent-owned Terminal Brief routing, metadata propagation) was validated by sibling lanes: #865 (yukson Done), #311 (jingun Done with 762/762 tests covering parent-broker-only ownership), and merged in #415/#418. The runner context-overflow Block is a runner infrastructure failure, not a source finding. | Runner Block: [#864#issuecomment-4506147677](https://github.com/jinwon-int/a2a-broker/issues/864) — context overflow during handler-sync. Substantive validation covered by docker-runner#311 Done evidence and a2a-plane#415/#418 merged PRs. |
-| [#865](https://github.com/jinwon-int/a2a-broker/issues/865) | [terminal-brief-all-hands-20260521-863] yukson: libero validation of live all-hands Terminal Brief closeout matrix | **OPEN** — Done evidence posted by runner. Task completed successfully with Done evidence (exit 0). | **Close** — Done evidence confirms the libero validation passed. All seven lanes had consistent parentRoundTotal=7, Team2 handoff lanes were parent-owned, Terminal Brief evidence separated provider accepted-send from terminal ACK. No regressions found. | Runner Done evidence: [#865](https://github.com/jinwon-int/a2a-broker/issues/865) — exit 0, Done marker with terminal evidence confirming all validation checks passed. |
-| [#866](https://github.com/jinwon-int/a2a-broker/issues/866) | [terminal-brief-all-hands-20260521-863] dungae: cross-broker projection receiver no-duplicate | **OPEN** — Last comment is a runner-produced Block (handler-sync context overflow) on 2026-05-21 | **Supersede** — The cross-broker no-duplicate projection receiver behavior was validated by subsequent rounds: openclaw-plugin-a2a#439 (cross-broker ownership guard and duplicate-visible suppression, merged), a2a-plane#426 (adapter receipt capability contract, merged), and the Terminal Brief core contract v1. The runner Block is a runner infrastructure failure. | Runner Block: [#866](https://github.com/jinwon-int/a2a-broker/issues/866) — context overflow. Duplicate suppression and cross-broker protection later merged in openclaw-plugin-a2a#439 and a2a-plane#426 (productization round #423). |
-| [#896](https://github.com/jinwon-int/a2a-broker/issues/896) | Terminal Brief stale outbox classifier and broker tracker closeout map (bangtong, 1/7 of this round) | **OPEN** — Lane 1/7 of this completion round; assigned to bangtong | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the bangtong worker (1/7). | Current round parent issue #427 comments list 896 as bangtong's lane. Evaluation pending bangtong output. |
+| [#863](https://github.com/jinwon-int/a2a-broker/issues/863) | A2A Terminal Brief live all-hands ownership canary | **OPEN** — Parent of the `terminal-brief-all-hands-20260521-863` run. Last comment: post-fix 2-lane live proof dispatched (workerBeta + workerZeta). | **Close** — This was the parent round for the all-hands canary (7 lanes: #413/#414/#415/#864/#865/#866/#311). All child lanes are terminal: #413 (workerAlpha, superseded by #418), #414 (workerEta, superseded), #415 (MERGED), #864 (workerGamma, Block from runner context overflow), #865 (workerDelta, Done), #866 (workerEpsilon, Block from runner no-diff), #311 (workerZeta, Done). The canary's technical goal (validate parent-owned Terminal Brief routing) was proven by the merged PRs (#415/#418), the hardcoded `ownership: "parent-broker-only"` in docker-runner, and the cross-broker handoff contract. The parent issue can be closed. | Child lane terminal states confirmed in #416 closeout, the terminal-brief-core-contract.md, parent-terminal-brief-aggregation.md v1 contract, and docker-runner#311 Done evidence. |
+| [#864](https://github.com/jinwon-int/a2a-broker/issues/864) | [terminal-brief-all-hands-20260521-863] workerGamma: broker parent-owned Terminal Brief canary | **OPEN** — Last comment is a runner-produced Block (handler-sync context overflow) on 2026-05-21 | **Supersede** — The substantive canary work (parent-owned Terminal Brief routing, metadata propagation) was validated by sibling lanes: #865 (workerDelta Done), #311 (workerZeta Done with 762/762 tests covering parent-broker-only ownership), and merged in #415/#418. The runner context-overflow Block is a runner infrastructure failure, not a source finding. | Runner Block: [#864#issuecomment-4506147677](https://github.com/jinwon-int/a2a-broker/issues/864) — context overflow during handler-sync. Substantive validation covered by docker-runner#311 Done evidence and a2a-plane#415/#418 merged PRs. |
+| [#865](https://github.com/jinwon-int/a2a-broker/issues/865) | [terminal-brief-all-hands-20260521-863] workerDelta: libero validation of live all-hands Terminal Brief closeout matrix | **OPEN** — Done evidence posted by runner. Task completed successfully with Done evidence (exit 0). | **Close** — Done evidence confirms the libero validation passed. All seven lanes had consistent parentRoundTotal=7, Team2 handoff lanes were parent-owned, Terminal Brief evidence separated provider accepted-send from terminal ACK. No regressions found. | Runner Done evidence: [#865](https://github.com/jinwon-int/a2a-broker/issues/865) — exit 0, Done marker with terminal evidence confirming all validation checks passed. |
+| [#866](https://github.com/jinwon-int/a2a-broker/issues/866) | [terminal-brief-all-hands-20260521-863] workerEpsilon: cross-broker projection receiver no-duplicate | **OPEN** — Last comment is a runner-produced Block (handler-sync context overflow) on 2026-05-21 | **Supersede** — The cross-broker no-duplicate projection receiver behavior was validated by subsequent rounds: openclaw-plugin-a2a#439 (cross-broker ownership guard and duplicate-visible suppression, merged), a2a-plane#426 (adapter receipt capability contract, merged), and the Terminal Brief core contract v1. The runner Block is a runner infrastructure failure. | Runner Block: [#866](https://github.com/jinwon-int/a2a-broker/issues/866) — context overflow. Duplicate suppression and cross-broker protection later merged in openclaw-plugin-a2a#439 and a2a-plane#426 (productization round #423). |
+| [#896](https://github.com/jinwon-int/a2a-broker/issues/896) | Terminal Brief stale outbox classifier and broker tracker closeout map (workerGamma, 1/7 of this round) | **OPEN** — Lane 1/7 of this completion round; assigned to workerGamma | **Keep open** — This is a sibling lane in the current completion round. Its disposition will be determined by the workerGamma worker (1/7). | Current round parent issue #427 comments list 896 as workerGamma's lane. Evaluation pending workerGamma output. |
 
 ### A2A OpenClaw Plugin issues
 
 | # | Title | Current state | Recommended disposition | Evidence |
 | --- | --- | --- | --- | --- |
-| [#440](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/440) | Terminal Brief Gateway plugin runtime and manifest preflight (sogyo, 2/7 of this round) | **OPEN** | **Keep open** — Sibling lane in the current completion round. Assigned to sogyo (2/7). | Parent issue #427 confirms 2/7 sogyo. |
-| [#441](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/441) | Cross-broker projection-only preflight and duplicate Brief suppression (dungae, 5/7 of this round) | **OPEN** | **Keep open** — Sibling lane in the current completion round. Assigned to dungae (5/7). | Parent issue #427 confirms 5/7 dungae. |
+| [#440](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/440) | Terminal Brief Gateway plugin runtime and manifest preflight (workerBeta, 2/7 of this round) | **OPEN** | **Keep open** — Sibling lane in the current completion round. Assigned to workerBeta (2/7). | Parent issue #427 confirms 2/7 workerBeta. |
+| [#441](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/441) | Cross-broker projection-only preflight and duplicate Brief suppression (workerEpsilon, 5/7 of this round) | **OPEN** | **Keep open** — Sibling lane in the current completion round. Assigned to workerEpsilon (5/7). | Parent issue #427 confirms 5/7 workerEpsilon. |
 
 ---
 
 ## Summary disposition table
 
-| Tracker | Current state | Recommended disposition | Seoseo action needed |
+| Tracker | Current state | Recommended disposition | brokerAlpha action needed |
 | --- | --- | --- | --- |
 | a2a-plane#414 | OPEN (Block evidence) | **Supersede** | Close as superseded by #415/#418 |
 | a2a-plane#416 | OPEN (finalizer closeout) | **Close** | Close — all lanes terminal, finalizer evidence posted |
 | a2a-plane#419 | OPEN (carry-over resolved) | **Close** | Close — all carry-overs addressed |
 | a2a-plane#420 | OPEN (blocked, superseded) | **Defer** — covered by subsequent rounds | Defer; core v1 produced in later round |
 | a2a-plane#423 | CLOSED | **Close** (already closed) | Confirm closed |
-| a2a-plane#428 | OPEN (sibling lane 3/7) | **Keep open** | Evaluate after nosuk completes |
+| a2a-plane#428 | OPEN (sibling lane 3/7) | **Keep open** | Evaluate after workerAlpha completes |
 | a2a-docker-runner#311 | OPEN (Done evidence) | **Close** | Close — substantive validation completed |
-| a2a-docker-runner#330 | OPEN (sibling lane 6/7) | **Keep open** | Evaluate after jingun completes |
+| a2a-docker-runner#330 | OPEN (sibling lane 6/7) | **Keep open** | Evaluate after workerZeta completes |
 | a2a-broker#863 | OPEN (parent canary) | **Close** | Close — all child lanes terminal |
 | a2a-broker#864 | OPEN (Block evidence) | **Supersede** | Close as superseded by #415/#418 + docker-runner#311 |
 | a2a-broker#865 | OPEN (Done evidence) | **Close** | Close — libero validation completed |
 | a2a-broker#866 | OPEN (Block evidence) | **Supersede** | Close as superseded by openclaw-plugin-a2a#439 + a2a-plane#426 |
-| a2a-broker#896 | OPEN (sibling lane 1/7) | **Keep open** | Evaluate after bangtong completes |
-| openclaw-plugin-a2a#440 | OPEN (sibling lane 2/7) | **Keep open** | Evaluate after sogyo completes |
-| openclaw-plugin-a2a#441 | OPEN (sibling lane 5/7) | **Keep open** | Evaluate after dungae completes |
+| a2a-broker#896 | OPEN (sibling lane 1/7) | **Keep open** | Evaluate after workerGamma completes |
+| openclaw-plugin-a2a#440 | OPEN (sibling lane 2/7) | **Keep open** | Evaluate after workerBeta completes |
+| openclaw-plugin-a2a#441 | OPEN (sibling lane 5/7) | **Keep open** | Evaluate after workerEpsilon completes |
 
 **Totals:**
 - **Close**: 6 trackers (#416, #419, #423, #865, #863, #311)
@@ -103,30 +103,30 @@ operator receipt, approval, or terminal-outbox ACK.
 
 ### Remaining sibling lanes in this round (pending output)
 
-These are tracked in the current completion round and their outcomes must be collected by Seoseo:
+These are tracked in the current completion round and their outcomes must be collected by brokerAlpha:
 
 | Lane | Worker | Issue | Task status |
 | --- | --- | --- | --- |
-| 1/7 | bangtong | a2a-broker#896 | `running` at round dispatch |
-| 2/7 | sogyo | openclaw-plugin-a2a#440 | `running` at round dispatch |
-| 3/7 | nosuk | a2a-plane#428 | `queued` at round dispatch |
-| 5/7 | dungae | openclaw-plugin-a2a#441 | `queued` at round dispatch |
-| 6/7 | jingun | a2a-docker-runner#330 | `queued` at round dispatch |
-| 7/7 | soonwook | a2a-plane#430 | `queued` at round dispatch |
+| 1/7 | workerGamma | a2a-broker#896 | `running` at round dispatch |
+| 2/7 | workerBeta | openclaw-plugin-a2a#440 | `running` at round dispatch |
+| 3/7 | workerAlpha | a2a-plane#428 | `queued` at round dispatch |
+| 5/7 | workerEpsilon | openclaw-plugin-a2a#441 | `queued` at round dispatch |
+| 6/7 | workerZeta | a2a-docker-runner#330 | `queued` at round dispatch |
+| 7/7 | workerEta | a2a-plane#430 | `queued` at round dispatch |
 
-The 6 pending lanes will each post Start, then PR/Done/Block evidence. Seoseo must aggregate those outcomes
+The 6 pending lanes will each post Start, then PR/Done/Block evidence. brokerAlpha must aggregate those outcomes
 into the parent round (#427) final closeout.
 
 ### Changed files in this closeout matrix PR
 
-This document only: `docs/validation/team1-yukson-terminal-brief-tracker-closeout-matrix.md`
+This document only: `docs/validation/team1-workerDelta-terminal-brief-tracker-closeout-matrix.md`
 
 ### Checks
 
 - All tracker issue states verified via `gh issue view` against live GitHub state at inspection time.
 - Each recommendation references specific evidence URLs (comments, PRs, contracts).
 - All current-round sibling lanes are marked `keep-open` without premature disposition.
-- No recommendations claim operator approval — all are evidence-backed disposition recommendations for Seoseo.
+- No recommendations claim operator approval — all are evidence-backed disposition recommendations for brokerAlpha.
 
 ### Risk notes
 
@@ -140,8 +140,8 @@ This document only: `docs/validation/team1-yukson-terminal-brief-tracker-closeou
 
 | Blocker | Reason | Required action |
 | --- | --- | --- |
-| Seoseo finalizer approval | This matrix provides recommendations only; Seoseo must accept/reject each disposition | Seoseo reviews and either merges this PR or posts Block evidence |
-| Sibling lane outcomes | 6 sibling lanes in this round are still pending; their outputs may affect the parent closeout | Seoseo aggregates sibling results into #427 closeout |
+| brokerAlpha finalizer approval | This matrix provides recommendations only; brokerAlpha must accept/reject each disposition | brokerAlpha reviews and either merges this PR or posts Block evidence |
+| Sibling lane outcomes | 6 sibling lanes in this round are still pending; their outputs may affect the parent closeout | brokerAlpha aggregates sibling results into #427 closeout |
 
 ---
 
@@ -175,12 +175,12 @@ find . \( -path './.git' -o -path './node_modules' -o -path './packages/*/node_m
 
 | Risk | Description | Mitigation |
 | --- | --- | --- |
-| Tracker state drift | Issues may be closed/superseded by other workers between matrix creation and Seoseo review | Matrix snapshot-timestamped; Seoseo should re-verify before accepting |
+| Tracker state drift | Issues may be closed/superseded by other workers between matrix creation and brokerAlpha review | Matrix snapshot-timestamped; brokerAlpha should re-verify before accepting |
 | Deferred #420 | Core v1 hardening round partially addressed by merged source guards but original task scope not completed | Core v1 contract spec completed in #421; runner provisioning fixed in #327 |
-| Sibling lane failure | 6 pending lanes may produce Block evidence that changes the parent closeout assessment | Matrix marks all as keep-open; Seoseo aggregates |
+| Sibling lane failure | 6 pending lanes may produce Block evidence that changes the parent closeout assessment | Matrix marks all as keep-open; brokerAlpha aggregates |
 
 ---
 
-*This document is evidence only — it does not authorize any safety-prohibited action. Seoseo remains
+*This document is evidence only — it does not authorize any safety-prohibited action. brokerAlpha remains
 broker/finalizer of record. Provider accepted/message-id evidence remains accepted-send telemetry
 only, never read/visibility/Terminal ACK.*

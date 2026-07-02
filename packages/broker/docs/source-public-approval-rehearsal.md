@@ -3,7 +3,7 @@
 Issue: [#484](https://github.com/jinwon-int/a2a-broker/issues/484)
 Parent: a2a-plane#211 (a2a-plane#211, internal tracker private)
 Run: `a2a-source-public-approval-rehearsal-20260511T014240Z`
-Lane: Team2 — dungae
+Lane: Team2 — workerepsilon
 
 This lane adds a deterministic, read-only source-public approval rehearsal. It
 builds approval packets and evidence bundles before any real source-public
@@ -16,7 +16,7 @@ production database, or ACK a Terminal Brief.
 ```bash
 npm run source_public_approval_rehearsal -- --json \
   --run-id a2a-source-public-approval-rehearsal-20260511T014240Z \
-  --worker dungae \
+  --worker workerepsilon \
   --repo jinwon-int/a2a-broker \
   --issue 484
 ```

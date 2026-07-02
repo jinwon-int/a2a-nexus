@@ -27,12 +27,12 @@ function buildTradingDialecticTaskFixture(
       dataFreshnessMs: 1500,
       openedAt: "2026-04-19T09:00:00.000Z",
       expiresAt: "2026-04-19T10:00:00.000Z",
-      openedBy: "seoseo",
+      openedBy: "brokeralpha",
     },
     roles: {
-      thesisAgent: { agentId: "bangtong" },
+      thesisAgent: { agentId: "workergamma" },
       antithesisAgent: { agentId: "dengae" },
-      synthAgent: { agentId: "seoseo" },
+      synthAgent: { agentId: "brokeralpha" },
     },
     context: {
       marketSnapshot: { bid: 64000, ask: 64010 },
@@ -43,7 +43,7 @@ function buildTradingDialecticTaskFixture(
       maxTimestampDriftMs: 2000,
     },
     thesis: {
-      author: { agentId: "bangtong" },
+      author: { agentId: "workergamma" },
       submittedAt: "2026-04-19T09:05:00.000Z",
       regimeHypothesis: "trend-up",
       tradeIdea: "long perp",
@@ -69,7 +69,7 @@ function buildTradingDialecticTaskFixture(
       confidence: 0.6,
     },
     rebuttal: {
-      author: { agentId: "bangtong" },
+      author: { agentId: "workergamma" },
       submittedAt: "2026-04-19T09:15:00.000Z",
       response: "volume returning post-open",
       defendedClaims: ["trend intact"],
@@ -77,7 +77,7 @@ function buildTradingDialecticTaskFixture(
       residualRisks: ["news event"],
     },
     synthesis: {
-      author: { agentId: "seoseo" },
+      author: { agentId: "brokeralpha" },
       submittedAt: "2026-04-19T09:20:00.000Z",
       preserve: ["entry plan"],
       discard: ["aggressive sizing"],
@@ -90,7 +90,7 @@ function buildTradingDialecticTaskFixture(
     },
     decision: {
       action: "EXECUTE_PROBE",
-      routeTo: "bangtong",
+      routeTo: "workergamma",
       ttlSec: 600,
       hardVeto: false,
       executionPolicyRef: "policy-probe-v1",
@@ -130,15 +130,15 @@ function buildDecisionDialecticTaskFixture(
       openedAt: "2026-05-18T00:00:00.000Z",
       snapshotAt: "2026-05-18T00:02:00.000Z",
       expiresAt: "2026-05-18T06:00:00.000Z",
-      openedBy: "seoseo",
+      openedBy: "brokeralpha",
       contextRefs: ["wiki:pages/a2a/dialectic-mode.md"],
       tags: ["a2ad", "ops"],
     },
     roles: {
-      thesisAgent: { agentId: "sogyo", teamId: "team1", roleHint: "thesis" },
-      antithesisAgent: { agentId: "nosuk", teamId: "team1", roleHint: "antithesis" },
-      rebuttalAgent: { agentId: "bangtong", teamId: "team1", roleHint: "rebuttal" },
-      synthAgent: { agentId: "yukson", teamId: "team1", roleHint: "synthesis" },
+      thesisAgent: { agentId: "workerbeta", teamId: "team1", roleHint: "thesis" },
+      antithesisAgent: { agentId: "workeralpha", teamId: "team1", roleHint: "antithesis" },
+      rebuttalAgent: { agentId: "workergamma", teamId: "team1", roleHint: "rebuttal" },
+      synthAgent: { agentId: "workerdelta", teamId: "team1", roleHint: "synthesis" },
     },
     context: {
       brief: "Evaluate whether to reduce heartbeat polling pressure.",
@@ -149,12 +149,12 @@ function buildDecisionDialecticTaskFixture(
       availableTools: ["logs", "unit-tests"],
       hardVetoPolicy: ["would require unapproved restart", "drops operator visibility"],
       domainContext: {
-        brokerId: "seoseo",
+        brokerId: "brokeralpha",
         team: "team1",
       },
     },
     thesis: {
-      author: { agentId: "sogyo" },
+      author: { agentId: "workerbeta" },
       submittedAt: "2026-05-18T00:05:00.000Z",
       claim: "Reduce redundant idle polling.",
       proposal: "Bound idle polling and keep explicit heartbeat updates.",
@@ -166,7 +166,7 @@ function buildDecisionDialecticTaskFixture(
       confidence: 0.72,
     },
     antithesis: {
-      author: { agentId: "nosuk" },
+      author: { agentId: "workeralpha" },
       submittedAt: "2026-05-18T00:10:00.000Z",
       counterClaim: "Too much reduction can hide worker stalls.",
       whyThesisMayFail: "Operators rely on visible heartbeat signals.",
@@ -183,7 +183,7 @@ function buildDecisionDialecticTaskFixture(
       confidence: 0.64,
     },
     rebuttal: {
-      author: { agentId: "bangtong" },
+      author: { agentId: "workergamma" },
       submittedAt: "2026-05-18T00:15:00.000Z",
       response: "Keep heartbeat summaries while bounding duplicate scans.",
       defendedClaims: ["operator visibility remains explicit"],
@@ -191,7 +191,7 @@ function buildDecisionDialecticTaskFixture(
       residualRisks: ["misconfigured interval"],
     },
     synthesis: {
-      author: { agentId: "yukson" },
+      author: { agentId: "workerdelta" },
       submittedAt: "2026-05-18T00:20:00.000Z",
       preserve: ["explicit heartbeat signal"],
       discard: ["unbounded duplicate polling"],
@@ -203,7 +203,7 @@ function buildDecisionDialecticTaskFixture(
     },
     decision: {
       action: "PROCEED_WITH_GUARDRAILS",
-      routeTo: "yukson",
+      routeTo: "workerdelta",
       ttlSec: 1800,
       hardVeto: false,
       decisionPolicyRef: "decision-dialectic-no-live-v1",
@@ -233,7 +233,7 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
     enforceRequesterIdentity: true,
   });
   try {
-    await registerTestWorker(server.baseUrl, "sogyo", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workerbeta", "analyst", "test-edge-secret");
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
@@ -244,8 +244,8 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
         message: "evaluate generic decision dialectic",
         payload: buildDecisionDialecticPayload(),
       }),
@@ -271,30 +271,30 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
     assert.equal(body.contract.phase, "synthesis");
     assert.equal(body.meta.topic, "gateway-heartbeat-polling");
     assert.equal(body.meta.domain, "operations");
-    assert.equal(body.roles.thesisAgent.agentId, "sogyo");
-    assert.equal(body.roles.antithesisAgent.agentId, "nosuk");
-    assert.equal(body.roles.rebuttalAgent.agentId, "bangtong");
-    assert.equal(body.roles.synthAgent.agentId, "yukson");
-    assert.equal(body.context.domainContext.brokerId, "seoseo");
+    assert.equal(body.roles.thesisAgent.agentId, "workerbeta");
+    assert.equal(body.roles.antithesisAgent.agentId, "workeralpha");
+    assert.equal(body.roles.rebuttalAgent.agentId, "workergamma");
+    assert.equal(body.roles.synthAgent.agentId, "workerdelta");
+    assert.equal(body.context.domainContext.brokerId, "brokeralpha");
 
     const stageNames = ["thesis", "antithesis", "rebuttal", "synthesis", "outcome"];
     for (const stage of stageNames) {
       assert.ok(body.stages[stage], `expected stage ${stage}`);
       assert.equal(body.stages[stage].name, stage);
     }
-    assert.equal(body.stages.thesis.author.agentId, "sogyo");
+    assert.equal(body.stages.thesis.author.agentId, "workerbeta");
     assert.equal(body.stages.antithesis.vetoFlags[0].code, "drops_operator_visibility");
     assert.equal(body.stages.synthesis.verdict, "PROCEED_WITH_GUARDRAILS");
     assert.equal(body.stages.outcome.present, false);
 
     assert.equal(body.decisionCard.present, true);
     assert.equal(body.decisionCard.verdict, "PROCEED_WITH_GUARDRAILS");
-    assert.equal(body.decisionCard.route, "yukson");
+    assert.equal(body.decisionCard.route, "workerdelta");
     assert.equal(body.decisionCard.hardVeto, false);
     assert.equal(body.decisionCard.decisionPolicyRef, "decision-dialectic-no-live-v1");
     assert.equal(body.decisionCard.decisionBasisRevision, 3);
     assert.equal(body.decisionCard.ttlSec, 1800);
-    assert.equal(body.decisionCard.decidedBy.agentId, "yukson");
+    assert.equal(body.decisionCard.decidedBy.agentId, "workerdelta");
     assert.match(body.summary.decision, /PROCEED_WITH_GUARDRAILS/);
   } finally {
     await server.close();
@@ -303,13 +303,13 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
 
 test("decision-dialectic execution advances phase tasks and applies ordered patches", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
     edgeSecret: "test-edge-secret",
     enforceRequesterIdentity: true,
   });
   try {
-    for (const workerId of ["sogyo", "nosuk", "bangtong", "yukson"]) {
+    for (const workerId of ["workerbeta", "workeralpha", "workergamma", "workerdelta"]) {
       await registerTestWorker(server.baseUrl, workerId, "analyst", "test-edge-secret");
     }
 
@@ -323,9 +323,9 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
-        brokerOfRecord: "seoseo",
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
+        brokerOfRecord: "brokeralpha",
         teamId: "team1",
         message: "run generic decision dialectic",
         payload: buildDecisionDialecticPayload(
@@ -361,18 +361,18 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
     assert.equal(thesisAdvance.phase, "thesis");
     assert.equal(thesisAdvance.parentTaskId, parent.id);
     assert.equal(thesisAdvance.childTask.parentTaskId, parent.id);
-    assert.equal(thesisAdvance.childTask.targetNodeId, "sogyo");
-    assert.equal(thesisAdvance.childTask.assignedWorkerId, "sogyo");
+    assert.equal(thesisAdvance.childTask.targetNodeId, "workerbeta");
+    assert.equal(thesisAdvance.childTask.assignedWorkerId, "workerbeta");
     assert.equal(thesisAdvance.childTask.payload.promptSpec.schemaName, "decisionDialectic.thesis.v1");
     assert.equal(thesisAdvance.childTask.payload.execution.expectedRevision, 0);
-    assert.equal(thesisAdvance.childTask.brokerOfRecord, "seoseo");
+    assert.equal(thesisAdvance.childTask.brokerOfRecord, "brokeralpha");
     assert.equal(thesisAdvance.childTask.teamId, "team1");
 
     const thesisPatchRes = await fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/patch`, {
       method: "POST",
       headers: jsonHeaders({
         "x-a2a-edge-secret": "test-edge-secret",
-        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-id": "workerbeta",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
@@ -380,7 +380,7 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
         patchId: "patch-thesis-1",
         taskId: "dd-task-01",
         expectedRevision: 0,
-        authorAgent: "sogyo",
+        authorAgent: "workerbeta",
         at: "2026-05-18T00:05:00.000Z",
         payload: fixture.thesis,
       }),
@@ -404,7 +404,7 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
     assert.equal(advanceAntithesisRes.status, 201);
     const antithesisAdvance = await advanceAntithesisRes.json();
     assert.equal(antithesisAdvance.phase, "antithesis");
-    assert.equal(antithesisAdvance.childTask.targetNodeId, "nosuk");
+    assert.equal(antithesisAdvance.childTask.targetNodeId, "workeralpha");
     assert.equal(antithesisAdvance.childTask.payload.execution.expectedRevision, 1);
 
     for (const patch of [
@@ -412,23 +412,23 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
         op: "append.antithesis",
         patchId: "patch-antithesis-1",
         expectedRevision: 1,
-        authorAgent: "nosuk",
+        authorAgent: "workeralpha",
         payload: fixture.antithesis,
       },
       {
         op: "append.rebuttal",
         patchId: "patch-rebuttal-1",
         expectedRevision: 2,
-        authorAgent: "bangtong",
+        authorAgent: "workergamma",
         payload: fixture.rebuttal,
       },
       {
         op: "set.synthesis_decision",
         patchId: "patch-synthesis-1",
         expectedRevision: 3,
-        authorAgent: "yukson",
+        authorAgent: "workerdelta",
         payload: {
-          author: { agentId: "yukson" },
+          author: { agentId: "workerdelta" },
           submittedAt: "2026-05-18T00:20:00.000Z",
           synthesis: fixture.synthesis,
           decision: fixture.decision,
@@ -464,7 +464,7 @@ test("decision-dialectic execution advances phase tasks and applies ordered patc
     assert.equal(readModel.contract.state, "DECISION_ROUTED");
     assert.equal(readModel.contract.phase, "outcome");
     assert.equal(readModel.decisionCard.verdict, "PROCEED_WITH_GUARDRAILS");
-    assert.equal(readModel.decisionCard.route, "yukson");
+    assert.equal(readModel.decisionCard.route, "workerdelta");
   } finally {
     await server.close();
   }
@@ -476,8 +476,8 @@ test("decision-dialectic execution rejects out-of-order patches", async () => {
     enforceRequesterIdentity: true,
   });
   try {
-    await registerTestWorker(server.baseUrl, "sogyo", "analyst", "test-edge-secret");
-    await registerTestWorker(server.baseUrl, "nosuk", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workerbeta", "analyst", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workeralpha", "analyst", "test-edge-secret");
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
@@ -488,8 +488,8 @@ test("decision-dialectic execution rejects out-of-order patches", async () => {
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
         message: "run generic decision dialectic",
         payload: buildDecisionDialecticPayload(
           {
@@ -514,7 +514,7 @@ test("decision-dialectic execution rejects out-of-order patches", async () => {
       method: "POST",
       headers: jsonHeaders({
         "x-a2a-edge-secret": "test-edge-secret",
-        "x-a2a-requester-id": "nosuk",
+        "x-a2a-requester-id": "workeralpha",
         "x-a2a-requester-role": "analyst",
       }),
       body: JSON.stringify({
@@ -522,7 +522,7 @@ test("decision-dialectic execution rejects out-of-order patches", async () => {
         patchId: "patch-antithesis-early",
         taskId: "dd-task-01",
         expectedRevision: 0,
-        authorAgent: "nosuk",
+        authorAgent: "workeralpha",
         at: "2026-05-18T00:10:00.000Z",
         payload: fixture.antithesis,
       }),
@@ -542,7 +542,7 @@ test("decision-dialectic route returns 404 when task is not a decision.dialectic
     enforceRequesterIdentity: true,
   });
   try {
-    await registerTestWorker(server.baseUrl, "bangtong", "live-trader", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workergamma", "live-trader", "test-edge-secret");
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
@@ -553,8 +553,8 @@ test("decision-dialectic route returns 404 when task is not a decision.dialectic
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "bangtong", kind: "node", role: "live-trader" },
-        assignedWorkerId: "bangtong",
+        target: { id: "workergamma", kind: "node", role: "live-trader" },
+        assignedWorkerId: "workergamma",
         message: "trade BTCUSDT",
         payload: buildTradingDialecticPayload(),
       }),
@@ -584,7 +584,7 @@ test("trading-dialectic read model returns operator stage rail and decision card
     enforceRequesterIdentity: true,
   });
   try {
-    await registerTestWorker(server.baseUrl, "bangtong", "live-trader", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workergamma", "live-trader", "test-edge-secret");
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
@@ -595,8 +595,8 @@ test("trading-dialectic read model returns operator stage rail and decision card
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "bangtong", kind: "node", role: "live-trader" },
-        assignedWorkerId: "bangtong",
+        target: { id: "workergamma", kind: "node", role: "live-trader" },
+        assignedWorkerId: "workergamma",
         message: "trade BTCUSDT",
         payload: buildTradingDialecticPayload(),
       }),
@@ -622,7 +622,7 @@ test("trading-dialectic read model returns operator stage rail and decision card
     assert.equal(body.contract.state, "EXECUTION_ROUTED");
     assert.equal(body.contract.phase, "synthesis");
     assert.equal(body.meta.symbol, "BTCUSDT");
-    assert.equal(body.roles.synthAgent.agentId, "seoseo");
+    assert.equal(body.roles.synthAgent.agentId, "brokeralpha");
 
     const stageNames = ["thesis", "antithesis", "rebuttal", "synthesis", "outcome"];
     for (const stage of stageNames) {
@@ -630,7 +630,7 @@ test("trading-dialectic read model returns operator stage rail and decision card
       assert.equal(body.stages[stage].name, stage);
     }
     assert.equal(body.stages.thesis.present, true);
-    assert.equal(body.stages.thesis.author.agentId, "bangtong");
+    assert.equal(body.stages.thesis.author.agentId, "workergamma");
     assert.equal(body.stages.thesis.at, "2026-04-19T09:05:00.000Z");
     assert.equal(body.stages.antithesis.present, true);
     assert.deepEqual(body.stages.antithesis.vetoFlags, []);
@@ -641,12 +641,12 @@ test("trading-dialectic read model returns operator stage rail and decision card
 
     assert.equal(body.decisionCard.present, true);
     assert.equal(body.decisionCard.verdict, "EXECUTE_PROBE");
-    assert.equal(body.decisionCard.route, "bangtong");
+    assert.equal(body.decisionCard.route, "workergamma");
     assert.equal(body.decisionCard.hardVeto, false);
     assert.equal(body.decisionCard.executionPolicyRef, "policy-probe-v1");
     assert.equal(body.decisionCard.decisionBasisRevision, 4);
     assert.equal(body.decisionCard.ttlSec, 600);
-    assert.equal(body.decisionCard.decidedBy.agentId, "seoseo");
+    assert.equal(body.decisionCard.decidedBy.agentId, "brokeralpha");
     assert.equal(body.decisionCard.decidedAt, "2026-04-19T09:20:00.000Z");
 
     assert.equal(typeof body.summary.headline, "string");
@@ -663,7 +663,7 @@ test("trading-dialectic read model omits absent decision card and stages", async
     enforceRequesterIdentity: true,
   });
   try {
-    await registerTestWorker(server.baseUrl, "bangtong", "live-trader", "test-edge-secret");
+    await registerTestWorker(server.baseUrl, "workergamma", "live-trader", "test-edge-secret");
     const createRes = await fetch(`${server.baseUrl}/tasks`, {
       method: "POST",
       headers: jsonHeaders({
@@ -674,8 +674,8 @@ test("trading-dialectic read model omits absent decision card and stages", async
       body: JSON.stringify({
         intent: "analyze",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "bangtong", kind: "node", role: "live-trader" },
-        assignedWorkerId: "bangtong",
+        target: { id: "workergamma", kind: "node", role: "live-trader" },
+        assignedWorkerId: "workergamma",
         message: "early stage trade",
         payload: buildTradingDialecticPayload(
           {

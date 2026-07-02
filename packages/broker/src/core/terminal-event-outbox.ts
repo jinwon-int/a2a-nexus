@@ -231,7 +231,7 @@ export interface TerminalTaskEventOutboxOptions {
  * callers can replay by stable event id and repeated enqueue is idempotent.
  *
  * This outbox only stores broker-local records. It never calls Telegram (or any
- * other external transport); seoseo/OpenClaw plugin-notifier owns delivery to
+ * other external transport); brokeralpha/OpenClaw plugin-notifier owns delivery to
  * operator Telegram/main-session surfaces.
  */
 export class TerminalTaskEventOutbox {

@@ -1,6 +1,6 @@
 # Operator Approval Request for Sealed Execution Plan
 
-> **Issue**: [#990 Team2 Dungae](https://github.com/jinwon-int/a2a-broker/issues/990)
+> **Issue**: [#990 Team2 workerepsilon](https://github.com/jinwon-int/a2a-broker/issues/990)
 > **Parent**: [#968](https://github.com/jinwon-int/a2a-broker/issues/968)
 > **Status**: Draft (source-only, no-live)
 
@@ -238,4 +238,4 @@ npx tsx scripts/generate-operator-approval-request-fixtures.ts
 - Issue: https://github.com/jinwon-int/a2a-broker/issues/990
 - Parent: https://github.com/jinwon-int/a2a-broker/issues/968
 - Run ID: `a2a-oi-v2-plan-review-20260529T1236Z`
-- Task ID: `a2a-oi-v2-990-dungae-20260529T1236Z`
+- Task ID: `a2a-oi-v2-990-workerepsilon-20260529T1236Z`

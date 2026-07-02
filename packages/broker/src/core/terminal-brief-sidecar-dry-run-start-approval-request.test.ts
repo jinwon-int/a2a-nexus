@@ -31,9 +31,9 @@ function chainReview(
       dryRunStartCanaryPlanIdempotencyKey: "tb-sidecar-dry-run-start-canary-plan:fixture-726",
       requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start_canary",
       operatorTarget: "operator-a",
-      executorName: "gongyung-sidecar-dry-run-executor",
-      adapterName: "gongyung",
-      finalizer: "seoseo",
+      executorName: "mobilealpha-sidecar-dry-run-executor",
+      adapterName: "mobilealpha",
+      finalizer: "brokeralpha",
     },
     chain: {
       readyPacketIds: [
@@ -84,7 +84,7 @@ function chainReview(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesPreflightEvidenceCollectorPacket: true,
       collectsLiveEvidence: false,
       probesGateway: false,
@@ -147,7 +147,7 @@ test("builds approval request draft without permitting dispatch or runtime actio
   assert.equal(packet.readiness.dbMutationPermitted, false);
   assert.equal(packet.integrationContract.openclawMessageSendRequired, false);
   assert.equal(packet.integrationContract.hermesAdapterCompatible, true);
-  assert.equal(packet.integrationContract.gongyungAdapterCompatible, true);
+  assert.equal(packet.integrationContract.mobilealphaAdapterCompatible, true);
   assert.equal(packet.integrationContract.sendsApprovalRequest, false);
   assert.equal(packet.integrationContract.startsSidecar, false);
   assert.equal(packet.supervisedDryRunBoundary.separateOperatorApprovalRequired, true);
@@ -209,7 +209,7 @@ test("extractors accept aliases and markdown keeps separate approval boundary", 
     preflightChainReviewPacket: chainReview(),
     dryRunStartApprovalRequest: {
       now: NOW,
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "jinwon",
       approvalWindowMinutes: 20,
     },

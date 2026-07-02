@@ -1,6 +1,6 @@
 # Docker Runner Worker Rollout and Rollback Runbook
 
-Sogyo canary 기준으로 bangtong/dungae/nosuk 확대 배포와 rollback 절차를 정리한 운영 문서.
+workerbeta canary 기준으로 workergamma/workerepsilon/workeralpha 확대 배포와 rollback 절차를 정리한 운영 문서.
 
 브로커 PR #167 (feature-flag routing) 및 #168 (default scope narrowing) 의 핸들러
 변경사항과 `a2a-docker-runner` MVP 런타임을 전제로 한다.
@@ -242,9 +242,9 @@ host 쪽 work directory 에 남고, 다음 task 실행 시 runner 가
 Timeout 초과 시 runner 는 SIGTERM → 5초 후 SIGKILL 로 container 를 종료한다.
 Runner result 의 `status` 는 `"timeout"`, `ok` 는 `false` 로 반환된다.
 
-## 4. Sogyo Canary Smoke
+## 4. workerbeta Canary Smoke
 
-Sogyo 는 최초 canary node 로서 `A2A_DOCKER_RUNNER_ENABLED=1` (plugin-only scope, `ALL_GITHUB=0`) 상태로
+workerbeta 는 최초 canary node 로서 `A2A_DOCKER_RUNNER_ENABLED=1` (plugin-only scope, `ALL_GITHUB=0`) 상태로
 운영 중이다. 신규 worker 를 추가하거나 rollout 확대 전에 다음 smoke check 를 수행한다.
 
 ### 4.1 Pre-flight Health
@@ -257,8 +257,8 @@ systemctl status openclaw-a2a-worker --no-pager -l | head -20
 curl -sf https://broker.example.com/health | jq .
 
 # worker 등록 확인
-curl -sf https://broker.example.com/workers/sogyo \
-  -H "x-a2a-requester-id: sogyo" \
+curl -sf https://broker.example.com/workers/workerbeta \
+  -H "x-a2a-requester-id: workerbeta" \
   -H "x-a2a-requester-kind: node" \
   -H "x-a2a-requester-role: operator" | jq .
 ```
@@ -328,7 +328,7 @@ node dist/cli.js run examples/task.openclaw-plugin-a2a.json
 TASK_ID=$(uuidgen | tr 'A-Z' 'a-z')
 curl -sf -X POST https://broker.example.com/tasks \
   -H 'content-type: application/json' \
-  -H 'x-a2a-requester-id: sogyo' \
+  -H 'x-a2a-requester-id: workerbeta' \
   -H 'x-a2a-requester-kind: node' \
   -H 'x-a2a-requester-role: operator' \
   -d "{
@@ -336,15 +336,15 @@ curl -sf -X POST https://broker.example.com/tasks \
     \"intent\": \"propose_patch\",
     \"mode\": \"github-propose-patch\",
     \"repo\": \"jinwon-int/openclaw-plugin-a2a\",
-    \"message\": \"Sogyo docker-runner smoke — verify PR/Block evidence\",
-    \"target\": { \"id\": \"sogyo\", \"role\": \"analyst\", \"kind\": \"node\" },
-    \"requester\": { \"id\": \"sogyo\", \"role\": \"operator\", \"kind\": \"node\" }
+    \"message\": \"workerbeta docker-runner smoke — verify PR/Block evidence\",
+    \"target\": { \"id\": \"workerbeta\", \"role\": \"analyst\", \"kind\": \"node\" },
+    \"requester\": { \"id\": \"workerbeta\", \"role\": \"operator\", \"kind\": \"node\" }
   }" | jq .
 
 # task 완료 대기 후 확인
 sleep 30
 curl -sf https://broker.example.com/tasks/$TASK_ID \
-  -H 'x-a2a-requester-id: sogyo' \
+  -H 'x-a2a-requester-id: workerbeta' \
   -H 'x-a2a-requester-kind: node' \
   -H 'x-a2a-requester-role: operator' | jq .
 ```
@@ -356,12 +356,12 @@ curl -sf https://broker.example.com/tasks/$TASK_ID \
 
 | Check | Method | Pass Condition |
 |---|---|---|
-| Worker online | `GET /workers/sogyo` | `status: "online"`, `lastSeenAt` < 30s |
+| Worker online | `GET /workers/workerbeta` | `status: "online"`, `lastSeenAt` < 30s |
 | Runner doctor | `cli.js doctor` | `ok: true`, engine detected, token configured |
 | Standalone preset | `cli.js run examples/task.openclaw-plugin-a2a.json` | `status: "completed"`, `ok: true`, `exitCode: 0` |
 | Broker live task | `POST /tasks` → poll `GET /tasks/:id` | `status: "succeeded"`, GitHub evidence present |
 
-## 5. Rollout — bangtong / dungae / nosuk
+## 5. Rollout — workergamma / workerepsilon / workeralpha
 
 ### 5.1 Prerequisites (per node)
 
@@ -447,7 +447,7 @@ systemctl status openclaw-a2a-worker --no-pager
 TASK_ID=$(uuidgen | tr 'A-Z' 'a-z')
 curl -sf -X POST https://broker.example.com/tasks \
   -H 'content-type: application/json' \
-  -H 'x-a2a-requester-id: sogyo' \
+  -H 'x-a2a-requester-id: workerbeta' \
   -H 'x-a2a-requester-kind: node' \
   -H 'x-a2a-requester-role: operator' \
   -d "{
@@ -457,18 +457,18 @@ curl -sf -X POST https://broker.example.com/tasks \
     \"repo\": \"jinwon-int/openclaw-plugin-a2a\",
     \"message\": \"$NODE docker-runner smoke — verify PR/Block evidence\",
     \"target\": { \"id\": \"$NODE\", \"role\": \"analyst\", \"kind\": \"node\" },
-    \"requester\": { \"id\": \"sogyo\", \"role\": \"operator\", \"kind\": \"node\" }
+    \"requester\": { \"id\": \"workerbeta\", \"role\": \"operator\", \"kind\": \"node\" }
   }" | jq .
 ```
 
-`$NODE` 를 `bangtong`, `dungae`, `nosuk` 으로 각각 치환하여 실행.
+`$NODE` 를 `workergamma`, `workerepsilon`, `workeralpha` 으로 각각 치환하여 실행.
 
 ### 5.4 Rollout Order
 
-1. **Sogyo** — 이미 canary 통과 (기준선)
-2. **Dungae** — VPS0, 리소스 여유 있음, 차선 확대 대상
-3. **Nosuk** — VPS2, 신규 노드, 리소스 여유 확인 후 확대
-4. **Bangtong** — VPS3, Codex CLI harness 의존 노드, runner 간섭
+1. **workerbeta** — 이미 canary 통과 (기준선)
+2. **workerepsilon** — VPS0, 리소스 여유 있음, 차선 확대 대상
+3. **workeralpha** — VPS2, 신규 노드, 리소스 여유 확인 후 확대
+4. **workergamma** — VPS3, Codex CLI harness 의존 노드, runner 간섭
    확인 후 마지막 확대
 
 ### 5.5 Switching Scope: plugin-only → all-github
@@ -484,7 +484,7 @@ curl -sf -X POST https://broker.example.com/tasks \
 | `A2A_DOCKER_RUNNER_BIN` 명시 설정 | `cat /etc/default/openclaw-a2a-worker` | 빈 값·미설정 시 `docker_runner_not_configured` 오류 발생 |
 | runner doctor pass | `node $RUNNER_BIN doctor` | `ok: true`, engine + token 확인 |
 | non-plugin repo dry-run | 아래 smoke 참고 | runner result 에 `prUrl`/`doneCommentUrl`/`blockCommentUrl` 존재 |
-| Sogyo all-github canary | plugin-only 와 동일한 smoke | 성공률 ≥ 90% (최근 5건) |
+| workerbeta all-github canary | plugin-only 와 동일한 smoke | 성공률 ≥ 90% (최근 5건) |
 
 **`A2A_DOCKER_RUNNER_BIN` 이 빈 값이거나 설정되지 않은 상태에서
 `A2A_DOCKER_RUNNER_SCOPE=all-github` 또는 `A2A_EXECUTOR_MODE=docker` 로
@@ -548,14 +548,14 @@ systemctl daemon-reload && systemctl restart openclaw-a2a-worker
 
 **전체 rollout 은 runner evidence executor 가 안정화될 때까지 보류한다.**
 
-현재 Sogyo 에서 `A2A_DOCKER_RUNNER_ENABLED=1` (plugin-only scope) 상태로
+현재 workerbeta 에서 `A2A_DOCKER_RUNNER_ENABLED=1` (plugin-only scope) 상태로
 canary 검증 중이며, runner 가 GitHub-mode task 에서 PR/Block evidence 를
-일관되게 생성할 수 있음이 확인된 후에 bangtong/dungae/nosuk 확대를
+일관되게 생성할 수 있음이 확인된 후에 workergamma/workerepsilon/workeralpha 확대를
 진행한다.
 
 Gate 조건:
 
-- Sogyo 에서 docker-runner 로 처리된 task 의 성공률 ≥ 90% (최근 5건 기준)
+- workerbeta 에서 docker-runner 로 처리된 task 의 성공률 ≥ 90% (최근 5건 기준)
 - Runner 결과의 `prUrl` / `doneCommentUrl` / `blockCommentUrl` 중 하나가
   항상 존재
 - Docker container OOM kill, timeout, image pull 실패가 연속 2회 이상
@@ -633,7 +633,7 @@ journalctl -u openclaw-a2a-worker --since "5 min ago" --no-pager
 
 # broker worker 등록 상태
 curl -sf https://broker.example.com/workers/$NODE \
-  -H "x-a2a-requester-id: sogyo" \
+  -H "x-a2a-requester-id: workerbeta" \
   -H "x-a2a-requester-kind: node" \
   -H "x-a2a-requester-role: operator" | jq '{ workerId, status, lastSeenAt, activeTaskCount }'
 ```
@@ -659,13 +659,13 @@ curl -sf https://broker.example.com/health | jq '{ status, stateVersion, staleRe
 # 특정 task audit trail
 TASK_ID="..."
 curl -sf https://broker.example.com/audit?targetId=$TASK_ID \
-  -H "x-a2a-requester-id: sogyo" \
+  -H "x-a2a-requester-id: workerbeta" \
   -H "x-a2a-requester-kind: node" \
   -H "x-a2a-requester-role: operator" | jq .
 
 # 노드별 active task
 curl -sf https://broker.example.com/tasks?status=running&status=claimed \
-  -H "x-a2a-requester-id: sogyo" \
+  -H "x-a2a-requester-id: workerbeta" \
   -H "x-a2a-requester-kind: node" \
   -H "x-a2a-requester-role: operator" | jq '[.[] | { id, status, assignedWorkerId }]'
 ```
@@ -678,7 +678,7 @@ cat /var/lib/openclaw-a2a/tasks/<task-id>/artifacts/summary.txt
 
 # broker task result 확인
 curl -sf https://broker.example.com/tasks/<task-id> \
-  -H "x-a2a-requester-id: sogyo" \
+  -H "x-a2a-requester-id: workerbeta" \
   -H "x-a2a-requester-kind: node" \
   -H "x-a2a-requester-role: operator" | jq '{ status, result: .result.output.github }'
 ```
@@ -687,38 +687,38 @@ curl -sf https://broker.example.com/tasks/<task-id> \
 `blockCommentUrl` 중 하나가 존재하고 runner artifact 의 PR URL 과
 일치해야 한다.
 
-## 8. Yukson Exclusion Policy
+## 8. workerdelta Exclusion Policy
 
-**Yukson (VPS2 legacy) 노드는 docker-runner rollout 대상에서 영구 제외한다.**
+**workerdelta (VPS2 legacy) 노드는 docker-runner rollout 대상에서 영구 제외한다.**
 
 ### 8.1 근거
 
-- Yukson 은 과거 VPS2 memory-pressure history 가 있는 노드로,
+- workerdelta 은 과거 VPS2 memory-pressure history 가 있는 노드로,
   docker daemon + container 조합의 메모리 부담을 감당할 수 없다.
-- Round 9 Wake-on-Task canary 에서도 yukson 은 resource pressure 로
+- Round 9 Wake-on-Task canary 에서도 workerdelta 은 resource pressure 로
   false-negative 를 냈고, 이후 모든 rollout 에서 제외 정책이 적용되었다.
-- 현재 VPS2 에는 `nosuk` 이라는 새로운 논리 노드를 할당하여
+- 현재 VPS2 에는 `workeralpha` 이라는 새로운 논리 노드를 할당하여
   신규 서비스 수용 및 확장 실험을 담당하게 한다.
 
 ### 8.2 정책
 
 | 대상 | 상태 |
 |---|---|
-| `yukson` | **영구 제외** — docker-runner never enable |
-| `nosuk` (VPS2) | rollout 대상 포함, 리소스 확인 후 확대 |
+| `workerdelta` | **영구 제외** — docker-runner never enable |
+| `workeralpha` (VPS2) | rollout 대상 포함, 리소스 확인 후 확대 |
 
 ### 8.3 Enforcement
 
-Worker `WORKER_ID` 가 `yukson` 인 경우, 환경변수 설정과 무관하게
+Worker `WORKER_ID` 가 `workerdelta` 인 경우, 환경변수 설정과 무관하게
 handler 는 docker-runner routing 을 skip 한다.
 
 ```bash
-# /etc/default/openclaw-a2a-worker (yukson / nosuk 구분)
-WORKER_ID=nosuk       # VPS2 — docker-runner 대상
-# WORKER_ID=yukson    # 사용하지 않음 (legacy, 영구 제외)
+# /etc/default/openclaw-a2a-worker (workerdelta / workeralpha 구분)
+WORKER_ID=workeralpha       # VPS2 — docker-runner 대상
+# WORKER_ID=workerdelta    # 사용하지 않음 (legacy, 영구 제외)
 ```
 
-Yukson worker 가 broker 에 등록된 경우 `GET /workers/yukson` 으로
+workerdelta worker 가 broker 에 등록된 경우 `GET /workers/workerdelta` 으로
 확인하고, 더 이상 사용하지 않으면 broker operator 가 worker record 를
 정리한다.
 
@@ -745,8 +745,8 @@ Yukson worker 가 broker 에 등록된 경우 `GET /workers/yukson` 으로
 │   A2A_DOCKER_RUNNER_ALL_GITHUB=0   plugin-only (default)│
 │   A2A_DOCKER_RUNNER_ALL_GITHUB=1   all GitHub (opt-in)  │
 │                                                         │
-│ Rollout order: Sogyo → Dungae → Nosuk → Bangtong        │
-│ Excluded: Yukson (영구 제외)                            │
+│ Rollout order: workerbeta → workerepsilon → workeralpha → workergamma        │
+│ Excluded: workerdelta (영구 제외)                            │
 │ Gate: runner evidence executor 안정화까지 보류          │
 │                                                         │
 │ Smoke:                                                  │

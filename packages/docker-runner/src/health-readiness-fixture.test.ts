@@ -91,7 +91,7 @@ test("broker health readiness fixture converts to a safe comment-only RunnerTask
   assert.equal(runnerTask.forbidNewPr, true);
   assert.equal(runnerTask.commentOnly, true);
   assert.equal(runnerTask.runId, fixture.source.runId);
-  assert.equal(runnerTask.requestedBy, "gwakga-jingun");
+  assert.equal(runnerTask.requestedBy, "brokerBeta-workerZeta");
   assert.match(runnerTask.prompt ?? "", /Do not call live broker \/health/i);
 });
 

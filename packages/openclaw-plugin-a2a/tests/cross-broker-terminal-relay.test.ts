@@ -37,7 +37,7 @@ function buildCrossBrokerTerminalEvent(
       kind: "terminal.brief",
       taskId: "task-canary-284-001",
       status: "succeeded",
-      worker: "sogyo",
+      worker: "workerBeta",
       repo: "jinwon-int/plugin-a2a",
       issue: 284,
       completedAt: "2026-05-13T04:01:00Z",
@@ -47,14 +47,14 @@ function buildCrossBrokerTerminalEvent(
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       notificationOwnership: {
-        ownerBrokerId: "gwakga-vps7",
+        ownerBrokerId: "brokerBeta-vps7",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
       crossBrokerHandoff: {
         parentRoundId: "round-284-canary",
-        originBrokerId: "gwakga-vps7",
+        originBrokerId: "brokerBeta-vps7",
         handoffBrokerId: "broker-racknerd-167be94",
         originTaskId: "task-team2-284",
       },
@@ -139,8 +139,8 @@ describe("cross-broker terminal relay (#284)", () => {
       assert.equal(projection!.childTaskId, "task-canary-284-001");
       assert.equal(projection!.parentRoundId, "round-284-canary");
       assert.equal(projection!.originBrokerId, "broker-racknerd-167be94");
-      assert.equal(projection!.brokerOfRecordId, "gwakga-vps7");
-      assert.equal(projection!.childWorkerId, "sogyo");
+      assert.equal(projection!.brokerOfRecordId, "brokerBeta-vps7");
+      assert.equal(projection!.childWorkerId, "workerBeta");
       assert.equal(projection!.status, "succeeded");
       assert.equal(projection!.parentRoundTotal, 7);
       assert.equal(projection!.parentRoundOrder, 4);
@@ -153,19 +153,19 @@ describe("cross-broker terminal relay (#284)", () => {
         parentRoundOrder: undefined,
         parentRoundNum: 2,
         parentRoundTotal: 2,
-        worker: "jingun",
+        worker: "workerZeta",
       });
       const projection = buildA2ACrossBrokerTerminalProjection(event);
 
       assert.ok(projection, "must produce projection for parentRoundNum-only cross-broker event");
-      assert.equal(projection!.childWorkerId, "jingun");
+      assert.equal(projection!.childWorkerId, "workerZeta");
       assert.equal(projection!.parentRoundTotal, 2);
       assert.equal(projection!.parentRoundOrder, 2);
     });
 
     it("carries the handoff broker's rendered Terminal Brief title line for parent relay", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         parentRoundProgress: 4,
         parentRoundTotal: 7,
         terminalBriefTemplate: "곽가 원문\n{title}\n요약: {summary}",
@@ -174,7 +174,7 @@ describe("cross-broker terminal relay (#284)", () => {
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
 
-      assert.equal(projection!.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo(완료 4/7)");
+      assert.equal(projection!.terminalBriefTitle, "A2A Terminal Brief 완료: workerBeta(완료 4/7)");
       assert.equal(Object.hasOwn(projection!, "terminalBriefText"), false);
     });
 
@@ -186,7 +186,7 @@ describe("cross-broker terminal relay (#284)", () => {
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
 
-      assert.equal(projection!.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo(완료 4/7)");
+      assert.equal(projection!.terminalBriefTitle, "A2A Terminal Brief 완료: workerBeta(완료 4/7)");
       assert.doesNotMatch(JSON.stringify(projection), /super-secret|private\/path|raw log|terminalBriefText/);
     });
 
@@ -309,7 +309,7 @@ describe("cross-broker terminal relay (#284)", () => {
       delete payload.parentOwnedTerminalBrief;
       delete payload.operatorFacingOwner;
       delete payload.notificationOwnership;
-      payload.brokerOfRecordId = "gwakga-vps7";
+      payload.brokerOfRecordId = "brokerBeta-vps7";
 
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.equal(projection, undefined);
@@ -540,12 +540,12 @@ describe("cross-broker terminal relay (#284)", () => {
 
   describe("A2A R13 — real-round guard and aggregation", () => {
     const PARENT_ROUND_ID = "a2a-r13-terminal-brief-realround-20260514T013556Z";
-    const ORIGIN_BROKER_ID = "seoseo";
+    const ORIGIN_BROKER_ID = "brokerAlpha";
     const HANDOFF_BROKER_ID = "broker-racknerd-167be94";
 
     it("buildA2ACrossBrokerTerminalProjection preserves parentRoundId and originBrokerId", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         roundNum: 2,
         roundTotal: 7,
         issue: 307,
@@ -555,7 +555,7 @@ describe("cross-broker terminal relay (#284)", () => {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "sogyo-r13-origin",
+          originTaskId: "workerBeta-r13-origin",
         },
       });
 
@@ -569,22 +569,22 @@ describe("cross-broker terminal relay (#284)", () => {
       assert.equal(projection!.brokerOfRecordId, ORIGIN_BROKER_ID);
       assert.equal(projection!.parentOriginBrokerId, ORIGIN_BROKER_ID);
       assert.equal(projection!.parentBrokerId, ORIGIN_BROKER_ID);
-      assert.equal(projection!.worker, "sogyo");
+      assert.equal(projection!.worker, "workerBeta");
       assert.equal(projection!.status, "succeeded");
     });
 
     it("preserves broker-initiated run and group ids across Team1/Team2 projections", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         runId: "a2a-r32-terminal-brief-round",
-        groupId: "seoseo-next-round-team1-team2",
+        groupId: "brokerAlpha-next-round-team1-team2",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "sogyo-r32-origin",
+          originTaskId: "workerBeta-r32-origin",
           runId: "a2a-r32-terminal-brief-round",
-          groupId: "seoseo-next-round-team1-team2",
+          groupId: "brokerAlpha-next-round-team1-team2",
         },
       });
 
@@ -592,20 +592,20 @@ describe("cross-broker terminal relay (#284)", () => {
       assert.ok(projection, "must produce projection for broker-initiated two-team round");
       assert.equal(projection!.parentRoundId, PARENT_ROUND_ID);
       assert.equal(projection!.runId, "a2a-r32-terminal-brief-round");
-      assert.equal(projection!.groupId, "seoseo-next-round-team1-team2");
+      assert.equal(projection!.groupId, "brokerAlpha-next-round-team1-team2");
       assert.equal(projection!.brokerOfRecordId, ORIGIN_BROKER_ID);
       assert.equal(projection!.originBrokerId, HANDOFF_BROKER_ID);
     });
 
     it("preserves childWorkerId from cross-broker handoff metadata for parent titles", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "gwakga",
+        worker: "brokerBeta",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "team2-child-soonwook",
-          childWorkerId: "soonwook",
+          originTaskId: "team2-child-workerEta",
+          childWorkerId: "workerEta",
         },
       });
 
@@ -613,13 +613,13 @@ describe("cross-broker terminal relay (#284)", () => {
       assert.ok(projection, "must produce projection for handoff child");
       assert.equal(projection!.originBrokerId, HANDOFF_BROKER_ID);
       assert.equal(projection!.brokerOfRecordId, ORIGIN_BROKER_ID);
-      assert.equal(projection!.childWorkerId, "soonwook");
-      assert.equal(projection!.worker, "gwakga");
+      assert.equal(projection!.childWorkerId, "workerEta");
+      assert.equal(projection!.worker, "brokerBeta");
     });
 
     it("evidence block preserves issue and repo for real-round", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         roundNum: 2,
         roundTotal: 7,
         issue: 307,
@@ -630,7 +630,7 @@ describe("cross-broker terminal relay (#284)", () => {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "sogyo-r13-origin",
+          originTaskId: "workerBeta-r13-origin",
         },
       });
 
@@ -643,12 +643,12 @@ describe("cross-broker terminal relay (#284)", () => {
 
     it("receipt block declares provider send is not ACK evidence for real-round", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "sogyo-r13-origin",
+          originTaskId: "workerBeta-r13-origin",
         },
       });
 
@@ -667,12 +667,12 @@ describe("cross-broker terminal relay (#284)", () => {
 
     it("getCrossBrokerTerminalReceiptGap returns terminalAckEligible=false for real-round", () => {
       const event = buildCrossBrokerTerminalEvent({
-        worker: "sogyo",
+        worker: "workerBeta",
         crossBrokerHandoff: {
           parentRoundId: PARENT_ROUND_ID,
           originBrokerId: ORIGIN_BROKER_ID,
           handoffBrokerId: HANDOFF_BROKER_ID,
-          originTaskId: "sogyo-r13-origin",
+          originTaskId: "workerBeta-r13-origin",
         },
       });
 
@@ -759,26 +759,26 @@ describe("cross-broker terminal relay (#284)", () => {
       // Populate with explicit handoff broker that differs from origin:
       payload.crossBrokerHandoff = {
         parentRoundId: "round-owner-separation",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
       };
       const projection = buildA2ACrossBrokerTerminalProjection(event);
       assert.ok(projection);
       // originBrokerId = handoff broker (child producer)
       assert.equal(
         projection!.originBrokerId,
-        "gwakga",
+        "brokerBeta",
         "originBrokerId is the child/handoff broker for broker ingestion compatibility",
       );
       // brokerOfRecordId = origin broker (initiating parent)
       assert.equal(
         projection!.brokerOfRecordId,
-        "seoseo",
+        "brokerAlpha",
         "brokerOfRecordId stays the origin/initiating parent broker",
       );
       // parent-origin broker IDs all point to the initiating parent
-      assert.equal(projection!.parentOriginBrokerId, "seoseo");
-      assert.equal(projection!.parentBrokerId, "seoseo");
+      assert.equal(projection!.parentOriginBrokerId, "brokerAlpha");
+      assert.equal(projection!.parentBrokerId, "brokerAlpha");
     });
 
     it("handoffBrokerId defaults from options when metadata is missing handoffBrokerId", () => {

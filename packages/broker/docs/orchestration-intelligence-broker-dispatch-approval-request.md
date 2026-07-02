@@ -37,7 +37,7 @@ runtime readiness evidence patch:
 - `explicitRuntimeApprovalPresent=true` (inherited from upstream decision evidence)
 - `validationEvidenceFresh=true`
 - `brokerDispatchApprovalPresent=false`
-- all worker-spawn, Daegyo/mobile expansion, rollback, and live-boundary readiness
+- all worker-spawn, mobilebeta/mobile expansion, rollback, and live-boundary readiness
   booleans remain `false`
 
 The next step may present the request to the operator and record the response in
@@ -61,4 +61,4 @@ send providers, or touch live services. All fail-closed readiness fields remain 
 
 - `brokerDispatchApprovalPresent=false`
 - `workerSpawnApprovalPresent=false`
-- `daegyoMobileScopeResolved=false`
+- `mobilebetaMobileScopeResolved=false`

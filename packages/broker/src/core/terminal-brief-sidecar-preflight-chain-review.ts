@@ -104,7 +104,7 @@ export interface TerminalBriefSidecarPreflightChainReviewPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesPreflightEvidenceCollectorPacket: true;
     collectsLiveEvidence: false;
     probesGateway: false;
@@ -200,7 +200,7 @@ export function buildTerminalBriefSidecarPreflightChainReview(
       "dispatching or invoking a start executor",
       "spawning a process or starting/stopping the sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "GitHub PR merge, issue close, or comment post from the packet/route",
       "TaskFlow record creation or broker DB mutation",
@@ -212,7 +212,7 @@ export function buildTerminalBriefSidecarPreflightChainReview(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesPreflightEvidenceCollectorPacket: true,
       collectsLiveEvidence: false,
       probesGateway: false,
@@ -333,7 +333,7 @@ function buildRows(
   const harnessReady = collector.integrationContract.harnessNeutral
     && !collector.integrationContract.openclawMessageSendRequired
     && collector.integrationContract.hermesAdapterCompatible
-    && collector.integrationContract.gongyungAdapterCompatible
+    && collector.integrationContract.mobilealphaAdapterCompatible
     && !collector.integrationContract.collectsLiveEvidence
     && !collector.integrationContract.probesGateway;
   const approvalBoundaryReady = !collector.readiness.approvalRequestDispatchPermitted
@@ -405,7 +405,7 @@ function buildRows(
       ready: harnessReady,
       detail: "openclawMessageSendRequired=" + collector.integrationContract.openclawMessageSendRequired
         + " hermes=" + collector.integrationContract.hermesAdapterCompatible
-        + " gongyung=" + collector.integrationContract.gongyungAdapterCompatible
+        + " mobilealpha=" + collector.integrationContract.mobilealphaAdapterCompatible
         + " probesGateway=" + collector.integrationContract.probesGateway,
       blockers: harnessReady ? [] : ["collector harness contract is not neutral/no-live"],
       nextAction: harnessReady ? "verify approval boundary" : "restore harness-neutral supplied-packet contract",

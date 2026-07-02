@@ -24,10 +24,10 @@ a2a-<nodeId>-<taskId>
 | Component | Example | Description |
 |-----------|---------|-------------|
 | `a2a-` | `a2a-` | Fixed prefix for all A2A task sessions |
-| `<nodeId>` | `dungae` | Worker node identifier |
+| `<nodeId>` | `workerepsilon` | Worker node identifier |
 | `<taskId>` | `550e8400-...` | Broker-assigned task UUID |
 
-Example: `a2a-dungae-550e8400-e29b-41d4-a716-446655440000`
+Example: `a2a-workerepsilon-550e8400-e29b-41d4-a716-446655440000`
 
 ## Derivation
 
@@ -36,8 +36,8 @@ The session ID is derived deterministically from the task record:
 ```typescript
 import { deriveSessionIdFromTask } from "./workers/session-isolation.js";
 
-const sessionId = deriveSessionIdFromTask(task, "dungae");
-// → "a2a-dungae-550e8400-e29b-41d4-a716-446655440000"
+const sessionId = deriveSessionIdFromTask(task, "workerepsilon");
+// → "a2a-workerepsilon-550e8400-e29b-41d4-a716-446655440000"
 ```
 
 This is statelessly computable — no side-channel state or live session lookup needed.
@@ -56,10 +56,10 @@ The following session IDs MUST NOT be used by full-handler workers:
 
 | Scenario | Session ID | Rationale |
 |----------|-----------|-----------|
-| First attempt | `a2a-dungae-task-abc` | Fresh task scope |
-| Retry (requeued) | `a2a-dungae-task-abc` | Same task, preserved context within scope |
-| Different task | `a2a-dungae-task-xyz` | Different scope, no cross-contamination |
-| Different node | `a2a-sogyo-task-abc` | Different node, different scope |
+| First attempt | `a2a-workerepsilon-task-abc` | Fresh task scope |
+| Retry (requeued) | `a2a-workerepsilon-task-abc` | Same task, preserved context within scope |
+| Different task | `a2a-workerepsilon-task-xyz` | Different scope, no cross-contamination |
+| Different node | `a2a-workerbeta-task-abc` | Different node, different scope |
 
 Key insight: the session is scoped to the **task**, not the **attempt**. A requeued
 task that picks up where the previous attempt left off benefits from preserved

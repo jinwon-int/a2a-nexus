@@ -131,7 +131,7 @@ export interface TerminalBriefSidecarDryRunGatePacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesSidecarIntegrationRehearsal: true;
     consumesFinalizerApprovalStatus: true;
     grantsApproval: false;
@@ -210,7 +210,7 @@ export function buildTerminalBriefSidecarDryRunGate(
     approvalSensitiveActionsExcluded: [
       "starting/enabling always-on sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "GitHub PR merge, issue close, or comment post from the gate",
       "TaskFlow record creation or broker DB mutation",
@@ -222,7 +222,7 @@ export function buildTerminalBriefSidecarDryRunGate(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesSidecarIntegrationRehearsal: true,
       consumesFinalizerApprovalStatus: true,
       grantsApproval: false,

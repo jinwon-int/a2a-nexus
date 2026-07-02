@@ -6,7 +6,7 @@
  * levels, confidence derivation, idempotency key stability, markdown
  * rendering, and boundary enforcement.
  *
- * Reference: #971 Team2 (gwakga/soonwook) — no-live orchestration
+ * Reference: #971 Team2 (brokerbeta/workereta) — no-live orchestration
  *            recommendation packet after classifier.
  */
 import { describe, it } from "node:test";

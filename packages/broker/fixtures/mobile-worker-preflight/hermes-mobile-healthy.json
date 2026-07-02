@@ -4,7 +4,7 @@
   "description": "Hermes-mobile worker with healthy timing and wake-lock. Hermes onboarding kind is recognized as a mobile worker mode.",
   "now": "2026-05-29T10:00:00.000Z",
   "input": {
-    "nodeId": "yukson",
+    "nodeId": "workerdelta",
     "workerMode": "hermes-mobile",
     "status": "online",
     "lastSeenAgeSec": 10,

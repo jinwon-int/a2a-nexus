@@ -16,9 +16,9 @@
       "dryRunStartCanaryPlanIdempotencyKey": "tb-sidecar-dry-run-start-canary-plan:fixture-726",
       "requestedAction": "approve_supervised_terminal_brief_sidecar_dry_run_start_canary",
       "operatorTarget": "operator-a",
-      "executorName": "gongyung-sidecar-dry-run-executor",
-      "adapterName": "gongyung",
-      "finalizer": "seoseo"
+      "executorName": "mobilealpha-sidecar-dry-run-executor",
+      "adapterName": "mobilealpha",
+      "finalizer": "brokeralpha"
     },
     "chain": {
       "readyPacketIds": [
@@ -69,7 +69,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesPreflightEvidenceCollectorPacket": true,
       "collectsLiveEvidence": false,
       "probesGateway": false,
@@ -109,7 +109,7 @@
   },
   "dryRunStartApprovalRequest": {
     "now": "2026-05-19T00:20:00.000Z",
-    "requestedBy": "seoseo",
+    "requestedBy": "brokeralpha",
     "operatorTarget": "operator-a",
     "approvalWindowMinutes": 20
   }

@@ -10,7 +10,7 @@
     "urgency": "normal",
     "desiredOptimization": "confidence",
     "hasIndependentEvidenceLanes": true,
-    "seoseoOwnsImplementation": true,
+    "brokeralphaOwnsImplementation": true,
     "boundedHelperScope": [
       "review stale close wording",
       "confirm no duplicate parent closeout",
@@ -31,5 +31,5 @@
     "credentialOrSecretChange": false,
     "approvalSensitiveCloseout": true
   },
-  "finalizerOwner": "seoseo"
+  "finalizerOwner": "brokeralpha"
 }

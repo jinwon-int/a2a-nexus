@@ -77,15 +77,15 @@ describe('terminal brief activation report', () => {
     assert.deepEqual(report.warnings, []);
   });
 
-  it('renders R9 Seoseo/Gwakga projection parity metadata and no-live GO/NO-GO packet', () => {
+  it('renders R9 brokeralpha/brokerbeta projection parity metadata and no-live GO/NO-GO packet', () => {
     const report = runTerminalBriefActivationReport({
       issue: '#570',
       parent: '#567',
       context: {
         parentRoundId: 'a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z',
-        parentBrokerFinalizer: 'seoseo',
-        handoffBroker: 'gwakga',
-        worker: 'dungae',
+        parentBrokerFinalizer: 'brokeralpha',
+        handoffBroker: 'brokerbeta',
+        worker: 'workerepsilon',
         knownTotal: '7',
       },
       oneShotFreshTaskSent: 'https://github.com/jinwon-int/a2a-broker/issues/570#provider-accepted-only',
@@ -99,11 +99,11 @@ describe('terminal brief activation report', () => {
     assert.match(report.goNoGoPacket.evidencePolicy, /PR\/Done\/Block evidence only/);
     assert.deepEqual(report.projectionParity, {
       parentRoundId: 'a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z',
-      parentBrokerFinalizer: 'seoseo',
-      handoffBroker: 'gwakga',
-      worker: 'dungae',
+      parentBrokerFinalizer: 'brokeralpha',
+      handoffBroker: 'brokerbeta',
+      worker: 'workerepsilon',
       knownTotal: 7,
-      compactParentRoundTitle: 'A2A Terminal Brief 완료: dungae(n/7)',
+      compactParentRoundTitle: 'A2A Terminal Brief 완료: workerepsilon(n/7)',
       parentBrokerAggregationMetadataRequired: true,
       parentOnlyNotificationOwnership: true,
       childProjectionProviderSendPermitted: false,
@@ -113,7 +113,7 @@ describe('terminal brief activation report', () => {
     assert.equal(report.receiptAckBoundaryProof.projectionMayAckTerminalOutbox, false);
     assert.equal(report.approvalGatedActivationRollbackPlan.activationRequiresFreshExplicitOperatorApproval, true);
     assert.match(markdown, /GO\/NO-GO: NO-GO/);
-    assert.match(markdown, /compact title target: A2A Terminal Brief 완료: dungae\(n\/7\)/);
+    assert.match(markdown, /compact title target: A2A Terminal Brief 완료: workerepsilon\(n\/7\)/);
     assert.match(markdown, /provider accepted\/message id counted as terminal ACK: no/);
     assert.match(markdown, /activation requires fresh explicit operator approval: yes/);
     assert.match(report.warnings.join('\n'), /provider send evidence is not operator-visible receipt evidence/);

@@ -10,7 +10,7 @@
 // worker state, dispatches nothing, mutates nothing, and emits a sealed
 // review packet that is an operator review artifact, not execution approval.
 //
-// Reference: #989 Team2 Jingun — seal complexity execution plan preflight
+// Reference: #989 Team2 workerzeta — seal complexity execution plan preflight
 //            packet.
 // Parent:    #982  Team2 — complexity execution plan draft from finalizer
 //            approval envelope.

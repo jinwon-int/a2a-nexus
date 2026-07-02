@@ -18,7 +18,7 @@ test("POST /terminal-brief/sidecar/default-on-candidate-final-gate returns sourc
         }),
         body: JSON.stringify({
           observationPacket: {
-            kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+            kind: "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation",
             generatedAt: "2026-05-19T03:31:05.000Z",
             operatorInstructionReference: "telegram:1000000001:53345",
             windowSeconds: 300,
@@ -90,7 +90,7 @@ test("POST /terminal-brief/sidecar/default-on-approval-request returns source-on
       sourceOnlyNoLive: true,
       idempotencyKey: "tb-sidecar-default-on-candidate-final-gate:fixture",
       source: {
-        observationKind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+        observationKind: "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation",
         observationState: "bounded_dry_run_observation_passed",
         observationGeneratedAt: "2026-05-19T03:31:05.000Z",
         operatorInstructionReference: "telegram:1000000001:53345",

@@ -10,7 +10,7 @@ not just that its digests are internally consistent.
 
 ```bash
 A2A_DOCKER_RUNNER_PROOF_SIGNING_KEY_FILE=/etc/a2a/proof-key.pem   # Ed25519 or EC P-256 PKCS#8 PEM
-A2A_DOCKER_RUNNER_PROOF_SIGNING_KID=node-bangtong-1               # optional JWS kid
+A2A_DOCKER_RUNNER_PROOF_SIGNING_KID=node-workerGamma-1               # optional JWS kid
 ```
 
 When set, every `ExecutionProof` gains a `signature` block:

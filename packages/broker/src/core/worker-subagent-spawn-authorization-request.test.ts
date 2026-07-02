@@ -21,7 +21,7 @@ function readyHandoff(
 ): A2AWorkerSubagentPlannerHandoffPacket {
   const assessment = buildA2AWorkerSelfAssessmentCapacity({
     now: NOW,
-    workerId: "bangtong",
+    workerId: "workergamma",
     task: {
       taskId: "task-large-independent",
       size: "large",
@@ -45,7 +45,7 @@ function readyHandoff(
   const plannerPolicy = buildA2AWorkerSubagentOrchestrationPolicy(assessment.plannerInput);
   const packet = buildA2AWorkerSubagentPlannerHandoff({
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     selfAssessment: assessment,
     plannerPolicy,
   });
@@ -55,7 +55,7 @@ function readyHandoff(
 test("spawn authorization request renders draft without spawning subagents", () => {
   const packet = buildA2AWorkerSubagentSpawnAuthorizationRequest(readyHandoff(), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     operatorTarget: "operator",
     authorizationReference: "subagent-spawn-auth-766",
     requestReference: "subagent-spawn-request-766",
@@ -64,8 +64,8 @@ test("spawn authorization request renders draft without spawning subagents", () 
 
   assert.equal(packet.kind, "a2a-broker.worker-subagent-spawn-authorization-request.packet");
   assert.equal(packet.state, "authorization_request_draft_ready");
-  assert.equal(packet.finalizer, "seoseo");
-  assert.equal(packet.workerId, "bangtong");
+  assert.equal(packet.finalizer, "brokeralpha");
+  assert.equal(packet.workerId, "workergamma");
   assert.equal(packet.source.plannerHandoffReady, true);
   assert.deepEqual(packet.source.recommendedRoles, ["explorer", "implementer", "verifier"]);
   assert.equal(packet.authorizationRequestDraft.draftOnly, true);
@@ -125,14 +125,14 @@ test("spawn authorization request extractors and markdown preserve source-only b
   const input = {
     plannerHandoffPacket: source,
     spawnAuthorizationRequest: {
-      finalizer_id: "seoseo",
+      finalizer_id: "brokeralpha",
       operator_target: "operator",
       authorization_reference: "subagent-spawn-auth-766",
     },
   };
 
   assert.equal(extractA2AWorkerSubagentSpawnAuthorizationRequestHandoff(input).idempotencyKey, source.idempotencyKey);
-  assert.equal(extractA2AWorkerSubagentSpawnAuthorizationRequestOptions(input).finalizer_id, "seoseo");
+  assert.equal(extractA2AWorkerSubagentSpawnAuthorizationRequestOptions(input).finalizer_id, "brokeralpha");
 
   const packet = buildA2AWorkerSubagentSpawnAuthorizationRequest(
     extractA2AWorkerSubagentSpawnAuthorizationRequestHandoff(input),

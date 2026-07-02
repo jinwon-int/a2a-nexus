@@ -157,7 +157,7 @@
   },
   "crossBrokerOutbox": {
     "projectionEvent": {
-      "id": "terminal:cross-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+      "id": "terminal:cross-broker%3Aparent-brokerAlpha%3Achild-1%3Asucceeded%3AbrokerAlpha",
       "kind": "task.terminal",
       "taskEventId": 541,
       "createdAt": "2026-06-07T05:00:00.000Z",
@@ -174,27 +174,27 @@
       "payload": {
         "taskId": "child-1",
         "status": "succeeded",
-        "run": "parent-seoseo",
-        "worker": "dungae",
+        "run": "parent-brokerAlpha",
+        "worker": "workerEpsilon",
         "testSummary": "projection evidence only",
         "notificationOwnership": {
-          "ownerBrokerId": "seoseo",
+          "ownerBrokerId": "brokerAlpha",
           "scope": "parent-broker-only",
           "providerSendPermittedByProjection": false,
           "terminalAckPermittedByProjection": false
         },
         "crossBrokerHandoff": {
-          "parentRoundId": "parent-seoseo",
-          "originBrokerId": "seoseo",
-          "handoffBrokerId": "gwakga",
+          "parentRoundId": "parent-brokerAlpha",
+          "originBrokerId": "brokerAlpha",
+          "handoffBrokerId": "brokerBeta",
           "originTaskId": "child-1",
-          "childWorkerId": "dungae"
+          "childWorkerId": "workerEpsilon"
         },
         "completedAt": "2026-06-07T04:59:58.000Z"
       }
     },
     "operatorEvent": {
-      "id": "terminal:cross-broker-operator%3Across-broker%3Aparent-seoseo%3Achild-1%3Asucceeded%3Aseoseo",
+      "id": "terminal:cross-broker-operator%3Across-broker%3Aparent-brokerAlpha%3Achild-1%3Asucceeded%3AbrokerAlpha",
       "kind": "task.terminal",
       "taskEventId": 542,
       "createdAt": "2026-06-07T05:00:00.000Z",
@@ -211,15 +211,15 @@
       "payload": {
         "taskId": "child-1",
         "status": "succeeded",
-        "run": "parent-seoseo",
-        "worker": "dungae",
+        "run": "parent-brokerAlpha",
+        "worker": "workerEpsilon",
         "testSummary": "operator-facing parent broker row",
         "crossBrokerHandoff": {
-          "parentRoundId": "parent-seoseo",
-          "originBrokerId": "seoseo",
-          "handoffBrokerId": "gwakga",
+          "parentRoundId": "parent-brokerAlpha",
+          "originBrokerId": "brokerAlpha",
+          "handoffBrokerId": "brokerBeta",
           "originTaskId": "child-1",
-          "childWorkerId": "dungae"
+          "childWorkerId": "workerEpsilon"
         },
         "completedAt": "2026-06-07T04:59:58.000Z"
       }

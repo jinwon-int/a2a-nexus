@@ -14,7 +14,7 @@
       "defaultOnApprovalRequestState": "approval_request_draft_ready",
       "defaultOnApprovalRequestIdempotencyKey": "tb-sidecar-default-on-approval-request:fixture-772",
       "requestedAction": "approve_terminal_brief_default_on_enablement",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "operatorChannel": "telegram",
       "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
@@ -106,7 +106,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesDefaultOnApprovalRequestPacket": true,
       "providerAcceptedIsVisibilityProof": false,
       "terminalAckRequiresVisibilityProof": true,
@@ -148,7 +148,7 @@
   "defaultOnEnablementGate": {
     "now": "2026-05-19T05:25:00.000Z",
     "mode": "fixture-source-only/no-live",
-    "finalizer": "seoseo",
+    "finalizer": "brokeralpha",
     "runtimeTarget": "terminal-brief-sidecar",
     "operatorInstructionReference": "a2a-broker#774"
   }

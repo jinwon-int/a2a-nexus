@@ -16,7 +16,7 @@ test("does not let dialectic synthesis win without ordinary alternatives", () =>
   const packet = buildA2ADialecticLiteFinalizerPacket({
     generatedAt: NOW,
     runId: "round-1",
-    synthesisCandidate: { workerId: "sogyo", summary: "Adopt the dialectic synthesis." },
+    synthesisCandidate: { workerId: "workerbeta", summary: "Adopt the dialectic synthesis." },
     selectedCandidateId: "synthesis",
     selectionRationale: ["Synthesis seems comprehensive."],
   });
@@ -33,8 +33,8 @@ test("uses ordinary A2A Lite as the default round mode", () => {
   const packet = buildA2ADialecticLiteFinalizerPacket({
     generatedAt: NOW,
     runId: "round-default-lite",
-    synthesisCandidate: { workerId: "sogyo", summary: "Keep the normal A2A round lightweight." },
-    ordinaryAlternatives: [{ id: "ordinary", workerId: "nosuk", summary: "Use direct engineering judgment only." }],
+    synthesisCandidate: { workerId: "workerbeta", summary: "Keep the normal A2A round lightweight." },
+    ordinaryAlternatives: [{ id: "ordinary", workerId: "workeralpha", summary: "Use direct engineering judgment only." }],
     selectedCandidateId: "ordinary",
     selectionRationale: ["The ordinary path is enough for this small decision."],
   });
@@ -50,10 +50,10 @@ test("records explicit strong a2ad mode only when requested", () => {
     runId: "round-strong-a2ad",
     roundMode: A2A_DIALECTIC_STRONG_MODE,
     synthesisCandidate: {
-      workerId: "sogyo",
+      workerId: "workerbeta",
       summary: "Run a deeper thesis/antithesis/synthesis review.",
     },
-    ordinaryAlternatives: [{ id: "ordinary", workerId: "nosuk", summary: "Keep the round as light A2A." }],
+    ordinaryAlternatives: [{ id: "ordinary", workerId: "workeralpha", summary: "Keep the round as light A2A." }],
     selectedCandidateId: "synthesis",
     selectionRationale: ["The decision is complex enough to justify explicit strong dialectic review."],
   });
@@ -85,10 +85,10 @@ test("allows synthesis only after comparison and rationale", () => {
   const packet = buildA2ADialecticLiteFinalizerPacket({
     generatedAt: NOW,
     runId: "round-2",
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     synthesisCandidate: {
       id: "synthesis",
-      workerId: "sogyo",
+      workerId: "workerbeta",
       summary: "Patch diagnostics and keep the round source-only.",
       evidence: ["matches current approval boundary"],
       verification: ["focused tests"],
@@ -96,7 +96,7 @@ test("allows synthesis only after comparison and rationale", () => {
     ordinaryAlternatives: [
       {
         id: "simple-doc-only",
-        workerId: "nosuk",
+        workerId: "workeralpha",
         summary: "Only document the operational guidance.",
         evidence: ["lower complexity"],
         risks: ["does not create an executable guard"],
@@ -121,11 +121,11 @@ test("can select an ordinary alternative over synthesis", () => {
   const packet = buildA2ADialecticLiteFinalizerPacket({
     generatedAt: NOW,
     runId: "round-3",
-    synthesisCandidate: { workerId: "sogyo", summary: "Create a larger multi-lane implementation." },
+    synthesisCandidate: { workerId: "workerbeta", summary: "Create a larger multi-lane implementation." },
     ordinaryAlternatives: [
       {
         id: "small-source-guard",
-        workerId: "nosuk",
+        workerId: "workeralpha",
         summary: "Add the smallest source-only finalizer guard.",
         evidence: ["directly addresses the policy gap"],
         complexity: "low",
@@ -144,8 +144,8 @@ test("requires rationale for any finalizer selection", () => {
   const packet = buildA2ADialecticLiteFinalizerPacket({
     generatedAt: NOW,
     runId: "round-4",
-    synthesisCandidate: { workerId: "sogyo", summary: "Synthesis candidate" },
-    ordinaryAlternatives: [{ id: "ordinary", workerId: "nosuk", summary: "Ordinary alternative" }],
+    synthesisCandidate: { workerId: "workerbeta", summary: "Synthesis candidate" },
+    ordinaryAlternatives: [{ id: "ordinary", workerId: "workeralpha", summary: "Ordinary alternative" }],
     selectedCandidateId: "ordinary",
   });
 
@@ -158,8 +158,8 @@ test("renders markdown with candidate-not-winner rule", () => {
     generatedAt: NOW,
     runId: "round-5",
     topic: "A2A finalizer policy",
-    synthesisCandidate: { workerId: "sogyo", summary: "Synthesis candidate" },
-    ordinaryAlternatives: [{ id: "ordinary", workerId: "nosuk", summary: "Ordinary alternative" }],
+    synthesisCandidate: { workerId: "workerbeta", summary: "Synthesis candidate" },
+    ordinaryAlternatives: [{ id: "ordinary", workerId: "workeralpha", summary: "Ordinary alternative" }],
     selectedCandidateId: "ordinary",
     selectionRationale: ["The ordinary alternative is safer and simpler."],
   });

@@ -6,7 +6,7 @@ describe("mobile-safety-lane", () => {
   describe("default mobile profile", () => {
     it("allows fanout with lightweight proof on mobile", () => {
       const lane = createMobileSafetyLane({
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         profile: { isMobile: true, isLowResource: true },
       });
       const result = lane.evaluate("fanout");
@@ -17,7 +17,7 @@ describe("mobile-safety-lane", () => {
 
     it("allows review with lightweight proof on mobile", () => {
       const lane = createMobileSafetyLane({
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         profile: { isMobile: true, isLowResource: true },
       });
       const result = lane.evaluate("review");
@@ -28,7 +28,7 @@ describe("mobile-safety-lane", () => {
 
     it("returns observe-only for swarm mode on mobile", () => {
       const lane = createMobileSafetyLane({
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         profile: { isMobile: true, isLowResource: true },
       });
       const result = lane.evaluate("swarm");
@@ -39,7 +39,7 @@ describe("mobile-safety-lane", () => {
 
     it("returns NO-GO for split mode on mobile", () => {
       const lane = createMobileSafetyLane({
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         profile: { isMobile: true, isLowResource: true },
         handoffTargets: ["node-hub"],
       });
@@ -47,7 +47,7 @@ describe("mobile-safety-lane", () => {
       assert.ok(!result.ok);
       if (result.ok) return;
       assert.equal(result.signal.type, "team_assignment_no_go");
-      assert.equal(result.signal.nodeId, "gongyung");
+      assert.equal(result.signal.nodeId, "mobileAlpha");
       assert.equal(result.signal.observeOnly, true);
       assert.deepEqual(result.signal.handoffTargets, ["node-hub"]);
     });
@@ -92,7 +92,7 @@ describe("mobile-safety-lane", () => {
   describe("NO-GO signal shape", () => {
     it("includes all required fields", () => {
       const lane = createMobileSafetyLane({
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         profile: { isMobile: true, isLowResource: true },
         handoffTargets: ["node-hub", "worker-alpha"],
         nowMs: () => 1_700_000_000_000,
@@ -100,7 +100,7 @@ describe("mobile-safety-lane", () => {
       const signal = lane.noGoSignal("test reason");
       assert.deepEqual(signal, {
         type: "team_assignment_no_go",
-        nodeId: "gongyung",
+        nodeId: "mobileAlpha",
         reason: "test reason",
         timestampMs: 1_700_000_000_000,
         observeOnly: true,

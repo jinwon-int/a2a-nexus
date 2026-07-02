@@ -204,8 +204,8 @@ export interface CrossBrokerTerminalBriefProjectionStoreOptions {
  *
  * Records are keyed by parent round, producing broker, and the best available
  * child identity. This keeps duplicate packets for the same child idempotent
- * while allowing several Gwakga-executed children to aggregate under the same
- * Seoseo-origin parent round without overwriting each other.
+ * while allowing several brokerbeta-executed children to aggregate under the same
+ * brokeralpha-origin parent round without overwriting each other.
  */
 export class CrossBrokerTerminalBriefProjectionStore {
   private readonly records = new Map<string, CrossBrokerTerminalBriefProjection>();

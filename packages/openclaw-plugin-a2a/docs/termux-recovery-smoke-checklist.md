@@ -1,7 +1,7 @@
 # Termux / Mobile Recovery Smoke Checklist
 
 > **Issue:** jinwon-int/plugin-a2a#77
-> **Node:** gongyung (Android Termux)
+> **Node:** mobileAlpha (Android Termux)
 > **Purpose:** Validate that recovery loop hardening works correctly on low-resource mobile nodes.
 
 ---

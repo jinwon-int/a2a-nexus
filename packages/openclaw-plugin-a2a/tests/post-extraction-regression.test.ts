@@ -457,12 +457,12 @@ describe("resolveCancelTarget — four-arm resolution", () => {
 
   it("arm 4: synthesizes from targetSessionKey + runId", () => {
     const result = resolveCancelTarget({
-      targetSessionKey: "agent:main:gongyung",
+      targetSessionKey: "agent:main:mobileAlpha",
       runId: "run-synth",
     });
     assert.ok(result);
     assert.equal(result.kind, "session_run");
-    assert.equal(result.sessionKey, "agent:main:gongyung");
+    assert.equal(result.sessionKey, "agent:main:mobileAlpha");
     assert.equal(result.runId, "run-synth");
   });
 

@@ -500,7 +500,7 @@ test("Done marker with done_evidence_only outcome maps to APPLIED state", () => 
   const event = makeWorkerEvent(
     "Done",
     "evidence-only, no code changes. Block assessment complete.",
-    "sogyo-validator",
+    "workerBeta-validator",
     "task-readonly-1",
     {
       payload: {
@@ -517,7 +517,7 @@ test("Done marker with done_evidence_only outcome maps to APPLIED state", () => 
   const proposal = result.event;
   assert.equal(proposal.state, ProposalState.APPLIED);
   assert.equal(proposal.transitionReason, PROPOSAL_TRANSITION_REASON.APPLY_SUCCEEDED);
-  assert.equal(proposal.participantId, "sogyo-validator");
+  assert.equal(proposal.participantId, "workerBeta-validator");
   assert.equal(
     proposal.artifactUrl,
     "https://github.com/org/repo/issues/17#issuecomment-500",
@@ -532,7 +532,7 @@ test("Done marker with done_no_changes outcome maps to APPLIED state with doneUr
   const event = makeWorkerEvent(
     "Done",
     "no changes needed. Existing configuration passes validation.",
-    "sogyo-validator",
+    "workerBeta-validator",
     "task-readonly-2",
     {
       payload: {
@@ -548,7 +548,7 @@ test("Done marker with done_no_changes outcome maps to APPLIED state with doneUr
 
   const proposal = result.event;
   assert.equal(proposal.state, ProposalState.APPLIED);
-  assert.equal(proposal.participantId, "sogyo-validator");
+  assert.equal(proposal.participantId, "workerBeta-validator");
   assert.ok(proposal.summary?.includes("no changes"), "summary must preserve no-changes context");
   assert.equal(
     proposal.artifactUrl,
@@ -562,7 +562,7 @@ test("Block marker with blockUrl maps to BLOCKED state with evidence URL", () =>
   const event = makeWorkerEvent(
     "Block",
     "read-only assessment found blocking condition",
-    "sogyo-validator",
+    "workerBeta-validator",
     "task-readonly-3",
     {
       payload: {
@@ -593,7 +593,7 @@ test("read-only Done proposal without any artifact URL still produces valid APPL
   const event = makeWorkerEvent(
     "Done",
     "validation complete, evidence-only, no PR needed",
-    "sogyo-validator",
+    "workerBeta-validator",
     "task-readonly-4",
   );
 

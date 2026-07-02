@@ -17,7 +17,7 @@ const NOW = "2026-06-16T04:10:00.000Z";
 test("advisory sidecar operator decision packet stays default-off and source-only (#794)", () => {
   const packet = createAdvisorySidecarOperatorDecisionPacket({
     now: NOW,
-    decisionOwner: "seoseo",
+    decisionOwner: "brokeralpha",
     decisionReference: "issue-794",
     parentRoundId: "a2a-open-cleanup-20260616T040301Z-795",
   });
@@ -29,7 +29,7 @@ test("advisory sidecar operator decision packet stays default-off and source-onl
   assert.equal(packet.sourceOnlyNoLive, true);
   assert.equal(packet.advisoryOnly, true);
   assert.equal(packet.defaultOffOnlyExecutableState, true);
-  assert.equal(packet.decision.decisionOwner, "seoseo");
+  assert.equal(packet.decision.decisionOwner, "brokeralpha");
   assert.equal(packet.decision.decisionReference, "issue-794");
   assert.equal(packet.decision.parentRoundId, "a2a-open-cleanup-20260616T040301Z-795");
   assert.deepEqual(packet.decision.recommendation, DEFAULT_DISABLED_ADVISORY_SIDECAR_RECOMMENDATION);
@@ -87,7 +87,7 @@ test("advisory sidecar operator decision packet records guardrail and issue refe
 });
 
 test("advisory sidecar activation approval packet enumerates required evidence and gates without granting approval (#837)", () => {
-  const packet = createAdvisorySidecarOperatorDecisionPacket({ now: NOW, decisionOwner: "seoseo" });
+  const packet = createAdvisorySidecarOperatorDecisionPacket({ now: NOW, decisionOwner: "brokeralpha" });
 
   assert.equal(packet.activationReadiness.defaultEnabled, false);
   assert.deepEqual(packet.activationReadiness.requiredEvidenceBeforeStart, [
@@ -137,7 +137,7 @@ test("advisory sidecar activation approval packet enumerates required evidence a
     "db_mutation_or_state_change_before_approval",
     "secret_or_release_action_before_approval",
   ]);
-  assert.equal(packet.activationReadiness.finalizer.owner, "seoseo");
+  assert.equal(packet.activationReadiness.finalizer.owner, "brokeralpha");
   assert.equal(packet.activationReadiness.finalizer.nonBypassable, true);
   assert.equal(packet.activationReadiness.finalizer.workerEvidenceAdvisoryOnly, true);
   assert.equal(packet.activationReadiness.packetGrantsApproval, false);
@@ -159,11 +159,11 @@ test("advisory sidecar operator decision packet is deeply immutable (#794)", () 
 test("advisory sidecar operator decision idempotency key is deterministic (#794)", () => {
   assert.equal(
     buildAdvisorySidecarOperatorDecisionIdempotencyKey(
-      "seoseo",
+      "brokeralpha",
       "issue-794",
       NOW,
       "default_off_operator_decision_ready",
     ),
-    "advisory-sidecar-operator-decision:default_off_operator_decision_ready:seoseo:issue-794:2026-06-16T04:10:00.000Z",
+    "advisory-sidecar-operator-decision:default_off_operator_decision_ready:brokeralpha:issue-794:2026-06-16T04:10:00.000Z",
   );
 });

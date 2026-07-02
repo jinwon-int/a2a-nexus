@@ -211,7 +211,7 @@ describe("Operator-approved execution plan dispatch (#991)", () => {
       stepDecisions: [
         { stepId: "operator-approval-request-root", status: "approved" },
       ],
-      operator: "gwakga",
+      operator: "brokerbeta",
       approvalReference: "approval:test",
     };
 
@@ -796,7 +796,7 @@ describe("Operator-approved execution plan dispatch (#991)", () => {
 
   it("includes source and operator approval metadata", () => {
     const plan = produceApprovalGatedPlan();
-    const approval = approveAllSteps(plan, "soonwook", "approval-991-001");
+    const approval = approveAllSteps(plan, "workereta", "approval-991-001");
     const dispatch = buildOperatorApprovedExecutionPlanDispatch(plan, approval, {
       now: NOW,
     });
@@ -804,7 +804,7 @@ describe("Operator-approved execution plan dispatch (#991)", () => {
     assert.equal(dispatch.source.executionPlanIdempotencyKey, plan.idempotencyKey);
     assert.equal(dispatch.source.executionPlanDecision, plan.decision);
     assert.equal(dispatch.source.executionPlanMode, plan.executionMode);
-    assert.equal(dispatch.operatorApproval.operatorIdentity, "soonwook");
+    assert.equal(dispatch.operatorApproval.operatorIdentity, "workereta");
     assert.equal(dispatch.operatorApproval.approvalReference, "approval-991-001");
     assert.equal(
       dispatch.operatorApproval.approvedStepCount,

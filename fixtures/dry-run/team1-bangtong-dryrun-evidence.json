@@ -1,5 +1,5 @@
 {
-  "description": "Team1/bangtong dry-run evidence fixture for source-public dry-run aggregator. Redacted only: no secrets, no private paths, no provider IDs, no session dumps.",
+  "description": "Team1/workerGamma dry-run evidence fixture for source-public dry-run aggregator. Redacted only: no secrets, no private paths, no provider IDs, no session dumps.",
   "run": "a2a-source-dryrun-orchestrator-20260510T133022Z",
   "decision": "GO",
   "gates": {
@@ -8,8 +8,8 @@
       "evidence": ["a2a-plane#198 (internal tracker, private)#broker-readiness-go"],
       "evidencePacket": {
         "health": { "ok": true, "revision": "abc1234" },
-        "expectedWorkers": ["bangtong"],
-        "onlineWorkerIds": ["bangtong"],
+        "expectedWorkers": ["workerGamma"],
+        "onlineWorkerIds": ["workerGamma"],
         "queue": { "queued": 0, "claimed": 0, "running": 0 },
         "stale": 0,
         "migrationHealthGate": { "ok": true, "checks": [{ "check": "schema-version", "ok": true }] }

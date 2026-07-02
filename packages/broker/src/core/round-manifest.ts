@@ -95,7 +95,7 @@ export interface WorkerEvidencePolicy {
  * used by the result collector to match terminal outbox events.
  */
 export interface WorkerRoundAssignment {
-  /** Short worker handle (e.g. "bangtong", "dungae"). */
+  /** Short worker handle (e.g. "workergamma", "workerepsilon"). */
   workerId: string;
 
   /** Optional human-readable description of this worker's task. */
@@ -261,10 +261,10 @@ const DEFAULT_CLOSEOUT_POLICY: RoundCloseoutPolicy = {
  *   runId: "a2a-round-20260526T201140KST",
  *   roundLabel: "a2a-hardening-r1",
  *   expectedWorkers: [
- *     { workerId: "bangtong", lane: 1, taskDescription: "Round manifest foundation" },
- *     { workerId: "dungae", lane: 2 },
- *     { workerId: "sogyo", lane: 3 },
- *     { workerId: "nosuk", lane: 4 },
+ *     { workerId: "workergamma", lane: 1, taskDescription: "Round manifest foundation" },
+ *     { workerId: "workerepsilon", lane: 2 },
+ *     { workerId: "workerbeta", lane: 3 },
+ *     { workerId: "workeralpha", lane: 4 },
  *   ],
  * });
  * ```

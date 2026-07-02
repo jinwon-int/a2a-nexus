@@ -1,12 +1,12 @@
 # #1032 Live-Proof / Release Gate Plan
 
-**Author:** Team1/Yukson (lane 4/4)
+**Author:** Team1/workerdelta (lane 4/4)
 **Issue:** https://github.com/jinwon-int/a2a-broker/issues/1032
 **Diagnostics surface PR:** #1235 (`22c47bb` — Expose #1032 persistence queue diagnostics)
 **Base:** `jinwon-int/a2a-broker` `main`
 
 > **This is a read-only plan document.**
-> No live action defined here may be executed without a separate, explicit approval from Seoseo (the operator). See §8 for the approval gate.
+> No live action defined here may be executed without a separate, explicit approval from brokeralpha (the operator). See §8 for the approval gate.
 
 ---
 
@@ -34,7 +34,7 @@ PR #1235 merged the production-facing persistence queue diagnostics surface:
 
 ### 1.3 Constraints
 
-- Seoseo is finalizer of record. Workers must not merge PRs or close #1032.
+- brokeralpha is finalizer of record. Workers must not merge PRs or close #1032.
 - All live actions require a separate, fresh approval from the operator. This document only defines *what* would be done, when, and how to verify — not an authorization to do it.
 - No DB migration, prune, mutation, Terminal ACK/replay, provider canary, credential movement, tag/release, or Gateway restart/reload without explicit approval.
 
@@ -75,18 +75,18 @@ These checks run entirely against the checked-out source, configured CI artifact
 
 ## 3. Deploy / Recreate (Approval-Gated)
 
-Once Seoseo signs off, the deploy proceeds in two phases:
+Once brokeralpha signs off, the deploy proceeds in two phases:
 
-### Phase A: Staging / Single-Broker Canary (Seoseo only)
+### Phase A: Staging / Single-Broker Canary (brokeralpha only)
 
 1. **Build image**
    ```bash
-   docker build -t seoseo-broker:<commit-short> .
+   docker build -t brokeralpha-broker:<commit-short> .
    ```
 
 2. **Stage the diagnostics callback** — The new binary includes the `persistenceQueueDiagnostics` option. The broker's entry point creates a `PersistenceQueue` instance (or a no-op placeholder) and passes it via `persistenceQueueDiagnostics: () => queue.diagnostics()`.
 
-3. **Deploy to Seoseo** — Docker compose update:
+3. **Deploy to brokeralpha** — Docker compose update:
    ```bash
    docker compose -f docker-compose.yml up -d broker
    ```
@@ -102,9 +102,9 @@ Once Seoseo signs off, the deploy proceeds in two phases:
    - `/livez`: no 5s timeouts
    - Event loop: `eventLoop.degraded === false` on `/readyz`
 
-### Phase B: Gwakga Follow (If Phase A Passes)
+### Phase B: brokerbeta Follow (If Phase A Passes)
 
-Repeat steps 1-3 for the Gwakga broker, with the same image tag and configuration.
+Repeat steps 1-3 for the brokerbeta broker, with the same image tag and configuration.
 
 ### Live Verification Commands
 
@@ -163,7 +163,7 @@ node scripts/broker-comprehensive-diagnostics.mjs \
 | Docker health latest | All passed | `docker inspect` |
 | Worker registrations | No unexpected churn | `/schedz` worker heartbeat list |
 
-**If pass:** Proceed to Phase B (Gwakga deploy) if not yet done, then to §5 (rollback boundary) and §7 (release decision).
+**If pass:** Proceed to Phase B (brokerbeta deploy) if not yet done, then to §5 (rollback boundary) and §7 (release decision).
 
 **If fail:** Execute §6 (rollback), then document residual attribution.
 
@@ -194,11 +194,11 @@ Before the release decision, collect these evidence artifacts:
 | `npm test` log | CI | Text |
 | Diagnostics contract test | `node --test ... persistence queue diagnostics` | CLI output |
 | Image build log | `docker build` | Text |
-| Seoseo deploy timestamp | Operator log | ISO-8601 |
-| Seoseo 30-min settle health | `/health`, `/livez`, `/readyz` sequence | JSON snapshot |
-| Seoseo latency gate report | `broker-comprehensive-diagnostics.mjs` | JSON + Markdown |
-| Gwakga deploy timestamp | Operator log | ISO-8601 |
-| Gwakga latency gate report | `broker-comprehensive-diagnostics.mjs` | JSON + Markdown |
+| brokeralpha deploy timestamp | Operator log | ISO-8601 |
+| brokeralpha 30-min settle health | `/health`, `/livez`, `/readyz` sequence | JSON snapshot |
+| brokeralpha latency gate report | `broker-comprehensive-diagnostics.mjs` | JSON + Markdown |
+| brokerbeta deploy timestamp | Operator log | ISO-8601 |
+| brokerbeta latency gate report | `broker-comprehensive-diagnostics.mjs` | JSON + Markdown |
 | Correlation report (if >1s samples) | `broker-livez-stall-attribution.mjs` | Markdown |
 | `/schedz` snapshot at peak | `curl /schedz` | JSON |
 
@@ -272,7 +272,7 @@ See [docs/a2a-1032-live-proof-release-gate-plan.md](../docs/a2a-1032-live-proof-
 
 ```bash
 # 1. Revert to previous image tag
-BROKER_IMAGE_TAG=seoseo-github-<pre-deploy-commit>
+BROKER_IMAGE_TAG=brokeralpha-github-<pre-deploy-commit>
 docker compose -f docker-compose.yml up -d broker
 
 # 2. Verify recovery
@@ -299,31 +299,31 @@ curl -s http://<broker>:8787/health | jq '.persistenceQueue'
 
 ### 7.1 Release Gate Criteria
 
-After the latency proof passes on **both** Seoseo and Gwakga:
+After the latency proof passes on **both** brokeralpha and brokerbeta:
 
 | Criterion | Requirement | Evidence |
 |-----------|-------------|----------|
-| G1 | Latency gate passed on Seoseo | Gate report timestamp |
-| G2 | Latency gate passed on Gwakga | Gate report timestamp |
+| G1 | Latency gate passed on brokeralpha | Gate report timestamp |
+| G2 | Latency gate passed on brokerbeta | Gate report timestamp |
 | G3 | No rollback triggers fired (see §6.1) | Operator log |
 | G4 | All source preflight checks pass | CI log |
 | G5 | #1032 acceptance criteria satisfied | Issue comment |
 | G6 | Libero validation matrix #1032 guardrails satisfied | C6-C9 from libero matrix |
-| G7 | Approval comment from Seoseo on issue | Issue link |
+| G7 | Approval comment from brokeralpha on issue | Issue link |
 | G8 | Wiki/evidence artifacts published | Wiki page link |
 
 ### 7.2 Release Path
 
-1. **Seoseo approves:** Seoseo (the operator) posts an approval comment on #1032
+1. **brokeralpha approves:** brokeralpha (the operator) posts an approval comment on #1032
 2. **Documentation updated:** Wiki page committed in the release branch
 3. **Tag:** Release tag pushed (e.g., `v1.6.0-rc1` or agreed version)
 4. **Release notes:** Include summary of persistence queue diagnostics and #1032 closure
-5. **Close #1032:** Seoseo closes the issue with a summary comment
+5. **Close #1032:** brokeralpha closes the issue with a summary comment
 
 ### 7.3 If Gate Fails
 
-1. Do not deploy to Gwakga (if Phase A failed)
-2. Rollback Seoseo (if Phase B failed before Gwakga deploy)
+1. Do not deploy to brokerbeta (if Phase A failed)
+2. Rollback brokeralpha (if Phase B failed before brokerbeta deploy)
 3. Open a follow-up issue with the residual attribution evidence
 4. Document the latency threshold that was not met
 5. Do not close #1032 — keep the issue open for the follow-up
@@ -334,10 +334,10 @@ After the latency proof passes on **both** Seoseo and Gwakga:
 
 ### 8.1 What Requires Approval
 
-The following actions require a **separate, fresh approval** from the operator (Seoseo) in a comment on #1032:
+The following actions require a **separate, fresh approval** from the operator (brokeralpha) in a comment on #1032:
 
-- [ ] Deploy new broker image to Seoseo (any image change)
-- [ ] Deploy new broker image to Gwakga
+- [ ] Deploy new broker image to brokeralpha (any image change)
+- [ ] Deploy new broker image to brokerbeta
 - [ ] Enable persistence queue diagnostics on a live broker
 - [ ] Run any script that makes repeated or latency-measuring live HTTP requests to a production broker
 - [ ] Modify broker/server configuration in production
@@ -368,7 +368,7 @@ The following actions require a **separate, fresh approval** from the operator (
 **Rollback:**
 - [rollback procedure reference]
 
-**Requested by:** @yukson
+**Requested by:** @workerdelta
 **Date:** YYYY-MM-DD
 ```
 
@@ -401,7 +401,7 @@ The following actions require a **separate, fresh approval** from the operator (
 ### Spike / Design
 - `docs/a2a-1032-sqlite-worker-thread-spike.md` — Full spike ADR with verdict history
 - `docs/persistence-next-step-proposal.md` — Original SQLite persistence path proposal
-- `docs/yukson-1032-a2ad-followup-03-review.md` — Libero review of #1083/#1086
+- `docs/workerdelta-1032-a2ad-followup-03-review.md` — Libero review of #1083/#1086
 
 ### Diagnostics Scripts
 - `scripts/broker-comprehensive-diagnostics.mjs` — Latency proof gate runner
@@ -418,4 +418,4 @@ The following actions require a **separate, fresh approval** from the operator (
 
 ---
 
-**Start marker:** 2026-06-04T02:21:00Z | **Worker:** yukson (Team1, lane 4/4)
+**Start marker:** 2026-06-04T02:21:00Z | **Worker:** workerdelta (Team1, lane 4/4)

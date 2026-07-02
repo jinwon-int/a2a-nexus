@@ -16,14 +16,14 @@ test("worker self-assessment emits planner-ready supplied snapshot packet", () =
 
   assert.equal(packet.kind, "a2a-broker.worker-self-assessment-capacity.packet");
   assert.equal(packet.generatedAt, NOW);
-  assert.equal(packet.workerId, "bangtong");
+  assert.equal(packet.workerId, "workergamma");
   assert.equal(packet.sourceOnly, true);
   assert.equal(packet.source.suppliedSnapshotOnly, true);
   assert.equal(packet.source.probesHost, false);
   assert.equal(packet.source.probesGateway, false);
   assert.equal(packet.readiness.plannerInputReady, true);
   assert.deepEqual(packet.readiness.missing, []);
-  assert.equal(packet.plannerInput?.host.workerId, "bangtong");
+  assert.equal(packet.plannerInput?.host.workerId, "workergamma");
   assert.equal(packet.plannerInput?.task.taskId, "task-large-independent");
   assert.equal(packet.boundaries.actualSubagentSpawn, false);
   assert.equal(packet.boundaries.brokerDispatch, false);

@@ -49,7 +49,7 @@ function insertOutbox(db, { id, taskEventId, acknowledgedAt = null, createdAt, p
     .run(id, taskEventId, acknowledgedAt, createdAt, payload);
 }
 
-function insertTask(db, { id, status = 'succeeded', worker = 'sogyo', updatedAt = '2026-05-04T07:30:00.000Z' }) {
+function insertTask(db, { id, status = 'succeeded', worker = 'workerbeta', updatedAt = '2026-05-04T07:30:00.000Z' }) {
   db.prepare('INSERT INTO broker_tasks (id, status, intent, target_node_id, assigned_worker_id, task_origin, updated_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, status, 'analyze', worker, worker, 'operator', updatedAt, JSON.stringify({ id, status, assignedWorkerId: worker }));
 }
@@ -79,7 +79,7 @@ describe('terminal receipt closeout report', () => {
       createdAt: '2026-05-04T07:30:00.000Z',
       payload: terminalPayload({ id: 'terminal-current', taskEventId: 2 }),
     });
-    insertTask(db, { id: 'task-1', status: 'succeeded', worker: 'sogyo' });
+    insertTask(db, { id: 'task-1', status: 'succeeded', worker: 'workerbeta' });
     insertAudit(db, { id: 'audit-created', action: 'task.created', targetId: 'task-1', createdAt: '2026-05-04T07:29:00.000Z' });
     insertAudit(db, { id: 'audit-succeeded', action: 'task.succeeded', targetId: 'task-1', createdAt: '2026-05-04T07:30:00.000Z' });
     insertOutbox(db, {
@@ -138,15 +138,15 @@ describe('terminal receipt closeout report', () => {
   it('classifies gaps by worker, status, evidence, age bucket, and cross-broker origin', () => {
     const { db, file } = createDb();
     insertOutbox(db, {
-      id: 'terminal:cross-broker%3Around%3Agwakga%3Atask-1:succeeded:2026-05-04T07%3A30%3A00.000Z',
+      id: 'terminal:cross-broker%3Around%3Abrokerbeta%3Atask-1:succeeded:2026-05-04T07%3A30%3A00.000Z',
       taskEventId: 1,
       createdAt: '2026-05-04T07:30:00.000Z',
       payload: terminalPayload({
-        id: 'terminal:cross-broker%3Around%3Agwakga%3Atask-1:succeeded:2026-05-04T07%3A30%3A00.000Z',
+        id: 'terminal:cross-broker%3Around%3Abrokerbeta%3Atask-1:succeeded:2026-05-04T07%3A30%3A00.000Z',
         payload: {
-          taskId: 'cross-broker:round:gwakga:task-1',
+          taskId: 'cross-broker:round:brokerbeta:task-1',
           status: 'succeeded',
-          worker: 'gwakga',
+          worker: 'brokerbeta',
           repo: 'jinwon-int/a2a-broker',
           issue: 681,
           doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/681#cross-broker',
@@ -165,7 +165,7 @@ describe('terminal receipt closeout report', () => {
         payload: {
           taskId: 'task-local-provider',
           status: 'failed',
-          worker: 'sogyo',
+          worker: 'workerbeta',
           createdAt: '2026-05-04T01:30:00.000Z',
           updatedAt: '2026-05-04T01:30:00.000Z',
         },
@@ -183,7 +183,7 @@ describe('terminal receipt closeout report', () => {
 
     assert.equal(report.ok, false);
     assert.equal(report.classifications.allUnacked.count, 2);
-    assert.deepEqual(report.classifications.allUnacked.byWorker, { sogyo: 1, gwakga: 1 });
+    assert.deepEqual(report.classifications.allUnacked.byWorker, { workerbeta: 1, brokerbeta: 1 });
     assert.deepEqual(report.classifications.allUnacked.byStatus, { failed: 1, succeeded: 1 });
     assert.deepEqual(report.classifications.allUnacked.byOrigin, { local: 1, crossBroker: 1 });
     assert.deepEqual(report.classifications.allUnacked.byEvidenceClass, {

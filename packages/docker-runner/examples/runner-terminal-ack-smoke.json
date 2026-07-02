@@ -1,13 +1,13 @@
 {
   "$schema": "a2a-runner-terminal-ack-smoke-v1",
-  "description": "CI-safe nosuk R3 compact terminal evidence ack smoke. It validates PR/Done/Block terminal ack decisions from synthetic runner output and proves provider send success alone never completes the terminal cursor without an operator-visible receipt.",
-  "worker": "nosuk",
+  "description": "CI-safe workerAlpha R3 compact terminal evidence ack smoke. It validates PR/Done/Block terminal ack decisions from synthetic runner output and proves provider send success alone never completes the terminal cursor without an operator-visible receipt.",
+  "worker": "workerAlpha",
   "emittedAt": "2026-05-02T03:00:00.000Z",
   "cases": [
     {
       "name": "PR evidence with broker receipt may ack",
       "handlerTask": {
-        "id": "r3-nosuk-pr-100",
+        "id": "r3-workerAlpha-pr-100",
         "intent": "propose_patch",
         "payload": {
           "mode": "github-propose-patch",
@@ -18,9 +18,9 @@
       },
       "runnerOutput": {
         "ok": true,
-        "taskId": "r3-nosuk-pr-100",
+        "taskId": "r3-workerAlpha-pr-100",
         "status": "completed",
-        "workDir": "/synthetic/not-forwarded/r3-nosuk-pr-100",
+        "workDir": "/synthetic/not-forwarded/r3-workerAlpha-pr-100",
         "exitCode": 0,
         "signal": null,
         "stdout": "synthetic stdout omitted from terminal ack",
@@ -44,20 +44,20 @@
       "receipt": {
         "operatorVisible": true,
         "channel": "broker-sse",
-        "receiptId": "receipt-nosuk-pr-100",
+        "receiptId": "receipt-workerAlpha-pr-100",
         "deliveredAt": "2026-05-02T03:00:01.000Z"
       },
       "expectedAck": {
         "schemaVersion": "a2a.runner.terminal-ack.v1",
-        "eventId": "a2a-terminal:r3-nosuk-pr-100:succeeded:PR:https://github.com/jinwon-int/a2a-docker-runner/pull/151",
-        "taskId": "r3-nosuk-pr-100",
+        "eventId": "a2a-terminal:r3-workerAlpha-pr-100:succeeded:PR:https://github.com/jinwon-int/a2a-docker-runner/pull/151",
+        "taskId": "r3-workerAlpha-pr-100",
         "evidenceKind": "PR",
         "acknowledged": true,
         "cursorComplete": true,
         "reason": "terminal evidence has operator-visible receipt",
         "receipt": {
           "channel": "broker-sse",
-          "receiptId": "receipt-nosuk-pr-100",
+          "receiptId": "receipt-workerAlpha-pr-100",
           "deliveredAt": "2026-05-02T03:00:01.000Z"
         }
       }
@@ -65,7 +65,7 @@
     {
       "name": "Done evidence with webhook receipt may ack",
       "handlerTask": {
-        "id": "r3-nosuk-done-100",
+        "id": "r3-workerAlpha-done-100",
         "intent": "propose_patch",
         "payload": {
           "mode": "github-propose-patch",
@@ -75,9 +75,9 @@
       },
       "runnerOutput": {
         "ok": true,
-        "taskId": "r3-nosuk-done-100",
+        "taskId": "r3-workerAlpha-done-100",
         "status": "completed",
-        "workDir": "/synthetic/not-forwarded/r3-nosuk-done-100",
+        "workDir": "/synthetic/not-forwarded/r3-workerAlpha-done-100",
         "exitCode": 0,
         "signal": null,
         "stdout": "synthetic done stdout omitted",
@@ -101,28 +101,28 @@
       "receipt": {
         "operatorVisible": true,
         "channel": "broker-webhook",
-        "receiptId": "receipt-nosuk-done-100",
-        "url": "https://broker.example.invalid/receipts/receipt-nosuk-done-100"
+        "receiptId": "receipt-workerAlpha-done-100",
+        "url": "https://broker.example.invalid/receipts/receipt-workerAlpha-done-100"
       },
       "expectedAck": {
         "schemaVersion": "a2a.runner.terminal-ack.v1",
-        "eventId": "a2a-terminal:r3-nosuk-done-100:succeeded:Done:https://github.com/jinwon-int/a2a-docker-runner/issues/100#issuecomment-done",
-        "taskId": "r3-nosuk-done-100",
+        "eventId": "a2a-terminal:r3-workerAlpha-done-100:succeeded:Done:https://github.com/jinwon-int/a2a-docker-runner/issues/100#issuecomment-done",
+        "taskId": "r3-workerAlpha-done-100",
         "evidenceKind": "Done",
         "acknowledged": true,
         "cursorComplete": true,
         "reason": "terminal evidence has operator-visible receipt",
         "receipt": {
           "channel": "broker-webhook",
-          "receiptId": "receipt-nosuk-done-100",
-          "url": "https://broker.example.invalid/receipts/receipt-nosuk-done-100"
+          "receiptId": "receipt-workerAlpha-done-100",
+          "url": "https://broker.example.invalid/receipts/receipt-workerAlpha-done-100"
         }
       }
     },
     {
       "name": "Block evidence with receipt may ack blocked cursor",
       "handlerTask": {
-        "id": "r3-nosuk-block-100",
+        "id": "r3-workerAlpha-block-100",
         "intent": "propose_patch",
         "payload": {
           "mode": "github-propose-patch",
@@ -132,9 +132,9 @@
       },
       "runnerOutput": {
         "ok": false,
-        "taskId": "r3-nosuk-block-100",
+        "taskId": "r3-workerAlpha-block-100",
         "status": "failed",
-        "workDir": "/synthetic/not-forwarded/r3-nosuk-block-100",
+        "workDir": "/synthetic/not-forwarded/r3-workerAlpha-block-100",
         "exitCode": 1,
         "signal": null,
         "stdout": "",
@@ -158,19 +158,19 @@
       "receipt": {
         "operatorVisible": true,
         "channel": "broker-sse",
-        "receiptId": "receipt-nosuk-block-100"
+        "receiptId": "receipt-workerAlpha-block-100"
       },
       "expectedAck": {
         "schemaVersion": "a2a.runner.terminal-ack.v1",
-        "eventId": "a2a-terminal:r3-nosuk-block-100:blocked:Block:https://github.com/jinwon-int/a2a-docker-runner/issues/100#issuecomment-block",
-        "taskId": "r3-nosuk-block-100",
+        "eventId": "a2a-terminal:r3-workerAlpha-block-100:blocked:Block:https://github.com/jinwon-int/a2a-docker-runner/issues/100#issuecomment-block",
+        "taskId": "r3-workerAlpha-block-100",
         "evidenceKind": "Block",
         "acknowledged": true,
         "cursorComplete": true,
         "reason": "terminal evidence has operator-visible receipt",
         "receipt": {
           "channel": "broker-sse",
-          "receiptId": "receipt-nosuk-block-100"
+          "receiptId": "receipt-workerAlpha-block-100"
         }
       }
     },
@@ -178,7 +178,7 @@
       "name": "Provider send success without receipt must not ack",
       "providerSendSuccessOnly": true,
       "handlerTask": {
-        "id": "r3-nosuk-send-only-100",
+        "id": "r3-workerAlpha-send-only-100",
         "intent": "propose_patch",
         "payload": {
           "mode": "github-propose-patch",
@@ -188,9 +188,9 @@
       },
       "runnerOutput": {
         "ok": true,
-        "taskId": "r3-nosuk-send-only-100",
+        "taskId": "r3-workerAlpha-send-only-100",
         "status": "completed",
-        "workDir": "/synthetic/not-forwarded/r3-nosuk-send-only-100",
+        "workDir": "/synthetic/not-forwarded/r3-workerAlpha-send-only-100",
         "exitCode": 0,
         "signal": null,
         "stdout": "gateway provider send returned ok, but no receipt exists",
@@ -213,8 +213,8 @@
       },
       "expectedAck": {
         "schemaVersion": "a2a.runner.terminal-ack.v1",
-        "eventId": "a2a-terminal:r3-nosuk-send-only-100:succeeded:PR:https://github.com/jinwon-int/a2a-docker-runner/pull/151",
-        "taskId": "r3-nosuk-send-only-100",
+        "eventId": "a2a-terminal:r3-workerAlpha-send-only-100:succeeded:PR:https://github.com/jinwon-int/a2a-docker-runner/pull/151",
+        "taskId": "r3-workerAlpha-send-only-100",
         "evidenceKind": "PR",
         "acknowledged": false,
         "cursorComplete": false,

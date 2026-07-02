@@ -14,7 +14,7 @@ const NOW = "2026-05-19T02:05:00.000Z";
 function selfAssessment() {
   return buildA2AWorkerSelfAssessmentCapacity({
     now: NOW,
-    workerId: "bangtong",
+    workerId: "workergamma",
     task: {
       taskId: "task-large-independent",
       size: "large",
@@ -42,15 +42,15 @@ test("planner handoff becomes ready when self-assessment and planner policy alig
   const plannerPolicy = buildA2AWorkerSubagentOrchestrationPolicy(assessment.plannerInput);
   const packet = buildA2AWorkerSubagentPlannerHandoff({
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     selfAssessment: assessment,
     plannerPolicy,
   });
 
   assert.equal(packet.kind, "a2a-broker.worker-subagent-planner-handoff.packet");
   assert.equal(packet.state, "ready_for_finalizer_review");
-  assert.equal(packet.finalizer, "seoseo");
-  assert.equal(packet.workerId, "bangtong");
+  assert.equal(packet.finalizer, "brokeralpha");
+  assert.equal(packet.workerId, "workergamma");
   assert.equal(packet.source.plannerParallelismHint, 3);
   assert.deepEqual(packet.source.recommendedRoles, ["explorer", "implementer", "verifier"]);
   assert.deepEqual(packet.review.blockers, []);
@@ -87,7 +87,7 @@ test("extractor accepts handoff envelopes", () => {
   const input = extractA2AWorkerSubagentPlannerHandoffInput({
     plannerHandoff: {
       now: NOW,
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       selfAssessment: assessment,
       plannerPolicy,
     },
@@ -95,7 +95,7 @@ test("extractor accepts handoff envelopes", () => {
   const packet = buildA2AWorkerSubagentPlannerHandoff(input);
 
   assert.equal(packet.generatedAt, NOW);
-  assert.equal(packet.finalizer, "seoseo");
+  assert.equal(packet.finalizer, "brokeralpha");
   assert.equal(packet.state, "ready_for_finalizer_review");
 });
 

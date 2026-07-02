@@ -1,0 +1,85 @@
+{
+  "description": "Team1/workerGamma approval-rehearsal evidence fixture for source-public approval rehearsal aggregator. Redacted only: no secrets, no private paths, no provider IDs, no session dumps. All gates GO including explicit operator approval yields GO_CANDIDATE.",
+  "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
+  "decision": "GO_CANDIDATE",
+  "gates": {
+    "brokerReadiness": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#broker-readiness-go"],
+      "evidencePacket": {
+        "health": { "ok": true, "revision": "abc1234" },
+        "expectedWorkers": ["workerGamma"],
+        "onlineWorkerIds": ["workerGamma"],
+        "queue": { "queued": 0, "claimed": 0, "running": 0 },
+        "stale": 0,
+        "migrationHealthGate": { "ok": true, "checks": [{ "check": "schema-version", "ok": true }] }
+      }
+    },
+    "pluginReadiness": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#plugin-readiness-go"],
+      "evidencePacket": {
+        "liveTelegramConfigured": false,
+        "providerDeliveryEnabled": false,
+        "notificationEnabled": false,
+        "operatorEventsEnabled": false,
+        "gatewayHealth": { "ok": true },
+        "operatorApproval": false
+      }
+    },
+    "runnerReadiness": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#runner-readiness-go"],
+      "evidencePacket": {
+        "artifactManifest": { "ok": true },
+        "scannerProfile": { "ok": true },
+        "productionDeploy": false,
+        "providerCalled": false
+      }
+    },
+    "publicPrivateBoundary": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#public-private-boundary-go"]
+    },
+    "terminalEvidence": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#terminal-evidence-go"]
+    },
+    "replaySafety": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#replay-safety-go"]
+    },
+    "externalScannerEvidence": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#external-scanner-evidence-go"]
+    },
+    "runtimeBootstrapHygiene": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#runtime-bootstrap-hygiene-go"]
+    },
+    "goNoGoMatrix": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#go-no-go-matrix-go"]
+    },
+    "redactedEvidencePolicy": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#redacted-evidence-policy-go"]
+    },
+    "operatorApproval": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#explicit-operator-approval-source-public"]
+    },
+    "approvalPacketIntegrity": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#approval-packet-integrity-go"]
+    },
+    "rehearsalIdempotencyProof": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#rehearsal-idempotency-proof-go"]
+    },
+    "rollbackAbortPath": {
+      "status": "GO",
+      "evidence": ["a2a-plane#212 (internal tracker, private)#rollback-abort-path-go"]
+    }
+  }
+}

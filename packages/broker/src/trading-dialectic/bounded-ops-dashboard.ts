@@ -4,7 +4,7 @@
  * Provides a bounded-context view of trading-dialectic tasks and workers
  * for Team1 operators. This is NOT a full broker dashboard — it is scoped
  * ("bounded") to Team1's domain: thesis/antithesis/rebuttal/synthesis/outcome
- * tasks handled by bangtong, dengae, and seoseo agents.
+ * tasks handled by workergamma, dengae, and brokeralpha agents.
  *
  * Two-broker awareness: when tasks carry a brokerOfRecord, the bounded
  * dashboard distinguishes tasks belonging to each broker so operators can
@@ -173,7 +173,7 @@ export interface BoundedOpsDashboardInput {
 
 /** Team1 lane roles that indicate a worker belongs to Team1. */
 const TEAM1_LANE_ROLES = new Set(["analyst", "researcher", "trader"]);
-const TEAM1_LANE_PREFIXES = ["td-", "trading-", "bangtong-", "dengae-", "seoseo-"];
+const TEAM1_LANE_PREFIXES = ["td-", "trading-", "workergamma-", "dengae-", "brokeralpha-"];
 
 /**
  * Determine whether a task is a Team1 trading-dialectic task.

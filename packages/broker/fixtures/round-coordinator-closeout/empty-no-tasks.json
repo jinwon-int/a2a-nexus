@@ -4,11 +4,11 @@
     "roundLabel": "a2a-team1-round-coordinator-20260526T201140KST",
     "parentIssueUrl": "https://github.com/jinwon-int/a2a-broker/issues/934",
     "lanes": [
-      { "workerId": "sogyo", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
-      { "workerId": "bangtong", "description": "Round manifest foundation" },
-      { "workerId": "nosuk", "description": "A2A definitions and types" },
-      { "workerId": "yukson", "description": "Validation and tests" },
-      { "workerId": "dungae", "description": "Result collector projection" }
+      { "workerId": "workerbeta", "description": "Wiring lane 2/4 — dry-run closeout CLI" },
+      { "workerId": "workergamma", "description": "Round manifest foundation" },
+      { "workerId": "workeralpha", "description": "A2A definitions and types" },
+      { "workerId": "workerdelta", "description": "Validation and tests" },
+      { "workerId": "workerepsilon", "description": "Result collector projection" }
     ],
     "staleAfterMs": 1800000,
     "timeoutAt": "2026-05-27T06:00:00.000Z"

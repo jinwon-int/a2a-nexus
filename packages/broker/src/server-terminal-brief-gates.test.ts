@@ -17,8 +17,8 @@ test("POST /terminal-brief/closeout/gate returns approval-gated dry-run plan", a
       currentStep: "finalizer_review",
       idempotencyKey: "tb-finalizer-workflow:fixture",
       finalizer: {
-        brokerOfRecordId: "seoseo",
-        owner: "seoseo",
+        brokerOfRecordId: "brokeralpha",
+        owner: "brokeralpha",
         required: true,
         singleFinalizerRequired: true,
       },
@@ -110,8 +110,8 @@ test("POST /terminal-brief/closeout/approval-request returns draft-only approval
       executePermitted: false,
       idempotencyKey: "tb-closeout-gate:fixture-702",
       finalizer: {
-        brokerOfRecordId: "seoseo",
-        owner: "seoseo",
+        brokerOfRecordId: "brokeralpha",
+        owner: "brokeralpha",
         required: true,
         singleFinalizerRequired: true,
       },
@@ -234,8 +234,8 @@ test("POST /terminal-brief/closeout/approval-executor returns no-live execute-bl
       executionPermitted: false,
       idempotencyKey: "tb-approval-request:fixture-704",
       finalizer: {
-        brokerOfRecordId: "seoseo",
-        owner: "seoseo",
+        brokerOfRecordId: "brokeralpha",
+        owner: "brokeralpha",
         required: true,
         singleFinalizerRequired: true,
       },
@@ -382,8 +382,8 @@ test("POST /terminal-brief/closeout/approval-dispatch returns no-live adapter tr
       executionPermitted: false,
       idempotencyKey: "tb-approval-executor:fixture-706",
       finalizer: {
-        brokerOfRecordId: "seoseo",
-        owner: "seoseo",
+        brokerOfRecordId: "brokeralpha",
+        owner: "brokeralpha",
         required: true,
         singleFinalizerRequired: true,
       },
@@ -458,10 +458,10 @@ test("POST /terminal-brief/closeout/approval-dispatch returns no-live adapter tr
         }),
         body: JSON.stringify({
           approvalExecutor,
-          adapter: "gongyung",
-          target: "hermes://gongyung/approval",
+          adapter: "mobilealpha",
+          target: "hermes://mobilealpha/approval",
           channel: "operator",
-          requestedBy: "seoseo",
+          requestedBy: "brokeralpha",
         }),
       },
     );
@@ -471,7 +471,7 @@ test("POST /terminal-brief/closeout/approval-dispatch returns no-live adapter tr
     const body = await res.json();
     assert.equal(body.kind, "a2a-broker.terminal-brief-approval-dispatch-adapter.packet");
     assert.equal(body.state, "dispatch_draft_ready");
-    assert.equal(body.adapter.type, "gongyung");
+    assert.equal(body.adapter.type, "mobilealpha");
     assert.equal(body.adapter.requiresOpenClawMessageSend, false);
     assert.equal(body.dispatchPermitted, false);
     assert.equal(body.providerSendPermitted, false);
@@ -484,7 +484,7 @@ test("POST /terminal-brief/closeout/approval-dispatch returns no-live adapter tr
     assert.equal(body.receiptDraft.terminalAck, false);
     assert.equal(body.integrationContract.openclawMessageSendRequired, false);
     assert.equal(body.integrationContract.hermesAdapterCompatible, true);
-    assert.equal(body.integrationContract.gongyungAdapterCompatible, true);
+    assert.equal(body.integrationContract.mobilealphaAdapterCompatible, true);
     assert.equal(body.integrationContract.sendsApprovalRequest, false);
     assert.equal(body.integrationContract.grantsApproval, false);
     assert.equal(body.integrationContract.executesAction, false);
@@ -517,8 +517,8 @@ test("POST /terminal-brief/closeout/approval-receipt returns no-live receipt evi
         singleFinalizerRequired: true,
       },
       adapter: {
-        id: "gongyung",
-        type: "gongyung",
+        id: "mobilealpha",
+        type: "mobilealpha",
         harnessNeutral: true,
         protocol: "json-transcript",
         requiresOpenClawMessageSend: false,
@@ -538,7 +538,7 @@ test("POST /terminal-brief/closeout/approval-receipt returns no-live receipt evi
       },
       transcript: {
         mode: "draft-only",
-        target: "hermes://gongyung/approval",
+        target: "hermes://mobilealpha/approval",
         channel: "operator",
         requestedBy: "broker-finalizer",
         title: "Draft approval dispatch: Terminal Brief closeout - round-708",
@@ -554,7 +554,7 @@ test("POST /terminal-brief/closeout/approval-receipt returns no-live receipt evi
         terminalAck: false,
         approvalGranted: false,
         actionExecuted: false,
-        reason: "dispatch transcript draft only for gongyung; no provider send exists",
+        reason: "dispatch transcript draft only for mobilealpha; no provider send exists",
       },
       blockers: [],
       nextActions: [],
@@ -564,7 +564,7 @@ test("POST /terminal-brief/closeout/approval-receipt returns no-live receipt evi
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         sendsApprovalRequest: false,
         producesLiveReceipt: false,
         grantsApproval: false,
@@ -656,8 +656,8 @@ test("POST /terminal-brief/closeout/finalizer-approval-status returns no-live fi
         singleFinalizerRequired: true,
       },
       adapter: {
-        id: "gongyung",
-        type: "gongyung",
+        id: "mobilealpha",
+        type: "mobilealpha",
       },
       source: {
         targetIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/709",
@@ -668,7 +668,7 @@ test("POST /terminal-brief/closeout/finalizer-approval-status returns no-live fi
         nonRequestableActions: 1,
       },
       transcript: {
-        target: "hermes://gongyung/approval",
+        target: "hermes://mobilealpha/approval",
         channel: "operator",
       },
       blockers: [],
@@ -882,7 +882,7 @@ test("POST /terminal-brief/sidecar/activation-approval returns no-live approval 
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         consumesSidecarIntegrationRehearsal: true,
         consumesFinalizerApprovalStatus: true,
         grantsApproval: false,
@@ -1021,7 +1021,7 @@ test("POST /terminal-brief/sidecar/activation-receipt returns no-live activation
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         consumesSidecarDryRunGate: true,
         producesApprovalRequestDraft: true,
         sendsApprovalRequest: false,
@@ -1166,7 +1166,7 @@ test("POST /terminal-brief/sidecar/start-executor-gate returns no-live start exe
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         consumesActivationApprovalPacket: true,
         providerAcceptedIsVisibilityProof: false,
         terminalAckRequiresVisibilityProof: true,
@@ -1265,9 +1265,9 @@ test("POST /terminal-brief/sidecar/executor-invocation-rehearsal returns no-live
       },
       startPlan: {
         supervisedDryRunOnly: true,
-        requestedExecutor: "gongyung-sidecar-dry-run-executor",
+        requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
         operatorApprovalReference: "operator-visible-approval-720",
-        dryRunReason: "sidecar-gongyung-spool-dry-run",
+        dryRunReason: "sidecar-mobilealpha-spool-dry-run",
         commandShape: {
           kind: "metadata_only",
           commandName: "terminal-brief-sidecar",
@@ -1303,7 +1303,7 @@ test("POST /terminal-brief/sidecar/executor-invocation-rehearsal returns no-live
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         consumesActivationReceiptIngestorPacket: true,
         dispatchesStartExecutor: false,
         grantsApproval: false,
@@ -1348,7 +1348,7 @@ test("POST /terminal-brief/sidecar/executor-invocation-rehearsal returns no-live
         body: JSON.stringify({
           startExecutorGate,
           executorInvocationRehearsal: {
-            adapterName: "gongyung",
+            adapterName: "mobilealpha",
             executorRuntime: "metadata-only",
             supervisor: "terminal-brief-sidecar-worker",
           },
@@ -1451,7 +1451,7 @@ test("POST /terminal-brief/sidecar/adapter-handoff-approval returns source-only 
         body: JSON.stringify({
           runtimePreflightApprovalPacket: fixture,
           adapterHandoffApproval: {
-            adapterId: "gongyung-approval-renderer",
+            adapterId: "mobilealpha-approval-renderer",
             deliveryTargetClass: "manual-operator-channel",
             handoffReference: "handoff-741",
           },
@@ -1467,7 +1467,7 @@ test("POST /terminal-brief/sidecar/adapter-handoff-approval returns source-only 
     assert.equal(body.source.runtimePreflightApprovalReady, true);
     assert.equal(body.source.adapterContractReady, true);
     assert.equal(body.adapterHandoff.draftOnly, true);
-    assert.equal(body.adapterHandoff.adapterId, "gongyung-approval-renderer");
+    assert.equal(body.adapterHandoff.adapterId, "mobilealpha-approval-renderer");
     assert.equal(body.adapterHandoff.dispatchPermitted, false);
     assert.equal(body.adapterHandoff.providerSendPermitted, false);
     assert.equal(body.adapterHandoff.approvalGrantPermitted, false);
@@ -1506,7 +1506,7 @@ test("POST /terminal-brief/sidecar/operator-review-table returns source-only rev
         body: JSON.stringify({
           adapterHandoffApprovalPacket: fixture,
           operatorReviewTable: {
-            reviewOwner: "seoseo",
+            reviewOwner: "brokeralpha",
             reviewReference: "operator-review-743",
           },
         }),
@@ -1871,15 +1871,15 @@ test("POST /terminal-brief/sidecar/dry-run-start-canary-plan returns draft-only 
         startExecutorGateState: "ready_for_start_executor_review",
         startExecutorGateIdempotencyKey: "tb-sidecar-start-executor-gate:fixture-724",
         startExecutorReviewReady: true,
-        requestedExecutor: "gongyung-sidecar-dry-run-executor",
+        requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
         operatorApprovalReference: "operator-visible-approval-724",
         commandShapeKind: "metadata_only",
       },
       invocationPlan: {
         rehearsalOnly: true,
         supervisedDryRunOnly: true,
-        executorName: "gongyung-sidecar-dry-run-executor",
-        adapterName: "gongyung",
+        executorName: "mobilealpha-sidecar-dry-run-executor",
+        adapterName: "mobilealpha",
         executorRuntime: "metadata-only",
         supervisor: "terminal-brief-sidecar-worker",
         commandShape: {
@@ -1923,7 +1923,7 @@ test("POST /terminal-brief/sidecar/dry-run-start-canary-plan returns draft-only 
         harnessNeutral: true,
         openclawMessageSendRequired: false,
         hermesAdapterCompatible: true,
-        gongyungAdapterCompatible: true,
+        mobilealphaAdapterCompatible: true,
         consumesStartExecutorGatePacket: true,
         dispatchesStartExecutor: false,
         invokesExecutor: false,

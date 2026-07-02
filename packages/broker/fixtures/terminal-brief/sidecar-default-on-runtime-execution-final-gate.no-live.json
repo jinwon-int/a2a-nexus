@@ -14,7 +14,7 @@
       "executionApprovalRequestState": "execution_approval_request_draft_ready",
       "executionApprovalRequestIdempotencyKey": "tb-sidecar-default-on-execution-approval-request:014776d3aff8ba4a38bb96a2",
       "requestedAction": "approve_terminal_brief_default_on_execution",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "operatorChannel": "telegram-direct",
       "approvalReference": "tb-sidecar-default-on-execution-approval:0bb4e657c911c315",
@@ -111,7 +111,7 @@
       "granting approval or executing an approval grant",
       "runtime config write or Terminal Brief default-on enablement",
       "Terminal Brief sidecar start/stop/restart",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, executor invocation, broker restart, or deploy",
       "GitHub PR merge, issue close, or comment post from the ingestor",
@@ -124,7 +124,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesExecutionApprovalRequestPacket": true,
       "providerAcceptedIsVisibilityProof": false,
       "approvalGrantEvidenceExecutesGrant": false,
@@ -176,7 +176,7 @@
   "runtimeExecutionFinalGate": {
     "now": "2026-05-19T07:25:00.000Z",
     "mode": "terminal-brief-default-on-runtime-execution-final-gate-source-only",
-    "finalizer": "seoseo",
+    "finalizer": "brokeralpha",
     "executionGateReference": "tb-sidecar-default-on-runtime-execution-final-gate:fixture-784"
   }
 }

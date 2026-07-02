@@ -2,7 +2,7 @@
 
 **Issue:** [#824](https://github.com/jinwon-int/a2a-broker/issues/824)
 **Date:** 2026-05-20
-**Author:** yukson (Team1, lane 4/4)
+**Author:** workerdelta (Team1, lane 4/4)
 
 ## Problem
 

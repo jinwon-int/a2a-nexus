@@ -1,6 +1,6 @@
 # SSE Task Subscription Failure-Mode Matrix
 
-**Author:** Gongyung (Android Termux node)
+**Author:** mobilealpha (Android Termux node)
 **Issue:** jinwon-int/a2a-broker#10
 **Date:** 2026-04-18
 
@@ -108,7 +108,7 @@ This requires the Priority 1 changes to be implemented first.
 
 ## 6. Environment-Specific Notes
 
-### Android Termux (Gongyung)
+### Android Termux (mobilealpha)
 - `EventSource` via `fetch` or `undici` — no browser, so CORS irrelevant
 - Tailscale overlay may add latency; heartbeat must account for RTT variance
 - Background process may be killed by Android battery optimization

@@ -1,18 +1,18 @@
 {
-  "schema": "a2a.bangtong.patch-lane-smoke.v1",
+  "schema": "a2a.workerGamma.patch-lane-smoke.v1",
   "mode": "no-live",
   "parentIssue": "https://github.com/jinwon-int/a2a-nexus/issues/1022",
   "snapshotDate": "2026-06-24",
-  "description": "Bangtong GitHub patch lane smoke fixture. Proves that bangtong can claim github-propose-patch and create a valid PR via the A2A docker-runner. Source-only fixture with no live broker/Gateway/worker boundaries.",
+  "description": "workerGamma GitHub patch lane smoke fixture. Proves that workerGamma can claim github-propose-patch and create a valid PR via the A2A docker-runner. Source-only fixture with no live broker/Gateway/worker boundaries.",
   "sourceOnly": true,
   "finalizerRequired": true,
   "worker": {
-    "workerId": "bangtong",
+    "workerId": "workerGamma",
     "runtime": "hermes-agent",
     "harness": "hermes",
     "workerMode": "persistent",
     "capabilityUnderTest": "github-propose-patch",
-    "brokerBoundary": "Seoseo broker-backed task, PR-first only"
+    "brokerBoundary": "brokerAlpha broker-backed task, PR-first only"
   },
   "noLiveBoundaries": {
     "deploy": false,

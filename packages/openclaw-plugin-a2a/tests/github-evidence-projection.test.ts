@@ -15,7 +15,7 @@ function baseInput(overrides = {}) {
     repo: "jinwon-int/plugin-a2a",
     issueNumber: 259,
     taskId: "5c64a53e-2a1e-4475-a6e5-9f718124384b",
-    worker: "sogyo",
+    worker: "workerBeta",
     commentUrl: "https://github.com/jinwon-int/plugin-a2a/issues/259#issuecomment-1",
     summary: "[a2a:Done] rendered GitHub evidence for Terminal Brief",
     ...overrides,

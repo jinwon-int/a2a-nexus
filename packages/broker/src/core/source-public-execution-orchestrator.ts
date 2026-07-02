@@ -202,7 +202,7 @@ export function buildSourcePublicExecutionPlanBundle(
   const issueNumber = Number.isInteger(options.issueNumber) && options.issueNumber && options.issueNumber > 0
     ? options.issueNumber
     : DEFAULT_ISSUE;
-  const worker = safeToken(options.worker) ?? "dungae";
+  const worker = safeToken(options.worker) ?? "workerepsilon";
   const runMode = options.runMode ?? "dry-run";
   const approvedPacket = normalizeApprovedPacket(options.approvedEvidencePacket);
   const scannerHistory = normalizeScannerHistory(options.scannerHistory);

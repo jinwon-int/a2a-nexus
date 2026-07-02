@@ -79,7 +79,7 @@ function approval(overrides: Partial<TerminalBriefSidecarActivationApprovalPacke
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesSidecarDryRunGate: true,
       producesApprovalRequestDraft: true,
       sendsApprovalRequest: false,

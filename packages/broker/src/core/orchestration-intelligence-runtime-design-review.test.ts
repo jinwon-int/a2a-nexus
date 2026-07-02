@@ -19,7 +19,7 @@ const allDesignEvidence = {
   executorContractDocumented: true,
   brokerDispatchBoundaryDocumented: true,
   workerSpawnBoundaryDocumented: true,
-  daegyoMobileBoundaryDocumented: true,
+  mobilebetaMobileBoundaryDocumented: true,
   rollbackAbortCriteriaDocumented: true,
   liveBoundaryPlanDocumented: true,
   observabilityPlanDocumented: true,
@@ -45,14 +45,14 @@ function finalizerDecision(decision = "advance_to_next_source_step") {
 function runtimeReadinessGate(decision = "advance_to_next_source_step") {
   return buildOIRuntimeReadinessGatePacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     finalizerDecision: finalizerDecision(decision),
     runtimeEvidence: {
       runtimeExecutorDesignReviewed: false,
       explicitRuntimeApprovalPresent: false,
       brokerDispatchApprovalPresent: false,
       workerSpawnApprovalPresent: false,
-      daegyoMobileScopeResolved: false,
+      mobilebetaMobileScopeResolved: false,
       rollbackAbortCriteriaDocumented: false,
       liveBoundaryPlanDocumented: false,
       validationEvidenceFresh: true,
@@ -63,7 +63,7 @@ function runtimeReadinessGate(decision = "advance_to_next_source_step") {
 test("records a source-only runtime design review without granting execution approval", () => {
   const packet = buildOIRuntimeDesignReviewPacket({
     generatedAt: NOW,
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
     runtimeReadinessGate: runtimeReadinessGate(),
     designEvidence: allDesignEvidence,
   });
@@ -75,13 +75,13 @@ test("records a source-only runtime design review without granting execution app
   assert.equal(packet.runtimeReadinessEvidencePatch.explicitRuntimeApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.brokerDispatchApprovalPresent, false);
   assert.equal(packet.runtimeReadinessEvidencePatch.workerSpawnApprovalPresent, false);
-  assert.equal(packet.runtimeReadinessEvidencePatch.daegyoMobileScopeResolved, false);
+  assert.equal(packet.runtimeReadinessEvidencePatch.mobilebetaMobileScopeResolved, false);
   assert.equal(packet.safety.runtimeDesignReviewOnly, true);
   assert.equal(packet.safety.grantsExecutionApproval, false);
   assert.equal(packet.safety.runtimeExecutorEnabled, false);
   assert.equal(packet.safety.brokerDispatchCreated, false);
   assert.equal(packet.safety.workerSpawned, false);
-  assert.equal(packet.safety.daegyoScopeExpanded, false);
+  assert.equal(packet.safety.mobilebetaScopeExpanded, false);
 });
 
 test("fails closed when design evidence is incomplete", () => {
@@ -146,5 +146,5 @@ test("renders review and remaining NO-GO boundaries", () => {
   assert.match(markdown, /runtimeExecutorDesignReviewed: true/);
   assert.match(markdown, /explicitRuntimeApprovalPresent: false/);
   assert.match(markdown, /does not grant execution approval/);
-  assert.match(markdown, /expand Daegyo\/mobile scope/);
+  assert.match(markdown, /expand mobilebeta\/mobile scope/);
 });

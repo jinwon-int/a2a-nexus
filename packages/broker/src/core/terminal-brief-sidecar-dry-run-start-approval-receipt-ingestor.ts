@@ -103,7 +103,7 @@ export interface TerminalBriefSidecarDryRunStartApprovalReceiptIngestorPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesDryRunStartApprovalRequestPacket: true;
     providerAcceptedIsVisibilityProof: false;
     terminalAckRequiresVisibilityProof: true;
@@ -216,7 +216,7 @@ export function buildTerminalBriefSidecarDryRunStartApprovalReceiptIngestor(
       "dispatching or invoking a start executor",
       "spawning a process or starting/stopping the sidecar",
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "GitHub PR merge, issue close, or comment post from the ingestor",
       "TaskFlow record creation or broker DB mutation",
@@ -228,7 +228,7 @@ export function buildTerminalBriefSidecarDryRunStartApprovalReceiptIngestor(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDryRunStartApprovalRequestPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,
@@ -413,7 +413,7 @@ function toActivationApprovalPacket(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesSidecarDryRunGate: true,
       producesApprovalRequestDraft: true,
       sendsApprovalRequest: false,

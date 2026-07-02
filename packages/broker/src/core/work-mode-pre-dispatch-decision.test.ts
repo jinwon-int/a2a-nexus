@@ -32,7 +32,7 @@ test("candidate review with healthy workers recommends Team1 evidence", () => {
   assert.equal(packet.recommendation.evidenceOnlyHelpers, true);
   assert.equal(packet.recommendation.requiredDispatchFlags.includes("one-finalizer-required"), true);
   assert.equal(packet.recommendation.requiredDispatchFlags.includes("safe-parent-wording"), true);
-  assert.equal(packet.recommendation.finalizerOwner, "seoseo");
+  assert.equal(packet.recommendation.finalizerOwner, "brokeralpha");
 });
 
 test("Team1 decision evidence preserves finalizer and capacity snapshot provenance", () => {
@@ -49,7 +49,7 @@ test("Team1 decision evidence preserves finalizer and capacity snapshot provenan
   const evidence = buildA2AWorkModeDecisionEvidence(packet);
 
   assert.equal(evidence.mode, "team1");
-  assert.equal(evidence.finalizerOwner, "seoseo");
+  assert.equal(evidence.finalizerOwner, "brokeralpha");
   assert.equal(evidence.capacityState, "healthy");
   assert.equal(evidence.capacitySnapshotSource, "/workers/capacity");
   assert.equal(evidence.capacitySnapshotAt, "2026-06-06T20:59:00.000Z");
@@ -115,7 +115,7 @@ test("extractor accepts snake_case route envelope and markdown is explicit about
         has_multiple_candidates: true,
       },
       workers: { capacity_state: "healthy", stale_tasks: 0 },
-      finalizer_owner: "seoseo",
+      finalizer_owner: "brokeralpha",
     },
   });
   const packet = buildA2AWorkModePreDispatchDecision(input);

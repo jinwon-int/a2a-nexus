@@ -56,7 +56,7 @@ The evidence bundle should contain:
    never the secret value
 2. health revision evidence (`ok/status` plus `build`, `revision`, or `version`)
 3. worker capacity matrix with all expected workers online:
-   `bangtong,dungae,sogyo,nosuk,yukson`
+   `workergamma,workerepsilon,workerbeta,workeralpha,workerdelta`
 4. queue/stale closeout counts: `queued=0`, `claimed=0`, `running=0`, `stale=0`
 5. migration health gate output (`npm run migration_health_gate -- --json`)
 6. live-readiness canary output (`npm run live_readiness_canary -- --no-live --json`

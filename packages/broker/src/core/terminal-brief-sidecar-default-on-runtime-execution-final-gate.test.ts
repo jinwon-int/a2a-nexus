@@ -110,13 +110,13 @@ test("default-on runtime execution final gate blocks unsafe source drift", () =>
 test("default-on runtime execution final gate extractors and markdown preserve no-live boundary", () => {
   const input = {
     defaultOnExecutionApprovalEvidenceIngestorPacket: acceptedEvidence(),
-    runtimeExecutionFinalGate: { now: NOW, finalizer: "seoseo", executionGateReference: "runtime-final-gate-784" },
+    runtimeExecutionFinalGate: { now: NOW, finalizer: "brokeralpha", executionGateReference: "runtime-final-gate-784" },
   };
 
   assert.equal(extractTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGateEvidence(input).state, "accepted");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnRuntimeExecutionFinalGateOptions(input), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     executionGateReference: "runtime-final-gate-784",
   });
 

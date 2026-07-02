@@ -22,7 +22,7 @@ function finalGate(overrides: Partial<TerminalBriefSidecarDefaultOnCandidateFina
     sourceOnlyNoLive: true,
     idempotencyKey: "tb-sidecar-default-on-candidate-final-gate:fixture",
     source: {
-      observationKind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation",
+      observationKind: "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation",
       observationState: "bounded_dry_run_observation_passed",
       observationGeneratedAt: NOW,
       operatorInstructionReference: "telegram:1000000001:53345",

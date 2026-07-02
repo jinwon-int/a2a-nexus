@@ -218,21 +218,21 @@ test("mapReceiptStatusToEventStatus defaults to outbox_accepted for unknown stat
 test("template metadata interface fields are accessible at runtime", () => {
   // Instantiate via plain object — verifies structural compatibility
   const meta = {
-    templateId: "terminal-brief/r23-team2-dungae",
+    templateId: "terminal-brief/r23-team2-workerepsilon",
     templateVersion: "1.0.0",
     taskDefinitionRef: "specs/terminal-brief-r23.md",
-    templateParameters: { lane: "dungae", team: "Team2" },
+    templateParameters: { lane: "workerepsilon", team: "Team2" },
   };
-  assert.equal(meta.templateId, "terminal-brief/r23-team2-dungae");
+  assert.equal(meta.templateId, "terminal-brief/r23-team2-workerepsilon");
   assert.equal(meta.templateVersion, "1.0.0");
   assert.equal(meta.taskDefinitionRef, "specs/terminal-brief-r23.md");
-  assert.deepEqual(meta.templateParameters, { lane: "dungae", team: "Team2" });
+  assert.deepEqual(meta.templateParameters, { lane: "workerepsilon", team: "Team2" });
 });
 
 test("TaskFlow linkage fields are accessible at runtime", () => {
   const linkage = {
     taskFlowRunId: "a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z",
-    taskFlowTaskId: "team2-dungae-state-machine",
+    taskFlowTaskId: "team2-workerepsilon-state-machine",
     taskFlowStepId: "implement-state-machine",
     parentTaskFlowRunId: "a2a-r23-master",
     stepLabel: "Terminal Brief state machine definition",
@@ -241,7 +241,7 @@ test("TaskFlow linkage fields are accessible at runtime", () => {
     linkage.taskFlowRunId,
     "a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z",
   );
-  assert.equal(linkage.taskFlowTaskId, "team2-dungae-state-machine");
+  assert.equal(linkage.taskFlowTaskId, "team2-workerepsilon-state-machine");
   assert.equal(linkage.taskFlowStepId, "implement-state-machine");
   assert.equal(linkage.parentTaskFlowRunId, "a2a-r23-master");
   assert.equal(linkage.stepLabel, "Terminal Brief state machine definition");
@@ -257,7 +257,7 @@ test("TerminalBriefRuntimeEvent scaffold is structurally sound", () => {
     receiptConfirmed: false,
     createdAt: new Date().toISOString(),
     template: {
-      templateId: "terminal-brief/r23-team2-dungae",
+      templateId: "terminal-brief/r23-team2-workerepsilon",
     },
     taskFlow: {
       taskFlowRunId: "run-001",
@@ -266,6 +266,6 @@ test("TerminalBriefRuntimeEvent scaffold is structurally sound", () => {
   assert.equal(event.id, "tb-event-001");
   assert.equal(event.status, "provider_sent");
   assert.ok(event.createdAt);
-  assert.equal(event.template?.templateId, "terminal-brief/r23-team2-dungae");
+  assert.equal(event.template?.templateId, "terminal-brief/r23-team2-workerepsilon");
   assert.equal(event.taskFlow?.taskFlowRunId, "run-001");
 });

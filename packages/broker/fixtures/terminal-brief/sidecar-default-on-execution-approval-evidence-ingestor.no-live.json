@@ -33,7 +33,7 @@
       "draftOnly": true,
       "status": "draft_not_sent",
       "requestedAction": "approve_terminal_brief_default_on_execution",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "operatorChannel": "telegram-direct",
       "approvalReference": "tb-sidecar-default-on-execution-approval:0bb4e657c911c315",
@@ -52,7 +52,7 @@
       "taskFlowMutationPermitted": false,
       "executionPermitted": false,
       "processSpawnPermitted": false,
-      "transcriptDraft": "[Terminal Brief default-on execution approval request draft]\nRequested action: approve_terminal_brief_default_on_execution\nRequested by: seoseo\nOperator target: terminal-brief-default-on\nApproval reference: tb-sidecar-default-on-execution-approval:0bb4e657c911c315\nApproval expires at: 2026-05-19T07:05:00.000Z\nSource envelope: tb-sidecar-default-on-execution-rollback-envelope:4fd1a5b3535e918a\nRuntime target: terminal-brief-sidecar\nConfig key: TERMINAL_BRIEF_SIDECAR_DEFAULT_ON\nProposed value: true\nExecutor id: terminal-brief-default-on-runtime-executor\nReady: true\nReply exactly: default-on execution 승인\nBoundary: this is only a draft; it does not send the request, grant approval, execute, write config, enable default-on, restart sidecar, send providers, ACK terminal rows, mutate DB/TaskFlow/GitHub state, release, publish, or move secrets.",
+      "transcriptDraft": "[Terminal Brief default-on execution approval request draft]\nRequested action: approve_terminal_brief_default_on_execution\nRequested by: brokeralpha\nOperator target: terminal-brief-default-on\nApproval reference: tb-sidecar-default-on-execution-approval:0bb4e657c911c315\nApproval expires at: 2026-05-19T07:05:00.000Z\nSource envelope: tb-sidecar-default-on-execution-rollback-envelope:4fd1a5b3535e918a\nRuntime target: terminal-brief-sidecar\nConfig key: TERMINAL_BRIEF_SIDECAR_DEFAULT_ON\nProposed value: true\nExecutor id: terminal-brief-default-on-runtime-executor\nReady: true\nReply exactly: default-on execution 승인\nBoundary: this is only a draft; it does not send the request, grant approval, execute, write config, enable default-on, restart sidecar, send providers, ACK terminal rows, mutate DB/TaskFlow/GitHub state, release, publish, or move secrets.",
       "requiredReply": "default-on execution 승인"
     },
     "executionApprovalBoundary": {
@@ -64,11 +64,11 @@
       "finalizerRequired": true,
       "separateOperatorApprovalRequired": true,
       "separateExecutorRequired": true,
-      "approvalCanBeRequestedBy": "seoseo",
+      "approvalCanBeRequestedBy": "brokeralpha",
       "approvalCanBeDeliveredBy": [
         "openclaw",
         "hermes",
-        "gongyung",
+        "mobilealpha",
         "external"
       ],
       "mustNotTreatProviderAcceptedAsVisibilityProof": true,
@@ -120,7 +120,7 @@
       "granting approval or executing an approval grant",
       "writing config or enabling Terminal Brief default-on",
       "starting, stopping, or restarting the Terminal Brief sidecar",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, executor invocation, broker restart, or deploy",
       "GitHub mutation from the packet/route",

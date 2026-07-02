@@ -18,7 +18,7 @@ early with a blocked outcome before any container is started.
 This guard exists because:
 
 1. **Safety**: a Hermes task accidentally routed to the Docker runner could try
-   to run Termux/Gongyung-specific commands inside a standard Linux container,
+   to run Termux/mobileAlpha-specific commands inside a standard Linux container,
    producing confusing failures or no-ops.
 2. **Evidence quality**: early rejection produces a deterministic Block outcome
    with a clear `worker_profile_blocked` failure category, so the broker can

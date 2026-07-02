@@ -21,7 +21,7 @@
  * a2a-<nodeId>-<taskId>
  * ```
  *
- * - `nodeId`: the worker node identifier (e.g. `dungae`, `sogyo`, `bangtong`)
+ * - `nodeId`: the worker node identifier (e.g. `workerepsilon`, `workerbeta`, `workergamma`)
  * - `taskId`: the broker-assigned task UUID
  *
  * This is deterministic, collision-resistant, and statelessly derivable from

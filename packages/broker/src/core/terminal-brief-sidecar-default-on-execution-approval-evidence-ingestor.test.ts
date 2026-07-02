@@ -32,7 +32,7 @@ function approvalRequest(
     extractTerminalBriefSidecarDefaultOnExecutionApprovalRequestEnvelope(fixtureInput()),
     {
       now: NOW,
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "terminal-brief-default-on",
       operatorChannel: "telegram-direct",
       approvalWindowMinutes: 20,

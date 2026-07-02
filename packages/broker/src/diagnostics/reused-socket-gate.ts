@@ -89,34 +89,34 @@ export function computeReusedSocketGate(inputs: {
 
   // Evidence: reused socket idle on wire
   if (reusedIdleP99 !== null && reusedIdleP99 > 1000) {
-    reasons.push(`sogyo: reused-socket idle on wire p99=${reusedIdleP99.toFixed(1)}ms`);
+    reasons.push(`workerbeta: reused-socket idle on wire p99=${reusedIdleP99.toFixed(1)}ms`);
   }
 
   // Evidence: Node request-event delivery delay
   if (eventToHandlerP99 !== null && eventToHandlerP99 > 100) {
-    reasons.push(`sogyo: Node request-event delivery delay p99=${eventToHandlerP99.toFixed(1)}ms`);
+    reasons.push(`workerbeta: Node request-event delivery delay p99=${eventToHandlerP99.toFixed(1)}ms`);
   }
 
   // Evidence: client pool artifact (client sees delay but server idle is low)
   if (clientProbeToReqP99 !== null && globalIdleP99 !== null) {
     if (clientProbeToReqP99 > 1000 && globalIdleP99 < 500) {
-      reasons.push(`sogyo: client pool artifact — client→request=${clientProbeToReqP99.toFixed(1)}ms but server idle=${globalIdleP99.toFixed(1)}ms`);
+      reasons.push(`workerbeta: client pool artifact — client→request=${clientProbeToReqP99.toFixed(1)}ms but server idle=${globalIdleP99.toFixed(1)}ms`);
     }
   }
 
   // Evidence: fresh connection age
   if (freshAgeP99 !== null && freshAgeP99 > 1000) {
-    reasons.push(`sogyo: fresh socket scheduling delay p99=${freshAgeP99.toFixed(1)}ms`);
+    reasons.push(`workerbeta: fresh socket scheduling delay p99=${freshAgeP99.toFixed(1)}ms`);
   }
 
   // Evidence: accept→request-event breakdown for fresh sockets
   if (freshAcceptToReqP99 !== null && freshAcceptToReqP99 > 500) {
-    reasons.push(`sogyo: fresh socket accept→request-event p99=${freshAcceptToReqP99.toFixed(1)}ms`);
+    reasons.push(`workerbeta: fresh socket accept→request-event p99=${freshAcceptToReqP99.toFixed(1)}ms`);
   }
 
   // Evidence: fresh-socket request-event → handler-start delay (event-loop descheduling)
   if (freshReqToHandlerP99 !== null && freshReqToHandlerP99 > 100) {
-    reasons.push(`sogyo: fresh socket req→handler delay p99=${freshReqToHandlerP99.toFixed(1)}ms`);
+    reasons.push(`workerbeta: fresh socket req→handler delay p99=${freshReqToHandlerP99.toFixed(1)}ms`);
   }
 
   // Classify the dominant bucket
@@ -139,7 +139,7 @@ export function computeReusedSocketGate(inputs: {
       // blocked (GC, cgroup throttle, event-loop pressure).
       if (reusedDataToReqEventP99 > reusedIdleBeforeDataP99 * 0.5 && reusedDataToReqEventP99 > 500) {
         bucket = "reused-socket-data-received-blocked";
-        reasons.push(`jingun: reused-socket data→req-event p99=${reusedDataToReqEventP99.toFixed(1)}ms exceeds idle-before-data p99=${reusedIdleBeforeDataP99.toFixed(1)}ms — event-loop blocked after data arrived, not wire idle`);
+        reasons.push(`workerzeta: reused-socket data→req-event p99=${reusedDataToReqEventP99.toFixed(1)}ms exceeds idle-before-data p99=${reusedIdleBeforeDataP99.toFixed(1)}ms — event-loop blocked after data arrived, not wire idle`);
         confidence = reusedDataToReqEventP99 > 2000 ? "high" : (reusedDataToReqEventP99 > 1000 ? "medium" : "low");
       } else {
         bucket = "reused-socket-idle-before-request-event";
@@ -165,7 +165,7 @@ export function computeReusedSocketGate(inputs: {
     // no data arrived) vs. data→req (data arrived but event-loop blocked
     // before parser fired).  Uses fresh-connection breakdown windows that
     // separate "waiting for data on the wire" from "event-loop delay after
-    // data arrived" (#1154 Team1 thesis — Gwakga fresh >3s attribution).
+    // data arrived" (#1154 Team1 thesis — brokerbeta fresh >3s attribution).
     const freshConnectedToData = freshConnectedToDataP99 ?? 0;
     const freshDataToReq = freshDataToReqP99 ?? 0;
     // If the accept→req portion dominates (>60% of total fresh age or
@@ -176,13 +176,13 @@ export function computeReusedSocketGate(inputs: {
       if (freshDataToReq > 500 && freshDataToReq > freshConnectedToData * 0.5) {
         // Data arrived but event-loop was blocked before HTTP parser ran.
         bucket = "accepted-socket-data-received-blocked";
-        reasons.push(`jingun: fresh socket data→req-event p99=${freshDataToReq.toFixed(1)}ms exceeds connected→data p99=${freshConnectedToData.toFixed(1)}ms — Node event-loop blocked after data arrived`);
+        reasons.push(`workerzeta: fresh socket data→req-event p99=${freshDataToReq.toFixed(1)}ms exceeds connected→data p99=${freshConnectedToData.toFixed(1)}ms — Node event-loop blocked after data arrived`);
         confidence = freshDataToReq > 2000 ? "high" : (freshDataToReq > 1000 ? "medium" : "low");
       } else if (freshConnectedToData > 500 && freshConnectedToData > freshDataToReq * 0.5) {
         // Socket accepted but first data byte delayed — network latency,
-        // Gwakga didn't send yet, or host scheduling before read callback.
+        // brokerbeta didn't send yet, or host scheduling before read callback.
         bucket = "accepted-socket-waiting-for-data";
-        reasons.push(`jingun: fresh socket connected→data p99=${freshConnectedToData.toFixed(1)}ms exceeds data→req-event p99=${freshDataToReq.toFixed(1)}ms — socket accepted but data not yet arrived`);
+        reasons.push(`workerzeta: fresh socket connected→data p99=${freshConnectedToData.toFixed(1)}ms exceeds data→req-event p99=${freshDataToReq.toFixed(1)}ms — socket accepted but data not yet arrived`);
         confidence = freshConnectedToData > 2000 ? "high" : (freshConnectedToData > 1000 ? "medium" : "low");
       } else {
         // Unclear split; fall back to existing classification.
@@ -197,7 +197,7 @@ export function computeReusedSocketGate(inputs: {
   }
 
   if (reasons.length === 0) {
-    reasons.push("sogyo: no stall evidence in aggregate timing windows");
+    reasons.push("workerbeta: no stall evidence in aggregate timing windows");
   }
 
   return {

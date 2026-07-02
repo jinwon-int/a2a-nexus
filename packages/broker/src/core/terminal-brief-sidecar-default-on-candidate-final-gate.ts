@@ -10,7 +10,7 @@ export type TerminalBriefSidecarDefaultOnCandidateFinalGateState =
   | "blocked";
 
 export interface TerminalBriefSidecarBoundedDryRunObservationPacket {
-  kind: "seoseo.terminal-brief-sidecar-bounded-dry-run-observation";
+  kind: "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation";
   generatedAt?: string;
   operatorInstructionReference?: string;
   windowSeconds?: number;
@@ -219,7 +219,7 @@ export function buildTerminalBriefSidecarDefaultOnCandidateFinalGate(
       : ["resolve bounded dry-run observation blockers before default-on candidate review"],
     approvalSensitiveActionsExcluded: [
       "Terminal Brief default-on enablement",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, sidecar start/stop/restart, or deploy",
       "GitHub mutation from the packet/route",
@@ -361,6 +361,6 @@ function buildGateReference(observation: TerminalBriefSidecarBoundedDryRunObserv
 }
 
 function isObservationPacket(value: unknown): value is TerminalBriefSidecarBoundedDryRunObservationPacket {
-  return isRecord(value) && value.kind === "seoseo.terminal-brief-sidecar-bounded-dry-run-observation";
+  return isRecord(value) && value.kind === "brokeralpha.terminal-brief-sidecar-bounded-dry-run-observation";
 }
 

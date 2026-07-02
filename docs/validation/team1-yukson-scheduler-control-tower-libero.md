@@ -3,9 +3,9 @@
 Parent: #434 (a2a-plane#434, internal tracker private)
 Assigned: #448 (a2a-plane#448, internal tracker private)
 Run: `a2a-team1-scheduler-control-tower-20260525T2255KST`
-Broker of record: `seoseo`
+Broker of record: `brokerAlpha`
 Team: `team1`
-Worker: `yukson`
+Worker: `workerDelta`
 Reviewed at: `2026-05-25T22:55:00Z`
 
 This is a validation artifact only. It validates the scheduler/control-tower policy spec
@@ -43,11 +43,11 @@ publish a release, or post to community channels.
 
 | Matrix | Path | Lane |
 | --- | --- | --- |
-| Team1 source-dryrun orchestrator | `docs/validation/team1-source-dryrun-orchestrator-libero.md` | yukson |
-| Team1 source-public execution orchestrator | `docs/validation/team1-source-public-execution-orchestrator-libero.md` | yukson |
-| Team1 roadmap cross-check | `docs/validation/team1-roadmap-cross-check.md` | yukson |
-| Team1 yukson plane gates 527-497-294 | `docs/validation/team1-yukson-plane-gates-527-497-294.md` | yukson |
-| Team2 gwakga cross-broker readiness | `docs/validation/team2-gwakga-cross-broker-readiness.md` | Team2 |
+| Team1 source-dryrun orchestrator | `docs/validation/team1-source-dryrun-orchestrator-libero.md` | workerDelta |
+| Team1 source-public execution orchestrator | `docs/validation/team1-source-public-execution-orchestrator-libero.md` | workerDelta |
+| Team1 roadmap cross-check | `docs/validation/team1-roadmap-cross-check.md` | workerDelta |
+| Team1 workerDelta plane gates 527-497-294 | `docs/validation/team1-workerDelta-plane-gates-527-497-294.md` | workerDelta |
+| Team2 brokerBeta cross-broker readiness | `docs/validation/team2-brokerBeta-cross-broker-readiness.md` | Team2 |
 
 ---
 
@@ -107,7 +107,7 @@ publish a release, or post to community channels.
 
 | Criterion | Required condition | Observed | Libero decision |
 | --- | --- | --- | --- |
-| Lane summary | §6.1 table identifies Seoseo (Team1), Gwakga (Team2), and cross-broker handoff lanes. | Worker names and roles are correctly identified. | **Pass** |
+| Lane summary | §6.1 table identifies brokerAlpha (Team1), brokerBeta (Team2), and cross-broker handoff lanes. | Worker names and roles are correctly identified. | **Pass** |
 | Cross-check dimensions | §6.2 evaluates capacity profile, libero routing, stuck handling, slow-lane phrasing, source-only activation, and dry-run capability across all three lanes. | Each dimension has a finding and libero decision. Team1 is the primary implementation; Team2 is deferred or default. | **Pass** |
 | Integration risks documented | §6.3 lists 3 risks: Team2 capacity model gap, handoff stuck escalation gap, libero availability fallback. | Risks are specific, actionable, and have follow-up recommendations. | **Pass** |
 | Recommendation | §6.4 recommends merge, defers Team2 adoption, and files follow-up issues. | Consistent with existing roadmap cross-check patterns. | **Pass** |

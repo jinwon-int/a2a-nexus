@@ -2,12 +2,12 @@
   "kind": "a2a-broker.round-manifest-resource-policy.fixture",
   "version": 1,
   "generatedAt": "2026-05-26T20:11:40.000Z",
-  "description": "GO: Mobile standby/readOnly worker with Gongyung/Hermes-type policy in round manifest, succeeded with done evidence.",
+  "description": "GO: Mobile standby/readOnly worker with mobilealpha/Hermes-type policy in round manifest, succeeded with done evidence.",
   "manifest": {
-    "roundLabel": "a2a-team1-round-coordinator-wiring-04-yukson",
+    "roundLabel": "a2a-team1-round-coordinator-wiring-04-workerdelta",
     "lanes": [
       {
-        "workerId": "yukson",
+        "workerId": "workerdelta",
         "description": "Mobile standby validation",
         "expectedOutcome": "evidence-only"
       }
@@ -23,18 +23,18 @@
     "standby": false,
     "readOnly": true
   },
-  "onboardingKind": "gongyung-hermes",
+  "onboardingKind": "mobilealpha-hermes",
   "evaluation": {
     "decision": "go",
     "reasons": [
       "Policy validation passed",
-      "All GO/NO-GO gates passed for gongyung-hermes"
+      "All GO/NO-GO gates passed for mobilealpha-hermes"
     ]
   },
   "collectorTasks": [
     {
-      "id": "task-yukson-mobile-1",
-      "assignedWorkerId": "yukson",
+      "id": "task-workerdelta-mobile-1",
+      "assignedWorkerId": "workerdelta",
       "status": "succeeded",
       "createdAt": "2026-05-26T19:30:00.000Z",
       "updatedAt": "2026-05-26T20:00:00.000Z",

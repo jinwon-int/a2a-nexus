@@ -79,7 +79,7 @@ export function buildBrokerRehearsalManifest(options: BrokerRehearsalManifestOpt
     runMode: "no-live",
     generatedAt,
     runId: options.runId ?? "a2a-no-live-integration-rehearsal",
-    worker: options.worker ?? "sogyo",
+    worker: options.worker ?? "workerbeta",
     sourceIssue: { repo, issueNumber, issueUrl },
     safety: {
       productionDeploy: false,

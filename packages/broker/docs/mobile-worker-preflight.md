@@ -1,7 +1,7 @@
 # Mobile worker preflight
 
 `npm run mobile_worker_preflight` builds a source-only/no-live preflight packet
-for Termux/mobile A2A workers such as Daegyo.
+for Termux/mobile A2A workers such as mobilebeta.
 
 It is designed for the case where mobile transport is recoverable but broker
 status can flip to `stale` because Android/Termux sleep, poll intervals, tmux
@@ -29,7 +29,7 @@ The input can be either a top-level mobile worker object or a fixture with an
 ```json
 {
   "input": {
-    "nodeId": "daegyo",
+    "nodeId": "mobilebeta",
     "workerMode": "termux-mobile",
     "status": "stale",
     "lastSeenAgeSec": 50,
@@ -78,7 +78,7 @@ sleep, slow polling, missing tmux supervisor, or missing local-forward listener.
 
 ## Non-docker research task policy
 
-Gongyung and Daegyo should be treated as **non-docker Hermes research workers**.
+mobilealpha and mobilebeta should be treated as **non-docker Hermes research workers**.
 They are not Docker runner nodes, but they are ordinary A2A workers for safe
 research work. A mobile/non-docker worker may accept a task when all of the
 following are true:
@@ -93,7 +93,7 @@ following are true:
   or generic GitHub write/proof-marker execution.
 
 This lets Team1/Team2 A2A and A2AD no-live rounds dispatch ordinary
-analysis-only children to Gongyung and Daegyo while still blocking
+analysis-only children to mobilealpha and mobilebeta while still blocking
 Docker-dependent and live-impact lanes. Keep `parentRoundId`,
 `parentRoundTotal`, and `parentRoundOrder` on the task record for ordinary A2A
 round grouping; do not duplicate `parentRoundId` inside `payload` unless the

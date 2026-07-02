@@ -20,7 +20,7 @@ const NOW = "2026-06-01T12:00:00.000Z";
 function readyV1AuthorizationRequest(): ReturnType<typeof buildA2AWorkerSubagentSpawnAuthorizationRequest> {
   const assessment = buildA2AWorkerSelfAssessmentCapacity({
     now: NOW,
-    workerId: "bangtong",
+    workerId: "workergamma",
     task: {
       taskId: "task-feature-gamma",
       size: "large",
@@ -44,13 +44,13 @@ function readyV1AuthorizationRequest(): ReturnType<typeof buildA2AWorkerSubagent
   const plannerPolicy = buildA2AWorkerSubagentOrchestrationPolicy(assessment.plannerInput);
   const handoff = buildA2AWorkerSubagentPlannerHandoff({
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     selfAssessment: assessment,
     plannerPolicy,
   });
   return buildA2AWorkerSubagentSpawnAuthorizationRequest(handoff, {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     operatorTarget: "operator",
     authorizationReference: "subagent-spawn-auth-gamma",
     requestReference: "subagent-spawn-request-gamma",
@@ -78,7 +78,7 @@ function acceptedWorkerSpawnApprovalDecisionEvidence(
     version: 1,
     generatedAt: NOW,
     runId: "oi-v2-worker-spawn-decision-accepted",
-    recorder: "gwakga",
+    recorder: "brokerbeta",
     sourceOnly,
     state,
     idempotencyKey: `oi-worker-spawn-decision:${state}:${workerSpawnApprovalPresent}`,
@@ -87,7 +87,7 @@ function acceptedWorkerSpawnApprovalDecisionEvidence(
       explicitRuntimeApprovalPresent: true,
       brokerDispatchApprovalPresent: true,
       workerSpawnApprovalPresent,
-      daegyoMobileScopeResolved: false,
+      mobilebetaMobileScopeResolved: false,
       rollbackAbortCriteriaDocumented: true,
       liveBoundaryPlanDocumented: true,
       validationEvidenceFresh: true,
@@ -101,7 +101,7 @@ function acceptedWorkerSpawnApprovalDecisionEvidence(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -129,9 +129,9 @@ test("builds bridge packet from ready v1 authorization request without granting 
   assert.equal(bridge.version, 1);
   assert.equal(bridge.sourceOnly, true);
   assert.equal(bridge.state, "bridge_ready");
-  assert.equal(bridge.workerId, "bangtong");
+  assert.equal(bridge.workerId, "workergamma");
   assert.equal(bridge.taskId, "task-feature-gamma");
-  assert.equal(bridge.finalizer, "seoseo");
+  assert.equal(bridge.finalizer, "brokeralpha");
   assert.equal(bridge.v1AuthorizationRequestIdempotencyKey, v1.idempotencyKey);
   assert.equal(
     bridge.workerSpawnApprovalDecisionEvidenceIdempotencyKey,
@@ -225,7 +225,7 @@ test("fails closed when v1 authorization request is not ready", () => {
   // Create a v1 request with non-ready state by passing "blocked" handoff
   const assessment = buildA2AWorkerSelfAssessmentCapacity({
     now: NOW,
-    workerId: "bangtong",
+    workerId: "workergamma",
     task: {
       taskId: "task-blocked",
       size: "large",
@@ -248,7 +248,7 @@ test("fails closed when v1 authorization request is not ready", () => {
   const plannerPolicy = buildA2AWorkerSubagentOrchestrationPolicy(assessment.plannerInput);
   const handoff = buildA2AWorkerSubagentPlannerHandoff({
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     selfAssessment: assessment,
     plannerPolicy,
   });
@@ -256,7 +256,7 @@ test("fails closed when v1 authorization request is not ready", () => {
   // which may produce a "blocked" or non-ready handoff. Build the v1 request.
   const v1 = buildA2AWorkerSubagentSpawnAuthorizationRequest(handoff, {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
   });
 
   const bridge = buildOIWorkerSubagentSpawnAuthorizationBridgePacket(v1, {
@@ -337,7 +337,7 @@ test("builds from input envelope with nested v1 packet", () => {
   });
 
   assert.equal(bridge.state, "bridge_ready");
-  assert.equal(bridge.workerId, "bangtong");
+  assert.equal(bridge.workerId, "workergamma");
   assert.equal(bridge.v1AuthorizationRequestIdempotencyKey, v1.idempotencyKey);
 });
 
@@ -352,7 +352,7 @@ test("builds from input envelope with nested packet key", () => {
   });
 
   assert.equal(bridge.state, "bridge_ready");
-  assert.equal(bridge.finalizer, "seoseo");
+  assert.equal(bridge.finalizer, "brokeralpha");
 });
 
 test("throws on invalid input", () => {
@@ -388,8 +388,8 @@ test("renders bridge packet markdown with safety disclaimer", () => {
   assert.match(markdown, /source-only bridge packet/);
   assert.match(markdown, /does not grant authorization/);
   assert.match(markdown, /All mutation\/action boundaries remain false/);
-  assert.match(markdown, /bangtong/);
-  assert.match(markdown, /seoseo/);
+  assert.match(markdown, /workergamma/);
+  assert.match(markdown, /brokeralpha/);
   assert.match(markdown, /seo-jin-on/);
 });
 

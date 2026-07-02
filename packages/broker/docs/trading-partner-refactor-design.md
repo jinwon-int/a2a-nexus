@@ -6,7 +6,7 @@ The broker is no longer just a neutral message relay.
 
 The target operating model is a coordinated trading system where:
 
-- `bangtong` owns live trading execution and final promotion decisions
+- `workergamma` owns live trading execution and final promotion decisions
 - `dengae` owns backfill, analysis, research, and strategy improvement proposals
 - both nodes communicate continuously through the broker
 - each node must retain freedom to modify its own local workspace
@@ -21,7 +21,7 @@ This means the current minimal broker must evolve from a simple exchange service
 3. Workers run in containers, but with narrowly scoped `rw` mounts for their own workspace.
 4. The broker coordinates tasks, proposals, validation, and promotion, but does not directly edit remote files.
 5. Change transfer between nodes happens through proposals, patches, parameter payloads, artifacts, and approval events.
-6. `bangtong` is the last gate before live rollout.
+6. `workergamma` is the last gate before live rollout.
 
 ## Design goals
 
@@ -43,7 +43,7 @@ This means the current minimal broker must evolve from a simple exchange service
 
 ```text
 +-------------------+         +-------------------+
-| bangtong worker   |         | dengae worker     |
+| workergamma worker   |         | dengae worker     |
 | live trading      |         | backfill/research |
 | local rw mount    |         | local rw mount    |
 +---------+---------+         +---------+---------+
@@ -60,7 +60,7 @@ This means the current minimal broker must evolve from a simple exchange service
 
 ### Node responsibilities
 
-#### bangtong
+#### workergamma
 
 - runs live trading logic
 - validates incoming proposals before live adoption
@@ -72,7 +72,7 @@ This means the current minimal broker must evolve from a simple exchange service
 - runs backfills, simulations, analysis, and exploratory modifications
 - edits its own local workspace freely
 - submits patches, parameter proposals, and benchmark artifacts
-- never directly writes into `bangtong` filesystems
+- never directly writes into `workergamma` filesystems
 
 #### broker
 
@@ -98,7 +98,7 @@ Containerization is recommended for both workers, but isolation must be explicit
 
 ### Example mount model
 
-#### bangtong
+#### workergamma
 
 - `/workspace/live` -> host live strategy directory, `rw`
 - `/config` -> worker config, usually `ro` or tightly controlled `rw`
@@ -231,7 +231,7 @@ analysis/backfill
 
 ### Key rule
 
-`dengae` may originate a proposal for `bangtong`, but only `bangtong` applies the change to the live workspace.
+`dengae` may originate a proposal for `workergamma`, but only `workergamma` applies the change to the live workspace.
 
 This preserves local autonomy and avoids hidden cross-node mutations.
 
@@ -448,7 +448,7 @@ The dashboard should stop thinking only in terms of exchanges.
 - metadata DB
 - artifact storage
 
-#### `bangtong`
+#### `workergamma`
 
 - live worker container
 - local mounted live workspace
@@ -514,7 +514,7 @@ That means:
 - keep per-node local workspace freedom
 - isolate runtime state by container and volume
 - exchange changes through proposals and artifacts
-- let `bangtong` remain the final live gate
+- let `workergamma` remain the final live gate
 - let `dengae` remain the aggressive research and analysis node
 - let the broker orchestrate, record, and enforce policy
 

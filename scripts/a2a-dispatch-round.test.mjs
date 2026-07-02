@@ -209,8 +209,8 @@ test('dry-run accepts the #960 canonical sourceBundle projection contract fixtur
   m.defaults.intent = 'analyze';
   m.defaults.terminalBrief = { notificationOwnership: 'parent' };
   m.defaults.payload = {
-    originBrokerId: 'seoseo',
-    brokerOfRecordId: 'seoseo',
+    originBrokerId: 'brokerAlpha',
+    brokerOfRecordId: 'brokerAlpha',
     operatorFacingOwner: 'parent',
   };
   m.lanes = fixture.lanes.map((lane) => ({
@@ -274,8 +274,8 @@ function makeA2adAnalysisManifest(brokerUrl) {
     roundMode: 'a2ad',
     sourceOnly: true,
     noLive: true,
-    originBrokerId: 'seoseo',
-    brokerOfRecordId: 'seoseo',
+    originBrokerId: 'brokerAlpha',
+    brokerOfRecordId: 'brokerAlpha',
     operatorFacingOwner: 'parent',
     sourceBundle: { files: [{ path: 'README.md', content: '# A2A Nexus\n' }] },
   };
@@ -313,7 +313,7 @@ test('dry-run requires A2AD ownership metadata even when a source-only workModeD
   m.defaults.payload.workModeDecision = {
     mode: 'team1',
     idempotencyKey: 'a2ad-analysis-r1',
-    finalizerOwner: 'seoseo',
+    finalizerOwner: 'brokerAlpha',
     generatedAt: '2026-06-21T00:00:00Z',
     capacityState: 'healthy',
     capacitySnapshotSource: 'fixture',
@@ -347,11 +347,11 @@ test('dry-run rejects pure A2AD opinion lanes routed through GitHub evidence mod
 function makeGitHubVerifyManifest(brokerUrl) {
   const manifest = makeManifest(brokerUrl, 1);
   manifest.roundId = 'a2a-github-verify-r1';
-  manifest.requester = { id: 'seoseo', role: 'operator' };
+  manifest.requester = { id: 'brokerAlpha', role: 'operator' };
   manifest.defaults = {
     intent: 'verify',
     taskOrigin: 'github',
-    workspace: { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' },
+    workspace: { nodeId: 'workerGamma', workspaceId: 'workspace-workerGamma' },
     terminalBrief: { notificationOwnership: 'parent' },
     payload: {
       mode: 'github-verify',
@@ -360,13 +360,13 @@ function makeGitHubVerifyManifest(brokerUrl) {
       readOnlyValidation: true,
       sourceOnly: true,
       noLive: true,
-      originBrokerId: 'seoseo',
-      brokerOfRecordId: 'seoseo',
+      originBrokerId: 'brokerAlpha',
+      brokerOfRecordId: 'brokerAlpha',
       operatorFacingOwner: 'parent',
       workModeDecision: {
         mode: 'team1',
-        idempotencyKey: 'a2a-github-verify-r1-bangtong',
-        finalizerOwner: 'seoseo',
+        idempotencyKey: 'a2a-github-verify-r1-workerGamma',
+        finalizerOwner: 'brokerAlpha',
         generatedAt: '2026-06-17T00:00:00Z',
         capacityState: 'healthy',
         capacitySnapshotSource: 'fixture',
@@ -377,8 +377,8 @@ function makeGitHubVerifyManifest(brokerUrl) {
     },
   };
   manifest.lanes[0] = {
-    target: { id: 'bangtong', role: 'analyst' },
-    assignedWorkerId: 'bangtong',
+    target: { id: 'workerGamma', role: 'analyst' },
+    assignedWorkerId: 'workerGamma',
     message: 'Validate issue #869 with a read-only GitHub verify lane',
   };
   return manifest;
@@ -409,7 +409,7 @@ test('dry-run stamps GitHub verify parent-round and ownership metadata (#869)', 
   assert.equal(out.exitCode, 0);
   const lane = out.lanes[0];
   assert.equal(lane.taskOrigin, 'github');
-  assert.deepEqual(lane.workspace, { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' });
+  assert.deepEqual(lane.workspace, { nodeId: 'workerGamma', workspaceId: 'workspace-workerGamma' });
   assert.equal(lane.parentRoundId, 'a2a-github-verify-r1');
   assert.equal(lane.parentRoundTotal, 1);
   assert.equal(lane.parentRoundOrder, 1);
@@ -425,11 +425,11 @@ test('dry-run stamps GitHub verify parent-round and ownership metadata (#869)', 
 function makeGitHubPatchManifest(brokerUrl) {
   const manifest = makeManifest(brokerUrl, 1);
   manifest.roundId = 'a2a-github-patch-r1';
-  manifest.requester = { id: 'seoseo', role: 'operator' };
+  manifest.requester = { id: 'brokerAlpha', role: 'operator' };
   manifest.defaults = {
     intent: 'propose_patch',
     taskOrigin: 'github',
-    workspace: { nodeId: 'seoseo', workspaceId: 'workspace-shared' },
+    workspace: { nodeId: 'brokerAlpha', workspaceId: 'workspace-shared' },
     terminalBrief: { notificationOwnership: 'parent' },
     payload: {
       mode: 'github-propose-patch',
@@ -440,14 +440,14 @@ function makeGitHubPatchManifest(brokerUrl) {
     },
   };
   manifest.lanes[0] = {
-    target: { id: 'yukson', role: 'analyst' },
-    assignedWorkerId: 'yukson',
+    target: { id: 'workerDelta', role: 'analyst' },
+    assignedWorkerId: 'workerDelta',
     message: 'Propose a source-only patch for issue #884',
   };
   return manifest;
 }
 
-function addPatchReadyWorker(manifest, workerId = 'yukson') {
+function addPatchReadyWorker(manifest, workerId = 'workerDelta') {
   manifest.workerReadiness = {
     rows: [
       {
@@ -487,7 +487,7 @@ test('dry-run accepts github-propose-patch lanes with proven PR capability (#103
 test('dry-run rejects github-propose-patch lanes whose readiness lacks PR capability (#1034)', async () => {
   const manifest = makeGitHubPatchManifest('http://unused');
   manifest.workerReadiness = {
-    rows: [{ node: 'yukson', ok: true, githubPatch: 'ok', canPatchWorkspace: true, canOpenPullRequest: false }],
+    rows: [{ node: 'workerDelta', ok: true, githubPatch: 'ok', canPatchWorkspace: true, canOpenPullRequest: false }],
   };
 
   const out = await runDispatch(manifest, { dryRun: true });
@@ -514,14 +514,14 @@ test('dry-run rejects github-propose-patch lanes declared read-only/no-write (#8
 
 test('dry-run derives GitHub workspace nodeId from target worker when defaults use orchestrator node (#884)', async () => {
   const manifest = makeGitHubVerifyManifest('http://unused');
-  manifest.defaults.workspace = { nodeId: 'seoseo', workspaceId: 'workspace-shared' };
-  manifest.lanes[0].target = { id: 'yukson', role: 'analyst' };
-  manifest.lanes[0].assignedWorkerId = 'yukson';
+  manifest.defaults.workspace = { nodeId: 'brokerAlpha', workspaceId: 'workspace-shared' };
+  manifest.lanes[0].target = { id: 'workerDelta', role: 'analyst' };
+  manifest.lanes[0].assignedWorkerId = 'workerDelta';
 
   const out = await runDispatch(manifest, { dryRun: true });
 
   assert.equal(out.exitCode, 0);
-  assert.deepEqual(out.lanes[0].workspace, { nodeId: 'yukson', workspaceId: 'workspace-shared' });
+  assert.deepEqual(out.lanes[0].workspace, { nodeId: 'workerDelta', workspaceId: 'workspace-shared' });
 });
 
 test('GitHub propose-patch dispatch derives worker workspace before POST (#884)', async () => {
@@ -541,8 +541,8 @@ test('GitHub propose-patch dispatch derives worker workspace before POST (#884)'
     const body = seenBodies[0];
     assert.equal(body.taskOrigin, 'github');
     assert.equal(body.intent, 'propose_patch');
-    assert.deepEqual(body.workspace, { nodeId: 'yukson', workspaceId: 'workspace-shared' });
-    assert.equal(body.assignedWorkerId, 'yukson');
+    assert.deepEqual(body.workspace, { nodeId: 'workerDelta', workspaceId: 'workspace-shared' });
+    assert.equal(body.assignedWorkerId, 'workerDelta');
     assert.equal(body.payload.mode, 'github-propose-patch');
     assert.equal(body.payload.parentRoundId, 'a2a-github-patch-r1');
     assert.equal(body.payload.parentRoundTotal, 1);
@@ -554,12 +554,12 @@ test('GitHub propose-patch dispatch derives worker workspace before POST (#884)'
 
 test('dry-run rejects explicit GitHub lane workspace node mismatch (#884)', async () => {
   const manifest = makeGitHubPatchManifest('http://unused');
-  manifest.lanes[0].workspace = { nodeId: 'seoseo', workspaceId: 'workspace-shared' };
+  manifest.lanes[0].workspace = { nodeId: 'brokerAlpha', workspaceId: 'workspace-shared' };
 
   const out = await runDispatch(manifest, { dryRun: true });
 
   assert.equal(out.exitCode, 1);
-  assert.ok(out.errors.some((e) => /workspace\.nodeId must match target\.id 'yukson'/.test(e)));
+  assert.ok(out.errors.some((e) => /workspace\.nodeId must match target\.id 'workerDelta'/.test(e)));
 });
 
 test('GitHub verify dispatch POST includes top-level schema/readback fields (#869)', async () => {
@@ -577,8 +577,8 @@ test('GitHub verify dispatch POST includes top-level schema/readback fields (#86
     assert.equal(seenBodies.length, 1);
     const body = seenBodies[0];
     assert.equal(body.taskOrigin, 'github');
-    assert.deepEqual(body.workspace, { nodeId: 'bangtong', workspaceId: 'workspace-bangtong' });
-    assert.equal(body.assignedWorkerId, 'bangtong');
+    assert.deepEqual(body.workspace, { nodeId: 'workerGamma', workspaceId: 'workspace-workerGamma' });
+    assert.equal(body.assignedWorkerId, 'workerGamma');
     assert.equal(body.parentRoundId, 'a2a-github-verify-r1');
     assert.equal(body.parentRoundTotal, 1);
     assert.equal(body.parentRoundOrder, 1);

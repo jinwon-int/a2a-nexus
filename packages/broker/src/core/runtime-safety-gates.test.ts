@@ -40,7 +40,7 @@ test("terminal action gate denies side-effecting actions from non-finalizers wit
 test("terminal action gate allows finalizer with scoped fresh approval token", () => {
   const decision = evaluateTerminalActionGate(request({
     actorRole: "finalizer",
-    actorId: "seoseo-finalizer",
+    actorId: "brokeralpha-finalizer",
     freshApprovalToken: "approval:git_push:20260629T1419Z",
     approvalTokenIssuedAt: "2026-06-29T14:19:30.000Z",
     approvalTokenMaxAgeMs: 120_000,
@@ -127,7 +127,7 @@ test("stable idempotency keys ignore retry-only timestamps and block duplicate a
 test("worker runtime boundary enforces tunnel-only broker egress and workspace membership", () => {
   const decision = evaluateWorkerRuntimeBoundary({
     tunnelOnly: true,
-    brokerUrl: "https://gwakga.example.invalid:8787",
+    brokerUrl: "https://brokerbeta.example.invalid:8787",
     taskWorkspaceId: "a2a-nexus",
     registeredWorkspaceIds: ["ccc-node"],
     bridgeBin: "claude-a2a-analysis-bridge.mjs",

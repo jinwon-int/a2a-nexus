@@ -116,7 +116,7 @@ export interface OIRuntimeApprovalDecisionEvidencePacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -194,7 +194,7 @@ export function buildOIRuntimeApprovalDecisionEvidencePacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -226,7 +226,7 @@ export function renderOIRuntimeApprovalDecisionEvidenceMarkdown(
     ...(packet.blockers.length ? packet.blockers.map((blocker) => `- ${blocker}`) : ["- none"]),
     "Next actions:",
     ...packet.nextActions.map((action) => `- ${action}`),
-    "Safety: source-only runtime approval decision evidence. It may record explicit approval evidence for a later readiness gate, but it does not grant execution approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand Daegyo/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
+    "Safety: source-only runtime approval decision evidence. It may record explicit approval evidence for a later readiness gate, but it does not grant execution approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand mobilebeta/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
   ].join("\n");
 }
 
@@ -367,7 +367,7 @@ function nextActionsForState(state: OIRuntimeApprovalDecisionEvidenceState): str
   if (state === "approval_evidence_accepted") {
     return [
       "feed explicitRuntimeApprovalPresent=true into a later runtime readiness gate review",
-      "keep broker dispatch approval, worker spawn approval, Daegyo/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
+      "keep broker dispatch approval, worker spawn approval, mobilebeta/mobile scope resolution, rollback/live readiness, and executor enablement as separate gates",
     ];
   }
   if (state === "approval_evidence_missing") return ["wait for a scoped operator response to the runtime approval request"];
@@ -386,7 +386,7 @@ function evidencePatchForState(state: OIRuntimeApprovalDecisionEvidenceState): R
     explicitRuntimeApprovalPresent: state === "approval_evidence_accepted",
     brokerDispatchApprovalPresent: false,
     workerSpawnApprovalPresent: false,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: false,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: state === "approval_evidence_accepted",

@@ -24,7 +24,7 @@ import {
 const BASE_ROUND_SPEC = {
   teamId: "team1" as const,
   lane: 2 as const,
-  worker: "yukson",
+  worker: "workerdelta",
   runId: "a2a-team1-dispatch-wrapper-20260520T233413Z",
   parentIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/847",
   childIssueUrl: "https://github.com/jinwon-int/a2a-broker/issues/848",
@@ -35,7 +35,7 @@ function validTeam1DecisionEvidence(): A2AWorkModeDecisionEvidence {
   return buildA2AWorkModeDecisionEvidence(
     buildA2AWorkModePreDispatchDecision({
       now: "2026-06-07T06:00:00.000Z",
-      finalizerOwner: "seoseo",
+      finalizerOwner: "brokeralpha",
       task: {
         taskId: "team1-dispatch-wrapper-test",
         workProfile: "candidate_review",
@@ -248,7 +248,7 @@ test("buildTeam1DispatchPlan with --execute persists work-mode decision evidence
 
   assert.equal(plan.decision.value, "warn_go");
   assert.equal(plan.taskPayload?.workModeDecision?.idempotencyKey, workModeDecision.idempotencyKey);
-  assert.equal(plan.metadata.workModeDecision?.finalizerOwner, "seoseo");
+  assert.equal(plan.metadata.workModeDecision?.finalizerOwner, "brokeralpha");
   assert.equal(plan.runRecord.metadata.workModeDecisionMode, "team1");
   assert.equal(plan.roundManifest?.metadata?.workModeDecisionIdempotencyKey, workModeDecision.idempotencyKey);
   assert.ok(plan.dispatchActions.some((a) => a.includes("[work-mode] decision")));
@@ -329,11 +329,11 @@ test("buildTeam1DispatchPlan uses actual dispatch workers before manual totals",
   const plan = buildTeam1DispatchPlan(
     {
       ...BASE_ROUND_SPEC,
-      worker: "yukson",
+      worker: "workerdelta",
       lane: 4,
       parentRoundTotal: 5,
       parentRoundOrder: 5,
-      dispatchWorkers: ["sogyo", "nosuk", "bangtong", "yukson"],
+      dispatchWorkers: ["workerbeta", "workeralpha", "workergamma", "workerdelta"],
     },
     undefined,
     true,
@@ -343,7 +343,7 @@ test("buildTeam1DispatchPlan uses actual dispatch workers before manual totals",
   assert.equal(plan.metadata.parentRoundOrder, 4);
   assert.equal(plan.runRecord.metadata.parentRoundTotalSource, "dispatch-workers");
   assert.equal(plan.runRecord.metadata.parentRoundOrderSource, "dispatch-workers");
-  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["sogyo", "nosuk", "bangtong", "yukson"]);
+  assert.deepEqual(plan.taskPayload?.dispatchedWorkers, ["workerbeta", "workeralpha", "workergamma", "workerdelta"]);
   assert.equal(plan.taskPayload?.parentRoundTotal, 4);
   assert.equal(plan.taskPayload?.parentRoundOrder, 4);
 });
@@ -365,7 +365,7 @@ test("buildTeam1DispatchPlan produces sanitized run record", () => {
 
   assert.equal(plan.runRecord.teamId, "team1");
   assert.equal(plan.runRecord.lane, 2);
-  assert.equal(plan.runRecord.worker, "yukson");
+  assert.equal(plan.runRecord.worker, "workerdelta");
   assert.equal(plan.runRecord.dryRun, true);
   assert.ok(plan.runRecord.recordChecksum.length > 0);
   // Verify no secret patterns leak
@@ -495,7 +495,7 @@ test("idempotency: same run spec produces identical taskId", () => {
 
 test("idempotency: different run specs produce different taskIds", () => {
   const planA = buildTeam1DispatchPlan(BASE_ROUND_SPEC, undefined, true);
-  const planB = buildTeam1DispatchPlan({ ...BASE_ROUND_SPEC, worker: "dungae" }, undefined, true);
+  const planB = buildTeam1DispatchPlan({ ...BASE_ROUND_SPEC, worker: "workerepsilon" }, undefined, true);
 
   assert.notEqual(planA.deterministicTaskId.taskId, planB.deterministicTaskId.taskId);
 });
@@ -678,7 +678,7 @@ test("buildTeam1RoundManifest includes expected worker with deterministic taskId
   assert.ok(result !== null);
   assert.equal(result.manifest.expectedWorkers.length, 1);
   const worker = result.manifest.expectedWorkers[0];
-  assert.equal(worker.workerId, "yukson");
+  assert.equal(worker.workerId, "workerdelta");
   assert.equal(worker.lane, 2);
   assert.match(worker.taskId ?? "", /^team1-/);
   // Verify taskId matches deterministic ID
@@ -744,7 +744,7 @@ test("buildTeam1RoundManifest builds deterministic projection", () => {
 
 test("buildTeam1RoundManifest changes manifestId for different worker", () => {
   const specA = BASE_ROUND_SPEC;
-  const specB = { ...BASE_ROUND_SPEC, worker: "bangtong" };
+  const specB = { ...BASE_ROUND_SPEC, worker: "workergamma" };
   const resultA = buildTeam1RoundManifest(specA, { dryRun: true, execute: false, preflightEnabled: true });
   const resultB = buildTeam1RoundManifest(specB, { dryRun: true, execute: false, preflightEnabled: true });
   assert.ok(resultA !== null && resultB !== null);
@@ -798,7 +798,7 @@ test("buildTeam1DispatchPlan includes roundManifest for valid parent URL", () =>
   assert.ok(plan.roundManifestProjection !== null, "roundManifestProjection should be present");
   assert.equal(plan.roundManifest.teamId, "team1");
   assert.equal(plan.roundManifest.parentIssue.issueNumber, 847);
-  assert.equal(plan.roundManifest.expectedWorkers[0].workerId, "yukson");
+  assert.equal(plan.roundManifest.expectedWorkers[0].workerId, "workerdelta");
   assert.match(plan.roundManifest.manifestId, /^[0-9a-f]{32}$/);
 });
 
@@ -847,7 +847,7 @@ test("markdown renderer includes round manifest section", () => {
   assert.match(md, /Parent issue/);
   assert.match(md, /Expected workers/);
   assert.match(md, /Closeout policy/);
-  assert.match(md, /yukson/);
+  assert.match(md, /workerdelta/);
   assert.match(md, /team1-/);
   assert.doesNotMatch(md, /secret value|private path|ghp_|ghs_|openclaw-path/i);
 });
@@ -871,7 +871,7 @@ test("roundManifest projection is JSON-serialisable", () => {
   const json = JSON.stringify(plan.roundManifestProjection);
   const parsed = JSON.parse(json);
   assert.equal(parsed.manifestId, plan.roundManifestProjection.manifestId);
-  assert.equal(parsed.expectedWorkerIds[0], "yukson");
+  assert.equal(parsed.expectedWorkerIds[0], "workerdelta");
   assert.equal(parsed.runId, BASE_ROUND_SPEC.runId);
 });
 
@@ -879,7 +879,7 @@ test("roundManifest contains lane metadata in projection workerAssignments", () 
   const plan = buildTeam1DispatchPlan(BASE_ROUND_SPEC, undefined, true);
   assert.ok(plan.roundManifestProjection !== null);
   const wa = plan.roundManifestProjection.workerAssignments[0];
-  assert.equal(wa.workerId, "yukson");
+  assert.equal(wa.workerId, "workerdelta");
   assert.equal(wa.lane, 2);
   assert.ok(wa.taskId !== undefined);
   assert.match(wa.taskId!, /^team1-/);

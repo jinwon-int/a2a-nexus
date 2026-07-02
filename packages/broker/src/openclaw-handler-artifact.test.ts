@@ -72,7 +72,7 @@ test("versioned A2A task handler source does not embed credentials or host paths
   const source = readFileSync(handlerPath, "utf8");
   assert.doesNotMatch(source, /(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|refresh_token)/i);
   assert.doesNotMatch(source, /\/root\//);
-  assert.doesNotMatch(source, /bangtong|dungae|sogyo|yukson/i);
+  assert.doesNotMatch(source, /workergamma|workerepsilon|workerbeta|workerdelta/i);
 });
 
 
@@ -90,7 +90,7 @@ if (task.mode !== "github-propose-patch") throw new Error("expected mode propaga
 if (task.issue !== "#1") throw new Error("expected issue propagation");
 if (task.issueUrl !== "https://github.com/owner/repo/issues/1") throw new Error("expected issueUrl propagation");
 if (task.reportLanguage !== "ko") throw new Error("expected reportLanguage propagation");
-if (task.requestedBy !== "seoseo-test") throw new Error("expected requestedBy propagation");
+if (task.requestedBy !== "brokeralpha-test") throw new Error("expected requestedBy propagation");
 console.log(JSON.stringify({
   ok: true,
   taskId: task.id,
@@ -110,7 +110,7 @@ console.log(JSON.stringify({
         issue: "#1",
         issueUrl: "https://github.com/owner/repo/issues/1",
         reportLanguage: "ko",
-        requestedBy: "seoseo-test",
+        requestedBy: "brokeralpha-test",
       },
     });
     const result = spawnSync(process.execPath, [handlerPath], {
@@ -991,13 +991,13 @@ test("docker broker noop smoke has dedicated non-generic handler evidence", () =
   const smokeTask = githubTask();
   smokeTask.id = "smoke-task-1";
   smokeTask.intent = "analyze";
-  (smokeTask as unknown as { assignedWorkerId: string }).assignedWorkerId = "bangtong";
+  (smokeTask as unknown as { assignedWorkerId: string }).assignedWorkerId = "workergamma";
   smokeTask.payload = {
     schemaVersion: 1,
     mode: "docker-broker-noop-smoke",
     noOp: true,
     runId: "smoke-run-1",
-    worker: "bangtong",
+    worker: "workergamma",
   };
 
   const result = spawnSync(process.execPath, [handlerPath], {
@@ -1283,7 +1283,7 @@ test("GitHub read-only review task succeeds on a review verdict without a Done/B
   // Nested review.{verdict,bodyRef} with a non-url evidence ref also passes.
   const nestedVerdictError = validateTaskCompletionEvidence(
     taskRecord,
-    { summary: "reviewed", output: { review: { verdict: "request_changes", bodyRef: "evidence://round/652/sogyo" } } } as any,
+    { summary: "reviewed", output: { review: { verdict: "request_changes", bodyRef: "evidence://round/652/workerbeta" } } } as any,
   );
   assert.equal(nestedVerdictError, null);
 
@@ -1591,7 +1591,7 @@ console.log(JSON.stringify({
         A2A_EXECUTOR_MODE: "docker",
         A2A_DOCKER_RUNNER_BIN: process.execPath,
         A2A_DOCKER_RUNNER_ARGS_JSON: JSON.stringify([fakeRunnerPath]),
-        A2A_NODE_ID: "dungae-node",
+        A2A_NODE_ID: "workerepsilon-node",
       },
     });
 
@@ -1600,7 +1600,7 @@ console.log(JSON.stringify({
     assert.equal(payload.result.output.repo, "owner/repo", "repo must be in output");
     assert.equal(payload.result.output.issue, "#196", "issue must be in output");
     assert.equal(payload.result.output.issueUrl, "https://github.com/owner/repo/issues/196", "issueUrl must be in output");
-    assert.equal(payload.result.output.nodeId, "dungae-node", "nodeId must be in output");
+    assert.equal(payload.result.output.nodeId, "workerepsilon-node", "nodeId must be in output");
     assert.equal(payload.result.output.taskId, "task-fixture-1", "taskId must be in output");
     assert.equal(payload.result.output.branch, "fix/issue-196", "branch must be projected from runner response");
     assert.deepEqual(payload.result.output.tests, ["npm test -- --testNamePattern handler -> pass"], "tests must be projected");
@@ -2311,9 +2311,9 @@ function decisionDialecticPhaseTask(): GithubTaskFixture {
             openedBy: "hub-a",
           },
           roles: {
-            thesisAgent: { agentId: "sogyo" },
-            antithesisAgent: { agentId: "nosuk" },
-            synthAgent: { agentId: "yukson" },
+            thesisAgent: { agentId: "workerbeta" },
+            antithesisAgent: { agentId: "workeralpha" },
+            synthAgent: { agentId: "workerdelta" },
           },
           context: {
             brief: "Test brief",
@@ -2364,7 +2364,7 @@ test("decision.dialectic bridge patches parent with worker-authored phase payloa
   const curlArgsPath = join(tempDir, "curl-args.json");
   const curlBodyPath = join(tempDir, "curl-body.json");
   const phasePayload = {
-    author: { agentId: "sogyo" },
+    author: { agentId: "workerbeta" },
     submittedAt: "2026-06-08T08:15:00.000Z",
     claim: "The bridge should patch the parent task.",
     proposal: "Use decision.dialectic patch route after phase execution.",
@@ -2409,7 +2409,7 @@ test("decision.dialectic bridge patches parent with worker-authored phase payloa
         A2A_DECISION_DIALECTIC_BRIDGE_ENABLED: "1",
         A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
         OPENCLAW_BIN: fakeOpenClawPath,
-        A2A_WORKER_ID: "sogyo",
+        A2A_WORKER_ID: "workerbeta",
         A2A_WORKER_ROLE: "analyst",
         A2A_BROKER_URL: "http://127.0.0.1:8787",
         A2A_BROKER_EDGE_SECRET: "test-edge-secret",
@@ -2426,7 +2426,7 @@ test("decision.dialectic bridge patches parent with worker-authored phase payloa
     assert.equal(receivedBody.op, "append.thesis");
     assert.equal(receivedBody.taskId, "a2ad-parent");
     assert.equal(receivedBody.expectedRevision, 0);
-    assert.equal(receivedBody.authorAgent, "sogyo");
+    assert.equal(receivedBody.authorAgent, "workerbeta");
     assert.equal(receivedBody.payload.claim, "The bridge should patch the parent task.");
     const payload = JSON.parse(result.stdout);
     assert.match(payload.result.summary, /decision\.dialectic thesis patched parent/);

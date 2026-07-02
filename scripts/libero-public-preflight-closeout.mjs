@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Libero public preflight aggregate closeout (issue #44).
 //
-// Read-only by design. This consumes sanitized evidence for bangtong, sogyo,
-// and nosuk lanes, then renders Done/Waiting/Block evidence. It never changes
+// Read-only by design. This consumes sanitized evidence for workerGamma, workerBeta,
+// and workerAlpha lanes, then renders Done/Waiting/Block evidence. It never changes
 // repository visibility, publishes artifacts, deploys, restarts services,
 // mutates databases, sends live provider/Telegram messages, ACKs terminal
 // outbox records, rotates secrets, rewrites history, or force-pushes.
@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 
 export const ISSUE = '#44';
 export const PARENT_ISSUE = '#40';
-export const REQUIRED_WORKERS = ['bangtong', 'sogyo', 'nosuk'];
+export const REQUIRED_WORKERS = ['workerGamma', 'workerBeta', 'workerAlpha'];
 
 const ACTIVE_STATUSES = new Set(['queued', 'claimed', 'running', 'active', 'pending', 'waiting']);
 const SUCCESS_STATUSES = new Set(['succeeded', 'success', 'completed', 'complete', 'done', 'ready']);

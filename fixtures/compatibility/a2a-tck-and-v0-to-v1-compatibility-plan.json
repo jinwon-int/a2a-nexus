@@ -124,7 +124,7 @@
         "contracts/a2a/broker-handoff-protocol.md"
       ],
       "frozenFixtures": [
-        "fixtures/contract/gwakga-cross-broker-handoff.json"
+        "fixtures/contract/brokerBeta-cross-broker-handoff.json"
       ],
       "gateType": "tck-gate",
       "checkCommand": "node test/conformance/check-contract-fixtures.mjs",

@@ -14,7 +14,7 @@
       "approvalEvidenceIdempotencyKey": "tb-sidecar-default-on-approval-evidence:fixture-774",
       "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
       "requestedAction": "approve_terminal_brief_default_on_enablement",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "operatorChannel": "telegram",
       "receiptEvidenceAccepted": true,
@@ -24,7 +24,7 @@
     "enablementGate": {
       "reviewOnly": true,
       "gateReference": "tb-sidecar-default-on-enablement-gate:fixture-776",
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "runtimeTarget": "terminal-brief-sidecar",
       "operatorInstructionReference": "a2a-broker#774",
       "requiredAcceptedEvidence": [
@@ -120,7 +120,7 @@
   "defaultOnRuntimeMutationPlan": {
     "now": "2026-05-19T05:45:00.000Z",
     "mode": "fixture-source-only/no-live",
-    "finalizer": "seoseo",
+    "finalizer": "brokeralpha",
     "runtimeTarget": "terminal-brief-sidecar",
     "operatorInstructionReference": "a2a-broker#776",
     "configKey": "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",

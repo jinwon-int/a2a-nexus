@@ -89,7 +89,7 @@ test("extractor accepts snake_case envelope and markdown is explicit about no di
         needs_durable_state: true,
         needs_pr_or_artifact: true,
       },
-      finalizer_owner: "seoseo",
+      finalizer_owner: "brokeralpha",
     },
   });
   const record = buildA2AAdaptiveSelectorRecord(input);
@@ -97,7 +97,7 @@ test("extractor accepts snake_case envelope and markdown is explicit about no di
 
   assert.equal(record.generatedAt, NOW);
   assert.equal(record.decision.workMode, "a2a_direct");
-  assert.equal(record.decision.finalizerOwner, "seoseo");
+  assert.equal(record.decision.finalizerOwner, "brokeralpha");
   assert.equal(markdown.includes("No worker dispatch"), true);
   assert.equal(markdown.includes("dispatchAllowedByThisRecord**: false"), true);
 });

@@ -1,7 +1,7 @@
 // -- Mobile worker preflight packet (source-only, no-live) -------------------
 //
 // Builds an operator-facing health packet for Termux/mobile A2A workers such
-// as Daegyo from supplied input only. It does not inspect live broker, host,
+// as mobilebeta from supplied input only. It does not inspect live broker, host,
 // tmux, SSH tunnel, Gateway, Android, or Termux state.
 // ---------------------------------------------------------------------------
 

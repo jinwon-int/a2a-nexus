@@ -2,10 +2,10 @@
 
 Parent: [#829](https://github.com/jinwon-int/a2a-broker/issues/829)
 Child: #394 (a2a-plane#394, internal tracker private)
-Run: `a2a-team1-post-bangtong-readiness-20260520T110014Z`
-Broker of record: `seoseo`
+Run: `a2a-team1-post-workerGamma-readiness-20260520T110014Z`
+Broker of record: `brokerAlpha`
 Team: `team1`
-Worker: `bangtong`
+Worker: `workerGamma`
 Reviewed at: `2026-05-20T11:05:00Z`
 
 This is a redacted validation artifact only. It documents the guardrails that apply
@@ -16,12 +16,12 @@ rotate or disclose credentials, rewrite history, force-push, publish a release, 
 post to community channels.
 
 Parent round metadata:
-- `parentRoundId=a2a-team1-post-bangtong-readiness-20260520T110014Z`
+- `parentRoundId=a2a-team1-post-workerGamma-readiness-20260520T110014Z`
 - `parentRoundTotal=4`
 - `parentRoundOrder=4`
 - `parentRoundProgress=0`
-- `originBrokerId=seoseo`
-- `brokerOfRecordId=seoseo`
+- `originBrokerId=brokerAlpha`
+- `brokerOfRecordId=brokerAlpha`
 
 ## Evidence reviewed
 
@@ -30,7 +30,7 @@ Parent round metadata:
 - Team1 dispatch contracts: `contracts/a2a/parent-terminal-brief-aggregation.md`, `contracts/a2a/broker-handoff-protocol.md`, `contracts/a2a/canonical-progress-validation-matrix.md`.
 - Broker dispatch docs: `packages/broker/docs/github-dispatch-payload.md`.
 - Prior Team1 source-only artifacts: `docs/validation/team1-source-public-readiness-libero.md`, `docs/validation/team1-source-public-approval-packet-libero.md`, `docs/validation/team1-source-dryrun-orchestrator-libero.md`, `docs/validation/team1-source-public-approval-rehearsal-libero.md`, `docs/validation/team1-source-public-execution-orchestrator-libero.md`.
-- Team2 dispatch guard references: `docs/validation/team2-soonwook-r9-concise-terminal-brief-runtime-readiness.md`, `docs/validation/team1-yukson-r13-terminal-brief-acceptance-matrix.md`, `docs/validation/parent-terminal-brief-aggregation-checklist.md`.
+- Team2 dispatch guard references: `docs/validation/team2-workerEta-r9-concise-terminal-brief-runtime-readiness.md`, `docs/validation/team1-workerDelta-r13-terminal-brief-acceptance-matrix.md`, `docs/validation/parent-terminal-brief-aggregation-checklist.md`.
 
 ## Guardrail matrix
 
@@ -64,15 +64,15 @@ The Team1 source-only parent-round dispatch guardrails apply to the current run:
 
 | Field | Value |
 | --- | --- |
-| Run id | `a2a-team1-post-bangtong-readiness-20260520T110014Z` |
-| parentRoundId | `a2a-team1-post-bangtong-readiness-20260520T110014Z` |
+| Run id | `a2a-team1-post-workerGamma-readiness-20260520T110014Z` |
+| parentRoundId | `a2a-team1-post-workerGamma-readiness-20260520T110014Z` |
 | parentRoundTotal | 4 |
 | parentRoundOrder | 4 (source-only lane 4/4) |
 | parentRoundProgress | 0 |
-| originBrokerId | `seoseo` |
-| brokerOfRecordId | `seoseo` |
+| originBrokerId | `brokerAlpha` |
+| brokerOfRecordId | `brokerAlpha` |
 | team | team1 |
-| worker | bangtong |
+| worker | workerGamma |
 | Safety gate | **source-only** — no production deploy, worker/broker/Gateway restart, live Telegram/provider send, production DB mutation/prune/migration, terminal ACK/replay, historical outbox replay, release/tag/publish, or credential movement. |
 
 ## Guardrail state at this snapshot

@@ -1,7 +1,7 @@
 {
   "operator": "seo-jin-on",
-  "reviewer": "gwakga",
-  "finalizer": "gwakga",
+  "reviewer": "brokerbeta",
+  "finalizer": "brokerbeta",
   "scoreInput": {
     "runId": "oi-v2-runtime-design-review-ready",
     "evidence": [
@@ -98,7 +98,7 @@
     "explicitRuntimeApprovalPresent": false,
     "brokerDispatchApprovalPresent": false,
     "workerSpawnApprovalPresent": false,
-    "daegyoMobileScopeResolved": false,
+    "mobilebetaMobileScopeResolved": false,
     "rollbackAbortCriteriaDocumented": false,
     "liveBoundaryPlanDocumented": false,
     "validationEvidenceFresh": true
@@ -107,7 +107,7 @@
     "executorContractDocumented": true,
     "brokerDispatchBoundaryDocumented": true,
     "workerSpawnBoundaryDocumented": true,
-    "daegyoMobileBoundaryDocumented": true,
+    "mobilebetaMobileBoundaryDocumented": true,
     "rollbackAbortCriteriaDocumented": true,
     "liveBoundaryPlanDocumented": true,
     "observabilityPlanDocumented": true

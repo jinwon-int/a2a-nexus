@@ -27,7 +27,7 @@ function enablementGate(overrides: Partial<TerminalBriefSidecarDefaultOnEnableme
       approvalEvidenceIdempotencyKey: "tb-sidecar-default-on-approval-evidence:fixture-774",
       approvalReference: "tb-sidecar-default-on-approval:fixture-772",
       requestedAction: "approve_terminal_brief_default_on_enablement",
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "terminal-brief-default-on",
       operatorChannel: "telegram",
       receiptEvidenceAccepted: true,
@@ -37,7 +37,7 @@ function enablementGate(overrides: Partial<TerminalBriefSidecarDefaultOnEnableme
     enablementGate: {
       reviewOnly: true,
       gateReference: "tb-sidecar-default-on-enablement-gate:fixture-776",
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       runtimeTarget: "terminal-brief-sidecar",
       operatorInstructionReference: "a2a-broker#774",
       requiredAcceptedEvidence: [],
@@ -115,7 +115,7 @@ function enablementGate(overrides: Partial<TerminalBriefSidecarDefaultOnEnableme
 test("builds a source-only runtime mutation plan from a ready default-on enablement gate", () => {
   const packet = buildTerminalBriefSidecarDefaultOnRuntimeMutationPlan(enablementGate(), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     runtimeTarget: "terminal-brief-sidecar",
   });
 
@@ -179,7 +179,7 @@ test("extracts enablement gate and options from envelopes", () => {
     defaultOnEnablementGatePacket: enablementGate(),
     defaultOnRuntimeMutationPlan: {
       mode: "fixture",
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       planReference: "plan-1",
       runtimeTarget: "sidecar",
       configKey: "TERMINAL_BRIEF_SIDECAR_DEFAULT_ON",
@@ -191,7 +191,7 @@ test("extracts enablement gate and options from envelopes", () => {
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnRuntimeMutationPlanOptions(input), {
     now: undefined,
     mode: "fixture",
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     planReference: "plan-1",
     runtimeTarget: "sidecar",
     operatorInstructionReference: undefined,

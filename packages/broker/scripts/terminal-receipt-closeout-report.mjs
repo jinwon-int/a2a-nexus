@@ -176,7 +176,7 @@ function originFor(id, event) {
     payload.sourceBrokerId,
   ].filter((value) => typeof value === 'string').join(' ');
   if (/cross[-_]broker/i.test(raw)) return 'crossBroker';
-  if (typeof payload.originBrokerId === 'string' && payload.originBrokerId && payload.originBrokerId !== 'seoseo') return 'crossBroker';
+  if (typeof payload.originBrokerId === 'string' && payload.originBrokerId && payload.originBrokerId !== 'brokeralpha') return 'crossBroker';
   return 'local';
 }
 

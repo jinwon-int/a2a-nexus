@@ -63,7 +63,7 @@ describe('broker live-readiness canary', () => {
           id: 'legacy-receipt-confirmed',
           ack: { status: 'receipt_confirmed', evidence: 'operator_visible', acknowledgedAt: '2026-05-13T00:00:00.000Z' },
           receipt: { status: 'operator_visible', evidence: 'operator_visible', updatedAt: '2026-05-13T00:00:00.000Z' },
-          payload: { worker: 'gwakga', status: 'succeeded' },
+          payload: { worker: 'brokerbeta', status: 'succeeded' },
         },
       ],
     }, 200);
@@ -81,7 +81,7 @@ describe('broker live-readiness canary', () => {
         return jsonResponse({ ok: true, service: 'a2a-broker', version: '0.1.0', build: 'test-build' });
       }
       if (parsed.pathname === '/workers') {
-        return jsonResponse({ items: [{ nodeId: 'sogyo', status: 'online' }] });
+        return jsonResponse({ items: [{ nodeId: 'workerbeta', status: 'online' }] });
       }
       if (parsed.pathname === '/tasks/diagnostics') {
         return jsonResponse({ tasks: { byStatus: { queued: 0, claimed: 0, running: 0 }, stale: 0 } });
@@ -92,13 +92,13 @@ describe('broker live-readiness canary', () => {
           events: [
             {
               id: 'provider-send-only',
-              payload: { worker: 'sogyo', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-provider', receiptStatus: 'provider_sent' },
+              payload: { worker: 'workerbeta', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-provider', receiptStatus: 'provider_sent' },
             },
             {
               id: 'provider-delivery-only',
               ack: { status: 'receipt_confirmed', evidence: 'provider_delivery_receipt', acknowledgedAt: '2026-05-05T00:00:00.000Z' },
               receipt: { status: 'provider_sent', evidence: 'provider_delivery_receipt', updatedAt: '2026-05-05T00:00:00.000Z' },
-              payload: { worker: 'sogyo', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-delivery' },
+              payload: { worker: 'workerbeta', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-delivery' },
             },
           ],
         });
@@ -123,7 +123,7 @@ describe('broker live-readiness canary', () => {
         return jsonResponse({ ok: true, service: 'a2a-broker', version: '0.1.0', build: 'test-build' });
       }
       if (parsed.pathname === '/workers') {
-        return jsonResponse({ items: [{ nodeId: 'sogyo', status: 'online' }] });
+        return jsonResponse({ items: [{ nodeId: 'workerbeta', status: 'online' }] });
       }
       if (parsed.pathname === '/tasks/diagnostics') {
         return jsonResponse({ tasks: { byStatus: { queued: 0, claimed: 0, running: 0 }, stale: 0 } });
@@ -135,7 +135,7 @@ describe('broker live-readiness canary', () => {
             id: 'manual-receipt',
             ack: { status: 'receipt_confirmed', evidence: 'operator_confirmed', acknowledgedAt: '2026-05-05T00:00:00.000Z' },
             receipt: { status: 'operator_visible', evidence: 'operator_confirmed', updatedAt: '2026-05-05T00:00:00.000Z' },
-            payload: { worker: 'sogyo', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-manual' },
+            payload: { worker: 'workerbeta', doneUrl: 'https://github.com/jinwon-int/a2a-broker/issues/390#issuecomment-manual' },
           }],
         });
       }
@@ -158,7 +158,7 @@ describe('broker live-readiness canary', () => {
         return jsonResponse({ ok: true, service: 'a2a-broker', version: '0.1.0', build: 'test-build' });
       }
       if (parsed.pathname === '/workers') {
-        return jsonResponse({ items: [{ nodeId: 'sogyo', status: 'online' }] });
+        return jsonResponse({ items: [{ nodeId: 'workerbeta', status: 'online' }] });
       }
       if (parsed.pathname === '/tasks/diagnostics') {
         return jsonResponse({ tasks: { byStatus: { queued: 0, claimed: 0, running: 0 }, stale: 0 } });
@@ -166,7 +166,7 @@ describe('broker live-readiness canary', () => {
       if (parsed.pathname === '/a2a/tasks/terminal-outbox') {
         return jsonResponse({
           kind: 'task.terminal.outbox',
-          events: [{ id: 'terminal-1', payload: { worker: 'sogyo', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receiptStatus: 'accepted' } }],
+          events: [{ id: 'terminal-1', payload: { worker: 'workerbeta', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receiptStatus: 'accepted' } }],
         });
       }
       throw new Error(`unexpected path ${parsed.pathname}`);
@@ -195,7 +195,7 @@ describe('broker live-readiness canary', () => {
         return jsonResponse({ ok: true, service: 'a2a-broker', version: '0.1.0', build: 'test-build' });
       }
       if (parsed.pathname === '/workers') {
-        return jsonResponse({ items: [{ nodeId: 'sogyo', status: 'online' }] });
+        return jsonResponse({ items: [{ nodeId: 'workerbeta', status: 'online' }] });
       }
       if (parsed.pathname === '/tasks/diagnostics') {
         return jsonResponse({ tasks: { byStatus: { queued: 1, claimed: 0, running: 0 }, stale: 1 } });
@@ -203,7 +203,7 @@ describe('broker live-readiness canary', () => {
       if (parsed.pathname === '/a2a/tasks/terminal-outbox') {
         return jsonResponse({
           kind: 'task.terminal.outbox',
-          events: [{ id: 'terminal-1', payload: { worker: 'sogyo', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receiptStatus: 'accepted' } }],
+          events: [{ id: 'terminal-1', payload: { worker: 'workerbeta', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/334', receiptStatus: 'accepted' } }],
         });
       }
       throw new Error(`unexpected path ${parsed.pathname}`);
@@ -237,7 +237,7 @@ describe('broker live-readiness canary', () => {
         });
       }
       if (parsed.pathname === '/workers') {
-        return jsonResponse({ items: [{ nodeId: 'sogyo', status: 'online' }] });
+        return jsonResponse({ items: [{ nodeId: 'workerbeta', status: 'online' }] });
       }
       if (parsed.pathname === '/tasks/diagnostics') {
         return jsonResponse({ tasks: { byStatus: { queued: 0, claimed: 0, running: 0 }, stale: 0 } });
@@ -249,7 +249,7 @@ describe('broker live-readiness canary', () => {
             id: 'legacy-confirmed-no-evidence',
             ack: { status: 'receipt_confirmed', evidence: 'operator_visible' },
             receipt: { status: 'operator_visible', evidence: 'operator_visible' },
-            payload: { worker: 'gwakga', status: 'succeeded' },
+            payload: { worker: 'brokerbeta', status: 'succeeded' },
           }],
         });
       }

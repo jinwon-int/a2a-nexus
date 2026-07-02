@@ -7,7 +7,7 @@ import test from "node:test";
 
 const SCRIPT = "scripts/rollout-receipt-evidence-guard.mjs";
 const EXPECTED_COMMIT = "123df9b19e2c600e826273f5b16117039aa44b6f";
-const WORKERS = ["bangtong", "dungae", "sogyo", "nosuk"];
+const WORKERS = ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"];
 const NO_LIVE_FIXTURE = "examples/rollout-receipt-evidence.no-live.json";
 
 function fixtureFor(worker: string) {
@@ -63,17 +63,17 @@ test("no-live proof bundle fixture passes the rollout evidence guard", () => {
 });
 
 test("rollout receipt evidence guard fails closed on missing worker evidence", () => {
-  const input = writeFixture({ workers: WORKERS.filter((worker) => worker !== "nosuk").map(fixtureFor) });
+  const input = writeFixture({ workers: WORKERS.filter((worker) => worker !== "workerAlpha").map(fixtureFor) });
 
   assert.throws(
     () => runGuard(input),
     (error: unknown) => {
       const stderr = error as { stdout?: Buffer | string; status?: number };
       const output = JSON.parse(String(stderr.stdout)) as { ok: boolean; workers: Array<{ worker: string; errors: string[] }> };
-      const nosuk = output.workers.find((worker) => worker.worker === "nosuk");
+      const workerAlpha = output.workers.find((worker) => worker.worker === "workerAlpha");
       assert.equal(stderr.status, 1);
       assert.equal(output.ok, false);
-      assert.deepEqual(nosuk?.errors, ["missing worker evidence"]);
+      assert.deepEqual(workerAlpha?.errors, ["missing worker evidence"]);
       return true;
     },
   );
@@ -89,8 +89,8 @@ test("rollout receipt evidence guard rejects mismatched commits and provider-sen
     () => runGuard(input),
     (error: unknown) => {
       const failed = JSON.parse(String((error as { stdout?: Buffer | string }).stdout)) as { workers: Array<{ worker: string; errors: string[] }> };
-      assert.match(failed.workers.find((worker) => worker.worker === "bangtong")?.errors.join("\n") ?? "", /does not match expected/);
-      assert.match(failed.workers.find((worker) => worker.worker === "dungae")?.errors.join("\n") ?? "", /provider-send-only ACK/);
+      assert.match(failed.workers.find((worker) => worker.worker === "workerGamma")?.errors.join("\n") ?? "", /does not match expected/);
+      assert.match(failed.workers.find((worker) => worker.worker === "workerEpsilon")?.errors.join("\n") ?? "", /provider-send-only ACK/);
       return true;
     },
   );

@@ -94,8 +94,8 @@ without receipt evidence can return a non-ACK terminal receipt status:
 {
   "ackTerminalEvent": false,
   "terminalReceiptStatus": "produced",
-  "receiptId": "hermes-gongyung:gongyung:terminal-brief-task-1",
-  "reason": "spooled for Gongyung review"
+  "receiptId": "hermes-mobileAlpha:mobileAlpha:terminal-brief-task-1",
+  "reason": "spooled for mobileAlpha review"
 }
 ~~~
 
@@ -137,17 +137,17 @@ a2a-terminal-brief-sidecar \
   --cursor-file ~/.openclaw/a2a-terminal-brief-sidecar/cursor.json \
   --delivery-command /opt/hermes/bin/a2a-terminal-brief-adapter \
   --delivery-command-arg --operator \
-  --delivery-command-arg gongyung
+  --delivery-command-arg mobileAlpha
 ~~~
 
 The sidecar does not need to know whether the adapter talks to OpenClaw, Hermes,
 another agent harness, or a local operator UI. It only trusts the normalized
 receipt decision JSON.
 
-## Bundled Hermes/Gongyung Skeleton Adapter
+## Bundled Hermes/mobileAlpha Skeleton Adapter
 
-The package also includes a2a-terminal-brief-hermes-gongyung as a public-safe
-Hermes/Gongyung adapter skeleton. It does not call OpenClaw, Telegram, provider
+The package also includes a2a-terminal-brief-hermes-mobileAlpha as a public-safe
+Hermes/mobileAlpha adapter skeleton. It does not call OpenClaw, Telegram, provider
 transports, or Hermes live messaging by default. Its default behavior is
 dry-run/spool-only, so it returns ackTerminalEvent: false with
 terminalReceiptStatus: produced.
@@ -158,9 +158,9 @@ Dry-run spool example:
 a2a-terminal-brief-sidecar \
   --base-url http://127.0.0.1:8787 \
   --cursor-file ~/.openclaw/a2a-terminal-brief-sidecar/cursor.json \
-  --delivery-command a2a-terminal-brief-hermes-gongyung \
+  --delivery-command a2a-terminal-brief-hermes-mobileAlpha \
   --delivery-command-arg --operator \
-  --delivery-command-arg gongyung \
+  --delivery-command-arg mobileAlpha \
   --delivery-command-arg --spool-file \
   --delivery-command-arg ~/.hermes/a2a-terminal-brief-spool.jsonl
 ~~~
@@ -172,12 +172,12 @@ claiming terminal ACK.
 Rendered envelopes label the requested operator proof as `Required receipt proof`
 so spool-only artifacts do not look like actual receipt or ACK evidence.
 
-The skeleton can project a receipt only when another approved Hermes/Gongyung
+The skeleton can project a receipt only when another approved Hermes/mobileAlpha
 path has already confirmed one of the accepted receipt sources:
 
 ~~~bash
-a2a-terminal-brief-hermes-gongyung --manual-receipt-id manual:gongyung:20260518
-a2a-terminal-brief-hermes-gongyung --visible-receipt-id hermes:gongyung:visible:20260518
+a2a-terminal-brief-hermes-mobileAlpha --manual-receipt-id manual:mobileAlpha:20260518
+a2a-terminal-brief-hermes-mobileAlpha --visible-receipt-id hermes:mobileAlpha:visible:20260518
 ~~~
 
 Those explicit options are intended as adapter integration seams, not as proof
@@ -186,13 +186,13 @@ states still return ackTerminalEvent: false unless the adapter can map them to
 current-session-visible or manual operator receipt evidence.
 
 The skeleton can also read a local receipt evidence file. This is the preferred
-Hermes/Gongyung integration shape because the live harness can write a small
+Hermes/mobileAlpha integration shape because the live harness can write a small
 receipt record independently, while the sidecar adapter stays no-live and
 fail-closed:
 
 ~~~bash
-a2a-terminal-brief-hermes-gongyung \
-  --operator gongyung \
+a2a-terminal-brief-hermes-mobileAlpha \
+  --operator mobileAlpha \
   --spool-file ~/.hermes/a2a-terminal-brief-spool.jsonl \
   --receipt-evidence-file ~/.hermes/a2a-terminal-brief-receipts.jsonl \
   --receipt-max-age-ms 600000
@@ -205,24 +205,24 @@ receiptId; and must include a fresh observedAt or updatedAt timestamp.
 
 ~~~json
 {
-  "schema": "a2a.terminalBrief.hermesGongyung.receipt.v1",
-  "operator": "gongyung",
+  "schema": "a2a.terminalBrief.hermesmobileAlpha.receipt.v1",
+  "operator": "mobileAlpha",
   "envelopeId": "terminal-brief-task-1",
   "confirmationSource": "current_session_visible",
   "status": "visible",
-  "receiptId": "hermes:gongyung:visible:20260518T071500Z",
+  "receiptId": "hermes:mobileAlpha:visible:20260518T071500Z",
   "observedAt": "2026-05-18T07:15:00.000Z"
 }
 ~~~
 
 ~~~json
 {
-  "schema": "a2a.terminalBrief.hermesGongyung.receipt.v1",
-  "operator": "gongyung",
+  "schema": "a2a.terminalBrief.hermesmobileAlpha.receipt.v1",
+  "operator": "mobileAlpha",
   "taskId": "terminal-brief-task-1",
   "receiptMode": "manual_operator_receipt",
   "status": "operator_confirmed",
-  "receiptId": "manual:gongyung:20260518T071500Z",
+  "receiptId": "manual:mobileAlpha:20260518T071500Z",
   "observedAt": "2026-05-18T07:15:00.000Z"
 }
 ~~~

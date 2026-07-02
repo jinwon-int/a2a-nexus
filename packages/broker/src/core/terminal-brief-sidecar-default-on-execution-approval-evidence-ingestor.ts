@@ -113,7 +113,7 @@ export interface TerminalBriefSidecarDefaultOnExecutionApprovalEvidenceIngestorP
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesExecutionApprovalRequestPacket: true;
     providerAcceptedIsVisibilityProof: false;
     approvalGrantEvidenceExecutesGrant: false;
@@ -267,7 +267,7 @@ export function buildTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceInges
       "granting approval or executing an approval grant",
       "runtime config write or Terminal Brief default-on enablement",
       "Terminal Brief sidecar start/stop/restart",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, executor invocation, broker restart, or deploy",
       "GitHub PR merge, issue close, or comment post from the ingestor",
@@ -280,7 +280,7 @@ export function buildTerminalBriefSidecarDefaultOnExecutionApprovalEvidenceInges
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesExecutionApprovalRequestPacket: true,
       providerAcceptedIsVisibilityProof: false,
       approvalGrantEvidenceExecutesGrant: false,

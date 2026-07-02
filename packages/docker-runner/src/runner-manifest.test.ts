@@ -543,11 +543,11 @@ test("cleanup rehearsal is preserved only as no-live backup and rollback evidenc
     const cleanupRehearsal = sanitizeCleanupRehearsal({
       schemaVersion: "a2a.runner.cleanup-rehearsal.v1",
       generatedAt: "1970-01-01T00:00:00.000Z",
-      runId: "a2a-cleanup-20260512-1810r2-jingun",
+      runId: "a2a-cleanup-20260512-1810r2-workerZeta",
       target: "broker_db",
       mode: "simulate",
       status: "ready_for_operator_approval",
-      planId: "cleanup-rehearsal-jingun",
+      planId: "cleanup-rehearsal-workerZeta",
       candidateCounts: { total: 4, highRisk: 1, staleWorkerRows: 2, terminalOutboxRows: 2 },
       checkpoint: {
         requiredBeforeExecution: true,

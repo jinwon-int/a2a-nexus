@@ -2,7 +2,7 @@
 
 **Issue:** [#497](https://github.com/jinwon-int/a2a-broker/issues/497)
 **Date:** 2026-05-12
-**Author:** bangtong (Team1)
+**Author:** workergamma (Team1)
 
 ## 1. Root Cause Analysis
 
@@ -18,7 +18,7 @@ The SQLite broker persistence layer supports two load modes via `SqliteBrokerSta
 
 Historically, the `readHotRuntimeSnapshot()` method (in `src/core/store.ts`) performed unbounded `SELECT payload FROM ...` queries across the hot tables. The current runtime load path keeps active state hydrated and caps the largest historical streams:
 
-| Table | Observed Count (seoseo) | Approx. per-row payload |
+| Table | Observed Count (brokeralpha) | Approx. per-row payload |
 |---|---|---|
 | `broker_tasks` | 660 | 100–120 KB |
 | `broker_audit_events` | 1,986 | ~1 KB |
@@ -80,7 +80,7 @@ The p95 health latency is already elevated by mirror-status comparison. At 10× 
 
 ### 2.2 Low-Risk Immediately Available
 
-1. **Enable audit retention** — Set `maxAuditEvents` in the broker retention policy. The default is 5,000 but the seoseo broker likely has this at default. Lower to 2,000 to reduce hot-table load.
+1. **Enable audit retention** — Set `maxAuditEvents` in the broker retention policy. The default is 5,000 but the brokeralpha broker likely has this at default. Lower to 2,000 to reduce hot-table load.
 
 2. **Monitor hot-table counts and runtime caps** — Use `persistence.hotTableLoadMetrics` and `persistence.hotTableRuntimeLoadLimits` on `/health` to track per-table growth, unacked terminal outbox rows, and rows skipped from live heap hydration.
 

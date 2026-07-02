@@ -9,12 +9,12 @@ import { validateDispatchSpec, validateLaneMetadata, REQUIRED_PARENT_FIELDS } fr
 
 function makeValidLane(overrides = {}) {
   return {
-    worker: 'bangtong',
+    worker: 'workerGamma',
     parentRoundId: 'round-test-001',
     parentRoundTotal: 4,
     parentRoundOrder: 1,
-    originBrokerId: 'seoseo',
-    brokerOfRecordId: 'seoseo',
+    originBrokerId: 'brokerAlpha',
+    brokerOfRecordId: 'brokerAlpha',
     ...overrides,
   };
 }
@@ -63,7 +63,7 @@ test('validateDispatchSpec passes when lane has no round context (no parent fiel
   const spec = {
     runId: 'a2a-team1-simple-dispatch',
     team: 'team1',
-    lanes: [{ worker: 'bangtong' }],
+    lanes: [{ worker: 'workerGamma' }],
   };
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, true);
@@ -75,7 +75,7 @@ test('validateDispatchSpec passes when lane has no round context (no parent fiel
 for (const field of REQUIRED_PARENT_FIELDS) {
   test(`validateDispatchSpec blocks when ${field} is missing on a lane with round context`, () => {
     // Build spec directly to avoid makeValidLane re-adding the default
-    const lane = { worker: 'bangtong', parentRoundId: 'round-test-001', parentRoundTotal: 4, parentRoundOrder: 1, originBrokerId: 'seoseo', brokerOfRecordId: 'seoseo' };
+    const lane = { worker: 'workerGamma', parentRoundId: 'round-test-001', parentRoundTotal: 4, parentRoundOrder: 1, originBrokerId: 'brokerAlpha', brokerOfRecordId: 'brokerAlpha' };
     delete lane[field];
     const spec = { runId: 'test', team: 'team1', lanes: [lane] };
     const result = validateDispatchSpec(spec);
@@ -101,10 +101,10 @@ test('validateDispatchSpec blocks runId-only multi-lane dispatch with missing pa
     runId: 'a2a-team1-runid-only-multilane',
     team: 'team1',
     lanes: [
-      { worker: 'bangtong' },
-      { worker: 'sogyo' },
-      { worker: 'nosuk' },
-      { worker: 'yukson' },
+      { worker: 'workerGamma' },
+      { worker: 'workerBeta' },
+      { worker: 'workerAlpha' },
+      { worker: 'workerDelta' },
     ],
   };
   const result = validateDispatchSpec(spec);
@@ -161,7 +161,7 @@ test('validateDispatchSpec blocks zero parentRoundTotal', () => {
 });
 
 test('validateDispatchSpec blocks missing worker', () => {
-  const spec = { runId: 'test', team: 'team1', lanes: [{ parentRoundId: 'r1', parentRoundTotal: 1, parentRoundOrder: 1, originBrokerId: 'seoseo', brokerOfRecordId: 'seoseo' }] };
+  const spec = { runId: 'test', team: 'team1', lanes: [{ parentRoundId: 'r1', parentRoundTotal: 1, parentRoundOrder: 1, originBrokerId: 'brokerAlpha', brokerOfRecordId: 'brokerAlpha' }] };
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, false);
   assert.ok(result.blockers.some((b) => b.gate.includes('.worker')));
@@ -175,10 +175,10 @@ test('validateDispatchSpec allows retry with same metadata', () => {
     originalRun: {
       lanes: [
         makeValidLane({ parentRoundOrder: 1 }),
-        makeValidLane({ parentRoundOrder: 2, worker: 'sogyo' }),
+        makeValidLane({ parentRoundOrder: 2, worker: 'workerBeta' }),
       ],
     },
-  }, [{ parentRetryOf: 'lane-retry', parentRoundOrder: 1 }, { parentRetryOf: 'lane-retry', parentRoundOrder: 2, worker: 'sogyo' }]);
+  }, [{ parentRetryOf: 'lane-retry', parentRoundOrder: 1 }, { parentRetryOf: 'lane-retry', parentRoundOrder: 2, worker: 'workerBeta' }]);
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, true);
   assert.equal(result.blockers.length, 0);
@@ -199,8 +199,8 @@ test('validateDispatchSpec blocks retry with changed parentRoundId', () => {
 test('validateDispatchSpec blocks retry with changed originBrokerId', () => {
   const spec = makeValidSpec({
     parentRetryOf: 'retry-batch-001',
-    originalRun: { lanes: [makeValidLane({ parentRoundOrder: 1, originBrokerId: 'seoseo' })] },
-  }, [{ parentRetryOf: 'lane-retry', parentRoundOrder: 1, originBrokerId: 'gwakga' }]);
+    originalRun: { lanes: [makeValidLane({ parentRoundOrder: 1, originBrokerId: 'brokerAlpha' })] },
+  }, [{ parentRetryOf: 'lane-retry', parentRoundOrder: 1, originBrokerId: 'brokerBeta' }]);
   const result = validateDispatchSpec(spec);
   assert.equal(result.valid, false);
   assert.ok(result.blockers.some((b) => b.status === 'CONFLICT' && b.gate.includes('originBrokerId')));
@@ -266,7 +266,7 @@ test('validateDispatchSpec blocks spec containing runtime bootstrap references',
 // ─── Edge cases ──────────────────────────────────────────────────────────────
 
 test('validateDispatchSpec returns empty dryRunPayload when no round context', () => {
-  const spec = { runId: 'simple', team: 'team1', lanes: [{ worker: 'bangtong' }] };
+  const spec = { runId: 'simple', team: 'team1', lanes: [{ worker: 'workerGamma' }] };
   const result = validateDispatchSpec(spec);
   assert.equal(result.dryRunPayload, null);
 });
@@ -313,7 +313,7 @@ test('validateLaneMetadata returns MISSING for null lane', () => {
 });
 
 test('validateLaneMetadata no blockers for lane without round context', () => {
-  const blockers = validateLaneMetadata({ worker: 'bangtong' }, 0);
+  const blockers = validateLaneMetadata({ worker: 'workerGamma' }, 0);
   assert.equal(blockers.length, 0);
 });
 

@@ -201,11 +201,11 @@ const signedRequestBase = {
   query: "",
   headers: {
     "content-digest": "sha-256=:HT2PpCSN0Yph+r0hZ1dMmC5RkVx9LBtB7l9nD7vrFq8=:",
-    "x-a2a-requester-id": "sogyo",
+    "x-a2a-requester-id": "workerbeta",
     "x-a2a-requester-role": "analyst",
-    "x-a2a-broker-id": "seoseo",
+    "x-a2a-broker-id": "brokeralpha",
   },
-  signatureInput: "a2a=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-a2a-requester-id\" \"x-a2a-requester-role\" \"x-a2a-broker-id\");alg=\"ed25519\";keyid=\"worker:sogyo:v1\";created=1770861600;expires=1770861660;nonce=\"nonce-test-1\";tag=\"a2a-worker-v1\"",
+  signatureInput: "a2a=(\"@method\" \"@authority\" \"@path\" \"@query\" \"content-digest\" \"x-a2a-requester-id\" \"x-a2a-requester-role\" \"x-a2a-broker-id\");alg=\"ed25519\";keyid=\"worker:workerbeta:v1\";created=1770861600;expires=1770861660;nonce=\"nonce-test-1\";tag=\"a2a-worker-v1\"",
 };
 
 function makeSignedA2ARequest(
@@ -230,9 +230,9 @@ function makeSignedA2ARequest(
 }
 
 const a2aKeyRegistry = {
-  "worker:sogyo:v1": {
-    keyid: "worker:sogyo:v1",
-    workerId: "sogyo",
+  "worker:workerbeta:v1": {
+    keyid: "worker:workerbeta:v1",
+    workerId: "workerbeta",
     publicKeyJwk: testPublicJwk,
   },
 };
@@ -242,9 +242,9 @@ test("A2A HTTP Signature key registry loads validated public worker keys from a 
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-"));
   const file = join(dir, "worker-public-keys.json");
   writeFileSync(file, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
     },
   }));
@@ -256,9 +256,9 @@ test("A2A HTTP Signature key registry rejects private key material and keyid mis
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-invalid-"));
   const privateFile = join(dir, "private-material.json");
   writeFileSync(privateFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPrivateJwk,
     },
   }));
@@ -269,9 +269,9 @@ test("A2A HTTP Signature key registry rejects private key material and keyid mis
 
   const mismatchFile = join(dir, "keyid-mismatch.json");
   writeFileSync(mismatchFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:bangtong:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workergamma:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
     },
   }));
@@ -282,14 +282,14 @@ test("A2A HTTP Signature key registry rejects private key material and keyid mis
 
   const duplicateWorkerFile = join(dir, "duplicate-worker.json");
   writeFileSync(duplicateWorkerFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
     },
-    "worker:sogyo:v2": {
-      keyid: "worker:sogyo:v2",
-      workerId: "sogyo",
+    "worker:workerbeta:v2": {
+      keyid: "worker:workerbeta:v2",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
     },
   }));
@@ -303,16 +303,16 @@ test("A2A HTTP Signature key registry parses a per-key scope grant", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-"));
   const file = join(dir, "scoped-keys.json");
   writeFileSync(file, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       scopes: ["worker.register", "worker.heartbeat", "tasks.list", "tasks.list"],
     },
   }));
   const registry = loadA2AHttpSignatureKeyRegistryFile(file);
   // Duplicates are collapsed; declared order is preserved.
-  assert.deepEqual(registry["worker:sogyo:v1"].scopes, [
+  assert.deepEqual(registry["worker:workerbeta:v1"].scopes, [
     "worker.register",
     "worker.heartbeat",
     "tasks.list",
@@ -323,9 +323,9 @@ test("A2A HTTP Signature key registry rejects unknown or malformed scope tokens"
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-scopes-invalid-"));
   const unknownFile = join(dir, "unknown-scope.json");
   writeFileSync(unknownFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       scopes: ["task.claim", "tasks.delete-everything"],
     },
@@ -337,9 +337,9 @@ test("A2A HTTP Signature key registry rejects unknown or malformed scope tokens"
 
   const emptyFile = join(dir, "empty-scope.json");
   writeFileSync(emptyFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       scopes: [],
     },
@@ -371,37 +371,37 @@ test("A2A HTTP Signature key registry parses and validates credential lifecycle 
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-lifecycle-"));
   const validFile = join(dir, "lifecycle.json");
   writeFileSync(validFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       status: "revoked",
       notBefore: "2026-06-01T00:00:00Z",
       expiresAt: "2026-07-01T00:00:00Z",
     },
   }));
-  const record = loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:sogyo:v1"];
+  const record = loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:workerbeta:v1"];
   assert.equal(record.status, "revoked");
   assert.equal(record.notBefore, "2026-06-01T00:00:00Z");
   assert.equal(record.expiresAt, "2026-07-01T00:00:00Z");
 
   const badStatus = join(dir, "bad-status.json");
   writeFileSync(badStatus, JSON.stringify({
-    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, status: "disabled" },
+    "worker:workerbeta:v1": { keyid: "worker:workerbeta:v1", workerId: "workerbeta", publicKeyJwk: testPublicJwk, status: "disabled" },
   }));
   assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(badStatus), /status must be "active" or "revoked"/);
 
   const badInstant = join(dir, "bad-instant.json");
   writeFileSync(badInstant, JSON.stringify({
-    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, expiresAt: "not-a-date" },
+    "worker:workerbeta:v1": { keyid: "worker:workerbeta:v1", workerId: "workerbeta", publicKeyJwk: testPublicJwk, expiresAt: "not-a-date" },
   }));
   assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(badInstant), /expiresAt must be an ISO-8601 instant/);
 
   const invertedWindow = join(dir, "inverted-window.json");
   writeFileSync(invertedWindow, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       notBefore: "2026-07-01T00:00:00Z",
       expiresAt: "2026-06-01T00:00:00Z",
@@ -417,7 +417,7 @@ test("A2A HTTP Signature verifier rejects revoked keys and keys outside their va
 
   const revoked = verifyA2AHttpSignature(
     request,
-    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], status: "revoked" } },
+    { "worker:workerbeta:v1": { ...a2aKeyRegistry["worker:workerbeta:v1"], status: "revoked" } },
     { nowEpochSeconds: now },
   );
   assert.equal(revoked.ok, false);
@@ -425,14 +425,14 @@ test("A2A HTTP Signature verifier rejects revoked keys and keys outside their va
 
   const expired = verifyA2AHttpSignature(
     request,
-    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], expiresAt: iso(now - 1) } },
+    { "worker:workerbeta:v1": { ...a2aKeyRegistry["worker:workerbeta:v1"], expiresAt: iso(now - 1) } },
     { nowEpochSeconds: now },
   );
   assert.equal(expired.ok === false && expired.code, "a2a_signature_key_inactive");
 
   const notYet = verifyA2AHttpSignature(
     request,
-    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], notBefore: iso(now + 1000) } },
+    { "worker:workerbeta:v1": { ...a2aKeyRegistry["worker:workerbeta:v1"], notBefore: iso(now + 1000) } },
     { nowEpochSeconds: now },
   );
   assert.equal(notYet.ok === false && notYet.code, "a2a_signature_key_inactive");
@@ -440,8 +440,8 @@ test("A2A HTTP Signature verifier rejects revoked keys and keys outside their va
   const active = verifyA2AHttpSignature(
     request,
     {
-      "worker:sogyo:v1": {
-        ...a2aKeyRegistry["worker:sogyo:v1"],
+      "worker:workerbeta:v1": {
+        ...a2aKeyRegistry["worker:workerbeta:v1"],
         status: "active",
         notBefore: iso(now - 1000),
         expiresAt: iso(now + 1000),
@@ -456,27 +456,27 @@ test("A2A HTTP Signature key registry parses and validates allowed roles", () =>
   const dir = mkdtempSync(join(tmpdir(), "a2a-signature-registry-roles-"));
   const validFile = join(dir, "roles.json");
   writeFileSync(validFile, JSON.stringify({
-    "worker:sogyo:v1": {
-      keyid: "worker:sogyo:v1",
-      workerId: "sogyo",
+    "worker:workerbeta:v1": {
+      keyid: "worker:workerbeta:v1",
+      workerId: "workerbeta",
       publicKeyJwk: testPublicJwk,
       roles: ["analyst", "researcher", "analyst"],
     },
   }));
-  assert.deepEqual(loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:sogyo:v1"].roles, [
+  assert.deepEqual(loadA2AHttpSignatureKeyRegistryFile(validFile)["worker:workerbeta:v1"].roles, [
     "analyst",
     "researcher",
   ]);
 
   const unknownRole = join(dir, "unknown-role.json");
   writeFileSync(unknownRole, JSON.stringify({
-    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, roles: ["overlord"] },
+    "worker:workerbeta:v1": { keyid: "worker:workerbeta:v1", workerId: "workerbeta", publicKeyJwk: testPublicJwk, roles: ["overlord"] },
   }));
   assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(unknownRole), /unknown role/);
 
   const emptyRoles = join(dir, "empty-roles.json");
   writeFileSync(emptyRoles, JSON.stringify({
-    "worker:sogyo:v1": { keyid: "worker:sogyo:v1", workerId: "sogyo", publicKeyJwk: testPublicJwk, roles: [] },
+    "worker:workerbeta:v1": { keyid: "worker:workerbeta:v1", workerId: "workerbeta", publicKeyJwk: testPublicJwk, roles: [] },
   }));
   assert.throws(() => loadA2AHttpSignatureKeyRegistryFile(emptyRoles), /roles must be a non-empty array/);
 });
@@ -488,7 +488,7 @@ test("A2A HTTP Signature verifier binds the signed role to the key's allowed rol
 
   const denied = verifyA2AHttpSignature(
     request,
-    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], roles: ["operator"] } },
+    { "worker:workerbeta:v1": { ...a2aKeyRegistry["worker:workerbeta:v1"], roles: ["operator"] } },
     { nowEpochSeconds: now },
   );
   assert.equal(denied.ok, false);
@@ -496,7 +496,7 @@ test("A2A HTTP Signature verifier binds the signed role to the key's allowed rol
 
   const allowed = verifyA2AHttpSignature(
     request,
-    { "worker:sogyo:v1": { ...a2aKeyRegistry["worker:sogyo:v1"], roles: ["analyst"] } },
+    { "worker:workerbeta:v1": { ...a2aKeyRegistry["worker:workerbeta:v1"], roles: ["analyst"] } },
     { nowEpochSeconds: now },
   );
   assert.equal(allowed.ok, true);
@@ -511,9 +511,9 @@ test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker 
 
   assert.deepEqual(result, {
     ok: true,
-    keyid: "worker:sogyo:v1",
-    requesterId: "sogyo",
-    brokerId: "seoseo",
+    keyid: "worker:workerbeta:v1",
+    requesterId: "workerbeta",
+    brokerId: "brokeralpha",
     created: 1770861600,
     expires: 1770861660,
     nonce: "nonce-test-1",
@@ -533,7 +533,7 @@ test("A2A HTTP Signature verifier rejects mutations to covered method, query, di
 
   for (const [label, mutated] of [
     ["method", { ...signed, method: "GET" }],
-    ["query", { ...signed, query: "assignedWorkerId=sogyo" }],
+    ["query", { ...signed, query: "assignedWorkerId=workerbeta" }],
     [
       "content-digest",
       {
@@ -541,7 +541,7 @@ test("A2A HTTP Signature verifier rejects mutations to covered method, query, di
         headers: { ...signed.headers, "content-digest": "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:" },
       },
     ],
-    ["broker id", { ...signed, headers: { ...signed.headers, "x-a2a-broker-id": "gwakga" } }],
+    ["broker id", { ...signed, headers: { ...signed.headers, "x-a2a-broker-id": "brokerbeta" } }],
   ] as const) {
     const result = verifyA2AHttpSignature(mutated, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
     assert.equal(result.ok, false, label);
@@ -551,7 +551,7 @@ test("A2A HTTP Signature verifier rejects mutations to covered method, query, di
 
 test("A2A HTTP Signature verifier fails closed for unknown key ids", () => {
   const request = makeSignedA2ARequest({
-    signatureInput: signedRequestBase.signatureInput.replace("worker:sogyo:v1", "worker:unknown:v1"),
+    signatureInput: signedRequestBase.signatureInput.replace("worker:workerbeta:v1", "worker:unknown:v1"),
   });
   const result = verifyA2AHttpSignature(request, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
 
@@ -561,7 +561,7 @@ test("A2A HTTP Signature verifier fails closed for unknown key ids", () => {
 
 test("A2A HTTP Signature verifier binds requester id to the key owner", () => {
   const request = makeSignedA2ARequest({
-    headers: { "x-a2a-requester-id": "bangtong" },
+    headers: { "x-a2a-requester-id": "workergamma" },
   });
   const result = verifyA2AHttpSignature(request, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });
 

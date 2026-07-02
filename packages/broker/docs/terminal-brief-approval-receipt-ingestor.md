@@ -2,7 +2,7 @@
 
 Issue #708 adds a source-only/no-live receipt evidence ingestor after the Terminal Brief approval dispatch adapter.
 
-The ingestor defines the JSON evidence contract that OpenClaw, Hermes/Gongyung, or another external harness must provide before Terminal Brief can move toward a live/default-on path. It does not send providers, mutate terminal receipt rows, grant approval, or execute any closeout action.
+The ingestor defines the JSON evidence contract that OpenClaw, Hermes/mobilealpha, or another external harness must provide before Terminal Brief can move toward a live/default-on path. It does not send providers, mutate terminal receipt rows, grant approval, or execute any closeout action.
 
 ## Input
 
@@ -106,4 +106,4 @@ The ingestor sets all live effects to false:
 
 Even when `terminalAckEligible=true`, this route does not ACK anything. ACK remains a separately approved live operation requiring current-session-visible or manual operator receipt proof.
 
-The ingestor does not post comments, merge PRs, close issues, send OpenClaw/Hermes/Gongyung/Telegram providers, ACK/replay terminal rows, restart/deploy services, mutate DB state, create TaskFlow records, replay history, publish releases, or move secrets.
+The ingestor does not post comments, merge PRs, close issues, send OpenClaw/Hermes/mobilealpha/Telegram providers, ACK/replay terminal rows, restart/deploy services, mutate DB state, create TaskFlow records, replay history, publish releases, or move secrets.

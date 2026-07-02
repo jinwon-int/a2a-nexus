@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Execution Proof (Team1 nosuk lane, A2A R23)
+// Execution Proof (Team1 workerAlpha lane, A2A R23)
 // Parent: a2a-docker-runner#261
 // Parent: a2a-plane#335
 //

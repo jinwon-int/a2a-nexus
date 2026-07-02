@@ -8,8 +8,8 @@
  * Coverage:
  * - Valid JSON example parses without error
  * - buildRunnerTaskFromHandlerPayload produces correct RunnerTask fields
- * - Active target nodes (bangtong/dungae/sogyo/nosuk) are present
- * - Yukson is explicitly excluded
+ * - Active target nodes (workerGamma/workerEpsilon/workerBeta/workerAlpha) are present
+ * - workerDelta is explicitly excluded
  * - Timeout, reportLanguage, issueUrl, mode are preserved
  */
 
@@ -81,19 +81,19 @@ test("broker canary payload is valid JSON and parses", () => {
   assert.ok(payload.excludedLegacy, "payload should have excluded legacy section");
 });
 
-test("broker canary payload has active targets (bangtong/dungae/sogyo/nosuk)", () => {
+test("broker canary payload has active targets (workerGamma/workerEpsilon/workerBeta/workerAlpha)", () => {
   const payload = loadCanaryPayload();
   const targets = payload.canary.activeTargets ?? [];
-  assert.ok(targets.includes("bangtong"), "missing bangtong");
-  assert.ok(targets.includes("dungae"), "missing dungae");
-  assert.ok(targets.includes("sogyo"), "missing sogyo");
-  assert.ok(targets.includes("nosuk"), "missing nosuk");
+  assert.ok(targets.includes("workerGamma"), "missing workerGamma");
+  assert.ok(targets.includes("workerEpsilon"), "missing workerEpsilon");
+  assert.ok(targets.includes("workerBeta"), "missing workerBeta");
+  assert.ok(targets.includes("workerAlpha"), "missing workerAlpha");
 });
 
-test("broker canary payload explicitly excludes yukson", () => {
+test("broker canary payload explicitly excludes workerDelta", () => {
   const payload = loadCanaryPayload();
   const excludes = payload.canary.excludeNodes ?? [];
-  assert.ok(excludes.includes("yukson"), "yukson must be in excludeNodes");
+  assert.ok(excludes.includes("workerDelta"), "workerDelta must be in excludeNodes");
   assert.ok(
     typeof payload.excludedLegacy?.reason === "string" &&
       payload.excludedLegacy.reason.length > 0,
@@ -363,12 +363,12 @@ test("broker canary payload operator checklist covers all required steps", () =>
   // Step 3: npm checks
   assert.ok(fullText.includes("npm"), "missing npm check step");
   // Step 4: active targets
-  assert.ok(fullText.includes("bangtong"), "missing bangtong in checklist");
-  assert.ok(fullText.includes("dungae"), "missing dungae in checklist");
-  assert.ok(fullText.includes("sogyo"), "missing sogyo in checklist");
-  assert.ok(fullText.includes("nosuk"), "missing nosuk in checklist");
-  // Step 5: yukson exclusion
-  assert.ok(fullText.includes("yukson"), "missing yukson exclusion in checklist");
+  assert.ok(fullText.includes("workerGamma"), "missing workerGamma in checklist");
+  assert.ok(fullText.includes("workerEpsilon"), "missing workerEpsilon in checklist");
+  assert.ok(fullText.includes("workerBeta"), "missing workerBeta in checklist");
+  assert.ok(fullText.includes("workerAlpha"), "missing workerAlpha in checklist");
+  // Step 5: workerDelta exclusion
+  assert.ok(fullText.includes("workerDelta"), "missing workerDelta exclusion in checklist");
 });
 
 test("broker canary payload uses synthetic values only (no real secrets)", () => {

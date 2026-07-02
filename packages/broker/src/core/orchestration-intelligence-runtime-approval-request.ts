@@ -97,7 +97,7 @@ export interface OIRuntimeApprovalRequestPacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -162,7 +162,7 @@ export function buildOIRuntimeApprovalRequestPacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -193,7 +193,7 @@ export function renderOIRuntimeApprovalRequestMarkdown(packet: OIRuntimeApproval
     ...(packet.blockers.length ? packet.blockers.map((blocker) => `- ${blocker}`) : ["- none"]),
     "Next actions:",
     ...packet.nextActions.map((action) => `- ${action}`),
-    "Safety: source-only runtime approval request. It documents the exact approval phrase and evidence fields for a future operator decision, but does not grant approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand Daegyo/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
+    "Safety: source-only runtime approval request. It documents the exact approval phrase and evidence fields for a future operator decision, but does not grant approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand mobilebeta/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
   ].join("\n");
 }
 
@@ -305,7 +305,7 @@ function evidencePatchForState(state: OIRuntimeApprovalRequestState): Required<O
     explicitRuntimeApprovalPresent: false,
     brokerDispatchApprovalPresent: false,
     workerSpawnApprovalPresent: false,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: false,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: state === "approval_request_ready",
@@ -323,7 +323,7 @@ function nextActionsForState(state: OIRuntimeApprovalRequestState): string[] {
     return [
       "present the explicit runtime approval request to the operator as a separate approval gate",
       "record any operator response in a future source-only approval decision evidence packet",
-      "keep runtime executor, broker dispatch, worker spawn, and Daegyo/mobile scope expansion disabled until later gates pass",
+      "keep runtime executor, broker dispatch, worker spawn, and mobilebeta/mobile scope expansion disabled until later gates pass",
     ];
   }
   if (state === "runtime_design_review_not_ready") return ["complete runtime design review before requesting approval"];
@@ -339,7 +339,7 @@ function approvalRequestFor(operator: string, phrase: string | undefined): OIRun
     scope: [
       "record explicit operator approval evidence in a future source-only packet",
       "keep runtime executor implementation and enablement in separate future work",
-      "keep broker dispatch, worker spawn, and Daegyo/mobile scope expansion as independent gates",
+      "keep broker dispatch, worker spawn, and mobilebeta/mobile scope expansion as independent gates",
     ],
     requiredConditions: [
       "operator identity must be recorded without secrets",
@@ -352,7 +352,7 @@ function approvalRequestFor(operator: string, phrase: string | undefined): OIRun
       "runtime executor enablement",
       "broker dispatch creation",
       "worker spawn",
-      "Daegyo/mobile scope expansion",
+      "mobilebeta/mobile scope expansion",
       "live provider or Telegram canary",
       "deploy, restart, DB mutation, Terminal ACK/replay, release publish, or credential movement",
     ],

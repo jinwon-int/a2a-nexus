@@ -42,12 +42,12 @@ const completeEvidence = {
   },
   lifecycle: {
     taskId: 'task-no-live-1',
-    workerId: 'nosuk',
+    workerId: 'workeralpha',
     resultProjectionObserved: true,
   },
   recovery: {
     staleTaskId: 'task-stale-1',
-    workerId: 'nosuk',
+    workerId: 'workeralpha',
     heartbeatAgeMs: 180000,
     staleAfterMs: 120000,
     requeueCountBefore: 0,

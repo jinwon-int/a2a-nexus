@@ -114,7 +114,7 @@ export interface TerminalBriefSidecarReviewDecisionIngestorPacket {
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     externalHarnessCompatible: true;
     consumesOperatorReviewTablePacket: true;
     classifiesOperatorDecisionEvidence: true;
@@ -225,7 +225,7 @@ export function buildTerminalBriefSidecarReviewDecisionIngestor(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       externalHarnessCompatible: true,
       consumesOperatorReviewTablePacket: true,
       classifiesOperatorDecisionEvidence: true,

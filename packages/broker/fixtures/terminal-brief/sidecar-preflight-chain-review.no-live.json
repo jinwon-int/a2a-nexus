@@ -15,8 +15,8 @@
       "dryRunStartCanaryPlanReady": true,
       "requestedAction": "approve_supervised_terminal_brief_sidecar_dry_run_start_canary",
       "operatorTarget": "operator-a",
-      "executorName": "gongyung-sidecar-dry-run-executor",
-      "adapterName": "gongyung",
+      "executorName": "mobilealpha-sidecar-dry-run-executor",
+      "adapterName": "mobilealpha",
       "monitorIntervalSeconds": 60,
       "maxQueueBacklog": 1000
     },
@@ -84,7 +84,7 @@
       "harnessNeutral": true,
       "openclawMessageSendRequired": false,
       "hermesAdapterCompatible": true,
-      "gongyungAdapterCompatible": true,
+      "mobilealphaAdapterCompatible": true,
       "consumesDryRunStartCanaryPlanPacket": true,
       "collectsLiveEvidence": false,
       "probesGateway": false,
@@ -124,6 +124,6 @@
   },
   "preflightChainReview": {
     "now": "2026-05-19T00:05:00.000Z",
-    "finalizer": "seoseo"
+    "finalizer": "brokeralpha"
   }
 }

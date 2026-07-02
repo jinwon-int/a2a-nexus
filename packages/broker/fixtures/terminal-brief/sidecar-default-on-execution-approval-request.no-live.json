@@ -26,7 +26,7 @@
     "executionRollbackEnvelope": {
       "envelopeOnly": true,
       "envelopeReference": "tb-sidecar-default-on-execution-rollback-envelope:4fd1a5b3535e918a",
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "executorId": "terminal-brief-default-on-runtime-executor",
       "runtimeTarget": "terminal-brief-sidecar",
       "operatorInstructionReference": "a2a-broker#778",
@@ -98,7 +98,7 @@
       "sending execution approval requests",
       "granting approval or executing an approval grant",
       "writing config or enabling Terminal Brief default-on",
-      "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+      "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
       "terminal ACK/replay or terminal receipt DB mutation",
       "process spawn, sidecar start/stop/restart, broker restart, or deploy",
       "GitHub mutation from the packet/route",
@@ -159,7 +159,7 @@
   "defaultOnExecutionApprovalRequest": {
     "now": "2026-05-19T06:10:00.000Z",
     "mode": "fixture-source-only/no-live",
-    "requestedBy": "seoseo",
+    "requestedBy": "brokeralpha",
     "operatorTarget": "terminal-brief-default-on",
     "approvalWindowMinutes": 20
   }

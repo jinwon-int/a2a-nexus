@@ -329,7 +329,7 @@ function pendingReasonCode(
 }
 
 function isMobileNoLiveWorker(worker: string): boolean {
-  return worker === "gongyung" || worker === "daegyo";
+  return worker === "mobilealpha" || worker === "mobilebeta";
 }
 
 function workerIdForTask(task: TaskRecord): string {

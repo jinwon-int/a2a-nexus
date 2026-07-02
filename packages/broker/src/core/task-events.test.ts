@@ -288,16 +288,16 @@ describe("TaskEventStream", () => {
 
   it("does not project runId-only tasks as parent rounds in compact terminal events", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "nosuk");
+    registerWorker(broker, "workeralpha");
     const task = createTask(broker, {
       id: "compact-runid-only",
-      targetNodeId: "nosuk",
+      targetNodeId: "workeralpha",
       payload: {
         runId: "standalone-retry-run",
       },
     });
-    broker.claimTask(task.id, "nosuk");
-    broker.completeTask(task.id, "nosuk", { summary: "retry complete" });
+    broker.claimTask(task.id, "workeralpha");
+    broker.completeTask(task.id, "workeralpha", { summary: "retry complete" });
 
     const [event] = broker.getTaskEventStream().subscribeTerminal();
     assert.ok(event);
@@ -310,16 +310,16 @@ describe("TaskEventStream", () => {
 
   it("keeps ambiguous parentRoundId out of raw compact event fields", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "sogyo");
+    registerWorker(broker, "workerbeta");
     const task = createTask(broker, {
       id: "compact-parent-round-without-total",
-      targetNodeId: "sogyo",
+      targetNodeId: "workerbeta",
       payload: {
         parentRoundId: "ambiguous-parent-round",
       },
     });
-    broker.claimTask(task.id, "sogyo");
-    broker.completeTask(task.id, "sogyo", { summary: "ambiguous complete" });
+    broker.claimTask(task.id, "workerbeta");
+    broker.completeTask(task.id, "workerbeta", { summary: "ambiguous complete" });
 
     const [event] = broker.getTaskEventStream().subscribeTerminal();
     assert.ok(event);
@@ -331,17 +331,17 @@ describe("TaskEventStream", () => {
 
   it("counts total-only parentRoundId compact event fields when local progress is available", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "sogyo");
+    registerWorker(broker, "workerbeta");
     const task = createTask(broker, {
       id: "compact-parent-round-without-order",
-      targetNodeId: "sogyo",
+      targetNodeId: "workerbeta",
       payload: {
         parentRoundId: "total-only-parent-round",
         parentRoundTotal: 4,
       },
     });
-    broker.claimTask(task.id, "sogyo");
-    broker.completeTask(task.id, "sogyo", { summary: "ambiguous complete" });
+    broker.claimTask(task.id, "workerbeta");
+    broker.completeTask(task.id, "workerbeta", { summary: "ambiguous complete" });
 
     const [event] = broker.getTaskEventStream().subscribeTerminal();
     assert.ok(event);
@@ -351,59 +351,59 @@ describe("TaskEventStream", () => {
     assert.equal(event.parentRoundOrder, undefined);
     assert.equal(event.parentRoundProgress, 1);
     assert.equal(event.parentRoundTerminalProgress, 1);
-    assert.equal(event.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo(완료 1/4)");
+    assert.equal(event.terminalBriefTitle, "A2A Terminal Brief 완료: workerbeta(완료 1/4)");
   });
 
   it("preserves parent-owned cross-broker routing metadata in compact terminal events", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-    registerWorker(broker, "jingun");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+    registerWorker(broker, "workerzeta");
 
     const task = createTask(broker, {
-      id: "compact-parent-owned-jingun",
-      targetNodeId: "jingun",
+      id: "compact-parent-owned-workerzeta",
+      targetNodeId: "workerzeta",
       payload: {
-        parentRoundId: "seoseo-led-round",
+        parentRoundId: "brokeralpha-led-round",
         parentRoundTotal: 2,
         parentRoundOrder: 2,
-        originBrokerId: "seoseo",
-        brokerOfRecordId: "seoseo",
+        originBrokerId: "brokeralpha",
+        brokerOfRecordId: "brokeralpha",
         operatorFacingOwner: "parent",
         crossBrokerHandoff: {
-          parentRoundId: "seoseo-led-round",
-          originBrokerId: "seoseo",
-          handoffBrokerId: "gwakga",
+          parentRoundId: "brokeralpha-led-round",
+          originBrokerId: "brokeralpha",
+          handoffBrokerId: "brokerbeta",
           originTaskId: "parent-task-1",
-          childWorkerId: "jingun",
+          childWorkerId: "workerzeta",
         },
       },
     });
-    broker.claimTask(task.id, "jingun");
-    broker.completeTask(task.id, "jingun", { summary: "Team2 child completed" });
+    broker.claimTask(task.id, "workerzeta");
+    broker.completeTask(task.id, "workerzeta", { summary: "Team2 child completed" });
 
     const [event] = broker.getTaskEventStream().subscribeTerminal();
     assert.ok(event);
-    assert.equal(event.parentRoundId, "seoseo-led-round");
-    assert.equal(event.originBrokerId, "seoseo");
-    assert.equal(event.brokerOfRecordId, "seoseo");
+    assert.equal(event.parentRoundId, "brokeralpha-led-round");
+    assert.equal(event.originBrokerId, "brokeralpha");
+    assert.equal(event.brokerOfRecordId, "brokeralpha");
     assert.equal(event.parentRoundTotal, 2);
     assert.equal(event.parentRoundOrder, 2);
     assert.equal(event.parentRoundProgress, 2);
     assert.equal(event.parentRoundProgressSource, "parent_round_order");
     assert.deepEqual(event.crossBrokerHandoff, {
-      parentRoundId: "seoseo-led-round",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
+      parentRoundId: "brokeralpha-led-round",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
       originTaskId: "parent-task-1",
-      childWorkerId: "jingun",
+      childWorkerId: "workerzeta",
     });
     assert.deepEqual(event.notificationOwnership, {
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
       reason: "parent-owned cross-broker Terminal Brief; handoff broker event is aggregation evidence only; parent broker owns operator notification and ACK",
     });
-    assert.equal(event.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/2)");
+    assert.equal(event.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/2)");
   });
 });
 
@@ -421,8 +421,8 @@ describe("TerminalTaskEventOutbox", () => {
         taskDescription: "Fix terminal closeout from /work/private token=fake-token-placeholder",
         crossBrokerHandoff: {
           parentRoundId: "parent-round-1",
-          originBrokerId: "gwakga",
-          handoffBrokerId: "seoseo",
+          originBrokerId: "brokerbeta",
+          handoffBrokerId: "brokeralpha",
           originTaskId: "parent-task-1",
         },
       },
@@ -463,8 +463,8 @@ describe("TerminalTaskEventOutbox", () => {
     assert.match(event.payload.testSummary ?? "", /tests passed from \[path\]/);
     assert.deepEqual(event.payload.crossBrokerHandoff, {
       parentRoundId: "parent-round-1",
-      originBrokerId: "gwakga",
-      handoffBrokerId: "seoseo",
+      originBrokerId: "brokerbeta",
+      handoffBrokerId: "brokeralpha",
       originTaskId: "parent-task-1",
     });
     assert.deepEqual(event.ackAudit, {
@@ -490,9 +490,9 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("normalizes no-change comment evidence aliases into terminal outbox evidence URLs", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "dungae");
+    registerWorker(broker, "workerepsilon");
     const task = createTask(broker, {
-      targetNodeId: "dungae",
+      targetNodeId: "workerepsilon",
       payload: {
         githubRepo: "jinwon-int/a2a-broker",
         githubIssueNumber: 472,
@@ -501,8 +501,8 @@ describe("TerminalTaskEventOutbox", () => {
       },
     });
 
-    broker.claimTask(task.id, "dungae");
-    broker.completeTask(task.id, "dungae", {
+    broker.claimTask(task.id, "workerepsilon");
+    broker.completeTask(task.id, "workerepsilon", {
       summary: "no code change needed; evidence-only Done/Block URL returned",
       output: {
         github: {
@@ -524,10 +524,10 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("includes worker task brief in fake operator terminal line", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "sogyo");
+    registerWorker(broker, "workerbeta");
     const task = createTask(broker, {
       id: "brief-line",
-      targetNodeId: "sogyo",
+      targetNodeId: "workerbeta",
       payload: {
         githubRepo: "jinwon-int/a2a-broker",
         githubIssueNumber: 310,
@@ -535,15 +535,15 @@ describe("TerminalTaskEventOutbox", () => {
       },
     });
 
-    broker.claimTask(task.id, "sogyo");
-    broker.completeTask(task.id, "sogyo", { summary: "npm test passed" });
+    broker.claimTask(task.id, "workerbeta");
+    broker.completeTask(task.id, "workerbeta", { summary: "npm test passed" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
     const envelope = toFakeOperatorEnvelope(event);
-    assert.equal(envelope.body.worker, "sogyo");
+    assert.equal(envelope.body.worker, "workerbeta");
     assert.equal(envelope.body.taskBrief, "broker receipt/evidence gate");
-    assert.equal(renderFakeOperatorLine(envelope.body), "sogyo completed jinwon-int/a2a-broker#310 — broker receipt/evidence gate");
+    assert.equal(renderFakeOperatorLine(envelope.body), "workerbeta completed jinwon-int/a2a-broker#310 — broker receipt/evidence gate");
   });
 
   it("counts direct parent round progress only when a total denominator is known", () => {
@@ -605,68 +605,68 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(events[2]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: worker-1(진단: parentRoundTotal, parentRoundOrder 누락)");
   });
 
-  it("direct task flow emits bangtong compact Terminal Brief with parentRoundTotal=7, progress=1", () => {
+  it("direct task flow emits workergamma compact Terminal Brief with parentRoundTotal=7, progress=1", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     const task = createTask(broker, {
-      id: "bangtong-direct-child",
-      targetNodeId: "bangtong",
+      id: "workergamma-direct-child",
+      targetNodeId: "workergamma",
       payload: {
         parentRoundId: "r13-parent-round",
         parentRoundTotal: 7,
       },
     });
 
-    broker.claimTask(task.id, "bangtong");
-    broker.completeTask(task.id, "bangtong", { summary: "bangtong direct task completed" });
+    broker.claimTask(task.id, "workergamma");
+    broker.completeTask(task.id, "workergamma", { summary: "workergamma direct task completed" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
-    const event = events.find(e => e.payload.taskId === "bangtong-direct-child");
-    assert.ok(event, "bangtong direct task event must exist");
-    assert.equal(event.payload.worker, "bangtong");
+    const event = events.find(e => e.payload.taskId === "workergamma-direct-child");
+    assert.ok(event, "workergamma direct task event must exist");
+    assert.equal(event.payload.worker, "workergamma");
     assert.equal(event.payload.run, "r13-parent-round");
     assert.equal(event.payload.parentRoundTotal, 7);
     assert.equal(event.payload.parentRoundProgress, 1);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/7)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/7)");
     assert.equal(event.payload.status, "succeeded");
   });
 
   it("parent-local Terminal Brief defaults origin broker to broker-of-record for compact title metadata", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-    registerWorker(broker, "bangtong");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+    registerWorker(broker, "workergamma");
 
     const task = createTask(broker, {
       id: "parent-local-terminal-brief-child",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: {
-        parentRoundId: "seoseo-parent-local-round",
+        parentRoundId: "brokeralpha-parent-local-round",
         parentRoundTotal: 7,
       },
     });
 
-    broker.claimTask(task.id, "bangtong");
-    broker.completeTask(task.id, "bangtong", { summary: "parent local child completed" });
+    broker.claimTask(task.id, "workergamma");
+    broker.completeTask(task.id, "workergamma", { summary: "parent local child completed" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
-    assert.equal(event.payload.parentRoundId, "seoseo-parent-local-round");
-    assert.equal(event.payload.run, "seoseo-parent-local-round");
-    assert.equal(event.payload.originBrokerId, "seoseo");
-    assert.equal(event.payload.brokerOfRecordId, "seoseo");
+    assert.equal(event.payload.parentRoundId, "brokeralpha-parent-local-round");
+    assert.equal(event.payload.run, "brokeralpha-parent-local-round");
+    assert.equal(event.payload.originBrokerId, "brokeralpha");
+    assert.equal(event.payload.brokerOfRecordId, "brokeralpha");
     assert.equal(event.payload.parentRoundTotal, 7);
     assert.equal(event.payload.parentRoundProgress, 1);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/7)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/7)");
     assert.equal(event.payload.notificationOwnership, undefined);
   });
 
   it("projects R16 Terminal Brief metadata aliases from payload and result metadata", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-    registerWorker(broker, "jingun");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+    registerWorker(broker, "workerzeta");
 
     const task = createTask(broker, {
       id: "r16-terminal-brief-metadata",
-      targetNodeId: "jingun",
+      targetNodeId: "workerzeta",
       payload: {
         parentRoundId: "a2a-r16-terminal-brief-round",
         parentRoundTotal: "7",
@@ -674,13 +674,13 @@ describe("TerminalTaskEventOutbox", () => {
       },
     });
 
-    broker.claimTask(task.id, "jingun");
-    broker.completeTask(task.id, "jingun", {
+    broker.claimTask(task.id, "workerzeta");
+    broker.completeTask(task.id, "workerzeta", {
       summary: "metadata projection fixed",
       output: {
         metadata: {
-          originBrokerId: "gwakga",
-          brokerOfRecordId: "seoseo",
+          originBrokerId: "brokerbeta",
+          brokerOfRecordId: "brokeralpha",
           parentRoundOrder: "6",
         },
       },
@@ -690,49 +690,49 @@ describe("TerminalTaskEventOutbox", () => {
     assert.ok(event);
     assert.equal(event.payload.parentRoundId, "a2a-r16-terminal-brief-round");
     assert.equal(event.payload.run, "a2a-r16-terminal-brief-round");
-    assert.equal(event.payload.originBrokerId, "gwakga");
-    assert.equal(event.payload.brokerOfRecordId, "seoseo");
+    assert.equal(event.payload.originBrokerId, "brokerbeta");
+    assert.equal(event.payload.brokerOfRecordId, "brokeralpha");
     assert.equal(event.payload.parentRoundTotal, 7);
     assert.equal(event.payload.parentRoundOrder, 6);
     assert.equal(event.payload.parentRoundProgress, 1);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 1/7)");
-    assert.equal(event.payload.title, "A2A Terminal Brief 완료: jingun(완료 1/7)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 1/7)");
+    assert.equal(event.payload.title, "A2A Terminal Brief 완료: workerzeta(완료 1/7)");
   });
 
-  it("direct task flow emits bangtong compact Terminal Brief on failed and canceled", () => {
+  it("direct task flow emits workergamma compact Terminal Brief on failed and canceled", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     // failed
     const failedTask = createTask(broker, {
-      id: "bangtong-failed",
-      targetNodeId: "bangtong",
+      id: "workergamma-failed",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r13-failed-round", parentRoundTotal: 7 },
     });
-    broker.claimTask(failedTask.id, "bangtong");
-    broker.failTask(failedTask.id, "bangtong", { message: "task failed" });
+    broker.claimTask(failedTask.id, "workergamma");
+    broker.failTask(failedTask.id, "workergamma", { message: "task failed" });
 
     // canceled
     const canceledTask = createTask(broker, {
-      id: "bangtong-canceled",
-      targetNodeId: "bangtong",
+      id: "workergamma-canceled",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r13-canceled-round", parentRoundTotal: 7 },
     });
-    broker.claimTask(canceledTask.id, "bangtong");
-    broker.cancelTask(canceledTask.id, { actor: { id: "bangtong", kind: "node", role: "analyst" }, reason: "task canceled" });
+    broker.claimTask(canceledTask.id, "workergamma");
+    broker.cancelTask(canceledTask.id, { actor: { id: "workergamma", kind: "node", role: "analyst" }, reason: "task canceled" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
 
-    const failedEvent = events.find(e => e.payload.taskId === "bangtong-failed");
-    assert.ok(failedEvent, "bangtong-failed event must exist");
-    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 1/7)");
+    const failedEvent = events.find(e => e.payload.taskId === "workergamma-failed");
+    assert.ok(failedEvent, "workergamma-failed event must exist");
+    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 1/7)");
     assert.equal(failedEvent.payload.status, "failed");
     assert.equal(failedEvent.payload.parentRoundProgress, 1);
     assert.equal(failedEvent.payload.parentRoundTotal, 7);
 
-    const canceledEvent = events.find(e => e.payload.taskId === "bangtong-canceled");
-    assert.ok(canceledEvent, "bangtong-canceled event must exist");
-    assert.equal(canceledEvent.payload.terminalBriefTitle, "A2A Terminal Brief 취소: bangtong(완료 1/7)");
+    const canceledEvent = events.find(e => e.payload.taskId === "workergamma-canceled");
+    assert.ok(canceledEvent, "workergamma-canceled event must exist");
+    assert.equal(canceledEvent.payload.terminalBriefTitle, "A2A Terminal Brief 취소: workergamma(완료 1/7)");
     assert.equal(canceledEvent.payload.status, "canceled");
     assert.equal(canceledEvent.payload.parentRoundProgress, 1);
     assert.equal(canceledEvent.payload.parentRoundTotal, 7);
@@ -837,9 +837,9 @@ describe("TerminalTaskEventOutbox", () => {
 
     const envelopes = webhookEvents.map(toFakeOperatorEnvelope);
     assert.deepEqual(envelopes.map((envelope) => envelope.transportOwner), [
-      "seoseo/OpenClaw plugin-notifier",
-      "seoseo/OpenClaw plugin-notifier",
-      "seoseo/OpenClaw plugin-notifier",
+      "brokeralpha/OpenClaw plugin-notifier",
+      "brokeralpha/OpenClaw plugin-notifier",
+      "brokeralpha/OpenClaw plugin-notifier",
     ]);
     assert.equal(envelopes[2]!.body.prUrl, "https://github.com/jinwon-int/a2a-broker/pull/230");
     assert.equal(envelopes[2]!.body.doneUrl, "https://github.com/jinwon-int/a2a-broker/issues/229#issuecomment-done");
@@ -1251,20 +1251,20 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("replays unacked terminal records after notifier restart without duplicating receipt-confirmed records", () => {
     const broker = new InMemoryA2ABroker(undefined, undefined, { maxTerminalTaskOutboxEvents: 10 });
-    registerWorker(broker, "nosuk");
+    registerWorker(broker, "workeralpha");
 
     for (const id of ["restart-acked", "restart-unacked"]) {
       const task = createTask(broker, {
         id,
-        targetNodeId: "nosuk",
+        targetNodeId: "workeralpha",
         payload: {
           githubRepo: "jinwon-int/a2a-broker",
           githubIssueNumber: 319,
           githubIssueTitle: "terminal outbox cursor recovery proof",
         },
       });
-      broker.claimTask(task.id, "nosuk");
-      broker.completeTask(task.id, "nosuk", { summary: `done ${id}` });
+      broker.claimTask(task.id, "workeralpha");
+      broker.completeTask(task.id, "workeralpha", { summary: `done ${id}` });
     }
 
     const outbox = broker.getTerminalTaskEventOutbox();
@@ -1291,11 +1291,11 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(replay.cursor, unacked.id, "stale-cursor recovery must not move the notifier cursor backward");
     assert.equal(replay.reconciledUnacked, 1);
     const replayed = replay.events[0]!;
-    assert.equal(replayed.payload.worker, "nosuk");
+    assert.equal(replayed.payload.worker, "workeralpha");
     assert.equal(replayed.payload.taskBrief, "terminal outbox cursor recovery proof");
     assert.equal(
       renderFakeOperatorLine(replayed.payload),
-      "nosuk completed jinwon-int/a2a-broker#319 — terminal outbox cursor recovery proof",
+      "workeralpha completed jinwon-int/a2a-broker#319 — terminal outbox cursor recovery proof",
     );
 
     restarted.getTerminalTaskEventOutbox().acknowledge(replayed.id, {
@@ -1361,22 +1361,22 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("Terminal Brief single-task 1/1 succeeds with 1/1 progress", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     const task = createTask(broker, {
       id: "single-task-single-round",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-single-1of1", parentRoundTotal: 1 },
     });
-    broker.claimTask(task.id, "bangtong");
-    broker.completeTask(task.id, "bangtong", { summary: "done" });
+    broker.claimTask(task.id, "workergamma");
+    broker.completeTask(task.id, "workergamma", { summary: "done" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
     const event = events.find(e => e.payload.taskId === "single-task-single-round");
     assert.ok(event);
     assert.equal(event.payload.parentRoundProgress, 1);
     assert.equal(event.payload.parentRoundTotal, 1);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/1)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/1)");
     assert.equal(event.payload.status, "succeeded");
   });
 
@@ -1390,20 +1390,20 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("valid 4-lane round metadata renders deterministic n/4 title", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
-    registerWorker(broker, "yukson");
-    registerWorker(broker, "sogyo");
-    registerWorker(broker, "nosuk");
+    registerWorker(broker, "workergamma");
+    registerWorker(broker, "workerdelta");
+    registerWorker(broker, "workerbeta");
+    registerWorker(broker, "workeralpha");
 
-    const lanes = ["bangtong", "yukson", "sogyo", "nosuk"];
+    const lanes = ["workergamma", "workerdelta", "workerbeta", "workeralpha"];
     const tasks = lanes.map((worker, i) => {
       const task = createTask(broker, {
         id: `regression-lane-${worker}`,
         targetNodeId: worker,
         payload: {
           parentRoundId: "r4-lane-regression",
-          originBrokerId: "seoseo",
-          brokerOfRecordId: "seoseo",
+          originBrokerId: "brokeralpha",
+          brokerOfRecordId: "brokeralpha",
           parentRoundTotal: 4,
           parentRoundOrder: i + 1,
         },
@@ -1423,8 +1423,8 @@ describe("TerminalTaskEventOutbox", () => {
       assert.equal(event.payload.parentRoundTotal, 4);
       assert.equal(event.payload.parentRoundOrder, i + 1);
       assert.equal(event.payload.parentRoundProgress, i + 1);
-      assert.equal(event.payload.originBrokerId, "seoseo");
-      assert.equal(event.payload.brokerOfRecordId, "seoseo");
+      assert.equal(event.payload.originBrokerId, "brokeralpha");
+      assert.equal(event.payload.brokerOfRecordId, "brokeralpha");
       assert.ok(event.payload.terminalBriefTitle);
       assert.match(
         event.payload.terminalBriefTitle,
@@ -1436,18 +1436,18 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("runId-only payload without total/order stays standalone", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "nosuk");
+    registerWorker(broker, "workeralpha");
 
     // Simulate a retry task that only carries runId as round context
     const task = createTask(broker, {
       id: "regression-runId-only",
-      targetNodeId: "nosuk",
+      targetNodeId: "workeralpha",
       payload: {
         runId: "simulated-retry-run",
       },
     });
-    broker.claimTask(task.id, "nosuk");
-    broker.completeTask(task.id, "nosuk", { summary: "retry succeeded" });
+    broker.claimTask(task.id, "workeralpha");
+    broker.completeTask(task.id, "workeralpha", { summary: "retry succeeded" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
     const event = events.find(e => e.payload.taskId === "regression-runId-only");
@@ -1459,27 +1459,27 @@ describe("TerminalTaskEventOutbox", () => {
     assert.ok(event.payload.terminalBriefTitle);
     assert.doesNotMatch(event.payload.terminalBriefTitle, /\?\//);
     assert.doesNotMatch(event.payload.terminalBriefTitle, /진단/);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: nosuk");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workeralpha");
   });
 
   it("standalone single-worker without round metadata keeps simple title", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     // A task with no parentRoundId, no runId, no round metadata at all
     const task = createTask(broker, {
       id: "regression-standalone-no-round",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: {},
     });
-    broker.claimTask(task.id, "bangtong");
-    broker.completeTask(task.id, "bangtong", { summary: "standalone done" });
+    broker.claimTask(task.id, "workergamma");
+    broker.completeTask(task.id, "workergamma", { summary: "standalone done" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
     const event = events.find(e => e.payload.taskId === "regression-standalone-no-round");
     assert.ok(event);
-    // Standalone falls through to: A2A Terminal Brief 완료: bangtong (no progress parens)
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong");
+    // Standalone falls through to: A2A Terminal Brief 완료: workergamma (no progress parens)
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma");
     // No diagnostic, no ?/?, no progress
     assert.doesNotMatch(event.payload.terminalBriefTitle, /\//);
     assert.doesNotMatch(event.payload.terminalBriefTitle, /진단/);
@@ -1487,24 +1487,24 @@ describe("TerminalTaskEventOutbox", () => {
 
   it("Terminal Brief out-of-order completion uses correct completed-lane count", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     // Complete task B first, then task A
     const taskB = createTask(broker, {
       id: "out-of-order-b",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-out-of-order", parentRoundTotal: 2 },
     });
-    broker.claimTask(taskB.id, "bangtong");
-    broker.completeTask(taskB.id, "bangtong", { summary: "task B done first" });
+    broker.claimTask(taskB.id, "workergamma");
+    broker.completeTask(taskB.id, "workergamma", { summary: "task B done first" });
 
     const taskA = createTask(broker, {
       id: "out-of-order-a",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-out-of-order", parentRoundTotal: 2 },
     });
-    broker.claimTask(taskA.id, "bangtong");
-    broker.completeTask(taskA.id, "bangtong", { summary: "task A done second" });
+    broker.claimTask(taskA.id, "workergamma");
+    broker.completeTask(taskA.id, "workergamma", { summary: "task A done second" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
     const eventB = events.find(e => e.payload.taskId === "out-of-order-b");
@@ -1515,35 +1515,35 @@ describe("TerminalTaskEventOutbox", () => {
     // First terminal task gets completed-lane count 1
     assert.equal(eventB.payload.parentRoundProgress, 1);
     assert.equal(eventB.payload.parentRoundTotal, 2);
-    assert.equal(eventB.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/2)");
+    assert.equal(eventB.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/2)");
 
     // Second terminal task gets completed-lane count 2
     assert.equal(eventA.payload.parentRoundProgress, 2);
     assert.equal(eventA.payload.parentRoundTotal, 2);
-    assert.equal(eventA.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 2/2)");
+    assert.equal(eventA.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 2/2)");
   });
 
   it("Terminal Brief failed tasks increment completed-lane progress", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     // First task fails
     const failTask = createTask(broker, {
       id: "mixed-fail",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-mixed-round", parentRoundTotal: 3 },
     });
-    broker.claimTask(failTask.id, "bangtong");
-    broker.failTask(failTask.id, "bangtong", { message: "failed" });
+    broker.claimTask(failTask.id, "workergamma");
+    broker.failTask(failTask.id, "workergamma", { message: "failed" });
 
     // Second task succeeds
     const succeedTask = createTask(broker, {
       id: "mixed-succeed",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-mixed-round", parentRoundTotal: 3 },
     });
-    broker.claimTask(succeedTask.id, "bangtong");
-    broker.completeTask(succeedTask.id, "bangtong", { summary: "succeeded" });
+    broker.claimTask(succeedTask.id, "workergamma");
+    broker.completeTask(succeedTask.id, "workergamma", { summary: "succeeded" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
 
@@ -1552,55 +1552,55 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(failedEvent.payload.status, "failed");
     // Failed task still reports lane completion for operator progress.
     assert.equal(failedEvent.payload.parentRoundProgress, 1);
-    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 1/3)");
+    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 1/3)");
 
     const succeededEvent = events.find(e => e.payload.taskId === "mixed-succeed");
     assert.ok(succeededEvent);
     assert.equal(succeededEvent.payload.status, "succeeded");
     // Succeeded task is the second terminal lane in the round.
     assert.equal(succeededEvent.payload.parentRoundProgress, 2);
-    assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 2/3)");
+    assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 2/3)");
   });
 
   it("Terminal Brief retry replaces failed task: same canonical child counts once when succeeded", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     // Task fails — no succeeded children yet
     const task = createTask(broker, {
       id: "retry-child-fixed-id",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-retry-round", parentRoundTotal: 2 },
     });
-    broker.claimTask(task.id, "bangtong");
-    broker.failTask(task.id, "bangtong", { message: "first attempt failed" });
+    broker.claimTask(task.id, "workergamma");
+    broker.failTask(task.id, "workergamma", { message: "first attempt failed" });
 
     // Retry with new task ID but same round — this is a new canonical child
     const retry = createTask(broker, {
       id: "retry-child-retry-attempt",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: { parentRoundId: "r-retry-round", parentRoundTotal: 2 },
     });
-    broker.claimTask(retry.id, "bangtong");
-    broker.completeTask(retry.id, "bangtong", { summary: "retry succeeded" });
+    broker.claimTask(retry.id, "workergamma");
+    broker.completeTask(retry.id, "workergamma", { summary: "retry succeeded" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
 
     const failedEvent = events.find(e => e.payload.taskId === "retry-child-fixed-id");
     assert.ok(failedEvent);
     assert.equal(failedEvent.payload.parentRoundProgress, 1);
-    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 1/2)");
+    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 1/2)");
 
     const succeededEvent = events.find(e => e.payload.taskId === "retry-child-retry-attempt");
     assert.ok(succeededEvent);
     // Retry is the second terminal event for the round.
     assert.equal(succeededEvent.payload.parentRoundProgress, 2);
-    assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 2/2)");
+    assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 2/2)");
   });
 
   it("Terminal Brief failed final lane counts as completed progress", () => {
     const broker = new InMemoryA2ABroker();
-    registerWorker(broker, "bangtong");
+    registerWorker(broker, "workergamma");
 
     for (const [id, order] of [
       ["round-child-success-1", 2],
@@ -1609,30 +1609,30 @@ describe("TerminalTaskEventOutbox", () => {
     ] as const) {
       const task = createTask(broker, {
         id,
-        targetNodeId: "bangtong",
+        targetNodeId: "workergamma",
         payload: {
           parentRoundId: "r-final-failure-round",
           parentRoundTotal: 4,
           parentRoundOrder: order,
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
         },
       });
-      broker.claimTask(task.id, "bangtong");
-      broker.completeTask(task.id, "bangtong", { summary: "succeeded" });
+      broker.claimTask(task.id, "workergamma");
+      broker.completeTask(task.id, "workergamma", { summary: "succeeded" });
     }
 
     const failedTask = createTask(broker, {
       id: "round-child-failed-last",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: {
         parentRoundId: "r-final-failure-round",
         parentRoundTotal: 4,
         parentRoundOrder: 1,
-        originBrokerId: "seoseo",
+        originBrokerId: "brokeralpha",
       },
     });
-    broker.claimTask(failedTask.id, "bangtong");
-    broker.failTask(failedTask.id, "bangtong", { message: "failed after three successes" });
+    broker.claimTask(failedTask.id, "workergamma");
+    broker.failTask(failedTask.id, "workergamma", { message: "failed after three successes" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
     const failedEvent = events.find(e => e.payload.taskId === "round-child-failed-last");
@@ -1641,40 +1641,40 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(failedEvent.payload.parentRoundProgress, 4);
     assert.equal(failedEvent.payload.parentRoundTerminalProgress, 4);
     assert.equal(failedEvent.payload.parentRoundOrder, 1);
-    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 4/4)");
+    assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 4/4)");
   });
 
   it("Terminal Brief local parent round uses completed progress rather than lane order", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-    registerWorker(broker, "bangtong");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+    registerWorker(broker, "workergamma");
 
     // Create first succeeded child so progress becomes 1
     const task1 = createTask(broker, {
       id: "order-test-first",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: {
         parentRoundId: "r-order-round",
         parentRoundTotal: 4,
         parentRoundOrder: 1,
-        originBrokerId: "seoseo",
+        originBrokerId: "brokeralpha",
       },
     });
-    broker.claimTask(task1.id, "bangtong");
-    broker.completeTask(task1.id, "bangtong", { summary: "first completed" });
+    broker.claimTask(task1.id, "workergamma");
+    broker.completeTask(task1.id, "workergamma", { summary: "first completed" });
 
     // Second child: lane 4 of 4, but only progress=1 (only one succeeded so far)
     const task4 = createTask(broker, {
       id: "order-test-fourth",
-      targetNodeId: "bangtong",
+      targetNodeId: "workergamma",
       payload: {
         parentRoundId: "r-order-round",
         parentRoundTotal: 4,
         parentRoundOrder: 4,
-        originBrokerId: "seoseo",
+        originBrokerId: "brokeralpha",
       },
     });
-    broker.claimTask(task4.id, "bangtong");
-    broker.completeTask(task4.id, "bangtong", { summary: "fourth completed" });
+    broker.claimTask(task4.id, "workergamma");
+    broker.completeTask(task4.id, "workergamma", { summary: "fourth completed" });
 
     const events = broker.getTerminalTaskEventOutbox().subscribe();
 
@@ -1682,33 +1682,33 @@ describe("TerminalTaskEventOutbox", () => {
     assert.ok(firstEvent);
     assert.equal(firstEvent.payload.parentRoundProgress, 1);
     assert.equal(firstEvent.payload.parentRoundOrder, 1);
-    assert.equal(firstEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/4)");
+    assert.equal(firstEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/4)");
 
     const fourthEvent = events.find(e => e.payload.taskId === "order-test-fourth");
     assert.ok(fourthEvent);
     assert.equal(fourthEvent.payload.parentRoundProgress, 2);
     assert.equal(fourthEvent.payload.parentRoundOrder, 4);
-    assert.equal(fourthEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 2/4)");
+    assert.equal(fourthEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 2/4)");
   });
 
   it("Terminal Brief same-broker parent-owned round does not use lane order as progress", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-    registerWorker(broker, "yukson");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+    registerWorker(broker, "workerdelta");
 
     const task = createTask(broker, {
       id: "same-broker-parent-owned-third-lane-first",
-      targetNodeId: "yukson",
+      targetNodeId: "workerdelta",
       payload: {
         parentRoundId: "same-broker-parent-owned-round",
         parentRoundTotal: 4,
         parentRoundOrder: 3,
-        originBrokerId: "seoseo",
-        brokerOfRecordId: "seoseo",
+        originBrokerId: "brokeralpha",
+        brokerOfRecordId: "brokeralpha",
         operatorFacingOwner: "parent",
       },
     });
-    broker.claimTask(task.id, "yukson");
-    broker.completeTask(task.id, "yukson", { summary: "third lane completed first" });
+    broker.claimTask(task.id, "workerdelta");
+    broker.completeTask(task.id, "workerdelta", { summary: "third lane completed first" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
@@ -1717,46 +1717,46 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(event.payload.parentRoundTerminalProgress, 1);
     assert.equal(event.payload.parentRoundProgressSource, "broker_local_count");
     assert.equal(event.payload.notificationOwnership, undefined);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: yukson(완료 1/4)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerdelta(완료 1/4)");
   });
 
   it("Terminal Brief parentRoundNum=2/2 is preserved when it is the first local child completion", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-    registerWorker(broker, "jingun");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+    registerWorker(broker, "workerzeta");
 
     const task = createTask(broker, {
       id: "parent-round-num-first-child",
-      targetNodeId: "jingun",
+      targetNodeId: "workerzeta",
       payload: {
-        parentRoundId: "seoseo-led-cross-broker-round",
+        parentRoundId: "brokeralpha-led-cross-broker-round",
         parentRoundTotal: 2,
         parentRoundNum: 2,
-        originBrokerId: "seoseo",
-        brokerOfRecordId: "seoseo",
+        originBrokerId: "brokeralpha",
+        brokerOfRecordId: "brokeralpha",
         crossBrokerHandoff: {
-          parentRoundId: "seoseo-led-cross-broker-round",
-          originBrokerId: "seoseo",
-          handoffBrokerId: "gwakga",
+          parentRoundId: "brokeralpha-led-cross-broker-round",
+          originBrokerId: "brokeralpha",
+          handoffBrokerId: "brokerbeta",
         },
       },
     });
-    broker.claimTask(task.id, "jingun");
-    broker.completeTask(task.id, "jingun", { summary: "Team2 child completed" });
+    broker.claimTask(task.id, "workerzeta");
+    broker.completeTask(task.id, "workerzeta", { summary: "Team2 child completed" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
     assert.equal(event.payload.parentRoundProgress, 2);
     assert.equal(event.payload.parentRoundOrder, 2);
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/2)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/2)");
   });
 
   it("parent-owned cross-broker Terminal Brief uses parent order for handoff progress", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-    registerWorker(broker, "jingun");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+    registerWorker(broker, "workerzeta");
 
     const task = createTask(broker, {
-      id: "parent-owned-live-shape-jingun",
-      targetNodeId: "jingun",
+      id: "parent-owned-live-shape-workerzeta",
+      targetNodeId: "workerzeta",
       payload: {
         runId: "terminal-brief-runner317-proof-20260521",
         parentRoundId: "terminal-brief-runner317-proof-20260521",
@@ -1765,24 +1765,24 @@ describe("TerminalTaskEventOutbox", () => {
         parentRoundNum: 2,
         parentRoundOrder: 2,
         roundNum: 2,
-        laneWorker: "jingun",
+        laneWorker: "workerzeta",
         parentOwnedTerminalBrief: true,
         operatorFacingOwner: "parent",
-        originBrokerId: "seoseo",
-        brokerOfRecordId: "seoseo",
-        handoffBrokerId: "gwakga",
+        originBrokerId: "brokeralpha",
+        brokerOfRecordId: "brokeralpha",
+        handoffBrokerId: "brokerbeta",
         terminalBrief: {
           parentRoundId: "terminal-brief-runner317-proof-20260521",
-          originBrokerId: "seoseo",
+          originBrokerId: "brokeralpha",
           parentRoundTotal: 2,
           parentRoundNum: 2,
           parentRoundOrder: 2,
-          workerId: "jingun",
+          workerId: "workerzeta",
         },
       },
     });
-    broker.claimTask(task.id, "jingun");
-    broker.completeTask(task.id, "jingun", { summary: "Team2 child completed" });
+    broker.claimTask(task.id, "workerzeta");
+    broker.completeTask(task.id, "workerzeta", { summary: "Team2 child completed" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
@@ -1790,11 +1790,11 @@ describe("TerminalTaskEventOutbox", () => {
     assert.equal(event.payload.parentRoundProgress, 2);
     assert.equal(event.payload.parentRoundTerminalProgress, 2);
     assert.equal(event.payload.parentRoundProgressSource, "parent_round_order");
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/2)");
-    assert.equal(event.payload.crossBrokerHandoff?.originBrokerId, "seoseo");
-    assert.equal(event.payload.crossBrokerHandoff?.handoffBrokerId, "gwakga");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/2)");
+    assert.equal(event.payload.crossBrokerHandoff?.originBrokerId, "brokeralpha");
+    assert.equal(event.payload.crossBrokerHandoff?.handoffBrokerId, "brokerbeta");
     assert.deepEqual(event.payload.notificationOwnership, {
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
@@ -1803,41 +1803,41 @@ describe("TerminalTaskEventOutbox", () => {
   });
 
   it("infers parent-owned cross-broker Terminal Brief ownership from origin operator owner", () => {
-    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-    registerWorker(broker, "jingun");
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+    registerWorker(broker, "workerzeta");
 
     const task = createTask(broker, {
-      id: "seoseo-led-team2-parent-owned-jingun",
-      targetNodeId: "jingun",
+      id: "brokeralpha-led-team2-parent-owned-workerzeta",
+      targetNodeId: "workerzeta",
       payload: {
         parentRoundId: "family-wiki-cleanup-scan-20260522T031233Z",
         parentRoundTotal: 7,
         parentRoundOrder: 6,
-        originBrokerId: "seoseo",
-        brokerOfRecordId: "gwakga",
-        operatorFacingOwner: "seoseo",
+        originBrokerId: "brokeralpha",
+        brokerOfRecordId: "brokerbeta",
+        operatorFacingOwner: "brokeralpha",
       },
     });
-    broker.claimTask(task.id, "jingun");
-    broker.completeTask(task.id, "jingun", { summary: "Team2 child completed" });
+    broker.claimTask(task.id, "workerzeta");
+    broker.completeTask(task.id, "workerzeta", { summary: "Team2 child completed" });
 
     const [event] = broker.getTerminalTaskEventOutbox().subscribe();
     assert.ok(event);
-    assert.equal(event.payload.brokerOfRecordId, "seoseo");
-    assert.equal(event.payload.originBrokerId, "seoseo");
+    assert.equal(event.payload.brokerOfRecordId, "brokeralpha");
+    assert.equal(event.payload.originBrokerId, "brokeralpha");
     assert.equal(event.payload.parentRoundOrder, 6);
     assert.equal(event.payload.parentRoundProgress, 6);
     assert.equal(event.payload.parentRoundTerminalProgress, 6);
     assert.equal(event.payload.parentRoundProgressSource, "parent_round_order");
-    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 6/7)");
+    assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 6/7)");
     assert.deepEqual(event.payload.crossBrokerHandoff, {
       parentRoundId: "family-wiki-cleanup-scan-20260522T031233Z",
-      originBrokerId: "seoseo",
-      handoffBrokerId: "gwakga",
-      childWorkerId: "jingun",
+      originBrokerId: "brokeralpha",
+      handoffBrokerId: "brokerbeta",
+      childWorkerId: "workerzeta",
     });
     assert.deepEqual(event.payload.notificationOwnership, {
-      ownerBrokerId: "seoseo",
+      ownerBrokerId: "brokeralpha",
       scope: "parent-broker-only",
       providerSendPermittedByProjection: false,
       terminalAckPermittedByProjection: false,
@@ -1858,7 +1858,7 @@ function toFakeOperatorEnvelope(event: TerminalTaskOutboxEvent) {
   return {
     envelopeVersion: 1,
     delivery: "operator-terminal-push-proof",
-    transportOwner: "seoseo/OpenClaw plugin-notifier",
+    transportOwner: "brokeralpha/OpenClaw plugin-notifier",
     brokerTransport: "webhook-or-sse",
     cursor: event.id,
     body: event.payload,

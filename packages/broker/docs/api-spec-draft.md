@@ -64,8 +64,8 @@ Requires edge secret authentication (same as other non-health routes).
         "id": "...",
         "intent": "analyze",
         "status": "queued",
-        "targetNodeId": "dungae",
-        "assignedWorkerId": "dungae",
+        "targetNodeId": "workerepsilon",
+        "assignedWorkerId": "workerepsilon",
         "createdAt": "...",
         "statusSinceAt": "...",
         "statusAgeSec": 42
@@ -78,14 +78,14 @@ Requires edge secret authentication (same as other non-health routes).
     "totalCompleted": 42,
     "totalFailed": 3,
     "recent": [
-      { "id": "...", "intent": "validate_change", "status": "succeeded", "targetNodeId": "dungae", "completedAt": "...", "result": { "summary": "..." } }
+      { "id": "...", "intent": "validate_change", "status": "succeeded", "targetNodeId": "workerepsilon", "completedAt": "...", "result": { "summary": "..." } }
     ]
   },
   "proposals": {
     "total": 7,
     "byStatus": { "submitted": 2, "validated": 1, "approved": 1, "applied": 3 },
     "pendingAction": [
-      { "id": "...", "kind": "patch", "summary": "...", "status": "submitted", "sourceNodeId": "sogyo", "targetNodeId": "bangtong", "updatedAt": "..." }
+      { "id": "...", "kind": "patch", "summary": "...", "status": "submitted", "sourceNodeId": "workerbeta", "targetNodeId": "workergamma", "updatedAt": "..." }
     ]
   },
   "workers": {
@@ -94,7 +94,7 @@ Requires edge secret authentication (same as other non-health routes).
     "stale": 1,
     "byNode": [
       {
-        "nodeId": "bangtong",
+        "nodeId": "workergamma",
         "role": "live-trader",
         "displayName": "방통",
         "status": "online",
@@ -114,8 +114,8 @@ Requires edge secret authentication (same as other non-health routes).
       "oldestClaimed": {
         "id": "...",
         "intent": "validate_change",
-        "targetNodeId": "bangtong",
-        "assignedWorkerId": "bangtong",
+        "targetNodeId": "workergamma",
+        "assignedWorkerId": "workergamma",
         "createdAt": "...",
         "statusSinceAt": "...",
         "statusAgeSec": 19
@@ -129,7 +129,7 @@ Requires edge secret authentication (same as other non-health routes).
     },
     "workerHealth": {
       "staleWorkersWithActiveTasks": [
-        { "nodeId": "dungae", "activeTaskCount": 2, "lastSeenAt": "...", "lastSeenAgeSec": 137 }
+        { "nodeId": "workerepsilon", "activeTaskCount": 2, "lastSeenAt": "...", "lastSeenAgeSec": 137 }
       ]
     }
   },
@@ -407,7 +407,7 @@ Request:
 ```json
 {
   "source": { "id": "dengae", "kind": "node", "role": "researcher" },
-  "target": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "target": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "kind": "patch",
   "summary": "Tighten entry filter after weak overnight breakouts",
   "rationale": "Backfill shows lower drawdown and fewer low-conviction entries.",
@@ -428,7 +428,7 @@ Response:
 {
   "id": "prop_01",
   "sourceNodeId": "dengae",
-  "targetNodeId": "bangtong",
+  "targetNodeId": "workergamma",
   "kind": "patch",
   "summary": "Tighten entry filter after weak overnight breakouts",
   "status": "submitted",
@@ -461,7 +461,7 @@ Response:
     {
       "id": "prop_01",
       "sourceNodeId": "dengae",
-      "targetNodeId": "bangtong",
+      "targetNodeId": "workergamma",
       "kind": "patch",
       "summary": "Tighten entry filter after weak overnight breakouts",
       "status": "submitted",
@@ -479,7 +479,7 @@ Response:
 {
   "id": "prop_01",
   "sourceNodeId": "dengae",
-  "targetNodeId": "bangtong",
+  "targetNodeId": "workergamma",
   "kind": "patch",
   "summary": "Tighten entry filter after weak overnight breakouts",
   "rationale": "Backfill shows lower drawdown and fewer low-conviction entries.",
@@ -534,13 +534,13 @@ Response:
 
 ### `POST /proposals/:id/validate`
 
-Submit a validation result, usually from `bangtong` or a designated validator.
+Submit a validation result, usually from `workergamma` or a designated validator.
 
 Request:
 
 ```json
 {
-  "nodeId": "bangtong",
+  "nodeId": "workergamma",
   "kind": "backfill",
   "verdict": "pass",
   "metrics": {
@@ -560,7 +560,7 @@ Response:
 {
   "id": "val_01",
   "proposalId": "prop_01",
-  "nodeId": "bangtong",
+  "nodeId": "workergamma",
   "kind": "backfill",
   "verdict": "pass",
   "metrics": {
@@ -606,7 +606,7 @@ Request:
 
 ```json
 {
-  "actor": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "actor": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "note": "Approved for local apply after replay pass."
 }
 ```
@@ -628,7 +628,7 @@ Request:
 
 ```json
 {
-  "actor": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "actor": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "note": "Rejected because slippage sensitivity worsened in the local replay."
 }
 ```
@@ -654,9 +654,9 @@ Request:
 
 ```json
 {
-  "actor": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "actor": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "workspace": {
-    "nodeId": "bangtong",
+    "nodeId": "workergamma",
     "workspaceId": "kr-futures-live",
     "strategyId": "mean-revert-01"
   },
@@ -685,7 +685,7 @@ Request:
 
 ```json
 {
-  "actor": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "actor": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "targetEnvironment": "live",
   "note": "Promoted after staged replay and operator review."
 }
@@ -699,7 +699,7 @@ Request:
 
 ```json
 {
-  "actor": { "id": "bangtong", "kind": "node", "role": "live-trader" },
+  "actor": { "id": "workergamma", "kind": "node", "role": "live-trader" },
   "reason": "Unexpected drawdown expansion after rollout"
 }
 ```

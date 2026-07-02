@@ -1,7 +1,7 @@
 export type RunnerEngine = "docker" | "podman";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task Templates (Team1 nosuk lane, A2A R23)
+// Task Templates (Team1 workerAlpha lane, A2A R23)
 // Parent: a2a-docker-runner#261
 // Parent: a2a-plane#335
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,7 +749,7 @@ export interface RunnerTask {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Template Expansion Evidence (Team1 nosuk lane, A2A R23)
+// Template Expansion Evidence (Team1 workerAlpha lane, A2A R23)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

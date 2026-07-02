@@ -2,24 +2,24 @@
   "kind": "a2a-broker.terminal-brief-finalizer-handoff.fixture",
   "version": 1,
   "mode": "read-only/no-live",
-  "brokerOfRecordId": "seoseo",
-  "finalizerOwner": "seoseo",
+  "brokerOfRecordId": "brokeralpha",
+  "finalizerOwner": "brokeralpha",
   "parentRoundId": "round-695-no-live",
-  "expectedWorkers": ["bangtong", "sogyo", "nosuk"],
+  "expectedWorkers": ["workergamma", "workerbeta", "workeralpha"],
   "expectedTotal": 3,
   "sidecar": {
     "spool": [
       {
-        "schema": "a2a.terminalBrief.hermesGongyungAdapter.spool.v1",
+        "schema": "a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1",
         "writtenAt": "2026-05-18T11:00:00.000Z",
-        "operator": "gongyung",
-        "envelopeId": "terminal-brief-bangtong",
-        "dedupeKey": "terminal-brief-bangtong",
-        "taskId": "task-bangtong",
-        "worker": "bangtong",
+        "operator": "mobilealpha",
+        "envelopeId": "terminal-brief-workergamma",
+        "dedupeKey": "terminal-brief-workergamma",
+        "taskId": "task-workergamma",
+        "worker": "workergamma",
         "status": "succeeded",
-        "title": "A2A Terminal Brief 완료: bangtong(1/3)",
-        "text": "A2A Terminal Brief 완료: bangtong(1/3)\nRequired receipt proof: current_session_visible",
+        "title": "A2A Terminal Brief 완료: workergamma(1/3)",
+        "text": "A2A Terminal Brief 완료: workergamma(1/3)\nRequired receipt proof: current_session_visible",
         "safety": {
           "providerSend": false,
           "terminalAck": false,
@@ -27,16 +27,16 @@
         }
       },
       {
-        "schema": "a2a.terminalBrief.hermesGongyungAdapter.spool.v1",
+        "schema": "a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1",
         "writtenAt": "2026-05-18T11:01:00.000Z",
-        "operator": "gongyung",
-        "envelopeId": "terminal-brief-sogyo",
-        "dedupeKey": "terminal-brief-sogyo",
-        "taskId": "task-sogyo",
-        "worker": "sogyo",
+        "operator": "mobilealpha",
+        "envelopeId": "terminal-brief-workerbeta",
+        "dedupeKey": "terminal-brief-workerbeta",
+        "taskId": "task-workerbeta",
+        "worker": "workerbeta",
         "status": "succeeded",
-        "title": "A2A Terminal Brief 완료: sogyo(2/3)",
-        "text": "A2A Terminal Brief 완료: sogyo(2/3)\nRequired receipt proof: current_session_visible",
+        "title": "A2A Terminal Brief 완료: workerbeta(2/3)",
+        "text": "A2A Terminal Brief 완료: workerbeta(2/3)\nRequired receipt proof: current_session_visible",
         "safety": {
           "providerSend": false,
           "terminalAck": false,
@@ -44,16 +44,16 @@
         }
       },
       {
-        "schema": "a2a.terminalBrief.hermesGongyungAdapter.spool.v1",
+        "schema": "a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1",
         "writtenAt": "2026-05-18T11:02:00.000Z",
-        "operator": "gongyung",
-        "envelopeId": "terminal-brief-nosuk",
-        "dedupeKey": "terminal-brief-nosuk",
-        "taskId": "task-nosuk",
-        "worker": "nosuk",
+        "operator": "mobilealpha",
+        "envelopeId": "terminal-brief-workeralpha",
+        "dedupeKey": "terminal-brief-workeralpha",
+        "taskId": "task-workeralpha",
+        "worker": "workeralpha",
         "status": "succeeded",
-        "title": "A2A Terminal Brief 완료: nosuk(3/3)",
-        "text": "A2A Terminal Brief 완료: nosuk(3/3)\nRequired receipt proof: current_session_visible",
+        "title": "A2A Terminal Brief 완료: workeralpha(3/3)",
+        "text": "A2A Terminal Brief 완료: workeralpha(3/3)\nRequired receipt proof: current_session_visible",
         "safety": {
           "providerSend": false,
           "terminalAck": false,
@@ -65,23 +65,23 @@
       {
         "ackTerminalEvent": false,
         "terminalReceiptStatus": "produced",
-        "receiptId": "hermes-gongyung:gongyung:terminal-brief-nosuk",
-        "reason": "spooled for Gongyung review; operator-visible receipt is not confirmed"
+        "receiptId": "hermes-mobilealpha:mobilealpha:terminal-brief-workeralpha",
+        "reason": "spooled for mobilealpha review; operator-visible receipt is not confirmed"
       }
     ]
   },
   "events": [
     {
-      "id": "task-bangtong-succeeded-20260518T110000Z",
+      "id": "task-workergamma-succeeded-20260518T110000Z",
       "kind": "task.terminal",
       "taskEventId": 1,
       "payload": {
-        "taskId": "task-bangtong",
+        "taskId": "task-workergamma",
         "status": "succeeded",
         "parentRoundId": "round-695-no-live",
-        "originBrokerId": "seoseo",
-        "brokerOfRecordId": "seoseo",
-        "worker": "bangtong",
+        "originBrokerId": "brokeralpha",
+        "brokerOfRecordId": "brokeralpha",
+        "worker": "workergamma",
         "repo": "jinwon-int/a2a-broker",
         "issue": 695,
         "taskBrief": "Terminal Brief finalizer handoff fixture lane 1",
@@ -96,25 +96,25 @@
       "receipt": {
         "status": "produced",
         "updatedAt": "2026-05-18T11:00:00.000Z",
-        "receiptId": "hermes-gongyung:gongyung:task-bangtong"
+        "receiptId": "hermes-mobilealpha:mobilealpha:task-workergamma"
       },
       "attempts": 0
     },
     {
-      "id": "task-sogyo-succeeded-20260518T110100Z",
+      "id": "task-workerbeta-succeeded-20260518T110100Z",
       "kind": "task.terminal",
       "taskEventId": 2,
       "payload": {
-        "taskId": "task-sogyo",
+        "taskId": "task-workerbeta",
         "status": "succeeded",
         "parentRoundId": "round-695-no-live",
-        "originBrokerId": "seoseo",
-        "brokerOfRecordId": "seoseo",
-        "worker": "sogyo",
+        "originBrokerId": "brokeralpha",
+        "brokerOfRecordId": "brokeralpha",
+        "worker": "workerbeta",
         "repo": "jinwon-int/a2a-broker",
         "issue": 695,
         "taskBrief": "Terminal Brief finalizer handoff fixture lane 2",
-        "doneUrl": "https://github.com/jinwon-int/a2a-broker/issues/695#issuecomment-sogyo-done",
+        "doneUrl": "https://github.com/jinwon-int/a2a-broker/issues/695#issuecomment-workerbeta-done",
         "parentRoundProgress": 2,
         "parentRoundTotal": 3,
         "createdAt": "2026-05-18T11:01:00.000Z",
@@ -125,21 +125,21 @@
       "receipt": {
         "status": "produced",
         "updatedAt": "2026-05-18T11:01:00.000Z",
-        "receiptId": "hermes-gongyung:gongyung:task-sogyo"
+        "receiptId": "hermes-mobilealpha:mobilealpha:task-workerbeta"
       },
       "attempts": 0
     },
     {
-      "id": "task-nosuk-succeeded-20260518T110200Z",
+      "id": "task-workeralpha-succeeded-20260518T110200Z",
       "kind": "task.terminal",
       "taskEventId": 3,
       "payload": {
-        "taskId": "task-nosuk",
+        "taskId": "task-workeralpha",
         "status": "succeeded",
         "parentRoundId": "round-695-no-live",
-        "originBrokerId": "seoseo",
-        "brokerOfRecordId": "seoseo",
-        "worker": "nosuk",
+        "originBrokerId": "brokeralpha",
+        "brokerOfRecordId": "brokeralpha",
+        "worker": "workeralpha",
         "repo": "jinwon-int/a2a-broker",
         "issue": 695,
         "taskBrief": "Terminal Brief finalizer handoff fixture lane 3",
@@ -154,7 +154,7 @@
       "receipt": {
         "status": "produced",
         "updatedAt": "2026-05-18T11:02:00.000Z",
-        "receiptId": "hermes-gongyung:gongyung:task-nosuk"
+        "receiptId": "hermes-mobilealpha:mobilealpha:task-workeralpha"
       },
       "attempts": 0
     }

@@ -29,7 +29,7 @@
     "noLiveActionLeak",
     "gitHubPermissionCheck",
     "idempotencyCheck",
-    "seoseoFinalizer",
+    "brokerAlphaFinalizer",
     "crossLaneProjectionStatus",
     "commentOnlyGate"
   ],
@@ -192,7 +192,7 @@
       ]
     },
     {
-      "id": "seoseoFinalizer",
+      "id": "brokerAlphaFinalizer",
       "title": "broker-alpha finalizer check",
       "failClosed": true,
       "requiredForGo": true,

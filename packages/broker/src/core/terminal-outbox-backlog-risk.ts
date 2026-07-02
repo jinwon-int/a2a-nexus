@@ -10,7 +10,7 @@
  * cursorUnknownUnacked) are caller-provided evidence; the analyzer flags gaps
  * but does not guess cursor state.
  *
- * Reference: #540 Team1/Bangtong stability gates for #497/#294 / #824 cleanup.
+ * Reference: #540 Team1/workergamma stability gates for #497/#294 / #824 cleanup.
  */
 
 // ---------------------------------------------------------------------------

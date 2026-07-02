@@ -80,7 +80,7 @@ function receipt(overrides: Partial<TerminalBriefSidecarActivationReceiptIngesto
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesActivationApprovalPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,
@@ -134,7 +134,7 @@ function dryRunStartReceipt(
       dryRunStartApprovalRequestState: "approval_request_draft_ready",
       dryRunStartApprovalRequestIdempotencyKey: "tb-sidecar-dry-run-start-approval-request:fixture-733",
       requestedAction: "approve_supervised_terminal_brief_sidecar_dry_run_start",
-      requestedBy: "seoseo",
+      requestedBy: "brokeralpha",
       operatorTarget: "round-733",
       operatorChannel: "telegram",
       dispatchRequired: true,
@@ -192,7 +192,7 @@ function dryRunStartReceipt(
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDryRunStartApprovalRequestPacket: true,
       providerAcceptedIsVisibilityProof: false,
       terminalAckRequiresVisibilityProof: true,
@@ -235,7 +235,7 @@ function dryRunStartReceipt(
 test("sidecar start executor gate becomes ready from accepted receipt evidence without dispatching start", () => {
   const packet = buildTerminalBriefSidecarStartExecutorGate(receipt(), {
     now: NOW,
-    requestedExecutor: "gongyung-sidecar-dry-run-executor",
+    requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
     operatorApprovalReference: "operator-visible-approval-1",
     commandName: "terminal-brief-sidecar",
     commandArgs: ["--dry-run", "--poll-ms", "15000"],
@@ -267,7 +267,7 @@ test("sidecar start executor gate becomes ready from accepted receipt evidence w
 test("sidecar start executor gate consumes dry-run start approval receipt evidence", () => {
   const packet = buildTerminalBriefSidecarStartExecutorGate(dryRunStartReceipt(), {
     now: NOW,
-    requestedExecutor: "gongyung-sidecar-dry-run-executor",
+    requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
     operatorApprovalReference: "operator-visible-approval-733",
     commandName: "terminal-brief-sidecar",
     commandArgs: ["--dry-run", "--poll-ms", "15000"],

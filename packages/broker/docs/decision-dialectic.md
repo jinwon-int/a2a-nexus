@@ -1,6 +1,6 @@
 # Generic Decision Dialectic
 
-decision.dialectic is the domain-independent successor lane for the older trading.dialectic A2AD shape. It keeps the same explicit phase order and read-model ergonomics while removing trading-only fields such as symbol, venue, side, market type, fixed bangtong/dengae/seoseo routing, and trading-only verdicts.
+decision.dialectic is the domain-independent successor lane for the older trading.dialectic A2AD shape. It keeps the same explicit phase order and read-model ergonomics while removing trading-only fields such as symbol, venue, side, market type, fixed workergamma/dengae/brokeralpha routing, and trading-only verdicts.
 
 For ordinary A2A team rounds that only need a lightweight
 thesis/antithesis/ordinary-alternative review layer, use

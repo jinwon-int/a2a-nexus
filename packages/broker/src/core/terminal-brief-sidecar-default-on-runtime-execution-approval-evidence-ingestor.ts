@@ -122,7 +122,7 @@ export interface TerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEvidenceIn
     harnessNeutral: true;
     openclawMessageSendRequired: false;
     hermesAdapterCompatible: true;
-    gongyungAdapterCompatible: true;
+    mobilealphaAdapterCompatible: true;
     consumesRuntimeExecutionRequestDraftPacket: true;
     providerAcceptedIsVisibilityProof: false;
     approvalGrantEvidenceExecutesGrant: false;
@@ -290,7 +290,7 @@ export function buildTerminalBriefSidecarDefaultOnRuntimeExecutionApprovalEviden
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesRuntimeExecutionRequestDraftPacket: true,
       providerAcceptedIsVisibilityProof: false,
       approvalGrantEvidenceExecutesGrant: false,
@@ -716,7 +716,7 @@ function approvalSensitiveActionsExcluded(): string[] {
     "granting approval or executing an approval grant",
     "runtime config write or Terminal Brief default-on enablement",
     "Terminal Brief sidecar start/stop/restart",
-    "live provider/Hermes/Gongyung/Telegram/OpenClaw send",
+    "live provider/Hermes/mobilealpha/Telegram/OpenClaw send",
     "terminal ACK/replay or terminal receipt DB mutation",
     "process spawn, start executor dispatch, executor invocation, broker restart, or deploy",
     "GitHub PR merge, issue close, or comment post from the ingestor",

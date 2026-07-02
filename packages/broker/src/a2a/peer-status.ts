@@ -13,7 +13,7 @@ import type { TaskRecord } from "../core/types.js";
 // ---------------------------------------------------------------------------
 
 export interface PeerStatusRequest {
-  /** Canonical node id, e.g. "seoseo", "yukson" */
+  /** Canonical node id, e.g. "brokeralpha", "workerdelta" */
   target: string;
   /** Caller's tolerance for cached answer in ms; default 5000 */
   maxCacheAgeMs?: number;

@@ -14,7 +14,7 @@ create or enable runtime behavior.
 - executor contract documented
 - broker dispatch boundary documented
 - worker spawn boundary documented
-- Daegyo/mobile boundary documented
+- mobilebeta/mobile boundary documented
 - rollback and abort criteria documented
 - live boundary plan documented
 - observability and finalizer evidence handoff documented
@@ -28,7 +28,7 @@ readiness evidence patch:
 
 - `runtimeExecutorDesignReviewed=true`
 - `validationEvidenceFresh=true`
-- all approval, dispatch, worker-spawn, Daegyo/mobile expansion, rollback, and
+- all approval, dispatch, worker-spawn, mobilebeta/mobile expansion, rollback, and
   live-boundary readiness booleans remain `false`
 
 Those remaining gates require separate source packets and explicit approval.
@@ -45,6 +45,6 @@ Use `--json` for the raw packet.
 ## Boundary
 
 This packet is source/docs/tests only. It does not enable a runtime executor,
-create broker dispatch, spawn workers, expand Daegyo/mobile GitHub scope, send
+create broker dispatch, spawn workers, expand mobilebeta/mobile GitHub scope, send
 providers, perform Terminal ACK/replay, mutate a database, deploy or restart
 services, publish releases, or move credentials.

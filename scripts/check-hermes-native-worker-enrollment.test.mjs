@@ -4,7 +4,7 @@
  * Validates the enrollment runbook and fixture:
  * - Enrollment runbook structure and required sections.
  * - Enrollment evidence fixture JSON schema, evidence schemas, safety flags.
- * - Cross-reference consistency with no-live conformance and Gongyung profile.
+ * - Cross-reference consistency with no-live conformance and mobileAlpha profile.
  * - Redaction rules and secret-free content.
  * - GO/NO-GO matrix completeness.
  * - Rollback procedure coverage.
@@ -25,7 +25,7 @@ const enrollmentFixturePath = 'fixtures/native-worker/enrollment-evidence.json';
 const conformanceFixturePath = 'fixtures/native-worker/no-live-conformance.json';
 const conformanceChecklistPath = 'docs/hermes-native-worker-conformance-checklist.md';
 const androidRunbookPath = 'docs/hermes-android-native-worker-runbook.md';
-const gongyungSpecPath = 'docs/specs/gongyung-hermes-worker-profile/spec.md';
+const gongyungSpecPath = 'docs/specs/mobileAlpha-hermes-worker-profile/spec.md';
 const hermesIntegrationSpec = 'docs/specs/hermes-worker-integration/spec.md';
 const workerCapabilityRegistryPath = 'packages/broker/docs/worker-capability-registry.md';
 
@@ -51,7 +51,7 @@ test('prerequisite android runbook exists', () => {
   assert.ok(existsSync(join(repoRoot, androidRunbookPath)), `missing: ${androidRunbookPath}`);
 });
 
-test('prerequisite gongyung spec exists', () => {
+test('prerequisite mobileAlpha spec exists', () => {
   assert.ok(existsSync(join(repoRoot, gongyungSpecPath)), `missing: ${gongyungSpecPath}`);
 });
 
@@ -63,11 +63,11 @@ test('worker capability registry exists', () => {
   assert.ok(existsSync(join(repoRoot, workerCapabilityRegistryPath)), `missing: ${workerCapabilityRegistryPath}`);
 });
 
-test('worker capability registry frames Gongyung and Daegyo as mobile no-live workers', () => {
+test('worker capability registry frames mobileAlpha and mobileBeta as mobile no-live workers', () => {
   const content = readFileSync(join(repoRoot, workerCapabilityRegistryPath), 'utf8');
 
-  assert.match(content, /gongyung/i);
-  assert.match(content, /daegyo/i);
+  assert.match(content, /mobileAlpha/i);
+  assert.match(content, /mobileBeta/i);
   assert.match(content, /mobile\s*\/\s*non-docker/i);
   assert.match(content, /no-live, source-only `analyze` \/ `verify`/i);
   assert.match(content, /must reject: Docker-runner, live-impact, provider-send, and generic GitHub-write\/proof-marker payloads/i);
@@ -101,7 +101,7 @@ test('enrollment runbook references issue 504 and parent 503', () => {
   const content = readFileSync(join(repoRoot, enrollmentRunbookPath), 'utf8');
   assert.match(content, /#504/);
   assert.match(content, /#503/);
-  assert.match(content, /seoseo/);
+  assert.match(content, /brokerAlpha/);
 });
 
 test('enrollment runbook references prerequisite documents', () => {
@@ -109,7 +109,7 @@ test('enrollment runbook references prerequisite documents', () => {
 
   assert.match(content, /hermes-android-native-worker-runbook/);
   assert.match(content, /hermes-native-worker-conformance-checklist/);
-  assert.match(content, /gongyung-hermes-worker-profile/);
+  assert.match(content, /mobileAlpha-hermes-worker-profile/);
   assert.match(content, /hermes-worker-integration/);
   assert.match(content, /no-live-conformance\.json/);
   assert.match(content, /enrollment-evidence\.json/);
@@ -288,7 +288,7 @@ test('enrollment fixture references prior art issues', () => {
 test('enrollment fixture has reference fields', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, enrollmentFixturePath), 'utf8'));
 
-  assert.ok(fixture.profiles.some(p => p.includes('gongyung-hermes-worker-profile')), 'fixture must reference gongyung profile');
+  assert.ok(fixture.profiles.some(p => p.includes('mobileAlpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile');
   assert.ok(fixture.runbook.includes('hermes-native-worker-enrollment-runbook'), 'fixture must reference enrollment runbook');
   assert.ok(fixture.priorFixture.includes('no-live-conformance.json'), 'fixture must reference no-live conformance fixture');
   assert.ok(fixture.referenceWorker.includes('hermes-reference-worker'), 'fixture must reference worker');

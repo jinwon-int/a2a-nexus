@@ -11,7 +11,7 @@
   },
   "workers": [
     {
-      "worker": "bangtong",
+      "worker": "workerGamma",
       "runnerBuild": {
         "version": "0.1.0",
         "revision": "0d7c00a22f3756a0b7ccac025e5708d08f3fb6a6"
@@ -22,7 +22,7 @@
       },
       "terminalReceiptSmoke": {
         "operatorVisible": true,
-        "receiptId": "synthetic-bangtong-receipt",
+        "receiptId": "synthetic-workerGamma-receipt",
         "providerSendOnly": {
           "acknowledged": false,
           "cursorComplete": false
@@ -33,7 +33,7 @@
       }
     },
     {
-      "worker": "dungae",
+      "worker": "workerEpsilon",
       "runnerBuild": {
         "version": "0.1.0",
         "revision": "0d7c00a22f3756a0b7ccac025e5708d08f3fb6a6"
@@ -44,7 +44,7 @@
       },
       "terminalReceiptSmoke": {
         "operatorVisible": true,
-        "receiptId": "synthetic-dungae-receipt",
+        "receiptId": "synthetic-workerEpsilon-receipt",
         "providerSendOnly": {
           "acknowledged": false,
           "cursorComplete": false
@@ -55,7 +55,7 @@
       }
     },
     {
-      "worker": "sogyo",
+      "worker": "workerBeta",
       "runnerBuild": {
         "version": "0.1.0",
         "revision": "0d7c00a22f3756a0b7ccac025e5708d08f3fb6a6"
@@ -66,7 +66,7 @@
       },
       "terminalReceiptSmoke": {
         "operatorVisible": true,
-        "receiptId": "synthetic-sogyo-receipt",
+        "receiptId": "synthetic-workerBeta-receipt",
         "providerSendOnly": {
           "acknowledged": false,
           "cursorComplete": false
@@ -77,7 +77,7 @@
       }
     },
     {
-      "worker": "nosuk",
+      "worker": "workerAlpha",
       "runnerBuild": {
         "version": "0.1.0",
         "revision": "0d7c00a22f3756a0b7ccac025e5708d08f3fb6a6"
@@ -88,7 +88,7 @@
       },
       "terminalReceiptSmoke": {
         "operatorVisible": true,
-        "receiptId": "synthetic-nosuk-receipt",
+        "receiptId": "synthetic-workerAlpha-receipt",
         "providerSendOnly": {
           "acknowledged": false,
           "cursorComplete": false

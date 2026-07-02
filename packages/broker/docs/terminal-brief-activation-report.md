@@ -27,9 +27,9 @@ Optional R9 context flags (metadata only; they do not perform live actions):
 - `--issue=#570`
 - `--parent=#567`
 - `--run=<parent-round-id>` / `--parent-round-id=<parent-round-id>`
-- `--parent-broker=seoseo`
-- `--handoff-broker=gwakga`
-- `--worker=dungae`
+- `--parent-broker=brokeralpha`
+- `--handoff-broker=brokerbeta`
+- `--worker=workerepsilon`
 - `--known-total=7`
 
 Optional evidence flags:
@@ -64,9 +64,9 @@ The report returns `Block` until all seven gates have bounded HTTP evidence and 
 
 ## R9 parent-round projection parity addendum
 
-For Seoseo-owned parent rounds receiving Gwakga handoff child Terminal Briefs, no-live activation evidence must prove:
+For brokeralpha-owned parent rounds receiving brokerbeta handoff child Terminal Briefs, no-live activation evidence must prove:
 
-- projected records preserve `brokerOfRecordId=seoseo`, `originBrokerId=gwakga`, the child worker id, and the parent-round total;
+- projected records preserve `brokerOfRecordId=brokeralpha`, `originBrokerId=brokerbeta`, the child worker id, and the parent-round total;
 - parent-broker outbox records render compact titles as `A2A Terminal Brief 완료: <worker>(n/7)` only when both numerator and denominator are known;
 - notification ownership stays parent-only: the broker exposes replayable outbox/evidence records but does not send providers or ACK terminal rows;
 - activation remains blocked until the no-live report links bounded PR/Done/Block evidence and excludes OpenClaw runtime/bootstrap context paths.
@@ -75,7 +75,7 @@ For Seoseo-owned parent rounds receiving Gwakga handoff child Terminal Briefs, n
 The generated packet now includes:
 
 - a GO/NO-GO decision that remains `NO-GO` until all seven bounded HTTP evidence gates pass;
-- Seoseo/Gwakga projection parity metadata (`parentRoundId`, parent/finalizer broker, handoff broker, worker, known total, compact title target);
+- brokeralpha/brokerbeta projection parity metadata (`parentRoundId`, parent/finalizer broker, handoff broker, worker, known total, compact title target);
 - receipt/ACK boundary proof that provider accepted/message-id evidence is not terminal ACK evidence;
 - an approval-gated activation and rollback plan that forbids deploy/restart/reload, live sends, terminal ACK/replay, DB mutation, secret/visibility changes, and release/tag actions without fresh explicit operator approval.
 

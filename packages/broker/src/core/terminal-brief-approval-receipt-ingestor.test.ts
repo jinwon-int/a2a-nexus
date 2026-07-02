@@ -96,8 +96,8 @@ function dispatch(options: Parameters<typeof buildTerminalBriefApprovalExecutor>
   const executor = buildTerminalBriefApprovalExecutor(request, { now: NOW, ...options });
   return buildTerminalBriefApprovalDispatchAdapter(executor, {
     now: NOW,
-    adapter: "gongyung",
-    target: "hermes://gongyung/approval",
+    adapter: "mobilealpha",
+    target: "hermes://mobilealpha/approval",
     channel: "operator",
     requestedBy: "broker-finalizer",
   });

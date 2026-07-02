@@ -22,7 +22,7 @@ function workModeDecision(): Record<string, unknown> {
   return {
     mode: "team1",
     idempotencyKey: "team1-parent-round-policy:test",
-    finalizerOwner: "seoseo",
+    finalizerOwner: "brokeralpha",
     generatedAt: "2026-06-08T13:00:00.000Z",
     capacityState: "healthy",
     capacitySnapshotSource: "/workers/capacity",
@@ -34,19 +34,19 @@ function workModeDecision(): Record<string, unknown> {
 
 test("operator Team1 tasks fail closed when parent round order metadata is missing", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "bangtong");
+  registerWorker(broker, "workergamma");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "team1-parentless-canary",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "bangtong", kind: "node", role: "analyst" },
-        assignedWorkerId: "bangtong",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workergamma", kind: "node", role: "analyst" },
+        assignedWorkerId: "workergamma",
         message: "analysis-only Team1 canary without parent order metadata",
         payload: {
           mode: "analysis-only",
@@ -54,7 +54,7 @@ test("operator Team1 tasks fail closed when parent round order metadata is missi
         },
         taskOrigin: "operator",
         teamId: "team1",
-        brokerOfRecord: "seoseo",
+        brokerOfRecord: "brokeralpha",
       }),
     {
       name: "BrokerError",
@@ -66,29 +66,29 @@ test("operator Team1 tasks fail closed when parent round order metadata is missi
 
 test("operator Team1 tasks must pass through parent round resolution before creation", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  for (const workerId of ["sogyo", "nosuk", "bangtong"]) {
+  for (const workerId of ["workerbeta", "workeralpha", "workergamma"]) {
     registerWorker(broker, workerId);
   }
 
   const task = broker.createTask({
     id: "team1-parent-resolved-canary",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "bangtong", kind: "node", role: "analyst" },
-    assignedWorkerId: "bangtong",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "workergamma", kind: "node", role: "analyst" },
+    assignedWorkerId: "workergamma",
     message: "analysis-only Team1 canary resolved by participant topology",
     payload: {
       mode: "analysis-only",
       discussionRunId: "team1-hermes-canary",
-      participantWorkers: ["sogyo", "nosuk", "bangtong"],
+      participantWorkers: ["workerbeta", "workeralpha", "workergamma"],
       workModeDecision: workModeDecision(),
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
   assert.equal(task.payload.parentRoundId, "team1-hermes-canary");
@@ -119,30 +119,30 @@ test("operator Team1 tasks must pass through parent round resolution before crea
 
 test("operator Team1 round denominator uses actual dispatched workers before broad participants", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  for (const workerId of ["sogyo", "nosuk", "bangtong", "gongyung", "yukson"]) {
+  for (const workerId of ["workerbeta", "workeralpha", "workergamma", "mobilealpha", "workerdelta"]) {
     registerWorker(broker, workerId);
   }
 
   const task = broker.createTask({
     id: "team1-actual-dispatch-denominator-canary",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "yukson", kind: "node", role: "analyst" },
-    assignedWorkerId: "yukson",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "workerdelta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerdelta",
     message: "analysis-only Team1 canary resolved by actual dispatch topology",
     payload: {
       mode: "analysis-only",
       discussionRunId: "team1-worker-refresh-canary",
-      participantWorkers: ["sogyo", "nosuk", "bangtong", "gongyung", "yukson"],
-      dispatchedWorkers: ["sogyo", "nosuk", "bangtong", "yukson"],
+      participantWorkers: ["workerbeta", "workeralpha", "workergamma", "mobilealpha", "workerdelta"],
+      dispatchedWorkers: ["workerbeta", "workeralpha", "workergamma", "workerdelta"],
       workModeDecision: workModeDecision(),
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
   assert.equal(task.payload.parentRoundId, "team1-worker-refresh-canary");
@@ -172,19 +172,19 @@ test("operator Team1 round denominator uses actual dispatched workers before bro
 
 test("operator Team1 round rejects no-live mobile broker-claim lanes by default (#778)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "gongyung");
+  registerWorker(broker, "mobilealpha");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "team1-no-live-mobile-default-excluded",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "gongyung", kind: "node", role: "analyst" },
-        assignedWorkerId: "gongyung",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "mobilealpha", kind: "node", role: "analyst" },
+        assignedWorkerId: "mobilealpha",
         message: "analysis-only Team1 canary incorrectly assigned to no-live mobile worker",
         payload: {
           mode: "analysis-only",
@@ -195,7 +195,7 @@ test("operator Team1 round rejects no-live mobile broker-claim lanes by default 
         },
         taskOrigin: "operator",
         teamId: "team1",
-        brokerOfRecord: "seoseo",
+        brokerOfRecord: "brokeralpha",
       }),
     {
       name: "BrokerError",
@@ -207,17 +207,17 @@ test("operator Team1 round rejects no-live mobile broker-claim lanes by default 
 
 test("operator Team1 round can explicitly opt in no-live mobile broker-claim lanes (#778)", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "gongyung");
+  registerWorker(broker, "mobilealpha");
 
   const task = broker.createTask({
     id: "team1-no-live-mobile-explicit-opt-in",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "gongyung", kind: "node", role: "analyst" },
-    assignedWorkerId: "gongyung",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "mobilealpha", kind: "node", role: "analyst" },
+    assignedWorkerId: "mobilealpha",
     message: "analysis-only Team1 canary explicitly opting mobile worker into broker claim",
     payload: {
       mode: "analysis-only",
@@ -229,26 +229,26 @@ test("operator Team1 round can explicitly opt in no-live mobile broker-claim lan
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
-  assert.equal(task.assignedWorkerId, "gongyung");
+  assert.equal(task.assignedWorkerId, "mobilealpha");
   assert.equal(task.payload.allowNoLiveMobileBrokerClaim, true);
 });
 
 test("operator Team1 tasks normalize discussionRunId into parent round metadata", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "bangtong");
+  registerWorker(broker, "workergamma");
 
   const task = broker.createTask({
     id: "team1-parent-aware-canary",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "bangtong", kind: "node", role: "analyst" },
-    assignedWorkerId: "bangtong",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "workergamma", kind: "node", role: "analyst" },
+    assignedWorkerId: "workergamma",
     message: "analysis-only Team1 canary with parent metadata",
     payload: {
       mode: "analysis-only",
@@ -259,7 +259,7 @@ test("operator Team1 tasks normalize discussionRunId into parent round metadata"
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
   assert.equal(task.payload.parentRoundId, "team1-hermes-canary");
@@ -269,24 +269,24 @@ test("operator Team1 tasks normalize discussionRunId into parent round metadata"
   assert.equal(task.parentRoundId, "team1-hermes-canary");
   assert.equal(task.parentRoundTotal, 3);
   assert.equal(task.parentRoundOrder, 2);
-  assert.equal(task.payload.originBrokerId, "seoseo");
-  assert.equal(task.payload.brokerOfRecordId, "seoseo");
+  assert.equal(task.payload.originBrokerId, "brokeralpha");
+  assert.equal(task.payload.brokerOfRecordId, "brokeralpha");
   assert.equal(task.payload.teamScope, "team1");
 });
 
 test("operator Team1 decision-dialectic parent tasks are not treated as A2A round children", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workerbeta");
 
   const task = broker.createTask({
     id: "decision-dialectic-parent",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "sogyo", kind: "node", role: "analyst" },
-    assignedWorkerId: "sogyo",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "workerbeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerbeta",
     message: "decision dialectic parent task",
     payload: {
       contract: {
@@ -297,7 +297,7 @@ test("operator Team1 decision-dialectic parent tasks are not treated as A2A roun
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
   assert.equal(task.payload.parentRoundId, undefined);
@@ -306,19 +306,19 @@ test("operator Team1 decision-dialectic parent tasks are not treated as A2A roun
 
 test("source-only A2A analysis with sourceHints fails closed when no source evidence is attached", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workerbeta");
 
   assert.throws(
     () =>
       broker.createTask({
         id: "team1-source-hints-without-bundle",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
         message: "source-only A2A task with source hints but no source bundle",
         payload: {
           mode: "analysis-only",
@@ -326,7 +326,7 @@ test("source-only A2A analysis with sourceHints fails closed when no source evid
           sourceOnly: true,
           readOnlyValidation: true,
           discussionRunId: "team1-source-map-canary",
-          participantWorkers: ["sogyo"],
+          participantWorkers: ["workerbeta"],
           sourceHints: [
             { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
           ],
@@ -334,7 +334,7 @@ test("source-only A2A analysis with sourceHints fails closed when no source evid
         },
         taskOrigin: "operator",
         teamId: "team1",
-        brokerOfRecord: "seoseo",
+        brokerOfRecord: "brokeralpha",
       }),
     {
       name: "BrokerError",
@@ -346,11 +346,11 @@ test("source-only A2A analysis with sourceHints fails closed when no source evid
 
 test("source-only A2A analysis fails closed when the assigned worker is stale", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
-  const worker = broker.getWorker("sogyo");
+  registerWorker(broker, "workerbeta");
+  const worker = broker.getWorker("workerbeta");
   assert.ok(worker !== null);
   worker.lastSeenAt = new Date(Date.now() - 3600_000).toISOString();
 
@@ -359,9 +359,9 @@ test("source-only A2A analysis fails closed when the assigned worker is stale", 
       broker.createTask({
         id: "team1-stale-worker-source-evidence",
         intent: "analyze",
-        requester: { id: "seoseo", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        assignedWorkerId: "sogyo",
+        requester: { id: "brokeralpha", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
         message: "source-only A2A task must not be queued to stale worker",
         payload: {
           mode: "analysis-only",
@@ -369,7 +369,7 @@ test("source-only A2A analysis fails closed when the assigned worker is stale", 
           sourceOnly: true,
           readOnlyValidation: true,
           discussionRunId: "team1-stale-worker-canary",
-          participantWorkers: ["sogyo"],
+          participantWorkers: ["workerbeta"],
           sourceHints: [
             { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
           ],
@@ -380,7 +380,7 @@ test("source-only A2A analysis fails closed when the assigned worker is stale", 
         },
         taskOrigin: "operator",
         teamId: "team1",
-        brokerOfRecord: "seoseo",
+        brokerOfRecord: "brokeralpha",
       }),
     {
       name: "BrokerError",
@@ -392,17 +392,17 @@ test("source-only A2A analysis fails closed when the assigned worker is stale", 
 
 test("source-only A2A analysis accepts embedded source evidence instead of harness-specific repo access", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, {
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
-  registerWorker(broker, "sogyo");
+  registerWorker(broker, "workerbeta");
 
   const task = broker.createTask({
     id: "team1-embedded-source-evidence",
     intent: "analyze",
-    requester: { id: "seoseo", kind: "node", role: "hub" },
-    target: { id: "sogyo", kind: "node", role: "analyst" },
-    assignedWorkerId: "sogyo",
+    requester: { id: "brokeralpha", kind: "node", role: "hub" },
+    target: { id: "workerbeta", kind: "node", role: "analyst" },
+    assignedWorkerId: "workerbeta",
     message: "source-only A2A task with embedded source evidence",
     payload: {
       mode: "analysis-only",
@@ -410,7 +410,7 @@ test("source-only A2A analysis accepts embedded source evidence instead of harne
       sourceOnly: true,
       readOnlyValidation: true,
       discussionRunId: "team1-embedded-source-canary",
-      participantWorkers: ["sogyo"],
+      participantWorkers: ["workerbeta"],
       sourceHints: [
         { repo: "jinwon-int/a2a-nexus", path: "packages/broker/src/core/a2a-intent-router.ts" },
       ],
@@ -421,7 +421,7 @@ test("source-only A2A analysis accepts embedded source evidence instead of harne
     },
     taskOrigin: "operator",
     teamId: "team1",
-    brokerOfRecord: "seoseo",
+    brokerOfRecord: "brokeralpha",
   });
 
   const sourceEvidenceResolution = task.payload.sourceEvidenceResolution as Record<string, unknown>;

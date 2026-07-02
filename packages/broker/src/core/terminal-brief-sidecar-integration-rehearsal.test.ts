@@ -33,8 +33,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: "round-693",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-broker",
       issue: 693,
@@ -51,7 +51,7 @@ function eventFor(
     receipt: {
       status: "produced",
       updatedAt: NOW,
-      receiptId: "hermes-gongyung:gongyung:" + taskId,
+      receiptId: "hermes-mobilealpha:mobilealpha:" + taskId,
     },
     attempts: 0,
   };
@@ -59,9 +59,9 @@ function eventFor(
 
 function spoolRecord(worker: string, progress: number, total: number): TerminalBriefSidecarSpoolRecord {
   return {
-    schema: "a2a.terminalBrief.hermesGongyungAdapter.spool.v1",
+    schema: "a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1",
     writtenAt: NOW,
-    operator: "gongyung",
+    operator: "mobilealpha",
     envelopeId: "terminal-brief-" + worker,
     dedupeKey: "terminal-brief-" + worker,
     taskId: "task-" + worker,
@@ -79,17 +79,17 @@ function spoolRecord(worker: string, progress: number, total: number): TerminalB
 
 function readyEvents(): TerminalTaskOutboxEvent[] {
   return [
-    eventFor("bangtong", "succeeded", {
+    eventFor("workergamma", "succeeded", {
       progress: 1,
       total: 3,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/701",
     }),
-    eventFor("sogyo", "succeeded", {
+    eventFor("workerbeta", "succeeded", {
       progress: 2,
       total: 3,
-      doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/693#issuecomment-sogyo-done",
+      doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/693#issuecomment-workerbeta-done",
     }),
-    eventFor("nosuk", "succeeded", {
+    eventFor("workeralpha", "succeeded", {
       progress: 3,
       total: 3,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/702",
@@ -100,18 +100,18 @@ function readyEvents(): TerminalTaskOutboxEvent[] {
 test("sidecar dry-run spool final count produces a closeout candidate without ACK", () => {
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-693",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
-      spoolRecord("nosuk", 3, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
+      spoolRecord("workeralpha", 3, 3),
     ],
     sidecarReceipts: [
       {
         ackTerminalEvent: false,
         terminalReceiptStatus: "produced",
-        receiptId: "hermes-gongyung:gongyung:task-nosuk",
-        reason: "spooled for Gongyung review",
+        receiptId: "hermes-mobilealpha:mobilealpha:task-workeralpha",
+        reason: "spooled for mobilealpha review",
       },
     ],
     events: readyEvents(),
@@ -130,21 +130,21 @@ test("sidecar dry-run spool final count produces a closeout candidate without AC
 test("partial sidecar M/N blocks with missing worker evidence", () => {
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-693",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
     ],
     events: readyEvents().slice(0, 2),
   }, { now: NOW });
 
   assert.equal(rehearsal.decision, "blocked");
-  assert.deepEqual(rehearsal.finalCountCandidate.missingWorkers, ["nosuk"]);
+  assert.deepEqual(rehearsal.finalCountCandidate.missingWorkers, ["workeralpha"]);
   assert.match(rehearsal.blockers.join("\n"), /final count not reached: 2\/3/);
 });
 
 test("sidecar safety flags fail closed when provider send or terminal ACK is attempted", () => {
-  const unsafe = spoolRecord("nosuk", 3, 3);
+  const unsafe = spoolRecord("workeralpha", 3, 3);
   unsafe.safety = {
     providerSend: true,
     terminalAck: true,
@@ -152,10 +152,10 @@ test("sidecar safety flags fail closed when provider send or terminal ACK is att
   };
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-693",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
       unsafe,
     ],
     sidecarReceipts: [{ ackTerminalEvent: true, confirmationSource: "current_session_visible", receiptId: "live-receipt" }],
@@ -172,10 +172,10 @@ test("sidecar safety flags fail closed when provider send or terminal ACK is att
 test("conflicting sidecar final counts fail closed", () => {
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-693",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("nosuk", 3, 3),
-      spoolRecord("yukson", 4, 4),
+      spoolRecord("workeralpha", 3, 3),
+      spoolRecord("workerdelta", 4, 4),
     ],
     events: readyEvents(),
   }, { now: NOW });
@@ -187,11 +187,11 @@ test("conflicting sidecar final counts fail closed", () => {
 test("renderTerminalBriefSidecarIntegrationRehearsalMarkdown states source-only receipt boundary", () => {
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-693",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
-      spoolRecord("nosuk", 3, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
+      spoolRecord("workeralpha", 3, 3),
     ],
     events: readyEvents(),
   }, { now: NOW });

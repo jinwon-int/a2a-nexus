@@ -5,8 +5,8 @@ issue: jinwon-int/a2a-nexus#831 — read-only advisory sidecar readiness evidenc
 startSha: 5c3c0425b1af133af2fc0a2dc33f5f820983c989
 parentTracker: jinwon-int/a2a-nexus#834
 startCommentUrl: https://github.com/jinwon-int/a2a-nexus/issues/831#issuecomment-4723566238
-workerTask: a2a-open-cleanup-20260616T204949Z-yukson-issue-831
-worker: yukson
+workerTask: a2a-open-cleanup-20260616T204949Z-workerDelta-issue-831
+worker: workerDelta
 finalizerUpdate: PR #835 adds the code/test slice that resolves the worker-identified routing-influence ambiguity.
 
 recommendation: PR-first implementation slice is required and included in this branch. Before this PR, the no-live-sidecar and no-provider-send boundaries were already source-covered, but the routing-influence boundary was ambiguous because `resolveAdvisorySidecarRoutingPolicy()` could return `status: "allowed"` with an operational-looking `route: "advisory_sidecar"`. This PR keeps advisory metadata allowed while making operational routing stay on `default_worker` and exposing `routingInfluencePermitted: false` / `operationalRoutingChanged: false` evidence.

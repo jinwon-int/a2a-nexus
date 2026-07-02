@@ -45,8 +45,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: options.parentRoundId ?? "round-833",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-broker",
       issue: 833,
@@ -71,10 +71,10 @@ function eventFor(
 
 function allReadyEvents(): TerminalTaskOutboxEvent[] {
   return [
-    eventFor("bangtong", "succeeded", { progress: 1, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831" }),
-    eventFor("yukson", "succeeded", { progress: 2, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833" }),
-    eventFor("sogyo", "succeeded", { progress: 3, total: 4, doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398" }),
-    eventFor("nosuk", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395" }),
+    eventFor("workergamma", "succeeded", { progress: 1, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/831" }),
+    eventFor("workerdelta", "succeeded", { progress: 2, total: 4, prUrl: "https://github.com/jinwon-int/a2a-broker/pull/833" }),
+    eventFor("workerbeta", "succeeded", { progress: 3, total: 4, doneUrl: "https://github.com/jinwon-int/openclaw-plugin-a2a/pull/398" }),
+    eventFor("workeralpha", "succeeded", { progress: 4, total: 4, prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/395" }),
   ];
 }
 
@@ -89,9 +89,9 @@ function buildReadyInput(): TerminalBriefAutoCloseoutDryRunRunnerInput {
       ciPassUrls: ["https://github.com/jinwon-int/a2a-broker/actions/runs/100"],
       finalCountInput: {
         parentRoundId: "round-833",
-        expectedWorkers: ["bangtong", "yukson", "sogyo", "nosuk"],
+        expectedWorkers: ["workergamma", "workerdelta", "workerbeta", "workeralpha"],
         finalCountSignals: [
-          { id: "brief-final", text: "Terminal Brief: nosuk final worker (4/4)", createdAt: NOW },
+          { id: "brief-final", text: "Terminal Brief: workeralpha final worker (4/4)", createdAt: NOW },
         ],
         events: allReadyEvents(),
       },

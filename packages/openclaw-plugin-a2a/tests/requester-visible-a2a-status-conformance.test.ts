@@ -263,7 +263,7 @@ describe("requester-visible A2A status conformance", () => {
           return { ...operatorEvent, ack: { status: "receipt_confirmed", ...params.receipt as JsonRecord } };
         },
       },
-      handoffBrokerId: "seoseo",
+      handoffBrokerId: "brokerAlpha",
       notifyOperator(envelope: JsonRecord) {
         sent.push(envelope);
         return { ackTerminalEvent: true, confirmationSource: "current_session_visible" };

@@ -1,13 +1,13 @@
 # Terminal Brief approval dispatch adapter
 
-Issue #706 adds a source-only/no-live adapter shell after the Terminal Brief approval executor. The goal is to keep approval dispatch reusable across OpenClaw, Hermes/Gongyung, and future external harnesses without hard-wiring broker core logic to `openclaw message send`.
+Issue #706 adds a source-only/no-live adapter shell after the Terminal Brief approval executor. The goal is to keep approval dispatch reusable across OpenClaw, Hermes/mobilealpha, and future external harnesses without hard-wiring broker core logic to `openclaw message send`.
 
 The adapter consumes an `a2a-broker.terminal-brief-approval-executor.packet` and emits an `a2a-broker.terminal-brief-approval-dispatch-adapter.packet`.
 
 ## CLI
 
 ```bash
-npm run terminal_brief_approval_dispatch -- --input approval-executor.json --adapter gongyung --target hermes://gongyung/approval --channel operator --requested-by broker-finalizer --json
+npm run terminal_brief_approval_dispatch -- --input approval-executor.json --adapter mobilealpha --target hermes://mobilealpha/approval --channel operator --requested-by broker-finalizer --json
 ```
 
 The CLI also accepts lower-level Terminal Brief packets for convenience:
@@ -42,7 +42,7 @@ The request body must contain an approval executor packet directly or under one 
 
 Adapter options:
 
-- `adapter`: `generic`, `openclaw`, `hermes`, or `gongyung`
+- `adapter`: `generic`, `openclaw`, `hermes`, or `mobilealpha`
 - `target`
 - `channel`
 - `requestedBy` / `requested_by`
@@ -63,7 +63,7 @@ Supported adapter types:
 - `generic`
 - `openclaw`
 - `hermes`
-- `gongyung`
+- `mobilealpha`
 
 All adapters share the same source-only contract:
 
@@ -83,7 +83,7 @@ The transcript and receipt are drafts. They are not accepted-send evidence, visi
 
 This adapter does not:
 
-- send OpenClaw, Hermes, Gongyung, Telegram, or other provider messages;
+- send OpenClaw, Hermes, mobilealpha, Telegram, or other provider messages;
 - grant approval;
 - execute a GitHub closeout action;
 - post comments, merge PRs, or close issues;

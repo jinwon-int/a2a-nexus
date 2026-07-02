@@ -326,7 +326,7 @@ test("/health p95/p99 regression with small SQLite fixture (≤200 audit rows)",
   const tmp = tempDir();
   const sqliteFile = join(tmp.dir, "state.sqlite");
 
-  // Seed: 200 audit rows is representative of Seoseo's observed ~1623, well
+  // Seed: 200 audit rows is representative of brokeralpha's observed ~1623, well
   // within "small DB" territory.
   const store = new SqliteBrokerStateStore(sqliteFile);
   store.save(smallAuditSnapshot(200));

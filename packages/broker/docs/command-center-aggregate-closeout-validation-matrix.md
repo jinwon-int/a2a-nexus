@@ -4,7 +4,7 @@ Issue: [#370](https://github.com/jinwon-int/a2a-broker/issues/370)
 Parent: [#364](https://github.com/jinwon-int/a2a-broker/issues/364)
 Roadmap: [#294](https://github.com/jinwon-int/a2a-broker/issues/294)
 Run: `a2a-command-center-aggregation-20260505170100`
-Worker: `yukson` libero validation lane
+Worker: `workerdelta` libero validation lane
 
 This matrix is the no-live validation plan for the command-center aggregation round. It is safe to attach to the #370 issue or PR before all implementation lanes have PR/Done evidence, then re-run as linked lanes become available.
 
@@ -45,7 +45,7 @@ Linked lane evidence observed after the initial #370 Block:
 | #368 closeout markdown states | [`a2a-broker#371`](https://github.com/jinwon-int/a2a-broker/pull/371), merged | Closeout checklist renderer added with fixture tests. |
 | #369 aggregate comment trigger | [`a2a-broker#373`](https://github.com/jinwon-int/a2a-broker/pull/373), merged | Managed parent aggregate comment preview/update path added with tests. |
 | #143 runner evidence hints | [`a2a-docker-runner#144`](https://github.com/jinwon-int/a2a-docker-runner/pull/144), merged | Runner artifact/evidence hint improvements added with tests. |
-| Sogyo auth-path recurrence fix | [`a2a-docker-runner#145`](https://github.com/jinwon-int/a2a-docker-runner/pull/145), merged and applied to live workers | Embedded OpenClaw profile now mirrors ephemeral `GH_TOKEN` into the disposable in-container `gh-issues` config; live worker doctor with env passed on `bangtong`, `dungae`, `sogyo`, `nosuk`, and `vps5` at runner revision `5629354dc954`. |
+| workerbeta auth-path recurrence fix | [`a2a-docker-runner#145`](https://github.com/jinwon-int/a2a-docker-runner/pull/145), merged and applied to live workers | Embedded OpenClaw profile now mirrors ephemeral `GH_TOKEN` into the disposable in-container `gh-issues` config; live worker doctor with env passed on `workergamma`, `workerepsilon`, `workerbeta`, `workeralpha`, and `vps5` at runner revision `5629354dc954`. |
 
 Focused validation run for this matrix branch after merging current `origin/main`:
 

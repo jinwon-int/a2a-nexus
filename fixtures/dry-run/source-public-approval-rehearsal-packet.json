@@ -4,8 +4,8 @@
   "run": "a2a-source-public-approval-rehearsal-20260511T014240Z",
   "parentIssue": "a2a-plane#211 (internal tracker, private)",
   "issue": "a2a-plane#213 (internal tracker, private)",
-  "lane": "team1-yukson-libero",
-  "packetKey": "a2a-source-public-approval-rehearsal-20260511T014240Z/team1-yukson-libero/v1",
+  "lane": "team1-workerDelta-libero",
+  "packetKey": "a2a-source-public-approval-rehearsal-20260511T014240Z/team1-workerDelta-libero/v1",
   "canonicalization": {
     "sortObjectKeys": true,
     "stableArrayOrder": "as-listed-by-gate-id",

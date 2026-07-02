@@ -30,7 +30,7 @@ Provider accepted evidence remains non-visibility and non-ACK evidence.
 The packet is JSON-only and harness-neutral:
 
 - OpenClaw message send is not required;
-- Hermes/Gongyung adapters can render or relay the draft from the same packet;
+- Hermes/mobilealpha adapters can render or relay the draft from the same packet;
 - external harnesses can consume the same packet without OpenClaw CLI coupling.
 
 ## CLI

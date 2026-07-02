@@ -3,7 +3,7 @@
  *
  * Issue:  jinwon-int/plugin-a2a#318
  * Parent: jinwon-int/a2a-broker#636
- * Worker: sogyo
+ * Worker: workerBeta
  *
  * Verifies that handleA2AMonitorStatus with operatorEvents returns a
  * synthesized operatorStatus projection combining broker pressure

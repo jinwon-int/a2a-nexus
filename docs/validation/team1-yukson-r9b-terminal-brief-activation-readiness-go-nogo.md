@@ -1,9 +1,9 @@
-# Team1/yukson R9b Terminal Brief activation readiness GO/NO-GO acceptance matrix
+# Team1/workerDelta R9b Terminal Brief activation readiness GO/NO-GO acceptance matrix
 
 Issue: a2a-plane#293 (a2a-plane#293, internal tracker private)
 Parent: [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567)
 Run: `a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z`
-Lane: Team1/yukson
+Lane: Team1/workerDelta
 Round: A2A R9b — Terminal Brief activation readiness no-live proof
 Snapshot: `2026-05-13T15:27:14Z`
 
@@ -29,7 +29,7 @@ This validation is a no-live, read-only gate. The following actions are explicit
 | # | Outcome | Scope | Validation approach |
 | --- | --- | --- | --- |
 | 1 | **Parent-broker aggregation metadata** | All 7 child tasks in the R9b round carry `parentRoundId`, `originBrokerId`, `parentBrokerId`, and `handoffBrokerId` (when applicable) as immutable metadata. | Contract + fixture review: `contracts/a2a/parent-terminal-brief-aggregation.md` and `fixtures/contract/parent-terminal-brief-aggregation.json`. |
-| 2 | **Compact parent-round titles** | Every aggregate Terminal Brief notification title follows known-total format `A2A Terminal Brief <상태>: <worker>(N/7)` or unknown-total fallback `A2A Terminal Brief <상태>: <worker>(N)`, ≤80 chars, forbidden content excluded. | Title renderer spec review in `contracts/a2a/parent-terminal-brief-aggregation.md` Concise title semantics and `team1-yukson-concise-brief-r9.md` Gate B. |
+| 2 | **Compact parent-round titles** | Every aggregate Terminal Brief notification title follows known-total format `A2A Terminal Brief <상태>: <worker>(N/7)` or unknown-total fallback `A2A Terminal Brief <상태>: <worker>(N)`, ≤80 chars, forbidden content excluded. | Title renderer spec review in `contracts/a2a/parent-terminal-brief-aggregation.md` Concise title semantics and `team1-workerDelta-concise-brief-r9.md` Gate B. |
 | 3 | **Parent-only notification ownership** | Only the broker matching `originBrokerId` may render, dispatch, or update the aggregate Terminal Brief notification for a parent round. | Contract section "Parent-only notification ownership" from `parent-terminal-brief-aggregation.md`. |
 | 4 | **Receipt/ACK boundary proof** | All four receipt levels (accepted-send, requester-visible, operator-visible, terminal ACK) are distinct and tested. Provider accepted-send evidence is never promoted to ACK. | Contract `terminal-semantics.md` v0 freeze + `terminal-brief-live-readiness-go-no-go-matrix.md` receipt gates. |
 | 5 | **GO/NO-GO acceptance matrix** | This document defines the aggregate decision state with linked evidence for each gate, updating the status from the R9 concise brief baseline for R9b activation readiness. | Per-gate pass/fail status below. |
@@ -42,11 +42,11 @@ This validation is a no-live, read-only gate. The following actions are explicit
 | Lane / source | Required evidence for this round | Snapshot evidence | Validation result |
 | --- | --- | --- | --- |
 | Parent dispatch — [a2a-broker#567](https://github.com/jinwon-int/a2a-broker/issues/567) | Round lane list, safety gates, and prior activation context for R9b. | Start marker posted: [a2a-plane#293#issuecomment-4442611374](a2a-plane#293 (internal tracker, private)#issuecomment-4442611374). Parent broker dispatch context pending. | `NO-GO`: parent dispatch context not fully recorded at snapshot. |
-| Parent aggregation metadata — `parent-terminal-brief-aggregation.md` (contract) | Contract and fixture proving `parentRoundId`, `originBrokerId`, `parentBrokerId`, `handoffBrokerId` metadata lifecycle, `projectionKey` idempotency, and redaction boundary. | Contract `contracts/a2a/parent-terminal-brief-aggregation.md` v0 with R9 addition (7-child fixture, concise title, activation plan). Fixture `fixtures/contract/parent-terminal-brief-aggregation.json` with Gwakga-origin and Seoseo-origin title examples. | `PASS`: contract/fixture frozen at v0; R9 addition adds 7-child scenario with known-total and unknown-total fallback. |
-| Concise title coverage — a2a-plane#289 (a2a-plane#289, internal tracker private) | 7-child parent round titles: 3 direct Team1 + 4 cross-broker Team2 projected + 1 unknown-total fallback. All conform to format, ≤80 chars, forbidden content excluded. | R9 concise brief runbook gate at `docs/validation/team1-yukson-concise-brief-r9.md` defines Gates A–G with exact title formats. Fixture covers Gwakga-origin known-total (`(1/7)`) and Seoseo-origin unknown-total (`(2)`). | `PASS`: concise title format, max chars, and forbidden content rules are documented and fixtures verify both known-total and unknown-total paths. |
+| Parent aggregation metadata — `parent-terminal-brief-aggregation.md` (contract) | Contract and fixture proving `parentRoundId`, `originBrokerId`, `parentBrokerId`, `handoffBrokerId` metadata lifecycle, `projectionKey` idempotency, and redaction boundary. | Contract `contracts/a2a/parent-terminal-brief-aggregation.md` v0 with R9 addition (7-child fixture, concise title, activation plan). Fixture `fixtures/contract/parent-terminal-brief-aggregation.json` with brokerBeta-origin and brokerAlpha-origin title examples. | `PASS`: contract/fixture frozen at v0; R9 addition adds 7-child scenario with known-total and unknown-total fallback. |
+| Concise title coverage — a2a-plane#289 (a2a-plane#289, internal tracker private) | 7-child parent round titles: 3 direct Team1 + 4 cross-broker Team2 projected + 1 unknown-total fallback. All conform to format, ≤80 chars, forbidden content excluded. | R9 concise brief runbook gate at `docs/validation/team1-workerDelta-concise-brief-r9.md` defines Gates A–G with exact title formats. Fixture covers brokerBeta-origin known-total (`(1/7)`) and brokerAlpha-origin unknown-total (`(2)`). | `PASS`: concise title format, max chars, and forbidden content rules are documented and fixtures verify both known-total and unknown-total paths. |
 | Parent-only notification ownership — `parent-terminal-brief-aggregation.md` | Contractually enforced: only `originBrokerId` may send the parent-round aggregate notification; children/handoff brokers must not. | Contract section "Parent-only notification ownership" with 5 ownership gates. Fixture proves `terminalBriefTitleOwnerBrokerId` and `terminalBriefTitleRenderedByParentBrokerOnly`. | `PASS`: ownership rules are contractually defined with fail-closed conditions and fixture coverage. |
 | Receipt/ACK boundary — `terminal-semantics.md` | 4-level receipt vocabulary is distinct; provider accepted-send is non-ACK; no evidence line promotes send success to ACK. | `terminal-semantics.md` v0 freeze. Fixture `fixtures/terminal-evidence/accepted-send-non-ack.json`. Prior validation in `terminal-brief-live-readiness-go-no-go-matrix.md`. | `PASS`: receipt levels are frozen and tested; accepted-send non-ACK boundary is documented with fail-closed conditions. |
-| Team2 cross-broker parity — a2a-plane#290 (a2a-plane#290, internal tracker private) | Team2/Soonwook R9 concise brief runtime readiness evidence agrees on receipt boundary, title format, parent-only ownership, and rollback semantics. | Team2/Soonwook evidence at `docs/validation/team2-soonwook-r9-concise-terminal-brief-runtime-readiness.md` with 7-child title proof table, parent-only ownership docs for `seoseo`, and approval-gated activation plan. | `PASS`: Team2 evidence agrees on receipt boundary, title format, parent-only ownership, and activation/rollback plan. Continued re-validation needed for R9b dispatch. |
+| Team2 cross-broker parity — a2a-plane#290 (a2a-plane#290, internal tracker private) | Team2/workerEta R9 concise brief runtime readiness evidence agrees on receipt boundary, title format, parent-only ownership, and rollback semantics. | Team2/workerEta evidence at `docs/validation/team2-workerEta-r9-concise-terminal-brief-runtime-readiness.md` with 7-child title proof table, parent-only ownership docs for `brokerAlpha`, and approval-gated activation plan. | `PASS`: Team2 evidence agrees on receipt boundary, title format, parent-only ownership, and activation/rollback plan. Continued re-validation needed for R9b dispatch. |
 | Runtime/bootstrap hygiene | No `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, or `.openclaw/**` in branch diff, PR body, issue comments, or artifact bundle. | Pre-creation scan performed (see Runtime/bootstrap hygiene gate). | `PASS` (at snapshot): guard paths absent from branch artifacts. Re-check before PR/Done/Block publication. |
 
 ---
@@ -56,14 +56,14 @@ This validation is a no-live, read-only gate. The following actions are explicit
 | Gate | Pass condition | Fail / NO-GO condition | Current status |
 | --- | --- | --- | --- |
 | G1. Parent-broker aggregation metadata | All 7 child dispatches in the R9b round carry `parentRoundId`, `originBrokerId`, `parentBrokerId`, and `handoffBrokerId` (when applicable). Metadata lifecycle is contractually defined: once minted, fields are immutable and copied (not rewritten) in handoff envelopes. | Any child dispatch missing required metadata, fields are mutable after child handoff, or `originBrokerId` rewritten by a child broker. | `PASS`: `parent-terminal-brief-aggregation.md` contract + fixture define metadata lifecycle with fail-closed on missing/rewritten metadata. |
-| G2. Concise title — known-total format | Every aggregate title for the 7-child round follows `A2A Terminal Brief <상태>: <worker>(<completed>/<total>)` with total=7. | Title exceeds 80 chars, uses wrong total, includes forbidden content (task id, child issue URL, broker id, evidence URL, receipt/ACK status), or renders a wrong denominator. | `PASS`: R9 team1-yukson-concise-brief-r9.md Gate B and parent-terminal-brief-aggregation.md fixture prove known-total titles for all 7 children. |
-| G3. Concise title — unknown-total fallback | When total is unknown, title follows `A2A Terminal Brief <상태>: <worker>(<completed>)` with no denominator. | Title renders `(N/?)`, `(N/unknown)`, or any denominator placeholder when total is unknown. | `PASS`: fixture includes `terminalBriefTitle`: `A2A Terminal Brief 완료: yukson(2)` and explicitly forbids `(2/?)`. |
+| G2. Concise title — known-total format | Every aggregate title for the 7-child round follows `A2A Terminal Brief <상태>: <worker>(<completed>/<total>)` with total=7. | Title exceeds 80 chars, uses wrong total, includes forbidden content (task id, child issue URL, broker id, evidence URL, receipt/ACK status), or renders a wrong denominator. | `PASS`: R9 team1-workerDelta-concise-brief-r9.md Gate B and parent-terminal-brief-aggregation.md fixture prove known-total titles for all 7 children. |
+| G3. Concise title — unknown-total fallback | When total is unknown, title follows `A2A Terminal Brief <상태>: <worker>(<completed>)` with no denominator. | Title renders `(N/?)`, `(N/unknown)`, or any denominator placeholder when total is unknown. | `PASS`: fixture includes `terminalBriefTitle`: `A2A Terminal Brief 완료: workerDelta(2)` and explicitly forbids `(2/?)`. |
 | G4. Body/evidence separation | Title and body are separate fields. Title contains no evidence body content, child issue URLs, broker IDs, or ACK state. Body does not contain `terminalBriefTitle`. | Concatenated title+body block; title leaking evidence content; body-only notification with blank title. | `PASS`: parent-terminal-brief-aggregation.md contract section "Body/evidence separation" documents 4 gates and fixture proves separate title rendering. |
 | G5. Parent-only notification ownership | Only broker matching `originBrokerId` may render/dispatch aggregate Terminal Brief for parent round. Child/handoff brokers must not. Replay preserves ownership. | Child broker sends own parent-round notification, overwrites `terminalBriefTitle`, or recovery hijacks ownership without contract version change. | `PASS`: 5 ownership gates documented in contract; fixture proves `parentBrokerOnly=true`. |
 | G6. Receipt/ACK boundary | 4-level receipt vocabulary is frozen at v0. Provider accepted-send is non-ACK. Operator-visible receipt and terminal-outbox ACK are separate gates. | Any contract change or code path promotes `providerAccepted` or `messageId` to ACK, or conflates any two receipt levels. | `PASS`: `terminal-semantics.md` v0 freeze; accepted-send non-ACK fixture; receipt levels are distinct. |
-| G7. Cross-broker parity | Team2 (Soonwook/Gwakga) evidence agrees on receipt boundary, title format, parent-only ownership, rollback, and closeout shape. | Missing Team2 evidence, or Team2 evidence contradicts receipt/title/ownership/rollback consensus. | `PASS`: Team2 Soonwook R9 runtime readiness doc validates shape. R9b dispatch re-validation pending. |
+| G7. Cross-broker parity | Team2 (workerEta/brokerBeta) evidence agrees on receipt boundary, title format, parent-only ownership, rollback, and closeout shape. | Missing Team2 evidence, or Team2 evidence contradicts receipt/title/ownership/rollback consensus. | `PASS`: Team2 workerEta R9 runtime readiness doc validates shape. R9b dispatch re-validation pending. |
 | G8. Approval-gated activation plan | Plan documents read-only verification (A1–A3), staging activation requiring operator approval (A4–A5), post-activation verification (A6–A7), production GO (A8 each with separate operator approval). | Activation plan absent, permits activation without approval, authorizes production deploy without staging canary, or lacks rollback/restoration steps. | `PASS`: parent-terminal-brief-aggregation.md R9 addition includes 8-step activation plan with operator approval requirements at steps A4, A5, A8. |
-| G9. Rollback procedure | Steps to disable notification bridge, preserve unacked rows, remove canary container, restore plugin state, verify no duplicate send, post terminal evidence. All no-live. | Rollback procedure missing; rollback assumes live mutation to reverse; no evidence of draft rollback path. | `PASS`: parent-terminal-brief-aggregation.md "Rollback and no-replay guidance" and team1-yukson-concise-brief-r9.md Gate E activation plan include rollback/restoration steps. |
+| G9. Rollback procedure | Steps to disable notification bridge, preserve unacked rows, remove canary container, restore plugin state, verify no duplicate send, post terminal evidence. All no-live. | Rollback procedure missing; rollback assumes live mutation to reverse; no evidence of draft rollback path. | `PASS`: parent-terminal-brief-aggregation.md "Rollback and no-replay guidance" and team1-workerDelta-concise-brief-r9.md Gate E activation plan include rollback/restoration steps. |
 | G10. Runtime/bootstrap hygiene | All guard paths (`AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `.openclaw/**`) absent from branch diff, PR body, issue comments, and artifact evidence. | Any guard path detected in branch, PR, comment, or artifact. | `PASS` (pre-publication): scan confirms guard paths absent (see below). Must re-check before final evidence publication. |
 
 ---
@@ -148,10 +148,10 @@ Use this procedure if any acceptance gate fails or if an operator stops the R9b 
 
 | Risk | Failure mode | Existing guard | Residual risk | Gate reference |
 | --- | --- | --- | --- | --- |
-| Parent metadata mismatch in child dispatch | `parentRoundId` or `originBrokerId` is stale, missing, or rewritten by a child or handoff broker. | Contract lifecycle: metadata is immutable after minting; handoff copies only. Fixture proves metadata carried through Seoseo handoff. | Low — contract-level guard; runtime enforcement depends on dispatcher implementation. | G1 |
+| Parent metadata mismatch in child dispatch | `parentRoundId` or `originBrokerId` is stale, missing, or rewritten by a child or handoff broker. | Contract lifecycle: metadata is immutable after minting; handoff copies only. Fixture proves metadata carried through brokerAlpha handoff. | Low — contract-level guard; runtime enforcement depends on dispatcher implementation. | G1 |
 | Concise title exceeds 80 chars | A long worker or status label makes the title exceed 80 characters. | Max chars rule is contractual; renderer must truncate or fail. No existing test for edge-case worker IDs. | Medium — edge case not tested; operator must validate before activation. | G2–G3 |
 | Body/evidence leak into title | Notification adapter concatenates title and body, or title includes evidence URL. | Contract separation gates and fixture prove separate rendering. Runtime enforcement depends on adapter implementation. | Low — contract-level; runtime must follow. | G4 |
-| Child broker dispatches own parent-round notification | Handoff broker (e.g. Gwakga) sends its own `A2A Terminal Brief` notification for the Seoseo-origin parent round. | Parent-only ownership contract rule; fixture proves `parentBrokerOnly=true`. Runtime enforcement depends on dispatcher implementation. | Low — contract-level; runtime dispatch guard not yet implemented in this repo. | G5 |
+| Child broker dispatches own parent-round notification | Handoff broker (e.g. brokerBeta) sends its own `A2A Terminal Brief` notification for the brokerAlpha-origin parent round. | Parent-only ownership contract rule; fixture proves `parentBrokerOnly=true`. Runtime enforcement depends on dispatcher implementation. | Low — contract-level; runtime dispatch guard not yet implemented in this repo. | G5 |
 | Receipt/ACK boundary weakened | Operator treats provider accepted-send or GitHub comment as terminal-outbox ACK. | `terminal-semantics.md` v0 freeze; accepted-send non-ACK fixture; prior validation matrices enforce separation. | Low — multiple static guards exist; operator discipline required. | G6 |
 | Parity assumed without Team2 evidence | Team2 lane goes silent and operators treat silence as consent. | G7 explicitly requires Team2 TEAM2 evidence, not silence. | Medium — operator discipline required to wait for explicit evidence. | G7 |
 | Activation plan treated as execution | Staging/production activation occurs without separate operator approval. | Activation plan explicitly documents "not executed" and requires separate approvals at A4, A5, A8. | Low — plan is documentation only in this round. Operator must enforce approval gating. | G8 |
@@ -168,22 +168,22 @@ The following table proves the synthetic title format for all 7 children plus th
 
 | n | Worker | Team | Broker of record | Note | Title |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `yukson` | Team1 | `seoseo` | Direct child | `A2A Terminal Brief 완료: yukson(1/7)` |
-| 2 | `bangtong` | Team1 | `seoseo` | Direct child | `A2A Terminal Brief 완료: bangtong(2/7)` |
-| 3 | `sogyo` | Team1 | `seoseo` | Direct child | `A2A Terminal Brief 완료: sogyo(3/7)` |
-| 4 | `nosuk` | Team1 | `seoseo` | Direct child | `A2A Terminal Brief 완료: nosuk(4/7)` |
-| 5 | `dungae` | Team2 | `gwakga` | Projected child | `A2A Terminal Brief 완료: dungae(5/7)` |
-| 6 | `gwakga` | Team2 | `gwakga` | Projected child | `A2A Terminal Brief 완료: gwakga(6/7)` |
-| 7 | `soonwook` | Team2 | `gwakga` | Projected child | `A2A Terminal Brief 완료: soonwook(7/7)` |
+| 1 | `workerDelta` | Team1 | `brokerAlpha` | Direct child | `A2A Terminal Brief 완료: workerDelta(1/7)` |
+| 2 | `workerGamma` | Team1 | `brokerAlpha` | Direct child | `A2A Terminal Brief 완료: workerGamma(2/7)` |
+| 3 | `workerBeta` | Team1 | `brokerAlpha` | Direct child | `A2A Terminal Brief 완료: workerBeta(3/7)` |
+| 4 | `workerAlpha` | Team1 | `brokerAlpha` | Direct child | `A2A Terminal Brief 완료: workerAlpha(4/7)` |
+| 5 | `workerEpsilon` | Team2 | `brokerBeta` | Projected child | `A2A Terminal Brief 완료: workerEpsilon(5/7)` |
+| 6 | `brokerBeta` | Team2 | `brokerBeta` | Projected child | `A2A Terminal Brief 완료: brokerBeta(6/7)` |
+| 7 | `workerEta` | Team2 | `brokerBeta` | Projected child | `A2A Terminal Brief 완료: workerEta(7/7)` |
 
 **Unknown-total fallback:**
 
 | Worker | Completed | Total known | Title |
 | --- | --- | --- | --- |
-| `yukson` | 2 | No | `A2A Terminal Brief 완료: yukson(2)` (no denominator) |
+| `workerDelta` | 2 | No | `A2A Terminal Brief 완료: workerDelta(2)` (no denominator) |
 
 **Title constraints verified for every row:**
-- Source: parent broker (`seoseo`) aggregation ledger, not child issue body or child broker local state.
+- Source: parent broker (`brokerAlpha`) aggregation ledger, not child issue body or child broker local state.
 - Maximum length: ≤80 characters.
 - Forbidden content: no task ids, child issue URLs, PR/Done/Block URLs, evidence body, child broker ID, handoff broker ID, provider message ID, receipt state, ACK state, raw logs, secrets, private paths, or runtime/bootstrap file names.
 - Status label: `완료` (Korean), not `success` or English equivalent.
@@ -213,7 +213,7 @@ Expected output: empty (no matches). If any guard path is detected, do not publi
 
 ### Hygiene scan result (this run)
 
-Guard scan performed at snapshot time on branch `a2a-patch-20260513-152847-a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z-yukson`:
+Guard scan performed at snapshot time on branch `a2a-patch-20260513-152847-a2a-r9b-terminal-brief-activation-readiness-20260513T152714Z-workerDelta`:
 
 Result: **PASS** — no guard paths detected in branch diff or staged changes. Re-scan before final evidence publication.
 
@@ -225,11 +225,11 @@ Result: **PASS** — no guard paths detected in branch diff or staged changes. R
 # Check layout and structure
 npm run check:layout
 
-# Run team1-yukson plane gates validation
-npm run check:team1-yukson-plane-gates
+# Run team1-workerDelta plane gates validation
+npm run check:team1-workerDelta-plane-gates
 
 # Run r9 concise brief specific tests (if available)
-node --test scripts/archive/check-team1-yukson-concise-brief-r9.test.mjs
+node --test scripts/archive/check-team1-workerDelta-concise-brief-r9.test.mjs
 
 # Hygiene scan
 git diff --name-only -- AGENTS.md SOUL.md USER.md TOOLS.md HEARTBEAT.md IDENTITY.md .openclaw
@@ -242,7 +242,7 @@ git status --short --ignored
 
 The safe closeout for this lane is a PR/Done marker stating that:
 
-> The R9b Team1/yukson Terminal Brief activation readiness GO/NO-GO acceptance matrix is documented and validated. The aggregate decision is **`GO_CANDIDATE / Needs operator approval`** for the activation readiness packet and **`NO-GO / Waiting`** for any live activation. All activation and rollback steps are documented but not executed. No provider send, deploy, restart, DB mutation, ACK, secret change, release, visibility change, or force-push was performed.
+> The R9b Team1/workerDelta Terminal Brief activation readiness GO/NO-GO acceptance matrix is documented and validated. The aggregate decision is **`GO_CANDIDATE / Needs operator approval`** for the activation readiness packet and **`NO-GO / Waiting`** for any live activation. All activation and rollback steps are documented but not executed. No provider send, deploy, restart, DB mutation, ACK, secret change, release, visibility change, or force-push was performed.
 
 This lane must not advance to `GO` for activation while any acceptance gate remains Start-only/missing, parent metadata is unvalidated against the actual R9b dispatch, receipt/ACK boundaries are disputed, parity evidence is incomplete, or operator approval for activation has not been granted.
 

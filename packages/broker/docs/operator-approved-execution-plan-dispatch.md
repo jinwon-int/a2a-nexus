@@ -3,7 +3,7 @@
 Issue: [#991](https://github.com/jinwon-int/a2a-broker/issues/991)
 Parent: [#968](https://github.com/jinwon-int/a2a-broker/issues/968)
 Run: `a2a-oi-v2-plan-review-20260529T1236Z`
-Lane: Team2 — Soonwook
+Lane: Team2 — workereta
 
 This layer sits after the operator approval request draft (#990). It converts a
 sanitized approval request packet plus explicit operator approval evidence into
@@ -130,7 +130,7 @@ This dispatch request does **not**:
 - dispatch or invoke any executor;
 - spawn any process or start/stop the sidecar;
 - enable Terminal Brief default-on;
-- send live provider/Hermes/Gongyung/Telegram/OpenClaw messages;
+- send live provider/Hermes/mobilealpha/Telegram/OpenClaw messages;
 - ACK, replay, or mutate terminal receipt rows;
 - merge PRs, close issues, or post GitHub comments;
 - create TaskFlow records or mutate broker DB state;

@@ -62,7 +62,7 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     chmodSync(fakeClaudePath, 0o755);
 
     const message = [
-      "You are A2A worker nosuk. Complete this read-only Claude Code adapter analysis task.",
+      "You are A2A worker workeralpha. Complete this read-only Claude Code adapter analysis task.",
       "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true }),
     ].join("\n\n");
 

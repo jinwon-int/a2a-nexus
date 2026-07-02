@@ -60,13 +60,13 @@ test("TerminalBriefHandoffMetadata carries traceability fields", () => {
   const handoff: TerminalBriefHandoffMetadata = {
     parentRoundId: "round-1",
     originBrokerId: "parent-broker",
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerbeta",
     originTaskId: "child-task-1",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
   };
   assert.equal(handoff.parentRoundId, "round-1");
   assert.equal(handoff.originBrokerId, "parent-broker");
-  assert.equal(handoff.handoffBrokerId, "gwakga");
+  assert.equal(handoff.handoffBrokerId, "brokerbeta");
 });
 
 test("TerminalBriefHandoffMetadata only requires parentRoundId and originBrokerId", () => {
@@ -100,7 +100,7 @@ test("TerminalBriefProjectionMetadata includes all dispatch and handoff fields",
     originBrokerId: "child-broker-a",
     brokerOfRecordId: "parent-broker",
     childTaskId: "child-1",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
     status: "succeeded",
     summary: "child completed safely",
     taskBrief: "minimal safe patch",
@@ -337,10 +337,10 @@ test("validateTerminalBriefMetadata fails with receiver mismatch for originBroke
 test("validateTerminalBriefMetadata passes with allowLocalOrigin when origin equals receiver", () => {
   const result = validateTerminalBriefMetadata({
     parentRoundId: "round-1",
-    originBrokerId: "gwakga",
+    originBrokerId: "brokerbeta",
     parentRoundTotal: 7,
     parentRoundOrder: 3,
-  }, "gwakga", { allowLocalOrigin: true });
+  }, "brokerbeta", { allowLocalOrigin: true });
   assert.equal(result.valid, true);
   const originIssues = result.issues.filter((i) => i.path === "originBrokerId");
   assert.equal(originIssues.length, 0);
@@ -349,10 +349,10 @@ test("validateTerminalBriefMetadata passes with allowLocalOrigin when origin equ
 test("validateTerminalBriefMetadata still rejects same-broker origin without allowLocalOrigin", () => {
   const result = validateTerminalBriefMetadata({
     parentRoundId: "round-1",
-    originBrokerId: "gwakga",
+    originBrokerId: "brokerbeta",
     parentRoundTotal: 7,
     parentRoundOrder: 3,
-  }, "gwakga");
+  }, "brokerbeta");
   assert.equal(result.valid, false);
   const issues = result.issues.filter((i) => i.path === "originBrokerId");
   assert.ok(issues.length > 0);
@@ -457,9 +457,9 @@ test("validateTerminalBriefMetadata rejects handoffBrokerId that differs from ac
     crossBrokerHandoff: {
       parentRoundId: "round-1",
       originBrokerId: "parent-broker",
-      handoffBrokerId: "seoseo",
+      handoffBrokerId: "brokeralpha",
     },
-  }, "gwakga", { allowLocalOrigin: true });
+  }, "brokerbeta", { allowLocalOrigin: true });
 
   assert.equal(result.valid, false);
   const issues = result.issues.filter((i) => i.path === "crossBrokerHandoff.handoffBrokerId");
@@ -475,7 +475,7 @@ test("hasTerminalBriefMetadata returns false when only parentRoundId is set", ()
 });
 
 test("hasTerminalBriefMetadata returns true when explicit dispatch ownership is set", () => {
-  assert.equal(hasTerminalBriefMetadata({ parentRoundId: "round-1", originBrokerId: "gwakga" }), true);
+  assert.equal(hasTerminalBriefMetadata({ parentRoundId: "round-1", originBrokerId: "brokerbeta" }), true);
 });
 
 test("hasTerminalBriefMetadata returns true when parentRoundNum alias is set", () => {
@@ -570,22 +570,22 @@ test("validation result summary reports error count when invalid", () => {
 
 test("TerminalBriefTemplateMetadata fields are structurally sound", () => {
   const meta: TerminalBriefTemplateMetadata = {
-    templateId: "terminal-brief/r23-team2-dungae",
+    templateId: "terminal-brief/r23-team2-workerepsilon",
     templateVersion: "1.0.0",
     taskDefinitionRef: "specs/terminal-brief-r23.md",
-    templateParameters: { lane: "dungae", team: "Team2" },
+    templateParameters: { lane: "workerepsilon", team: "Team2" },
   };
-  assert.equal(meta.templateId, "terminal-brief/r23-team2-dungae");
+  assert.equal(meta.templateId, "terminal-brief/r23-team2-workerepsilon");
   assert.equal(meta.templateVersion, "1.0.0");
   assert.equal(meta.taskDefinitionRef, "specs/terminal-brief-r23.md");
-  assert.equal(meta.templateParameters?.lane, "dungae");
+  assert.equal(meta.templateParameters?.lane, "workerepsilon");
 });
 
 test("TerminalBriefTemplateMetadata allows partial fields", () => {
   const meta: TerminalBriefTemplateMetadata = {
-    templateId: "terminal-brief/r23-team2-dungae",
+    templateId: "terminal-brief/r23-team2-workerepsilon",
   };
-  assert.equal(meta.templateId, "terminal-brief/r23-team2-dungae");
+  assert.equal(meta.templateId, "terminal-brief/r23-team2-workerepsilon");
   assert.equal(meta.templateVersion, undefined);
   assert.equal(meta.taskDefinitionRef, undefined);
   assert.equal(meta.templateParameters, undefined);
@@ -606,13 +606,13 @@ test("TerminalBriefTemplateMetadata allows empty template", () => {
 test("TerminalBriefTaskFlowLinkage fields are structurally sound", () => {
   const linkage: TerminalBriefTaskFlowLinkage = {
     taskFlowRunId: "a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z",
-    taskFlowTaskId: "team2-dungae-state-machine",
+    taskFlowTaskId: "team2-workerepsilon-state-machine",
     taskFlowStepId: "implement-state-machine",
     parentTaskFlowRunId: "a2a-r23-master",
     stepLabel: "Terminal Brief state machine definition",
   };
   assert.equal(linkage.taskFlowRunId, "a2a-r23-terminal-brief-spec-taskflow-monorepo-20260515T055352Z");
-  assert.equal(linkage.taskFlowTaskId, "team2-dungae-state-machine");
+  assert.equal(linkage.taskFlowTaskId, "team2-workerepsilon-state-machine");
   assert.equal(linkage.taskFlowStepId, "implement-state-machine");
   assert.equal(linkage.parentTaskFlowRunId, "a2a-r23-master");
   assert.equal(linkage.stepLabel, "Terminal Brief state machine definition");

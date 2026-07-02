@@ -22,14 +22,14 @@ const routeGatePublicJwk = {
 } as const;
 
 const routeGateKeyRegistry = {
-  "worker:sogyo:v1": {
-    keyid: "worker:sogyo:v1",
-    workerId: "sogyo",
+  "worker:workerbeta:v1": {
+    keyid: "worker:workerbeta:v1",
+    workerId: "workerbeta",
     publicKeyJwk: routeGatePublicJwk,
   },
-  "worker:bangtong:v1": {
-    keyid: "worker:bangtong:v1",
-    workerId: "bangtong",
+  "worker:workergamma:v1": {
+    keyid: "worker:workergamma:v1",
+    workerId: "workergamma",
     publicKeyJwk: routeGatePublicJwk,
   },
 };
@@ -39,7 +39,7 @@ function signedWorkerHeaders(params: {
   method: string;
   path: string;
   query?: string;
-  workerId: "sogyo" | "bangtong";
+  workerId: "workerbeta" | "workergamma";
   body?: string;
   nonce: string;
 }): Record<string, string> {
@@ -50,7 +50,7 @@ function signedWorkerHeaders(params: {
     "content-digest": `sha-256=:${createHash("sha256").update(rawBody).digest("base64")}:`,
     "x-a2a-requester-id": params.workerId,
     "x-a2a-requester-role": "analyst",
-    "x-a2a-broker-id": "seoseo",
+    "x-a2a-broker-id": "brokeralpha",
   };
   const keyid = `worker:${params.workerId}:v1`;
   const created = Math.floor(Date.now() / 1000) - 1;
@@ -75,16 +75,16 @@ function signedWorkerHeaders(params: {
 
 test("strict A2A HTTP Signature worker route gate rejects unsigned worker requests", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    const body = JSON.stringify(workerPayload("sogyo"));
+    const body = JSON.stringify(workerPayload("workerbeta"));
     const res = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: jsonHeaders({
-        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-id": "workerbeta",
         "x-a2a-requester-role": "analyst",
       }),
       body,
@@ -101,19 +101,19 @@ test("strict A2A HTTP Signature worker route gate rejects unsigned worker reques
 
 test("strict A2A HTTP Signature worker route gate accepts signed worker flow and rejects replay", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
     const registerHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,
       method: "POST",
       path: "/workers/register",
-      workerId: "sogyo",
+      workerId: "workerbeta",
       body: registerBody,
-      nonce: "route-register-sogyo",
+      nonce: "route-register-workerbeta",
     });
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
@@ -131,54 +131,54 @@ test("strict A2A HTTP Signature worker route gate accepts signed worker flow and
       body: JSON.stringify({
         id: "signed-worker-poll-task",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        targetNodeId: "sogyo",
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
         intent: "analyze",
         message: "signed worker should be able to poll this task",
       }),
     });
     assert.equal(createRes.status, 201);
 
-    const unsignedPollRes = await fetch(`${server.baseUrl}/tasks?worker=sogyo&status=pending&detail=full`);
+    const unsignedPollRes = await fetch(`${server.baseUrl}/tasks?worker=workerbeta&status=pending&detail=full`);
     assert.equal(unsignedPollRes.status, 401);
 
-    const unsignedAssignedPollRes = await fetch(`${server.baseUrl}/tasks?assignedWorkerId=sogyo&status=queued`);
+    const unsignedAssignedPollRes = await fetch(`${server.baseUrl}/tasks?assignedWorkerId=workerbeta&status=queued`);
     assert.equal(unsignedAssignedPollRes.status, 401);
 
-    const mismatchedQuery = "worker=sogyo&assignedWorkerId=bangtong&status=pending&detail=full";
+    const mismatchedQuery = "worker=workerbeta&assignedWorkerId=workergamma&status=pending&detail=full";
     const mismatchedPollRes = await fetch(`${server.baseUrl}/tasks?${mismatchedQuery}`, {
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "GET",
         path: "/tasks",
         query: mismatchedQuery,
-        workerId: "sogyo",
+        workerId: "workerbeta",
         nonce: "route-poll-mismatched-worker-params",
       }),
     });
     assert.equal(mismatchedPollRes.status, 400);
 
-    const emptyWorkerAssignedQuery = "worker=&assignedWorkerId=bangtong&status=pending&detail=full";
+    const emptyWorkerAssignedQuery = "worker=&assignedWorkerId=workergamma&status=pending&detail=full";
     const emptyWorkerAssignedRes = await fetch(`${server.baseUrl}/tasks?${emptyWorkerAssignedQuery}`, {
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "GET",
         path: "/tasks",
         query: emptyWorkerAssignedQuery,
-        workerId: "sogyo",
+        workerId: "workerbeta",
         nonce: "route-poll-empty-worker-assigned-victim",
       }),
     });
     assert.equal(emptyWorkerAssignedRes.status, 401);
 
-    const query = "worker=sogyo&status=pending&detail=full";
+    const query = "worker=workerbeta&status=pending&detail=full";
     const pollHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,
       method: "GET",
       path: "/tasks",
       query,
-      workerId: "sogyo",
-      nonce: "route-poll-sogyo",
+      workerId: "workerbeta",
+      nonce: "route-poll-workerbeta",
     });
     const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, {
       headers: pollHeaders,
@@ -199,31 +199,31 @@ test("strict A2A HTTP Signature worker route gate accepts signed worker flow and
 });
 
 test("strict A2A HTTP Signature worker route gate fails closed when the signing key lacks the route scope (#691)", async () => {
-  // sogyo's key is scoped to registration/heartbeat only; bangtong stays unscoped (legacy).
+  // workerbeta's key is scoped to registration/heartbeat only; workergamma stays unscoped (legacy).
   const scopedKeyRegistry = {
-    "worker:sogyo:v1": {
-      ...routeGateKeyRegistry["worker:sogyo:v1"],
+    "worker:workerbeta:v1": {
+      ...routeGateKeyRegistry["worker:workerbeta:v1"],
       scopes: ["worker.register", "worker.heartbeat"] as const,
     },
-    "worker:bangtong:v1": routeGateKeyRegistry["worker:bangtong:v1"],
+    "worker:workergamma:v1": routeGateKeyRegistry["worker:workergamma:v1"],
   };
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: scopedKeyRegistry,
   });
   try {
     // In-scope route (worker.register) is authorized.
-    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "POST",
         path: "/workers/register",
-        workerId: "sogyo",
+        workerId: "workerbeta",
         body: registerBody,
-        nonce: "scoped-register-sogyo",
+        nonce: "scoped-register-workerbeta",
       }),
       body: registerBody,
     });
@@ -231,15 +231,15 @@ test("strict A2A HTTP Signature worker route gate fails closed when the signing 
 
     // Out-of-scope route (tasks.list) fails closed with 403 even though the
     // signature itself is valid and the requester id matches the key owner.
-    const query = "worker=sogyo&status=pending&detail=full";
+    const query = "worker=workerbeta&status=pending&detail=full";
     const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, {
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "GET",
         path: "/tasks",
         query,
-        workerId: "sogyo",
-        nonce: "scoped-poll-sogyo-denied",
+        workerId: "workerbeta",
+        nonce: "scoped-poll-workerbeta-denied",
       }),
     });
     assert.equal(pollRes.status, 403);
@@ -248,36 +248,36 @@ test("strict A2A HTTP Signature worker route gate fails closed when the signing 
     assert.match(pollBody.error.message, /a2a_signature_scope_denied: signing key is not authorized for tasks\.list/);
 
     // An unscoped (legacy) key remains authorized for the same route.
-    const bangtongQuery = "worker=bangtong&status=pending&detail=full";
-    const bangtongPollRes = await fetch(`${server.baseUrl}/tasks?${bangtongQuery}`, {
+    const workergammaQuery = "worker=workergamma&status=pending&detail=full";
+    const workergammaPollRes = await fetch(`${server.baseUrl}/tasks?${workergammaQuery}`, {
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "GET",
         path: "/tasks",
-        query: bangtongQuery,
-        workerId: "bangtong",
-        nonce: "scoped-poll-bangtong-allowed",
+        query: workergammaQuery,
+        workerId: "workergamma",
+        nonce: "scoped-poll-workergamma-allowed",
       }),
     });
-    assert.equal(bangtongPollRes.status, 200);
+    assert.equal(workergammaPollRes.status, 200);
   } finally {
     await server.close();
   }
 });
 
 test("strict A2A HTTP Signature worker route gate fails closed on every out-of-scope task mutation route (#691)", async () => {
-  // sogyo is scoped to registration only, so every task.* mutation route is out of
+  // workerbeta is scoped to registration only, so every task.* mutation route is out of
   // scope. The scope check fires before any task lookup, so a placeholder task id is
   // enough to exercise denial across the full mutation surface.
   const scopedKeyRegistry = {
-    "worker:sogyo:v1": {
-      ...routeGateKeyRegistry["worker:sogyo:v1"],
+    "worker:workerbeta:v1": {
+      ...routeGateKeyRegistry["worker:workerbeta:v1"],
       scopes: ["worker.register"] as const,
     },
-    "worker:bangtong:v1": routeGateKeyRegistry["worker:bangtong:v1"],
+    "worker:workergamma:v1": routeGateKeyRegistry["worker:workergamma:v1"],
   };
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: scopedKeyRegistry,
   });
@@ -285,14 +285,14 @@ test("strict A2A HTTP Signature worker route gate fails closed on every out-of-s
     const actions = ["claim", "start", "heartbeat", "checkpoint", "complete", "evidence", "fail"] as const;
     for (const action of actions) {
       const path = `/tasks/scope-probe-task/${action}`;
-      const body = JSON.stringify({ workerId: "sogyo" });
+      const body = JSON.stringify({ workerId: "workerbeta" });
       const res = await fetch(`${server.baseUrl}${path}`, {
         method: "POST",
         headers: signedWorkerHeaders({
           baseUrl: server.baseUrl,
           method: "POST",
           path,
-          workerId: "sogyo",
+          workerId: "workerbeta",
           body,
           nonce: `scoped-deny-${action}`,
         }),
@@ -313,13 +313,13 @@ test("strict A2A HTTP Signature worker route gate fails closed on every out-of-s
 
 test("strict A2A HTTP Signature worker route gate does not let one worker mutate another worker task", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     enforceRequesterIdentity: false,
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    for (const workerId of ["sogyo", "bangtong"] as const) {
+    for (const workerId of ["workerbeta", "workergamma"] as const) {
       const body = JSON.stringify(workerPayload(workerId));
       const headers = signedWorkerHeaders({
         baseUrl: server.baseUrl,
@@ -344,26 +344,26 @@ test("strict A2A HTTP Signature worker route gate does not let one worker mutate
         "x-a2a-requester-role": "hub",
       }),
       body: JSON.stringify({
-        id: "bangtong-owned-task",
+        id: "workergamma-owned-task",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "bangtong", kind: "node", role: "analyst" },
-        targetNodeId: "bangtong",
+        target: { id: "workergamma", kind: "node", role: "analyst" },
+        targetNodeId: "workergamma",
         intent: "analyze",
-        message: "sogyo must not claim as bangtong",
+        message: "workerbeta must not claim as workergamma",
       }),
     });
     assert.equal(createRes.status, 201);
 
-    const claimBody = JSON.stringify({ workerId: "bangtong" });
+    const claimBody = JSON.stringify({ workerId: "workergamma" });
     const claimHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,
       method: "POST",
-      path: "/tasks/bangtong-owned-task/claim",
-      workerId: "sogyo",
+      path: "/tasks/workergamma-owned-task/claim",
+      workerId: "workerbeta",
       body: claimBody,
       nonce: "route-cross-worker-claim",
     });
-    const claimRes = await fetch(`${server.baseUrl}/tasks/bangtong-owned-task/claim`, {
+    const claimRes = await fetch(`${server.baseUrl}/tasks/workergamma-owned-task/claim`, {
       method: "POST",
       headers: claimHeaders,
       body: claimBody,
@@ -377,13 +377,13 @@ test("strict A2A HTTP Signature worker route gate does not let one worker mutate
 
 test("strict A2A HTTP Signature worker route gate binds signed worker to poll query even without requester identity enforcement", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     enforceRequesterIdentity: false,
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    for (const workerId of ["sogyo", "bangtong"] as const) {
+    for (const workerId of ["workerbeta", "workergamma"] as const) {
       const body = JSON.stringify(workerPayload(workerId));
       const headers = signedWorkerHeaders({
         baseUrl: server.baseUrl,
@@ -404,23 +404,23 @@ test("strict A2A HTTP Signature worker route gate binds signed worker to poll qu
         "x-a2a-requester-role": "hub",
       }),
       body: JSON.stringify({
-        id: "sogyo-owned-poll-task",
+        id: "workerbeta-owned-poll-task",
         requester: { id: "hub-a", kind: "node", role: "hub" },
-        target: { id: "sogyo", kind: "node", role: "analyst" },
-        targetNodeId: "sogyo",
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
         intent: "analyze",
-        message: "bangtong must not poll sogyo queue",
+        message: "workergamma must not poll workerbeta queue",
       }),
     });
     assert.equal(createRes.status, 201);
 
-    const query = "worker=sogyo&status=pending&detail=full";
+    const query = "worker=workerbeta&status=pending&detail=full";
     const pollHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,
       method: "GET",
       path: "/tasks",
       query,
-      workerId: "bangtong",
+      workerId: "workergamma",
       nonce: "route-cross-worker-poll",
     });
     const pollRes = await fetch(`${server.baseUrl}/tasks?${query}`, { headers: pollHeaders });
@@ -434,19 +434,19 @@ test("strict A2A HTTP Signature worker route gate binds signed worker to poll qu
 
 test("strict A2A HTTP Signature worker route gate rejects unsigned assignment-events subscriptions", async () => {
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    const registerBody = JSON.stringify(workerPayload("sogyo"));
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
     const registerHeaders = signedWorkerHeaders({
       baseUrl: server.baseUrl,
       method: "POST",
       path: "/workers/register",
-      workerId: "sogyo",
+      workerId: "workerbeta",
       body: registerBody,
-      nonce: "route-assignment-register-sogyo",
+      nonce: "route-assignment-register-workerbeta",
     });
     const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
@@ -455,9 +455,9 @@ test("strict A2A HTTP Signature worker route gate rejects unsigned assignment-ev
     });
     assert.equal(registerRes.status, 201);
 
-    const unsignedRes = await fetch(`${server.baseUrl}/a2a/workers/sogyo/assignment-events`, {
+    const unsignedRes = await fetch(`${server.baseUrl}/a2a/workers/workerbeta/assignment-events`, {
       headers: {
-        "x-a2a-requester-id": "sogyo",
+        "x-a2a-requester-id": "workerbeta",
         "x-a2a-requester-role": "analyst",
       },
     });
@@ -471,18 +471,18 @@ test("strict A2A HTTP Signature worker route gate rejects unsigned assignment-ev
 
 test("A2A HTTP Signature worker route gate rejects body digest mismatches and optional-mode malformed signatures", async () => {
   const strictServer = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    const signedBody = JSON.stringify(workerPayload("sogyo"));
-    const mutatedBody = JSON.stringify({ ...workerPayload("sogyo"), displayName: "tampered-body" });
+    const signedBody = JSON.stringify(workerPayload("workerbeta"));
+    const mutatedBody = JSON.stringify({ ...workerPayload("workerbeta"), displayName: "tampered-body" });
     const headers = signedWorkerHeaders({
       baseUrl: strictServer.baseUrl,
       method: "POST",
       path: "/workers/register",
-      workerId: "sogyo",
+      workerId: "workerbeta",
       body: signedBody,
       nonce: "route-digest-mismatch",
     });
@@ -510,17 +510,17 @@ test("A2A HTTP Signature worker route gate rejects body digest mismatches and op
   }
 
   const optionalServer = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "optional",
     a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
   });
   try {
-    const body = JSON.stringify(workerPayload("sogyo"));
+    const body = JSON.stringify(workerPayload("workerbeta"));
     const malformedHeaders = signedWorkerHeaders({
       baseUrl: optionalServer.baseUrl,
       method: "POST",
       path: "/workers/register",
-      workerId: "sogyo",
+      workerId: "workerbeta",
       body,
       nonce: "route-optional-malformed",
     });
@@ -543,7 +543,7 @@ test("strict A2A HTTP Signature worker route gate loads worker public keys from 
   writeFileSync(registryFile, JSON.stringify(routeGateKeyRegistry));
 
   const server = await startTestServer({
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistryFile: registryFile,
   });
@@ -557,16 +557,16 @@ test("strict A2A HTTP Signature worker route gate loads worker public keys from 
     assert.equal(health.requestSecurity.a2aHttpSignatureWorkerKeyCount, 2);
     assert.equal(health.requestSecurity.a2aHttpSignatureWorkerKeySource, "file");
 
-    const body = JSON.stringify(workerPayload("sogyo"));
+    const body = JSON.stringify(workerPayload("workerbeta"));
     const res = await fetch(`${server.baseUrl}/workers/register`, {
       method: "POST",
       headers: signedWorkerHeaders({
         baseUrl: server.baseUrl,
         method: "POST",
         path: "/workers/register",
-        workerId: "sogyo",
+        workerId: "workerbeta",
         body,
-        nonce: "route-file-registry-register-sogyo",
+        nonce: "route-file-registry-register-workerbeta",
       }),
       body,
     });

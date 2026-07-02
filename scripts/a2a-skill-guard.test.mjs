@@ -22,7 +22,7 @@ test('manifest guard fails source-only A2AD lanes shaped as GitHub patch tasks (
     lanes: [{
       id: 'r1:1',
       intent: 'propose_patch',
-      target: { id: 'sogyo', role: 'analyst' },
+      target: { id: 'workerBeta', role: 'analyst' },
       payload: { mode: 'github-propose-patch', sourceOnly: true, noGitHubWrites: true },
     }],
   });
@@ -37,7 +37,7 @@ test('manifest guard accepts canonical source-only A2AD analysis lanes (#1035)',
   const manifest = tempFile('manifest.json', {
     roundId: 'r1',
     defaults: { intent: 'analyze', payload: { mode: 'analysis-only', sourceOnly: true, noGitHubWrites: true, noLive: true } },
-    lanes: [{ id: 'r1:1', target: { id: 'sogyo', role: 'analyst' }, message: 'review' }],
+    lanes: [{ id: 'r1:1', target: { id: 'workerBeta', role: 'analyst' }, message: 'review' }],
   });
 
   const out = runGuard(['manifest', '--manifest', manifest, '--mode', 'a2ad']);
@@ -84,7 +84,7 @@ test('manifest guard fails source bundles with oversized raw artifact injection 
     defaults: { intent: 'analyze', payload: { mode: 'analysis-only', sourceOnly: true, noGitHubWrites: true, noLive: true } },
     lanes: [{
       id: 'r1:1',
-      target: { id: 'sogyo', role: 'analyst' },
+      target: { id: 'workerBeta', role: 'analyst' },
       message: 'review',
       payload: { sourceBundle: { files: [{ path: 'raw.log', content: 'x'.repeat(120) }] } },
     }],

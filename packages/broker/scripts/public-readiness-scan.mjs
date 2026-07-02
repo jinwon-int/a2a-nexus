@@ -43,7 +43,7 @@ function redact(value) {
     .replace(/(edge[-_ ]?secret|broker_edge_secret|token|api[_-]?key|authorization|password)([\w .:-]*=\s*)([^\s"'`]+)/gi, "$1$2<redacted>")
     .replace(/x-a2a-edge-secret:\s*[^\s"'`]+/gi, "x-a2a-edge-secret: <redacted>")
     .replace(/-100\d{6,}/g, "<telegram-chat-id>")
-    .replace(/\b(seoseo|racknerd[-\w]*)\b/gi, "<private-host>");
+    .replace(/\b(brokeralpha|racknerd[-\w]*)\b/gi, "<private-host>");
 }
 
 function inspectUrl(file, lineNumber, line) {
@@ -136,7 +136,7 @@ function concreteSecretValue(key, value) {
 }
 
 function inspectLine(file, lineNumber, line) {
-  if (/\b(seoseo|racknerd[-\w]*)\b/i.test(line) && !/<(?:private|broker|worker|notifier)-host>/i.test(line)) {
+  if (/\b(brokeralpha|racknerd[-\w]*)\b/i.test(line) && !/<(?:private|broker|worker|notifier)-host>/i.test(line)) {
     addFinding(file, lineNumber, "warn", "host-alias", "Private host alias should be replaced with a role placeholder in public docs.", line);
   }
 

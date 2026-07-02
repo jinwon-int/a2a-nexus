@@ -31,15 +31,15 @@ services:
     networks:
       - a2a-net
 
-  bangtong-worker:
+  workergamma-worker:
     image: node:22-bookworm-slim
-    container_name: bangtong-worker
+    container_name: workergamma-worker
     restart: unless-stopped
     working_dir: /app
     # Placeholder only. Replace with the real worker startup command before using this in an operator flow.
-    command: ["bash", "-lc", "echo bangtong worker placeholder && tail -f /dev/null"]
+    command: ["bash", "-lc", "echo workergamma worker placeholder && tail -f /dev/null"]
     environment:
-      NODE_ID: bangtong
+      NODE_ID: workergamma
       NODE_ROLE: live-trader
       BROKER_URL: http://a2a-broker:8787
       WORKSPACE_ROOT: /workspace/live
@@ -47,9 +47,9 @@ services:
       CONFIG_ROOT: /config
     volumes:
       # Safe placeholder volumes. Put live host paths in an operator-only override file, not this copyable example.
-      - bangtong-workspace:/workspace/live:ro
-      - bangtong-config:/config:ro
-      - bangtong-artifacts:/artifacts:ro
+      - workergamma-workspace:/workspace/live:ro
+      - workergamma-config:/config:ro
+      - workergamma-artifacts:/artifacts:ro
     depends_on:
       - a2a-broker
     networks:
@@ -82,9 +82,9 @@ services:
 volumes:
   broker-artifacts:
   broker-state:
-  bangtong-workspace:
-  bangtong-config:
-  bangtong-artifacts:
+  workergamma-workspace:
+  workergamma-config:
+  workergamma-artifacts:
   dengae-research:
   dengae-datasets:
   dengae-artifacts:

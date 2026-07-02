@@ -11,13 +11,13 @@ const REVISION = 'c0ffee1234567890abcdefc0ffee1234567890ab';
 function makeExpected(overrides = {}) {
   return {
     teams: {
-      team1: { broker: 'seoseo', brokerUrl: 'https://seoseo.broker.internal', edgeSecretSha256: SHA_TEAM1 },
-      team2: { broker: 'gwakga', brokerUrl: 'https://gwakga.broker.internal', edgeSecretSha256: SHA_TEAM2 },
+      team1: { broker: 'brokerAlpha', brokerUrl: 'https://brokerAlpha.broker.internal', edgeSecretSha256: SHA_TEAM1 },
+      team2: { broker: 'brokerBeta', brokerUrl: 'https://brokerBeta.broker.internal', edgeSecretSha256: SHA_TEAM2 },
     },
     nodes: {
-      yukson: { team: 'team1' },
-      bangtong: { team: 'team1' },
-      soonwook: { team: 'team2' },
+      workerDelta: { team: 'team1' },
+      workerGamma: { team: 'team1' },
+      workerEta: { team: 'team2' },
     },
     expectedService: 'a2a-hermes-worker',
     expectedRoot: '/opt/a2a-broker-worker',
@@ -27,7 +27,7 @@ function makeExpected(overrides = {}) {
 }
 
 function obs(node, team, overrides = {}) {
-  const brokerUrl = team === 'team1' ? 'https://seoseo.broker.internal' : 'https://gwakga.broker.internal';
+  const brokerUrl = team === 'team1' ? 'https://brokerAlpha.broker.internal' : 'https://brokerBeta.broker.internal';
   const sha = team === 'team1' ? SHA_TEAM1 : SHA_TEAM2;
   return {
     node,
@@ -43,9 +43,9 @@ function obs(node, team, overrides = {}) {
 
 function makeObserved(overrides = {}) {
   const base = {
-    yukson: obs('yukson', 'team1'),
-    bangtong: obs('bangtong', 'team1'),
-    soonwook: obs('soonwook', 'team2'),
+    workerDelta: obs('workerDelta', 'team1'),
+    workerGamma: obs('workerGamma', 'team1'),
+    workerEta: obs('workerEta', 'team2'),
   };
   Object.assign(base, overrides);
   return Object.values(base);
@@ -65,7 +65,7 @@ test('all-green fleet passes', () => {
 test('trailing slash difference on broker URL still passes', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ yukson: obs('yukson', 'team1', { brokerUrl: 'https://seoseo.broker.internal/' }) }),
+    makeObserved({ workerDelta: obs('workerDelta', 'team1', { brokerUrl: 'https://brokerAlpha.broker.internal/' }) }),
   );
   assert.equal(result.ok, true);
 });
@@ -75,10 +75,10 @@ test('trailing slash difference on broker URL still passes', () => {
 test('Team2 node pointed at Team1 broker fails', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ soonwook: obs('soonwook', 'team2', { brokerUrl: 'https://seoseo.broker.internal' }) }),
+    makeObserved({ workerEta: obs('workerEta', 'team2', { brokerUrl: 'https://brokerAlpha.broker.internal' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'brokerUrl'));
+  assert.ok(result.violations.some((v) => v.node === 'workerEta' && v.field === 'brokerUrl'));
 });
 
 // ─── Auth fingerprint ────────────────────────────────────────────────────────
@@ -86,19 +86,19 @@ test('Team2 node pointed at Team1 broker fails', () => {
 test('wrong secret fingerprint fails', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ yukson: obs('yukson', 'team1', { edgeSecretSha256: 'd'.repeat(64) }) }),
+    makeObserved({ workerDelta: obs('workerDelta', 'team1', { edgeSecretSha256: 'd'.repeat(64) }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'auth'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'auth'));
 });
 
 test('missing/non-sha secret fingerprint fails on auth', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ yukson: obs('yukson', 'team1', { edgeSecretSha256: '' }) }),
+    makeObserved({ workerDelta: obs('workerDelta', 'team1', { edgeSecretSha256: '' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'auth'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'auth'));
 });
 
 // ─── Service name ────────────────────────────────────────────────────────────
@@ -106,10 +106,10 @@ test('missing/non-sha secret fingerprint fails on auth', () => {
 test('wrong service name fails (old openclaw-a2a-worker)', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ bangtong: obs('bangtong', 'team1', { service: 'openclaw-a2a-worker' }) }),
+    makeObserved({ workerGamma: obs('workerGamma', 'team1', { service: 'openclaw-a2a-worker' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'bangtong' && v.field === 'service'));
+  assert.ok(result.violations.some((v) => v.node === 'workerGamma' && v.field === 'service'));
 });
 
 // ─── Root drift ──────────────────────────────────────────────────────────────
@@ -117,21 +117,21 @@ test('wrong service name fails (old openclaw-a2a-worker)', () => {
 test('root drift fails when not exempt', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ yukson: obs('yukson', 'team1', { root: '/opt/openclaw-a2a-worker' }) }),
+    makeObserved({ workerDelta: obs('workerDelta', 'team1', { root: '/opt/openclaw-a2a-worker' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'root'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'root'));
 });
 
 test('root drift passes when node is exemptRoot', () => {
   const expected = makeExpected();
-  expected.nodes.yukson.exemptRoot = true;
+  expected.nodes.workerDelta.exemptRoot = true;
   const result = evaluateFleet(
     expected,
-    makeObserved({ yukson: obs('yukson', 'team1', { root: '/opt/openclaw-a2a-worker' }) }),
+    makeObserved({ workerDelta: obs('workerDelta', 'team1', { root: '/opt/openclaw-a2a-worker' }) }),
   );
   assert.equal(result.ok, true);
-  assert.equal(result.rows.find((r) => r.node === 'yukson').root, 'exempt');
+  assert.equal(result.rows.find((r) => r.node === 'workerDelta').root, 'exempt');
 });
 
 // ─── Revision ────────────────────────────────────────────────────────────────
@@ -139,10 +139,10 @@ test('root drift passes when node is exemptRoot', () => {
 test('stale revision fails', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ soonwook: obs('soonwook', 'team2', { revision: 'deadbeef' }) }),
+    makeObserved({ workerEta: obs('workerEta', 'team2', { revision: 'deadbeef' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'revision'));
+  assert.ok(result.violations.some((v) => v.node === 'workerEta' && v.field === 'revision'));
 });
 
 // ─── Docker runner image/env drift ───────────────────────────────────────────
@@ -150,19 +150,19 @@ test('stale revision fails', () => {
 test('stale Docker runner image fails even when worker revision matches', () => {
   const result = evaluateFleet(
     makeExpected({ expectedRunnerImage: 'a2a-docker-runner-hermes:c0ffee1' }),
-    makeObserved({ soonwook: obs('soonwook', 'team2', { runnerImage: 'a2a-docker-runner-hermes:deadbee' }) }),
+    makeObserved({ workerEta: obs('workerEta', 'team2', { runnerImage: 'a2a-docker-runner-hermes:deadbee' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'runnerImage'));
+  assert.ok(result.violations.some((v) => v.node === 'workerEta' && v.field === 'runnerImage'));
 });
 
 test('missing Docker runner image fails when expected runner image is configured', () => {
   const result = evaluateFleet(
     makeExpected({ expectedRunnerImage: 'a2a-docker-runner-hermes:c0ffee1' }),
-    makeObserved({ bangtong: obs('bangtong', 'team1', { runnerImage: '' }) }),
+    makeObserved({ workerGamma: obs('workerGamma', 'team1', { runnerImage: '' }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'bangtong' && v.field === 'runnerImage'));
+  assert.ok(result.violations.some((v) => v.node === 'workerGamma' && v.field === 'runnerImage'));
 });
 
 // ─── Active ──────────────────────────────────────────────────────────────────
@@ -170,17 +170,17 @@ test('missing Docker runner image fails when expected runner image is configured
 test('inactive worker fails', () => {
   const result = evaluateFleet(
     makeExpected(),
-    makeObserved({ bangtong: obs('bangtong', 'team1', { active: false }) }),
+    makeObserved({ workerGamma: obs('workerGamma', 'team1', { active: false }) }),
   );
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'bangtong' && v.field === 'active'));
+  assert.ok(result.violations.some((v) => v.node === 'workerGamma' && v.field === 'active'));
 });
 
 test('missing observation for an expected node fails', () => {
   const observed = makeObserved();
-  const result = evaluateFleet(makeExpected(), observed.filter((o) => o.node !== 'yukson'));
+  const result = evaluateFleet(makeExpected(), observed.filter((o) => o.node !== 'workerDelta'));
   assert.equal(result.ok, false);
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'observation'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'observation'));
 });
 
 // ─── Malformed inputs ────────────────────────────────────────────────────────
@@ -227,15 +227,15 @@ test('multiple violations are all enumerated', () => {
   const result = evaluateFleet(
     makeExpected(),
     makeObserved({
-      yukson: obs('yukson', 'team1', { service: 'openclaw-a2a-worker', active: false }),
-      soonwook: obs('soonwook', 'team2', { brokerUrl: 'https://seoseo.broker.internal' }),
+      workerDelta: obs('workerDelta', 'team1', { service: 'openclaw-a2a-worker', active: false }),
+      workerEta: obs('workerEta', 'team2', { brokerUrl: 'https://brokerAlpha.broker.internal' }),
     }),
   );
   assert.equal(result.ok, false);
   assert.ok(result.violations.length >= 3);
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'service'));
-  assert.ok(result.violations.some((v) => v.node === 'yukson' && v.field === 'active'));
-  assert.ok(result.violations.some((v) => v.node === 'soonwook' && v.field === 'brokerUrl'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'service'));
+  assert.ok(result.violations.some((v) => v.node === 'workerDelta' && v.field === 'active'));
+  assert.ok(result.violations.some((v) => v.node === 'workerEta' && v.field === 'brokerUrl'));
 });
 
 // ─── --force semantics (simulated at evaluation layer) ───────────────────────
@@ -251,7 +251,7 @@ test('--force passes but the run is marked forced (CLI subprocess)', async () =>
   const expectedPath = join(dir, 'expected.json');
   const observedPath = join(dir, 'observed.json');
   writeFileSync(expectedPath, JSON.stringify(makeExpected()));
-  writeFileSync(observedPath, JSON.stringify(makeObserved({ yukson: obs('yukson', 'team1', { active: false }) })));
+  writeFileSync(observedPath, JSON.stringify(makeObserved({ workerDelta: obs('workerDelta', 'team1', { active: false }) })));
 
   const script = fileURLToPath(new URL('./a2a-fleet-routing-guard.mjs', import.meta.url));
 

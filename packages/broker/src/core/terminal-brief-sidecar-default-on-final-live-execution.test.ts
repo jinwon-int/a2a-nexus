@@ -36,7 +36,7 @@ function readyGate(): TerminalBriefSidecarDefaultOnRuntimeExecutorGatePacket {
 test("default-on final live execution packet becomes review-ready without permitting execution", () => {
   const packet = buildTerminalBriefSidecarDefaultOnFinalLiveExecution(readyGate(), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     checkpointReference: "checkpoint-792",
     targetConfigFile: "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
     backupLocation: "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env.pre-default-on.fixture-792.bak",
@@ -119,7 +119,7 @@ test("default-on final live execution extractors and markdown preserve no-live b
     defaultOnRuntimeExecutorGatePacket: readyGate(),
     finalLiveExecution: {
       now: NOW,
-      finalizer: "seoseo",
+      finalizer: "brokeralpha",
       checkpointReference: "checkpoint-792",
       targetConfigFile: "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
     },
@@ -128,7 +128,7 @@ test("default-on final live execution extractors and markdown preserve no-live b
   assert.equal(extractTerminalBriefSidecarDefaultOnFinalLiveExecutionGate(input).state, "ready_for_runtime_executor_review");
   assert.deepEqual(extractTerminalBriefSidecarDefaultOnFinalLiveExecutionOptions(input), {
     now: NOW,
-    finalizer: "seoseo",
+    finalizer: "brokeralpha",
     checkpointReference: "checkpoint-792",
     targetConfigFile: "/root/.openclaw/a2a-broker/terminal-brief-sidecar.env",
   });

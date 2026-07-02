@@ -281,7 +281,7 @@ test("server exposes lightweight scheduling diagnostics on /schedz", async () =>
       assert.ok(body.workerHeartbeatPhases[phase].count >= 1);
     }
 
-    // Per-worker heartbeat phase timing: sogyo attribution (#1032 / Team1 first pass)
+    // Per-worker heartbeat phase timing: workerbeta attribution (#1032 / Team1 first pass)
     assert.ok(body.perWorkerHeartbeatPhases, "/schedz should include perWorkerHeartbeatPhases field");
     assert.ok("worker-schedz" in body.perWorkerHeartbeatPhases,
       `perWorkerHeartbeatPhases should have entry for worker-schedz`);

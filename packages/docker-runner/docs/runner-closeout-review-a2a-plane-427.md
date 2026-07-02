@@ -4,8 +4,8 @@
 
 Reviewed PRs:
 
-- `jinwon-int/a2a-docker-runner#329` — Team2 / `jingun`, Fix runner doctor env-file loading.
-- `jinwon-int/a2a-docker-runner#330` — Team2 / `jingun`, Lane 6 Terminal Brief completion verification (this PR).
+- `jinwon-int/a2a-docker-runner#329` — Team2 / `workerZeta`, Fix runner doctor env-file loading.
+- `jinwon-int/a2a-docker-runner#330` — Team2 / `workerZeta`, Lane 6 Terminal Brief completion verification (this PR).
 
 ## Closeout decision
 
@@ -85,7 +85,7 @@ This closeout verifies that the runner-side doctor is complete and testable for 
 - Live Docker/Podman daemon validation
 - Production Gateway/broker/worker restart or reload
 - Canary deploy or release tag
-- Parent tracker issue merge or close (Seoseo remains broker/finalizer)
+- Parent tracker issue merge or close (brokerAlpha remains broker/finalizer)
 
 ## Changed files
 

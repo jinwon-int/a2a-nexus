@@ -141,7 +141,7 @@ test("canary e2e: PR path — fake runner emits success JSON with prUrl", async 
   assert.ok(evidence, "expected GitHub evidence");
   assert.equal(evidence?.prUrl, "https://github.com/jinwon-int/a2a-docker-runner/pull/99");
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.equal(handlerResult.status, "pr_opened");
   assert.equal(handlerResult.prUrl, evidence?.prUrl);
   assert.equal(handlerResult.risks.length, 0);
@@ -166,7 +166,7 @@ test("canary e2e: Done path — fake runner emits success JSON with doneCommentU
   assert.equal(evidence?.prUrl, undefined);
   assert.equal(evidence?.blockCommentUrl, undefined);
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.equal(handlerResult.status, "done");
   assert.equal(handlerResult.doneCommentUrl, evidence?.doneCommentUrl);
 });
@@ -189,7 +189,7 @@ test("canary e2e: Block path — fake runner emits failure JSON with blockCommen
   assert.ok(evidence);
   assert.equal(evidence?.blockCommentUrl, "https://github.com/jinwon-int/a2a-docker-runner/issues/11#issuecomment-canary-block");
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.equal(handlerResult.status, "blocked");
   assert.equal(handlerResult.blockCommentUrl, evidence?.blockCommentUrl);
 });
@@ -212,7 +212,7 @@ test("canary e2e: Failure/timeout path — fake runner emits timeout JSON with n
   const evidence = extractGitHubEvidence(parsed);
   assert.equal(evidence, null);
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.equal(handlerResult.status, "blocked");
   assert.ok(handlerResult.summary.includes("without PR/Done/Block evidence"));
   assert.ok(handlerResult.risks.length > 0);
@@ -273,7 +273,7 @@ test("canary e2e: full deployment canary — ALL_GITHUB=1 + timeout env passthro
   const parsed = parseRunnerOutput(stdout);
   assert.equal(parsed.ok, true);
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.equal(handlerResult.status, "pr_opened");
   assert.ok(handlerResult.prUrl?.includes("/pull/99"));
 });
@@ -324,7 +324,7 @@ test("canary e2e: handler summary includes task ID and Korean context", async ()
   const { stdout } = await spawnFakeRunner("pr", taskFile);
 
   const parsed = parseRunnerOutput(stdout);
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
 
   assert.equal(handlerResult.status, "pr_opened");
   assert.ok(handlerResult.summary.includes("한글-카나리-태스크"));
@@ -339,7 +339,7 @@ test("canary e2e: artifacts from fake runner propagated to handler result", asyn
   const parsed = parseRunnerOutput(stdout);
   assert.ok(parsed.artifacts.length >= 2, `expected >= 2 artifacts, got ${parsed.artifacts.length}`);
 
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
   assert.ok(handlerResult.filesChanged.length >= 2);
   assert.ok(handlerResult.filesChanged.some((f) => f.includes("summary.txt")));
   assert.ok(handlerResult.filesChanged.some((f) => f.includes("canary-result.txt")));
@@ -352,7 +352,7 @@ test("canary e2e: runnerRaw included in handler result for debugging", async () 
   const { stdout } = await spawnFakeRunner("pr", taskFile);
 
   const parsed = parseRunnerOutput(stdout);
-  const handlerResult = buildHandlerResult(parsed, handlerTask, "sogyo");
+  const handlerResult = buildHandlerResult(parsed, handlerTask, "workerBeta");
 
   assert.ok(handlerResult.runnerRaw);
   assert.equal((handlerResult.runnerRaw as Record<string, unknown>).ok, true);
@@ -366,7 +366,7 @@ test("canary e2e: tests array is always present and non-empty on success", async
   for (const mode of ["pr", "done"]) {
     const { stdout } = await spawnFakeRunner(mode, taskFile);
     const parsed = parseRunnerOutput(stdout);
-    const hr = buildHandlerResult(parsed, handlerTask, "sogyo");
+    const hr = buildHandlerResult(parsed, handlerTask, "workerBeta");
     assert.ok(Array.isArray(hr.tests), `tests should be array for mode ${mode}`);
     assert.ok(hr.tests.length > 0, `tests should be non-empty for mode ${mode}`);
   }

@@ -22,8 +22,8 @@
   "source": {
     "dispatchState": "dispatch_draft_ready",
     "dispatchIdempotencyKey": "tb-approval-dispatch:fixture-708",
-    "adapterType": "gongyung",
-    "transcriptTarget": "hermes://gongyung/approval",
+    "adapterType": "mobilealpha",
+    "transcriptTarget": "hermes://mobilealpha/approval",
     "transcriptChannel": "operator",
     "selectedAction": "post_closeout_comment",
     "selectedTarget": "https://github.com/jinwon-int/a2a-broker/issues/708"
@@ -84,7 +84,7 @@
     "harnessNeutral": true,
     "openclawMessageSendRequired": false,
     "hermesAdapterCompatible": true,
-    "gongyungAdapterCompatible": true,
+    "mobilealphaAdapterCompatible": true,
     "providerAcceptedIsVisibilityProof": false,
     "terminalAckRequiresVisibilityProof": true,
     "grantsApproval": false,

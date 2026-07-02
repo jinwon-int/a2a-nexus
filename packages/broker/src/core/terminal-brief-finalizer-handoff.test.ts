@@ -36,8 +36,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: "round-695",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-broker",
       issue: 695,
@@ -54,7 +54,7 @@ function eventFor(
     receipt: {
       status: "produced",
       updatedAt: NOW,
-      receiptId: "hermes-gongyung:gongyung:" + taskId,
+      receiptId: "hermes-mobilealpha:mobilealpha:" + taskId,
     },
     attempts: 0,
   };
@@ -62,9 +62,9 @@ function eventFor(
 
 function spoolRecord(worker: string, progress: number, total: number): TerminalBriefSidecarSpoolRecord {
   return {
-    schema: "a2a.terminalBrief.hermesGongyungAdapter.spool.v1",
+    schema: "a2a.terminalBrief.hermesmobilealphaAdapter.spool.v1",
     writtenAt: NOW,
-    operator: "gongyung",
+    operator: "mobilealpha",
     envelopeId: "terminal-brief-" + worker,
     dedupeKey: "terminal-brief-" + worker,
     taskId: "task-" + worker,
@@ -82,17 +82,17 @@ function spoolRecord(worker: string, progress: number, total: number): TerminalB
 
 function readyEvents(): TerminalTaskOutboxEvent[] {
   return [
-    eventFor("bangtong", "succeeded", {
+    eventFor("workergamma", "succeeded", {
       progress: 1,
       total: 3,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/701",
     }),
-    eventFor("sogyo", "succeeded", {
+    eventFor("workerbeta", "succeeded", {
       progress: 2,
       total: 3,
-      doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/695#issuecomment-sogyo-done",
+      doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/695#issuecomment-workerbeta-done",
     }),
-    eventFor("nosuk", "succeeded", {
+    eventFor("workeralpha", "succeeded", {
       progress: 3,
       total: 3,
       prUrl: "https://github.com/jinwon-int/a2a-broker/pull/702",
@@ -103,18 +103,18 @@ function readyEvents(): TerminalTaskOutboxEvent[] {
 function readyRehearsal() {
   return buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-695",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
-      spoolRecord("nosuk", 3, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
+      spoolRecord("workeralpha", 3, 3),
     ],
     sidecarReceipts: [
       {
         ackTerminalEvent: false,
         terminalReceiptStatus: "produced",
-        receiptId: "hermes-gongyung:gongyung:task-nosuk",
-        reason: "spooled for Gongyung review",
+        receiptId: "hermes-mobilealpha:mobilealpha:task-workeralpha",
+        reason: "spooled for mobilealpha review",
       },
     ],
     events: readyEvents(),
@@ -124,12 +124,12 @@ function readyRehearsal() {
 test("buildTerminalBriefFinalizerHandoff emits ready handoff packet without performing final action", () => {
   const packet = buildTerminalBriefFinalizerHandoff(readyRehearsal(), {
     now: NOW,
-    brokerOfRecordId: "seoseo",
-    finalizerOwner: "seoseo",
+    brokerOfRecordId: "brokeralpha",
+    finalizerOwner: "brokeralpha",
   });
 
   assert.equal(packet.decision, "ready");
-  assert.equal(packet.finalizer.brokerOfRecordId, "seoseo");
+  assert.equal(packet.finalizer.brokerOfRecordId, "brokeralpha");
   assert.equal(packet.finalizer.singleFinalizerRequired, true);
   assert.equal(packet.summary.expectedWorkers, 3);
   assert.equal(packet.summary.readyWorkers, 3);
@@ -144,7 +144,7 @@ test("buildTerminalBriefFinalizerHandoff emits ready handoff packet without perf
 });
 
 test("handoff blocks when sidecar safety is unsafe", () => {
-  const unsafe = spoolRecord("nosuk", 3, 3);
+  const unsafe = spoolRecord("workeralpha", 3, 3);
   unsafe.safety = {
     providerSend: true,
     terminalAck: true,
@@ -152,10 +152,10 @@ test("handoff blocks when sidecar safety is unsafe", () => {
   };
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-695",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [
-      spoolRecord("bangtong", 1, 3),
-      spoolRecord("sogyo", 2, 3),
+      spoolRecord("workergamma", 1, 3),
+      spoolRecord("workerbeta", 2, 3),
       unsafe,
     ],
     events: readyEvents(),
@@ -172,7 +172,7 @@ test("handoff blocks when sidecar safety is unsafe", () => {
 test("handoff blocks when final count is missing or worker evidence is incomplete", () => {
   const rehearsal = buildTerminalBriefSidecarIntegrationRehearsal({
     parentRoundId: "round-695",
-    expectedWorkers: ["bangtong", "sogyo", "nosuk"],
+    expectedWorkers: ["workergamma", "workerbeta", "workeralpha"],
     sidecarSpool: [],
     finalCountSignals: [],
     events: readyEvents().slice(0, 2),
@@ -202,8 +202,8 @@ test("handoff preserves a waiting source rehearsal as wait-only next action", ()
 test("renderTerminalBriefFinalizerHandoffMarkdown states single-finalizer and no-live safety", () => {
   const packet = buildTerminalBriefFinalizerHandoff(readyRehearsal(), {
     now: NOW,
-    brokerOfRecordId: "seoseo",
-    finalizerOwner: "seoseo",
+    brokerOfRecordId: "brokeralpha",
+    finalizerOwner: "brokeralpha",
   });
   const markdown = renderTerminalBriefFinalizerHandoffMarkdown(packet);
 

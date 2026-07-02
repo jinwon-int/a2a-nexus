@@ -36,38 +36,38 @@ function knownWorkers(workers) {
     .filter(({ workerId }) => workerId);
 }
 
-export function findDuplicateOnlineWorkerIds(seoseoWorkers, gwakgaWorkers) {
-  const seoseoById = new Map();
-  const gwakgaById = new Map();
+export function findDuplicateOnlineWorkerIds(brokeralphaWorkers, brokerbetaWorkers) {
+  const brokeralphaById = new Map();
+  const brokerbetaById = new Map();
 
-  for (const entry of onlineWorkers(seoseoWorkers)) seoseoById.set(entry.workerId, entry.worker);
-  for (const entry of onlineWorkers(gwakgaWorkers)) gwakgaById.set(entry.workerId, entry.worker);
+  for (const entry of onlineWorkers(brokeralphaWorkers)) brokeralphaById.set(entry.workerId, entry.worker);
+  for (const entry of onlineWorkers(brokerbetaWorkers)) brokerbetaById.set(entry.workerId, entry.worker);
 
-  return [...seoseoById.keys()]
-    .filter((workerId) => gwakgaById.has(workerId))
+  return [...brokeralphaById.keys()]
+    .filter((workerId) => brokerbetaById.has(workerId))
     .sort()
     .map((workerId) => ({
       workerId,
-      seoseo: summarizeWorker(seoseoById.get(workerId)),
-      gwakga: summarizeWorker(gwakgaById.get(workerId)),
+      brokeralpha: summarizeWorker(brokeralphaById.get(workerId)),
+      brokerbeta: summarizeWorker(brokerbetaById.get(workerId)),
     }));
 }
 
-export function findStaleOrInactiveCrossBrokerWorkerIds(seoseoWorkers, gwakgaWorkers) {
-  const seoseoById = new Map();
-  const gwakgaById = new Map();
+export function findStaleOrInactiveCrossBrokerWorkerIds(brokeralphaWorkers, brokerbetaWorkers) {
+  const brokeralphaById = new Map();
+  const brokerbetaById = new Map();
 
-  for (const entry of knownWorkers(seoseoWorkers)) seoseoById.set(entry.workerId, entry.worker);
-  for (const entry of knownWorkers(gwakgaWorkers)) gwakgaById.set(entry.workerId, entry.worker);
+  for (const entry of knownWorkers(brokeralphaWorkers)) brokeralphaById.set(entry.workerId, entry.worker);
+  for (const entry of knownWorkers(brokerbetaWorkers)) brokerbetaById.set(entry.workerId, entry.worker);
 
-  return [...seoseoById.keys()]
-    .filter((workerId) => gwakgaById.has(workerId))
-    .filter((workerId) => seoseoById.get(workerId)?.status !== 'online' || gwakgaById.get(workerId)?.status !== 'online')
+  return [...brokeralphaById.keys()]
+    .filter((workerId) => brokerbetaById.has(workerId))
+    .filter((workerId) => brokeralphaById.get(workerId)?.status !== 'online' || brokerbetaById.get(workerId)?.status !== 'online')
     .sort()
     .map((workerId) => ({
       workerId,
-      seoseo: summarizeWorker(seoseoById.get(workerId)),
-      gwakga: summarizeWorker(gwakgaById.get(workerId)),
+      brokeralpha: summarizeWorker(brokeralphaById.get(workerId)),
+      brokerbeta: summarizeWorker(brokerbetaById.get(workerId)),
       distinction: 'non-blocking unless either side is fresh/online without an approved replacement plan',
     }));
 }
@@ -105,22 +105,22 @@ export function evaluateSafetyGates(evidence = {}) {
   return { ok: blockers.length === 0, gates, blockers };
 }
 
-export function buildPreflightResult({ seoseoWorkers, gwakgaWorkers, seoseoHealth, gwakgaHealth, safetyEvidence = {} }) {
-  const duplicates = findDuplicateOnlineWorkerIds(seoseoWorkers, gwakgaWorkers);
-  const staleOrInactiveCrossBrokerWorkers = findStaleOrInactiveCrossBrokerWorkerIds(seoseoWorkers, gwakgaWorkers);
+export function buildPreflightResult({ brokeralphaWorkers, brokerbetaWorkers, brokeralphaHealth, brokerbetaHealth, safetyEvidence = {} }) {
+  const duplicates = findDuplicateOnlineWorkerIds(brokeralphaWorkers, brokerbetaWorkers);
+  const staleOrInactiveCrossBrokerWorkers = findStaleOrInactiveCrossBrokerWorkerIds(brokeralphaWorkers, brokerbetaWorkers);
   const safety = evaluateSafetyGates(safetyEvidence);
   return {
     ok: duplicates.length === 0 && safety.ok,
     brokerRevisions: {
-      seoseo: extractBrokerRevision(seoseoHealth),
-      gwakga: extractBrokerRevision(gwakgaHealth),
+      brokeralpha: extractBrokerRevision(brokeralphaHealth),
+      brokerbeta: extractBrokerRevision(brokerbetaHealth),
     },
     workerRevisionSummary: {
-      seoseo: summarizeWorkerRevisions(seoseoWorkers),
-      gwakga: summarizeWorkerRevisions(gwakgaWorkers),
+      brokeralpha: summarizeWorkerRevisions(brokeralphaWorkers),
+      brokerbeta: summarizeWorkerRevisions(brokerbetaWorkers),
     },
-    seoseoOnline: onlineWorkers(seoseoWorkers).length,
-    gwakgaOnline: onlineWorkers(gwakgaWorkers).length,
+    brokeralphaOnline: onlineWorkers(brokeralphaWorkers).length,
+    brokerbetaOnline: onlineWorkers(brokerbetaWorkers).length,
     duplicates,
     staleOrInactiveCrossBrokerWorkers,
     rollbackNotes: [
@@ -166,8 +166,8 @@ function getArg(argv, name) {
 
 export function parseArgs(argv, env = process.env) {
   return {
-    seoseoUrl: getArg(argv, '--seoseo-url') || env.SEOSEO_BROKER_URL || env.A2A_SEOSEO_BROKER_URL,
-    gwakgaUrl: getArg(argv, '--gwakga-url') || env.GWAKGA_BROKER_URL || env.A2A_GWAKGA_BROKER_URL,
+    brokeralphaUrl: getArg(argv, '--brokeralpha-url') || env.brokeralpha_BROKER_URL || env.A2A_brokeralpha_BROKER_URL,
+    brokerbetaUrl: getArg(argv, '--brokerbeta-url') || env.brokerbeta_BROKER_URL || env.A2A_brokerbeta_BROKER_URL,
     safetyEvidence: getArg(argv, '--safety-evidence'),
     json: argv.includes('--json'),
   };
@@ -213,24 +213,24 @@ async function readSafetyEvidence(path) {
 
 function printHuman(result) {
   console.log('A2A two-broker worker cutover preflight');
-  console.log(`seoseo broker revision: ${result.brokerRevisions.seoseo.revision ?? 'unknown'} (${result.brokerRevisions.seoseo.brokerId ?? 'brokerId unknown'})`);
-  console.log(`gwakga broker revision: ${result.brokerRevisions.gwakga.revision ?? 'unknown'} (${result.brokerRevisions.gwakga.brokerId ?? 'brokerId unknown'})`);
-  console.log(`seoseo online workers: ${result.seoseoOnline}`);
-  console.log(`gwakga online workers: ${result.gwakgaOnline}`);
+  console.log(`brokeralpha broker revision: ${result.brokerRevisions.brokeralpha.revision ?? 'unknown'} (${result.brokerRevisions.brokeralpha.brokerId ?? 'brokerId unknown'})`);
+  console.log(`brokerbeta broker revision: ${result.brokerRevisions.brokerbeta.revision ?? 'unknown'} (${result.brokerRevisions.brokerbeta.brokerId ?? 'brokerId unknown'})`);
+  console.log(`brokeralpha online workers: ${result.brokeralphaOnline}`);
+  console.log(`brokerbeta online workers: ${result.brokerbetaOnline}`);
 
   if (result.duplicates.length === 0) {
-    console.log('PASS duplicate online workerIds: none found across seoseo and gwakga');
+    console.log('PASS duplicate online workerIds: none found across brokeralpha and brokerbeta');
   } else {
-    console.log('FAIL duplicate online workerIds: found across seoseo and gwakga');
+    console.log('FAIL duplicate online workerIds: found across brokeralpha and brokerbeta');
     for (const duplicate of result.duplicates) {
-      console.log(`- ${duplicate.workerId}: seoseo status=${duplicate.seoseo.status ?? 'unknown'} revision=${duplicate.seoseo.revision ?? 'unknown'} lastSeenAt=${duplicate.seoseo.lastSeenAt ?? 'unknown'}, gwakga status=${duplicate.gwakga.status ?? 'unknown'} revision=${duplicate.gwakga.revision ?? 'unknown'} lastSeenAt=${duplicate.gwakga.lastSeenAt ?? 'unknown'}`);
+      console.log(`- ${duplicate.workerId}: brokeralpha status=${duplicate.brokeralpha.status ?? 'unknown'} revision=${duplicate.brokeralpha.revision ?? 'unknown'} lastSeenAt=${duplicate.brokeralpha.lastSeenAt ?? 'unknown'}, brokerbeta status=${duplicate.brokerbeta.status ?? 'unknown'} revision=${duplicate.brokerbeta.revision ?? 'unknown'} lastSeenAt=${duplicate.brokerbeta.lastSeenAt ?? 'unknown'}`);
     }
   }
 
   if (result.staleOrInactiveCrossBrokerWorkers.length > 0) {
     console.log('NOTE stale/inactive cross-broker workerIds are distinguished from duplicate-online blockers:');
     for (const worker of result.staleOrInactiveCrossBrokerWorkers) {
-      console.log(`- ${worker.workerId}: seoseo status=${worker.seoseo.status ?? 'unknown'} revision=${worker.seoseo.revision ?? 'unknown'}, gwakga status=${worker.gwakga.status ?? 'unknown'} revision=${worker.gwakga.revision ?? 'unknown'}`);
+      console.log(`- ${worker.workerId}: brokeralpha status=${worker.brokeralpha.status ?? 'unknown'} revision=${worker.brokeralpha.revision ?? 'unknown'}, brokerbeta status=${worker.brokerbeta.status ?? 'unknown'} revision=${worker.brokerbeta.revision ?? 'unknown'}`);
     }
   }
 
@@ -244,20 +244,20 @@ function printHuman(result) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (!options.seoseoUrl || !options.gwakgaUrl) {
-    console.error('fatal: provide --seoseo-url/--gwakga-url or SEOSEO_BROKER_URL/GWAKGA_BROKER_URL');
+  if (!options.brokeralphaUrl || !options.brokerbetaUrl) {
+    console.error('fatal: provide --brokeralpha-url/--brokerbeta-url or brokeralpha_BROKER_URL/brokerbeta_BROKER_URL');
     process.exit(2);
   }
 
-  const [seoseoWorkers, gwakgaWorkers, seoseoHealth, gwakgaHealth, safetyEvidence] = await Promise.all([
-    fetchWorkerList(options.seoseoUrl),
-    fetchWorkerList(options.gwakgaUrl),
-    fetchBrokerHealth(options.seoseoUrl),
-    fetchBrokerHealth(options.gwakgaUrl),
+  const [brokeralphaWorkers, brokerbetaWorkers, brokeralphaHealth, brokerbetaHealth, safetyEvidence] = await Promise.all([
+    fetchWorkerList(options.brokeralphaUrl),
+    fetchWorkerList(options.brokerbetaUrl),
+    fetchBrokerHealth(options.brokeralphaUrl),
+    fetchBrokerHealth(options.brokerbetaUrl),
     readSafetyEvidence(options.safetyEvidence),
   ]);
 
-  const result = buildPreflightResult({ seoseoWorkers, gwakgaWorkers, seoseoHealth, gwakgaHealth, safetyEvidence });
+  const result = buildPreflightResult({ brokeralphaWorkers, brokerbetaWorkers, brokeralphaHealth, brokerbetaHealth, safetyEvidence });
 
   if (options.json) console.log(JSON.stringify(result, null, 2));
   else printHuman(result);

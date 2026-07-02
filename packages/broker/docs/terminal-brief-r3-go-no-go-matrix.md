@@ -3,7 +3,7 @@
 Issue: [#392](https://github.com/jinwon-int/a2a-broker/issues/392)
 Parent: [#383](https://github.com/jinwon-int/a2a-broker/issues/383)
 Run: `terminal-brief-r3-20260505T224116Z`
-Worker: `yukson` validation/doc lane
+Worker: `workerdelta` validation/doc lane
 Snapshot: bounded GitHub issue/PR metadata and local no-live broker checks from the R3 assignment window.
 
 This matrix is intentionally conservative. It records only proof that is visible through bounded PR/issue evidence. Provider send success is not counted as operator receipt, receipt is not counted as manual ACK, and ACK is not counted as final no-live restoration.

@@ -35,7 +35,7 @@ proves no active node still references them.
    {
      "workers": [
        {
-         "nodeId": "dungae",
+         "nodeId": "workerepsilon",
          "service": "openclaw-a2a-worker",
          "env": {
            "A2A_WORKER_PROFILE": "broker-poll-only",

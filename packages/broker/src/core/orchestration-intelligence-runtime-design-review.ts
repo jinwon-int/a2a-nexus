@@ -17,7 +17,7 @@ export interface OIRuntimeDesignReviewEvidence {
   executorContractDocumented?: boolean;
   brokerDispatchBoundaryDocumented?: boolean;
   workerSpawnBoundaryDocumented?: boolean;
-  daegyoMobileBoundaryDocumented?: boolean;
+  mobilebetaMobileBoundaryDocumented?: boolean;
   rollbackAbortCriteriaDocumented?: boolean;
   liveBoundaryPlanDocumented?: boolean;
   observabilityPlanDocumented?: boolean;
@@ -38,7 +38,7 @@ export interface OIRuntimeDesignReviewCheck {
     | "executor_contract_documented"
     | "broker_dispatch_boundary_documented"
     | "worker_spawn_boundary_documented"
-    | "daegyo_mobile_boundary_documented"
+    | "mobilebeta_mobile_boundary_documented"
     | "rollback_abort_criteria_documented"
     | "live_boundary_plan_documented"
     | "observability_plan_documented";
@@ -83,7 +83,7 @@ export interface OIRuntimeDesignReviewPacket {
     runtimeExecutorEnabled: false;
     brokerDispatchCreated: false;
     workerSpawned: false;
-    daegyoScopeExpanded: false;
+    mobilebetaScopeExpanded: false;
     providerSend: false;
     terminalAckReplay: false;
     dbMutation: false;
@@ -143,7 +143,7 @@ export function buildOIRuntimeDesignReviewPacket(
       runtimeExecutorEnabled: false,
       brokerDispatchCreated: false,
       workerSpawned: false,
-      daegyoScopeExpanded: false,
+      mobilebetaScopeExpanded: false,
       providerSend: false,
       terminalAckReplay: false,
       dbMutation: false,
@@ -169,7 +169,7 @@ export function renderOIRuntimeDesignReviewMarkdown(packet: OIRuntimeDesignRevie
     ...Object.entries(packet.runtimeReadinessEvidencePatch).map(([key, value]) => `- ${key}: ${value}`),
     "Next actions:",
     ...packet.nextActions.map((action) => `- ${action}`),
-    "Safety: source-only runtime design review; records design evidence only. It does not grant execution approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand Daegyo/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
+    "Safety: source-only runtime design review; records design evidence only. It does not grant execution approval, enable or create a runtime executor, create broker dispatch, spawn workers, expand mobilebeta/mobile scope, send providers, ACK/replay Terminal rows, mutate DB state, deploy/restart services, publish releases, or move credentials.",
   ].join("\n");
 }
 
@@ -207,10 +207,10 @@ function buildChecks(
       "worker spawn boundary is missing",
     ),
     boolCheck(
-      "daegyo_mobile_boundary_documented",
-      evidence.daegyoMobileBoundaryDocumented,
-      "Daegyo/mobile boundary remains constrained and documented",
-      "Daegyo/mobile boundary is missing",
+      "mobilebeta_mobile_boundary_documented",
+      evidence.mobilebetaMobileBoundaryDocumented,
+      "mobilebeta/mobile boundary remains constrained and documented",
+      "mobilebeta/mobile boundary is missing",
     ),
     boolCheck(
       "rollback_abort_criteria_documented",
@@ -275,7 +275,7 @@ function evidencePatchForState(state: OIRuntimeDesignReviewState): Required<OIRu
     explicitRuntimeApprovalPresent: false,
     brokerDispatchApprovalPresent: false,
     workerSpawnApprovalPresent: false,
-    daegyoMobileScopeResolved: false,
+    mobilebetaMobileScopeResolved: false,
     rollbackAbortCriteriaDocumented: false,
     liveBoundaryPlanDocumented: false,
     validationEvidenceFresh: true,
@@ -292,7 +292,7 @@ function nextActionsForState(state: OIRuntimeDesignReviewState): string[] {
   if (state === "design_review_ready") {
     return [
       "feed runtimeExecutorDesignReviewed=true into the next runtime readiness gate review",
-      "keep explicit runtime approval, broker dispatch approval, worker spawn approval, and Daegyo/mobile scope expansion as separate NO-GO gates",
+      "keep explicit runtime approval, broker dispatch approval, worker spawn approval, and mobilebeta/mobile scope expansion as separate NO-GO gates",
     ];
   }
   if (state === "source_chain_not_ready") return ["complete source-only validation chain before design review"];

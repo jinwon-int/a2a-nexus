@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 
 import { TEAM_BROKER_INVARIANT, hasText, normalizeUrl } from "./a2a-routing-shared.mjs";
 
-test("TEAM_BROKER_INVARIANT maps team1→seoseo and team2→gwakga", () => {
-  assert.deepEqual(TEAM_BROKER_INVARIANT, { team1: "seoseo", team2: "gwakga" });
+test("TEAM_BROKER_INVARIANT maps team1→brokerAlpha and team2→brokerBeta", () => {
+  assert.deepEqual(TEAM_BROKER_INVARIANT, { team1: "brokerAlpha", team2: "brokerBeta" });
 });
 
 test("hasText is true only for non-blank strings", () => {
@@ -17,8 +17,8 @@ test("hasText is true only for non-blank strings", () => {
 });
 
 test("normalizeUrl trims and strips trailing slashes, passing through non-strings", () => {
-  assert.equal(normalizeUrl(" https://seoseo.invalid/// "), "https://seoseo.invalid");
-  assert.equal(normalizeUrl("https://gwakga.invalid"), "https://gwakga.invalid");
+  assert.equal(normalizeUrl(" https://brokerAlpha.invalid/// "), "https://brokerAlpha.invalid");
+  assert.equal(normalizeUrl("https://brokerBeta.invalid"), "https://brokerBeta.invalid");
   assert.equal(normalizeUrl(""), "");
   assert.equal(normalizeUrl(undefined), undefined);
 });

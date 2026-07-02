@@ -9,7 +9,7 @@ import { emptySnapshot } from "./core/store.js";
 
 test("server exposes a public agent card on the well-known path", async () => {
   const server = await startTestServer({
-    serviceName: "seoseo-broker",
+    serviceName: "brokeralpha-broker",
     publicBaseUrl: "https://broker.example.com/",
     edgeSecret: "test-edge-secret",
   });
@@ -20,7 +20,7 @@ test("server exposes a public agent card on the well-known path", async () => {
     assert.equal(response.headers.get("cache-control"), "public, max-age=300");
 
     const card = await response.json();
-    assert.equal(card.name, "seoseo-broker");
+    assert.equal(card.name, "brokeralpha-broker");
     assert.equal(card.url, "https://broker.example.com/a2a/jsonrpc");
     assert.equal(card.protocolVersion, "1.0");
     assert.equal(card.capabilities.streaming, true);

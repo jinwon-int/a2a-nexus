@@ -151,7 +151,7 @@ const handlerResult = buildHandlerResult(parsed, task, nodeId);
 | `A2A_DOCKER_RUNNER_PATCH_COMMAND_TEMPLATE` | — | Legacy eval template; used only when script/json are unset |
 
 Patch command precedence is `SCRIPT > JSON > TEMPLATE`. Prefer `SCRIPT` or
-`JSON` for active targets (`bangtong`, `dungae`, `sogyo`, `nosuk`) and keep the
+`JSON` for active targets (`workerGamma`, `workerEpsilon`, `workerBeta`, `workerAlpha`) and keep the
 legacy template only for compatibility during rollout.
 
 ## Broker Claim/Heartbeat (untouched)
@@ -178,11 +178,11 @@ The handler continues to claim → execute → report using the same broker prot
 
 | Node | Expected integration state |
 |---|---|
-| bangtong | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
-| dungae | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
-| sogyo | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
-| nosuk | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
-| yukson | **Excluded** (legacy, no integration) |
+| workerGamma | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
+| workerEpsilon | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
+| workerBeta | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
+| workerAlpha | Handler imports integration; `A2A_DOCKER_RUNNER_ENABLED=1` |
+| workerDelta | **Excluded** (legacy, no integration) |
 
 ## Canary Deployment
 
@@ -215,7 +215,7 @@ export A2A_DOCKER_RUNNER_BIN=a2a-docker-runner
   ],
   "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/11",
   "reportLanguage": "ko",
-  "requestedBy": "seoseo",
+  "requestedBy": "brokerAlpha",
   "timeoutMs": 120000
 }
 ```

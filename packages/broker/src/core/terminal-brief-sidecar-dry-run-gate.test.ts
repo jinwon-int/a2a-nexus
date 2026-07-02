@@ -117,7 +117,7 @@ function status(overrides: Partial<TerminalBriefFinalizerApprovalStatusPacket> =
     source: {
       dispatchState: "dispatch_draft_ready",
       dispatchIdempotencyKey: "tb-approval-dispatch:fixture-712",
-      adapterType: "gongyung",
+      adapterType: "mobilealpha",
     },
     requestedAction: {
       action: "post_closeout_comment",
@@ -161,7 +161,7 @@ function status(overrides: Partial<TerminalBriefFinalizerApprovalStatusPacket> =
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesDispatchAdapterPacket: true,
       consumesReceiptIngestorPacket: true,
       grantsApproval: false,

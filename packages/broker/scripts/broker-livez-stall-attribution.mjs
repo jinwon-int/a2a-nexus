@@ -1369,7 +1369,7 @@ function renderMarkdown(report) {
       `- **"accepted-socket-waiting-before-request-event"**: A fresh TCP connection was accepted but the HTTP request`,
       "  event fired late (no clear data-level decomposition). Suggests accept-queue buildup under TCP accept backpressure.",
       `- **"accepted-socket-waiting-for-data"**: A fresh socket was accepted but the first TCP data byte arrived`,
-      "  late (socketConnectedToFirstDataMs dominates). The client/Gwakga may not have sent the request yet,",
+      "  late (socketConnectedToFirstDataMs dominates). The client/brokerbeta may not have sent the request yet,",
       "  the network was slow, or host scheduling delayed the read callback.",
       `- **"accepted-socket-data-received-blocked"**: The first TCP data byte arrived promptly but the HTTP request`,
       "  event fired late (firstDataToHttpRequestEventMs dominates). Node event-loop was blocked (GC, cgroup",

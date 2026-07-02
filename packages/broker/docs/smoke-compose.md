@@ -6,7 +6,7 @@ runtime.
 
 It intentionally uses the built-in `echo` worker from this repo, so
 an operator can verify a deploy end to end before wiring up
-`openclaw-plugin-a2a`, `bangtong`, or `dengae`.
+`openclaw-plugin-a2a`, `workergamma`, or `dengae`.
 
 Reference files:
 
@@ -179,7 +179,7 @@ smoke starts fresh.
   restarts, task is requeued and completed), use
   `docs/restart-recovery-smoke.md`. That drill uses the same broker
   build but a host-local worker with a sleep handler.
-- For the trading-partner isolation reference (`bangtong`, `dengae`),
+- For the trading-partner isolation reference (`workergamma`, `dengae`),
   use `examples/docker-compose.trading-partners.yml` together with
   `docs/docker-compose-trading-partners.md`. That compose is
   intentionally not a runnable smoke stack and has placeholder worker

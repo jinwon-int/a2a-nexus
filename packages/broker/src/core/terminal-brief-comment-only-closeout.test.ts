@@ -41,8 +41,8 @@ function eventFor(
       taskId,
       status,
       parentRoundId: options.parentRoundId ?? "round-437",
-      originBrokerId: "seoseo",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokeralpha",
+      brokerOfRecordId: "brokeralpha",
       worker,
       repo: "jinwon-int/a2a-nexus",
       issue: 437,
@@ -69,17 +69,17 @@ function buildInput(): TerminalBriefAutoCloseoutPlannerInput {
   return {
     finalCountInput: {
       parentRoundId: "round-437",
-      expectedWorkers: ["bangtong", "yukson"],
+      expectedWorkers: ["workergamma", "workerdelta"],
       finalCountSignals: [
         { id: "brief-final", text: "Terminal Brief complete (2/2)", createdAt: NOW },
       ],
       events: [
-        eventFor("bangtong", "succeeded", {
+        eventFor("workergamma", "succeeded", {
           progress: 1,
           total: 2,
           prUrl: "https://github.com/jinwon-int/a2a-broker/pull/901",
         }),
-        eventFor("yukson", "succeeded", {
+        eventFor("workerdelta", "succeeded", {
           progress: 2,
           total: 2,
           doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/900#issuecomment-1",
@@ -194,9 +194,9 @@ test("rendered markdown exposes blockers, target, and safety", () => {
 function buildInputWithMissingWorkers(): TerminalBriefAutoCloseoutPlannerInput {
   const input = buildInput();
   assert.ok(input.finalCountInput, "test fixture must include finalCountInput");
-  // Remove yukson event so only bangtong has evidence, making yukson a missing worker
+  // Remove workerdelta event so only workergamma has evidence, making workerdelta a missing worker
   input.finalCountInput.events = input.finalCountInput.events.filter(
-    (e) => e.payload.worker !== "yukson",
+    (e) => e.payload.worker !== "workerdelta",
   );
   return input;
 }
@@ -217,7 +217,7 @@ test("missing workers block comment_only closeout with named blocker", () => {
   assert.equal(draft.plannedAction, "blocked");
   assert.equal(draft.postPermitted, false);
   assert.ok(
-    draft.blockers.some((b) => b.includes("missing workers") && b.includes("yukson")),
+    draft.blockers.some((b) => b.includes("missing workers") && b.includes("workerdelta")),
     "blockers should name missing workers",
   );
 });

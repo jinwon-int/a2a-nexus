@@ -2,7 +2,7 @@
 
 **Issue:** [#941](https://github.com/jinwon-int/a2a-broker/issues/941)
 **Date:** 2026-05-27
-**Author:** bangtong (Team1)
+**Author:** workergamma (Team1)
 
 ## 1. Purpose
 

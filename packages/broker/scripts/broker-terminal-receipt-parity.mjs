@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Read-only cross-broker terminal receipt parity check for Seoseo ↔ Gwakga.
+// Read-only cross-broker terminal receipt parity check for brokeralpha ↔ brokerbeta.
 // This script only performs GET requests and a deterministic no-live canary; it
 // never sends provider messages, mutates broker state, or ACKs terminal rows.
 
@@ -23,11 +23,11 @@ function parseArgs(argv, env = process.env) {
   const limitRaw = getArg(argv, '--limit') ?? env.BROKER_TERMINAL_RECEIPT_PARITY_LIMIT;
   const limit = Number(limitRaw ?? DEFAULT_LIMIT);
   return {
-    seoseoUrl: getArg(argv, '--seoseo-url') ?? env.SEOSEO_BROKER_URL ?? env.A2A_SEOSEO_BROKER_URL,
-    gwakgaUrl: getArg(argv, '--gwakga-url') ?? env.GWAKGA_BROKER_URL ?? env.A2A_GWAKGA_BROKER_URL,
+    brokeralphaUrl: getArg(argv, '--brokeralpha-url') ?? env.brokeralpha_BROKER_URL ?? env.A2A_brokeralpha_BROKER_URL,
+    brokerbetaUrl: getArg(argv, '--brokerbeta-url') ?? env.brokerbeta_BROKER_URL ?? env.A2A_brokerbeta_BROKER_URL,
     edgeSecret: getArg(argv, '--edge-secret') ?? env.BROKER_EDGE_SECRET ?? env.EDGE_SECRET,
-    seoseoEdgeSecret: getArg(argv, '--seoseo-edge-secret') ?? env.SEOSEO_BROKER_EDGE_SECRET,
-    gwakgaEdgeSecret: getArg(argv, '--gwakga-edge-secret') ?? env.GWAKGA_BROKER_EDGE_SECRET,
+    brokeralphaEdgeSecret: getArg(argv, '--brokeralpha-edge-secret') ?? env.brokeralpha_BROKER_EDGE_SECRET,
+    brokerbetaEdgeSecret: getArg(argv, '--brokerbeta-edge-secret') ?? env.brokerbeta_BROKER_EDGE_SECRET,
     limit: Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT,
     json: argv.includes('--json'),
   };
@@ -68,19 +68,19 @@ async function fetchTerminalOutbox(baseUrl, edgeSecret, limit, fetchImpl = fetch
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (!options.seoseoUrl || !options.gwakgaUrl) {
-    console.error('fatal: provide --seoseo-url/--gwakga-url or SEOSEO_BROKER_URL/GWAKGA_BROKER_URL');
+  if (!options.brokeralphaUrl || !options.brokerbetaUrl) {
+    console.error('fatal: provide --brokeralpha-url/--brokerbeta-url or brokeralpha_BROKER_URL/brokerbeta_BROKER_URL');
     process.exit(2);
   }
 
-  const [seoseoSnapshot, gwakgaSnapshot] = await Promise.all([
-    fetchTerminalOutbox(options.seoseoUrl, options.seoseoEdgeSecret ?? options.edgeSecret, options.limit),
-    fetchTerminalOutbox(options.gwakgaUrl, options.gwakgaEdgeSecret ?? options.edgeSecret, options.limit),
+  const [brokeralphaSnapshot, brokerbetaSnapshot] = await Promise.all([
+    fetchTerminalOutbox(options.brokeralphaUrl, options.brokeralphaEdgeSecret ?? options.edgeSecret, options.limit),
+    fetchTerminalOutbox(options.brokerbetaUrl, options.brokerbetaEdgeSecret ?? options.edgeSecret, options.limit),
   ]);
 
   const report = compareBrokerTerminalReceiptParity({
-    seoseo: analyzeBrokerTerminalReceiptSnapshot('seoseo', seoseoSnapshot),
-    gwakga: analyzeBrokerTerminalReceiptSnapshot('gwakga', gwakgaSnapshot),
+    brokeralpha: analyzeBrokerTerminalReceiptSnapshot('brokeralpha', brokeralphaSnapshot),
+    brokerbeta: analyzeBrokerTerminalReceiptSnapshot('brokerbeta', brokerbetaSnapshot),
     receiptGateCanary: runReceiptGateCanaryMatrix(),
   });
 

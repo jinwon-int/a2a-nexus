@@ -72,7 +72,7 @@
       "decision": "RECORDED_ACTIVE_NO_FURTHER_CHANGE",
       "operatorOwner": "the operator / operator",
       "evidence": "docs/history/monorepo-branch-protection-approval-packet.md",
-      "rollbackOwner": "the operator / operator for settings decision; seoseo finalizer for PR evidence/revert docs",
+      "rollbackOwner": "the operator / operator for settings decision; brokerAlpha finalizer for PR evidence/revert docs",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
     },
@@ -117,7 +117,7 @@
       "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
       "operatorOwner": "the operator / operator",
       "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
-      "rollbackOwner": "seoseo finalizer via PR revert; registry/package owner transfer rollback remains unassigned until a separate execution packet",
+      "rollbackOwner": "brokerAlpha finalizer via PR revert; registry/package owner transfer rollback remains unassigned until a separate execution packet",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
     },
@@ -126,7 +126,7 @@
       "decision": "GO_CANDIDATE_PR_FIRST_SOURCE_DECLARATION",
       "operatorOwner": "the operator / operator",
       "evidence": "docs/history/monorepo-canonical-flip-readiness.md",
-      "rollbackOwner": "seoseo finalizer via PR revert; live/runtime rollback remains unassigned until a separate execution packet",
+      "rollbackOwner": "brokerAlpha finalizer via PR revert; live/runtime rollback remains unassigned until a separate execution packet",
       "approvedForPrFirstPacket": true,
       "executionApproved": false
     }
@@ -184,58 +184,58 @@
   "a2aEvidence": {
     "primaryRound": "a2a-finalpacket-retry-20260610T123212Z",
     "primaryEvidencePath": "/tmp/a2a-finalpacket-retry-20260610T123212Z-evidence.json",
-    "supplementalRetryRound": "a2a-finalpacket-jingun-retry-20260610T123834Z",
-    "supplementalEvidencePath": "/tmp/a2a-finalpacket-jingun-retry-20260610T123834Z-evidence.json",
+    "supplementalRetryRound": "a2a-finalpacket-workerZeta-retry-20260610T123834Z",
+    "supplementalEvidencePath": "/tmp/a2a-finalpacket-workerZeta-retry-20260610T123834Z-evidence.json",
     "sourceOnly": true,
     "githubCommentsByWorkers": false,
     "workers": [
       {
         "team": "Team1",
-        "broker": "seoseo",
-        "worker": "sogyo",
+        "broker": "brokerAlpha",
+        "worker": "workerBeta",
         "taskId": "83607748-813f-47c9-a9de-edab7e44cad2",
         "analysisStatus": "done"
       },
       {
         "team": "Team1",
-        "broker": "seoseo",
-        "worker": "nosuk",
+        "broker": "brokerAlpha",
+        "worker": "workerAlpha",
         "taskId": "04f8b5b0-bf19-471b-9794-e87647f83ca9",
         "analysisStatus": "done"
       },
       {
         "team": "Team1",
-        "broker": "seoseo",
-        "worker": "bangtong",
+        "broker": "brokerAlpha",
+        "worker": "workerGamma",
         "taskId": "5fc18add-d580-4bec-940b-42c924148011",
         "analysisStatus": "done"
       },
       {
         "team": "Team2",
-        "broker": "gwakga",
-        "worker": "dungae",
+        "broker": "brokerBeta",
+        "worker": "workerEpsilon",
         "taskId": "506d9d8a-d652-495c-bc7c-75da1aba6425",
         "analysisStatus": "done"
       },
       {
         "team": "Team2",
-        "broker": "gwakga",
-        "worker": "jingun",
+        "broker": "brokerBeta",
+        "worker": "workerZeta",
         "taskId": "8abf24cb-4a91-4126-8b86-98e5a252a26f",
         "analysisStatus": "done",
         "source": "supplementalRetry"
       },
       {
         "team": "Team2",
-        "broker": "gwakga",
-        "worker": "soonwook",
+        "broker": "brokerBeta",
+        "worker": "workerEta",
         "taskId": "0c5e41be-fe6d-4d78-aaf8-a903f9ad1d9b",
         "analysisStatus": "done"
       }
     ],
     "blockedSupersededTasks": [
       {
-        "worker": "jingun",
+        "worker": "workerZeta",
         "taskId": "d039996e-2465-410d-8083-ad851d9567cf",
         "reason": "source bundle key mismatch; superseded by supplemental retry"
       }

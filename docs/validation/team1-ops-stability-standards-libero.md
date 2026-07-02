@@ -1,7 +1,7 @@
 # Team1 operations stability + standards alignment libero validation
 
 Parent: a2a-plane#232 (a2a-plane#232, internal tracker private)
-Lane: Team1/yukson, a2a-plane#235 (a2a-plane#235, internal tracker private)
+Lane: Team1/workerDelta, a2a-plane#235 (a2a-plane#235, internal tracker private)
 Run: `a2a-ops-stability-and-standards-20260511T063530Z`
 Snapshot: `2026-05-11T06:47:09Z`
 
@@ -17,13 +17,13 @@ The safe closeout for this lane is a validation PR/Done marker that records the 
 
 | Lane | Required output | Snapshot evidence | Libero result |
 | --- | --- | --- | --- |
-| Team1/bangtong — a2a-plane#233 (a2a-plane#233, internal tracker private) | Checkpoint, human-interrupt, and trace policy output for operations stability. | Start marker only: a2a-plane#233 (internal tracker, private)#issuecomment-4418160790 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team1/sogyo — [openclaw-plugin-a2a#267](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/267) | A2A Inspector/a2a-python conformance smoke gate output. | Start marker only: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/267#issuecomment-4418160845 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team1/nosuk — [a2a-docker-runner#199](https://github.com/jinwon-int/a2a-docker-runner/issues/199) | Runner false-failure recovery after successful PR creation. | Start marker only: https://github.com/jinwon-int/a2a-docker-runner/issues/199#issuecomment-4418161724 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team2/dungae — [a2a-broker#491](https://github.com/jinwon-int/a2a-broker/issues/491) | Broker A2A 1.0 task semantics plus Worker Capability/AgentCard registry output. | Start/preflight markers only: https://github.com/jinwon-int/a2a-broker/issues/491#issuecomment-4418152221 and https://github.com/jinwon-int/a2a-broker/issues/491#issuecomment-4418164903 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team2/jingun — [a2a-docker-runner#200](https://github.com/jinwon-int/a2a-docker-runner/issues/200) | Worker runtime visibility, cleanup, and safety policy output. | Start markers only: https://github.com/jinwon-int/a2a-docker-runner/issues/200#issuecomment-4418151374 and https://github.com/jinwon-int/a2a-docker-runner/issues/200#issuecomment-4418160346 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team2/soonwook — a2a-plane#234 (a2a-plane#234, internal tracker private) | Independent Team2 libero cross-validation. | Start markers only: a2a-plane#234 (internal tracker, private)#issuecomment-4418151462 and a2a-plane#234 (internal tracker, private)#issuecomment-4418159462 | `NO-GO / Waiting` until terminal evidence lands. |
-| Team1/yukson — a2a-plane#235 (a2a-plane#235, internal tracker private) | This Team1 libero validation artifact and regression test. | This patch records the fail-closed snapshot. Start marker: a2a-plane#235 (internal tracker, private)#issuecomment-4418168079 | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
+| Team1/workerGamma — a2a-plane#233 (a2a-plane#233, internal tracker private) | Checkpoint, human-interrupt, and trace policy output for operations stability. | Start marker only: a2a-plane#233 (internal tracker, private)#issuecomment-4418160790 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team1/workerBeta — [openclaw-plugin-a2a#267](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/267) | A2A Inspector/a2a-python conformance smoke gate output. | Start marker only: https://github.com/jinwon-int/openclaw-plugin-a2a/issues/267#issuecomment-4418160845 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team1/workerAlpha — [a2a-docker-runner#199](https://github.com/jinwon-int/a2a-docker-runner/issues/199) | Runner false-failure recovery after successful PR creation. | Start marker only: https://github.com/jinwon-int/a2a-docker-runner/issues/199#issuecomment-4418161724 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team2/workerEpsilon — [a2a-broker#491](https://github.com/jinwon-int/a2a-broker/issues/491) | Broker A2A 1.0 task semantics plus Worker Capability/AgentCard registry output. | Start/preflight markers only: https://github.com/jinwon-int/a2a-broker/issues/491#issuecomment-4418152221 and https://github.com/jinwon-int/a2a-broker/issues/491#issuecomment-4418164903 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team2/workerZeta — [a2a-docker-runner#200](https://github.com/jinwon-int/a2a-docker-runner/issues/200) | Worker runtime visibility, cleanup, and safety policy output. | Start markers only: https://github.com/jinwon-int/a2a-docker-runner/issues/200#issuecomment-4418151374 and https://github.com/jinwon-int/a2a-docker-runner/issues/200#issuecomment-4418160346 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team2/workerEta — a2a-plane#234 (a2a-plane#234, internal tracker private) | Independent Team2 libero cross-validation. | Start markers only: a2a-plane#234 (internal tracker, private)#issuecomment-4418151462 and a2a-plane#234 (internal tracker, private)#issuecomment-4418159462 | `NO-GO / Waiting` until terminal evidence lands. |
+| Team1/workerDelta — a2a-plane#235 (a2a-plane#235, internal tracker private) | This Team1 libero validation artifact and regression test. | This patch records the fail-closed snapshot. Start marker: a2a-plane#235 (internal tracker, private)#issuecomment-4418168079 | Pass for validation shape only; aggregate remains `NO-GO / Waiting`. |
 
 ## Libero validation matrix
 

@@ -34,7 +34,7 @@ test("source-public execution plan is deterministic, dry-run only, and operator 
   const options = {
     generatedAt: "2026-05-11T02:32:07.000Z",
     runId: "a2a-source-public-execution-orchestrator-20260511T023207Z",
-    worker: "dungae",
+    worker: "workerepsilon",
     approvedEvidencePacket,
     scannerHistory,
     preflights: passingPreflights,

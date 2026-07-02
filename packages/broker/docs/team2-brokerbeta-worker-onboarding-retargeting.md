@@ -1,0 +1,160 @@
+# Team2/brokerbeta worker onboarding and retargeting runbook
+
+This runbook prepares the Team2/brokerbeta side of a two-broker cutover. It is intentionally conservative: it documents safe preflight, onboarding, retarget, and rollback steps without changing production routes, restarting Gateway, rotating secrets, mutating production databases, sending through live providers, or acknowledging terminal outbox rows.
+
+Reference config: [`examples/team2-brokerbeta.worker.env.example`](../examples/team2-brokerbeta.worker.env.example).
+
+## Broker and team naming conventions
+
+Use stable lowercase IDs everywhere a worker reports broker/team ownership. Do not infer ownership from hostnames or URLs.
+
+| Side | brokerId | teamId | Use |
+| --- | --- | --- | --- |
+| Team1/brokeralpha | `brokeralpha` | `team1` | Current/home broker before retargeting. |
+| Team2/brokerbeta | `brokerbeta` | `team2` | Target broker for Team2 worker onboarding. |
+
+For worker metadata, keep the values explicit and redundant:
+
+```json
+{
+  "brokerId": "brokerbeta",
+  "teamId": "team2",
+  "homeBrokerId": "brokerbeta",
+  "retargetRun": "a2a-2broker-safety-20260507T021114Z"
+}
+```
+
+When retargeting from brokeralpha to brokerbeta, also record `previousHomeBrokerId: "brokeralpha"` and keep any human approval reference outside secrets or raw session logs.
+
+## Evidence required before moving `workereta` or future workers
+
+Capture sanitized evidence in the issue/PR comment before the cutover is considered ready:
+
+- worker ID and intended home side (`workereta` → `brokerId=brokerbeta`, `teamId=team2`)
+- exact old and new broker URLs, redacted to host labels if private
+- old-broker check showing no active lease for the worker (`claimed`, `running`, or queued task assigned to that worker)
+- target-broker check showing no fresh duplicate registration for the same worker ID, or an explicit operator-approved replacement plan
+- config diff or env summary with secrets redacted (`BROKER_EDGE_SECRET`, provider tokens, runner tokens)
+- rollback owner and trigger conditions
+- validation command output with exit codes
+
+Do not paste raw `.env` files, edge secrets, OpenClaw runtime context files, raw session dumps, or terminal outbox payloads.
+
+## Safe preflight: duplicate, lease, revision, and terminal receipt parity checks
+
+Run these as read-only checks first. Replace placeholders in your local shell; keep secrets out of logs.
+
+For every two-broker deploy/restart/canary readiness packet, include the read-only worker preflight output. It fetches `/health` and `/workers` from both brokers with `GET` only, reports broker build revisions and worker metadata revisions, separates duplicate-online blockers from stale/inactive cross-broker rows, and applies fail-closed no-live safety gates for deploy/restart/canary/DB/ACK/release claims.
+
+```bash
+cat > /tmp/a2a-two-broker-safety-evidence.json <<'JSON'
+{
+  "safety": {
+    "productionDeploy": false,
+    "gatewayRestart": false,
+    "liveProviderCanary": false,
+    "dbMutation": false,
+    "terminalAckOrReplay": false,
+    "release": false,
+    "providerAcceptedMessageIdAsAck": false
+  }
+}
+JSON
+
+npm run two_broker_worker_preflight -- \
+  --brokeralpha-url "${OLD_BROKER_URL}" \
+  --brokerbeta-url "${NEW_BROKER_URL}" \
+  --safety-evidence /tmp/a2a-two-broker-safety-evidence.json \
+  --json
+```
+
+The output is **not** deployment approval. Treat it as Block evidence if either broker revision is `unknown`, any worker revision needed for the cutover is `unknown`, any duplicate-online worker ID appears, or any safety gate fails. Stale/inactive same-ID rows may be non-blocking only when the stale window/lastSeen evidence proves the old side cannot claim work and an operator-approved replacement/rollback plan is attached.
+
+Rollback notes to attach with the preflight:
+
+- rollback is not executed by the preflight and needs fresh explicit operator approval;
+- rollback must preserve unacknowledged/replayable terminal rows unless a separate ACK/prune approval exists;
+- provider accepted/message-id evidence is non-ACK and must not be counted as `receipt_confirmed` terminal ACK evidence;
+- rollback must not deploy/restart/reload, send a live provider canary, mutate DB state, replay/ACK terminal rows, or publish a release without separate approval.
+
+```bash
+export WORKER_ID=workereta
+export OLD_BROKER_URL=https://brokeralpha-broker.example.invalid
+export NEW_BROKER_URL=https://brokerbeta-broker.example.invalid
+export BROKER_EDGE_SECRET=<edge-secret-placeholder>
+
+# Old broker: worker registration should be absent or stale after stop.
+curl -fsS \
+  -H "x-a2a-edge-secret: ${BROKER_EDGE_SECRET}" \
+  -H "x-a2a-requester-id: operator" \
+  "${OLD_BROKER_URL}/workers/${WORKER_ID}"
+
+# Old broker: no work should remain assigned or leased to this worker.
+for status in queued claimed running; do
+  curl -fsS \
+    -H "x-a2a-edge-secret: ${BROKER_EDGE_SECRET}" \
+    -H "x-a2a-requester-id: operator" \
+    "${OLD_BROKER_URL}/tasks?assignedWorkerId=${WORKER_ID}&status=${status}"
+done
+
+# Target broker: no fresh duplicate should already be registered for this ID.
+curl -fsS \
+  -H "x-a2a-edge-secret: ${BROKER_EDGE_SECRET}" \
+  -H "x-a2a-requester-id: operator" \
+  "${NEW_BROKER_URL}/workers/${WORKER_ID}"
+```
+
+Fail closed if any old-broker task is `claimed` or `running`, if the target broker already has a fresh same-ID worker without an approved replacement, or if the checks require an unapproved production secret/routing change.
+
+Before considering terminal receipt behavior equivalent across brokeralpha and brokerbeta, run the read-only parity helper. It polls each broker terminal outbox with `GET` only and combines that shape check with the deterministic no-live receipt-gate canary; it never sends providers, mutates the broker DB, or ACKs terminal rows.
+
+```bash
+npm run broker_terminal_receipt_parity -- \
+  --brokeralpha-url "${OLD_BROKER_URL}" \
+  --brokerbeta-url "${NEW_BROKER_URL}" \
+  --edge-secret "${BROKER_EDGE_SECRET}" \
+  --limit 20
+```
+
+If the report lists observed bucket discrepancies, attach the fix proposal from the output and rerun `terminal_outbox_preflight` on both brokers with the same cursor and limit before any operator-approved backfill or ACK.
+
+## Onboarding a new brokerbeta worker
+
+1. Create a worker-specific env file from the example, using a unique `WORKER_ID` and `WORKER_METADATA_JSON` with `brokerId=brokerbeta`, `teamId=team2`, and `homeBrokerId=brokerbeta`.
+2. Keep workspace and artifact roots worker-specific. Do not share writable workspace mounts with brokeralpha workers.
+3. Run the duplicate preflight against the brokerbeta broker.
+4. Start the worker only after operator approval for the onboarding window.
+5. Confirm exactly one fresh registration/heartbeat exists for the worker on brokerbeta.
+6. Submit only sanitized evidence: worker ID, broker/team IDs, fresh heartbeat timestamp, validation commands, and redacted config summary.
+
+## Retargeting `workereta` from brokeralpha to brokerbeta
+
+Retargeting has a hard boundary: one worker ID must have one active home broker.
+
+1. **Stop the old worker process** on the brokeralpha side using the operator-approved service/container procedure. Do not restart Gateway.
+2. **Verify lease drain** on brokeralpha: no `claimed` or `running` tasks for `workereta`; queued tasks are either drained, cancelled, or explicitly requeued by an approved operator.
+3. **Wait for stale window or deregistration evidence** according to the broker's worker-offline threshold. Do not rely on silence alone; capture the read-only worker/task checks.
+4. **Apply local worker config** so `BROKER_URL` points at the brokerbeta broker and metadata reports `brokerId=brokerbeta`, `teamId=team2`, `homeBrokerId=brokerbeta`, and `previousHomeBrokerId=brokeralpha`.
+5. **Run duplicate preflight** on brokerbeta before start. If brokerbeta already reports a fresh `workereta`, stop and resolve ownership.
+6. **Restart only the worker process/container** using the approved worker procedure. No production deploy, public route change, secret rotation, live provider send, terminal-outbox ACK, or Gateway restart is part of this runbook.
+7. **Verify post-start**: brokerbeta shows one fresh `workereta` heartbeat; brokeralpha shows no active lease for `workereta`; evidence is sanitized.
+
+## Rollback boundary
+
+Rollback is a worker retarget only, not a broker deploy.
+
+Rollback triggers:
+
+- brokerbeta registration is missing or flapping after the approved window.
+- Any dual fresh registration appears for the same worker ID.
+- Tasks are claimed on the wrong broker.
+- Required validation/evidence cannot be produced safely.
+
+Rollback steps:
+
+1. Stop the brokerbeta-side worker process/container.
+2. Confirm brokerbeta has no `claimed` or `running` tasks for the worker, or get operator approval to fail/requeue them.
+3. Restore the previous brokeralpha worker env/config from the last known-good sanitized config summary.
+4. Restart only the worker process/container on brokeralpha.
+5. Verify exactly one fresh home registration on brokeralpha and no fresh duplicate on brokerbeta.
+6. Post rollback evidence with secrets and host-private paths redacted.

@@ -1,7 +1,7 @@
 /**
  * Tests for terminal-outbox backlog risk analyzer (issues #540, #824).
  *
- * Reference: #540 Team1/Bangtong stability gates for #497/#294;
+ * Reference: #540 Team1/workergamma stability gates for #497/#294;
  * #824 cleanup candidate actionability for cursor-derived outbox states.
  */
 import { describe, it } from "node:test";

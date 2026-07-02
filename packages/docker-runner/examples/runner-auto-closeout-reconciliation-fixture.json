@@ -8,9 +8,9 @@
   "parentRoundTotal": 4,
   "parentRoundOrder": 1,
   "parentRoundProgress": 0,
-  "originBrokerId": "bangtong",
-  "brokerOfRecordId": "bangtong",
-  "parentBrokerId": "bangtong",
+  "originBrokerId": "workerGamma",
+  "brokerOfRecordId": "workerGamma",
+  "parentBrokerId": "workerGamma",
   "noLiveProof": {
     "fixtureOnly": true,
     "autoCloseoutEnabled": false,
@@ -41,15 +41,15 @@
     "terminalOutboxAckPerformed": false,
     "autoCloseoutMode": "source_only"
   },
-  "activeNodes": ["bangtong", "dungae", "sogyo", "nosuk"],
+  "activeNodes": ["workerGamma", "workerEpsilon", "workerBeta", "workerAlpha"],
   "source": {
     "schemaVersion": "a2a.runner.auto-closeout-reconciliation-fixture.v1",
     "parentRoundTotal": 4,
     "parentRoundOrder": 1,
     "parentRoundProgress": 0,
-    "originBrokerId": "bangtong",
-    "brokerOfRecordId": "bangtong",
-    "parentBrokerId": "bangtong"
+    "originBrokerId": "workerGamma",
+    "brokerOfRecordId": "workerGamma",
+    "parentBrokerId": "workerGamma"
   },
   "reconciliationSemantics": {
     "approvalGateRequired": true,
@@ -76,9 +76,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 1,
           "parentRoundProgress": 0,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -133,9 +133,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 2,
           "parentRoundProgress": 1,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -194,9 +194,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 3,
           "parentRoundProgress": 2,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -265,9 +265,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 4,
           "parentRoundProgress": 2,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -327,9 +327,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 5,
           "parentRoundProgress": 3,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -389,9 +389,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 6,
           "parentRoundProgress": 3,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {
@@ -447,9 +447,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 7,
           "parentRoundProgress": 3,
-          "originBrokerId": "bangtong",
-          "brokerOfRecordId": "bangtong",
-          "parentBrokerId": "bangtong"
+          "originBrokerId": "workerGamma",
+          "brokerOfRecordId": "workerGamma",
+          "parentBrokerId": "workerGamma"
         }
       },
       "runnerOutput": {

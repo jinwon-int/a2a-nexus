@@ -17,7 +17,7 @@ export interface OIRuntimeReadinessEvidence {
   explicitRuntimeApprovalPresent?: boolean;
   brokerDispatchApprovalPresent?: boolean;
   workerSpawnApprovalPresent?: boolean;
-  daegyoMobileScopeResolved?: boolean;
+  mobilebetaMobileScopeResolved?: boolean;
   rollbackAbortCriteriaDocumented?: boolean;
   liveBoundaryPlanDocumented?: boolean;
   validationEvidenceFresh?: boolean;
@@ -39,7 +39,7 @@ export interface OIRuntimeReadinessGateCheck {
     | "explicit_runtime_approval_present"
     | "broker_dispatch_approval_present"
     | "worker_spawn_approval_present"
-    | "daegyo_mobile_scope_resolved"
+    | "mobilebeta_mobile_scope_resolved"
     | "rollback_abort_criteria_documented"
     | "live_boundary_plan_documented"
     | "validation_evidence_fresh";
@@ -203,10 +203,10 @@ function buildChecks(
       "worker spawn approval evidence is missing",
     ),
     boolCheck(
-      "daegyo_mobile_scope_resolved",
-      evidence.daegyoMobileScopeResolved,
-      "Daegyo/mobile worker scope limits are resolved for this runtime path",
-      "Daegyo/mobile workers remain limited to no-live evidence and approved proof-marker paths",
+      "mobilebeta_mobile_scope_resolved",
+      evidence.mobilebetaMobileScopeResolved,
+      "mobilebeta/mobile worker scope limits are resolved for this runtime path",
+      "mobilebeta/mobile workers remain limited to no-live evidence and approved proof-marker paths",
     ),
     boolCheck(
       "rollback_abort_criteria_documented",

@@ -2,8 +2,8 @@
 
 Reviewed PRs:
 
-- `jinwon-int/a2a-docker-runner#210` — Team2 / `jingun`, runner config/schema parity audit and pre-PR bootstrap guard hardening.
-- `jinwon-int/a2a-docker-runner#211` — Team1 / `nosuk`, runner pre-deploy config validation.
+- `jinwon-int/a2a-docker-runner#210` — Team2 / `workerZeta`, runner config/schema parity audit and pre-PR bootstrap guard hardening.
+- `jinwon-int/a2a-docker-runner#211` — Team1 / `workerAlpha`, runner pre-deploy config validation.
 
 ## Closeout decision
 

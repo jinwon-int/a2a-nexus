@@ -19,7 +19,7 @@ const repoRoot = process.cwd();
 const fixturePath = 'fixtures/native-worker/no-live-conformance.json';
 const checklistPath = 'docs/hermes-native-worker-conformance-checklist.md';
 const androidRunbookPath = 'docs/hermes-android-native-worker-runbook.md';
-const gongyungSpecPath = 'docs/specs/gongyung-hermes-worker-profile/spec.md';
+const gongyungSpecPath = 'docs/specs/mobileAlpha-hermes-worker-profile/spec.md';
 const hermesIntegrationSpec = 'docs/specs/hermes-worker-integration/spec.md';
 
 function escapeRegExp(str) {
@@ -40,7 +40,7 @@ test('hermes android native worker runbook exists', () => {
   assert.ok(existsSync(join(repoRoot, androidRunbookPath)), `missing: ${androidRunbookPath}`);
 });
 
-test('gongyung hermes worker profile spec exists', () => {
+test('mobileAlpha hermes worker profile spec exists', () => {
   assert.ok(existsSync(join(repoRoot, gongyungSpecPath)), `missing: ${gongyungSpecPath}`);
 });
 
@@ -73,7 +73,7 @@ test('fixture worker identity reflects Hermes/Android native worker', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const worker = fixture.worker;
 
-  assert.equal(worker.id, 'gongyung');
+  assert.equal(worker.id, 'mobileAlpha');
   assert.equal(worker.runtime, 'hermes-agent');
   assert.equal(worker.runtimeFlavor, 'termux-hermes');
   assert.equal(worker.openClawRequired, false);
@@ -84,7 +84,7 @@ test('fixture worker identity reflects Hermes/Android native worker', () => {
   assert.equal(worker.evidenceSchema, 'a2a.hermesWorker.localEvidence.v1');
 });
 
-test('fixture worker capabilities match Gongyung profile', () => {
+test('fixture worker capabilities match mobileAlpha profile', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const caps = fixture.worker.capabilities;
 
@@ -107,7 +107,7 @@ test('fixture worker capabilities match Gongyung profile', () => {
   assert.equal(caps.canRunHeavyProof, false);
 });
 
-test('fixture rejected intents match Gongyung profile', () => {
+test('fixture rejected intents match mobileAlpha profile', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const rejected = fixture.worker.rejectedIntents;
 
@@ -117,7 +117,7 @@ test('fixture rejected intents match Gongyung profile', () => {
   assert.ok(rejected.includes('test_repo'), 'rejectedIntents must include test_repo');
 });
 
-test('fixture rejected capabilities match Gongyung profile', () => {
+test('fixture rejected capabilities match mobileAlpha profile', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const rejected = fixture.worker.rejectedCapabilities;
 
@@ -201,7 +201,7 @@ test('checklist references all required source documents', () => {
   const content = readFileSync(join(repoRoot, checklistPath), 'utf8');
 
   assert.match(content, /hermes-worker-integration\/spec\.md/);
-  assert.match(content, /gongyung-hermes-worker-profile\/spec\.md/);
+  assert.match(content, /mobileAlpha-hermes-worker-profile\/spec\.md/);
   assert.match(content, /hermes-android-native-worker-runbook\.md/);
   assert.match(content, /native-worker\/no-live-conformance\.json/);
 });
@@ -268,10 +268,10 @@ test('checklist has no secret values', () => {
 
 // ── Cross-reference consistency ─────────────────────────────────────
 
-test('fixture profiles field references gongyung spec', () => {
+test('fixture profiles field references mobileAlpha spec', () => {
   const fixture = JSON.parse(readFileSync(join(repoRoot, fixturePath), 'utf8'));
   const profiles = fixture.profiles || [];
-  assert.ok(profiles.some(p => p.includes('gongyung-hermes-worker-profile')), 'fixture must reference gongyung profile spec');
+  assert.ok(profiles.some(p => p.includes('mobileAlpha-hermes-worker-profile')), 'fixture must reference mobileAlpha profile spec');
 });
 
 test('fixture runbook field references android native worker runbook', () => {

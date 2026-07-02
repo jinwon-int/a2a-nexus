@@ -3,9 +3,9 @@
 Parent: #188 (a2a-plane#188, internal tracker private)
 Child: #189 (a2a-plane#189, internal tracker private)
 Run: `a2a-evidence-nochange-hardening-20260510T100150Z`
-Broker of record: `seoseo`
+Broker of record: `brokerAlpha`
 Team: `team1`
-Worker: `yukson`
+Worker: `workerDelta`
 Reviewed at: `2026-05-10T10:01:50Z`
 Closeout refreshed at: `2026-05-10T11:12:00Z`
 

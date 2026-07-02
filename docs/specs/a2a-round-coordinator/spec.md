@@ -244,7 +244,7 @@ human finalizer's review.
       "evidenceCompleteness": true,
       "noLiveActionLeak": true,
       "runtimeBootstrapHygiene": true,
-      "seoseoFinalizerRequired": true
+      "brokerAlphaFinalizerRequired": true
     }
   },
   "safetyConfirmation": {

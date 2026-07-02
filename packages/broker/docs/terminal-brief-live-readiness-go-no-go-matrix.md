@@ -3,7 +3,7 @@
 Issue: [#386](https://github.com/jinwon-int/a2a-broker/issues/386)
 Parent: [#383](https://github.com/jinwon-int/a2a-broker/issues/383)
 Run: `terminal-brief-live-readiness-20260505130545`
-Worker: `yukson` libero validation lane
+Worker: `workerdelta` libero validation lane
 Snapshot: `2026-05-05T13:18Z` from bounded GitHub issue/PR metadata plus local no-live broker checks.
 
 This is a conservative validation matrix for A2A Terminal Brief live readiness. It records what is safe to conclude from the R2 evidence available at the snapshot. Open PRs are not counted as merged code, provider send success is not counted as operator-visible receipt proof, and no production/live action is counted without explicit operator approval.

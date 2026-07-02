@@ -338,7 +338,7 @@ function normalizePositiveInt(value: unknown): number | undefined {
  */
 export interface TerminalBriefTemplateMetadata {
   /**
-   * Unique template identifier (e.g. "terminal-brief/r23-team2-dungae").
+   * Unique template identifier (e.g. "terminal-brief/r23-team2-workerepsilon").
    * Used for idempotent task creation and template version tracking.
    */
   templateId?: string;
@@ -456,7 +456,7 @@ export interface TerminalBriefValidationOptions {
    * When true, allow `originBrokerId` to equal `receiverBrokerId`.
    *
    * This is used for local parent rounds where the origin and receiving
-   * broker are the same (e.g., Team2-local Gwakga rounds carrying local-safe
+   * broker are the same (e.g., Team2-local brokerbeta rounds carrying local-safe
    * parent grouping metadata). Cross-broker projections should not set this
    * flag; they still reject same-broker origin as "wrong_origin".
    *

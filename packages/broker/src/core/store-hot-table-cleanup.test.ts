@@ -191,7 +191,7 @@ test("SqliteBrokerStateStore.readHotRuntimeSnapshot survives representative load
     // Create with hot-tables load source to exercise the exact regression path from #497
     const store = new SqliteBrokerStateStore(temp.filePath, { loadSource: "hot-tables" });
 
-    // Seed representative data matching observed seoseo broker shape
+    // Seed representative data matching observed brokeralpha broker shape
     const t0 = "2026-04-27T00:00:00.000Z";
     const taskCount = 660;
     const auditCount = 1908;

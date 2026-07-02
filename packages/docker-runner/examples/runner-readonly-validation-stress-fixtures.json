@@ -34,7 +34,7 @@
           "title": "Team2 runner parity/stress fixtures for validation lanes",
           "focus": "read-only validation",
           "readOnlyValidation": true,
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-stability-r7-20260513T101831Z"
         }
       },
@@ -73,7 +73,7 @@
           "repo": "jinwon-int/a2a-docker-runner",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/238",
           "validationOnly": true,
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-stability-r7-20260513T101831Z"
         }
       },
@@ -112,7 +112,7 @@
           "repo": "jinwon-int/a2a-docker-runner",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/238",
           "focus": "libero validation",
-          "requestedBy": "jingun",
+          "requestedBy": "workerZeta",
           "runId": "a2a-stability-r7-20260513T101831Z"
         }
       },

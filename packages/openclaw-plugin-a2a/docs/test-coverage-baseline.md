@@ -98,7 +98,7 @@ test body or assertion changed.
 | `docker-runner-dev-e2e-proof.test.mjs` | Reads a shipped proof doc (`docs/docker-runner-dev-e2e-proof.md`) via `import.meta.url`. Artifact assertion, same path-fragility. |
 | `openclaw-plugin-config-schema.test.mjs` | Reads `openclaw.plugin.json` (the shipped manifest) via `import.meta.url`. Manifest/artifact assertion. |
 
-(The pre-existing `tests/*.test.ts` `terminal-brief-hermes-gongyung` /
+(The pre-existing `tests/*.test.ts` `terminal-brief-hermes-mobileAlpha` /
 `terminal-brief-openclaw-message` use `spawnSync`, and `sessions-send-hook`
 imports the plugin entry — these are genuine integration suites that already
 lived in `tests/` and are already wired into the script.)

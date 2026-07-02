@@ -138,18 +138,18 @@ test("cross-broker Terminal Brief projection preserves the rendered handoff titl
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    childWorkerId: "jingun",
+    childWorkerId: "workerzeta",
     parentRoundTotal: "3",
     parentRoundOrder: "2",
-    terminalBriefTitle: "A2A Terminal Brief 완료: jingun(완료 2/3)",
+    terminalBriefTitle: "A2A Terminal Brief 완료: workerzeta(완료 2/3)",
   }));
   assert.equal(result.accepted, true);
-  assert.equal(result.record.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/3)");
+  assert.equal(result.record.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/3)");
   assert.equal(Object.hasOwn(result.record, "terminalBriefText"), false);
 
   const [terminalEvent] = projectionRows(broker.getTerminalTaskEventOutbox().subscribe());
-  assert.equal(terminalEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/3)");
-  assert.equal(terminalEvent?.payload.title, "A2A Terminal Brief 완료: jingun(완료 2/3)");
+  assert.equal(terminalEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/3)");
+  assert.equal(terminalEvent?.payload.title, "A2A Terminal Brief 완료: workerzeta(완료 2/3)");
   assert.equal(Object.hasOwn(terminalEvent?.payload ?? {}, "terminalBriefText"), false);
   assert.equal(Object.hasOwn(terminalEvent?.payload ?? {}, "terminalBriefTemplate"), false);
 });
@@ -203,20 +203,20 @@ test("cross-broker Terminal Brief projection carries parent round denominator in
   createParentRound(broker);
 
   const knownTotal = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "gwakga",
+    originBrokerId: "brokerbeta",
     brokerOfRecordId: "parent-broker",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "7",
     parentRoundOrder: "5",
   }));
   assert.equal(knownTotal.accepted, true);
   assert.equal(knownTotal.record.parentRoundTotal, 7);
-  assert.equal(knownTotal.record.childWorkerId, "dungae");
+  assert.equal(knownTotal.record.childWorkerId, "workerepsilon");
 
   const secondTotal = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     originBrokerId: "child-broker-b",
     childTaskId: "child-task-2",
-    childWorkerId: "sogyo",
+    childWorkerId: "workerbeta",
     parentRoundTotal: "3",
     parentRoundOrder: "2",
     completedAt: "2026-05-13T01:05:00.000Z",
@@ -230,118 +230,118 @@ test("cross-broker Terminal Brief projection carries parent round denominator in
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 2);
   assert.equal(terminalEvents[0]?.payload.parentRoundId, "round-parent");
-  assert.equal(terminalEvents[0]?.payload.originBrokerId, "gwakga");
+  assert.equal(terminalEvents[0]?.payload.originBrokerId, "brokerbeta");
   assert.equal(terminalEvents[0]?.payload.brokerOfRecordId, "parent-broker");
   assert.equal(terminalEvents[0]?.payload.run, "round-parent");
-  assert.equal(terminalEvents[0]?.payload.worker, "dungae");
+  assert.equal(terminalEvents[0]?.payload.worker, "workerepsilon");
   assert.equal(terminalEvents[0]?.payload.parentRoundTotal, 7);
   assert.equal(terminalEvents[0]?.payload.parentRoundOrder, 5);
   assert.equal(terminalEvents[0]?.payload.parentRoundProgress, 1);
-  assert.equal(terminalEvents[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 5/7)");
-  assert.equal(terminalEvents[0]?.payload.title, "A2A Terminal Brief 완료: dungae(완료 5/7)");
+  assert.equal(terminalEvents[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 5/7)");
+  assert.equal(terminalEvents[0]?.payload.title, "A2A Terminal Brief 완료: workerepsilon(완료 5/7)");
   assert.deepEqual(terminalEvents[0]?.payload.crossBrokerHandoff, {
     parentRoundId: "round-parent",
     originBrokerId: "parent-broker",
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerbeta",
     originTaskId: "child-task-1",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
   });
   assertProjectionOwnership(terminalEvents[0], "parent-broker");
   assert.equal(terminalEvents[1]?.payload.run, "round-parent");
-  assert.equal(terminalEvents[1]?.payload.worker, "sogyo");
+  assert.equal(terminalEvents[1]?.payload.worker, "workerbeta");
   assert.equal(terminalEvents[1]?.payload.parentRoundTotal, 3);
   assert.equal(terminalEvents[1]?.payload.parentRoundProgress, 2);
-  assert.equal(terminalEvents[1]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo(완료 2/3)");
+  assert.equal(terminalEvents[1]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerbeta(완료 2/3)");
 });
 
-test("Seoseo-origin parent keeps distinct Gwakga handoff children and explicit order", () => {
+test("brokeralpha-origin parent keeps distinct brokerbeta handoff children and explicit order", () => {
   const parentRoundId = "a2a-r13-terminal-brief-realround-20260514T013556Z";
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker, parentRoundId);
 
-  const dungae = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+  const workerepsilon = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId,
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: parentRoundId + "-05-dungae",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: parentRoundId + "-05-workerepsilon",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: 7,
     parentRoundOrder: 5,
-    summary: "dungae completed Gwakga handoff evidence for Seoseo parent",
+    summary: "workerepsilon completed brokerbeta handoff evidence for brokeralpha parent",
   }));
-  const jingun = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+  const workerzeta = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId,
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: parentRoundId + "-06-jingun",
-    childWorkerId: "jingun",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: parentRoundId + "-06-workerzeta",
+    childWorkerId: "workerzeta",
     parentRoundTotal: 7,
     parentRoundOrder: 6,
     completedAt: "2026-05-13T01:05:00.000Z",
     emittedAt: "2026-05-13T01:05:01.000Z",
   }));
 
-  assert.equal(dungae.accepted, true);
-  assert.equal(jingun.accepted, true);
+  assert.equal(workerepsilon.accepted, true);
+  assert.equal(workerzeta.accepted, true);
 
-  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId: "gwakga" });
+  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId: "brokerbeta" });
   assert.equal(records.length, 2);
-  assert.deepEqual(records.map((record) => record.childWorkerId), ["dungae", "jingun"]);
+  assert.deepEqual(records.map((record) => record.childWorkerId), ["workerepsilon", "workerzeta"]);
 
   const allTerminalEvents = broker.getTerminalTaskEventOutbox().subscribe();
   assert.equal(operatorRows(allTerminalEvents).length, 2);
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 2);
   assert.equal(terminalEvents[0]?.payload.run, parentRoundId);
-  assert.equal(terminalEvents[0]?.payload.worker, "dungae");
+  assert.equal(terminalEvents[0]?.payload.worker, "workerepsilon");
   assert.equal(terminalEvents[0]?.payload.parentRoundProgress, 1);
   assert.equal(terminalEvents[0]?.payload.parentRoundTotal, 7);
-  assert.equal(terminalEvents[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 5/7)");
-  assertProjectionOwnership(terminalEvents[0], "seoseo");
-  assert.equal(terminalEvents[1]?.payload.worker, "jingun");
+  assert.equal(terminalEvents[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 5/7)");
+  assertProjectionOwnership(terminalEvents[0], "brokeralpha");
+  assert.equal(terminalEvents[1]?.payload.worker, "workerzeta");
   assert.equal(terminalEvents[1]?.payload.parentRoundProgress, 2);
-  assert.equal(terminalEvents[1]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 6/7)");
+  assert.equal(terminalEvents[1]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 6/7)");
 });
 
-test("cross-broker Terminal Brief projection is symmetric for Gwakga-owned parent rounds", () => {
-  const parentRoundId = "a2a-r12-gwakga-origin-round";
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
+test("cross-broker Terminal Brief projection is symmetric for brokerbeta-owned parent rounds", () => {
+  const parentRoundId = "a2a-r12-brokerbeta-origin-round";
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
   createParentRound(broker, parentRoundId);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId,
-    originBrokerId: "seoseo",
-    brokerOfRecordId: "gwakga",
-    childTaskId: "seoseo-handoff-child",
-    childWorkerId: "dungae",
+    originBrokerId: "brokeralpha",
+    brokerOfRecordId: "brokerbeta",
+    childTaskId: "brokeralpha-handoff-child",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: 7,
     parentRoundOrder: 5,
-    summary: "Seoseo handoff child completed for the Gwakga aggregate",
+    summary: "brokeralpha handoff child completed for the brokerbeta aggregate",
   }));
 
   assert.equal(result.accepted, true);
-  assert.equal(result.record.brokerOfRecordId, "gwakga");
-  assert.equal(result.record.originBrokerId, "seoseo");
+  assert.equal(result.record.brokerOfRecordId, "brokerbeta");
+  assert.equal(result.record.originBrokerId, "brokeralpha");
   assert.equal(result.ack.terminalAck, false);
 
-  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId: "seoseo" });
+  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId, originBrokerId: "brokeralpha" });
   assert.equal(records.length, 1);
-  assert.equal(records[0]?.brokerOfRecordId, "gwakga");
+  assert.equal(records[0]?.brokerOfRecordId, "brokerbeta");
 
   const [terminalEvent] = projectionRows(broker.getTerminalTaskEventOutbox().subscribe());
   assert.equal(terminalEvent?.payload.run, parentRoundId);
-  assert.equal(terminalEvent?.payload.worker, "dungae");
+  assert.equal(terminalEvent?.payload.worker, "workerepsilon");
   assert.equal(terminalEvent?.payload.parentRoundTotal, 7);
   assert.equal(terminalEvent?.payload.parentRoundProgress, 1);
-  assert.equal(terminalEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 5/7)");
+  assert.equal(terminalEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 5/7)");
   assert.deepEqual(terminalEvent?.payload.crossBrokerHandoff, {
     parentRoundId,
-    originBrokerId: "gwakga",
-    handoffBrokerId: "seoseo",
-    originTaskId: "seoseo-handoff-child",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    handoffBrokerId: "brokeralpha",
+    originTaskId: "brokeralpha-handoff-child",
+    childWorkerId: "workerepsilon",
   });
-  assertProjectionOwnership(terminalEvent, "gwakga");
+  assertProjectionOwnership(terminalEvent, "brokerbeta");
 });
 
 test("cross-broker Terminal Brief projection redacts unsafe content and fails closed for ACKs", () => {
@@ -462,14 +462,14 @@ test("Terminal Brief dispatch guard accepts parentRoundNum as parentRoundOrder a
     parentRoundOrder: undefined,
     parentRoundNum: "2",
     parentRoundTotal: "2",
-    childWorkerId: "jingun",
+    childWorkerId: "workerzeta",
   }));
   assert.equal(result.accepted, true);
   assert.equal(result.record.parentRoundOrder, 2);
 
   const [event] = projectionRows(broker.getTerminalTaskEventOutbox().subscribe());
   assert.equal(event?.payload.parentRoundOrder, 2);
-  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 2/2)");
+  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 2/2)");
 });
 
 test("Terminal Brief dispatch guard accepts projection lacking brokerOfRecordId (defaults to receiver broker)", () => {
@@ -482,20 +482,20 @@ test("Terminal Brief dispatch guard accepts projection lacking brokerOfRecordId 
   assert.equal(result.accepted, true);
 });
 
-test("Terminal Brief dispatch guard accepts valid seoseo-origin projection with bangtong compact title", () => {
+test("Terminal Brief dispatch guard accepts valid brokeralpha-origin projection with workergamma compact title", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
-    childWorkerId: "bangtong",
+    originBrokerId: "brokeralpha",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
   }));
   assert.equal(result.accepted, true);
   assert.equal(result.replayed, false);
-  assert.equal(result.record.originBrokerId, "seoseo");
+  assert.equal(result.record.originBrokerId, "brokeralpha");
   assert.equal(result.record.parentRoundTotal, 7);
-  assert.equal(result.record.childWorkerId, "bangtong");
+  assert.equal(result.record.childWorkerId, "workergamma");
 
   const allEvents = broker.getTerminalTaskEventOutbox().subscribe();
   assert.equal(allEvents.length, 2);
@@ -503,34 +503,34 @@ test("Terminal Brief dispatch guard accepts valid seoseo-origin projection with 
   const events = projectionRows(allEvents);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.payload.run, "round-parent");
-  assert.equal(events[0]?.payload.worker, "bangtong");
+  assert.equal(events[0]?.payload.worker, "workergamma");
   assert.equal(events[0]?.payload.parentRoundTotal, 7);
   assert.equal(events[0]?.payload.parentRoundProgress, 1);
-  assert.equal(events[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/7)");
+  assert.equal(events[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/7)");
   assert.deepEqual(events[0]?.payload.crossBrokerHandoff, {
     parentRoundId: "round-parent",
     originBrokerId: "parent-broker",
-    handoffBrokerId: "seoseo",
+    handoffBrokerId: "brokeralpha",
     originTaskId: "child-task-1",
-    childWorkerId: "bangtong",
+    childWorkerId: "workergamma",
   });
   assertProjectionOwnership(events[0], "parent-broker");
 });
 
-test("Terminal Brief dispatch guard accepts valid gwakga-origin projection with dungae compact title", () => {
+test("Terminal Brief dispatch guard accepts valid brokerbeta-origin projection with workerepsilon compact title", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "gwakga",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "10",
   }));
   assert.equal(result.accepted, true);
   assert.equal(result.replayed, false);
-  assert.equal(result.record.originBrokerId, "gwakga");
+  assert.equal(result.record.originBrokerId, "brokerbeta");
   assert.equal(result.record.parentRoundTotal, 10);
-  assert.equal(result.record.childWorkerId, "dungae");
+  assert.equal(result.record.childWorkerId, "workerepsilon");
 
   const allEvents = broker.getTerminalTaskEventOutbox().subscribe();
   assert.equal(allEvents.length, 2);
@@ -538,112 +538,112 @@ test("Terminal Brief dispatch guard accepts valid gwakga-origin projection with 
   const events = projectionRows(allEvents);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.payload.run, "round-parent");
-  assert.equal(events[0]?.payload.worker, "dungae");
+  assert.equal(events[0]?.payload.worker, "workerepsilon");
   assert.equal(events[0]?.payload.parentRoundTotal, 10);
   assert.equal(events[0]?.payload.parentRoundProgress, 1);
-  assert.equal(events[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 1/10)");
+  assert.equal(events[0]?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 1/10)");
   assert.deepEqual(events[0]?.payload.crossBrokerHandoff, {
     parentRoundId: "round-parent",
     originBrokerId: "parent-broker",
-    handoffBrokerId: "gwakga",
+    handoffBrokerId: "brokerbeta",
     originTaskId: "child-task-1",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
   });
   assertProjectionOwnership(events[0], "parent-broker");
 });
 
 
-test("bangtong compact Terminal Brief emitted on every terminal status: succeeded", () => {
+test("workergamma compact Terminal Brief emitted on every terminal status: succeeded", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
-    childTaskId: "bangtong-task-succeeded",
-    childWorkerId: "bangtong",
+    originBrokerId: "brokeralpha",
+    childTaskId: "workergamma-task-succeeded",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "succeeded",
-    summary: "bangtong succeeded",
+    summary: "workergamma succeeded",
     completedAt: "2026-05-14T01:01:00.000Z",
     emittedAt: "2026-05-14T01:01:01.000Z",
   }));
   assert.equal(result.accepted, true);
 
   const events = broker.getTerminalTaskEventOutbox().subscribe();
-  const event = events.find(e => e.payload.taskId === "bangtong-task-succeeded");
-  assert.ok(event, "bangtong succeeded event must exist");
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/7)");
+  const event = events.find(e => e.payload.taskId === "workergamma-task-succeeded");
+  assert.ok(event, "workergamma succeeded event must exist");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/7)");
   assert.equal(event.payload.status, "succeeded");
 });
 
-test("bangtong compact Terminal Brief emitted on every terminal status: failed", () => {
+test("workergamma compact Terminal Brief emitted on every terminal status: failed", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
-    childTaskId: "bangtong-task-failed",
-    childWorkerId: "bangtong",
+    originBrokerId: "brokeralpha",
+    childTaskId: "workergamma-task-failed",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "failed",
-    summary: "bangtong failed",
+    summary: "workergamma failed",
     completedAt: "2026-05-14T01:02:00.000Z",
     emittedAt: "2026-05-14T01:02:01.000Z",
   }));
   assert.equal(result.accepted, true);
 
   const events = broker.getTerminalTaskEventOutbox().subscribe();
-  const event = events.find(e => e.payload.taskId === "bangtong-task-failed");
-  assert.ok(event, "bangtong failed event must exist");
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 1/7)");
+  const event = events.find(e => e.payload.taskId === "workergamma-task-failed");
+  assert.ok(event, "workergamma failed event must exist");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 1/7)");
   assert.equal(event.payload.status, "failed");
   assert.equal(event.payload.parentRoundProgress, 1);
 });
 
-test("bangtong compact Terminal Brief emitted on every terminal status: canceled", () => {
+test("workergamma compact Terminal Brief emitted on every terminal status: canceled", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
-    childTaskId: "bangtong-task-canceled",
-    childWorkerId: "bangtong",
+    originBrokerId: "brokeralpha",
+    childTaskId: "workergamma-task-canceled",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "canceled",
-    summary: "bangtong canceled",
+    summary: "workergamma canceled",
     completedAt: "2026-05-14T01:03:00.000Z",
     emittedAt: "2026-05-14T01:03:01.000Z",
   }));
   assert.equal(result.accepted, true);
 
   const events = broker.getTerminalTaskEventOutbox().subscribe();
-  const event = events.find(e => e.payload.taskId === "bangtong-task-canceled");
-  assert.ok(event, "bangtong canceled event must exist");
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 취소: bangtong(완료 1/7)");
+  const event = events.find(e => e.payload.taskId === "workergamma-task-canceled");
+  assert.ok(event, "workergamma canceled event must exist");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 취소: workergamma(완료 1/7)");
   assert.equal(event.payload.status, "canceled");
   assert.equal(event.payload.parentRoundProgress, 1);
 });
 
-test("bangtong compact Terminal Brief emitted on every terminal status: blocked", () => {
+test("workergamma compact Terminal Brief emitted on every terminal status: blocked", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "parent-broker" });
   createParentRound(broker);
 
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
-    childTaskId: "bangtong-task-blocked",
-    childWorkerId: "bangtong",
+    originBrokerId: "brokeralpha",
+    childTaskId: "workergamma-task-blocked",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "blocked",
-    summary: "bangtong blocked",
+    summary: "workergamma blocked",
     completedAt: "2026-05-14T01:04:00.000Z",
     emittedAt: "2026-05-14T01:04:01.000Z",
   }));
   assert.equal(result.accepted, true);
 
   const events = broker.getTerminalTaskEventOutbox().subscribe();
-  const event = events.find(e => e.payload.taskId === "bangtong-task-blocked");
-  assert.ok(event, "bangtong blocked event must exist");
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 차단: bangtong(완료 1/7)");
+  const event = events.find(e => e.payload.taskId === "workergamma-task-blocked");
+  assert.ok(event, "workergamma blocked event must exist");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 차단: workergamma(완료 1/7)");
   assert.equal(event.payload.status, "blocked");
   assert.equal(event.payload.parentRoundProgress, 1);
 });
@@ -654,9 +654,9 @@ test("cross-broker duplicate projection is idempotent; terminal event title unch
 
   // First ingestion
   const first = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
     childTaskId: "unique-child-projection",
-    childWorkerId: "bangtong",
+    childWorkerId: "workergamma",
     parentRoundTotal: "5",
     parentRoundOrder: "3",
     status: "succeeded",
@@ -665,9 +665,9 @@ test("cross-broker duplicate projection is idempotent; terminal event title unch
 
   // Same projection ingested again (duplicate/replay)
   const second = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
     childTaskId: "unique-child-projection",
-    childWorkerId: "bangtong",
+    childWorkerId: "workergamma",
     parentRoundTotal: "5",
     parentRoundOrder: "3",
     status: "succeeded",
@@ -683,7 +683,7 @@ test("cross-broker duplicate projection is idempotent; terminal event title unch
 
   const event = projectionRows(matching)[0];
   assert.ok(event);
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 3/5)");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 3/5)");
   assert.equal(event.payload.status, "succeeded");
   assert.equal(event.payload.parentRoundProgress, 1);
   assert.equal(event.payload.parentRoundTotal, 5);
@@ -695,9 +695,9 @@ test("cross-broker mixed succeeded and failed projections: numerator counts term
 
   // First projection: failed
   const failed = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
     childTaskId: "failed-child",
-    childWorkerId: "bangtong",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "failed",
   }));
@@ -705,9 +705,9 @@ test("cross-broker mixed succeeded and failed projections: numerator counts term
 
   // Second projection: succeeded
   const succeeded = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
     childTaskId: "succeeded-child",
-    childWorkerId: "bangtong",
+    childWorkerId: "workergamma",
     parentRoundTotal: "7",
     status: "succeeded",
   }));
@@ -719,7 +719,7 @@ test("cross-broker mixed succeeded and failed projections: numerator counts term
   assert.ok(failedEvent);
   // Failed projection still closes one lane for operator progress.
   assert.equal(failedEvent.payload.parentRoundProgress, 1);
-  assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: bangtong(완료 1/7)");
+  assert.equal(failedEvent.payload.terminalBriefTitle, "A2A Terminal Brief 실패: workergamma(완료 1/7)");
   assert.equal(failedEvent.payload.status, "failed");
 
   const succeededEvent = events.find(e => e.payload.taskId === "succeeded-child");
@@ -727,21 +727,21 @@ test("cross-broker mixed succeeded and failed projections: numerator counts term
   // Succeeded projection is the second terminal lane in the round, while the
   // rendered parent-owned title still preserves explicit parent order.
   assert.equal(succeededEvent.payload.parentRoundProgress, 2);
-  assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: bangtong(완료 1/7)");
+  assert.equal(succeededEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workergamma(완료 1/7)");
   assert.equal(succeededEvent.payload.status, "succeeded");
 });
 
 test("cross-broker Terminal Brief dedup uses stable notification idempotency key (ignores completedAt)", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker);
 
   // First projection with earlier timestamp
   const first = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-task-01",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-task-01",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "4",
     parentRoundOrder: "2",
     status: "succeeded",
@@ -758,10 +758,10 @@ test("cross-broker Terminal Brief dedup uses stable notification idempotency key
   // excludes completedAt, so the outbox returns the existing event.
   const second = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-task-01",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-task-01",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "4",
     parentRoundOrder: "2",
     status: "succeeded",
@@ -787,44 +787,44 @@ test("cross-broker Terminal Brief dedup uses stable notification idempotency key
     "outbox event completedAt preserves first-accepted value");
 
   // But the projection store record was updated with the newer completedAt
-  const stored = broker.getCrossBrokerTerminalBriefProjection("round-parent", "gwakga");
+  const stored = broker.getCrossBrokerTerminalBriefProjection("round-parent", "brokerbeta");
   assert.equal(stored?.completedAt, "2026-05-14T11:00:00.000Z",
     "projection store accepts newer completedAt without creating duplicate outbox event");
 });
 
 test("cross-broker Terminal Brief dedup key distinguishes multiple workers from same origin broker (no childTaskId)", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker);
 
-  // dungae projection WITHOUT childTaskId — only childWorkerId differentiates
-  const dungae = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+  // workerepsilon projection WITHOUT childTaskId — only childWorkerId differentiates
+  const workerepsilon = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: undefined,
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "7",
     parentRoundOrder: "5",
     status: "succeeded",
     completedAt: "2026-05-14T10:00:00.000Z",
     emittedAt: "2026-05-14T10:00:01.000Z",
   }));
-  assert.equal(dungae.accepted, true);
+  assert.equal(workerepsilon.accepted, true);
 
-  // jingun projection WITHOUT childTaskId — same parentRoundId, originBrokerId, different childWorkerId
-  const jingun = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+  // workerzeta projection WITHOUT childTaskId — same parentRoundId, originBrokerId, different childWorkerId
+  const workerzeta = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: undefined,
-    childWorkerId: "jingun",
+    childWorkerId: "workerzeta",
     parentRoundTotal: "7",
     parentRoundOrder: "6",
     status: "succeeded",
     completedAt: "2026-05-14T10:05:00.000Z",
     emittedAt: "2026-05-14T10:05:01.000Z",
   }));
-  assert.equal(jingun.accepted, true);
+  assert.equal(workerzeta.accepted, true);
 
   // Both must have produced terminal events (no collision from missing childTaskId)
   const allTerminalEvents = broker.getTerminalTaskEventOutbox().subscribe();
@@ -834,23 +834,23 @@ test("cross-broker Terminal Brief dedup key distinguishes multiple workers from 
   assert.equal(operatorRows(allTerminalEvents).length, 2);
 
   const workers = terminalEvents.map(e => e.payload.worker);
-  assert.ok(workers.includes("dungae"), "dungae must have a terminal event");
-  assert.ok(workers.includes("jingun"), "jingun must have a terminal event");
+  assert.ok(workers.includes("workerepsilon"), "workerepsilon must have a terminal event");
+  assert.ok(workers.includes("workerzeta"), "workerzeta must have a terminal event");
 
   // Verify the projection store also has distinct records
-  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId: "round-parent", originBrokerId: "gwakga" });
+  const records = broker.listCrossBrokerTerminalBriefProjections({ parentRoundId: "round-parent", originBrokerId: "brokerbeta" });
   assert.equal(records.length, 2, "projection store must have distinct records for both workers");
-  assert.deepEqual(records.map(r => r.childWorkerId).sort(), ["dungae", "jingun"]);
+  assert.deepEqual(records.map(r => r.childWorkerId).sort(), ["workerepsilon", "workerzeta"]);
 });
 
 test("cross-broker Terminal Brief dedup key distinguishes same child task from different origin brokers", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker);
 
-  const gwakga = broker.ingestCrossBrokerTerminalBriefProjection(projection({
+  const brokerbeta = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: "shared-child-task",
     childWorkerId: undefined,
     parentRoundTotal: "4",
@@ -859,12 +859,12 @@ test("cross-broker Terminal Brief dedup key distinguishes same child task from d
     completedAt: "2026-05-14T10:00:00.000Z",
     emittedAt: "2026-05-14T10:00:01.000Z",
   }));
-  assert.equal(gwakga.accepted, true);
+  assert.equal(brokerbeta.accepted, true);
 
   const otherBroker = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
     originBrokerId: "other-child-broker",
-    brokerOfRecordId: "seoseo",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: "shared-child-task",
     childWorkerId: undefined,
     parentRoundTotal: "4",
@@ -880,17 +880,17 @@ test("cross-broker Terminal Brief dedup key distinguishes same child task from d
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 2);
   assert.equal(operatorRows(allTerminalEvents).length, 2);
-  assert.deepEqual(terminalEvents.map((e) => e.payload.originBrokerId).sort(), ["gwakga", "other-child-broker"]);
+  assert.deepEqual(terminalEvents.map((e) => e.payload.originBrokerId).sort(), ["brokerbeta", "other-child-broker"]);
 });
 
 test("cross-broker Terminal Brief dedup key distinguishes ordered lanes when child id is absent", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker);
 
   const laneTwo = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: undefined,
     childWorkerId: undefined,
     parentRoundTotal: "4",
@@ -903,8 +903,8 @@ test("cross-broker Terminal Brief dedup key distinguishes ordered lanes when chi
 
   const laneThree = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: undefined,
     childWorkerId: undefined,
     parentRoundTotal: "4",
@@ -966,16 +966,16 @@ test("cross-broker Terminal Brief dedup key includes brokerOfRecordId in notific
 });
 
 test("cross-broker Terminal Brief dedup only suppresses duplicates but preserves outbox event fields", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker);
 
   // First projection — accepted
   const first = broker.ingestCrossBrokerTerminalBriefProjection(projection({
     parentRoundId: "round-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: "multiline-child",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "5",
     parentRoundOrder: "3",
     status: "succeeded",
@@ -992,10 +992,10 @@ test("cross-broker Terminal Brief dedup only suppresses duplicates but preserves
   for (let i = 0; i < 6; i++) {
     const replay = broker.ingestCrossBrokerTerminalBriefProjection(projection({
       parentRoundId: "round-parent",
-      originBrokerId: "gwakga",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerbeta",
+      brokerOfRecordId: "brokeralpha",
       childTaskId: "multiline-child",
-      childWorkerId: "dungae",
+      childWorkerId: "workerepsilon",
       parentRoundTotal: "5",
       parentRoundOrder: "3",
       status: "succeeded",
@@ -1018,12 +1018,12 @@ test("cross-broker Terminal Brief dedup only suppresses duplicates but preserves
   const currentEvent = afterEvents[0];
   assert.equal(currentEvent.id, firstEvent.id, "event id must be unchanged across replays");
   assert.equal(currentEvent.payload.status, "succeeded");
-  assert.equal(currentEvent.payload.worker, "dungae");
+  assert.equal(currentEvent.payload.worker, "workerepsilon");
   assert.equal(currentEvent.payload.parentRoundTotal, 5);
-  assert.equal(currentEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 3/5)");
+  assert.equal(currentEvent.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 3/5)");
 
   // Internal metadata on the projection record shows replay count
-  const stored = broker.getCrossBrokerTerminalBriefProjection("round-parent", "gwakga");
+  const stored = broker.getCrossBrokerTerminalBriefProjection("round-parent", "brokerbeta");
   assert.equal(stored?.replayCount, 6, "internal replayCount evidence is preserved across 6 replays");
   assert.equal(stored?.summary, "completed successfully");
 });
@@ -1056,15 +1056,15 @@ function routingProjection(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    parentRoundId: "seoseo-routing-round",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
+    parentRoundId: "brokeralpha-routing-round",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
     childTaskId: "child-task-routing-01",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "2",
     parentRoundOrder: "1",
     status: "succeeded",
-    summary: "Gwakga handoff success",
+    summary: "brokerbeta handoff success",
     completedAt: "2026-05-16T01:00:00.000Z",
     emittedAt: "2026-05-16T01:00:01.000Z",
     ...overrides,
@@ -1080,16 +1080,16 @@ function ingestRoutingProjection(
   );
 }
 
-test("routing: Seoseo-origin Team1+Team2 parent accepts Gwakga child projection via routing helper", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(broker, "seoseo-routing-round", "seoseo", "team1+team2");
+test("routing: brokeralpha-origin Team1+Team2 parent accepts brokerbeta child projection via routing helper", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(broker, "brokeralpha-routing-round", "brokeralpha", "team1+team2");
 
   const result = ingestRoutingProjection(broker);
-  assert.equal(result.accepted, true, "Gwakga projection must be accepted by Seoseo parent broker");
+  assert.equal(result.accepted, true, "brokerbeta projection must be accepted by brokeralpha parent broker");
   assert.equal(result.replayed, false);
-  assert.equal(result.record.originBrokerId, "gwakga");
-  assert.equal(result.record.brokerOfRecordId, "seoseo");
-  assert.equal(result.record.childWorkerId, "dungae");
+  assert.equal(result.record.originBrokerId, "brokerbeta");
+  assert.equal(result.record.brokerOfRecordId, "brokeralpha");
+  assert.equal(result.record.childWorkerId, "workerepsilon");
   assert.equal(result.record.parentRoundTotal, 2);
   assert.equal(result.record.parentRoundOrder, 1);
   assert.equal(result.ack.terminalAck, false);
@@ -1099,38 +1099,38 @@ test("routing: Seoseo-origin Team1+Team2 parent accepts Gwakga child projection 
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 1);
   const event = terminalEvents[0];
-  assert.equal(event?.payload.run, "seoseo-routing-round");
-  assert.equal(event?.payload.worker, "dungae");
+  assert.equal(event?.payload.run, "brokeralpha-routing-round");
+  assert.equal(event?.payload.worker, "workerepsilon");
   assert.equal(event?.payload.parentRoundTotal, 2);
   assert.equal(event?.payload.parentRoundProgress, 1);
-  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 1/2)");
+  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 1/2)");
   assert.deepEqual(event?.payload.crossBrokerHandoff, {
-    parentRoundId: "seoseo-routing-round",
-    originBrokerId: "seoseo",
-    handoffBrokerId: "gwakga",
+    parentRoundId: "brokeralpha-routing-round",
+    originBrokerId: "brokeralpha",
+    handoffBrokerId: "brokerbeta",
     originTaskId: "child-task-routing-01",
-    childWorkerId: "dungae",
+    childWorkerId: "workerepsilon",
   });
-  assertProjectionOwnership(event, "seoseo");
+  assertProjectionOwnership(event, "brokeralpha");
 });
 
-test("routing: Gwakga-origin Team2+Team1 parent accepts Seoseo child projection via routing helper", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-  createParentRoundWithRouting(broker, "gwakga-routing-round", "gwakga", "team1+team2");
+test("routing: brokerbeta-origin Team2+Team1 parent accepts brokeralpha child projection via routing helper", () => {
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+  createParentRoundWithRouting(broker, "brokerbeta-routing-round", "brokerbeta", "team1+team2");
 
   const result = ingestRoutingProjection(broker, {
-    parentRoundId: "gwakga-routing-round",
-    originBrokerId: "seoseo",
-    brokerOfRecordId: "gwakga",
-    childTaskId: "gwakga-child-01",
-    childWorkerId: "jingun",
+    parentRoundId: "brokerbeta-routing-round",
+    originBrokerId: "brokeralpha",
+    brokerOfRecordId: "brokerbeta",
+    childTaskId: "brokerbeta-child-01",
+    childWorkerId: "workerzeta",
     parentRoundTotal: "3",
     parentRoundOrder: "1",
   });
-  assert.equal(result.accepted, true, "Seoseo projection must be accepted by Gwakga parent broker");
-  assert.equal(result.record.originBrokerId, "seoseo");
-  assert.equal(result.record.brokerOfRecordId, "gwakga");
-  assert.equal(result.record.childWorkerId, "jingun");
+  assert.equal(result.accepted, true, "brokeralpha projection must be accepted by brokerbeta parent broker");
+  assert.equal(result.record.originBrokerId, "brokeralpha");
+  assert.equal(result.record.brokerOfRecordId, "brokerbeta");
+  assert.equal(result.record.childWorkerId, "workerzeta");
   assert.equal(result.ack.terminalAck, false);
 
   const allTerminalEvents = broker.getTerminalTaskEventOutbox().subscribe();
@@ -1138,27 +1138,27 @@ test("routing: Gwakga-origin Team2+Team1 parent accepts Seoseo child projection 
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 1);
   const event = terminalEvents[0];
-  assert.equal(event?.payload.run, "gwakga-routing-round");
-  assert.equal(event?.payload.worker, "jingun");
+  assert.equal(event?.payload.run, "brokerbeta-routing-round");
+  assert.equal(event?.payload.worker, "workerzeta");
   assert.equal(event?.payload.parentRoundTotal, 3);
   assert.equal(event?.payload.parentRoundProgress, 1);
-  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 1/3)");
+  assert.equal(event?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 1/3)");
   assert.deepEqual(event?.payload.crossBrokerHandoff, {
-    parentRoundId: "gwakga-routing-round",
-    originBrokerId: "gwakga",
-    handoffBrokerId: "seoseo",
-    originTaskId: "gwakga-child-01",
-    childWorkerId: "jingun",
+    parentRoundId: "brokerbeta-routing-round",
+    originBrokerId: "brokerbeta",
+    handoffBrokerId: "brokeralpha",
+    originTaskId: "brokerbeta-child-01",
+    childWorkerId: "workerzeta",
   });
-  assertProjectionOwnership(event, "gwakga");
+  assertProjectionOwnership(event, "brokerbeta");
 });
 
 test("routing: projection from wrong handoff broker is rejected by routing validation", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(broker, "seoseo-routing-round", "seoseo", "team1+team2");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(broker, "brokeralpha-routing-round", "brokeralpha", "team1+team2");
 
   // Attempt projection from an unexpected broker (not the routing helper's
-  // expected handoff broker for Team1+Team2 = gwakga)
+  // expected handoff broker for Team1+Team2 = brokerbeta)
   const result = ingestRoutingProjection(broker, {
     originBrokerId: "unexpected-broker",
   });
@@ -1174,8 +1174,8 @@ test("routing: projection with mismatched brokerOfRecordId is caught by wrong_or
   // receiver brokerId and rejects before routing validation runs. This is
   // correct because brokerOfRecordId must match the receiver broker — routing
   // only further constrains which originBrokerId is expected.
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(broker, "seoseo-routing-round", "seoseo", "team1+team2");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(broker, "brokeralpha-routing-round", "brokeralpha", "team1+team2");
 
   const result = ingestRoutingProjection(broker, {
     brokerOfRecordId: "wrong-parent",
@@ -1190,14 +1190,14 @@ test("routing: parent round without routing metadata falls back to existing vali
   // When the parent task has no teamScope/initiatingBrokerId, the routing
   // callback returns undefined and the projection store uses existing
   // validation (wrong_origin, missing_parent, etc.) without routing checks.
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRound(broker, "no-routing-round");
 
   // Projection with origin == receiving broker — the dispatch preflight catches
   // originBrokerId == receiverBrokerId before wrong_origin check.
   const selfOrigin = ingestRoutingProjection(broker, {
     parentRoundId: "no-routing-round",
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
   });
   assert.equal(selfOrigin.accepted, false);
   assert.equal(selfOrigin.ack.code, "missing_dispatch_metadata", "dispatch preflight rejects self-origin before wrong_origin check");
@@ -1205,7 +1205,7 @@ test("routing: parent round without routing metadata falls back to existing vali
 });
 
 test("routing: invalid initiatingBrokerId falls through to existing validation", () => {
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
   createParentRoundWithRouting(broker, "bad-init-round", "unknown-broker", "team1-only");
 
   // The routing callback calls resolveTerminalBriefParentOriginRoute with an
@@ -1218,17 +1218,17 @@ test("routing: invalid initiatingBrokerId falls through to existing validation",
   assert.equal(result.ack.terminalAck, false);
 });
 
-test("routing: Seoseo Team1-only parent round falls through to dispatch preflight for self-origin", () => {
+test("routing: brokeralpha Team1-only parent round falls through to dispatch preflight for self-origin", () => {
   // Team1-only rounds have handoff: null, so the routing callback returns
   // handoffBrokerId: undefined. The routing validation only checks
   // handoffBrokerId when it's non-undefined, so no mismatch is possible.
   // Self-origin projection is still caught by dispatch preflight.
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(broker, "team1-local-round", "seoseo", "team1-only");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(broker, "team1-local-round", "brokeralpha", "team1-only");
 
   const selfOrigin = ingestRoutingProjection(broker, {
     parentRoundId: "team1-local-round",
-    originBrokerId: "seoseo",
+    originBrokerId: "brokeralpha",
   });
   assert.equal(selfOrigin.accepted, false);
   assert.equal(selfOrigin.ack.code, "missing_dispatch_metadata", "dispatch preflight catches self-origin before routing gets to wrong_origin");
@@ -1238,53 +1238,53 @@ test("routing: broker A parent round with broker B worker preserves parent count
   // This is the end-to-end test from the assignment spec:
   // "Test proving broker A parent round with broker B worker addresses
   //  human-facing brief to broker A and preserves parent counts."
-  const brokerA = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
+  const brokerA = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
 
   // Broker A creates a Team1+Team2 parent round with 2 expected workers
-  createParentRoundWithRouting(brokerA, "a2a-r854-parent", "seoseo", "team1+team2");
+  createParentRoundWithRouting(brokerA, "a2a-r854-parent", "brokeralpha", "team1+team2");
 
-  // Broker B (Gwakga) executes dungae — projection arrives at broker A
-  const dungae = ingestRoutingProjection(brokerA, {
+  // Broker B (brokerbeta) executes workerepsilon — projection arrives at broker A
+  const workerepsilon = ingestRoutingProjection(brokerA, {
     parentRoundId: "a2a-r854-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-dungae-task",
-    childWorkerId: "dungae",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerepsilon-task",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "2",
     parentRoundOrder: "1",
     status: "succeeded",
-    summary: "dungae done",
+    summary: "workerepsilon done",
     completedAt: "2026-05-16T02:00:00.000Z",
     emittedAt: "2026-05-16T02:00:01.000Z",
   });
-  assert.equal(dungae.accepted, true, "dungae projection must be accepted");
-  assert.equal(dungae.record.originBrokerId, "gwakga");
-  assert.equal(dungae.record.brokerOfRecordId, "seoseo");
-  assert.equal(dungae.record.childWorkerId, "dungae");
+  assert.equal(workerepsilon.accepted, true, "workerepsilon projection must be accepted");
+  assert.equal(workerepsilon.record.originBrokerId, "brokerbeta");
+  assert.equal(workerepsilon.record.brokerOfRecordId, "brokeralpha");
+  assert.equal(workerepsilon.record.childWorkerId, "workerepsilon");
 
-  // Broker B (Gwakga) executes sogyo — second projection arrives at broker A
-  const sogyo = ingestRoutingProjection(brokerA, {
+  // Broker B (brokerbeta) executes workerbeta — second projection arrives at broker A
+  const workerbeta = ingestRoutingProjection(brokerA, {
     parentRoundId: "a2a-r854-parent",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-sogyo-task",
-    childWorkerId: "sogyo",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerbeta-task",
+    childWorkerId: "workerbeta",
     parentRoundTotal: "2",
     parentRoundOrder: "2",
     status: "succeeded",
-    summary: "sogyo done",
+    summary: "workerbeta done",
     completedAt: "2026-05-16T02:05:00.000Z",
     emittedAt: "2026-05-16T02:05:01.000Z",
   });
-  assert.equal(sogyo.accepted, true, "sogyo projection must be accepted");
-  assert.equal(sogyo.record.childWorkerId, "sogyo");
+  assert.equal(workerbeta.accepted, true, "workerbeta projection must be accepted");
+  assert.equal(workerbeta.record.childWorkerId, "workerbeta");
 
   // Verify projections stored correctly
   const records = brokerA.listCrossBrokerTerminalBriefProjections({ parentRoundId: "a2a-r854-parent" });
   assert.equal(records.length, 2, "both projections must be stored");
   assert.deepEqual(
     records.map((r) => r.childWorkerId),
-    ["dungae", "sogyo"],
+    ["workerepsilon", "workerbeta"],
     "projections in worker order",
   );
 
@@ -1295,30 +1295,30 @@ test("routing: broker A parent round with broker B worker preserves parent count
   const terminalEvents = projectionRows(allTerminalEvents);
   assert.equal(terminalEvents.length, 2, "two projection events, one per child worker");
 
-  // First event: dungae — parentRoundProgress 1/2
-  const dungaeEvent = terminalEvents.find((e) => e.payload.worker === "dungae");
-  assert.ok(dungaeEvent, "dungae terminal event exists");
-  assert.equal(dungaeEvent?.payload.parentRoundProgress, 1, "dungae: progress 1/2");
-  assert.equal(dungaeEvent?.payload.parentRoundTotal, 2);
-  assert.equal(dungaeEvent?.payload.parentRoundOrder, 1);
-  assert.equal(dungaeEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: dungae(완료 1/2)");
-  assert.equal(dungaeEvent?.payload.title, "A2A Terminal Brief 완료: dungae(완료 1/2)");
+  // First event: workerepsilon — parentRoundProgress 1/2
+  const workerepsilonEvent = terminalEvents.find((e) => e.payload.worker === "workerepsilon");
+  assert.ok(workerepsilonEvent, "workerepsilon terminal event exists");
+  assert.equal(workerepsilonEvent?.payload.parentRoundProgress, 1, "workerepsilon: progress 1/2");
+  assert.equal(workerepsilonEvent?.payload.parentRoundTotal, 2);
+  assert.equal(workerepsilonEvent?.payload.parentRoundOrder, 1);
+  assert.equal(workerepsilonEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerepsilon(완료 1/2)");
+  assert.equal(workerepsilonEvent?.payload.title, "A2A Terminal Brief 완료: workerepsilon(완료 1/2)");
 
-  // Second event: sogyo — parentRoundProgress 2/2
-  const sogyoEvent = terminalEvents.find((e) => e.payload.worker === "sogyo");
-  assert.ok(sogyoEvent, "sogyo terminal event exists");
-  assert.equal(sogyoEvent?.payload.parentRoundProgress, 2, "sogyo: progress 2/2");
-  assert.equal(sogyoEvent?.payload.parentRoundTotal, 2);
-  assert.equal(sogyoEvent?.payload.parentRoundOrder, 2);
-  assert.equal(sogyoEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: sogyo(완료 2/2)");
-  assert.equal(sogyoEvent?.payload.title, "A2A Terminal Brief 완료: sogyo(완료 2/2)");
+  // Second event: workerbeta — parentRoundProgress 2/2
+  const workerbetaEvent = terminalEvents.find((e) => e.payload.worker === "workerbeta");
+  assert.ok(workerbetaEvent, "workerbeta terminal event exists");
+  assert.equal(workerbetaEvent?.payload.parentRoundProgress, 2, "workerbeta: progress 2/2");
+  assert.equal(workerbetaEvent?.payload.parentRoundTotal, 2);
+  assert.equal(workerbetaEvent?.payload.parentRoundOrder, 2);
+  assert.equal(workerbetaEvent?.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerbeta(완료 2/2)");
+  assert.equal(workerbetaEvent?.payload.title, "A2A Terminal Brief 완료: workerbeta(완료 2/2)");
 
   // Both addressed to broker A (human-facing brief shows broker A context)
   for (const event of terminalEvents) {
-    assert.equal(event?.payload.brokerOfRecordId, "seoseo", "both events addressed to broker A");
-    assert.equal(event?.payload.originBrokerId, "gwakga", "both events originate from broker B");
+    assert.equal(event?.payload.brokerOfRecordId, "brokeralpha", "both events addressed to broker A");
+    assert.equal(event?.payload.originBrokerId, "brokerbeta", "both events originate from broker B");
     assert.equal(event?.payload.parentRoundId, "a2a-r854-parent");
-    assertProjectionOwnership(event, "seoseo");
+    assertProjectionOwnership(event, "brokeralpha");
   }
 });
 
@@ -1328,26 +1328,26 @@ test("parent-owned cross-broker projection rows remain evidence-only; operator-f
   // send, visibility receipt, and terminal ACK must happen on a separate
   // operator-facing Terminal Brief row.
 
-  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
-  createParentRound(broker, "gwakga-parent-round");
+  const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
+  createParentRound(broker, "brokerbeta-parent-round");
 
-  // Ingest a cross-broker Terminal Brief projection where Gwakga is the parent broker
-  // (brokerOfRecordId === "gwakga").  The projection comes from a Seoseo worker
-  // completing a handoff child for Gwakga's parent round.
+  // Ingest a cross-broker Terminal Brief projection where brokerbeta is the parent broker
+  // (brokerOfRecordId === "brokerbeta").  The projection comes from a brokeralpha worker
+  // completing a handoff child for brokerbeta's parent round.
   const result = broker.ingestCrossBrokerTerminalBriefProjection(projection({
-    parentRoundId: "gwakga-parent-round",
-    originBrokerId: "seoseo",
-    brokerOfRecordId: "gwakga",
-    childTaskId: "gwakga-child-001",
-    childWorkerId: "jingun",
+    parentRoundId: "brokerbeta-parent-round",
+    originBrokerId: "brokeralpha",
+    brokerOfRecordId: "brokerbeta",
+    childTaskId: "brokerbeta-child-001",
+    childWorkerId: "workerzeta",
     parentRoundTotal: "5",
     parentRoundOrder: "3",
-    summary: "jingun completed Seoseo handoff evidence for Gwakga parent",
+    summary: "workerzeta completed brokeralpha handoff evidence for brokerbeta parent",
   }));
 
   assert.equal(result.accepted, true);
   assert.equal(result.ack.terminalAck, false, "projection ingest must not ACK");
-  assert.equal(result.record.brokerOfRecordId, "gwakga", "brokerOfRecordId is Gwakga (parent broker)");
+  assert.equal(result.record.brokerOfRecordId, "brokerbeta", "brokerOfRecordId is brokerbeta (parent broker)");
 
   // Outbox event must carry evidence-only notification ownership.
   const outbox = broker.getTerminalTaskEventOutbox();
@@ -1356,15 +1356,15 @@ test("parent-owned cross-broker projection rows remain evidence-only; operator-f
   const event = projectionRows(events)[0]!;
   const operatorEvent = operatorRows(events)[0];
   assertOperatorFacingRow(operatorEvent);
-  assert.equal(event.payload.run, "gwakga-parent-round");
-  assert.equal(operatorEvent?.payload.run, "gwakga-parent-round");
-  assert.equal(event.payload.worker, "jingun");
-  assert.equal(operatorEvent?.payload.worker, "jingun");
+  assert.equal(event.payload.run, "brokerbeta-parent-round");
+  assert.equal(operatorEvent?.payload.run, "brokerbeta-parent-round");
+  assert.equal(event.payload.worker, "workerzeta");
+  assert.equal(operatorEvent?.payload.worker, "workerzeta");
   assert.equal(event.payload.parentRoundTotal, 5);
   assert.equal(event.payload.parentRoundOrder, 3);
   assert.equal(event.payload.parentRoundProgress, 1);
-  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: jingun(완료 3/5)");
-  assertProjectionOwnership(event, "gwakga");
+  assert.equal(event.payload.terminalBriefTitle, "A2A Terminal Brief 완료: workerzeta(완료 3/5)");
+  assertProjectionOwnership(event, "brokerbeta");
 
   // ackAudit must start as "pending" — not acknowledged
   assert.equal(event.ackAudit?.decision, "pending");
@@ -1429,7 +1429,7 @@ test("parent-owned cross-broker projection rows remain evidence-only; operator-f
 
   // Event must survive snapshot/restore with correct metadata
   const snapshot = broker.exportSnapshot().terminalOutbox ?? [];
-  const restoredBroker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "gwakga" });
+  const restoredBroker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokerbeta" });
   restoredBroker.getTerminalTaskEventOutbox().restoreSnapshot(snapshot);
   const restoredEvents = restoredBroker.getTerminalTaskEventOutbox().subscribe();
   assert.equal(restoredEvents.length, 2);
@@ -1441,74 +1441,74 @@ test("parent-owned cross-broker projection rows remain evidence-only; operator-f
   assert.equal(operatorRows(restoredEvents)[0]?.ack?.status, "receipt_confirmed");
 });
 
-test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-facing synthetic Terminal Brief", () => {
+test("no-live harness: brokeralpha parent → brokerbeta Team2 child → brokeralpha operator-facing synthetic Terminal Brief", () => {
   // =====================================================================
-  // PHASE 1 — Seoseo creates a parent round; Gwakga Team2 children
+  // PHASE 1 — brokeralpha creates a parent round; brokerbeta Team2 children
   // produce terminal events that arrive as cross-broker projections
-  // at Seoseo.
+  // at brokeralpha.
   // =====================================================================
-  const seoseo = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(seoseo, "seoseo-parent-887", "seoseo", "team1+team2");
+  const brokeralpha = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(brokeralpha, "brokeralpha-parent-887", "brokeralpha", "team1+team2");
 
-  // Two Gwakga Team2 workers produce succeeded terminal events →
-  // cross-broker projections arrive at Seoseo.
-  const dungaeProj = ingestRoutingProjection(seoseo, {
-    parentRoundId: "seoseo-parent-887",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-dungae-child",
-    childWorkerId: "dungae",
+  // Two brokerbeta Team2 workers produce succeeded terminal events →
+  // cross-broker projections arrive at brokeralpha.
+  const workerepsilonProj = ingestRoutingProjection(brokeralpha, {
+    parentRoundId: "brokeralpha-parent-887",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerepsilon-child",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "2",
     parentRoundOrder: "1",
     status: "succeeded",
-    summary: "dungae completed",
+    summary: "workerepsilon completed",
     completedAt: "2026-05-22T10:00:00.000Z",
     emittedAt: "2026-05-22T10:00:01.000Z",
   });
-  const sogyoProj = ingestRoutingProjection(seoseo, {
-    parentRoundId: "seoseo-parent-887",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-sogyo-child",
-    childWorkerId: "sogyo",
+  const workerbetaProj = ingestRoutingProjection(brokeralpha, {
+    parentRoundId: "brokeralpha-parent-887",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerbeta-child",
+    childWorkerId: "workerbeta",
     parentRoundTotal: "2",
     parentRoundOrder: "2",
     status: "succeeded",
-    summary: "sogyo completed",
+    summary: "workerbeta completed",
     completedAt: "2026-05-22T10:05:00.000Z",
     emittedAt: "2026-05-22T10:05:01.000Z",
   });
 
-  assert.equal(dungaeProj.accepted, true, "dungae projection accepted by Seoseo");
-  assert.equal(sogyoProj.accepted, true, "sogyo projection accepted by Seoseo");
+  assert.equal(workerepsilonProj.accepted, true, "workerepsilon projection accepted by brokeralpha");
+  assert.equal(workerbetaProj.accepted, true, "workerbeta projection accepted by brokeralpha");
 
-  const outbox = seoseo.getTerminalTaskEventOutbox();
+  const outbox = brokeralpha.getTerminalTaskEventOutbox();
   const allProjectedOutput = outbox.subscribe();
   const projectionEvents = projectionRows(allProjectedOutput);
   const automaticOperatorEvents = operatorRows(allProjectedOutput);
-  assert.equal(allProjectedOutput.length, 4, "two projections plus two automatic operator-facing rows in Seoseo outbox");
-  assert.equal(projectionEvents.length, 2, "two projection events in Seoseo outbox");
-  assert.equal(automaticOperatorEvents.length, 2, "two operator-facing rows in Seoseo outbox");
+  assert.equal(allProjectedOutput.length, 4, "two projections plus two automatic operator-facing rows in brokeralpha outbox");
+  assert.equal(projectionEvents.length, 2, "two projection events in brokeralpha outbox");
+  assert.equal(automaticOperatorEvents.length, 2, "two operator-facing rows in brokeralpha outbox");
 
   // =====================================================================
-  // CLAIM A — Gwakga parent-owned rows ARE projection-relayed to Seoseo
-  // and carry notification ownership identifying Seoseo as owner broker.
+  // CLAIM A — brokerbeta parent-owned rows ARE projection-relayed to brokeralpha
+  // and carry notification ownership identifying brokeralpha as owner broker.
   // =====================================================================
   for (const event of projectionEvents) {
-    assert.equal(event.payload.brokerOfRecordId, "seoseo", "projection addressed to Seoseo");
-    assert.equal(event.payload.originBrokerId, "gwakga", "projection originates from Gwakga");
-    assert.equal(event.payload.parentRoundId, "seoseo-parent-887", "belongs to Seoseo parent round");
+    assert.equal(event.payload.brokerOfRecordId, "brokeralpha", "projection addressed to brokeralpha");
+    assert.equal(event.payload.originBrokerId, "brokerbeta", "projection originates from brokerbeta");
+    assert.equal(event.payload.parentRoundId, "brokeralpha-parent-887", "belongs to brokeralpha parent round");
   }
 
   // =====================================================================
-  // CLAIM B — Projection events on Seoseo have evidence-only notification
+  // CLAIM B — Projection events on brokeralpha have evidence-only notification
   // ownership: NOT locally provider-sent or terminal-ACK-eligible.
   // =====================================================================
   for (const event of projectionEvents) {
     assert.deepEqual(
       event.payload.notificationOwnership,
       {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokeralpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
@@ -1517,7 +1517,7 @@ test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-
           "provider send and terminal ACK belong to a separate " +
           "parent-broker operator-facing Terminal Brief row",
       },
-      "projection has evidence-only notification ownership on Seoseo",
+      "projection has evidence-only notification ownership on brokeralpha",
     );
 
     // ACK must fail closed
@@ -1528,21 +1528,21 @@ test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-
           acknowledgedAt: "2026-05-22T11:00:00.000Z",
         }),
       /terminal outbox ack rejected/,
-      "projection ACK rejected on Seoseo",
+      "projection ACK rejected on brokeralpha",
     );
 
     // provider_sent receipt status must fail closed
     assert.throws(
       () => outbox.recordReceiptStatus(event.id, { status: "provider_sent" }),
       /terminal outbox receipt rejected/,
-      "projection provider_sent rejected on Seoseo",
+      "projection provider_sent rejected on brokeralpha",
     );
 
     // operator_visible receipt must fail closed
     assert.throws(
       () => outbox.recordReceiptStatus(event.id, { status: "operator_visible" }),
       /terminal outbox receipt rejected/,
-      "projection operator_visible rejected on Seoseo",
+      "projection operator_visible rejected on brokeralpha",
     );
 
     // Non-send receipt statuses (accepted, timed_out) still permitted
@@ -1553,11 +1553,11 @@ test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-
   }
 
   // =====================================================================
-  // CLAIM C — Seoseo automatically owns operator-facing send/ACK-eligible
+  // CLAIM C — brokeralpha automatically owns operator-facing send/ACK-eligible
   // rows derived from the cross-broker projections. These rows have NO
   // notification ownership restriction and ARE ACK/provider-send eligible.
   // =====================================================================
-  const operatorEvent = automaticOperatorEvents.find((event) => event.payload.taskId === "gwakga-dungae-child");
+  const operatorEvent = automaticOperatorEvents.find((event) => event.payload.taskId === "brokerbeta-workerepsilon-child");
   assertOperatorFacingRow(operatorEvent);
 
   const ackResult = outbox.acknowledge(operatorEvent.id, {
@@ -1569,38 +1569,38 @@ test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-
   assert.equal(ackResult?.ack?.evidence, "operator_visible", "operator-facing event ack evidence stored");
 
   // Reset: rebuild clean projections without the ACK to test provider_sent.
-  const cleanBroker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "seoseo" });
-  createParentRoundWithRouting(cleanBroker, "seoseo-parent-887", "seoseo", "team1+team2");
+  const cleanBroker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "brokeralpha" });
+  createParentRoundWithRouting(cleanBroker, "brokeralpha-parent-887", "brokeralpha", "team1+team2");
   // Re-ingest the two projections
   ingestRoutingProjection(cleanBroker, {
-    parentRoundId: "seoseo-parent-887",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-dungae-child",
-    childWorkerId: "dungae",
+    parentRoundId: "brokeralpha-parent-887",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerepsilon-child",
+    childWorkerId: "workerepsilon",
     parentRoundTotal: "2",
     parentRoundOrder: "1",
     status: "succeeded",
-    summary: "dungae completed",
+    summary: "workerepsilon completed",
     completedAt: "2026-05-22T10:00:00.000Z",
     emittedAt: "2026-05-22T10:00:01.000Z",
   });
   ingestRoutingProjection(cleanBroker, {
-    parentRoundId: "seoseo-parent-887",
-    originBrokerId: "gwakga",
-    brokerOfRecordId: "seoseo",
-    childTaskId: "gwakga-sogyo-child",
-    childWorkerId: "sogyo",
+    parentRoundId: "brokeralpha-parent-887",
+    originBrokerId: "brokerbeta",
+    brokerOfRecordId: "brokeralpha",
+    childTaskId: "brokerbeta-workerbeta-child",
+    childWorkerId: "workerbeta",
     parentRoundTotal: "2",
     parentRoundOrder: "2",
     status: "succeeded",
-    summary: "sogyo completed",
+    summary: "workerbeta completed",
     completedAt: "2026-05-22T10:05:00.000Z",
     emittedAt: "2026-05-22T10:05:01.000Z",
   });
   const cleanOutbox = cleanBroker.getTerminalTaskEventOutbox();
   const cleanOperatorEvent = operatorRows(cleanOutbox.subscribe())
-    .find((e) => e.payload.taskId === "gwakga-dungae-child");
+    .find((e) => e.payload.taskId === "brokerbeta-workerepsilon-child");
   assertOperatorFacingRow(cleanOperatorEvent);
 
   // provider_sent succeeds on automatically materialized operator-facing row
@@ -1628,7 +1628,7 @@ test("no-live harness: Seoseo parent → Gwakga Team2 child → Seoseo operator-
   );
 
   // Verify projection events on clean broker remain evidence-only
-  const cleanProjectionEvents = projectionRows(cleanOutbox.subscribe()).filter((e) => e.payload.originBrokerId === "gwakga");
+  const cleanProjectionEvents = projectionRows(cleanOutbox.subscribe()).filter((e) => e.payload.originBrokerId === "brokerbeta");
   assert.equal(cleanProjectionEvents.length, 2, "two projection events on clean broker");
   for (const projEvent of cleanProjectionEvents) {
     assert.throws(

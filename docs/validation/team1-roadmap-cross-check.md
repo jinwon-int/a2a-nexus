@@ -4,9 +4,9 @@ Parent: #130 (a2a-plane#130, internal tracker private)
 Child: #134 (a2a-plane#134, internal tracker private)
 Baseline: PR #129 (a2a-plane PR #129, internal tracker private)
 Run: `a2a-plane-post78261-next-20260509T142546Z`
-Broker of record: `seoseo`
-Team: `team1-seoseo`
-Worker: `yukson`
+Broker of record: `brokerAlpha`
+Team: `team1-brokerAlpha`
+Worker: `workerDelta`
 
 This note is a validation artifact only. It does not overwrite contract, quickstart, CI, scanner, or conformance implementation lanes.
 
@@ -48,9 +48,9 @@ This cross-check did not perform production deploys, Gateway/broker/worker resta
 Parent: #146 (a2a-plane#146, internal tracker private)
 Child: #150 (a2a-plane#150, internal tracker private)
 Run: `a2a-vnext-contract-smoke-crossbroker-20260510`
-Broker of record: `seoseo`
-Team: `team1-seoseo`
-Worker: `yukson`
+Broker of record: `brokerAlpha`
+Team: `team1-brokerAlpha`
+Worker: `workerDelta`
 
 This follow-up is a Team1 libero integration check for the vNext round. It is a validation artifact only: it does not change contract semantics, quickstart scripts, scanner rules, broker implementation, provider delivery, terminal-outbox ACK state, production databases, service state, or repository visibility.
 
@@ -60,9 +60,9 @@ At this review point, the Team1 sibling issues have only Start/dispatch evidence
 
 | Lane | Issue | Focus | Integration status | Libero decision |
 | --- | --- | --- | --- | --- |
-| bangtong | #147 (a2a-plane#147, internal tracker private) | Five-minute local no-live smoke capstone | Waiting for PR/Done/Block evidence proving deterministic, CI-friendly local broker → worker → terminal-evidence flow. | Do not mark Team1 green until exact commands and validation output land. |
-| sogyo | #148 (a2a-plane#148, internal tracker private) | Contract v0 boundary freeze | Waiting for PR/Done/Block evidence defining the frozen contract surface and accepted-send non-ACK boundary. | Merge before dependent quickstart/scanner wording when it changes shared terms. |
-| nosuk | #149 (a2a-plane#149, internal tracker private) | Readiness scanner and NO-GO gate proof | Waiting for PR/Done/Block evidence showing fail-closed readiness gates and local checks. | Public-readiness remains NO-GO unless scanner evidence and explicit operator approval are separate and complete. |
+| workerGamma | #147 (a2a-plane#147, internal tracker private) | Five-minute local no-live smoke capstone | Waiting for PR/Done/Block evidence proving deterministic, CI-friendly local broker → worker → terminal-evidence flow. | Do not mark Team1 green until exact commands and validation output land. |
+| workerBeta | #148 (a2a-plane#148, internal tracker private) | Contract v0 boundary freeze | Waiting for PR/Done/Block evidence defining the frozen contract surface and accepted-send non-ACK boundary. | Merge before dependent quickstart/scanner wording when it changes shared terms. |
+| workerAlpha | #149 (a2a-plane#149, internal tracker private) | Readiness scanner and NO-GO gate proof | Waiting for PR/Done/Block evidence showing fail-closed readiness gates and local checks. | Public-readiness remains NO-GO unless scanner evidence and explicit operator approval are separate and complete. |
 
 ## Risk cross-check
 
@@ -99,9 +99,9 @@ This cross-check performed only repository inspection, issue/comment inspection,
 Parent: #181 (a2a-plane#181, internal tracker private)
 Child: #182 (a2a-plane#182, internal tracker private)
 Run: `a2a-post-78261-health-readiness-20260510T024701Z`
-Broker of record: `seoseo`
-Team: `team1-seoseo`
-Worker: `yukson`
+Broker of record: `brokerAlpha`
+Team: `team1-brokerAlpha`
+Worker: `workerDelta`
 Reviewed at: `2026-05-10T02:50:23Z`
 
 This is a compact validation artifact for the Team1 lanes in the post-#78261 health/readiness round. It does not change contract semantics, broker/plugin code, scanners, provider delivery, terminal-outbox ACK state, production databases, service state, or repository visibility.
@@ -112,9 +112,9 @@ At review time, the Team1 sibling lanes had dispatch and Start evidence only; no
 
 | Lane | Issue | Focus | Visible output | Libero status |
 | --- | --- | --- | --- | --- |
-| bangtong | [a2a-broker#463](https://github.com/jinwon-int/a2a-broker/issues/463) | Broker `/health` intermittent ~2s latency | Linked to parent and started | Waiting for analysis/PR/Done/Block evidence with safe local or redacted benchmark output. |
-| sogyo | [openclaw-plugin-a2a#249](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/249) | Plugin-side accepted-send/non-ACK Terminal Brief wording/tests | Linked to parent and started | Waiting for PR/Done/Block evidence proving provider message IDs stay non-ACK. |
-| nosuk | [a2a-broker#464](https://github.com/jinwon-int/a2a-broker/issues/464) | `/health` SQLite query-plan and p95/p99 regression coverage | Linked to parent and started | Waiting for p95/p99 regression proof and query-plan evidence. |
+| workerGamma | [a2a-broker#463](https://github.com/jinwon-int/a2a-broker/issues/463) | Broker `/health` intermittent ~2s latency | Linked to parent and started | Waiting for analysis/PR/Done/Block evidence with safe local or redacted benchmark output. |
+| workerBeta | [openclaw-plugin-a2a#249](https://github.com/jinwon-int/openclaw-plugin-a2a/issues/249) | Plugin-side accepted-send/non-ACK Terminal Brief wording/tests | Linked to parent and started | Waiting for PR/Done/Block evidence proving provider message IDs stay non-ACK. |
+| workerAlpha | [a2a-broker#464](https://github.com/jinwon-int/a2a-broker/issues/464) | `/health` SQLite query-plan and p95/p99 regression coverage | Linked to parent and started | Waiting for p95/p99 regression proof and query-plan evidence. |
 
 ## Compact validation matrix
 

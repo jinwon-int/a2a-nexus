@@ -3,7 +3,7 @@
  * that integrate resource-aware worker policy with round manifest and
  * collector snapshots.
  *
- * This is the Team1 A2A round coordinator wiring lane 4/4 for yukson
+ * This is the Team1 A2A round coordinator wiring lane 4/4 for workerdelta
  * (issue #937).  It covers:
  *
  *   - GO/NO-GO   — resource-aware worker policy evaluation combined with
@@ -176,11 +176,11 @@ function getCollectorNow(fix: RoundManifestResourcePolicyFixture): number {
 // ---------------------------------------------------------------------------
 
 describe("round-manifest-resource-policy combined validation", () => {
-  // ── 1. GO/NO-GO: Daegyo-style worker ─────────────────────────────────
+  // ── 1. GO/NO-GO: mobilebeta-style worker ─────────────────────────────────
   describe("GO/NO-GO evaluation with round manifest", () => {
-    it("GO: Daegyo-style gateway worker — policy valid and collector succeeded", () => {
+    it("GO: mobilebeta-style gateway worker — policy valid and collector succeeded", () => {
       const fixture = JSON.parse(
-        readFileSync(join(FIXTURE_DIR, "daegyo-go.json"), "utf-8"),
+        readFileSync(join(FIXTURE_DIR, "mobilebeta-go.json"), "utf-8"),
       ) as RoundManifestResourcePolicyFixture;
 
       // 1a. Evaluate resource-aware worker policy
@@ -188,7 +188,7 @@ describe("round-manifest-resource-policy combined validation", () => {
         fixture.onboardingKind!,
         fixture.workerPolicy!,
       );
-      assert.equal(evaluation.decision, "go", "GO decision expected for valid Daegyo policy");
+      assert.equal(evaluation.decision, "go", "GO decision expected for valid mobilebeta policy");
       assert.ok(evaluation.reasons.some((r) => r.includes("passed")));
       assert.ok(evaluation.validation.ok);
 
@@ -233,8 +233,8 @@ describe("round-manifest-resource-policy combined validation", () => {
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
       // 1d. Verify collector classification
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
-      assert.ok(lane, "yukson lane should exist");
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
+      assert.ok(lane, "workerdelta lane should exist");
       assert.equal(lane.laneState, "succeeded");
       assert.equal(lane.outcomeClass, "pr_success");
       assert.ok(lane.prUrl?.includes("jinwon-int/a2a-broker/pull/937"));
@@ -286,7 +286,7 @@ describe("round-manifest-resource-policy combined validation", () => {
       const nowMs = getCollectorNow(fixture);
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
       assert.ok(lane);
       assert.equal(lane.laneState, "blocked");
       assert.equal(lane.outcomeClass, "no_change_block");
@@ -315,7 +315,7 @@ describe("round-manifest-resource-policy combined validation", () => {
 
       // Build manifest with mobile resource policy
       const worker: WorkerRoundAssignment = {
-        workerId: "yukson",
+        workerId: "workerdelta",
         taskDescription: "Mobile standby validation",
         resourcePolicy: {
           maxConcurrency: 1,
@@ -345,7 +345,7 @@ describe("round-manifest-resource-policy combined validation", () => {
       const nowMs = getCollectorNow(fixture);
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
       assert.ok(lane);
       assert.equal(lane.laneState, "succeeded");
       assert.equal(lane.outcomeClass, "no_change_done");
@@ -365,7 +365,7 @@ describe("round-manifest-resource-policy combined validation", () => {
       const nowMs = getCollectorNow(fixture);
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
       assert.ok(lane);
       assert.equal(lane.laneState, "succeeded");
       assert.equal(lane.evidenceUrls.length, 0);
@@ -389,12 +389,12 @@ describe("round-manifest-resource-policy combined validation", () => {
       const nowMs = getCollectorNow(fixture);
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
       assert.ok(lane);
       assert.equal(lane.laneState, "stale");
       assert.ok(lane.ageMs! >= 30 * 60 * 1000);
       assert.equal(output.staleLanes.length, 1);
-      assert.ok(output.staleLanes.includes("yukson"));
+      assert.ok(output.staleLanes.includes("workerdelta"));
       assert.ok(output.closeoutBundle.body.includes("⚠️"));
     });
 
@@ -408,11 +408,11 @@ describe("round-manifest-resource-policy combined validation", () => {
       const nowMs = getCollectorNow(fixture);
       const output = collectRoundResults(collectorManifest, tasks, { nowMs });
 
-      const lane = output.lanes.find((l) => l.workerId === "yukson")!;
+      const lane = output.lanes.find((l) => l.workerId === "workerdelta")!;
       assert.ok(lane);
       assert.equal(lane.laneState, "timeout");
       assert.equal(output.timeoutLanes.length, 1);
-      assert.ok(output.timeoutLanes.includes("yukson"));
+      assert.ok(output.timeoutLanes.includes("workerdelta"));
       assert.ok(output.closeoutBundle.body.includes("⏰"));
     });
   });
@@ -459,20 +459,20 @@ describe("round-manifest-resource-policy combined validation", () => {
       assert.ok(output.closeoutBundle.title.includes("needs review"));
 
       // Verify lane states
-      const laneYukson = output.lanes.find((l) => l.workerId === "yukson")!;
-      assert.equal(laneYukson.laneState, "succeeded");
-      assert.ok(laneYukson.prUrl?.includes("jinwon-int/a2a-broker/pull/937"));
+      const laneworkerdelta = output.lanes.find((l) => l.workerId === "workerdelta")!;
+      assert.equal(laneworkerdelta.laneState, "succeeded");
+      assert.ok(laneworkerdelta.prUrl?.includes("jinwon-int/a2a-broker/pull/937"));
 
-      const laneSogyo = output.lanes.find((l) => l.workerId === "sogyo")!;
-      assert.equal(laneSogyo.laneState, "pending");
-      assert.equal(laneSogyo.evidenceUrls.length, 0);
+      const laneworkerbeta = output.lanes.find((l) => l.workerId === "workerbeta")!;
+      assert.equal(laneworkerbeta.laneState, "pending");
+      assert.equal(laneworkerbeta.evidenceUrls.length, 0);
 
-      const laneNosuk = output.lanes.find((l) => l.workerId === "nosuk")!;
-      assert.equal(laneNosuk.laneState, "stale");
+      const laneworkeralpha = output.lanes.find((l) => l.workerId === "workeralpha")!;
+      assert.equal(laneworkeralpha.laneState, "stale");
 
       // Verify missing/stale/timeout/blocked arrays
-      assert.ok(output.missingLanes.includes("sogyo"));
-      assert.ok(output.staleLanes.includes("nosuk"));
+      assert.ok(output.missingLanes.includes("workerbeta"));
+      assert.ok(output.staleLanes.includes("workeralpha"));
       assert.equal(output.timeoutLanes.length, 0);
       assert.equal(output.blockedLanes.length, 0);
     });
@@ -570,7 +570,7 @@ describe("combined integration: resource policy → manifest → collector", () 
 
     // Step 3: Build round manifest with the evaluated worker
     const worker: WorkerRoundAssignment = {
-      workerId: "yukson",
+      workerId: "workerdelta",
       lane: 1,
       taskDescription: "Combined pipeline validation",
       evidencePolicy: { requiredTypes: ["pr"], minimumRequired: 1 },
@@ -617,7 +617,7 @@ describe("combined integration: resource policy → manifest → collector", () 
         intent: "propose_patch",
         status: "succeeded",
         targetNodeId: "default",
-        assignedWorkerId: "yukson",
+        assignedWorkerId: "workerdelta",
         requester: { id: "broker", kind: "service" },
         target: { id: "default", kind: "node" },
         payload: {},

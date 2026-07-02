@@ -106,7 +106,7 @@ export function buildA2AAdaptiveSelectorRecord(input: A2AAdaptiveSelectorInput):
   const generatedAt = input.now ?? new Date().toISOString();
   const selectorInputs = normalizeSignals(input.signals, input.task.taskClass);
   const decision = decide(input.task.taskClass, selectorInputs);
-  const finalizerOwner = input.finalizerOwner ?? "seoseo";
+  const finalizerOwner = input.finalizerOwner ?? "brokeralpha";
 
   return {
     kind: "a2a-broker.adaptive-work-mode-selector.record",

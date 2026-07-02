@@ -3,7 +3,7 @@
 // Validation fixtures, types, and GO/NO-GO evaluation for resource-aware
 // worker onboarding flags: maxConcurrent, allowedTaskTypes, noLiveSend,
 // noMutation, gatewayRequired, mobileLowPower, standby/read-only, and
-// GO/NO-GO examples for Gongyung/Hermes and Daegyo-style worker onboarding.
+// GO/NO-GO examples for mobilealpha/Hermes and mobilebeta-style worker onboarding.
 //
 // This is source-only and fail-closed.  It does not inspect live host or
 // gateway state, spawn subagents, dispatch broker work, claim tasks, invoke
@@ -50,7 +50,7 @@ export interface ResourceAwareWorkerPolicy {
 
 // ── Predefined policy templates ────────────────────────────────────────────
 
-export const GONGYUNG_HERMES_POLICY: ResourceAwareWorkerPolicy = {
+export const mobilealpha_HERMES_POLICY: ResourceAwareWorkerPolicy = {
   allowedTaskTypes: ["analyze", "validate_change"],
   noLiveSend: true,
   noMutation: true,
@@ -60,7 +60,7 @@ export const GONGYUNG_HERMES_POLICY: ResourceAwareWorkerPolicy = {
   readOnly: true,
 };
 
-export const DAEGYO_STYLE_POLICY: ResourceAwareWorkerPolicy = {
+export const mobilebeta_STYLE_POLICY: ResourceAwareWorkerPolicy = {
   allowedTaskTypes: ["propose_patch", "apply_local_change", "analyze"],
   noLiveSend: false,
   noMutation: false,
@@ -186,8 +186,8 @@ export function validateResourceAwareWorkerPolicy(
 // ── GO/NO-GO evaluation ────────────────────────────────────────────────────
 
 export type WorkerOnboardingKind =
-  | "gongyung-hermes"
-  | "daegyo-style"
+  | "mobilealpha-hermes"
+  | "mobilebeta-style"
   | "standard-gateway"
   | "team1-scheduling-attribution"
   | "generic-terms";
@@ -216,47 +216,47 @@ export function evaluateWorkerOnboarding(
   }
 
   switch (kind) {
-    case "gongyung-hermes": {
-      // Gongyung/Hermes workers must be readOnly, noLiveSend, noMutation,
+    case "mobilealpha-hermes": {
+      // mobilealpha/Hermes workers must be readOnly, noLiveSend, noMutation,
       // mobileLowPower, and NOT gatewayRequired
       if (!policy.readOnly) {
-        reasons.push("Gongyung/Hermes workers must be readOnly");
+        reasons.push("mobilealpha/Hermes workers must be readOnly");
       }
       if (!policy.noLiveSend) {
-        reasons.push("Gongyung/Hermes workers must set noLiveSend=true");
+        reasons.push("mobilealpha/Hermes workers must set noLiveSend=true");
       }
       if (!policy.noMutation) {
-        reasons.push("Gongyung/Hermes workers must set noMutation=true");
+        reasons.push("mobilealpha/Hermes workers must set noMutation=true");
       }
       if (!policy.mobileLowPower) {
-        reasons.push("Gongyung/Hermes workers must set mobileLowPower=true");
+        reasons.push("mobilealpha/Hermes workers must set mobileLowPower=true");
       }
       if (policy.gatewayRequired) {
-        reasons.push("Gongyung/Hermes workers must NOT set gatewayRequired=true");
+        reasons.push("mobilealpha/Hermes workers must NOT set gatewayRequired=true");
       }
       // Hermes workers should not have promote_to_live in allowedTaskTypes
       if (policy.allowedTaskTypes.includes("promote_to_live")) {
-        reasons.push("Gongyung/Hermes workers must not include promote_to_live in allowedTaskTypes");
+        reasons.push("mobilealpha/Hermes workers must not include promote_to_live in allowedTaskTypes");
       }
       break;
     }
 
-    case "daegyo-style": {
-      // Daegyo-style workers require gateway, support mutation-capable task types,
+    case "mobilebeta-style": {
+      // mobilebeta-style workers require gateway, support mutation-capable task types,
       // no mobileLowPower, and must NOT be readOnly
       if (!policy.gatewayRequired) {
-        reasons.push("Daegyo-style workers must have gatewayRequired=true");
+        reasons.push("mobilebeta-style workers must have gatewayRequired=true");
       }
       if (policy.mobileLowPower) {
-        reasons.push("Daegyo-style workers must not set mobileLowPower=true");
+        reasons.push("mobilebeta-style workers must not set mobileLowPower=true");
       }
       if (policy.readOnly) {
-        reasons.push("Daegyo-style workers must not be readOnly");
+        reasons.push("mobilebeta-style workers must not be readOnly");
       }
       if (!policy.allowedTaskTypes.includes("propose_patch") &&
           !policy.allowedTaskTypes.includes("apply_local_change")) {
         reasons.push(
-          "Daegyo-style workers should include propose_patch or apply_local_change in allowedTaskTypes",
+          "mobilebeta-style workers should include propose_patch or apply_local_change in allowedTaskTypes",
         );
       }
       break;
@@ -280,7 +280,7 @@ export function evaluateWorkerOnboarding(
     }
 
     case "team1-scheduling-attribution": {
-      // Team1 scheduling-attribution workers (bangtong lane / #1051):
+      // Team1 scheduling-attribution workers (workergamma lane / #1051):
       // Source-only scheduling attribute analysis; no live send, no mutation.
       // Does not require a full Gateway; runs on broker context.
       // Must be readOnly, noLiveSend, noMutation.
@@ -376,7 +376,7 @@ export function diffResourceAwareWorkerPolicy(
 
 // ── Preset policies for common onboarding scenarios ────────────────────────
 
-export const BANGTONG_SCHEDULING_POLICY: ResourceAwareWorkerPolicy = {
+export const workergamma_SCHEDULING_POLICY: ResourceAwareWorkerPolicy = {
   allowedTaskTypes: ["analyze", "validate_change"],
   noLiveSend: true,
   noMutation: true,
@@ -387,9 +387,9 @@ export const BANGTONG_SCHEDULING_POLICY: ResourceAwareWorkerPolicy = {
 };
 
 /**
- * Bangtong lane scheduling-attribution policy (Team1).
+ * workergamma lane scheduling-attribution policy (Team1).
  *
- * This preset covers the bangtong lane (#1051) for host scheduling attribution
+ * This preset covers the workergamma lane (#1051) for host scheduling attribution
  * evidence — source-only analysis of scheduling timing windows, accept-queue
  * delay, and host scheduler attribution. Workers following this policy:
  * - are readOnly (source-only evidence submission)
@@ -398,9 +398,9 @@ export const BANGTONG_SCHEDULING_POLICY: ResourceAwareWorkerPolicy = {
  * - are NOT mobileLowPower (run on broker host, not battery)
  */
 export const PRESET_POLICIES: Record<string, ResourceAwareWorkerPolicy> = {
-  "gongyung-hermes": GONGYUNG_HERMES_POLICY,
-  "daegyo-style": DAEGYO_STYLE_POLICY,
-  "team1-scheduling-attribution": BANGTONG_SCHEDULING_POLICY,
+  "mobilealpha-hermes": mobilealpha_HERMES_POLICY,
+  "mobilebeta-style": mobilebeta_STYLE_POLICY,
+  "team1-scheduling-attribution": workergamma_SCHEDULING_POLICY,
 };
 
 /**

@@ -14,28 +14,28 @@ function terminalEvent(): A2ATerminalOutboxEvent {
     payload: {
       taskId: "relay-failure-canary",
       status: "succeeded",
-      worker: "soonwook",
+      worker: "workerEta",
       completedAt: "2026-05-14T10:34:49.752Z",
       summary: "relay failure should still allow local operator notification",
       parentRoundId: "terminal-brief-r16-live-canary-20260514",
-      originBrokerId: "gwakga",
-      brokerOfRecordId: "seoseo",
+      originBrokerId: "brokerBeta",
+      brokerOfRecordId: "brokerAlpha",
       parentRoundOrder: 1,
       parentRoundTotal: 1,
       parentOwnedTerminalBrief: true,
       operatorFacingOwner: "parent",
       notificationOwnership: {
-        ownerBrokerId: "seoseo",
+        ownerBrokerId: "brokerAlpha",
         scope: "parent-broker-only",
         providerSendPermittedByProjection: false,
         terminalAckPermittedByProjection: false,
       },
       crossBrokerHandoff: {
         parentRoundId: "terminal-brief-r16-live-canary-20260514",
-        originBrokerId: "seoseo",
-        handoffBrokerId: "gwakga",
+        originBrokerId: "brokerAlpha",
+        handoffBrokerId: "brokerBeta",
         originTaskId: "relay-failure-canary",
-        childWorkerId: "soonwook",
+        childWorkerId: "workerEta",
       },
     },
     receipt: { status: "accepted", updatedAt: "2026-05-14T10:34:49.757Z" },
@@ -44,7 +44,7 @@ function terminalEvent(): A2ATerminalOutboxEvent {
       reason: "terminal event accepted; awaiting current-session-visible/operator-visible/provider-delivery evidence before ACK",
       updatedAt: "2026-05-14T10:34:49.757Z",
       taskId: "relay-failure-canary",
-      worker: "soonwook",
+      worker: "workerEta",
       receiptStatus: "accepted",
     },
     ack: null,
@@ -90,7 +90,7 @@ describe("operator event bridge terminal outbox cross-broker relay failure", () 
       relayTerminalProjection: async () => {
         throw new Error("origin broker rejected projection");
       },
-      handoffBrokerId: "gwakga",
+      handoffBrokerId: "brokerBeta",
       notifyOperator: async (envelope) => {
         notifications.push(envelope);
         return {

@@ -1,4 +1,4 @@
-// yukson (synthesis-risk-libero, a2ad-1032-reused-socket-v2-20260601T2120KST):
+// workerdelta (synthesis-risk-libero, a2ad-1032-reused-socket-v2-20260601T2120KST):
 // Thesis: /schedz connection-reuse diagnostics instrument the full
 // accept→handler→finish lifecycle so reused-socket stalls are attributable
 // to either accept-queue depth or host-scheduler descheduling.
@@ -17,7 +17,7 @@ export type LiberoValidationArea =
   | "replay_canary"
   | "observability_readiness"
   | "evidence_hygiene"
-  // #1032 reused-socket RCA areas (yukson)
+  // #1032 reused-socket RCA areas (workerdelta)
   | "reused_socket_rca"
   | "scheduling_attribution"
   | "connection_tracking_diagnostics";
@@ -95,7 +95,7 @@ export const LIBERO_REQUIRED_AREAS: readonly LiberoValidationArea[] = [
   "replay_canary",
   "observability_readiness",
   "evidence_hygiene",
-  // #1032 reused-socket RCA areas (yukson)
+  // #1032 reused-socket RCA areas (workerdelta)
   "reused_socket_rca",
   "scheduling_attribution",
   "connection_tracking_diagnostics",
@@ -148,7 +148,7 @@ export const LIBERO_CLOSURE_CRITERIA: readonly LiberoClosureCriterion[] = [
     requiredEvidence: "Start plus PR/Done/Block evidence, command results, blocker URLs, and candidate diff checks for runtime/bootstrap path leaks.",
     closesWhen: "The branch/artifact set is free of AGENTS/SOUL/USER/TOOLS/HEARTBEAT/IDENTITY/.openclaw files and raw session/private-host dumps.",
   },
-  // #1032 reused-socket RCA closure criteria (yukson, synthesis-risk-libero)
+  // #1032 reused-socket RCA closure criteria (workerdelta, synthesis-risk-libero)
   {
     id: "C6",
     sourceIssue: "#1032",
@@ -210,7 +210,7 @@ export const LIBERO_NO_GO_TRAPS: readonly LiberoNoGoTrap[] = [
     trap: "Allowing OpenClaw runtime/bootstrap files, raw session dumps, private host paths, or secret-shaped values into branch diff or artifact evidence.",
     failClosedResponse: "Fail closed before PR creation and report the exact repo-relative offending paths.",
   },
-  // #1032 reused-socket RCA no-go traps (yukson)
+  // #1032 reused-socket RCA no-go traps (workerdelta)
   {
     id: "T6",
     area: "reused_socket_rca",
@@ -301,7 +301,7 @@ export const LIBERO_REGRESSION_GATES: readonly LiberoRegressionGate[] = [
     requiredProof: "Issue/PR evidence lists commands, pass/fail results, blockers, and safety flags without raw session dumps, secrets, host-private paths, or AGENTS/SOUL/USER/TOOLS/HEARTBEAT/IDENTITY/.openclaw artifacts.",
     noGoIf: "Evidence or branch artifacts include secrets, raw sessions, private paths, OpenClaw bootstrap files, or missing final marker URLs.",
   },
-  // #1032 reused-socket RCA regression gates (yukson, synthesis-risk-libero)
+  // #1032 reused-socket RCA regression gates (workerdelta, synthesis-risk-libero)
   {
     id: "L8",
     area: "reused_socket_rca",

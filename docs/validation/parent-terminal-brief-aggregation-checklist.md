@@ -3,7 +3,7 @@
 Issue: a2a-plane#269 (a2a-plane#269, internal tracker private)
 Contract: `contracts/a2a/parent-terminal-brief-aggregation.md`
 Fixture: `fixtures/contract/parent-terminal-brief-aggregation.json`
-Canary: Gwakga-origin parent round with Seoseo handoff child task
+Canary: brokerBeta-origin parent round with brokerAlpha handoff child task
 
 This checklist is for PR/Done/Block evidence on parent-broker Terminal Brief aggregation work. It is intentionally no-live: it does not deploy or restart services, send provider messages, mutate production databases, mutate terminal-outbox ACK rows, merge PRs, publish releases, or change repository visibility.
 
@@ -21,9 +21,9 @@ This checklist is for PR/Done/Block evidence on parent-broker Terminal Brief agg
 
 ## Metadata lifecycle checks
 
-- [ ] `originBrokerId` is minted by Gwakga with the parent round.
+- [ ] `originBrokerId` is minted by brokerBeta with the parent round.
 - [ ] `parentRoundId` remains stable across every child projection in the round.
-- [ ] Seoseo handoff receives `parentRoundId` and `originBrokerId` as copied metadata, not as authority to rewrite them.
+- [ ] brokerAlpha handoff receives `parentRoundId` and `originBrokerId` as copied metadata, not as authority to rewrite them.
 - [ ] Child broker of record appends child task/evidence fields only after it owns the child task.
 - [ ] Parent aggregation reads terminal child evidence but does not mutate child lifecycle, worker assignment, provider-send records, or ACK state.
 

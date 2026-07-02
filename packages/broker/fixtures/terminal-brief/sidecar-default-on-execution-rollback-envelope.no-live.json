@@ -15,7 +15,7 @@
       "gateReference": "tb-sidecar-default-on-enablement-gate:fixture-776",
       "approvalReference": "tb-sidecar-default-on-approval:fixture-772",
       "requestedAction": "approve_terminal_brief_default_on_enablement",
-      "requestedBy": "seoseo",
+      "requestedBy": "brokeralpha",
       "operatorTarget": "terminal-brief-default-on",
       "providerAcceptedIsVisibilityProof": false,
       "approvalGrantEvidenceExecutesGrant": false
@@ -23,7 +23,7 @@
     "runtimeMutationPlan": {
       "planOnly": true,
       "planReference": "tb-sidecar-default-on-runtime-mutation-plan:fixture-778",
-      "finalizer": "seoseo",
+      "finalizer": "brokeralpha",
       "runtimeTarget": "terminal-brief-sidecar",
       "operatorInstructionReference": "a2a-broker#776",
       "configChange": {
@@ -141,7 +141,7 @@
   "defaultOnExecutionRollbackEnvelope": {
     "now": "2026-05-19T06:05:00.000Z",
     "mode": "fixture-source-only/no-live",
-    "finalizer": "seoseo",
+    "finalizer": "brokeralpha",
     "operatorInstructionReference": "a2a-broker#778",
     "executorId": "terminal-brief-default-on-runtime-executor"
   }

@@ -90,7 +90,7 @@ describe('consolidated closeout release report', () => {
 
     assert.equal(report.ok, true);
     assert.equal(report.parent, '#294');
-    assert.deepEqual(report.expectedWorkers, ['bangtong', 'dungae', 'sogyo', 'nosuk', 'yukson']);
+    assert.deepEqual(report.expectedWorkers, ['workergamma', 'workerepsilon', 'workerbeta', 'workeralpha', 'workerdelta']);
     assert.equal(check(report, 'worker capacity matrix')?.ok, true);
     assert.equal(check(report, 'queue/stale closeout')?.ok, true);
     assert.equal(check(report, 'final config restoration/no-live verification')?.ok, true);

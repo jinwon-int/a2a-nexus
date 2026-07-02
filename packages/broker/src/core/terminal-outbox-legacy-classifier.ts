@@ -11,7 +11,7 @@
  * All classification is pure and source-only. The broker does not prune,
  * mutate, or ACK rows based on this classifier.
  *
- * Reference: #886 Team1/Bangtong Terminal Brief hardening lane 1/4.
+ * Reference: #886 Team1/workergamma Terminal Brief hardening lane 1/4.
  */
 
 // ---------------------------------------------------------------------------

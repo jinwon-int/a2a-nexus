@@ -34,9 +34,9 @@ function gate(overrides: Partial<TerminalBriefSidecarStartExecutorGatePacket> = 
     },
     startPlan: {
       supervisedDryRunOnly: true,
-      requestedExecutor: "gongyung-sidecar-dry-run-executor",
+      requestedExecutor: "mobilealpha-sidecar-dry-run-executor",
       operatorApprovalReference: "operator-visible-approval-720",
-      dryRunReason: "sidecar-gongyung-spool-dry-run",
+      dryRunReason: "sidecar-mobilealpha-spool-dry-run",
       commandShape: {
         kind: "metadata_only",
         commandName: "terminal-brief-sidecar",
@@ -75,7 +75,7 @@ function gate(overrides: Partial<TerminalBriefSidecarStartExecutorGatePacket> = 
       harnessNeutral: true,
       openclawMessageSendRequired: false,
       hermesAdapterCompatible: true,
-      gongyungAdapterCompatible: true,
+      mobilealphaAdapterCompatible: true,
       consumesActivationReceiptIngestorPacket: true,
       consumesDryRunStartApprovalReceiptIngestorPacket: false,
       dispatchesStartExecutor: false,
@@ -118,7 +118,7 @@ function gate(overrides: Partial<TerminalBriefSidecarStartExecutorGatePacket> = 
 test("sidecar executor invocation rehearsal becomes ready without invoking executor", () => {
   const packet = buildTerminalBriefSidecarExecutorInvocationRehearsal(gate(), {
     now: NOW,
-    adapterName: "gongyung",
+    adapterName: "mobilealpha",
     executorRuntime: "supervised-dry-run",
     supervisor: "terminal-brief-sidecar-worker",
     healthCheckTarget: "/readyz",
@@ -127,8 +127,8 @@ test("sidecar executor invocation rehearsal becomes ready without invoking execu
 
   assert.equal(packet.kind, "a2a-broker.terminal-brief-sidecar-executor-invocation-rehearsal.packet");
   assert.equal(packet.state, "ready_for_executor_invocation_rehearsal");
-  assert.equal(packet.invocationPlan.executorName, "gongyung-sidecar-dry-run-executor");
-  assert.equal(packet.invocationPlan.adapterName, "gongyung");
+  assert.equal(packet.invocationPlan.executorName, "mobilealpha-sidecar-dry-run-executor");
+  assert.equal(packet.invocationPlan.adapterName, "mobilealpha");
   assert.equal(packet.readiness.executorInvocationRehearsalReady, true);
   assert.equal(packet.readiness.startExecutorDispatchPermitted, false);
   assert.equal(packet.readiness.executorInvocationPermitted, false);
@@ -143,7 +143,7 @@ test("sidecar executor invocation rehearsal becomes ready without invoking execu
   assert.equal(packet.invocationPlan.commandShape.secretsIncluded, false);
   assert.deepEqual(packet.invocationPlan.commandShape.commandArgs, ["--dry-run", "--poll-ms", "15000"]);
   assert.equal(packet.invocationPlan.adapterContract.version, 1);
-  assert.equal(packet.invocationPlan.adapterContract.adapterName, "gongyung");
+  assert.equal(packet.invocationPlan.adapterContract.adapterName, "mobilealpha");
   assert.equal(packet.invocationPlan.adapterContract.transport, "json-stdin-stdout");
   assert.equal(packet.invocationPlan.adapterContract.input.commandExecutionPermitted, false);
   assert.equal(packet.invocationPlan.adapterContract.input.processSpawnPermitted, false);

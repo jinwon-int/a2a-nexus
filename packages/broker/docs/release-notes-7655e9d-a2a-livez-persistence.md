@@ -15,7 +15,7 @@ Primary operator outcomes:
   diagnostic-complete after proving the remaining rare `>1s` `/livez` samples
   are not broker handler work, SQLite work, worker heartbeat work, or delayed
   Node HTTP request-event emission after request bytes arrive.
-- Left Seoseo production broker on worker-thread SQLite persistence with
+- Left brokeralpha production broker on worker-thread SQLite persistence with
   `persistenceQueue.enabled=true`, `mode=worker_thread`, and `state=healthy`.
 
 ## Operator-facing changes
@@ -79,12 +79,12 @@ Accepted operating threshold after the 2026-06-05 KST close decision:
 
 Final #1032 close evidence used revision
 `abb1600c9a016e7eedb77ae588490eb05674879a` with image tag
-`seoseo-github-abb1600c`, before worker-thread persistence was re-enabled for
+`brokeralpha-github-abb1600c`, before worker-thread persistence was re-enabled for
 the follow-up canary.
 
 ### Worker-thread persistence canary
 
-Seoseo enabled `BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1` and recreated only
+brokeralpha enabled `BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1` and recreated only
 the broker container.
 
 90s gate:
@@ -106,7 +106,7 @@ worker-thread persistence stayed enabled.
 
 ### #1250 live gate on 7655e9d
 
-Seoseo deployed commit
+brokeralpha deployed commit
 `7655e9dec8d1713b6a316a797603421d73969726` and ran the #1250 live gate.
 
 90s gate:

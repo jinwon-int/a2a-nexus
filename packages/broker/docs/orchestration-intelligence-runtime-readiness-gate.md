@@ -8,7 +8,7 @@ gates explicit before any future executor design or live path can be considered.
 This packet is intentionally conservative. A source-chain advance decision does
 not imply runtime readiness. The default state is `no_go_runtime_executor` until
 runtime design review, explicit runtime approval, broker dispatch approval,
-worker spawn approval, Daegyo/mobile scope resolution, rollback/abort criteria,
+worker spawn approval, mobilebeta/mobile scope resolution, rollback/abort criteria,
 live boundary planning, and validation freshness evidence are all supplied.
 
 ## States

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Task Templates Tests (Team1 nosuk lane, A2A R23)
+// Task Templates Tests (Team1 workerAlpha lane, A2A R23)
 // Parent: a2a-docker-runner#261
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -341,7 +341,7 @@ test("terminal-brief-node-health expansion produces evidence with vars expanded"
     templateVars: {
       DOCTOR_ARGS: "a2a-docker-runner doctor",
       EXPECTED_REVISION: "abc1234",
-      TARGET_NODE: "nosuk",
+      TARGET_NODE: "workerAlpha",
     },
   };
   const expanded = expandTask(task);
@@ -351,7 +351,7 @@ test("terminal-brief-node-health expansion produces evidence with vars expanded"
   assert.ok(expanded.prompt);
   assert.ok(expanded.prompt!.includes("a2a-docker-runner doctor"));
   assert.ok(expanded.prompt!.includes("abc1234"));
-  assert.ok(expanded.prompt!.includes("nosuk"));
+  assert.ok(expanded.prompt!.includes("workerAlpha"));
   assert.equal(expanded.env!["A2A_DOCKER_RUNNER_NO_LIVE"], "1");
 
   const template = getTemplate("terminal-brief-node-health")!;
@@ -370,7 +370,7 @@ test("terminal-brief-latency-diagnostics expansion produces evidence with vars",
     intent: "propose_patch",
     template: "terminal-brief-latency-diagnostics",
     templateVars: {
-      TARGET_NODE: "nosuk",
+      TARGET_NODE: "workerAlpha",
       RUN_ID: "a2a-r25-team1-ops-readiness-20260515T1656Z",
       P95_THRESHOLD_MS: "500",
       P99_THRESHOLD_MS: "500",
@@ -380,7 +380,7 @@ test("terminal-brief-latency-diagnostics expansion produces evidence with vars",
   };
   const expanded = expandTask(task);
   assert.ok(expanded);
-  assert.ok(expanded.prompt!.includes("nosuk"));
+  assert.ok(expanded.prompt!.includes("workerAlpha"));
   assert.ok(expanded.prompt!.includes("500ms"));
   assert.equal(expanded.env!["A2A_DOCKER_RUNNER_NO_LIVE"], "1");
 
@@ -401,14 +401,14 @@ test("terminal-brief-worker-readiness expansion includes all required vars", () 
     template: "terminal-brief-worker-readiness",
     templateVars: {
       EXPECTED_REVISION: "abc1234",
-      TARGET_NODE: "nosuk",
+      TARGET_NODE: "workerAlpha",
       RUN_ID: "a2a-r25-team1-ops-readiness-20260515T1656Z",
     },
   };
   const expanded = expandTask(task);
   assert.ok(expanded);
   assert.ok(expanded.prompt!.includes("abc1234"));
-  assert.ok(expanded.prompt!.includes("nosuk"));
+  assert.ok(expanded.prompt!.includes("workerAlpha"));
   assert.ok(expanded.prompt!.includes("terminal-brief-node-health"));
   assert.ok(expanded.prompt!.includes("terminal-brief-latency-diagnostics"));
   assert.ok(expanded.prompt!.includes("terminal-brief-session-store-residue"));

@@ -15,17 +15,17 @@ function envelope() {
     severity: "info",
     deliveryOwner: "openclaw.plugin-notifier",
     deliveryTarget: "operator-main-session",
-    title: "A2A Terminal Brief 완료: sogyo(1/1)",
-    text: "A2A Terminal Brief 완료: sogyo(1/1)\nsummary",
+    title: "A2A Terminal Brief 완료: workerBeta(1/1)",
+    text: "A2A Terminal Brief 완료: workerBeta(1/1)\nsummary",
     evidence: {
       schema: "a2a.operator.notification.evidence",
       version: 1,
       taskId: "terminal-brief-openclaw-message-test",
-      worker: "sogyo",
+      worker: "workerBeta",
       receiptProjection: "current_session_visible",
     },
     taskId: "terminal-brief-openclaw-message-test",
-    worker: "sogyo",
+    worker: "workerBeta",
     status: "succeeded",
   };
 }
@@ -95,7 +95,7 @@ describe("Terminal Brief OpenClaw message notifier", () => {
       "--target",
       "telegram:1000000001",
     ]);
-    assert.ok(result.openclawArgs.includes("A2A Terminal Brief 완료: sogyo(1/1)\nsummary"));
+    assert.ok(result.openclawArgs.includes("A2A Terminal Brief 완료: workerBeta(1/1)\nsummary"));
   });
 
   it("does not ACK provider-only message send results", () => {

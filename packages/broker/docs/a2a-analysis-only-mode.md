@@ -4,7 +4,7 @@
 
 The analysis-only mode is a safe, read-only A2A task execution path that allows
 tasks to complete with Start+Done/Block evidence **without requiring a patch or
-pull request**. This mode is designed for analysis agents (e.g., `bangtong`
+pull request**. This mode is designed for analysis agents (e.g., `workergamma`
 thesis agent) that produce findings, summaries, and risk assessments but never
 modify code.
 

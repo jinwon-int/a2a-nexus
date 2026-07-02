@@ -36,10 +36,10 @@ const NOW = "2026-05-26T20:11:40.000Z";
 const NOW_MS = Date.parse(NOW);
 
 const BASE_WORKERS: WorkerRoundAssignment[] = [
-  { workerId: "bangtong", lane: 1, taskDescription: "Round manifest foundation" },
-  { workerId: "dungae", lane: 2, taskDescription: "Result collector projection" },
-  { workerId: "sogyo", lane: 3, taskDescription: "Deadline/stale detection" },
-  { workerId: "nosuk", lane: 4, taskDescription: "Closeout bundle generation" },
+  { workerId: "workergamma", lane: 1, taskDescription: "Round manifest foundation" },
+  { workerId: "workerepsilon", lane: 2, taskDescription: "Result collector projection" },
+  { workerId: "workerbeta", lane: 3, taskDescription: "Deadline/stale detection" },
+  { workerId: "workeralpha", lane: 4, taskDescription: "Closeout bundle generation" },
 ];
 
 const BASE_OPTIONS: RoundManifestOptions = {
@@ -83,13 +83,13 @@ describe("RoundManifest schema", () => {
   it("has the expected workers in lane order", () => {
     const manifest = buildBaseManifest();
     assert.equal(manifest.expectedWorkers.length, 4);
-    assert.equal(manifest.expectedWorkers[0].workerId, "bangtong");
+    assert.equal(manifest.expectedWorkers[0].workerId, "workergamma");
     assert.equal(manifest.expectedWorkers[0].lane, 1);
-    assert.equal(manifest.expectedWorkers[1].workerId, "dungae");
+    assert.equal(manifest.expectedWorkers[1].workerId, "workerepsilon");
     assert.equal(manifest.expectedWorkers[1].lane, 2);
-    assert.equal(manifest.expectedWorkers[2].workerId, "sogyo");
+    assert.equal(manifest.expectedWorkers[2].workerId, "workerbeta");
     assert.equal(manifest.expectedWorkers[2].lane, 3);
-    assert.equal(manifest.expectedWorkers[3].workerId, "nosuk");
+    assert.equal(manifest.expectedWorkers[3].workerId, "workeralpha");
     assert.equal(manifest.expectedWorkers[3].lane, 4);
   });
 
@@ -103,7 +103,7 @@ describe("RoundManifest schema", () => {
 
   it("accepts worker resource policy fields", () => {
     const workerWithPolicy: WorkerRoundAssignment = {
-      workerId: "daegyo",
+      workerId: "mobilebeta",
       lane: 5,
       resourcePolicy: {
         maxConcurrency: 2,
@@ -117,11 +117,11 @@ describe("RoundManifest schema", () => {
       ...BASE_OPTIONS,
       expectedWorkers: [...BASE_WORKERS, workerWithPolicy],
     });
-    const daegyo = manifest.expectedWorkers.find((w) => w.workerId === "daegyo")!;
-    assert.equal(daegyo.resourcePolicy?.maxConcurrency, 2);
-    assert.deepEqual(daegyo.resourcePolicy?.allowedTaskTypes, ["propose_patch", "analyze"]);
-    assert.equal(daegyo.resourcePolicy?.noLive, true);
-    assert.equal(daegyo.resourcePolicy?.mobileStandby, true);
+    const mobilebeta = manifest.expectedWorkers.find((w) => w.workerId === "mobilebeta")!;
+    assert.equal(mobilebeta.resourcePolicy?.maxConcurrency, 2);
+    assert.deepEqual(mobilebeta.resourcePolicy?.allowedTaskTypes, ["propose_patch", "analyze"]);
+    assert.equal(mobilebeta.resourcePolicy?.noLive, true);
+    assert.equal(mobilebeta.resourcePolicy?.mobileStandby, true);
   });
 });
 
@@ -153,7 +153,7 @@ describe("deterministic id and checksum", () => {
     const a = buildBaseManifest();
     const b = buildRoundManifest({
       ...BASE_OPTIONS,
-      expectedWorkers: [{ workerId: "bangtong", lane: 1 }],
+      expectedWorkers: [{ workerId: "workergamma", lane: 1 }],
     });
     assert.notEqual(a.manifestId, b.manifestId);
   });
@@ -190,7 +190,7 @@ describe("deterministic id and checksum", () => {
 
 describe("worker assignment validation", () => {
   it("passes for a valid worker", () => {
-    const issues = validateWorkerAssignment({ workerId: "bangtong", lane: 1 }, 0);
+    const issues = validateWorkerAssignment({ workerId: "workergamma", lane: 1 }, 0);
     assert.deepEqual(issues, []);
   });
 
@@ -207,7 +207,7 @@ describe("worker assignment validation", () => {
 
   it("rejects non-integer lane", () => {
     const issues = validateWorkerAssignment(
-      { workerId: "bangtong", lane: 0 as unknown as number },
+      { workerId: "workergamma", lane: 0 as unknown as number },
       0,
     );
     assert(issues.length > 0);
@@ -216,7 +216,7 @@ describe("worker assignment validation", () => {
 
   it("rejects past deadline when nowMs is given", () => {
     const issues = validateWorkerAssignment(
-      { workerId: "bangtong", deadlineAt: "2020-01-01T00:00:00.000Z" },
+      { workerId: "workergamma", deadlineAt: "2020-01-01T00:00:00.000Z" },
       0,
       NOW_MS,
     );
@@ -227,7 +227,7 @@ describe("worker assignment validation", () => {
 
   it("accepts future deadline", () => {
     const issues = validateWorkerAssignment(
-      { workerId: "bangtong", deadlineAt: "2026-06-01T00:00:00.000Z" },
+      { workerId: "workergamma", deadlineAt: "2026-06-01T00:00:00.000Z" },
       0,
       NOW_MS,
     );
@@ -237,7 +237,7 @@ describe("worker assignment validation", () => {
   it("rejects invalid evidence type", () => {
     const issues = validateWorkerAssignment(
       {
-        workerId: "bangtong",
+        workerId: "workergamma",
         evidencePolicy: { requiredTypes: ["invalid_type" as "pr"] },
       },
       0,
@@ -249,7 +249,7 @@ describe("worker assignment validation", () => {
   it("rejects evidencePolicy with empty requiredTypes", () => {
     const issues = validateWorkerAssignment(
       {
-        workerId: "bangtong",
+        workerId: "workergamma",
         evidencePolicy: { requiredTypes: [] },
       },
       0,
@@ -261,7 +261,7 @@ describe("worker assignment validation", () => {
   it("rejects minimumRequired outside 1–5 range", () => {
     const issues = validateWorkerAssignment(
       {
-        workerId: "bangtong",
+        workerId: "workergamma",
         evidencePolicy: { requiredTypes: ["pr"], minimumRequired: 6 },
       },
       0,
@@ -390,7 +390,7 @@ describe("evidence type labels", () => {
 describe("per-worker evidence policy", () => {
   it("worker evidence policy overrides default", () => {
     const worker: WorkerRoundAssignment = {
-      workerId: "bangtong",
+      workerId: "workergamma",
       lane: 1,
       evidencePolicy: { requiredTypes: ["pr"], minimumRequired: 1 },
     };
@@ -405,7 +405,7 @@ describe("per-worker evidence policy", () => {
   });
 
   it("worker without explicit policy falls back to default", () => {
-    const worker: WorkerRoundAssignment = { workerId: "bangtong", lane: 1 };
+    const worker: WorkerRoundAssignment = { workerId: "workergamma", lane: 1 };
     const manifest = buildRoundManifest({
       ...BASE_OPTIONS,
       expectedWorkers: [worker],
@@ -449,7 +449,7 @@ describe("deadline configuration", () => {
 
   it("per-worker deadlineAt overrides round-level", () => {
     const worker: WorkerRoundAssignment = {
-      workerId: "bangtong",
+      workerId: "workergamma",
       lane: 1,
       deadlineAt: "2026-05-27T20:11:40.000Z",
     };
@@ -471,7 +471,7 @@ describe("read projection (projectRoundManifest)", () => {
   it("projects expected worker ids", () => {
     const manifest = buildBaseManifest();
     const projection = projectRoundManifest(manifest);
-    assert.deepEqual(projection.expectedWorkerIds, ["bangtong", "dungae", "sogyo", "nosuk"]);
+    assert.deepEqual(projection.expectedWorkerIds, ["workergamma", "workerepsilon", "workerbeta", "workeralpha"]);
   });
 
   it("resolves required evidence types for each worker", () => {
@@ -486,7 +486,7 @@ describe("read projection (projectRoundManifest)", () => {
 
   it("carries per-worker deadline when present", () => {
     const workers: WorkerRoundAssignment[] = [
-      { workerId: "bangtong", lane: 1, deadlineAt: "2026-05-27T20:11:40.000Z" },
+      { workerId: "workergamma", lane: 1, deadlineAt: "2026-05-27T20:11:40.000Z" },
     ];
     const manifest = buildRoundManifest({ ...BASE_OPTIONS, expectedWorkers: workers });
     const projection = projectRoundManifest(manifest);
@@ -503,7 +503,7 @@ describe("read projection (projectRoundManifest)", () => {
   it("projects resource policy from worker", () => {
     const workers: WorkerRoundAssignment[] = [
       {
-        workerId: "daegyo",
+        workerId: "mobilebeta",
         lane: 1,
         resourcePolicy: { noLive: true, mobileStandby: true },
       },
@@ -544,10 +544,10 @@ describe("markdown rendering", () => {
   it("includes expected worker table header", () => {
     const md = renderRoundManifestMarkdown(buildBaseManifest());
     assert(md.includes("| Lane | Worker |"));
-    assert(md.includes("bangtong"));
-    assert(md.includes("dungae"));
-    assert(md.includes("sogyo"));
-    assert(md.includes("nosuk"));
+    assert(md.includes("workergamma"));
+    assert(md.includes("workerepsilon"));
+    assert(md.includes("workerbeta"));
+    assert(md.includes("workeralpha"));
   });
 
   it("includes closeout policy section", () => {
@@ -582,7 +582,7 @@ describe("edge cases", () => {
   it("works with a single worker", () => {
     const manifest = buildRoundManifest({
       ...BASE_OPTIONS,
-      expectedWorkers: [{ workerId: "bangtong", lane: 1 }],
+      expectedWorkers: [{ workerId: "workergamma", lane: 1 }],
     });
     assert.equal(manifest.expectedWorkers.length, 1);
     assert.match(manifest.manifestId, /^[0-9a-f]{32}$/);
@@ -621,7 +621,7 @@ describe("edge cases", () => {
   it("workers with metadata round-trip through JSON", () => {
     const workers: WorkerRoundAssignment[] = [
       {
-        workerId: "bangtong",
+        workerId: "workergamma",
         lane: 1,
         metadata: { displayName: "Bang Tong", role: "thesis" },
       },

@@ -16,14 +16,14 @@ function run(input, args = ["--json"]) {
 test("worker compatibility audit marks canonical broker-poll handler as removal-safe", () => {
   const report = run([
     {
-      nodeId: "dungae",
+      nodeId: "workerepsilon",
       env: {
         A2A_WORKER_PROFILE: "broker-poll-only",
         WORKER_HANDLER_ARGS_JSON: JSON.stringify(["/opt/openclaw-a2a-worker/scripts/a2a-task-handler.mjs"]),
       },
     },
     {
-      nodeId: "soonwook",
+      nodeId: "workereta",
       env: {
         A2A_WORKER_RUNTIME_FLAVOR: "termux-hermes",
         A2A_WORKER_HANDLER_ARGS_JSON: JSON.stringify(["/opt/openclaw-a2a-worker/scripts/a2a-task-handler.mjs"]),

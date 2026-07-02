@@ -47,7 +47,7 @@ For public-safe worker discovery, the registry maps the current worker read mode
 - Team/private provider-capability fields: `capabilities.providerCapabilities[].providerId`, optional `modelFamily`/`modelId`, `routeKind`, `availability`, optional `lastVerifiedAt`, and optional non-secret `evidenceId`. These fields are for broker-local assignment/preflight only and are omitted unless a non-public card sets `visibility.exposeProviderCapabilities=true` after review. Public cards must not carry provider capabilities.
 - Forbidden public fields: worker `brokerUrl`, raw `metadata`, terminal/provider identifiers, `providerCapabilities`, private hostnames, tokens, credentials, private keys, raw OAuth paths or payloads, raw provider payloads, raw session or prompt text, and `workspaceIds` unless a non-public reviewed card explicitly enables `visibility.exposeWorkspaceIds`.
 
-Assignment safety remains broker-owned and fail-closed: cards may help select candidate workers for #432 readiness lanes such as Team2/gwakga `dungae`, but they do not grant a lease, approve live work, ACK terminal receipts, or bypass operator approval. Public cards must keep `visibility.safeForDiscovery=true`, `visibility.exposeBrokerUrl=false`, `visibility.exposeWorkspaceIds=false`, and `safety.requiresApprovalForLive=true`.
+Assignment safety remains broker-owned and fail-closed: cards may help select candidate workers for #432 readiness lanes such as Team2/brokerbeta `workerepsilon`, but they do not grant a lease, approve live work, ACK terminal receipts, or bypass operator approval. Public cards must keep `visibility.safeForDiscovery=true`, `visibility.exposeBrokerUrl=false`, `visibility.exposeWorkspaceIds=false`, and `safety.requiresApprovalForLive=true`.
 
 ## Representative cards
 
@@ -57,7 +57,7 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 {
   "schemaVersion": "worker-capability-card/v1",
   "worker": { "id": "team1-impl-a", "name": "Team1 implementation", "role": "analyst", "mode": "persistent" },
-  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "seoseo" },
+  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "brokeralpha" },
   "assignment": {
     "roles": ["implementation"],
     "supportedTaskTypes": ["propose_patch", "apply_local_change"],
@@ -73,7 +73,7 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 {
   "schemaVersion": "worker-capability-card/v1",
   "worker": { "id": "team2-docs-compat", "name": "Team2 docs/compat", "role": "researcher", "mode": "persistent" },
-  "team": { "teamId": "team2", "lane": "team2", "brokerOfRecord": "gwakga" },
+  "team": { "teamId": "team2", "lane": "team2", "brokerOfRecord": "brokerbeta" },
   "assignment": {
     "roles": ["docs-compat"],
     "supportedTaskTypes": ["analyze", "validate_change"],
@@ -89,7 +89,7 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 {
   "schemaVersion": "worker-capability-card/v1",
   "worker": { "id": "runner-safety-a", "name": "Runner safety", "role": "operator", "mode": "persistent" },
-  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "seoseo" },
+  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "brokeralpha" },
   "assignment": {
     "roles": ["runner-safety"],
     "supportedTaskTypes": ["analyze", "validate_change"],
@@ -100,13 +100,13 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 }
 ```
 
-### Libero validation worker (`yukson` lane)
+### Libero validation worker (`workerdelta` lane)
 
 ```json
 {
   "schemaVersion": "worker-capability-card/v1",
-  "worker": { "id": "yukson", "name": "Yukson libero", "role": "analyst", "mode": "mobile" },
-  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "seoseo" },
+  "worker": { "id": "workerdelta", "name": "workerdelta libero", "role": "analyst", "mode": "mobile" },
+  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "brokeralpha" },
   "assignment": {
     "roles": ["libero"],
     "supportedTaskTypes": ["analyze", "validate_change"],
@@ -117,9 +117,9 @@ Assignment safety remains broker-owned and fail-closed: cards may help select ca
 }
 ```
 
-### Mobile no-live Hermes research workers (`gongyung`, `daegyo`)
+### Mobile no-live Hermes research workers (`mobilealpha`, `mobilebeta`)
 
-`gongyung` and `daegyo` are formal A2A workers, but their registry class is **mobile / non-docker / Hermes research worker** rather than Docker-runner or production deployment target. This corrects the #805 framing captured during the #807 cleanup round and keeps the registry aligned with the Termux production boundary in [`docs/termux-proot-distro-a2a-runner.md`](../../../docs/termux-proot-distro-a2a-runner.md).
+`mobilealpha` and `mobilebeta` are formal A2A workers, but their registry class is **mobile / non-docker / Hermes research worker** rather than Docker-runner or production deployment target. This corrects the #805 framing captured during the #807 cleanup round and keeps the registry aligned with the Termux production boundary in [`docs/termux-proot-distro-a2a-runner.md`](../../../docs/termux-proot-distro-a2a-runner.md).
 
 Required capability framing for these nodes:
 
@@ -134,8 +134,8 @@ Representative public-safe card shape:
 ```json
 {
   "schemaVersion": "worker-capability-card/v1",
-  "worker": { "id": "gongyung", "name": "Gongyung mobile no-live researcher", "role": "researcher", "mode": "mobile" },
-  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "seoseo" },
+  "worker": { "id": "mobilealpha", "name": "mobilealpha mobile no-live researcher", "role": "researcher", "mode": "mobile" },
+  "team": { "teamId": "team1", "lane": "team1", "brokerOfRecord": "brokeralpha" },
   "assignment": {
     "roles": ["docs-compat"],
     "supportedTaskTypes": ["analyze", "verify"],
@@ -147,15 +147,15 @@ Representative public-safe card shape:
 }
 ```
 
-Use the same capability framing for `daegyo` on Team2/Gwakga unless a later approved registry issue records a narrower node-specific exception.
+Use the same capability framing for `mobilebeta` on Team2/brokerbeta unless a later approved registry issue records a narrower node-specific exception.
 
-### Provider/model-capable Team2 worker (`soonwook`, private/team scope only)
+### Provider/model-capable Team2 worker (`workereta`, private/team scope only)
 
 ```json
 {
   "schemaVersion": "worker-capability-card/v1",
-  "worker": { "id": "soonwook", "name": "Soonwook Team2 model-capable worker", "role": "analyst", "mode": "persistent" },
-  "team": { "teamId": "team2", "lane": "team2", "brokerOfRecord": "gwakga" },
+  "worker": { "id": "workereta", "name": "workereta Team2 model-capable worker", "role": "analyst", "mode": "persistent" },
+  "team": { "teamId": "team2", "lane": "team2", "brokerOfRecord": "brokerbeta" },
   "assignment": {
     "roles": ["implementation"],
     "supportedTaskTypes": ["analyze", "validate_change"],

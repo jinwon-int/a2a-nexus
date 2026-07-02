@@ -49,7 +49,7 @@ test("builds a source-only finalizer review from a score-ready packet", () => {
   const packet = buildOIValidationFinalizerReviewPacket({
     generatedAt: NOW,
     score: readyScore(),
-    reviewer: "gwakga",
+    reviewer: "brokerbeta",
   });
 
   assert.equal(packet.kind, "a2a-broker.orchestration-intelligence.validation-finalizer-review.packet");
@@ -120,7 +120,7 @@ test("routes degraded candidates to broker review without granting approval", ()
 test("renders markdown without implying runtime execution", () => {
   const fixture = JSON.parse(readFileSync("fixtures/orchestration-intelligence/validation-finalizer-review.ready.json", "utf8"));
   const score = buildOIValidationScorePacket({ generatedAt: NOW, ...fixture.scoreInput });
-  const packet = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "gwakga" });
+  const packet = buildOIValidationFinalizerReviewPacket({ generatedAt: NOW, score, reviewer: "brokerbeta" });
   const markdown = renderOIValidationFinalizerReviewMarkdown(packet);
 
   assert.match(markdown, /A2A Orchestration Intelligence v2 validation finalizer review/);

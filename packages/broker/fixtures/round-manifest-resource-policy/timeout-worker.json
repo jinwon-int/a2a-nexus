@@ -4,10 +4,10 @@
   "generatedAt": "2026-05-26T20:11:40.000Z",
   "description": "Timeout: Worker non-terminal past round deadline (timeoutAt=23:00Z, now=next day 01:00Z). Collector classifies as timeout.",
   "manifest": {
-    "roundLabel": "a2a-team1-round-coordinator-wiring-04-yukson",
+    "roundLabel": "a2a-team1-round-coordinator-wiring-04-workerdelta",
     "lanes": [
       {
-        "workerId": "yukson",
+        "workerId": "workerdelta",
         "description": "Timed out lane",
         "expectedOutcome": "patch"
       }
@@ -35,8 +35,8 @@
   },
   "collectorTasks": [
     {
-      "id": "task-yukson-timeout-1",
-      "assignedWorkerId": "yukson",
+      "id": "task-workerdelta-timeout-1",
+      "assignedWorkerId": "workerdelta",
       "status": "running",
       "createdAt": "2026-05-26T20:00:00.000Z",
       "updatedAt": "2026-05-26T22:30:00.000Z"

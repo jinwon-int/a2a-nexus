@@ -33,7 +33,7 @@ The `a2a-broker` public-readiness gate is narrower:
 - **Placeholder detection** — `<placeholder>`, `example`, `masked`,
   `redacted`, `YOUR_*`, `CHANGEME` patterns are excluded.
 - **Telegram chat targets** — numeric IDs are blocked.
-- **Private host aliases** — `seoseo`, `racknerd` references are warned.
+- **Private host aliases** — `brokeralpha`, `racknerd` references are warned.
 - **URL allowlisting** — documented URLs are checked against a per-repo
   allowlist.
 
@@ -88,7 +88,7 @@ public-readiness-scan.mjs          test coverage (38 tests)
 │   └── Trailing punctuation       ✓ true), false], yes`
 ├── Telegram target detection      ✓ numeric chat IDs
 ├── URL inspection                 ✓ allowlist, private networks
-└── Host alias detection           ✓ seoseo, racknerd patterns
+└── Host alias detection           ✓ brokeralpha, racknerd patterns
 ```
 
 ## Evidence

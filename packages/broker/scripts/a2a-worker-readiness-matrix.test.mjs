@@ -20,16 +20,16 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         workers: [
-          { id: 'bangtong', online: true, active: 0, metadata: { platform: 'linux' } },
-          { id: 'dungae', online: true, active: 0, metadata: { platform: 'linux' } },
-          { id: 'gongyung', online: true, active: 0, metadata: { platform: 'termux' } },
+          { id: 'workergamma', online: true, active: 0, metadata: { platform: 'linux' } },
+          { id: 'workerepsilon', online: true, active: 0, metadata: { platform: 'linux' } },
+          { id: 'mobilealpha', online: true, active: 0, metadata: { platform: 'termux' } },
         ],
       }), 'utf8');
       writeFileSync(auditPath, JSON.stringify({
         workers: [
-          { id: 'bangtong', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
-          { id: 'dungae', hasClaudeConfig: false, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
-          { id: 'gongyung', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: false, hasGitHubAuth: true, mobile: true },
+          { id: 'workergamma', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
+          { id: 'workerepsilon', hasClaudeConfig: false, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true },
+          { id: 'mobilealpha', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: false, hasGitHubAuth: true, mobile: true },
         ],
       }), 'utf8');
 
@@ -43,9 +43,9 @@ describe('a2a worker readiness matrix', () => {
         blockedPatch: 2,
       });
       assert.deepEqual(report.workers.map((worker) => ({ id: worker.id, patchCapable: worker.patchCapable, blockers: worker.blockers })), [
-        { id: 'bangtong', patchCapable: true, blockers: [] },
-        { id: 'dungae', patchCapable: false, blockers: ['missing Claude config'] },
-        { id: 'gongyung', patchCapable: false, blockers: ['missing patch bridge script'] },
+        { id: 'mobilealpha', patchCapable: false, blockers: ['missing patch bridge script'] },
+        { id: 'workerepsilon', patchCapable: false, blockers: ['missing Claude config'] },
+        { id: 'workergamma', patchCapable: true, blockers: [] },
       ]);
       assert.match(report.summary, /online=3/);
       assert.match(report.summary, /patch-capable=1/);
@@ -61,15 +61,15 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         items: [
-          { nodeId: 'bangtong', status: 'online', counts: { active: 0 } },
-          { nodeId: 'seoseo-terminal-smoke-worker-071830', status: 'stale', counts: { active: 0 } },
+          { nodeId: 'workergamma', status: 'online', counts: { active: 0 } },
+          { nodeId: 'brokeralpha-terminal-smoke-worker-071830', status: 'stale', counts: { active: 0 } },
         ],
       }), 'utf8');
-      writeFileSync(auditPath, JSON.stringify([{ id: 'bangtong', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
+      writeFileSync(auditPath, JSON.stringify([{ id: 'workergamma', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
 
       const report = JSON.parse(runReadiness(['--capacity', capacityPath, '--audit', auditPath, '--only-audited', '--json']));
       assert.equal(report.counts.total, 1);
-      assert.equal(report.workers[0].id, 'bangtong');
+      assert.equal(report.workers[0].id, 'workergamma');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -82,15 +82,15 @@ describe('a2a worker readiness matrix', () => {
       const auditPath = join(tmp, 'audit.json');
       writeFileSync(capacityPath, JSON.stringify({
         items: [
-          { nodeId: 'soonwook', status: 'stale', counts: { active: 1 } },
-          { nodeId: 'soonwook', status: 'online', counts: { active: 0 } },
+          { nodeId: 'workereta', status: 'stale', counts: { active: 1 } },
+          { nodeId: 'workereta', status: 'online', counts: { active: 0 } },
         ],
       }), 'utf8');
-      writeFileSync(auditPath, JSON.stringify([{ id: 'soonwook', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
+      writeFileSync(auditPath, JSON.stringify([{ id: 'workereta', hasClaudeConfig: true, hasTrustedOperator: true, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
 
       const report = JSON.parse(runReadiness(['--capacity', capacityPath, '--audit', auditPath, '--only-audited', '--json']));
       assert.equal(report.counts.total, 1);
-      assert.equal(report.workers[0].id, 'soonwook');
+      assert.equal(report.workers[0].id, 'workereta');
       assert.equal(report.workers[0].online, true);
       assert.equal(report.workers[0].patchCapable, true);
     } finally {
@@ -103,8 +103,8 @@ describe('a2a worker readiness matrix', () => {
     try {
       const capacityPath = join(tmp, 'capacity.json');
       const auditPath = join(tmp, 'audit.json');
-      writeFileSync(capacityPath, JSON.stringify([{ id: 'yukson', online: true, active: 0 }]), 'utf8');
-      writeFileSync(auditPath, JSON.stringify([{ id: 'yukson', hasClaudeConfig: true, hasTrustedOperator: false, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
+      writeFileSync(capacityPath, JSON.stringify([{ id: 'workerdelta', online: true, active: 0 }]), 'utf8');
+      writeFileSync(auditPath, JSON.stringify([{ id: 'workerdelta', hasClaudeConfig: true, hasTrustedOperator: false, hasPatchBridge: true, hasGitHubAuth: true }]), 'utf8');
 
       const report = JSON.parse(runReadiness(['--capacity', capacityPath, '--audit', auditPath, '--json']));
       assert.equal(report.workers[0].analysisCapable, true);

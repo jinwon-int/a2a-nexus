@@ -8,9 +8,9 @@
   "parentRoundTotal": 4,
   "parentRoundOrder": 1,
   "parentRoundProgress": 0,
-  "originBrokerId": "seoseo",
-  "brokerOfRecordId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "originBrokerId": "brokerAlpha",
+  "brokerOfRecordId": "brokerAlpha",
+  "parentBrokerId": "brokerAlpha",
   "noLiveProof": {
     "fixtureOnly": true,
     "autoCloseoutEnabled": false,
@@ -46,19 +46,19 @@
     "autoCloseoutMode": "source_only"
   },
   "activeNodes": [
-    "bangtong",
-    "dungae",
-    "sogyo",
-    "nosuk"
+    "workerGamma",
+    "workerEpsilon",
+    "workerBeta",
+    "workerAlpha"
   ],
   "source": {
     "schemaVersion": "a2a.runner.auto-closeout-fixture.v1",
     "parentRoundTotal": 4,
     "parentRoundOrder": 1,
     "parentRoundProgress": 0,
-    "originBrokerId": "seoseo",
-    "brokerOfRecordId": "seoseo",
-    "parentBrokerId": "seoseo"
+    "originBrokerId": "brokerAlpha",
+    "brokerOfRecordId": "brokerAlpha",
+    "parentBrokerId": "brokerAlpha"
   },
   "cases": [
     {
@@ -77,9 +77,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 1,
           "parentRoundProgress": 0,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -132,9 +132,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 2,
           "parentRoundProgress": 1,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -189,9 +189,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 3,
           "parentRoundProgress": 1,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -245,9 +245,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 4,
           "parentRoundProgress": 2,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -299,9 +299,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 5,
           "parentRoundProgress": 4,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -329,7 +329,7 @@
           "doneCommentUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/299#issuecomment-auto-closeout-completed",
           "doneUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/299#issuecomment-auto-closeout-completed",
           "taskId": "auto-closeout-r1-completed-5",
-          "worker": "bangtong",
+          "worker": "workerGamma",
           "repo": "jinwon-int/a2a-docker-runner",
           "issue": "299",
           "issueUrl": "https://github.com/jinwon-int/a2a-docker-runner/issues/299",
@@ -359,9 +359,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 6,
           "parentRoundProgress": 4,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -415,9 +415,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 7,
           "parentRoundProgress": 4,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -468,9 +468,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 8,
           "parentRoundProgress": 4,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {
@@ -523,9 +523,9 @@
           "parentRoundTotal": 4,
           "parentRoundOrder": 9,
           "parentRoundProgress": 4,
-          "originBrokerId": "seoseo",
-          "brokerOfRecordId": "seoseo",
-          "parentBrokerId": "seoseo"
+          "originBrokerId": "brokerAlpha",
+          "brokerOfRecordId": "brokerAlpha",
+          "parentBrokerId": "brokerAlpha"
         }
       },
       "runnerOutput": {

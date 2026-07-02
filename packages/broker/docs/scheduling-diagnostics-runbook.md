@@ -48,7 +48,7 @@ socket metadata. The top slow sample list is redacted to timing fields only.
 | `reused-socket-idle-before-request-event` | A reused socket was open and idle, but Node emitted the next HTTP `request` event late while handler entry stayed near-zero after the event. | Compare `socketIdleBeforeHttpRequestEvent`, `socketAcceptedToHttpRequestEvent`, and `httpRequestEventToHandlerStart`; then check keep-alive reuse, client/runtime pooling behavior, and socket lifecycle pressure. Check `idleBeforeDataMs` vs `dataToHttpRequestEventMs` to confirm data was not yet received from client. |
 | `reused-socket-data-received-blocked` | A reused keep-alive socket received the TCP data bytes (low `idleBeforeDataMs`) but Node's event loop was blocked before the HTTP parser could fire the `request` event (high `dataToHttpRequestEventMs`). | **Not a broker-code issue.** Check Node event-loop pressure, cgroup CPU throttling (`container.cgroup.cpuDelta.nrThrottled`), GC pauses (`/livez.gc`), or host load. The HTTP parser couldn't run because Node was descheduled or busy. |
 | `accepted-socket-waiting-before-handler` | The broker accepted the socket, but the request handler started late. | Check host scheduling, cgroup throttling, and concurrent route pressure. |
-| `accepted-socket-waiting-for-data` | Fresh socket accepted but first TCP data byte delayed (socketConnectedToFirstDataMs dominates firstDataToHttpRequestEventMs). | Check client/Gwakga send timing, network latency, or host scheduling before read callback. |
+| `accepted-socket-waiting-for-data` | Fresh socket accepted but first TCP data byte delayed (socketConnectedToFirstDataMs dominates firstDataToHttpRequestEventMs). | Check client/brokerbeta send timing, network latency, or host scheduling before read callback. |
 | `accepted-socket-data-received-blocked` | First data byte arrived promptly but HTTP request event delayed (firstDataToHttpRequestEventMs dominates). Node event-loop was blocked (GC, cgroup throttle, callback pressure) after data arrived. | Check Node event-loop pressure, cgroup CPU throttling (`container.cgroup.cpuDelta.nrThrottled`), GC pauses, or host load. Not a broker-code issue. |
 | `tcp-connect-or-accept-before-handler` | Client probe start to socket acceptance crossed the threshold. | Check TCP accept backlog, container scheduling before accept, and host pressure. |
 | `response-egress-or-client-read` | Broker prepared the response before the client observed headers. | Check response flushing, kernel TCP buffer pressure, proxy/backpressure, and client-side timing. |
@@ -165,7 +165,7 @@ two fundamentally different causes:
 | Both high | Compound: wire idle + event-loop pressure | Check all of the above |
 | Both low | Request latency is in handler time or flushing | Check `schedulingTiming`, `handlerToFinishGapMs` |
 
-This breakdown was added by the antithesis-runtime (jingun) to reject the
+This breakdown was added by the antithesis-runtime (workerzeta) to reject the
 hypothesis that broker-code changes alone can fix reused-socket stalls.
 The existing deploy/gate comment at `091b2ae` already attributes stalls to
 `reused-socket-idle-before-request-event` — this refinement determines WHY.
@@ -197,10 +197,10 @@ settings without changing runtime behavior:
 - `maxConnections`
 - `connectionsCheckingIntervalMs`
 
-## `/schedz` Operator Gate (Team1/Sogyo, #1032 round a2ad-1032-reused-socket-v2)
+## `/schedz` Operator Gate (Team1/workerbeta, #1032 round a2ad-1032-reused-socket-v2)
 
 The `/schedz` endpoint now includes an `operatorGate` field that pre-classifies
-the stall type from aggregate timing evidence. The gate classifier (Team1/Sogyo)
+the stall type from aggregate timing evidence. The gate classifier (Team1/workerbeta)
 uses the following decision logic:
 
 | Evidence Pattern | Gate Verdict | Operator Action |
@@ -212,8 +212,8 @@ uses the following decision logic:
 | `freshSocketAgeP99Ms > 1000ms` (fresh connection slow) | `accepted-socket-waiting-before-handler` | Check host scheduling, cgroup CPU throttle, kernel accept backlog |
 | None of the above | `no-significant-stall` | Continue monitoring; no evidence of reused-socket idle stall |
 
-**Sogyo attribution:** The gate classifier (`computeReusedSocketGate` in
-`server.ts`, sogyo team) cites the team name in every `reasons[]` entry so
+**workerbeta attribution:** The gate classifier (`computeReusedSocketGate` in
+`server.ts`, workerbeta team) cites the team name in every `reasons[]` entry so
 that operator logs are traceable back to the hypothesis author.
 
 **Distinguishing the three sources:**

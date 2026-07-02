@@ -32,7 +32,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     return buildWorkerProfileBlockResult(task, task.workerProfile, blockError);
   }
 
-  // ── Template Expansion (Team1 nosuk lane, A2A R23) ────────────────
+  // ── Template Expansion (Team1 workerAlpha lane, A2A R23) ────────────────
   // Parent: a2a-docker-runner#261
   // Parent: a2a-plane#335
   let expandedTask: RunnerTask | undefined;
@@ -176,7 +176,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     }
   }
 
-  // ── Execution Proof (Team1 nosuk lane, A2A R23) ──────────────────
+  // ── Execution Proof (Team1 workerAlpha lane, A2A R23) ──────────────────
   // Parent: a2a-docker-runner#261
   // Parent: a2a-plane#335
   const executionProof = buildExecutionProof({

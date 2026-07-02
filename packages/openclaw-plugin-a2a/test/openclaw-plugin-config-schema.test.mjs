@@ -68,17 +68,17 @@ test("plugin config schema accepts bounded cross-broker Terminal Brief pull conf
   const config = {
     operatorEvents: {
       enabled: true,
-      localBrokerId: "seoseo",
+      localBrokerId: "brokerAlpha",
       crossBrokers: [
         {
           baseUrl: "https://team2-broker.example.test",
           edgeSecretFile: "/root/.openclaw/secrets/team2-broker-edge-secret",
-          label: "gwakga",
-          requesterId: "seoseo-cross-broker-terminal-brief",
+          label: "brokerBeta",
+          requesterId: "brokerAlpha-cross-broker-terminal-brief",
           terminalOutboxAllowedIds: ["terminal:round-1-team2"],
           terminalOutboxCursor: "terminal:previous-team2",
           terminalOutboxReconcileUnackedOnStart: false,
-          localBrokerId: "seoseo",
+          localBrokerId: "brokerAlpha",
           maxSummaryChars: 480,
         },
       ],
@@ -87,9 +87,9 @@ test("plugin config schema accepts bounded cross-broker Terminal Brief pull conf
         originBroker: {
           baseUrl: "https://origin-broker.example.test",
           edgeSecretFile: "/root/.openclaw/secrets/origin-broker-edge-secret",
-          label: "seoseo",
+          label: "brokerAlpha",
         },
-        handoffBrokerId: "gwakga",
+        handoffBrokerId: "brokerBeta",
       },
     },
   };

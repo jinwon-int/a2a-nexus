@@ -5,7 +5,7 @@ import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const DEFAULT_WORKERS = ['bangtong', 'dungae', 'sogyo', 'nosuk'];
+const DEFAULT_WORKERS = ['workergamma', 'workerepsilon', 'workerbeta', 'workeralpha'];
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'blocked', 'canceled']);
 const DEFAULT_TIMEOUT_MS = 180_000;
 const DEFAULT_INTERVAL_MS = 2_000;

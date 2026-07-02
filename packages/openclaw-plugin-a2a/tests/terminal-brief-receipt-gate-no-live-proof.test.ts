@@ -3,7 +3,7 @@
  *
  * Issue:  jinwon-int/plugin-a2a#303
  * Run:    a2a-r11-stability-activation-gates-20260513T231046Z
- * Worker: sogyo
+ * Worker: workerBeta
  *
  * Proves that the Source-Public Terminal Brief receipt/activation gate
  * functions correctly in the plugin go/no-go projection context without
@@ -158,7 +158,7 @@ describe("Terminal Brief receipt/activation gate plugin no-live proof", () => {
       const projection = projectPluginGoNoGo(
         {
           executionPlan: plan,
-          metadata: { issueNumber: 303, worker: "sogyo" },
+          metadata: { issueNumber: 303, worker: "workerBeta" },
         },
         configActive(),
         { runId: `plugin-${TEST_RUN}`, now: () => 1710000002000 },

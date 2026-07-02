@@ -28,7 +28,7 @@ function makeTask(overrides: Partial<TaskRecord> & { id: string }): TaskRecord {
     id: overrides.id,
     intent: overrides.intent ?? ("analyze" as TaskRecord["intent"]),
     status: overrides.status ?? "queued",
-    targetNodeId: overrides.targetNodeId ?? "td-worker-bangtong",
+    targetNodeId: overrides.targetNodeId ?? "td-worker-workergamma",
     requester: overrides.requester ?? { id: "requester-1" },
     target: overrides.target ?? { id: "target-1" },
     assignedWorkerId: overrides.assignedWorkerId ?? undefined,
@@ -101,13 +101,13 @@ test("Team1 bounded dashboard: empty state", () => {
     workers: [],
     workerCapacity: makeCapacitySummary([]),
     nowMs: NOW_MS,
-    brokerId: "seoseo",
+    brokerId: "brokeralpha",
     teamId: "team1",
   });
 
   assert.equal(dashboard.kind, "team1.bounded-ops.dashboard");
   assert.equal(dashboard.version, 1);
-  assert.equal(dashboard.broker.brokerId, "seoseo");
+  assert.equal(dashboard.broker.brokerId, "brokeralpha");
   assert.equal(dashboard.broker.teamId, "team1");
 
   assert.equal(dashboard.tasks.total, 0);
@@ -140,9 +140,9 @@ test("Team1 bounded dashboard: filters non-Team1 tasks", () => {
 
   const dashboard = buildTeam1BoundedOpsDashboard({
     tasks: [tdTask, nonTdTask],
-    workers: [makeWorker({ nodeId: "td-worker-bangtong" })],
+    workers: [makeWorker({ nodeId: "td-worker-workergamma" })],
     workerCapacity: makeCapacitySummary([
-      makeCapacityItem({ nodeId: "td-worker-bangtong" }),
+      makeCapacityItem({ nodeId: "td-worker-workergamma" }),
     ]),
     nowMs: NOW_MS,
   });
@@ -185,9 +185,9 @@ test("Team1 bounded dashboard: phase distribution", () => {
 
 test("Team1 bounded dashboard: two-broker load distribution", () => {
   const tdTasks: TaskRecord[] = [
-    makeTask({ id: "t1", payload: { contract: { kind: "trading.dialectic", phase: "thesis" } }, brokerOfRecord: "seoseo" as unknown as undefined }),
-    makeTask({ id: "t2", payload: { contract: { kind: "trading.dialectic", phase: "thesis" } }, brokerOfRecord: "gwakga" as unknown as undefined }),
-    makeTask({ id: "t3", payload: { contract: { kind: "trading.dialectic", phase: "antithesis" } }, brokerOfRecord: "seoseo" as unknown as undefined }),
+    makeTask({ id: "t1", payload: { contract: { kind: "trading.dialectic", phase: "thesis" } }, brokerOfRecord: "brokeralpha" as unknown as undefined }),
+    makeTask({ id: "t2", payload: { contract: { kind: "trading.dialectic", phase: "thesis" } }, brokerOfRecord: "brokerbeta" as unknown as undefined }),
+    makeTask({ id: "t3", payload: { contract: { kind: "trading.dialectic", phase: "antithesis" } }, brokerOfRecord: "brokeralpha" as unknown as undefined }),
     makeTask({ id: "t4", payload: { contract: { kind: "trading.dialectic", phase: "antithesis" } } }), // no brokerOfRecord
   ];
 
@@ -201,7 +201,7 @@ test("Team1 bounded dashboard: two-broker load distribution", () => {
   });
 
   assert.equal(dashboard.tasks.byBrokerOfRecord.total, 3);
-  assert.deepEqual(dashboard.tasks.byBrokerOfRecord.byBroker, { seoseo: 2, gwakga: 1 });
+  assert.deepEqual(dashboard.tasks.byBrokerOfRecord.byBroker, { brokeralpha: 2, brokerbeta: 1 });
   assert.equal(dashboard.tasks.byBrokerOfRecord.noBrokerOfRecord, 1);
 });
 
@@ -213,12 +213,12 @@ test("Team1 bounded dashboard: filters non-Team1 workers", () => {
   const dashboard = buildTeam1BoundedOpsDashboard({
     tasks: tdTasks,
     workers: [
-      makeWorker({ nodeId: "td-worker-bangtong", role: "analyst" }),
+      makeWorker({ nodeId: "td-worker-workergamma", role: "analyst" }),
       makeWorker({ nodeId: "hub-worker", role: "hub" }),
       makeWorker({ nodeId: "generic-op", role: "operator" }),
     ],
     workerCapacity: makeCapacitySummary([
-      makeCapacityItem({ nodeId: "td-worker-bangtong" }),
+      makeCapacityItem({ nodeId: "td-worker-workergamma" }),
       makeCapacityItem({ nodeId: "hub-worker" }),
       makeCapacityItem({ nodeId: "generic-op" }),
     ]),
@@ -228,7 +228,7 @@ test("Team1 bounded dashboard: filters non-Team1 workers", () => {
   assert.equal(dashboard.workers.total, 1);
   assert.equal(dashboard.workers.online, 1);
   assert.equal(dashboard.workers.items.length, 1);
-  assert.equal(dashboard.workers.items[0]!.nodeId, "td-worker-bangtong");
+  assert.equal(dashboard.workers.items[0]!.nodeId, "td-worker-workergamma");
 });
 
 test("Team1 bounded dashboard: stale worker diagnostics", () => {
@@ -357,12 +357,12 @@ test("Team1 bounded dashboard: multi-broker info warning", () => {
     makeTask({
       id: "t1",
       payload: { contract: { kind: "trading.dialectic", phase: "thesis" } },
-      brokerOfRecord: "seoseo" as unknown as undefined,
+      brokerOfRecord: "brokeralpha" as unknown as undefined,
     }),
     makeTask({
       id: "t2",
       payload: { contract: { kind: "trading.dialectic", phase: "antithesis" } },
-      brokerOfRecord: "gwakga" as unknown as undefined,
+      brokerOfRecord: "brokerbeta" as unknown as undefined,
     }),
   ];
 
@@ -404,14 +404,14 @@ test("Team1 bounded dashboard: worker capacity items reflect bounded set", () =>
   const dashboard = buildTeam1BoundedOpsDashboard({
     tasks: [],
     workers: [
-      makeWorker({ nodeId: "bangtong-agent-1", role: "analyst" }),
+      makeWorker({ nodeId: "workergamma-agent-1", role: "analyst" }),
       makeWorker({ nodeId: "dengae-agent-2", role: "analyst" }),
-      makeWorker({ nodeId: "seoseo-agent-3", role: "researcher" }),
+      makeWorker({ nodeId: "brokeralpha-agent-3", role: "researcher" }),
     ],
     workerCapacity: makeCapacitySummary([
-      makeCapacityItem({ nodeId: "bangtong-agent-1", counts: { queued: 2, claimed: 1, running: 0, stale: 0, active: 3 } }),
+      makeCapacityItem({ nodeId: "workergamma-agent-1", counts: { queued: 2, claimed: 1, running: 0, stale: 0, active: 3 } }),
       makeCapacityItem({ nodeId: "dengae-agent-2", counts: { queued: 0, claimed: 0, running: 1, stale: 0, active: 1 } }),
-      makeCapacityItem({ nodeId: "seoseo-agent-3", counts: { queued: 0, claimed: 0, running: 0, stale: 0, active: 0 } }),
+      makeCapacityItem({ nodeId: "brokeralpha-agent-3", counts: { queued: 0, claimed: 0, running: 0, stale: 0, active: 0 } }),
     ]),
     nowMs: NOW_MS,
   });
@@ -443,9 +443,9 @@ test("Team1 bounded dashboard: intent-based Team1 detection", () => {
 
 test("Team1 bounded dashboard: node-id-prefix-based Team1 detection", () => {
   const tdTasks: TaskRecord[] = [
-    makeTask({ id: "generic-1", targetNodeId: "bangtong-node-1", intent: "chat" }),
+    makeTask({ id: "generic-1", targetNodeId: "workergamma-node-1", intent: "chat" }),
     makeTask({ id: "generic-2", targetNodeId: "dengae-node-1", intent: "chat" }),
-    makeTask({ id: "generic-3", targetNodeId: "seoseo-node-1", intent: "chat" }),
+    makeTask({ id: "generic-3", targetNodeId: "brokeralpha-node-1", intent: "chat" }),
     makeTask({ id: "generic-4", targetNodeId: "td-agent-1", intent: "chat" }),
     makeTask({ id: "generic-5", targetNodeId: "trading-agent-1", intent: "chat" }),
     makeTask({ id: "generic-6", targetNodeId: "hub-node", intent: "chat" }), // not Team1

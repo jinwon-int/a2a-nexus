@@ -24,9 +24,9 @@ test('round merge preflight refuses to run without PR numbers', () => {
   assert.match(result.stderr, /Usage: npm run round:merge-preflight/);
 });
 
-test('Team1/yukson PR #253 closeout records package conflict and safe resolution', async () => {
+test('Team1/workerDelta PR #253 closeout records package conflict and safe resolution', async () => {
   const artifact = await readFile(
-    join(repoRoot, 'docs', 'validation', 'team1-yukson-pr253-closeout-libero.md'),
+    join(repoRoot, 'docs', 'validation', 'team1-workerDelta-pr253-closeout-libero.md'),
     'utf8',
   );
 

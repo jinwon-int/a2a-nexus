@@ -43,7 +43,7 @@ runtime readiness evidence patch:
 - `rollbackAbortCriteriaDocumented=true`
 - `validationEvidenceFresh=true`
 - `workerSpawnApprovalPresent=false`
-- all Daegyo/mobile expansion and live-boundary readiness booleans remain `false`
+- all mobilebeta/mobile expansion and live-boundary readiness booleans remain `false`
 
 The next step may present the request to the operator and record the response in
 a separate worker spawn approval decision evidence packet. This packet is only
@@ -67,4 +67,4 @@ fields remain false:
 
 - `brokerDispatchApprovalPresent=true` (inherited from upstream, flag only)
 - `workerSpawnApprovalPresent=false`
-- `daegyoMobileScopeResolved=false`
+- `mobilebetaMobileScopeResolved=false`
