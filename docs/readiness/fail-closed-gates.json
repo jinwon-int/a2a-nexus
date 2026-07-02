@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lane": "team2-gwakga",
+  "lane": "team2-broker-beta",
   "run": "a2a-plane-post78261-next-20260509T142546Z",
   "defaultDecision": "NO-GO",
   "failClosed": true,

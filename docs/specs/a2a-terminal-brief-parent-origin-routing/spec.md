@@ -13,14 +13,14 @@ The operator-facing requirement is not “any cross-broker Terminal Brief.” Th
 - same-team work stays local;
 - cross-team work uses the opposite broker only as a child/handoff broker that relays projections back to the initiating parent broker.
 
-The current live gates proved pieces of this behavior, but the code/test/docs still allow confusion such as ordinary Team2-only work being discussed as if Seoseo should be involved.
+The current live gates proved pieces of this behavior, but the code/test/docs still allow confusion such as ordinary Team2-only work being discussed as if broker-alpha should be involved.
 
 ## User / operator stories
 
-- As an operator, when I tell Seoseo to use Team1, I want Seoseo to own the parent round and send the Terminal Brief without involving Gwakga.
-- As an operator, when I tell Seoseo to use Team1+Team2, I want Seoseo to own the parent round while Gwakga relays Team2 child projections back to Seoseo.
-- As an operator, when I tell Gwakga to use Team2, I want Gwakga to own the parent round and send the Terminal Brief without involving Seoseo.
-- As an operator, when I tell Gwakga to use Team1+Team2, I want Gwakga to own the parent round while Seoseo relays Team1 child projections back to Gwakga.
+- As an operator, when I tell broker-alpha to use Team1, I want broker-alpha to own the parent round and send the Terminal Brief without involving broker-beta.
+- As an operator, when I tell broker-alpha to use Team1+Team2, I want broker-alpha to own the parent round while broker-beta relays Team2 child projections back to broker-alpha.
+- As an operator, when I tell broker-beta to use Team2, I want broker-beta to own the parent round and send the Terminal Brief without involving broker-alpha.
+- As an operator, when I tell broker-beta to use Team1+Team2, I want broker-beta to own the parent round while broker-alpha relays Team1 child projections back to broker-beta.
 - As a broker/finalizer, I want exactly one parent/origin broker and one operator-facing Terminal Brief sender per round.
 - As a worker, I want my output to become a bounded evidence packet without causing duplicate operator notifications.
 
@@ -28,10 +28,10 @@ The current live gates proved pieces of this behavior, but the code/test/docs st
 
 | Case | Initiator | Requested scope | Parent/origin broker | Execution path | Operator-facing Terminal Brief sender |
 |---|---|---|---|---|---|
-| 1 | Seoseo | Team1 only | `seoseo` | Team1 local | Seoseo |
-| 2 | Seoseo | Team1 + Team2 | `seoseo` | Team1 local + Team2 child/handoff through Gwakga | Seoseo |
-| 3 | Gwakga | Team2 only | `gwakga` | Team2 local | Gwakga |
-| 4 | Gwakga | Team1 + Team2 | `gwakga` | Team2 local + Team1 child/handoff through Seoseo | Gwakga |
+| 1 | broker-alpha | Team1 only | `broker-alpha` | Team1 local | broker-alpha |
+| 2 | broker-alpha | Team1 + Team2 | `broker-alpha` | Team1 local + Team2 child/handoff through broker-beta | broker-alpha |
+| 3 | broker-beta | Team2 only | `broker-beta` | Team2 local | broker-beta |
+| 4 | broker-beta | Team1 + Team2 | `broker-beta` | Team2 local + Team1 child/handoff through broker-alpha | broker-beta |
 
 Invariant:
 
@@ -63,8 +63,8 @@ Invariant:
 
 - [ ] Four-case routing helper or equivalent contract exists in code.
 - [ ] Broker tests cover all four cases.
-- [ ] Team2-only work cannot accidentally route through Seoseo.
-- [ ] Team1-only work cannot accidentally route through Gwakga.
+- [ ] Team2-only work cannot accidentally route through broker-alpha.
+- [ ] Team1-only work cannot accidentally route through broker-beta.
 - [ ] Cross-team child projections require an existing parent round on the initiating broker.
 - [ ] Plugin tests prove relay success suppresses duplicate child local notification.
 - [ ] Plugin tests prove relay failure falls back to local operator notification.

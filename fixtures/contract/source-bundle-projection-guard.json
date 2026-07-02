@@ -19,7 +19,7 @@
     {
       "id": "a2a-960-sourcebundle-contract-fixture-1-primary",
       "intent": "analyze",
-      "target": { "id": "nosuk", "role": "analyst" },
+      "target": { "id": "worker-alpha", "role": "analyst" },
       "payload": {
         "mode": "analysis-only",
         "roundMode": "a2ad",
@@ -48,7 +48,7 @@
     {
       "id": "a2a-960-sourcebundle-contract-fixture-2-supplement",
       "intent": "analyze",
-      "target": { "id": "bangtong", "role": "analyst" },
+      "target": { "id": "worker-gamma", "role": "analyst" },
       "payload": {
         "mode": "analysis-only",
         "roundMode": "a2ad",

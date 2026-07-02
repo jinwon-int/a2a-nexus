@@ -52,7 +52,7 @@ These should mirror the `trading-dialectic/` structure but with review-appropria
 
 ### 2.2 Role prompt specs
 
-Follow the `bangtong.ts` / `dengae.ts` / `seoseo.ts` pattern:
+Follow the `worker-gamma.ts` / `dengae.ts` / `broker-alpha.ts` pattern:
 
 - `reviewer.ts` — Thesis/reviewer prompt spec with A2AD output schema.
 - `critic.ts` — Antithesis/critic prompt spec with A2AD output schema.

@@ -2,7 +2,7 @@
 
 The `scripts/` directory accumulates CLIs and `node:test` files faster than it
 sheds them. Many test files are named for specific, now-closed review rounds
-(`check-team2-soonwook-r13-…`, `check-team1-yukson-r27-…`). Historically the
+(`check-team2-worker-eta-r13-…`, `check-team1-worker-delta-r27-…`). Historically the
 release gate enumerated ~50 of these by hand in a single `package.json` line —
 a merge-conflict magnet with no retirement story.
 
@@ -26,7 +26,7 @@ Every file under `scripts/` belongs to exactly one class:
 
 - **`round`** — tied to a **specific** review round, identified by a clear
   round marker in the filename (an `rNN` pattern, optionally with a person/team
-  prefix, e.g. `team2-soonwook-r13`). A `round` script is release-blocking
+  prefix, e.g. `team2-worker-eta-r13`). A `round` script is release-blocking
   **while its round is open**. Once the round closes it is archived (see below).
 
 ### Conservative classification (fail-closed)
@@ -50,7 +50,7 @@ superset of its historical behavior: we never silently drop a check.
   gate loudly.
 - `class` — `gate` | `tool` | `round` (a `tool` would not normally appear here;
   the manifest is the gate's run list).
-- `round` — round id for `round` entries (e.g. `team2-soonwook-r13`),
+- `round` — round id for `round` entries (e.g. `team2-worker-eta-r13`),
   otherwise `null`.
 - `note` — short human rationale, including why a round-flavored file was kept
   as `gate` when applicable.

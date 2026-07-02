@@ -6,7 +6,7 @@
     "contracts/compatibility/terminal-evidence-ack-boundary.md",
     "docs/readiness/fail-closed-scanner-readiness.md"
   ],
-  "description": "Public-safe Team2/Gwakga second-reference proof tying replay/no-duplicate live-canary readiness to the scanner and explicit-approval boundary.",
+  "description": "Public-safe Team2/broker-beta second-reference proof tying replay/no-duplicate live-canary readiness to the scanner and explicit-approval boundary.",
   "v0Freeze": {
     "frozenAt": "2026-05-09",
     "round": "a2a-live-canary-readiness-20260509T173917Z",
@@ -20,9 +20,9 @@
     "a2a-plane#171 (internal tracker, private)",
     "a2a-plane#172 (internal tracker, private)"
   ],
-  "brokerOfRecord": "gwakga",
-  "team": "team2-gwakga",
-  "workerName": "worker-soonwook-second-reference",
+  "brokerOfRecord": "broker-beta",
+  "team": "team2-broker-beta",
+  "workerName": "worker-worker-eta-second-reference",
   "canaryMode": "no-live-redacted-replay",
   "replayNoDuplicateProof": {
     "terminalResultRef": "terminal-pr-or-done-evidence",

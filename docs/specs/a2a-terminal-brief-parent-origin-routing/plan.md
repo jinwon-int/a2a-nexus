@@ -25,7 +25,7 @@ Reason: the change spans broker metadata, plugin relay behavior, control-plane c
 
 ## Broker / worker / finalizer roles
 
-- Broker of record / finalizer for implementation closeout: Gwakga unless explicitly handed off.
+- Broker of record / finalizer for implementation closeout: broker-beta unless explicitly handed off.
 - Code workers:
   - broker lane for `a2a-broker` contract/tests;
   - plugin lane for `openclaw-plugin-a2a` relay/notification tests;
@@ -47,31 +47,31 @@ Why this lane is safe: the implementation is multi-repo and cross-broker. Heavy 
 
 ### Local same-team cases
 
-1. Seoseo -> Team1 only:
-   - parent/origin broker: `seoseo`;
+1. broker-alpha -> Team1 only:
+   - parent/origin broker: `broker-alpha`;
    - worker side: Team1;
-   - Terminal Brief sender: Seoseo;
-   - no Gwakga parent seeding or relay.
+   - Terminal Brief sender: broker-alpha;
+   - no broker-beta parent seeding or relay.
 
-2. Gwakga -> Team2 only:
-   - parent/origin broker: `gwakga`;
+2. broker-beta -> Team2 only:
+   - parent/origin broker: `broker-beta`;
    - worker side: Team2;
-   - Terminal Brief sender: Gwakga;
-   - no Seoseo parent seeding or relay.
+   - Terminal Brief sender: broker-beta;
+   - no broker-alpha parent seeding or relay.
 
 ### Cross-team cases
 
-3. Seoseo -> Team1+Team2:
-   - parent/origin broker: `seoseo`;
-   - Team2 child/handoff broker: Gwakga;
-   - Gwakga relays Team2 child projections back to Seoseo;
-   - Seoseo sends operator-facing Terminal Briefs.
+3. broker-alpha -> Team1+Team2:
+   - parent/origin broker: `broker-alpha`;
+   - Team2 child/handoff broker: broker-beta;
+   - broker-beta relays Team2 child projections back to broker-alpha;
+   - broker-alpha sends operator-facing Terminal Briefs.
 
-4. Gwakga -> Team1+Team2:
-   - parent/origin broker: `gwakga`;
-   - Team1 child/handoff broker: Seoseo;
-   - Seoseo relays Team1 child projections back to Gwakga;
-   - Gwakga sends operator-facing Terminal Briefs.
+4. broker-beta -> Team1+Team2:
+   - parent/origin broker: `broker-beta`;
+   - Team1 child/handoff broker: broker-alpha;
+   - broker-alpha relays Team1 child projections back to broker-beta;
+   - broker-beta sends operator-facing Terminal Briefs.
 
 ## Source PR order
 
@@ -127,7 +127,7 @@ Purpose: only after PR A-C are stable, decide whether to add issue/PR template e
 - Live canary:
   - not part of source PRs;
   - requires separate approval;
-  - should validate both Seoseo-parent/Gwakga-child and Gwakga-parent/Seoseo-child directions.
+  - should validate both broker-alpha-parent/broker-beta-child and broker-beta-parent/broker-alpha-child directions.
 
 ## Rollout plan
 

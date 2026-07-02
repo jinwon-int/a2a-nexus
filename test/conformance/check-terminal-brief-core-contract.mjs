@@ -27,7 +27,7 @@ assert('Contains title format section', /## 1\. Title format/.test(contractText)
 assert('Contains default known-total format',
   /A2A Terminal Brief.*worker.*N/.test(contractText) || /default.*known.total/i.test(contractText));
 assert('Contains canonical raw compact title example',
-  /A2A Terminal Brief 완료: yukson\(완료 3\/7\)/.test(contractText));
+  /A2A Terminal Brief 완료: worker-delta\(완료 3\/7\)/.test(contractText));
 assert('Contains unknown-total fallback',
   /unknown-total fallback|unknown total/i.test(contractText) || /no denominator/.test(contractText));
 assert('Contains 80 char max constraint', /80 characters|80 chars/.test(contractText));
@@ -35,7 +35,7 @@ assert('Contains forbidden title content', /forbidden title content/i.test(contr
 
 // Ownership matrix
 assert('Contains ownership matrix section', /## 2\. Ownership matrix|Ownership matrix/.test(contractText));
-assert('Contains 4 routing cases', /Case.*\|.*Initiator/.test(contractText) || /Case 1.*seoseo/g.test(contractText));
+assert('Contains 4 routing cases', /Case.*\|.*Initiator/.test(contractText) || /Case 1.*broker-alpha/g.test(contractText));
 assert('Contains finalizer assignment', /finalizer assignment|Finalizer of record/i.test(contractText));
 assert('Contains network of ownership', /Network of ownership/.test(contractText));
 

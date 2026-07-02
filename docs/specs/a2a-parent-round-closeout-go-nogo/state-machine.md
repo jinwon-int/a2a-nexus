@@ -71,19 +71,19 @@ eligible for closeout evaluation via the go/no-go matrix.
 - Every lane has a terminal projection recorded in the parent aggregation ledger.
 
 **Exit conditions**:
-- Matrix returns GO → transition to `CLOSEOUT` (via Seoseo finalizer action).
+- Matrix returns GO → transition to `CLOSEOUT` (via broker-alpha finalizer action).
 - Matrix returns NO_GO → transition to `WAITING`.
 - Matrix returns BLOCKED → transition to `BLOCKED`.
 
 ### CLOSEOUT (terminal)
 
-Seoseo has executed the closeout: a Go decision comment was posted and the parent issue was
+broker-alpha has executed the closeout: a Go decision comment was posted and the parent issue was
 closed. This state is terminal — no further transitions occur for this parent round.
 
 **Entry conditions**:
 - Matrix returned GO.
-- Seoseo posted the Go decision comment on the parent issue (GitHub 200).
-- Seoseo closed the parent issue (GitHub 200).
+- broker-alpha posted the Go decision comment on the parent issue (GitHub 200).
+- broker-alpha closed the parent issue (GitHub 200).
 - Closeout ledger entry was recorded with idempotency key.
 
 **Evidence produced**:

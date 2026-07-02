@@ -14,7 +14,7 @@
 This note closes the measurement gaps tracked in [#919](https://github.com/jinwon-int/a2a-nexus/issues/919)
 (roadmap: public readiness gate closeout before promotion, refs #915) and
 [#922](https://github.com/jinwon-int/a2a-nexus/issues/922) (public-readiness gate implementation wave).
-All evidence below was collected on branch `a2a-patch-20260619-*-gwakga-public-readiness-gate-jingun`
+All evidence below was collected on branch `a2a-patch-20260619-*-broker-beta-public-readiness-gate-worker-zeta`
 at commit `0718352`; no visibility, publication, or promotion action has been performed.
 
 | Gate | Status | Evidence |

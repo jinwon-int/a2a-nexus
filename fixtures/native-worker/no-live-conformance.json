@@ -9,7 +9,7 @@
     "a2a-plane#435 (internal tracker, private)",
     "a2a-plane#441 (internal tracker, private)"
   ],
-  "profiles": ["docs/specs/gongyung-hermes-worker-profile/spec.md"],
+  "profiles": ["docs/specs/mobile-alpha-hermes-worker-profile/spec.md"],
   "runbook": "docs/hermes-android-native-worker-runbook.md",
   "referenceWorker": "examples/workers/hermes-reference-worker/",
   "worker": {

@@ -54,7 +54,7 @@ Public-readiness remains **NO-GO / Waiting** unless all of the following are tru
 - A2A Nexus terminal evidence and replay-safety proofs show provider accepted-send evidence is not requester-visible receipt, operator-visible receipt, terminal ACK, human-seen proof, or terminal-outbox ACK.
 - Local public-readiness/release gates and any required scanner/readiness gates are clean or explicitly blocked with redacted evidence.
 - Runtime/bootstrap hygiene is clear for the branch diff and artifact evidence.
-- 진원님 explicitly approves repository visibility/publication in a separate operator decision after the evidence is complete.
+- the operator explicitly approves repository visibility/publication in a separate operator decision after the evidence is complete.
 
 Scanner success, PR CI success, branch existence, Start comments, provider send success, provider message ids, or no-live canary success do **not** authorize repository visibility/publication and do **not** constitute terminal ACK evidence.
 

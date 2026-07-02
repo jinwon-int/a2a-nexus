@@ -42,7 +42,7 @@ mutation, provider-send, Telegram-send, and Terminal Brief ACK/replay surfaces.
 ### Optional model-backed mobile analysis
 
 By default, `analysis-only` still produces local/reference evidence only. To let a
-Gongyung/Daegyo-style mobile worker contribute substantive A2AD analysis, an
+mobile-alpha/mobile-beta-style mobile worker contribute substantive A2AD analysis, an
 operator may opt in to a strict JSON model bridge:
 
 ```bash
@@ -140,7 +140,7 @@ terminal evidence without invoking an LLM just to check for work.
 
 ## Android / Termux native profile
 
-For Gongyung/Daegyo-style mobile nodes, use the Android native worker runbook:
+For mobile-alpha/mobile-beta-style mobile nodes, use the Android native worker runbook:
 [`docs/hermes-android-native-worker-runbook.md`](../../../docs/hermes-android-native-worker-runbook.md).
 
 The mobile profile keeps the same HTTP worker contract but adds:

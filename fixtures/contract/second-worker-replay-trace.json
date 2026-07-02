@@ -13,11 +13,11 @@
   },
   "parentIssue": "a2a-plane#163 (internal tracker, private)",
   "childIssue": "a2a-plane#168 (internal tracker, private)",
-  "brokerOfRecord": "gwakga",
-  "team": "team2-gwakga",
-  "workerName": "worker-soonwook-second-reference",
+  "brokerOfRecord": "broker-beta",
+  "team": "team2-broker-beta",
+  "workerName": "worker-worker-eta-second-reference",
   "taskId": "task-second-worker-replay-public-168",
-  "dedupeKey": "task-second-worker-replay-public-168:worker-soonwook-second-reference:pr",
+  "dedupeKey": "task-second-worker-replay-public-168:worker-worker-eta-second-reference:pr",
   "replayProof": {
     "terminalResultRef": "terminal-pr-evidence",
     "attempts": [
@@ -82,7 +82,7 @@
       {
         "seq": 1,
         "taskRef": "sha256:public-task-168",
-        "workerName": "worker-soonwook-second-reference",
+        "workerName": "worker-worker-eta-second-reference",
         "eventClass": "terminal-result-created",
         "decision": "record-terminal-result",
         "resultRef": "terminal-pr-evidence",
@@ -94,7 +94,7 @@
       {
         "seq": 2,
         "taskRef": "sha256:public-task-168",
-        "workerName": "worker-soonwook-second-reference",
+        "workerName": "worker-worker-eta-second-reference",
         "eventClass": "replay-suppressed",
         "decision": "return-existing-terminal-result",
         "resultRef": "terminal-pr-evidence",

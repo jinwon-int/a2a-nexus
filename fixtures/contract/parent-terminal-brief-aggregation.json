@@ -1,20 +1,20 @@
 {
   "fixtureId": "a2a-nexus.contract.parent-terminal-brief-aggregation.v1",
   "contract": "contracts/a2a/parent-terminal-brief-aggregation.md",
-  "description": "Synthetic Gwakga-origin plus Seoseo-handoff and Seoseo-origin plus Gwakga-parent-symmetric canary for parent broker Terminal Brief aggregation, with broker-neutral concise title examples for Gwakga-origin, Seoseo-origin, and symmetric Seoseo-origin/Gwakga-parent parent rounds.",
+  "description": "Synthetic broker-beta-origin plus broker-alpha-handoff and broker-alpha-origin plus broker-beta-parent-symmetric canary for parent broker Terminal Brief aggregation, with broker-neutral concise title examples for broker-beta-origin, broker-alpha-origin, and symmetric broker-alpha-origin/broker-beta-parent parent rounds.",
   "parentIssue": "a2a-plane#269 (internal tracker, private)",
-  "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
-  "originBrokerId": "gwakga",
-  "parentBrokerId": "gwakga",
-  "handoffBrokerId": "seoseo",
-  "childBrokerId": "seoseo",
-  "brokerOfRecord": "seoseo",
-  "team": "team2-soonwook",
+  "parentRoundId": "round-broker-beta-origin-broker-alpha-handoff-canary-001",
+  "originBrokerId": "broker-beta",
+  "parentBrokerId": "broker-beta",
+  "handoffBrokerId": "broker-alpha",
+  "childBrokerId": "broker-alpha",
+  "brokerOfRecord": "broker-alpha",
+  "team": "team2-worker-eta",
   "canaryMode": "no-live-synthetic-projection",
   "metadataLifecycle": [
     {
       "step": "mint-parent-round",
-      "ownerBrokerId": "gwakga",
+      "ownerBrokerId": "broker-beta",
       "writes": [
         "parentRoundId",
         "originBrokerId",
@@ -24,16 +24,16 @@
     },
     {
       "step": "handoff-envelope-created",
-      "ownerBrokerId": "gwakga",
+      "ownerBrokerId": "broker-beta",
       "copies": [
         "parentRoundId",
         "originBrokerId"
       ],
-      "destinationBrokerId": "seoseo"
+      "destinationBrokerId": "broker-alpha"
     },
     {
       "step": "child-task-terminal-evidence",
-      "ownerBrokerId": "seoseo",
+      "ownerBrokerId": "broker-alpha",
       "appends": [
         "childTaskId",
         "childBrokerId",
@@ -44,7 +44,7 @@
     },
     {
       "step": "parent-projection-recorded",
-      "ownerBrokerId": "gwakga",
+      "ownerBrokerId": "broker-beta",
       "projectionState": "projected",
       "childLifecycleMutated": false
     }
@@ -72,17 +72,17 @@
     "isReadReceipt"
   ],
   "projection": {
-    "projectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
-    "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
-    "originBrokerId": "gwakga",
-    "parentBrokerId": "gwakga",
-    "handoffBrokerId": "seoseo",
-    "childBrokerId": "seoseo",
-    "childTaskId": "task-seoseo-child-canary-001",
+    "projectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr",
+    "parentRoundId": "round-broker-beta-origin-broker-alpha-handoff-canary-001",
+    "originBrokerId": "broker-beta",
+    "parentBrokerId": "broker-beta",
+    "handoffBrokerId": "broker-alpha",
+    "childBrokerId": "broker-alpha",
+    "childTaskId": "task-broker-alpha-child-canary-001",
     "childIssueUrl": "a2a-plane#269 (internal tracker, private)",
     "terminalKind": "pr",
     "terminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)",
-    "terminalSummary": "Synthetic child PR evidence projected into the Gwakga parent Terminal Brief aggregation ledger.",
+    "terminalSummary": "Synthetic child PR evidence projected into the broker-beta parent Terminal Brief aggregation ledger.",
     "projectionState": "projected",
     "redacted": true,
     "projectedAt": "2026-05-13T01:30:00Z",
@@ -91,23 +91,23 @@
     "isApproval": false,
     "isTerminalAck": false,
     "isReadReceipt": false,
-    "workerId": "dungae",
+    "workerId": "worker-epsilon",
     "roundProgress": {
       "completed": 1,
       "total": 7,
       "totalKnown": true
     },
-    "terminalBriefTitle": "A2A Terminal Brief 완료: dungae(1/7)",
-    "terminalBriefTitleOwnerBrokerId": "gwakga",
+    "terminalBriefTitle": "A2A Terminal Brief 완료: worker-epsilon(1/7)",
+    "terminalBriefTitleOwnerBrokerId": "broker-beta",
     "terminalBriefTitleRenderedByParentBrokerOnly": true
   },
   "scenarios": [
     {
-      "name": "gwakga-origin-metadata-is-carried-through-seoseo-handoff",
+      "name": "broker-beta-origin-metadata-is-carried-through-broker-alpha-handoff",
       "given": {
-        "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
-        "originBrokerId": "gwakga",
-        "handoffBrokerId": "seoseo"
+        "parentRoundId": "round-broker-beta-origin-broker-alpha-handoff-canary-001",
+        "originBrokerId": "broker-beta",
+        "handoffBrokerId": "broker-alpha"
       },
       "when": {
         "operation": "handoff.create"
@@ -116,7 +116,7 @@
         "metadataCopiedToChildEnvelope": true,
         "originBrokerIdRewritten": false,
         "parentRoundIdRewritten": false,
-        "childBrokerOfRecord": "seoseo"
+        "childBrokerOfRecord": "broker-alpha"
       }
     },
     {
@@ -130,7 +130,7 @@
       },
       "then": {
         "projectionState": "projected",
-        "projectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
+        "projectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr",
         "parentBriefEntryCreated": true,
         "redacted": true,
         "terminalOutboxAckMutated": false,
@@ -141,23 +141,23 @@
       }
     },
     {
-      "name": "gwakga-origin-parent-brief-title-is-concise-parent-broker-only",
+      "name": "broker-beta-origin-parent-brief-title-is-concise-parent-broker-only",
       "given": {
-        "parentBrokerId": "gwakga",
-        "childBrokerId": "seoseo",
-        "workerId": "dungae",
+        "parentBrokerId": "broker-beta",
+        "childBrokerId": "broker-alpha",
+        "workerId": "worker-epsilon",
         "completed": 1,
         "total": 7,
         "statusLabel": "완료",
-        "originBrokerId": "gwakga",
+        "originBrokerId": "broker-beta",
         "totalKnown": true
       },
       "when": {
         "operation": "parentTerminalBrief.renderTitle"
       },
       "then": {
-        "terminalBriefTitle": "A2A Terminal Brief 완료: dungae(1/7)",
-        "rendererBrokerId": "gwakga",
+        "terminalBriefTitle": "A2A Terminal Brief 완료: worker-epsilon(1/7)",
+        "rendererBrokerId": "broker-beta",
         "parentBrokerOnly": true,
         "maxChars": 80,
         "includesTaskId": false,
@@ -178,13 +178,13 @@
       }
     },
     {
-      "name": "seoseo-origin-parent-brief-title-uses-unknown-total-fallback",
+      "name": "broker-alpha-origin-parent-brief-title-uses-unknown-total-fallback",
       "given": {
-        "originBrokerId": "seoseo",
-        "parentBrokerId": "seoseo",
-        "handoffBrokerId": "gwakga",
-        "childBrokerId": "gwakga",
-        "workerId": "yukson",
+        "originBrokerId": "broker-alpha",
+        "parentBrokerId": "broker-alpha",
+        "handoffBrokerId": "broker-beta",
+        "childBrokerId": "broker-beta",
+        "workerId": "worker-delta",
         "completed": 2,
         "total": null,
         "totalKnown": false,
@@ -194,8 +194,8 @@
         "operation": "parentTerminalBrief.renderTitle"
       },
       "then": {
-        "terminalBriefTitle": "A2A Terminal Brief 완료: yukson(2)",
-        "rendererBrokerId": "seoseo",
+        "terminalBriefTitle": "A2A Terminal Brief 완료: worker-delta(2)",
+        "rendererBrokerId": "broker-alpha",
         "parentBrokerOnly": true,
         "maxChars": 80,
         "titleOmitsUnknownDenominator": true,
@@ -218,12 +218,12 @@
     {
       "name": "duplicate-parent-projection-returns-existing-entry",
       "given": {
-        "existingProjectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
+        "existingProjectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr",
         "existingTerminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)"
       },
       "when": {
         "operation": "parentTerminalBrief.project",
-        "projectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr"
+        "projectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr"
       },
       "then": {
         "status": "deduplicated",
@@ -236,12 +236,12 @@
     {
       "name": "same-key-different-payload-conflicts",
       "given": {
-        "existingProjectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
+        "existingProjectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr",
         "existingTerminalEvidenceUrl": "a2a-plane PR #0000 (internal tracker, private)"
       },
       "when": {
         "operation": "parentTerminalBrief.project",
-        "projectionKey": "round-gwakga-origin-seoseo-handoff-canary-001:gwakga:task-seoseo-child-canary-001:pr",
+        "projectionKey": "round-broker-beta-origin-broker-alpha-handoff-canary-001:broker-beta:task-broker-alpha-child-canary-001:pr",
         "terminalEvidenceUrl": "a2a-plane PR #9999 (internal tracker, private)"
       },
       "then": {
@@ -270,13 +270,13 @@
       }
     },
     {
-      "name": "symmetric-seoseo-origin-gwakga-parent-title-known-total",
+      "name": "symmetric-broker-alpha-origin-broker-beta-parent-title-known-total",
       "given": {
-        "originBrokerId": "seoseo",
-        "parentBrokerId": "gwakga",
-        "handoffBrokerId": "seoseo",
-        "childBrokerId": "seoseo",
-        "workerId": "dungae",
+        "originBrokerId": "broker-alpha",
+        "parentBrokerId": "broker-beta",
+        "handoffBrokerId": "broker-alpha",
+        "childBrokerId": "broker-alpha",
+        "workerId": "worker-epsilon",
         "completed": 1,
         "total": 3,
         "totalKnown": true,
@@ -286,11 +286,11 @@
         "operation": "parentTerminalBrief.renderTitle"
       },
       "then": {
-        "terminalBriefTitle": "A2A Terminal Brief 완료: dungae(1/3)",
-        "rendererBrokerId": "gwakga",
+        "terminalBriefTitle": "A2A Terminal Brief 완료: worker-epsilon(1/3)",
+        "rendererBrokerId": "broker-beta",
         "parentBrokerOnly": true,
         "maxChars": 80,
-        "originBrokerId": "seoseo",
+        "originBrokerId": "broker-alpha",
         "originDiffersFromParent": true,
         "includesTaskId": false,
         "includesChildIssueUrl": false,
@@ -323,8 +323,8 @@
     "parentRoundId and originBrokerId",
     "projectionKey",
     "concise parent-broker-only Terminal Brief title proof",
-    "Gwakga-origin and Seoseo-origin concise title examples, including unknown-total fallback proof",
-    "symmetric Seoseo-origin + Gwakga-parent title example",
+    "broker-beta-origin and broker-alpha-origin concise title examples, including unknown-total fallback proof",
+    "symmetric broker-alpha-origin + broker-beta-parent title example",
     "originBrokerId != parentBrokerId symmetric proof",
     "redaction confirmation",
     "no-live-send and no-ack confirmation",
@@ -350,21 +350,21 @@
   "v0Freeze": {
     "frozenAt": "2026-05-13T01:30:00Z",
     "round": "a2a-plane-269-parent-terminal-brief-aggregation",
-    "scope": "Gwakga-origin plus Seoseo-handoff parent Terminal Brief aggregation projection",
+    "scope": "broker-beta-origin plus broker-alpha-handoff parent Terminal Brief aggregation projection",
     "nonAckBoundary": "parent projections are evidence ledger entries only, not approval, read receipt, or terminal ACK"
   },
   "v1Symmetric": {
     "frozenAt": "2026-05-13T23:52:00Z",
     "round": "a2a-r12-origin-terminal-brief-guard",
-    "scope": "Symmetric origin-broker — originBrokerId may differ from parentBrokerId; both Seoseo-origin and Gwakga-origin paths are supported",
+    "scope": "Symmetric origin-broker — originBrokerId may differ from parentBrokerId; both broker-alpha-origin and broker-beta-origin paths are supported",
     "parentBrokerMayDifferFromOrigin": true,
     "coveredSymmetricPairs": [
-      ["gwakga", "gwakga"],
-      ["seoseo", "seoseo"],
-      ["seoseo", "gwakga"]
+      ["broker-beta", "broker-beta"],
+      ["broker-alpha", "broker-alpha"],
+      ["broker-alpha", "broker-beta"]
     ]
   },
-  "workerId": "dungae",
+  "workerId": "worker-epsilon",
   "roundProgress": {
     "completed": 1,
     "total": 7,
@@ -372,9 +372,9 @@
   },
   "terminalBriefTitlePolicy": {
     "scope": "parent-broker-only",
-    "rendererBrokerId": "gwakga",
+    "rendererBrokerId": "broker-beta",
     "format": "Known total: A2A Terminal Brief <statusLabel>: <workerId>(<completed>/<total>); unknown total: A2A Terminal Brief <statusLabel>: <workerId>(<completed>)",
-    "exampleTitle": "A2A Terminal Brief 완료: dungae(1/7)",
+    "exampleTitle": "A2A Terminal Brief 완료: worker-epsilon(1/7)",
     "maxChars": 80,
     "statusLabels": {
       "success": "완료",
@@ -408,34 +408,34 @@
     "isApproval": false,
     "isTerminalAck": false,
     "isReadReceipt": false,
-    "knownTotalExampleTitle": "A2A Terminal Brief 완료: dungae(1/7)",
-    "unknownTotalExampleTitle": "A2A Terminal Brief 완료: yukson(2)",
+    "knownTotalExampleTitle": "A2A Terminal Brief 완료: worker-epsilon(1/7)",
+    "unknownTotalExampleTitle": "A2A Terminal Brief 완료: worker-delta(2)",
     "unknownTotalFallback": "omit the denominator when total is unknown; never render <completed>/?",
     "unknownTotalDenominatorForbidden": true,
     "coveredOriginBrokerIds": [
-      "gwakga",
-      "seoseo"
+      "broker-beta",
+      "broker-alpha"
     ],
     "symmetricMode": true,
     "parentBrokerMayDifferFromOrigin": true
   },
   "parentRoundTitleExamples": [
     {
-      "name": "gwakga-origin-known-total-title",
-      "parentRoundId": "round-gwakga-origin-seoseo-handoff-canary-001",
-      "originBrokerId": "gwakga",
-      "parentBrokerId": "gwakga",
-      "handoffBrokerId": "seoseo",
-      "childBrokerId": "seoseo",
-      "workerId": "dungae",
+      "name": "broker-beta-origin-known-total-title",
+      "parentRoundId": "round-broker-beta-origin-broker-alpha-handoff-canary-001",
+      "originBrokerId": "broker-beta",
+      "parentBrokerId": "broker-beta",
+      "handoffBrokerId": "broker-alpha",
+      "childBrokerId": "broker-alpha",
+      "workerId": "worker-epsilon",
       "statusLabel": "완료",
       "roundProgress": {
         "completed": 1,
         "total": 7,
         "totalKnown": true
       },
-      "terminalBriefTitle": "A2A Terminal Brief 완료: dungae(1/7)",
-      "rendererBrokerId": "gwakga",
+      "terminalBriefTitle": "A2A Terminal Brief 완료: worker-epsilon(1/7)",
+      "rendererBrokerId": "broker-beta",
       "parentBrokerOnly": true,
       "unknownTotalDenominatorRendered": false,
       "liveProviderSend": false,
@@ -445,21 +445,21 @@
       "isReadReceipt": false
     },
     {
-      "name": "seoseo-origin-unknown-total-title",
-      "parentRoundId": "round-seoseo-origin-gwakga-handoff-canary-001",
-      "originBrokerId": "seoseo",
-      "parentBrokerId": "seoseo",
-      "handoffBrokerId": "gwakga",
-      "childBrokerId": "gwakga",
-      "workerId": "yukson",
+      "name": "broker-alpha-origin-unknown-total-title",
+      "parentRoundId": "round-broker-alpha-origin-broker-beta-handoff-canary-001",
+      "originBrokerId": "broker-alpha",
+      "parentBrokerId": "broker-alpha",
+      "handoffBrokerId": "broker-beta",
+      "childBrokerId": "broker-beta",
+      "workerId": "worker-delta",
       "statusLabel": "완료",
       "roundProgress": {
         "completed": 2,
         "total": null,
         "totalKnown": false
       },
-      "terminalBriefTitle": "A2A Terminal Brief 완료: yukson(2)",
-      "rendererBrokerId": "seoseo",
+      "terminalBriefTitle": "A2A Terminal Brief 완료: worker-delta(2)",
+      "rendererBrokerId": "broker-alpha",
       "parentBrokerOnly": true,
       "unknownTotalDenominatorRendered": false,
       "forbiddenUnknownDenominator": "(2/?)",
@@ -470,21 +470,21 @@
       "isReadReceipt": false
     },
     {
-      "name": "symmetric-seoseo-origin-gwakga-parent-title-known-total",
-      "parentRoundId": "round-seoseo-origin-gwakga-parent-symmetric-001",
-      "originBrokerId": "seoseo",
-      "parentBrokerId": "gwakga",
-      "handoffBrokerId": "seoseo",
-      "childBrokerId": "seoseo",
-      "workerId": "dungae",
+      "name": "symmetric-broker-alpha-origin-broker-beta-parent-title-known-total",
+      "parentRoundId": "round-broker-alpha-origin-broker-beta-parent-symmetric-001",
+      "originBrokerId": "broker-alpha",
+      "parentBrokerId": "broker-beta",
+      "handoffBrokerId": "broker-alpha",
+      "childBrokerId": "broker-alpha",
+      "workerId": "worker-epsilon",
       "statusLabel": "완료",
       "roundProgress": {
         "completed": 1,
         "total": 3,
         "totalKnown": true
       },
-      "terminalBriefTitle": "A2A Terminal Brief 완료: dungae(1/3)",
-      "rendererBrokerId": "gwakga",
+      "terminalBriefTitle": "A2A Terminal Brief 완료: worker-epsilon(1/3)",
+      "rendererBrokerId": "broker-beta",
       "parentBrokerOnly": true,
       "originDiffersFromParent": true,
       "unknownTotalDenominatorRendered": false,

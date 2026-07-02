@@ -22,8 +22,8 @@
         "reason": "cross-repo Terminal Brief routing contract"
       },
       "ownership": {
-        "brokerOfRecord": "gwakga",
-        "finalizer": "gwakga",
+        "brokerOfRecord": "broker-beta",
+        "finalizer": "broker-beta",
         "humanApprovalOwner": "operator"
       },
       "affectedRepos": [

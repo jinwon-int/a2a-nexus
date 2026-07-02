@@ -51,8 +51,8 @@ assert.equal(
 assert.equal(fixture.contract, 'contracts/a2a/github-evidence-projection.md');
 assert.equal(fixture.parentIssue, 'a2a-plane#204 (internal tracker, private)');
 assert.equal(fixture.issue, 'a2a-plane#205 (internal tracker, private)');
-assert.equal(fixture.team, 'team1-bangtong');
-assert.equal(fixture.brokerOfRecord, 'gwakga');
+assert.equal(fixture.team, 'team1-worker-gamma');
+assert.equal(fixture.brokerOfRecord, 'broker-beta');
 
 // --- Evidence comment kinds ---
 assert.deepEqual(

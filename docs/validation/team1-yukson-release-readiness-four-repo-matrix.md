@@ -147,7 +147,7 @@ All deploy-impacting scripts are operator-gated or mock-only by default. No live
 | Runtime/bootstrap hygiene | PR author + reviewer | Guard paths absent | **PASS** (for this lane) |
 | GO/NO-GO matrix | Cross-team broker | Every gate GO | **NO-GO / Waiting** — external scanner, terminal evidence, replay proof, package build verification, and approval remain open |
 | Package build verification | Lane owner | `tsc`-enabled compilation check passes for broker, plugin, docker-runner | **NO-GO / Waiting** — `tsc` not available in runner |
-| Operator approval | Operator (진원님) | Separate explicit approval for visibility/live action | **NO-GO / Waiting** — no approval comment present |
+| Operator approval | Operator (the operator) | Separate explicit approval for visibility/live action | **NO-GO / Waiting** — no approval comment present |
 | Seoseo finalizer | Seoseo | Only Seoseo closes parent issue | **Not reached** — lane is child only |
 
 ### 5.2 Explicit non-actions

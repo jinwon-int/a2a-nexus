@@ -48,22 +48,22 @@ owning-repo gap.
 
 The finalizer packet should be the user-visible product of the smoke. It should show the tracker, repo owner, lane, worker/source, current state, evidence link, local checkout readiness, source-of-truth ref, no-live boundary status, blocker/risk, finalizer decision, next action, and Wiki/runbook follow-up.
 
-Workers provide evidence only. Seoseo remains the single finalizer.
+Workers provide evidence only. broker-alpha remains the single finalizer.
 
-## Bangtong GitHub Patch Lane Smoke
+## worker-gamma GitHub Patch Lane Smoke
 
-This secondary smoke fixture lives at `fixtures/current-state/bangtong-patch-lane-smoke.json` and uses schema `a2a.bangtong.patch-lane-smoke.v1`. It is a focused, low-risk smoke under `a2a-nexus#1022` that proves `bangtong` can claim a `github-propose-patch` A2A task, produce a valid branch/PR, and include compact evidence without touching any live broker/Gateway/worker services.
+This secondary smoke fixture lives at `fixtures/current-state/worker-gamma-patch-lane-smoke.json` and uses schema `a2a.worker-gamma.patch-lane-smoke.v1`. It is a focused, low-risk smoke under `a2a-nexus#1022` that proves `worker-gamma` can claim a `github-propose-patch` A2A task, produce a valid branch/PR, and include compact evidence without touching any live broker/Gateway/worker services.
 
 ### Scope
 
 The fixture records only non-secret facts:
 
-- `workerId`: `bangtong`
+- `workerId`: `worker-gamma`
 - `runtime`: `hermes-agent`
 - `harness`: `hermes`
 - `workerMode`: `persistent`
 - Capability under test: `github-propose-patch`
-- Broker boundary: Seoseo broker-backed task, PR-first only
+- Broker boundary: broker-alpha broker-backed task, PR-first only
 - PR is source-only: no deploy, no restart, no DB mutation, no Terminal ACK/replay, no provider/Telegram send, no secret movement
 
 ### Required Boundaries

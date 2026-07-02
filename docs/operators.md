@@ -31,7 +31,7 @@ Separate approval is required for:
 
 1. [`README.md`](../README.md) for the public-alpha summary and safe local evaluation path.
 2. [`quickstart.md`](quickstart.md) for a disposable loopback broker/worker path.
-3. [`architecture.md`](architecture.md) and [`positioning.md`](architecture.md) for public-safe project framing.
+3. [`architecture.md`](architecture.md) and [`positioning.md`](positioning.md) for public-safe project framing.
 4. [`release-readiness.md`](release-readiness.md) and [`release-checklist.md`](release-checklist.md) for release/package readiness criteria.
 5. [`external-listings.md`](external-listings.md) for the gated external directory workflow.
 6. [`history/README.md`](history/README.md) for completed migration and rehearsal records.
@@ -40,6 +40,8 @@ Separate approval is required for:
 ## Finalizer Boundary
 
 CODEOWNERS routes review attention. It does not move finalizer authority to A2A workers or package owners. A finalizer remains responsible for closeout judgment, no-live boundary checks, and operator sign-off evidence.
+
+Before closing an issue or merging a closeout PR, the finalizer must compare every issue checklist item and acceptance criterion against concrete artifacts. Bulk closeout is a NO-GO unless the finalizer writes an issue-by-issue disposition that names completed items, deferred follow-ups, and skipped approval-sensitive actions. For A2A rounds, the default mapping is one implementation lane to one PR; consolidating lanes into one PR requires an explicit finalizer note explaining why review coverage is preserved.
 
 ## Approval records
 

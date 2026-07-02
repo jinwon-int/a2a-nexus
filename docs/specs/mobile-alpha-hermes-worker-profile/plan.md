@@ -1,11 +1,11 @@
-# Implementation Plan: Gongyung Hermes Lightweight A2A Worker Profile
+# Implementation Plan: mobile-alpha Hermes Lightweight A2A Worker Profile
 
 ## Linked spec
 
-- Spec: `docs/specs/gongyung-hermes-worker-profile/spec.md`
+- Spec: `docs/specs/mobile-alpha-hermes-worker-profile/spec.md`
 - Tracker: a2a-plane#393 (internal tracker, private)
 - Prior art: a2a-plane#384 (internal tracker, private)
-- Finalizer: Seoseo
+- Finalizer: broker-alpha
 
 ## Size classification
 
@@ -20,12 +20,12 @@ move it into the broker or the plugin's mobile-safety-lane module.
 
 ## Affected repos/components
 
-- `a2a-plane`: new spec packet under `docs/specs/gongyung-hermes-worker-profile/`,
+- `a2a-plane`: new spec packet under `docs/specs/mobile-alpha-hermes-worker-profile/`,
   plus admission validation tests under `packages/openclaw-plugin-a2a/tests/`.
 - `a2a-broker`: no change (profile is consumer-agnostic).
 - `a2a-docker-runner`: no change.
 - `openclaw-plugin-a2a`: addition of
-  `tests/gongyung-worker-profile-admission.test.ts` — new test file only,
+  `tests/mobile-alpha-worker-profile-admission.test.ts` — new test file only,
   no source modification.
 - Wiki/runbooks: no update needed at this time.
 
@@ -43,18 +43,18 @@ test assertions are deterministic and do not require a live broker.
 
 ## Data/control flow
 
-1. Spec defines Gongyung profile as a consumer of the existing Hermes
+1. Spec defines mobile-alpha profile as a consumer of the existing Hermes
    broker-agnostic worker contract.
 2. Validation tests exercise the fail-closed admission function against a
    matrix of admissible, rejected, and handoff task shapes.
 3. Evidence manifest validation tests verify the fixed artifact schema,
    redaction rules, and the `manifest ok` inline check.
-4. Spec explicitly documents that Gongyung must reject Docker runner task
+4. Spec explicitly documents that mobile-alpha must reject Docker runner task
    patterns at admission time — the tests verify this is structurally possible.
 
 ## Tests and validation
 
-### Admission validation tests (`packages/openclaw-plugin-a2a/tests/gongyung-worker-profile-admission.test.ts`)
+### Admission validation tests (`packages/openclaw-plugin-a2a/tests/mobile-alpha-worker-profile-admission.test.ts`)
 
 - `admit()` against admissible intents (analyze, review, clarify, observe,
   check_readiness, cross_check).
@@ -75,18 +75,18 @@ test assertions are deterministic and do not require a live broker.
 
 - `git diff --check` for whitespace.
 - `npm run check` for overall monorepo health.
-- `node --test packages/openclaw-plugin-a2a/tests/gongyung-worker-profile-admission.test.ts`.
+- `node --test packages/openclaw-plugin-a2a/tests/mobile-alpha-worker-profile-admission.test.ts`.
 
 ## Rollout plan
 
 - Merge source PR after local validation.
-- Do not deploy, restart, register live Gongyung workers, send provider
+- Do not deploy, restart, register live mobile-alpha workers, send provider
   notifications, or point the spec at non-loopback brokers.
 - Create a separate tracker if a runtime admission function implementation
   is requested.
 
 ## Rollback plan
 
-- Revert PR: remove `docs/specs/gongyung-hermes-worker-profile/` directory
-  and `packages/openclaw-plugin-a2a/tests/gongyung-worker-profile-admission.test.ts`.
+- Revert PR: remove `docs/specs/mobile-alpha-hermes-worker-profile/` directory
+  and `packages/openclaw-plugin-a2a/tests/mobile-alpha-worker-profile-admission.test.ts`.
 - No production state cleanup required.

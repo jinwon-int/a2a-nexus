@@ -127,7 +127,7 @@ needs the four retention criteria re-checked at retirement time.
 | `monorepo-branch-release-package-policy` | #517 | Active-invariant | Live brake on release/tag/publish/Docker until separate approval. |
 | `monorepo-docs-routing` | #515 | Active-invariant | Live policy: keeps `agent-olympics` out of A2A routing; CODEOWNERS-bound. |
 | `monorepo-final-operator-signoff-matrix` | #549 → #553 | Active-invariant | Current `GO_CANDIDATE` matrix; holds execution fields at `NO_GO / Waiting`. |
-| `monorepo-canonical-source-flip-execution-handoff` | #553 | Active-invariant | Source-only handoff guardrail (records Sogyo dissent brake). |
+| `monorepo-canonical-source-flip-execution-handoff` | #553 | Active-invariant | Source-only handoff guardrail (records worker-beta dissent brake). |
 | `monorepo-actual-canonical-flip-execution-preflight` | #553 | Superseded-milestone | Preflight for the flip whose *result* snapshot now asserts the stronger invariant. |
 | `monorepo-canonical-flip-readiness` | #541 phase 5 | Superseded-milestone | Readiness packet superseded by the executed-flip result. |
 | `monorepo-branch-protection-approval-packet` | #543 phase 6 | Superseded-milestone | Pre-flip proposal; superseded once protection policy is settled. |

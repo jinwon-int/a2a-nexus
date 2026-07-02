@@ -29,17 +29,17 @@
     },
     "brokerOfRecordId": {
       "type": "string",
-      "enum": ["seoseo"],
+      "enum": ["broker-alpha"],
       "description": "Broker of record for the round."
     },
     "originBrokerId": {
       "type": "string",
-      "enum": ["seoseo"],
+      "enum": ["broker-alpha"],
       "description": "Origin broker identifier."
     },
     "parentBrokerId": {
       "type": "string",
-      "enum": ["seoseo"],
+      "enum": ["broker-alpha"],
       "description": "Parent broker identifier."
     },
     "parentTitle": {
@@ -76,7 +76,7 @@
           },
           "worker": {
             "type": "string",
-            "description": "Worker identifier (e.g. bangtong, sogyo, nosuk, yukson)."
+            "description": "Worker identifier (e.g. worker-gamma, worker-beta, worker-alpha, worker-delta)."
           },
           "repo": {
             "type": "string",

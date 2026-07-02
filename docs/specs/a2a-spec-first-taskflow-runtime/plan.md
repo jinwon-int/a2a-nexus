@@ -25,7 +25,7 @@ Reason: this is a source-public dry-run command plus tests in one repo. Live Tas
 
 ## Broker / worker / finalizer roles
 
-- Broker of record / finalizer: Gwakga.
+- Broker of record / finalizer: broker-beta.
 - Workers: none required for this PR.
 - Libero/validator: local release-gate and GitHub Actions.
 - Human approval owner: the operator for any future live runtime automation.

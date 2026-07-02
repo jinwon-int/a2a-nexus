@@ -25,7 +25,7 @@ A2A Nexus is compatible with a standalone worker that only implements the broker
 
 The example card in `examples/workers/standalone-http-worker/worker-card.json` follows this lane. It models a generic HTTP worker with documentation and repository-inspection capabilities and no OpenClaw-specific fields.
 
-For the `a2a-vnext-contract-smoke-crossbroker-20260510` round, `fixtures/contract/worker-registration-capabilities.json` adds `worker-jingun-second-worker` as a public-safe Team2/Gwakga compatibility proof. The fixture binds the worker to issue #152, declares only coarse capabilities, and records that validation is local conformance only: no private topology, live provider send, or terminal ack mutation is required.
+For the `a2a-vnext-contract-smoke-crossbroker-20260510` round, `fixtures/contract/worker-registration-capabilities.json` adds `worker-worker-zeta-second-worker` as a public-safe Team2/broker-beta compatibility proof. The fixture binds the worker to issue #152, declares only coarse capabilities, and records that validation is local conformance only: no private topology, live provider send, or terminal ack mutation is required.
 
 ## Second reference worker shape
 

@@ -4,7 +4,7 @@ For Ubuntu-like package experiments on Termux, see [Termux proot-distro A2A Runn
 
 # Hermes / Android Native A2A Worker Runbook
 
-This runbook covers the source-only native worker path for Gongyung/Daegyo-style
+This runbook covers the source-only native worker path for mobile-alpha/mobile-beta-style
 Android Termux nodes. It uses the broker-agnostic HTTP worker contract and does
 not require a full OpenClaw Gateway install on the Android device.
 
@@ -41,12 +41,12 @@ Example env file shape:
 
 ```sh
 export A2A_BROKER_URL=http://127.0.0.1:18787
-export A2A_WORKER_ID=gongyung
-export A2A_WORKER_DISPLAY_NAME="Gongyung Hermes Worker"
+export A2A_WORKER_ID=mobile-alpha
+export A2A_WORKER_DISPLAY_NAME="mobile-alpha Hermes Worker"
 export A2A_WORKER_MODE=mobile
 export A2A_HERMES_RUNTIME_FLAVOR=termux-hermes
 export A2A_HERMES_ARTIFACT_ROOT="$HOME/.hermes/a2a/artifacts"
-export A2A_WORKER_LOCK_PATH="$HOME/.hermes/a2a/daegyo-worker.lock"
+export A2A_WORKER_LOCK_PATH="$HOME/.hermes/a2a/mobile-beta-worker.lock"
 export A2A_HTTP_TIMEOUT_SEC=10
 ```
 

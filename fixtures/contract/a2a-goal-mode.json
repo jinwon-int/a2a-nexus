@@ -126,7 +126,7 @@
         "eventId": "evt-002",
         "eventType": "dispatch",
         "summary": "Slice 1 dispatched to worker",
-        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "workerId": "bangtong"},
+        "details": {"sliceId": "a2a-goal-quickstart-guide-20260525T120000Z:slice:1", "workerId": "worker-gamma"},
         "timestamp": "2026-05-25T12:00:12Z"
       },
       {
@@ -147,7 +147,7 @@
         "eventId": "evt-005",
         "eventType": "dispatch",
         "summary": "Slices 2 and 3 dispatched to worker",
-        "details": {"sliceIds": ["...slice:2", "...slice:3"], "workerId": "bangtong"},
+        "details": {"sliceIds": ["...slice:2", "...slice:3"], "workerId": "worker-gamma"},
         "timestamp": "2026-05-25T12:30:08Z"
       },
       {
@@ -213,7 +213,7 @@
       }
     ],
     "approvalGates": [],
-    "idempotencyKey": "a2a-goal-mode:create:seoseo:add-public-quickstart-guide:20260525T120000Z",
+    "idempotencyKey": "a2a-goal-mode:create:broker-alpha:add-public-quickstart-guide:20260525T120000Z",
     "createdAt": "2026-05-25T12:00:00Z",
     "updatedAt": "2026-05-25T13:00:05Z",
     "completedAt": "2026-05-25T13:00:05Z"

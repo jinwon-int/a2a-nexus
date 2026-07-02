@@ -43,7 +43,7 @@ For A2AD opinion lanes over Nexus source, dispatch preflight must require:
 }
 ```
 
-A worker that is online but lacks `analysis-only`, or lacks a canonical repo map for `jinwon-int/a2a-nexus`, is not ready for the lane. This specifically keeps mobile/policy-limited workers such as Daegyo out of formal A2AD quorum unless they explicitly advertise the required mode.
+A worker that is online but lacks `analysis-only`, or lacks a canonical repo map for `jinwon-int/a2a-nexus`, is not ready for the lane. This specifically keeps mobile/policy-limited workers such as mobile-beta out of formal A2AD quorum unless they explicitly advertise the required mode.
 
 ## Task lifecycle
 

@@ -1,18 +1,18 @@
 # Hermes Native Worker Enrollment Runbook
 
-> **Operator-facing enrollment runbook** for Gongyung/Daegyo-style Hermes Android/Termux
+> **Operator-facing enrollment runbook** for mobile-alpha/mobile-beta-style Hermes Android/Termux
 > native workers. Covers pre-enrollment prerequisites, step-by-step procedure,
 > health/readiness checks, GO/NO-GO criteria, rollback/disable path, and evidence
 > packet capture.
 >
 > **Issue:** a2a-plane#504 (a2a-plane#504, internal tracker private)
 > **Parent:** a2a-plane#503 (a2a-plane#503, internal tracker private) — A2A Team1 roadmap wave 4
-> **Broker/finalizer of record:** `seoseo`
+> **Broker/finalizer of record:** `broker-alpha`
 >
 > **Prerequisite documents:**
 > - [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md) — loopback-only operation
 > - [Hermes native worker conformance checklist](hermes-native-worker-conformance-checklist.md) — no-live conformance
-> - [Gongyung Hermes lightweight worker profile spec](specs/gongyung-hermes-worker-profile/spec.md) — capability boundaries
+> - [mobile-alpha Hermes lightweight worker profile spec](specs/mobile-alpha-hermes-worker-profile/spec.md) — capability boundaries
 > - [Hermes broker-agnostic worker contract spec](specs/hermes-worker-integration/spec.md) — HTTP contract
 > - [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json) — baseline fixture
 > - [Enrollment evidence fixture](../fixtures/native-worker/enrollment-evidence.json) — enrollment-specific fixture
@@ -40,7 +40,7 @@ This runbook covers **enrollment** of a Hermes native worker into a non-loopback
 | Evidence | Loopback-validated fixtures | Production broker-visible evidence |
 | Heartbeat target | Local broker | Production broker |
 | Rollback capability | N/A (no production state) | Documented disable procedure (see §8) |
-| Seoseo approval | Not required (no-live) | Required per GO/NO-GO matrix |
+| broker-alpha approval | Not required (no-live) | Required per GO/NO-GO matrix |
 
 ### 1.2 Safety boundary
 
@@ -79,7 +79,7 @@ conformance checks.** The operator validates the following:
 # All no-live conformance checks
 npm run check:native-worker-conformance
 npm run check:hermes-reference-worker
-npm run check:gongyung-hermes-worker-profile
+npm run check:mobile-alpha-hermes-worker-profile
 
 # Current results must all be PASS
 ```
@@ -87,7 +87,7 @@ npm run check:gongyung-hermes-worker-profile
 ### 2.2 Reference fixture alignment
 
 - [ ] Worker identity matches `fixtures/native-worker/no-live-conformance.json` worker definition.
-- [ ] `capabilities` and `rejectedIntents` match the Gongyung profile.
+- [ ] `capabilities` and `rejectedIntents` match the mobile-alpha profile.
 - [ ] `registration` body matches `fixtures/contract/hermes-worker-registration.json` shape.
 - [ ] Terminal evidence matches expected schema (see [conformance checklist §6](hermes-native-worker-conformance-checklist.md#6-broker-visible-result-evidence)).
 
@@ -187,7 +187,7 @@ grep 'A2A_WORKER_ID' ~/.config/a2a/hermes-worker.env
 
 ### 4.1 Operator approval gate
 
-Before any enrollment action, the operator (Seoseo or delegate) must:
+Before any enrollment action, the operator (broker-alpha or delegate) must:
 
 1. Review the [GO/NO-GO matrix](#7-go-no-go-matrix) and confirm all GO gates pass.
 2. Post an explicit approval comment on the enrollment tracker issue
@@ -278,7 +278,7 @@ without any live action:
 
 ```bash
 # Submit the loopback-origin smoke task — it will be rejected by the
-# Gongyung profile if it has Docker or "required" capabilities.
+# mobile-alpha profile if it has Docker or "required" capabilities.
 # Operator must verify the broker maps the worker alias correctly.
 
 curl -s -X POST <production-broker-url>/tasks \
@@ -383,7 +383,7 @@ cat ~/.hermes/a2a/artifacts/hermes-enrollment-readiness-check/evidence.json | py
 ## 6. Allowed and Rejected Task Classes
 
 These tables are carried forward from the [no-live conformance checklist](hermes-native-worker-conformance-checklist.md#4-bounded-task-execution).
-Enrollment **does not change** the allowed/rejected task classes. The Gongyung
+Enrollment **does not change** the allowed/rejected task classes. The mobile-alpha
 profile is fixed; only scope of broker connectivity changes.
 
 ### 6.1 Allowed intents (worker may claim)
@@ -416,13 +416,13 @@ profile is fixed; only scope of broker connectivity changes.
 
 | Capability | Reason |
 |------------|--------|
-| `dockerRequired` | Gongyung has no Docker |
-| `buildRequired` | Gongyung cannot build repos |
-| `testRequired` | Gongyung cannot run test suites |
-| `repoPatch` | Gongyung cannot push branches |
-| `untrustedCode` | Gongyung is a lightweight runner |
-| `dependencyHeavy` | Gongyung has minimal dependencies |
-| `serviceRestart` | Gongyung has no service control |
+| `dockerRequired` | mobile-alpha has no Docker |
+| `buildRequired` | mobile-alpha cannot build repos |
+| `testRequired` | mobile-alpha cannot run test suites |
+| `repoPatch` | mobile-alpha cannot push branches |
+| `untrustedCode` | mobile-alpha is a lightweight runner |
+| `dependencyHeavy` | mobile-alpha has minimal dependencies |
+| `serviceRestart` | mobile-alpha has no service control |
 | `brokerDBMutation` | Blocked by safety boundary |
 | `credentialMovement` | Blocked by safety boundary |
 | `productionACK` | Blocked by safety boundary |
@@ -438,7 +438,7 @@ The operator evaluates each gate before approving enrollment:
 | # | Gate | Required condition | Evidence source | Fail-closed |
 |---|------|-------------------|----------------|-------------|
 | G1 | No-live conformance | All conformance tests PASS | `npm run check:native-worker-conformance` | NO-GO if any fail |
-| G2 | Worker admission profile | Worker capabilities match Gongyung profile | Profile spec, conformance fixture | NO-GO if mismatch |
+| G2 | Worker admission profile | Worker capabilities match mobile-alpha profile | Profile spec, conformance fixture | NO-GO if mismatch |
 | G3 | Registration payload | Payload matches `fixtures/contract/hermes-worker-registration.json` shape | Fixture validation | NO-GO if shape differs |
 | G4 | Evidence redaction | Evidence manifest passes redaction audit | Manual review | NO-GO if secrets found |
 | G5 | Preflight all pass | 10 preflight gates (P1–P10) all GREEN | §3 checklist | NO-GO if any fail |
@@ -453,7 +453,7 @@ The operator evaluates each gate before approving enrollment:
 | ALL gates GO | **GO** — Proceed with enrollment (§4) |
 |---|---|
 | One or more NO-GO | **NO-GO** — Document blockers, do not enroll |
-| Safety violation (secret leak, 403, unauthorized action) | **BLOCKED** — Escalate to Seoseo immediately |
+| Safety violation (secret leak, 403, unauthorized action) | **BLOCKED** — Escalate to broker-alpha immediately |
 
 ### 7.3 GO/NO-GO evidence packet
 
@@ -669,7 +669,7 @@ termux-battery-status
 
 | Action | Status |
 |--------|--------|
-| Production deploy of Gateway, broker, or worker | ⛔ Requires separate operator approval from Seoseo |
+| Production deploy of Gateway, broker, or worker | ⛔ Requires separate operator approval from broker-alpha |
 | Gateway/broker/worker restart | ⛔ Requires separate operator approval |
 | Live provider/Telegram canary or notification send | ⛔ Requires separate operator approval |
 | Production DB mutation, prune, migration, replay | ⛔ Requires separate operator approval |
@@ -722,7 +722,7 @@ After completing enrollment (or rollback), the operator should have:
 |----------|----------|
 | [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md) | Source-only operation (pre-enrollment baseline) |
 | [Hermes native worker conformance checklist](hermes-native-worker-conformance-checklist.md) | No-live conformance validation |
-| [Gongyung Hermes lightweight worker profile spec](specs/gongyung-hermes-worker-profile/spec.md) | Capability boundaries |
+| [mobile-alpha Hermes lightweight worker profile spec](specs/mobile-alpha-hermes-worker-profile/spec.md) | Capability boundaries |
 | [Hermes broker-agnostic worker contract spec](specs/hermes-worker-integration/spec.md) | HTTP contract |
 | [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json) | Baseline fixture |
 | [Enrollment evidence fixture](../fixtures/native-worker/enrollment-evidence.json) | Enrollment-specific fixture |
@@ -751,4 +751,4 @@ Enrollment decision is **GO/NO-GO only** — it produces evidence, not productio
 The actual broker URL change (Step E2) requires operator approval per §4.1.
 All evidence is redacted and stored locally with 0700 permissions.
 
-*Seoseo remains Team1 broker/finalizer of record.*
+*broker-alpha remains Team1 broker/finalizer of record.*

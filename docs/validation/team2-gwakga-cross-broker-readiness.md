@@ -13,7 +13,7 @@ This note is a libero validation artifact for the Team2 lanes. It does not perfo
 
 - Team2 dispatch and ownership: parent issue #146 and child issues #151, #152, and #153.
 - Cross-broker contract surface: `contracts/a2a/broker-handoff-protocol.md`.
-- Team2/Gwakga runbook surface: `packages/broker/docs/team2-gwakga-worker-onboarding-retargeting.md`.
+- Team2/Gwakga runbook surface: `packages/broker/docs/team2-broker-beta-worker-onboarding-retargeting.md`.
 - Terminal evidence boundary: `contracts/a2a/terminal-semantics.md`, `contracts/a2a/task-lifecycle.md`, and `fixtures/terminal-evidence/accepted-send-non-ack.json`.
 - Public-readiness boundary: `docs/public-readiness.md` and runtime/bootstrap hygiene guard paths.
 

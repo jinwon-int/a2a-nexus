@@ -54,7 +54,23 @@ No medium or large A2A change should close without evidence appropriate to its r
 - approval-sensitive actions not performed;
 - remaining blockers or follow-up issues.
 
-### 7. Reusable operating knowledge is promoted
+### 7. Verification is separated from implementation
+
+A lane that creates or changes an oracle (scanner, release gate, schema, fixture, checklist, or conformance rule) must not be the only lane that validates completion with that same oracle. Either assign a separate validation/finalizer lane, or require the finalizer to review the oracle coverage against the issue text before accepting the result.
+
+### 8. New gates require red-to-green evidence
+
+For new validation rules, scanners, release-gate entries, or CI wiring, ordinary green CI is not enough. The evidence packet must show that the intended bad fixture or pre-change tree fails before the change and passes after the change. If red evidence is impossible, the finalizer must record why and name the compensating review.
+
+### 9. Discovery-first removal tasks
+
+PII, private identifier, secret, dead-link, and residue cleanup tasks must start with an inventory lane that captures variants and scope before the mutation lane edits files. The finalizer closes against the approved inventory, not against a scanner pattern alone.
+
+### 10. Multi-stage plans are materialized
+
+Warn-to-fail migrations, staged strictness upgrades, mirror follow-ups, and other multi-stage plans must become explicit follow-up issues or tasks before the parent issue closes. A green current-stage gate is not closeout evidence for a later stage.
+
+### 11. Reusable operating knowledge is promoted
 
 If a change creates a durable operating rule, repeated procedure, or safety lesson, record it in the appropriate Wiki/runbook path after validation. Do not leave reusable A2A operating knowledge only in chat or ad-hoc local notes.
 

@@ -15,7 +15,7 @@ document: it defines what safe evidence looks like at the contract level without
 implementation details or implying production mutation.
 
 Parent issue: [a2a-broker#838](https://github.com/jinwon-int/a2a-broker/issues/838)
-Origin worker: Team1/nosuk
+Origin worker: Team1/worker-alpha
 Target package: [`packages/docker-runner/`](../../packages/docker-runner/)
 Sources: [`src/config.ts`](../../packages/docker-runner/src/config.ts) (`buildOpenClawPatchCommandScript`)
 

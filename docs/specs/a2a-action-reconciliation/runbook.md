@@ -110,7 +110,7 @@ The operator must post a comment that explicitly includes all of:
 1. ✅ **Repository name:** `a2a-plane (internal tracker, private)` (or applicable)
 2. ✅ **Approved parent round id:** exact `parentRoundId` from the request
 3. ✅ **Approved action kind(s):** `comment_post` and/or `issue_close`
-4. ✅ **Broker of record:** `seoseo` or `gwakga`
+4. ✅ **Broker of record:** `broker-alpha` or `broker-beta`
 5. ✅ **Scope exclusions:** confirms this approval does not authorize deploy, restart,
     production DB mutation, provider send (other than the approved closeout action),
     terminal-outbox ACK mutation, secret rotation, visibility change, force-push,

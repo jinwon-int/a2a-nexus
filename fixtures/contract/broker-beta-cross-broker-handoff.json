@@ -1,22 +1,22 @@
 {
-  "fixtureId": "a2a-nexus.contract.gwakga-cross-broker-handoff.v1",
+  "fixtureId": "a2a-nexus.contract.broker-beta-cross-broker-handoff.v1",
   "contract": "contracts/a2a/broker-handoff-protocol.md",
-  "description": "Public-safe cross-broker proof fixture showing Seoseo can request a Team2 handoff while Gwakga remains broker of record and owns worker assignment.",
+  "description": "Public-safe cross-broker proof fixture showing broker-alpha can request a Team2 handoff while broker-beta remains broker of record and owns worker assignment.",
   "round": "a2a-vnext-contract-smoke-crossbroker-20260510",
   "team": "team2",
-  "worker": "dungae",
-  "sourceBrokerId": "seoseo",
-  "destinationBrokerId": "gwakga",
-  "brokerOfRecord": "gwakga",
+  "worker": "worker-epsilon",
+  "sourceBrokerId": "broker-alpha",
+  "destinationBrokerId": "broker-beta",
+  "brokerOfRecord": "broker-beta",
   "sourceIssueUrl": "a2a-plane#151 (internal tracker, private)",
   "handoffEnvelope": {
-    "idempotencyKey": "issue-151:team2-dungae:gwakga-cross-broker-proof",
-    "sourceBrokerId": "seoseo",
-    "destinationBrokerId": "gwakga",
-    "brokerOfRecord": "gwakga",
+    "idempotencyKey": "issue-151:team2-worker-epsilon:broker-beta-cross-broker-proof",
+    "sourceBrokerId": "broker-alpha",
+    "destinationBrokerId": "broker-beta",
+    "brokerOfRecord": "broker-beta",
     "requestedTeamId": "team1",
     "destinationTeamId": "team2",
-    "summary": "Validate Gwakga-owned Team2 handoff semantics with synthetic fixture evidence only"
+    "summary": "Validate broker-beta-owned Team2 handoff semantics with synthetic fixture evidence only"
   },
   "policyInvariants": {
     "destinationBrokerIsBrokerOfRecord": true,
@@ -33,9 +33,9 @@
   },
   "scenarios": [
     {
-      "name": "gwakga-accepts-handoff-and-assigns-team2-worker",
+      "name": "broker-beta-accepts-handoff-and-assigns-team2-worker",
       "given": {
-        "authenticatedPeer": "seoseo",
+        "authenticatedPeer": "broker-alpha",
         "grantedScopes": [
           "handoff:create",
           "handoff:status",
@@ -48,38 +48,38 @@
       },
       "then": {
         "state": "accepted",
-        "destinationTaskId": "task-gwakga-crossbroker-001",
-        "brokerOfRecord": "gwakga",
+        "destinationTaskId": "task-broker-beta-crossbroker-001",
+        "brokerOfRecord": "broker-beta",
         "workerPool": "team2",
-        "assignedWorkerId": "worker-team2-dungae-fixture",
-        "assignedByBroker": "gwakga",
+        "assignedWorkerId": "worker-team2-worker-epsilon-fixture",
+        "assignedByBroker": "broker-beta",
         "sourceBrokerDispatchedWorker": false,
         "terminalOutboxAckMutated": false,
         "liveProviderSend": false
       }
     },
     {
-      "name": "duplicate-handoff-returns-existing-gwakga-task",
+      "name": "duplicate-handoff-returns-existing-broker-beta-task",
       "given": {
-        "existingDestinationTaskId": "task-gwakga-crossbroker-001",
-        "existingEnvelopeHash": "sha256:gwakga-crossbroker-public-fixture"
+        "existingDestinationTaskId": "task-broker-beta-crossbroker-001",
+        "existingEnvelopeHash": "sha256:broker-beta-crossbroker-public-fixture"
       },
       "when": {
         "operation": "handoff.create",
-        "idempotencyKey": "issue-151:team2-dungae:gwakga-cross-broker-proof",
-        "envelopeHash": "sha256:gwakga-crossbroker-public-fixture"
+        "idempotencyKey": "issue-151:team2-worker-epsilon:broker-beta-cross-broker-proof",
+        "envelopeHash": "sha256:broker-beta-crossbroker-public-fixture"
       },
       "then": {
         "status": "deduplicated",
-        "destinationTaskId": "task-gwakga-crossbroker-001",
+        "destinationTaskId": "task-broker-beta-crossbroker-001",
         "newTaskCreated": false,
-        "brokerOfRecord": "gwakga"
+        "brokerOfRecord": "broker-beta"
       }
     },
     {
       "name": "missing-create-scope-refuses-before-task-creation",
       "given": {
-        "authenticatedPeer": "seoseo",
+        "authenticatedPeer": "broker-alpha",
         "grantedScopes": [
           "handoff:status"
         ]
@@ -97,15 +97,15 @@
     {
       "name": "terminal-evidence-relay-is-redacted-metadata-only",
       "given": {
-        "authenticatedPeer": "seoseo",
+        "authenticatedPeer": "broker-alpha",
         "grantedScopes": [
           "handoff:evidence"
         ],
-        "destinationTaskId": "task-gwakga-crossbroker-001",
+        "destinationTaskId": "task-broker-beta-crossbroker-001",
         "terminalEvidence": {
           "kind": "pr",
           "url": "a2a-plane PR #0000 (internal tracker, private)",
-          "summary": "Fixture PR evidence prepared by Gwakga-owned Team2 task",
+          "summary": "Fixture PR evidence prepared by broker-beta-owned Team2 task",
           "redacted": true
         }
       },

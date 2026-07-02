@@ -22,9 +22,9 @@
   "task": {
     "runId": "run-conformance-001",
     "taskId": "task-conformance-lifecycle-001",
-    "brokerOfRecord": "gwakga",
+    "brokerOfRecord": "broker-beta",
     "assignedWorkerId": "worker-conformance-fixtures",
-    "idempotencyKey": "issue-119:team2-gwakga:contract-fixtures",
+    "idempotencyKey": "issue-119:team2-broker-beta:contract-fixtures",
     "safetyProfile": "public-safe-fixture-only"
   },
   "events": [
@@ -78,7 +78,7 @@
   "assertions": [
     "events advance only through allowedTransitions",
     "terminal states have no allowed next states",
-    "brokerOfRecord remains gwakga for the task",
+    "brokerOfRecord remains broker-beta for the task",
     "terminal evidence is referenced by id and does not imply provider delivery or ACK mutation",
     "cancelling is a non-terminal transitory state; only cancelled is terminal",
     "cancellation from queued or claimed goes directly to cancelled (no cancelling intermediary)",

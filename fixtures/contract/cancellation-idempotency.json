@@ -7,7 +7,7 @@
     "round": "a2a-vnext-contract-smoke-crossbroker-20260510",
     "note": "Cancellation sources, transitions, and idempotency guarantees are locked."
   },
-  "idempotencyKey": "issue-119:team2-gwakga:contract-fixtures",
+  "idempotencyKey": "issue-119:team2-broker-beta:contract-fixtures",
   "scenarios": [
     {
       "name": "duplicate-create-returns-existing-task",
@@ -16,7 +16,7 @@
         "existingEnvelopeHash": "sha256:public-fixture-envelope"
       },
       "when": {
-        "requestIdempotencyKey": "issue-119:team2-gwakga:contract-fixtures",
+        "requestIdempotencyKey": "issue-119:team2-broker-beta:contract-fixtures",
         "requestEnvelopeHash": "sha256:public-fixture-envelope"
       },
       "then": {
@@ -32,7 +32,7 @@
         "existingEnvelopeHash": "sha256:public-fixture-envelope"
       },
       "when": {
-        "requestIdempotencyKey": "issue-119:team2-gwakga:contract-fixtures",
+        "requestIdempotencyKey": "issue-119:team2-broker-beta:contract-fixtures",
         "requestEnvelopeHash": "sha256:different-public-fixture-envelope"
       },
       "then": {

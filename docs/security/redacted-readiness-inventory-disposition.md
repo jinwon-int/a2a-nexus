@@ -29,7 +29,7 @@ Scope: redacted metadata only; this document does **not** include matched values
 | `examples/workers/hermes-reference-worker/a2a_worker.py` | `secret-assignment`=1 | Example worker env/header handling; verify no literal secret values before visibility approval. |
 | `packages/broker/docs/a2a-http-signature-profile-v1.md` | `private-topology-term`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
 | `packages/broker/docs/phase-8-peer-status-rfc.md` | `private-topology-term`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
-| `packages/broker/docs/yukson-1032-a2ad-followup-03-review.md` | `private-topology-term`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
+| `packages/broker/docs/worker-delta-1032-a2ad-followup-03-review.md` | `private-topology-term`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
 | `packages/broker/scripts/public-readiness-scan.test.mjs` | `github-token-shape`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs` | `github-token-shape`=2 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/core/cross-broker-terminal-brief.test.ts` | `absolute-private-path`=1 | Test fixture metadata; keep synthetic/redacted. |

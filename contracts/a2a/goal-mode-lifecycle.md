@@ -10,7 +10,7 @@
 > must add a separate v0→v1 compatibility plan before any production use.
 >
 > **Lane issue:** a2a-plane#442 (a2a-plane#442, internal tracker private)
-> **Broker/finalizer of record:** `seoseo`
+> **Broker/finalizer of record:** `broker-alpha`
 
 ---
 
@@ -567,7 +567,7 @@ eventLog: "All 3 criteria met. Slices: 3/3 terminal."
 5. **No foreground flooding**: Goal progress summaries and approval notifications
    should be designed for detached delivery, not broker foreground sessions.
 
-6. **Seoseo remains Team1 broker/finalizer of record**: Only Seoseo may render
+6. **broker-alpha remains Team1 broker/finalizer of record**: Only broker-alpha may render
    final closeout decisions for Team1 goal rounds.
 
 ---

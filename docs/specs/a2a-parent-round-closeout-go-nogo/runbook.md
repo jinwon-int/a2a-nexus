@@ -54,7 +54,7 @@ The evaluator outputs a JSON report with:
 
 | Decision | Meaning | Next step |
 |---|---|---|
-| `GO` | All gates pass. The parent round is closeable by Seoseo. | Proceed to Step 3. |
+| `GO` | All gates pass. The parent round is closeable by broker-alpha. | Proceed to Step 3. |
 | `NO_GO` | One or more gates fail but no unsafe condition. | Proceed to Step 4. |
 | `BLOCKED` | An unsafe condition was detected (evidence not redacted, runtime/bootstrap leak, 403, or conflict). | Proceed to Step 5. |
 
@@ -93,8 +93,8 @@ node scripts/check-parent-round-closeout-go-nogo-matrix.mjs \
 ## A2A Parent Round Closeout — GO (comment-only)
 
 **Parent round:** a2a-team1-round-001
-**Origin broker:** seoseo
-**Parent broker:** seoseo
+**Origin broker:** broker-alpha
+**Parent broker:** broker-alpha
 **Decision:** GO (all gates pass)
 **Mode:** comment_only — this issue is **not** closed
 
@@ -131,9 +131,9 @@ If a comment_only post was erroneous:
 2. **The issue remains open** — no further action needed.
 3. **Do not mutate the closeout ledger.**
 
-## Step 3: GO — Execute closeout (Seoseo only)
+## Step 3: GO — Execute closeout (broker-alpha only)
 
-Only Seoseo (or a broker explicitly designated as finalizer) may execute parent issue closeout.
+Only broker-alpha (or a broker explicitly designated as finalizer) may execute parent issue closeout.
 
 ### 3a. Post the Go decision comment
 
@@ -181,7 +181,7 @@ gh issue close <parent-issue-url> \
 | G2 Lane evidence completeness | A terminal lane has missing evidence | The lane must be re-executed or the evidence manually completed. |
 | G3 Required metadata | A metadata field is missing or invalid | Fix the metadata at the orchestrator/broker level. |
 | G6 No live action leak | A lane's evidence shows an unapproved live action | The round is permanently NO_GO for this lane; operator must decide. |
-| G9 Seoseo finalizer | Non-Seoseo broker attempted closeout | Only Seoseo may close. Inform Seoseo. |
+| G9 broker-alpha finalizer | Non-broker-alpha broker attempted closeout | Only broker-alpha may close. Inform broker-alpha. |
 
 ### Retry
 
@@ -272,7 +272,7 @@ No rollback operation may perform any of:
 - Force-push or history rewrite
 - Release, tag, or npm publish
 
-If any of these would be needed for recovery, contact the Seoseo operator.
+If any of these would be needed for recovery, contact the broker-alpha operator.
 
 ## Emergency stop
 
@@ -281,4 +281,4 @@ If a serious safety violation is detected mid-evaluation:
 1. Abort the evaluation (Ctrl+C / SIGINT the script).
 2. Verify no GitHub write operations were performed (check the closeout ledger).
 3. Post an explanatory comment on the parent issue.
-4. Contact the Seoseo finalizer operator.
+4. Contact the broker-alpha finalizer operator.

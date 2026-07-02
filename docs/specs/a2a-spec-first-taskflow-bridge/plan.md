@@ -25,7 +25,7 @@ Reason: this PR is design/docs-only in one repo. Runtime implementation of the b
 
 ## Broker / worker / finalizer roles
 
-- Broker of record / finalizer for this docs PR: Gwakga.
+- Broker of record / finalizer for this docs PR: broker-beta.
 - Workers: none required.
 - Libero/validator: GitHub Actions and local release-gate validation.
 - Human approval owner: the operator for any future runtime automation/deploy/canary.

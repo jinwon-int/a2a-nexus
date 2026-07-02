@@ -107,7 +107,7 @@
       ],
       "tier": "core",
       "retirement": "keep",
-      "note": "Seoseo A2A/A2AD skill guardpack executable checks for #1035; read-only/no-live."
+      "note": "broker-alpha A2A/A2AD skill guardpack executable checks for #1035; read-only/no-live."
     },
     {
       "name": "a2ad-preset-ux-contract",

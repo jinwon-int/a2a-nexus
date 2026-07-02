@@ -45,6 +45,11 @@ Describe the intended flow, including cross-broker, Terminal Brief, evidence, or
 
 ## Tests and validation
 
+- Oracle independence / finalizer coverage review:
+- Red-to-green evidence for new gates or scanners:
+- Discovery inventory for cleanup/removal tasks:
+- Follow-up issue materialization for multi-stage plans:
+- Lane-to-PR mapping (default one lane = one PR; deviations require finalizer approval):
 - Unit tests:
 - Contract/conformance tests:
 - Build/lint/typecheck:

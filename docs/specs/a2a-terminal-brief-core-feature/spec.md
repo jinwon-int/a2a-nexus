@@ -10,7 +10,7 @@ spec packages (`a2a-terminal-brief-parent-origin-routing/`, `a2a-terminal-brief-
 (`terminal-brief-routing-contract.ts`), and multiple libero validation artifacts. However, no single
 document treats **Terminal Brief as a core A2A feature** with unified definition of:
 - the Team1 local lane path (same-broker child dispatch and Terminal Brief send);
-- the Team2 Gwakga handoff path (cross-broker child projection);
+- the Team2 broker-beta handoff path (cross-broker child projection);
 - parent broker finalizer ownership and the no-local-send rule;
 - acceptance matrix with concrete gates;
 - approval boundaries and safety invariants.
@@ -19,14 +19,14 @@ This spec fills that gap by consolidating the six rounds of design decisions int
 
 ## User / operator stories
 
-- As an operator dispatching a Team1-only round, I want Seoseo to own the parent round and send the
-  Terminal Brief without involving Gwakga, so that Team2 resources are not consumed for Team1 work.
-- As an operator dispatching a Team1+Team2 round, I want Seoseo to own the parent round while Gwakga
-  relays Team2 child projections back to Seoseo, so that there is exactly one operator-facing
+- As an operator dispatching a Team1-only round, I want broker-alpha to own the parent round and send the
+  Terminal Brief without involving broker-beta, so that Team2 resources are not consumed for Team1 work.
+- As an operator dispatching a Team1+Team2 round, I want broker-alpha to own the parent round while broker-beta
+  relays Team2 child projections back to broker-alpha, so that there is exactly one operator-facing
   Terminal Brief sender per round.
-- As a Team1/Seoseo finalizer, I want to own the parent-round closeout decision for Team1-origin
+- As a Team1/broker-alpha finalizer, I want to own the parent-round closeout decision for Team1-origin
   rounds, so that accountability is clear and there is no split-finalizer ambiguity.
-- As a Team2/Gwakga worker, I want to produce terminal evidence for my Team2 child tasks and relay
+- As a Team2/broker-beta worker, I want to produce terminal evidence for my Team2 child tasks and relay
   it to the parent broker's projection ledger, but I must NOT send my own parent-round Terminal Brief
   notification for parent-owned Team2 rows, so that operator-facing notification remains single-sourced.
 - As an operator reviewing a round's Terminal Brief evidence, I want a predictable acceptance matrix
@@ -36,17 +36,17 @@ This spec fills that gap by consolidating the six rounds of design decisions int
 
 | Actor | Broker ID | Team | Role in parent round |
 | --- | --- | --- | --- |
-| **Seoseo** | `seoseo` | `team1` | Parent/origin broker, finalizer of record for Team1-origin rounds |
-| **Gwakga** | `gwakga` | `team2` | Handoff broker for Team2 child tasks; evidence relay only |
+| **broker-alpha** | `broker-alpha` | `team1` | Parent/origin broker, finalizer of record for Team1-origin rounds |
+| **broker-beta** | `broker-beta` | `team2` | Handoff broker for Team2 child tasks; evidence relay only |
 | **Parent broker** | varies | n/a | Broker that renders the aggregate Terminal Brief notification |
 | **Origin broker** | varies | n/a | Broker that minted the parent round metadata |
 | **Finalizer** | varies | n/a | Person or automated agent that renders the aggregate GO/NO-GO decision |
 | **Worker** | varies | team1 or team2 | Execution surface that produces PR/Done/Block evidence |
 
 > **Deterministic broker assignment:** In the current v1 symmetric contract, `originBrokerId` is the
-> broker that minted `parentRoundId`. For Seoseo-initiated rounds, `originBrokerId = seoseo` and
-> `parentBrokerId = seoseo`. For Gwakga-initiated rounds, `originBrokerId = gwakga` and
-> `parentBrokerId = gwakga`. The "initiating broker is both parent and origin" invariant applies
+> broker that minted `parentRoundId`. For broker-alpha-initiated rounds, `originBrokerId = broker-alpha` and
+> `parentBrokerId = broker-alpha`. For broker-beta-initiated rounds, `originBrokerId = broker-beta` and
+> `parentBrokerId = broker-beta`. The "initiating broker is both parent and origin" invariant applies
 > for both brokers — there is no asymmetric default.
 
 ## Core Terminal Brief semantics
@@ -72,8 +72,8 @@ Default known-total completed-worker title:
 A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)
 ```
 
-Example: `A2A Terminal Brief 완료: yukson(완료 3/7)` (known total=7).
-Unknown-total fallback: `A2A Terminal Brief 완료: yukson(완료 2)` (no denominator).
+Example: `A2A Terminal Brief 완료: worker-delta(완료 3/7)` (known total=7).
+Unknown-total fallback: `A2A Terminal Brief 완료: worker-delta(완료 2)` (no denominator).
 Non-completed status: `A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)` — bounded status labels defined
 by the parent contract.
 
@@ -96,16 +96,16 @@ and must fail closed.
 
 ### Route
 
-When the parent broker `seoseo` dispatches a Team1-only round:
+When the parent broker `broker-alpha` dispatches a Team1-only round:
 
 ```
-Seoseo (origin/parent)
-  └─ mints parentRoundId, originBrokerId=seoseo, parentBrokerId=seoseo
+broker-alpha (origin/parent)
+  └─ mints parentRoundId, originBrokerId=broker-alpha, parentBrokerId=broker-alpha
   └─ assigns Team1 child tasks directly (no handoff)
   └─ each Team1 worker produces terminal PR/Done/Block evidence
-  └─ Seoseo renders per-child Terminal Brief titles from its aggregation ledger
-  └─ Seoseo is the sole operator-facing Terminal Brief sender
-  └─ Gwakga is NOT involved
+  └─ broker-alpha renders per-child Terminal Brief titles from its aggregation ledger
+  └─ broker-alpha is the sole operator-facing Terminal Brief sender
+  └─ broker-beta is NOT involved
 ```
 
 ### Child dispatch metadata
@@ -115,8 +115,8 @@ Each Team1 child task must carry:
 ```json
 {
   "parentRoundId": "<round-id>",
-  "originBrokerId": "seoseo",
-  "parentBrokerId": "seoseo",
+  "originBrokerId": "broker-alpha",
+  "parentBrokerId": "broker-alpha",
   "parentRoundTotal": <lane-count>,
   "parentRoundOrder": <1-based-index>
 }
@@ -126,9 +126,9 @@ Each Team1 child task must carry:
 
 For each terminal transition (done/pr/blocked) of a Team1 child:
 
-1. Seoseo reads terminal evidence from the child task result.
-2. Seoseo renders a concise title from its aggregation ledger.
-3. Seoseo dispatches the notification through an OpenClaw-routed outbound lifecycle path
+1. broker-alpha reads terminal evidence from the child task result.
+2. broker-alpha renders a concise title from its aggregation ledger.
+3. broker-alpha dispatches the notification through an OpenClaw-routed outbound lifecycle path
    (no direct Telegram Bot API or curl path).
 4. The provider send success is recorded as accepted-send evidence (level 1), never as ACK.
 
@@ -138,34 +138,34 @@ For each terminal transition (done/pr/blocked) of a Team1 child:
 | --- | --- |
 | Missing `parentRoundId` for Team1 child | Block — refuse dispatch |
 | Missing `originBrokerId` | Block — refuse dispatch |
-| `originBrokerId != seoseo` for Seoseo-initiated round | Block — origin mismatch |
-| Gwakga receives Team1 parent metadata | Block — Team1 work must not reach Gwakga |
+| `originBrokerId != broker-alpha` for broker-alpha-initiated round | Block — origin mismatch |
+| broker-beta receives Team1 parent metadata | Block — Team1 work must not reach broker-beta |
 | Title exceeds 80 chars | Block — title must be truncated or notification deferred |
 
-## Team2 Gwakga handoff path
+## Team2 broker-beta handoff path
 
 ### Route
 
-When the parent broker `seoseo` dispatches a Team1+Team2 round:
+When the parent broker `broker-alpha` dispatches a Team1+Team2 round:
 
 ```
-Seoseo (origin/parent)
-  ├─ mints parentRoundId, originBrokerId=seoseo, parentBrokerId=seoseo, parentRoundTotal=N
+broker-alpha (origin/parent)
+  ├─ mints parentRoundId, originBrokerId=broker-alpha, parentBrokerId=broker-alpha, parentRoundTotal=N
   ├─ assigns Team1 child tasks directly (see Team1 local lane path)
-  └─ creates handoff envelope → Gwakga (handoffBrokerId=gwakga)
+  └─ creates handoff envelope → broker-beta (handoffBrokerId=broker-beta)
        for each Team2 child task, with metadata:
        {
          "parentRoundId": "<round-id>",
-         "originBrokerId": "seoseo",
-         "parentBrokerId": "seoseo",
-         "handoffBrokerId": "gwakga",
+         "originBrokerId": "broker-alpha",
+         "parentBrokerId": "broker-alpha",
+         "handoffBrokerId": "broker-beta",
          "parentRoundTotal": <lane-count>,
          "parentRoundOrder": <1-based-index>
        }
-       └─ Gwakga receives handoff envelope
-            ├─ creates child task as broker of record (brokerOfRecord=gwakga)
+       └─ broker-beta receives handoff envelope
+            ├─ creates child task as broker of record (brokerOfRecord=broker-beta)
             ├─ assigns Team2 worker to produce terminal PR/Done/Block evidence
-            └─ relays redacted terminal evidence BACK to Seoseo's projection ledger
+            └─ relays redacted terminal evidence BACK to broker-alpha's projection ledger
                (NOT to its own aggregation ledger)
 ```
 
@@ -173,38 +173,38 @@ Seoseo (origin/parent)
 
 | Field | Minted by | Copied? | Consumed by |
 | --- | --- | --- | --- |
-| `parentRoundId` | Seoseo (origin) | Yes — into envelope | Gwakga (handoff broker), Seoseo (projection) |
-| `originBrokerId` | Seoseo (origin) | Yes — immutable | Gwakga, projection verifier |
-| `parentBrokerId` | Seoseo (origin) | Yes — immutable | Gwakga (must relay evidence back to this broker) |
-| `handoffBrokerId` | Seoseo (origin) | Yes — per child | Gwakga (identifies itself as handoff) |
-| `parentRoundTotal` | Seoseo (origin) | Yes — immutable | Parent broker title renderer |
-| `parentRoundOrder` | Seoseo (origin) | Yes — per child | Child broker, parent projection |
-| `childTaskId` | Gwakga (child broker of record) | Not copied back | Parent projection ledger |
-| `childIssueUrl` | Gwakga | Not copied back | Parent projection ledger |
-| `terminalEvidenceUrl` | Gwakga | Not copied back | Parent projection ledger |
+| `parentRoundId` | broker-alpha (origin) | Yes — into envelope | broker-beta (handoff broker), broker-alpha (projection) |
+| `originBrokerId` | broker-alpha (origin) | Yes — immutable | broker-beta, projection verifier |
+| `parentBrokerId` | broker-alpha (origin) | Yes — immutable | broker-beta (must relay evidence back to this broker) |
+| `handoffBrokerId` | broker-alpha (origin) | Yes — per child | broker-beta (identifies itself as handoff) |
+| `parentRoundTotal` | broker-alpha (origin) | Yes — immutable | Parent broker title renderer |
+| `parentRoundOrder` | broker-alpha (origin) | Yes — per child | Child broker, parent projection |
+| `childTaskId` | broker-beta (child broker of record) | Not copied back | Parent projection ledger |
+| `childIssueUrl` | broker-beta | Not copied back | Parent projection ledger |
+| `terminalEvidenceUrl` | broker-beta | Not copied back | Parent projection ledger |
 
 ### Parent-owned Team2 rows: no-local-send requirement
 
 **This is the critical ownership invariant:**
 
-> For Team2 child tasks that are parent-owned (the parent round was minted by Seoseo), Gwakga
+> For Team2 child tasks that are parent-owned (the parent round was minted by broker-alpha), broker-beta
 > must NOT send, render, update, retract, ACK, or otherwise dispatch its own operator-facing
-> parent-round Terminal Brief notification. Gwakga's role is limited to:
+> parent-round Terminal Brief notification. broker-beta's role is limited to:
 > 1. Creating the child task as broker of record.
 > 2. Producing redacted terminal evidence (PR/Done/Block).
-> 3. Relaying that evidence to Seoseo's parent projection ledger.
+> 3. Relaying that evidence to broker-alpha's parent projection ledger.
 >
-> **Gwakga must never send a parent-round aggregate notification to any provider or outbound
-> lifecycle path for a round where `originBrokerId != gwakga`.**
+> **broker-beta must never send a parent-round aggregate notification to any provider or outbound
+> lifecycle path for a round where `originBrokerId != broker-beta`.**
 
 Enforcement:
 
 | Condition | Rule | Fail-closed |
 | --- | --- | --- |
-| Gwakga detects `originBrokerId != gwakga` in handoff metadata | Gwakga must NOT render/send/update parent-round Terminal Brief | Block — Gwakga must reject parent-round send attempts for non-own rounds |
-| Gwakga evidence relay to Seoseo succeeds | Seoseo renders the title from its own aggregation ledger | Normal path |
-| Gwakga evidence relay to Seoseo fails | Gwakga may fall back to local operator notification as a failure-safety path, but the notification body MUST state it is a *relay failure notification*, NOT a parent-round Terminal Brief | Block — relay-failure fallback must not impersonate parent-round notification |
-| Gwakga child task reaches terminal state | Evidence must be relayed to Seoseo BEFORE any local notification (if any) | Block — evidence must reach parent broker first |
+| broker-beta detects `originBrokerId != broker-beta` in handoff metadata | broker-beta must NOT render/send/update parent-round Terminal Brief | Block — broker-beta must reject parent-round send attempts for non-own rounds |
+| broker-beta evidence relay to broker-alpha succeeds | broker-alpha renders the title from its own aggregation ledger | Normal path |
+| broker-beta evidence relay to broker-alpha fails | broker-beta may fall back to local operator notification as a failure-safety path, but the notification body MUST state it is a *relay failure notification*, NOT a parent-round Terminal Brief | Block — relay-failure fallback must not impersonate parent-round notification |
+| broker-beta child task reaches terminal state | Evidence must be relayed to broker-alpha BEFORE any local notification (if any) | Block — evidence must reach parent broker first |
 
 ### Handoff fail-closed rules
 
@@ -212,10 +212,10 @@ Enforcement:
 | --- | --- |
 | Handoff envelope missing `parentRoundId` | Block — refuse task creation |
 | Handoff envelope missing `originBrokerId` | Block — refuse task creation |
-| `originBrokerId == gwakga` but envelope originates from Seoseo | Block — origin mismatch |
-| Gwakga child evidence relay fails | Block — fall back to local notification, mark projection `blocked` |
-| Parentless projection (no matching parent round on Seoseo) | Block — `missing_parent` error |
-| Gwakga sends parent-round notification for Seoseo-origin round | BLOCK — report ownership violation immediately |
+| `originBrokerId == broker-beta` but envelope originates from broker-alpha | Block — origin mismatch |
+| broker-beta child evidence relay fails | Block — fall back to local notification, mark projection `blocked` |
+| Parentless projection (no matching parent round on broker-alpha) | Block — `missing_parent` error |
+| broker-beta sends parent-round notification for broker-alpha-origin round | BLOCK — report ownership violation immediately |
 
 ## Parent broker finalizer ownership
 
@@ -226,8 +226,8 @@ broker that minted `parentRoundId` and `originBrokerId`.
 
 | Round origin | Finalizer | Finalizer broker ID |
 | --- | --- | --- |
-| Team1-origin (Seoseo) | Seoseo operator or automated finalizer | `seoseo` |
-| Team2-origin (Gwakga) | Gwakga operator or automated finalizer | `gwakga` |
+| Team1-origin (broker-alpha) | broker-alpha operator or automated finalizer | `broker-alpha` |
+| Team2-origin (broker-beta) | broker-beta operator or automated finalizer | `broker-beta` |
 
 ### Finalizer responsibilities
 
@@ -252,14 +252,14 @@ If the assigned finalizer becomes unavailable, a new finalizer must be explicitl
 operator approval, not by silent broker failover. The new assignment must be documented in
 a parent issue comment.
 
-### Team1 finalizer (Seoseo) closeout handoff
+### Team1 finalizer (broker-alpha) closeout handoff
 
-When all Team1 and Team2 child lanes have reached a terminal state, Seoseo's finalizer
+When all Team1 and Team2 child lanes have reached a terminal state, broker-alpha's finalizer
 produces a closeout handoff packet that includes:
 
 ```json
 {
-  "finalizerId": "seoseo",
+  "finalizerId": "broker-alpha",
   "parentRoundId": "<runId>",
   "aggregateDecision": "GO|NO_GO|BLOCKED",
   "laneStatuses": {
@@ -277,18 +277,18 @@ This is the central ownership invariant for cross-broker Terminal Brief routing.
 ### Definition
 
 **Parent-owned Team2 rows** are Team2 child tasks created through a handoff envelope where
-`originBrokerId` and `parentBrokerId` equal the initiating broker (Seoseo for Team1-origin rounds),
-and the child broker of record is `gwakga`.
+`originBrokerId` and `parentBrokerId` equal the initiating broker (broker-alpha for Team1-origin rounds),
+and the child broker of record is `broker-beta`.
 
 ### Requirement
 
-For parent-owned Team2 rows, Gwakga must **not** perform any local send, update, retract, or ACK
-of the parent-round aggregate Terminal Brief notification. Gwakga's Terminal Brief responsibilities
+For parent-owned Team2 rows, broker-beta must **not** perform any local send, update, retract, or ACK
+of the parent-round aggregate Terminal Brief notification. broker-beta's Terminal Brief responsibilities
 are limited to:
 
 1. **Child terminal evidence production**: Produce PR/Done/Block evidence for the child task.
-2. **Evidence relay**: Project redacted evidence to Seoseo's parent aggregation ledger.
-3. **Relay-failure fallback**: If evidence relay to Seoseo fails, Gwakga may notify its own operator
+2. **Evidence relay**: Project redacted evidence to broker-alpha's parent aggregation ledger.
+3. **Relay-failure fallback**: If evidence relay to broker-alpha fails, broker-beta may notify its own operator
    about the relay failure. The notification must be clearly labeled as a relay failure notice and
    must not impersonate the parent-round Terminal Brief.
 
@@ -296,22 +296,22 @@ are limited to:
 
 | Gate | Pass condition | Fail-closed |
 | --- | --- | --- |
-| Parent-owned Team2 rows reach terminal state | Evidence is relayed to Seoseo before any local notification | Block if local notification precedes relay |
-| Gwakga relay to Seoseo succeeds | Seoseo renders concise title from its ledger | Normal path |
-| Gwakga relay to Seoseo fails but Gwakga falls back to local notification | Local notification says "Terminal Brief relay failure" not "Terminal Brief" | Block if fallback claims parent-round ownership |
-| Non-own round detection | Gwakga detects `originBrokerId != gwakga` and must not send parent-round Terminal Brief | Block — reject parent-round send attempts |
-| Symmetric reverse (Gwakga-origin round) | Seoseo follows the same no-local-send rules for parent-owned Team1 rows through Seoseo handoff | Block if Seoseo sends parent-round notification for Gwakga-origin round |
+| Parent-owned Team2 rows reach terminal state | Evidence is relayed to broker-alpha before any local notification | Block if local notification precedes relay |
+| broker-beta relay to broker-alpha succeeds | broker-alpha renders concise title from its ledger | Normal path |
+| broker-beta relay to broker-alpha fails but broker-beta falls back to local notification | Local notification says "Terminal Brief relay failure" not "Terminal Brief" | Block if fallback claims parent-round ownership |
+| Non-own round detection | broker-beta detects `originBrokerId != broker-beta` and must not send parent-round Terminal Brief | Block — reject parent-round send attempts |
+| Symmetric reverse (broker-beta-origin round) | broker-alpha follows the same no-local-send rules for parent-owned Team1 rows through broker-alpha handoff | Block if broker-alpha sends parent-round notification for broker-beta-origin round |
 
 ### Network of ownership
 
 ```
-Team1-origin round (Seoseo finalizer):
-  Team1 children → Seoseo renders Terminal Brief (local send OK)
-  Team2 children → Gwakga relays evidence back → Seoseo renders Terminal Brief (Gwakga: no local send)
+Team1-origin round (broker-alpha finalizer):
+  Team1 children → broker-alpha renders Terminal Brief (local send OK)
+  Team2 children → broker-beta relays evidence back → broker-alpha renders Terminal Brief (broker-beta: no local send)
 
-Team2-origin round (Gwakga finalizer):
-  Team2 children → Gwakga renders Terminal Brief (local send OK)
-  Team1 children → Seoseo relays evidence back → Gwakga renders Terminal Brief (Seoseo: no local send)
+Team2-origin round (broker-beta finalizer):
+  Team2 children → broker-beta renders Terminal Brief (local send OK)
+  Team1 children → broker-alpha relays evidence back → broker-beta renders Terminal Brief (broker-alpha: no local send)
 ```
 
 **Invariant:** The broker matching `parentBrokerId` is the only broker that may render and dispatch
@@ -325,11 +325,11 @@ and must not render or dispatch that round's aggregate notification.
 | # | Gate | Required condition | Evidence source | Fail-closed |
 | --- | --- | --- | --- | --- |
 | G1 | Parent metadata propagation | Every child task (Team1 direct + Team2 handoff) carries `parentRoundId`, `originBrokerId`, `parentBrokerId`, `parentRoundTotal`, `parentRoundOrder`. Handoff children also carry `handoffBrokerId`. No field is missing, rewritten, or inconsistent across children. | Broker task query, lane issue bodies, handoff envelope inspection | Block if any field missing or mismatched |
-| G2 | Four-case routing invariant | The four routing cases (Seoseo-Team1-only, Seoseo-Team1+2, Gwakga-Team2-only, Gwakga-Team1+2) each produce correct parent/origin/handoff/child-broker assignments. `initiatingBroker == originBrokerId == parentBrokerId` for standard operator-facing cases. | `contracts/a2a/parent-terminal-brief-aggregation.md` v1 four-case matrix, `fixtures/contract/terminal-brief-parent-origin-routing.json` | Block if any case violates the invariant |
+| G2 | Four-case routing invariant | The four routing cases (broker-alpha-Team1-only, broker-alpha-Team1+2, broker-beta-Team2-only, broker-beta-Team1+2) each produce correct parent/origin/handoff/child-broker assignments. `initiatingBroker == originBrokerId == parentBrokerId` for standard operator-facing cases. | `contracts/a2a/parent-terminal-brief-aggregation.md` v1 four-case matrix, `fixtures/contract/terminal-brief-parent-origin-routing.json` | Block if any case violates the invariant |
 | G3 | Concise title format | Each per-child terminal transition renders `A2A Terminal Brief <상태>: <worker>(<상태> <n>/<N>)` with known total, or `<상태>: <worker>(<상태> <n>)` unknown-total fallback. Title ≤80 chars; forbidden content absent. | Title evidence from parent aggregation ledger or test fixture | Block if title exceeds 80 chars or contains forbidden content |
 | G4 | Body/evidence separation | Title and body are separate fields. Title has no evidence content, URLs, broker IDs, or ACK state. Body has no `terminalBriefTitle`. | Projection schema test, notification adapter test | Block if concatenated or leaking |
 | G5 | Parent-only notification ownership | Only the broker matching `parentBrokerId` may render/dispatch parent-round aggregate Terminal Brief. Handoff/child brokers must not send their own parent notification. | Broker routing contract test (`terminal-brief-routing-contract.ts`), handoff scenario tests | Block if handoff broker sends parent notification |
-| G6 | No-local-send for parent-owned rows | Gwakga does NOT render/send parent-round Terminal Brief for Seoseo-origin rows. Seoseo does NOT render/send Gwakga-origin parent-round Terminal Brief. | Cross-broker handoff test, safety matrix test | Block if any local send detected for non-own round |
+| G6 | No-local-send for parent-owned rows | broker-beta does NOT render/send parent-round Terminal Brief for broker-alpha-origin rows. broker-alpha does NOT render/send broker-beta-origin parent-round Terminal Brief. | Cross-broker handoff test, safety matrix test | Block if any local send detected for non-own round |
 | G7 | Receipt/ACK boundary | Provider accepted-send is level 1 (non-ACK). No contract or code path promotes accepted-send to ACK. Four-level receipt vocabulary is frozen at v0. | `contracts/a2a/terminal-semantics.md`, `contracts/compatibility/terminal-evidence-ack-boundary.md`, `fixtures/terminal-evidence/accepted-send-non-ack.json` | Block if promotion detected or v0 freeze violated |
 | G8 | Broker finalizer assignment | Exactly one broker is the finalizer of record (matching `originBrokerId`). No other entity closes the parent issue or renders the aggregate decision. | Parent issue closeout comment, finalizer handoff packet | Block if non-assigned finalizer acts |
 | G9 | All lanes terminal | Every child lane has reached `done`, `pr`, `blocked`, or `cancelled`. | Broker `/tasks` query, lane issue comments | Block if any lane non-terminal |
@@ -407,7 +407,7 @@ Offending paths must be reported exactly with repo-relative or artifact-relative
 | Terminal Brief routing guard | `npm run check:terminal-brief-routing` | Four receipt levels, allow/forbidden routes, providerAccepted non-ACK invariant |
 | Message ID ACK boundary | `npm run check:message-id-ack-boundary` | Provider accepted-send is level 1, never ACK |
 | Contract fixture conformance | `npm run check:contract-fixtures` (`test:conformance`) | Parent-origin routing fixture, parent aggregation fixture, terminal brief canary fixture |
-| Team1 plane gates | `npm run check:team1-yukson-plane-gates` | Cross-cutting plane gate validation |
+| Team1 plane gates | `npm run check:team1-worker-delta-plane-gates` | Cross-cutting plane gate validation |
 | Full release gate | `npm run check` | All layout, conformance, package, and readiness checks |
 
 ### Hygiene scan
@@ -425,9 +425,9 @@ git status --short --ignored
 | --- | --- | --- | --- |
 | Metadata drift | Round spec or handoff envelope adds/renames/removes fields without updating fixtures | Fixture conformance tests in CI; sibling lane cross-check | Block if fixture mismatch |
 | Title format regression | Title exceeds 80 chars or contains forbidden content | Max-length and forbidden-content assertion in conformance test | Block if regression |
-| No-local-send enforcement gap | Gwakga sends parent-round Terminal Brief for Seoseo-origin round due to missing guard | Routing contract test, handoff scenario tests, positive/negative fixture | BLOCK if detected |
-| Cross-broker relay failure | Gwakga evidence relay to Seoseo fails; fallback may impersonate parent-round notification | Explicit relay-failure labeling requirement; projection fails `blocked` | Block if fallback claims ownership |
-| Finalizer handoff ambiguity | Seoseo unavailable and no explicit handoff to new finalizer | Documented assignment rule: new finalizer requires operator approval comment | Block without approval |
+| No-local-send enforcement gap | broker-beta sends parent-round Terminal Brief for broker-alpha-origin round due to missing guard | Routing contract test, handoff scenario tests, positive/negative fixture | BLOCK if detected |
+| Cross-broker relay failure | broker-beta evidence relay to broker-alpha fails; fallback may impersonate parent-round notification | Explicit relay-failure labeling requirement; projection fails `blocked` | Block if fallback claims ownership |
+| Finalizer handoff ambiguity | broker-alpha unavailable and no explicit handoff to new finalizer | Documented assignment rule: new finalizer requires operator approval comment | Block without approval |
 | Runtime/bootstrap hygiene drift | New contributor or tooling introduces guard paths | Pre-PR scan; public-readiness scan in CI | Block if detected |
 
 ## Evidence contract
@@ -466,7 +466,7 @@ Each PR or validation lane referencing this spec must produce evidence that incl
 | Terminal semantics contract | `contracts/a2a/terminal-semantics.md` | Result types, receipt levels, ACK boundary |
 | Broker handoff protocol | `contracts/a2a/broker-handoff-protocol.md` | Envelope shape, peer permissions, evidence relay |
 | Team1 dispatch wrapper runbook | `docs/specs/a2a-team1-dispatch-wrapper/runbook.md` | Team1 dispatch command, metadata propagation, finalizer handoff |
-| Team2/Gwakga onboarding runbook | `packages/broker/docs/team2-gwakga-worker-onboarding-retargeting.md` | Team2 worker registration and retargeting |
+| Team2/broker-beta onboarding runbook | `packages/broker/docs/team2-broker-beta-worker-onboarding-retargeting.md` | Team2 worker registration and retargeting |
 | Routing contract source | `packages/broker/src/core/terminal-brief-routing-contract.ts` | Pure broker-side guard for transport routes |
 | Parent-origin routing fixture | `fixtures/contract/terminal-brief-parent-origin-routing.json` | Machine-readable four-case invariant |
 | Parent aggregation fixture | `fixtures/contract/parent-terminal-brief-aggregation.json` | Projection field requirements |

@@ -4,9 +4,9 @@
   "laneIssue": "a2a-plane#467 (internal tracker, private)",
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/927",
   "run": "a2a-team1-round-coordinator-20260526T201140KST",
-  "laneOwner": "nosuk",
+  "laneOwner": "worker-alpha",
   "failClosed": true,
-  "defaultFinalizerId": "seoseo",
+  "defaultFinalizerId": "broker-alpha",
   "coordinatorStates": ["SEEDED", "TRACKING", "ALL_DONE", "TIMED_OUT", "COLLECTED", "PARTIAL", "READY", "CLOSED"],
   "laneStatusValues": ["pending", "running", "succeeded", "failed", "stale", "timeout", "cancelled", "blocked"],
   "backoffDefaults": {
@@ -92,7 +92,7 @@
     }
   },
   "mobileStandbyDefaults": {
-    "description": "Default capability policy for Gongyung/Hermes-style mobile standby workers.",
+    "description": "Default capability policy for mobile-alpha/Hermes-style mobile standby workers.",
     "maxConcurrency": 1,
     "allowedTaskTypes": ["monitor", "notify"],
     "noLive": true,

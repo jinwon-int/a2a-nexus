@@ -29,22 +29,22 @@
   ],
   "registeredBrokers": [
     {
-      "brokerId": "seoseo",
+      "brokerId": "broker-alpha",
       "teamId": "team1"
     },
     {
-      "brokerId": "gwakga",
+      "brokerId": "broker-beta",
       "teamId": "team2"
     }
   ],
   "routingCases": [
     {
-      "caseId": "seoseo-team1-local",
-      "initiatingBrokerId": "seoseo",
+      "caseId": "broker-alpha-team1-local",
+      "initiatingBrokerId": "broker-alpha",
       "requestedTeamScope": "team1-only",
-      "parentBrokerId": "seoseo",
-      "originBrokerId": "seoseo",
-      "operatorFacingTerminalBriefSender": "seoseo",
+      "parentBrokerId": "broker-alpha",
+      "originBrokerId": "broker-alpha",
+      "operatorFacingTerminalBriefSender": "broker-alpha",
       "localTeamIds": [
         "team1"
       ],
@@ -52,20 +52,20 @@
       "childProjectionRequired": false,
       "parentSeedRequired": false,
       "forbiddenBrokerInvolvement": [
-        "gwakga"
+        "broker-beta"
       ],
       "expectedPath": "local-only",
       "terminalBriefNotification": {
-        "senderBrokerId": "seoseo",
+        "senderBrokerId": "broker-alpha",
         "parentBrokerOnly": true,
         "parentOriginOnly": true,
         "titleMetadata": {
           "statusLabel": "완료",
-          "workerId": "yukson",
+          "workerId": "worker-delta",
           "parentRoundOrder": 1,
           "parentRoundTotal": 4,
-          "defaultTitle": "A2A Terminal Brief 완료: yukson(1/4)",
-          "renderedByBrokerId": "seoseo",
+          "defaultTitle": "A2A Terminal Brief 완료: worker-delta(1/4)",
+          "renderedByBrokerId": "broker-alpha",
           "operatorFacingOwnerIsParentOrigin": true,
           "childOrHandoffRenderedOperatorFacingTitle": false
         },
@@ -83,34 +83,34 @@
       }
     },
     {
-      "caseId": "seoseo-allteams-gwakga-child",
-      "initiatingBrokerId": "seoseo",
+      "caseId": "broker-alpha-allteams-broker-beta-child",
+      "initiatingBrokerId": "broker-alpha",
       "requestedTeamScope": "team1+team2",
-      "parentBrokerId": "seoseo",
-      "originBrokerId": "seoseo",
-      "operatorFacingTerminalBriefSender": "seoseo",
+      "parentBrokerId": "broker-alpha",
+      "originBrokerId": "broker-alpha",
+      "operatorFacingTerminalBriefSender": "broker-alpha",
       "localTeamIds": [
         "team1"
       ],
-      "handoffBrokerId": "gwakga",
+      "handoffBrokerId": "broker-beta",
       "handoffTeamIds": [
         "team2"
       ],
       "childProjectionRequired": true,
       "parentSeedRequired": true,
-      "projectionDestinationBrokerId": "seoseo",
+      "projectionDestinationBrokerId": "broker-alpha",
       "expectedPath": "local-plus-cross-team-child-projection",
       "terminalBriefNotification": {
-        "senderBrokerId": "seoseo",
+        "senderBrokerId": "broker-alpha",
         "parentBrokerOnly": true,
         "parentOriginOnly": true,
         "titleMetadata": {
           "statusLabel": "완료",
-          "workerId": "soonwook",
+          "workerId": "worker-eta",
           "parentRoundOrder": 2,
           "parentRoundTotal": 4,
-          "defaultTitle": "A2A Terminal Brief 완료: soonwook(2/4)",
-          "renderedByBrokerId": "seoseo",
+          "defaultTitle": "A2A Terminal Brief 완료: worker-eta(2/4)",
+          "renderedByBrokerId": "broker-alpha",
           "operatorFacingOwnerIsParentOrigin": true,
           "childOrHandoffRenderedOperatorFacingTitle": false
         },
@@ -128,12 +128,12 @@
       }
     },
     {
-      "caseId": "gwakga-team2-local",
-      "initiatingBrokerId": "gwakga",
+      "caseId": "broker-beta-team2-local",
+      "initiatingBrokerId": "broker-beta",
       "requestedTeamScope": "team2-only",
-      "parentBrokerId": "gwakga",
-      "originBrokerId": "gwakga",
-      "operatorFacingTerminalBriefSender": "gwakga",
+      "parentBrokerId": "broker-beta",
+      "originBrokerId": "broker-beta",
+      "operatorFacingTerminalBriefSender": "broker-beta",
       "localTeamIds": [
         "team2"
       ],
@@ -141,20 +141,20 @@
       "childProjectionRequired": false,
       "parentSeedRequired": false,
       "forbiddenBrokerInvolvement": [
-        "seoseo"
+        "broker-alpha"
       ],
       "expectedPath": "local-only",
       "terminalBriefNotification": {
-        "senderBrokerId": "gwakga",
+        "senderBrokerId": "broker-beta",
         "parentBrokerOnly": true,
         "parentOriginOnly": true,
         "titleMetadata": {
           "statusLabel": "완료",
-          "workerId": "dungae",
+          "workerId": "worker-epsilon",
           "parentRoundOrder": 3,
           "parentRoundTotal": 4,
-          "defaultTitle": "A2A Terminal Brief 완료: dungae(3/4)",
-          "renderedByBrokerId": "gwakga",
+          "defaultTitle": "A2A Terminal Brief 완료: worker-epsilon(3/4)",
+          "renderedByBrokerId": "broker-beta",
           "operatorFacingOwnerIsParentOrigin": true,
           "childOrHandoffRenderedOperatorFacingTitle": false
         },
@@ -172,34 +172,34 @@
       }
     },
     {
-      "caseId": "gwakga-allteams-seoseo-child",
-      "initiatingBrokerId": "gwakga",
+      "caseId": "broker-beta-allteams-broker-alpha-child",
+      "initiatingBrokerId": "broker-beta",
       "requestedTeamScope": "team1+team2",
-      "parentBrokerId": "gwakga",
-      "originBrokerId": "gwakga",
-      "operatorFacingTerminalBriefSender": "gwakga",
+      "parentBrokerId": "broker-beta",
+      "originBrokerId": "broker-beta",
+      "operatorFacingTerminalBriefSender": "broker-beta",
       "localTeamIds": [
         "team2"
       ],
-      "handoffBrokerId": "seoseo",
+      "handoffBrokerId": "broker-alpha",
       "handoffTeamIds": [
         "team1"
       ],
       "childProjectionRequired": true,
       "parentSeedRequired": true,
-      "projectionDestinationBrokerId": "gwakga",
+      "projectionDestinationBrokerId": "broker-beta",
       "expectedPath": "local-plus-cross-team-child-projection",
       "terminalBriefNotification": {
-        "senderBrokerId": "gwakga",
+        "senderBrokerId": "broker-beta",
         "parentBrokerOnly": true,
         "parentOriginOnly": true,
         "titleMetadata": {
           "statusLabel": "완료",
-          "workerId": "bangtong",
+          "workerId": "worker-gamma",
           "parentRoundOrder": 4,
           "parentRoundTotal": 4,
-          "defaultTitle": "A2A Terminal Brief 완료: bangtong(4/4)",
-          "renderedByBrokerId": "gwakga",
+          "defaultTitle": "A2A Terminal Brief 완료: worker-gamma(4/4)",
+          "renderedByBrokerId": "broker-beta",
           "operatorFacingOwnerIsParentOrigin": true,
           "childOrHandoffRenderedOperatorFacingTitle": false
         },
@@ -238,8 +238,8 @@
   ],
   "forbiddenInterpretations": [
     "originBrokerId means child broker",
-    "Team2-only work routes through Seoseo",
-    "Team1-only work routes through Gwakga",
+    "Team2-only work routes through broker-alpha",
+    "Team1-only work routes through broker-beta",
     "provider accepted/send evidence must be treated as non-ACK only",
     "child broker sends an operator-facing parent Terminal Brief after relay success",
     "child or handoff broker renders the operator-facing default Terminal Brief title",
@@ -265,12 +265,12 @@
   "v0Freeze": {
     "frozenAt": "2026-05-15T02:20:00+09:00",
     "round": "a2a-broker-634-parent-origin-four-case-routing",
-    "scope": "Four-case Terminal Brief parent-origin routing matrix for Seoseo/Team1 and Gwakga/Team2",
+    "scope": "Four-case Terminal Brief parent-origin routing matrix for broker-alpha/Team1 and broker-beta/Team2",
     "nonAckBoundary": "routing cases define ownership and projection flow only; provider accepted/send evidence remains non-ACK"
   },
   "v1Freeze": {
     "frozenAt": "2026-05-15T02:20:00+09:00",
     "round": "a2a-broker-634-parent-origin-four-case-routing",
-    "scope": "Four-case Terminal Brief parent-origin routing matrix for Seoseo/Team1 and Gwakga/Team2"
+    "scope": "Four-case Terminal Brief parent-origin routing matrix for broker-alpha/Team1 and broker-beta/Team2"
   }
 }

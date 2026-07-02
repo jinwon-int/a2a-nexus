@@ -10,6 +10,11 @@
 
 ## Implementation tasks
 
+- [ ] Produce a discovery inventory before cleanup/removal edits.
+- [ ] Define independent verification or finalizer oracle-coverage review.
+- [ ] Capture red evidence before adding/fixing a gate, scanner, or CI wiring.
+- [ ] Materialize later-stage follow-up issues/tasks before parent closeout.
+- [ ] Map each implementation lane to one PR, or record finalizer approval for consolidation.
 - [ ] Define or update evidence/schema/contract expectations.
 - [ ] Implement code/config/docs change.
 - [ ] Add or update tests.

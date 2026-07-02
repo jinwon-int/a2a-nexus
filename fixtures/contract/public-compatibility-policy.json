@@ -1,7 +1,7 @@
 {
   "fixtureId": "a2a-nexus.contract.public-compatibility-policy.v1",
   "contract": "contracts/compatibility/README.md",
-  "description": "Public-safe policy proof for issue #94 follow-ups: compatibility claims are backed by A2A Nexus contracts and fixtures, not private Seoseo-only runtime assumptions.",
+  "description": "Public-safe policy proof for issue #94 follow-ups: compatibility claims are backed by A2A Nexus contracts and fixtures, not private broker-alpha-only runtime assumptions.",
   "sourceIssueUrl": "a2a-plane#94 (internal tracker, private)",
   "reviewIssueUrl": "a2a-plane#166 (internal tracker, private)",
   "round": "a2a-public-readiness-next-20260509T165108Z",
@@ -20,14 +20,14 @@
     "contracts/a2a/broker-handoff-protocol.md",
     "contracts/compatibility/matrix.md",
     "fixtures/contract/worker-registration-capabilities.json",
-    "fixtures/contract/gwakga-cross-broker-handoff.json",
+    "fixtures/contract/broker-beta-cross-broker-handoff.json",
     "fixtures/contract/terminal-evidence.json"
   ],
   "portableBrokerExamples": [
     {
-      "brokerId": "gwakga",
+      "brokerId": "broker-beta",
       "role": "broker-of-record",
-      "evidenceRef": "fixtures/contract/gwakga-cross-broker-handoff.json"
+      "evidenceRef": "fixtures/contract/broker-beta-cross-broker-handoff.json"
     },
     {
       "brokerId": "generic-public-broker",
@@ -36,7 +36,7 @@
     }
   ],
   "forbiddenAssumptions": [
-    "requires-seoseo-as-broker-of-record",
+    "requires-broker-alpha-as-broker-of-record",
     "requires-private-worker-logs",
     "requires-provider-message-id-as-terminal-ack",
     "requires-live-provider-send",

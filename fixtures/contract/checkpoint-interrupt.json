@@ -85,7 +85,7 @@
       },
       "when": {
         "type": "task.resumed",
-        "brokerOfRecord": "gwakga",
+        "brokerOfRecord": "broker-beta",
         "resumedBy": "operator",
         "workerId": "worker-checkpoint-fixtures"
       },
@@ -346,7 +346,7 @@
     "description": "Redacted deterministic JSON event sequence for a task's full lifecycle including checkpoint and interrupt events.",
     "schema": {
       "taskId": "task-redacted-example-export",
-      "brokerOfRecord": "gwakga",
+      "brokerOfRecord": "broker-beta",
       "events": [
         { "sequence": 1, "type": "task.accepted", "state": "queued" },
         { "sequence": 2, "type": "task.claimed", "state": "claimed" },

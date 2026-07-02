@@ -1,11 +1,11 @@
 # Hermes Native Worker Conformance Checklist
 
-Operator-facing acceptance path for Gongyung/Daegyo-style Hermes Android/Termux
+Operator-facing acceptance path for mobile-alpha/mobile-beta-style Hermes Android/Termux
 native workers. This checklist builds on:
 
 - [Hermes broker-agnostic worker contract](specs/hermes-worker-integration/spec.md) (a2a-plane#435 (internal tracker, private))
 - [Hermes reference worker dry-run](specs/hermes-worker-integration/plan.md) (Phase 2, #441)
-- [Gongyung Hermes lightweight worker profile](specs/gongyung-hermes-worker-profile/spec.md) (#393)
+- [mobile-alpha Hermes lightweight worker profile](specs/mobile-alpha-hermes-worker-profile/spec.md) (#393)
 - [Hermes/Android native worker runbook](hermes-android-native-worker-runbook.md)
 - [No-live conformance fixture](../fixtures/native-worker/no-live-conformance.json)
 
@@ -17,7 +17,7 @@ provider send, DB mutation, Terminal Brief ACK/replay, release/tag, secret
 movement, or force-push occurs during these checks.
 
 Live enrollment requires a separately approved canary packet and human operator
-approval from Seoseo.
+approval from broker-alpha.
 
 ---
 
@@ -93,9 +93,9 @@ approval from Seoseo.
       `brokerDBMutation`, `credentialMovement`, or `productionACK` are
       rejected or handed off.
 
-**Reference:** `docs/specs/gongyung-hermes-worker-profile/spec.md`
+**Reference:** `docs/specs/mobile-alpha-hermes-worker-profile/spec.md`
 
-**Test:** `node --test scripts/check-gongyung-hermes-worker-profile.test.mjs`
+**Test:** `node --test scripts/check-mobile-alpha-hermes-worker-profile.test.mjs`
 
 ### 4.2 Task lifecycle
 
@@ -117,7 +117,7 @@ approval from Seoseo.
 - [ ] `status` is one of `accepted`, `rejected`, or `handoff`.
 - [ ] All device identifiers, provider tokens, private paths, and raw session
       dumps are redacted to `<redacted>`.
-- [ ] `nodeId` (`gongyung`), outcome, summary, artifact paths, and profile
+- [ ] `nodeId` (`mobile-alpha`), outcome, summary, artifact paths, and profile
       metadata are kept as safe evidence content.
 - [ ] Artifact root uses 0700 permissions (private to Termux user).
 - [ ] The manifest is readable by the operator for offline review.
@@ -149,10 +149,10 @@ approval from Seoseo.
 - [ ] `result.output.runtimeFlavor` is `termux-hermes`.
 - [ ] `result.output.profileVersion` is `1`.
 - [ ] Each artifact entry has `path`, `kind`, and `redacted` fields.
-- [ ] Evidence does **not** include `outcome: "pr"` (Gongyung cannot push
+- [ ] Evidence does **not** include `outcome: "pr"` (mobile-alpha cannot push
       branches).
 
-**Reference:** `docs/specs/gongyung-hermes-worker-profile/spec.md`
+**Reference:** `docs/specs/mobile-alpha-hermes-worker-profile/spec.md`
 
 **Test:** `node --test scripts/check-hermes-reference-worker.test.mjs`
 
@@ -181,7 +181,7 @@ approval from Seoseo.
 
 ---
 
-## 9. Admission Validation (Gongyung Profile)
+## 9. Admission Validation (mobile-alpha Profile)
 
 - [ ] `admit()` returns `{ ok: true }` for allowed intents.
 - [ ] `admit()` returns `{ ok: false, noGoSignal: { reason: "gongyung_not_docker_runner" } }`
@@ -192,9 +192,9 @@ approval from Seoseo.
 - [ ] Evidence manifest validation fails structured when required fields are
       missing or redaction rules are violated.
 
-**Reference:** `docs/specs/gongyung-hermes-worker-profile/spec.md`
-**Test:** `node --test scripts/check-gongyung-hermes-worker-profile.test.mjs`
-**Plugin test:** `npx node --test packages/openclaw-plugin-a2a/tests/gongyung-worker-profile-admission.test.ts`
+**Reference:** `docs/specs/mobile-alpha-hermes-worker-profile/spec.md`
+**Test:** `node --test scripts/check-mobile-alpha-hermes-worker-profile.test.mjs`
+**Plugin test:** `npx node --test packages/openclaw-plugin-a2a/tests/mobile-alpha-worker-profile-admission.test.ts`
 
 ---
 
@@ -218,14 +218,14 @@ npm run start
 # Reference worker static checks
 node --test scripts/check-hermes-reference-worker.test.mjs
 
-# Gongyung profile static checks
-node --test scripts/check-gongyung-hermes-worker-profile.test.mjs
+# mobile-alpha profile static checks
+node --test scripts/check-mobile-alpha-hermes-worker-profile.test.mjs
 
 # Native worker conformance fixture checks
 node --test scripts/check-native-worker-conformance.test.mjs
 
-# Gongyung admission tests (requires package build)
-cd packages/openclaw-plugin-a2a && npx node --test tests/gongyung-worker-profile-admission.test.ts
+# mobile-alpha admission tests (requires package build)
+cd packages/openclaw-plugin-a2a && npx node --test tests/mobile-alpha-worker-profile-admission.test.ts
 ```
 
 ### Local loopback smoke test
@@ -287,8 +287,8 @@ reference Done evidence.
 ## Risk Notes
 
 - This checklist covers **no-live conformance only**. Live enrollment requires
-  a separate canary approval packet and Seoseo as finalizer.
-- Gongyung runs on Android Termux with no Docker, no GitHub push, and limited
+  a separate canary approval packet and broker-alpha as finalizer.
+- mobile-alpha runs on Android Termux with no Docker, no GitHub push, and limited
   memory. Heavy, build, or patch tasks must be rejected or handed off.
 - Secret values must never appear in docs, fixtures, tests, evidence, or chat.
   The fixture at `fixtures/native-worker/no-live-conformance.json` contains
@@ -309,7 +309,7 @@ After a successful conformance run, capture:
    (redacted).
 4. `git diff --check` output.
 5. `npm run check:hermes-reference-worker` output.
-6. `npm run check:gongyung-hermes-worker-profile` output.
+6. `npm run check:mobile-alpha-hermes-worker-profile` output.
 7. `npm run check:native-worker-conformance` output.
 
 Store evidence under `~/.hermes/a2a/conformance/` with ISO-8601 timestamp.
@@ -317,5 +317,5 @@ Do not paste raw evidence into GitHub issues or PRs — use redacted summaries.
 
 ---
 
-*This checklist is source-only and produces no production state. Seoseo
+*This checklist is source-only and produces no production state. broker-alpha
 remains Team1 broker/finalizer of record.*

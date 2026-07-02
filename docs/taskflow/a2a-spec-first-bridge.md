@@ -60,8 +60,8 @@ Store only minimal resumable state in `stateJson`.
     "reason": "cross-repo Terminal Brief routing contract"
   },
   "ownership": {
-    "brokerOfRecord": "gwakga",
-    "finalizer": "gwakga",
+    "brokerOfRecord": "broker-beta",
+    "finalizer": "broker-beta",
     "humanApprovalOwner": "operator"
   },
   "affectedRepos": [
@@ -178,7 +178,7 @@ Source packet:
 - Plan: `docs/specs/a2a-terminal-brief-parent-origin-routing/plan.md`
 - Tasks: `docs/specs/a2a-terminal-brief-parent-origin-routing/tasks.md`
 - Size: Large
-- Broker/finalizer: Gwakga
+- Broker/finalizer: broker-beta
 
 Suggested flow:
 
@@ -192,7 +192,7 @@ Suggested flow:
 4. Move to `collecting_evidence` while PRs/tests run.
 5. Move to `awaiting_approval` before any deploy/restart/live canary request.
 6. Move to `ready_for_closeout` when source PRs are merged and evidence is complete.
-7. Gwakga finalizer closes with GO/NO-GO and records follow-up runtime gate if needed.
+7. broker-beta finalizer closes with GO/NO-GO and records follow-up runtime gate if needed.
 
 ## Phase 1 manual boundaries
 

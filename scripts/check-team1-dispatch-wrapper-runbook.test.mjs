@@ -94,10 +94,10 @@ test('Dispatch-wrapper runbook covers worker-online preflight', async () => {
   assert.match(content, /preflight/i);
   assert.match(content, /doctor/);
   assert.match(content, /health/);
-  assert.match(content, /bangtong/);
-  assert.match(content, /sogyo/);
-  assert.match(content, /nosuk/);
-  assert.match(content, /yukson/);
+  assert.match(content, /worker-gamma/);
+  assert.match(content, /worker-beta/);
+  assert.match(content, /worker-alpha/);
+  assert.match(content, /worker-delta/);
 });
 
 test('Dispatch-wrapper runbook covers read-only follow-up check', async () => {
@@ -115,7 +115,7 @@ test('Dispatch-wrapper runbook covers finalizer closeout handoff', async () => {
   assert.match(content, /finalizer/i);
   assert.match(content, /closeout/i);
   assert.match(content, /handoff/i);
-  assert.match(content, /seoseo/);
+  assert.match(content, /broker-alpha/);
   assert.match(content, /aggregate decision/i);
   assert.match(content, /go\/nogo/i);
 });

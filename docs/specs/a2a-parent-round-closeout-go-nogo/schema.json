@@ -5,7 +5,7 @@
   "parentIssue": "https://github.com/jinwon-int/a2a-broker/issues/841",
   "issue": "a2a-plane#396 (internal tracker, private)",
   "run": "a2a-team1-auto-closeout-dryrun-wiring-20260520T174311Z",
-  "lane": "team1-nosuk",
+  "lane": "team1-worker-alpha",
   "failClosed": true,
   "defaultDecision": "NO_GO",
   "decisionOutputs": ["GO", "NO_GO", "BLOCKED"],
@@ -193,16 +193,16 @@
     },
     {
       "id": "seoseoFinalizer",
-      "title": "Seoseo finalizer check",
+      "title": "broker-alpha finalizer check",
       "failClosed": true,
       "requiredForGo": true,
       "automated": true,
       "blockedWhenMissing": null,
-      "failedWhenMissing": "The broker attempting closeout is not Seoseo. Only Seoseo may close the parent issue.",
+      "failedWhenMissing": "The broker attempting closeout is not broker-alpha. Only broker-alpha may close the parent issue.",
       "evidence": [
-        "The evaluating broker matches the designated finalizer (Seoseo).",
-        "Non-Seoseo evaluation is informational only and does not produce a closeout action.",
-        "Seoseo operator identity is confirmed before closeout execution."
+        "The evaluating broker matches the designated finalizer (broker-alpha).",
+        "Non-broker-alpha evaluation is informational only and does not produce a closeout action.",
+        "broker-alpha operator identity is confirmed before closeout execution."
       ]
     },
     {
@@ -237,8 +237,8 @@
     }
   ],
   "roundLanes": {
-    "a2a-plane-nosuk": {
-      "owner": "team1-nosuk",
+    "a2a-plane-worker-alpha": {
+      "owner": "team1-worker-alpha",
       "issue": "a2a-plane#396 (internal tracker, private)",
       "role": "Parent-round closeout go/no-go matrix spec/runbook and validation fixture"
     }

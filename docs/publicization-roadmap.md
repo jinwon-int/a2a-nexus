@@ -43,12 +43,12 @@ Checked for the #1160/#1166 A2AD round, follow-up operator approval, and the #11
 The #1160/#1166 implementation planning round was dispatched through the broker as a source-only/no-live A2AD round:
 
 - Round id: `nexus-open-issues-publicization-r2-20260701T030930Z`
-- Broker: Seoseo broker, local source-only/no-live dispatch
+- Broker: broker-alpha broker, local source-only/no-live dispatch
 - Lanes created: 4/4
-  - `public-surface` → `sogyo`
-  - `settings-proposal` → `nosuk`
-  - `listing-tracker` → `bangtong`
-  - `finalizer` → `gongyung`
+  - `public-surface` → `worker-beta`
+  - `settings-proposal` → `worker-alpha`
+  - `listing-tracker` → `worker-gamma`
+  - `finalizer` → `mobile-alpha`
 - Final task state: 4/4 succeeded
 - Finalizer decision: `GO_WITH_CHANGES`
 
