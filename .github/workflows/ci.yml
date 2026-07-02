@@ -61,6 +61,7 @@ jobs:
             contracts:
               - 'contracts/**'
               - 'fixtures/**'
+              - 'test/conformance/**'
             docs:
               - 'docs/**'
               - 'README.md'
