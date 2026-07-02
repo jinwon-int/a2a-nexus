@@ -1,13 +1,14 @@
 FROM node:22-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json* ./
+WORKDIR /app/packages/broker
+COPY packages/broker/package.json packages/broker/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 FROM deps AS build
-WORKDIR /app
-COPY tsconfig.json ./
-COPY src ./src
-COPY scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
+WORKDIR /app/packages/broker
+COPY tsconfig.base.json /app/tsconfig.base.json
+COPY packages/broker/tsconfig.json ./
+COPY packages/broker/src ./src
+COPY packages/broker/scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
 RUN npm run build
 
 FROM node:22-alpine AS runtime
@@ -32,17 +33,17 @@ ENV NODE_ENV=production \
     A2A_BROKER_BUILT_AT=$A2A_BROKER_CREATED \
     A2A_BROKER_SOURCE=github.com/jinwon-int/a2a-nexus \
     A2A_BROKER_RUNTIME=docker
-COPY package.json package-lock.json* ./
+COPY packages/broker/package.json packages/broker/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
-COPY --from=build /app/dist ./dist
-COPY scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
-COPY scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
+COPY --from=build /app/packages/broker/dist ./dist
+COPY packages/broker/scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
+COPY packages/broker/scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
 # Generate dist/build-info.json from Docker build ARGs so /health.build.revision
 # and org.opencontainers.image.revision use the actual build-time values.
 RUN node scripts/generate-build-info.mjs --runtime docker
-COPY scripts/a2a-task-handler.mjs ./scripts/a2a-task-handler.mjs
-COPY scripts/worker-model-policy.mjs ./scripts/worker-model-policy.mjs
-COPY scripts/hermes-a2a-analysis-bridge.mjs ./scripts/hermes-a2a-analysis-bridge.mjs
+COPY packages/broker/scripts/a2a-task-handler.mjs ./scripts/a2a-task-handler.mjs
+COPY packages/broker/scripts/worker-model-policy.mjs ./scripts/worker-model-policy.mjs
+COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./scripts/hermes-a2a-analysis-bridge.mjs
 RUN mkdir -p /var/lib/a2a-broker ./handlers \
   && cp scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
   && cp scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
