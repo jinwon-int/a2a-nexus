@@ -55,6 +55,7 @@
     { "file": "scripts/archive/check-team1-workerDelta-go-nogo-evidence-pack.test.mjs", "class": "gate", "round": null, "note": "Team1 workerDelta go/no-go evidence pack; no round id, kept as gate (conservative)." },
     { "file": "scripts/a2a-worker-readiness-preflight.test.mjs", "class": "gate", "round": null, "note": "Worker readiness preflight evaluator (#655/#739): secret/route/handler + role-drift and broker-freshness classification. Was previously ungated." },
     { "file": "scripts/a2a-skill-guard.test.mjs", "class": "gate", "round": null, "note": "brokerAlpha A2A skill guardpack tests (#1035)." },
-    { "file": "test/conformance/check-terminal-evidence-state-machine.mjs", "class": "gate", "round": null, "note": "Terminal Evidence State Machine schema/docs/fixture boundary (#965): provider_accepted and operator_visible are non-ACK; acknowledged is operator-owned terminal ACK." }
+    { "file": "test/conformance/check-terminal-evidence-state-machine.mjs", "class": "gate", "round": null, "note": "Terminal Evidence State Machine schema/docs/fixture boundary (#965): provider_accepted and operator_visible are non-ACK; acknowledged is operator-owned terminal ACK." },
+    { "file": "scripts/check-runtime-hardening-docs.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1209 runtime-hardening docs absence gate." }
   ]
 }

@@ -2,6 +2,18 @@
 
 All notable public-safe changes for **A2A Nexus** are collected here. This file is release-preparation documentation only: it does not publish packages, create tags, change repository visibility, deploy services, restart services, mutate production state, send provider messages, rotate secrets, or ACK terminal outbox records.
 
+## Unreleased
+
+### Changed — docker-runner trusted-lane defaults (behavior change, #1204/#1209)
+
+- The trusted-operator default network dropped from `host` to `bridge`. Untrusted lanes keep `none`. Trusted workers that relied on host networking must opt in explicitly with `A2A_DOCKER_RUNNER_NETWORK=host`.
+- Trusted lanes now default to a read-only root filesystem (`--read-only` plus a bounded `noexec,nosuid` `/tmp` tmpfs) and a non-root container user (`--user 1000:1000`). Escape hatches: `A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS=0`, `A2A_DOCKER_RUNNER_USER=root`. Full matrix and migration note: [`packages/docker-runner/docs/trusted-operator-hardening.md`](packages/docker-runner/docs/trusted-operator-hardening.md).
+
+### Added — broker runtime robustness (#1204)
+
+- Broker entrypoint installs `unhandledRejection`/`uncaughtException` handlers with structured logging and graceful-shutdown reuse.
+- Process-local security limits (replay cache, rate limiter) are documented in [`packages/broker/docs/process-local-security-limits.md`](packages/broker/docs/process-local-security-limits.md); restarts reset both and horizontal scaling needs a shared store.
+
 ## v0.1.0-alpha — operator decision candidate
 
 Status: **draft / unreleased**. Use this entry as the operator decision surface for either an initial `v0.1.0-alpha` tag or a later `v0.1.0` after every public-readiness gate closes.
