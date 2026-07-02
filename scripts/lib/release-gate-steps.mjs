@@ -69,6 +69,7 @@ export function parseReleaseGateArgs(argv) {
   const selectedTiers = new Set(DEFAULT_TIERS);
   let all = false;
   let list = false;
+  let replaceDefaultTiers = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -87,8 +88,27 @@ export function parseReleaseGateArgs(argv) {
       i += 1;
       continue;
     }
+    if (arg === '--only-tier') {
+      const tier = argv[i + 1];
+      if (!tier) fail('--only-tier requires a tier name');
+      if (!replaceDefaultTiers) {
+        selectedTiers.clear();
+        replaceDefaultTiers = true;
+      }
+      selectedTiers.add(tier);
+      i += 1;
+      continue;
+    }
     if (arg.startsWith('--tier=')) {
       selectedTiers.add(arg.slice('--tier='.length));
+      continue;
+    }
+    if (arg.startsWith('--only-tier=')) {
+      if (!replaceDefaultTiers) {
+        selectedTiers.clear();
+        replaceDefaultTiers = true;
+      }
+      selectedTiers.add(arg.slice('--only-tier='.length));
       continue;
     }
     fail(`unknown release-gate argument: ${arg}`);
