@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
+import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
 import type {
   A2APartyKind,
@@ -318,6 +319,26 @@ export class A2ABrokerWorker {
         await this.failTask(task.id, outcome.error);
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${outcome.error.message}`);
         return true;
+      }
+
+      const acceptance = parseTaskAcceptance(runningTask);
+      if (acceptance?.error) {
+        stopTaskHeartbeat?.();
+        stopTaskHeartbeat = undefined;
+        await this.failTask(task.id, acceptance.error);
+        console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${acceptance.error.message}`);
+        return true;
+      }
+      if (acceptance?.spec) {
+        const validation = runTaskAcceptance(acceptance.spec);
+        outcome.result = { ...(outcome.result ?? {}), validation };
+        if (validation.verdict !== "pass") {
+          stopTaskHeartbeat?.();
+          stopTaskHeartbeat = undefined;
+          await this.failTask(task.id, { code: "acceptance_failed", message: validation.note ?? "acceptance command failed" });
+          console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${validation.note}`);
+          return true;
+        }
       }
 
       const completionEvidenceError = validateTaskCompletionEvidence(runningTask, outcome.result);
@@ -681,7 +702,7 @@ function assertSafeHttpSignatureParamValue(value: string, label: string): void {
 }
 
 export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskResult): TaskError | null {
-  return validateGithubTaskCompletionEvidence(task, result);
+  return validateAcceptanceEvidence(task, result) ?? validateGithubTaskCompletionEvidence(task, result);
 }
 
 /**
