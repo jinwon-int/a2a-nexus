@@ -58,6 +58,7 @@
     { "file": "test/conformance/check-terminal-evidence-state-machine.mjs", "class": "gate", "round": null, "note": "Terminal Evidence State Machine schema/docs/fixture boundary (#965): provider_accepted and operator_visible are non-ACK; acknowledged is operator-owned terminal ACK." },
     { "file": "scripts/check-runtime-hardening-docs.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1209 runtime-hardening docs absence gate." },
     { "file": "scripts/check-issue-closeout-hygiene.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1210 closeout hygiene monitor (skips without GITHUB_TOKEN)." },
-    { "file": "scripts/check-disposition-references.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1220 disposition reference checker (skips without GITHUB_TOKEN)." }
+    { "file": "scripts/check-disposition-references.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1220 disposition reference checker (skips without GITHUB_TOKEN)." },
+    { "file": "scripts/check-round-quality-scorecard.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1220 round-quality scorecard gate and its committed baseline." }
   ]
 }
