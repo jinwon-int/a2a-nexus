@@ -43,7 +43,13 @@ CODEOWNERS routes review attention. It does not move finalizer authority to A2A 
 
 Before closing an issue or merging a closeout PR, the finalizer must compare every issue checklist item and acceptance criterion against concrete artifacts. Bulk closeout is a NO-GO unless the finalizer writes an issue-by-issue disposition that names completed items, deferred follow-ups, and skipped approval-sensitive actions. For A2A rounds, the default mapping is one implementation lane to one PR; consolidating lanes into one PR requires an explicit finalizer note explaining why review coverage is preserved.
 
-This rule is machine-monitored (#1210): the scheduled [`closeout-hygiene`](../.github/workflows/closeout-hygiene.yml) workflow runs `scripts/check-issue-closeout-hygiene.mjs` and fails on issues closed as completed with unchecked task-list items. Deviations require the `closeout-exception` label plus an item-by-item disposition comment before close.
+This rule is machine-monitored (#1210): the scheduled [`closeout-hygiene`](../.github/workflows/closeout-hygiene.yml) workflow runs `scripts/check-issue-closeout-hygiene.mjs` and fails on issues closed as completed with unchecked task-list items. Deviations require the `closeout-exception` label plus an item-by-item disposition comment before close. Disposition comments are themselves checked: `scripts/check-disposition-references.mjs` (same workflow) fails when a disposition cites a PR, workflow run, or repo path that does not exist — a reconciliation that points at nothing is not a reconciliation (#1220).
+
+### Finalizer judgment rules (#1220)
+
+- **Oracle independence.** Never judge a round with a detector or gate that the same round built — the detector's blind spots are the implementation's blind spots (#1194 RC-A; observed in #1204). The reference for completion is always the issue's own acceptance criteria, read from the issue text.
+- **Standard rejection reasons.** A PR that adds a new gate, scanner rule, or test without a red→green log (the check failing on the pre-change tree) is returned, not merged. A task whose spec demands mutation evidence is returned without the mutation log. These are standard dispositions, not discretionary calls.
+- **Verification methodology.** When judging that an artifact is absent, sweep synonyms before concluding (a doc named `process-local-*` satisfies a "per-process" requirement), and trace config-layer defaults before reading runtime conditionals as opt-in (`config.ts` defaults flow into `runner.ts` guards). Both failure modes produced false findings in #1209.
 
 ## Approval records
 
