@@ -1,0 +1,23 @@
+{
+  "$comment": "Round-quality scorecard (#1220 PR 3). One entry per closed improvement track or A2AD round wave. Metrics are the feedback loop for guardpack/process changes: carryOverCount = deliverables that had to be re-tracked in a follow-up issue; falseFindingCount = audit/verification findings later corrected as wrong; reworkIssueCount = issues opened solely to redo or complete previously-closed work; legacyIncompleteCloses = checklist-incomplete completed-closes observed (one-time baseline from the first closeout-hygiene run). Validated fail-closed by scripts/check-round-quality-scorecard.mjs. Counts only — no personal identifiers, no private channels.",
+  "entries": [
+    {
+      "id": "improvement-track-2026-07",
+      "window": { "from": "2026-07-01", "to": "2026-07-02" },
+      "scope": "#1183/#1198/#1217 umbrellas and their child issues",
+      "metrics": {
+        "carryOverCount": 2,
+        "falseFindingCount": 2,
+        "reworkIssueCount": 2,
+        "legacyIncompleteCloses": 51
+      },
+      "evidence": [
+        "carry-over: C6 e2e re-tracked #1204 -> #1209 -> #1215",
+        "false findings: #1209 R2 (synonym miss) and R5 (config-layer misread), corrected in the #1209 audit-correction comment",
+        "rework issues: #1192 (post-closeout gaps), #1209 (C6 residual completion)",
+        "legacy incomplete closes: closeout-hygiene run 28568436975 first live report"
+      ],
+      "recordedAt": "2026-07-02"
+    }
+  ]
+}

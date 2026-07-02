@@ -43,6 +43,16 @@
       "note": "Absence-detection gate for #1204/#1209 runtime-hardening docs (CHANGELOG trusted-default entry, process-local security limits, hardening escape hatches). Keep while the documented defaults exist."
     },
     {
+      "name": "round-quality-scorecard",
+      "command": "node",
+      "args": [
+        "scripts/check-round-quality-scorecard.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Fail-closed validation of docs/ops/round-quality-scorecard.json (#1220 PR 3) — the round-quality feedback loop must stay machine-readable."
+    },
+    {
       "name": "packages",
       "command": "npm",
       "args": [
