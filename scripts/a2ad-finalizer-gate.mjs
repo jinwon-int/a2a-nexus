@@ -139,7 +139,7 @@ function classifyLaneEvidence(lane) {
     error,
     message: lane.message,
   });
-  const worker = String(workerOf(lane) || '').toLowerCase();
+  const worker = String(workerOf(lane) || '').trim().toLowerCase();
   const statusBucket = classify(lane.status);
   const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
   const sourceProjectionQuality = String(output.sourceProjection?.quality ?? '').trim().toLowerCase();
@@ -157,7 +157,7 @@ function classifyLaneEvidence(lane) {
     };
   }
 
-  if (statusBucket === 'pending' && worker === 'mobileBeta') {
+  if (statusBucket === 'pending' && worker === 'mobilebeta') {
     const laneStatus = String(lane.status || '').trim().toLowerCase();
     if (laneStatus === 'claimed' || laneStatus === 'running') {
       return {
