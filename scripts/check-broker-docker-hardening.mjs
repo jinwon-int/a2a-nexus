@@ -30,6 +30,12 @@ function check() {
     assert.match(dockerfile, /chown\s+-R\s+node:node\s+\/app\s+\/var\/lib\/a2a-broker/);
     assert.match(dockerfile, /^USER\s+node$/m);
   });
+  ok("compose builds broker image from repo-root context so shared tsconfig is available", () => {
+    assert.match(compose, /context:\s+\.\.\/\.\./);
+    assert.match(compose, /dockerfile:\s+packages\/broker\/Dockerfile/);
+    assert.match(dockerfile, /COPY\s+tsconfig\.base\.json\s+\/app\/tsconfig\.base\.json/);
+    assert.match(dockerfile, /COPY\s+packages\/broker\/tsconfig\.json\s+\.\//);
+  });
   ok("compose build args require revision and created timestamp", () => {
     assert.match(compose, /A2A_BROKER_REVISION:\s+\$\{A2A_BROKER_REVISION:\?[^}]+\}/);
     assert.match(compose, /A2A_BROKER_CREATED:\s+\$\{A2A_BROKER_CREATED:\?[^}]+\}/);

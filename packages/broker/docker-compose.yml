@@ -1,7 +1,8 @@
 services:
   a2a-broker:
     build:
-      context: .
+      context: ../..
+      dockerfile: packages/broker/Dockerfile
       args:
         # Pass git SHA and timestamp as build args so Docker labels
         # (org.opencontainers.image.revision) and runtime env vars
