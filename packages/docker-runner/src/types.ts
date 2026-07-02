@@ -633,6 +633,57 @@ export interface SourcePublicExecutionPreflight {
   };
 }
 
+export interface RunnerPostPatchVerification {
+  /** argv executed in the task container after patch application; defaults to `npm run check` when the object is present without a command. */
+  command?: string[];
+  /** Expected process exit code. Defaults to 0. */
+  expectExitCode?: number;
+  /** Timeout in milliseconds for the verification command. Defaults to 300000. */
+  timeoutMs?: number;
+}
+
+export interface RunnerDiffHygienePolicy {
+  /** Repo-relative files or directory prefixes that must never appear in the patch. */
+  forbiddenPaths?: string[];
+  /** Allow lockfile changes only when the task scope explicitly opts in. */
+  allowLockfileChanges?: boolean;
+  /** Block a pure whitespace/re-serialization diff after patch generation. */
+  blockWhitespaceOnly?: boolean;
+}
+
+export interface RunnerPostPatchVerificationEvidence {
+  schemaVersion: "a2a.runner.post-patch-verification.v1";
+  command: string[];
+  exitCode: number;
+  expectedExitCode: number;
+  durationMs?: number;
+  logSha256?: string;
+  logPath: string;
+  status: "passed" | "failed";
+}
+
+export interface RunnerDiffHygieneEvidence {
+  schemaVersion: "a2a.runner.diff-hygiene.v1";
+  status: "passed" | "blocked";
+  changedPaths: string[];
+  blockedPaths: string[];
+  lockfileChanges: string[];
+  whitespaceOnly: boolean;
+}
+
+export interface RunnerReproducibilityMetadata {
+  schemaVersion: "a2a.runner.reproducibility.v1";
+  image: string;
+  nodeVersion: string;
+  runnerRevision?: string;
+  lockfileSha256?: string;
+  envProfile: {
+    network: string;
+    readOnlyRootFilesystem: boolean;
+    trustedOperator: boolean;
+  };
+}
+
 export interface RunnerTask {
   id: string;
   intent: string;
@@ -715,6 +766,10 @@ export interface RunnerTask {
    * uncommitted, or committed repository delta fails closed before PR creation.
    */
   readOnlyValidation?: boolean;
+  /** Optional post-patch verification command. Object present with no command defaults to `npm run check`. */
+  postPatchVerification?: RunnerPostPatchVerification;
+  /** Optional fail-closed diff hygiene policy run before PR/artifact success. */
+  diffHygiene?: RunnerDiffHygienePolicy;
   /** Safe broker/run identifier to carry into release-gate evidence when present. */
   runId?: string;
   /** Safe distributed trace identifier to carry into release-gate evidence when present. */
@@ -1065,6 +1120,12 @@ export interface ArtifactManifest {
   receiptTrace?: RunnerReceiptTrace;
   /** Optional sanitized recommendation for a bounded, approval-gated continuation. */
   continuation?: RunnerContinuationEvidence;
+  /** Optional post-patch verification command evidence. */
+  postPatchVerification?: RunnerPostPatchVerificationEvidence;
+  /** Optional diff hygiene gate evidence. */
+  diffHygiene?: RunnerDiffHygieneEvidence;
+  /** Optional reproducibility metadata for replay/audit. */
+  reproducibility?: RunnerReproducibilityMetadata;
   /** Optional no-live cleanup backup/checkpoint and rollback rehearsal capsule. */
   cleanupRehearsal?: CleanupRehearsalEvidence;
   /** Compact structured evidence URLs for broker task-report recovery. */
@@ -1104,6 +1165,9 @@ export interface ResultSummary {
   githubCommentProjection?: GitHubCommentProjection;
   sourcePublicApprovalRehearsal?: SourcePublicApprovalRehearsal;
   sourcePublicExecutionPreflight?: SourcePublicExecutionPreflight;
+  postPatchVerification?: RunnerPostPatchVerificationEvidence;
+  diffHygiene?: RunnerDiffHygieneEvidence;
+  reproducibility?: RunnerReproducibilityMetadata;
   /** Evidence of container execution retries due to transient failures. */
   containerRetryEvidence?: ContainerRetryEvidence;
   /** Optional external scanner evidence placeholders for SAST/DAST/CVE/SBOM evidence chain. */

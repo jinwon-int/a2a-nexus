@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildArtifactManifest, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
+import { buildArtifactManifest, buildContainerScript, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
+import { normalizeTask } from "./task-normalizer.js";
 import { buildBlockCommentBody } from "./github-evidence.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -49,6 +50,75 @@ test("buildArtifactManifest supports executions with no task artifacts", async (
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("buildArtifactManifest projects #1219 verification, hygiene, and reproducibility evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-1219-evidence-"));
+  try {
+    const manifest = await buildArtifactManifest(dir, [], {
+      postPatchVerification: {
+        schemaVersion: "a2a.runner.post-patch-verification.v1",
+        command: ["npm", "run", "check"],
+        exitCode: 0,
+        expectedExitCode: 0,
+        durationMs: 25,
+        logSha256: "a".repeat(64),
+        logPath: "artifacts/post-patch-verification.log",
+        status: "passed",
+      },
+      diffHygiene: {
+        schemaVersion: "a2a.runner.diff-hygiene.v1",
+        status: "passed",
+        changedPaths: ["packages/docker-runner/src/runner.ts"],
+        blockedPaths: [],
+        lockfileChanges: [],
+        whitespaceOnly: false,
+      },
+      reproducibility: {
+        schemaVersion: "a2a.runner.reproducibility.v1",
+        image: "a2a-docker-runner:test",
+        nodeVersion: "v22.0.0",
+        runnerRevision: "abc123",
+        envProfile: { network: "bridge", readOnlyRootFilesystem: false, trustedOperator: true },
+      },
+    });
+    assert.equal(manifest.postPatchVerification?.status, "passed");
+    assert.equal(manifest.diffHygiene?.changedPaths[0], "packages/docker-runner/src/runner.ts");
+    assert.equal(manifest.reproducibility?.runnerRevision, "abc123");
+
+    const summary = buildResultSummary(
+      { code: 0, signal: null, stdout: "ok", stderr: "", timedOut: false },
+      "ok",
+      "",
+      [],
+      manifest,
+    );
+    assert.equal(summary.postPatchVerification?.expectedExitCode, 0);
+    assert.equal(summary.diffHygiene?.status, "passed");
+    assert.equal(summary.reproducibility?.image, "a2a-docker-runner:test");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("buildContainerScript embeds fail-closed post-patch and diff hygiene gates", () => {
+  const task = normalizeTask({
+    id: "issue-1219",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    postPatchVerification: { command: ["node", "scripts/worker-artifact-rollout-guard.mjs", "--deployed"], expectExitCode: 0, timeoutMs: 120000 },
+    diffHygiene: { forbiddenPaths: ["SOUL.md", ".openclaw/"], allowLockfileChanges: false, blockWhitespaceOnly: true },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /post_patch_verification=started/);
+  assert.match(script, /timeout 120s 'node' 'scripts\/worker-artifact-rollout-guard\.mjs' '--deployed'/);
+  assert.match(script, /diff_hygiene=started/);
+  assert.match(script, /LOCKFILE_CHANGES=/);
+  assert.match(script, /diff-hygiene\.json/);
 });
 
 test("redactAndBound redacts secret-like values and truncates large output", () => {

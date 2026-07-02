@@ -15,7 +15,7 @@ import { buildExecutionProof } from "./execution-proof.js";
 import { detectEmbeddedModelTimeoutNoFallback } from "./failure-classification.js";
 import { redactAndBound, redactSecrets } from "./redaction.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
-import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContinuationEvidence, RunnerEvidenceHints, RunnerReceiptTrace, RunnerResult, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
+import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerConfig, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
 export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<RunnerResult> {
   validateTask(task);
@@ -95,6 +95,9 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     : undefined;
   const budgetStop = inferBudgetStopEvidence(stdout, stderr);
   const receiptTrace = sanitizeReceiptTrace(normalizedTask.receiptTrace ?? parseReceiptTraceEnv(normalizedTask.env));
+  const postPatchVerification = await readArtifactJson<RunnerPostPatchVerificationEvidence>(workDir, "post-patch-verification.json", isPostPatchVerificationEvidence);
+  const diffHygiene = await readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence);
+  const reproducibility = await buildReproducibilityMetadata(config, normalizedTask, workDir);
   const manifest = await buildArtifactManifest(workDir, artifacts, {
     task: normalizedTask,
     status: budgetStop ? "budget_limited" : completed.timedOut ? "failed" : completed.code === 0 ? "done" : "failed",
@@ -102,6 +105,9 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     stderr,
     prUrl,
     receiptTrace,
+    postPatchVerification,
+    diffHygiene,
+    reproducibility,
     ...(budgetStop ? budgetStop : {}),
   });
   await writeArtifactManifest(workDir, manifest);
@@ -649,8 +655,78 @@ export function buildResultSummary(
     ...(manifest.githubCommentProjection ? { githubCommentProjection: manifest.githubCommentProjection } : {}),
     ...(manifest.sourcePublicApprovalRehearsal ? { sourcePublicApprovalRehearsal: manifest.sourcePublicApprovalRehearsal } : {}),
     ...(manifest.sourcePublicExecutionPreflight ? { sourcePublicExecutionPreflight: manifest.sourcePublicExecutionPreflight } : {}),
+    ...(manifest.postPatchVerification ? { postPatchVerification: manifest.postPatchVerification } : {}),
+    ...(manifest.diffHygiene ? { diffHygiene: manifest.diffHygiene } : {}),
+    ...(manifest.reproducibility ? { reproducibility: manifest.reproducibility } : {}),
     ...(runnerBuild ? { runnerBuild } : {}),
   };
+}
+
+async function readArtifactJson<T>(workDir: string, artifactName: string, guard: (value: unknown) => value is T): Promise<T | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(join(workDir, "artifacts", artifactName), "utf8"));
+    return guard(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPostPatchVerificationEvidence(value: unknown): value is RunnerPostPatchVerificationEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return entry.schemaVersion === "a2a.runner.post-patch-verification.v1"
+    && Array.isArray(entry.command)
+    && entry.command.every((part) => typeof part === "string")
+    && typeof entry.exitCode === "number"
+    && typeof entry.expectedExitCode === "number"
+    && entry.logPath === "artifacts/post-patch-verification.log"
+    && (entry.status === "passed" || entry.status === "failed");
+}
+
+function isDiffHygieneEvidence(value: unknown): value is RunnerDiffHygieneEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return entry.schemaVersion === "a2a.runner.diff-hygiene.v1"
+    && (entry.status === "passed" || entry.status === "blocked")
+    && Array.isArray(entry.changedPaths)
+    && entry.changedPaths.every((part) => typeof part === "string")
+    && Array.isArray(entry.blockedPaths)
+    && entry.blockedPaths.every((part) => typeof part === "string")
+    && Array.isArray(entry.lockfileChanges)
+    && entry.lockfileChanges.every((part) => typeof part === "string")
+    && typeof entry.whitespaceOnly === "boolean";
+}
+
+async function buildReproducibilityMetadata(config: RunnerConfig, task: NormalizedRunnerTask, workDir: string): Promise<RunnerReproducibilityMetadata> {
+  const primaryRepo = task.repos.find((repo) => repo.primary) ?? task.repos[0];
+  const lockfileSha256 = primaryRepo ? await hashFirstExisting([
+    join(workDir, primaryRepo.path ?? "repo", "package-lock.json"),
+    join(workDir, primaryRepo.path ?? "repo", "pnpm-lock.yaml"),
+    join(workDir, primaryRepo.path ?? "repo", "yarn.lock"),
+  ]) : undefined;
+  return {
+    schemaVersion: "a2a.runner.reproducibility.v1",
+    image: config.image,
+    nodeVersion: process.version,
+    ...(config.buildMetadata?.revision ? { runnerRevision: config.buildMetadata.revision } : {}),
+    ...(lockfileSha256 ? { lockfileSha256 } : {}),
+    envProfile: {
+      network: config.network ?? "bridge",
+      readOnlyRootFilesystem: config.readOnlyRootFilesystem === true,
+      trustedOperator: config.trustedOperator === true,
+    },
+  };
+}
+
+async function hashFirstExisting(paths: string[]): Promise<string | undefined> {
+  for (const path of paths) {
+    try {
+      return createHash("sha256").update(await readFile(path)).digest("hex");
+    } catch {
+      // try next lockfile
+    }
+  }
+  return undefined;
 }
 
 export interface ArtifactManifestContext {
@@ -662,6 +738,9 @@ export interface ArtifactManifestContext {
   budget?: RunnerBudgetEvidence;
   receiptTrace?: RunnerReceiptTrace;
   continuation?: RunnerContinuationEvidence;
+  postPatchVerification?: RunnerPostPatchVerificationEvidence;
+  diffHygiene?: RunnerDiffHygieneEvidence;
+  reproducibility?: RunnerReproducibilityMetadata;
   cleanupRehearsal?: CleanupRehearsalEvidence;
   evidenceHints?: RunnerEvidenceHints;
   githubCommentProjection?: GitHubCommentProjection;
@@ -704,6 +783,9 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
     ...(context.budget ? { budget: context.budget } : {}),
     ...(context.receiptTrace ? { receiptTrace: context.receiptTrace } : {}),
     ...(context.continuation ? { continuation: context.continuation } : {}),
+    ...(context.postPatchVerification ? { postPatchVerification: context.postPatchVerification } : {}),
+    ...(context.diffHygiene ? { diffHygiene: context.diffHygiene } : {}),
+    ...(context.reproducibility ? { reproducibility: context.reproducibility } : {}),
     ...(cleanupRehearsal ? { cleanupRehearsal } : {}),
     ...(context.evidenceHints ? { evidenceHints: context.evidenceHints } : {}),
     ...(context.githubCommentProjection ? { githubCommentProjection: context.githubCommentProjection } : {}),

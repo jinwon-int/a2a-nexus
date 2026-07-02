@@ -18,6 +18,25 @@
         "legacy incomplete closes: closeout-hygiene run 28568436975 first live report"
       ],
       "recordedAt": "2026-07-02"
+    },
+    {
+      "id": "a2a-nexus-1219-q2-closeout-2026-07-02",
+      "window": { "from": "2026-07-02", "to": "2026-07-02" },
+      "scope": "#1219 docker-runner verification-embedded Q2 closeout under umbrella #1217",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "acceptancePayloadLanes": 6,
+        "acceptancePayloadPassed": 4
+      },
+      "evidence": [
+        "A2A round a2a-nexus-1219-acceptance-r1-20260702 dispatched 6 lanes with task payload acceptance.command=node scripts/worker-artifact-rollout-guard.mjs --deployed",
+        "implementation adds postPatchVerification, diffHygiene, and reproducibility manifest evidence for #1219 PR1/PR2/PR3 scope",
+        "local gates: docker-runner package parity and npm run check passed before merge",
+        "baseline comparison: previous improvement-track-2026-07 had carryOverCount=2 and falseFindingCount=2; this closeout records 0/0 at close time"
+      ],
+      "recordedAt": "2026-07-02"
     }
   ]
 }
