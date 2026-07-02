@@ -21,7 +21,7 @@ if (fs.existsSync(manifestPath)) {
   expect(manifest.private === true, 'docker runner package must remain private until explicit package-publication approval');
   expect(manifest.bin?.['a2a-docker-runner'] === './dist/cli.js', 'docker runner bin must point to ./dist/cli.js');
   expect(manifest.type === 'module', 'docker runner package must stay ESM');
-  expect(manifest.engines?.node === '>=22', 'docker runner package must require Node >=22');
+  expect(manifest.engines?.node === '>=22.5', 'docker runner package must require Node >=22.5');
   for (const script of ['build', 'check', 'test', 'lint']) {
     expect(Boolean(manifest.scripts?.[script]), `docker runner package missing ${script} script`);
   }

@@ -33,14 +33,14 @@
     "smoke:runner-canary-recovery-audit": "npm run build && node scripts/runner-canary-recovery-audit-smoke.mjs"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5"
   },
   "dependencies": {
     "picomatch": "^4.0.4"
   },
   "devDependencies": {
     "@types/node": "^24.6.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   },
   "repository": {
     "type": "git",

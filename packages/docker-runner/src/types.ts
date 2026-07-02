@@ -163,8 +163,12 @@ export interface RunnerConfig {
   defaultTimeoutMs: number;
   memory?: string;
   cpus?: string;
-  /** Container network mode. Defaults to bridge; trusted OpenClaw/Hermes profiles may opt into host. */
+  /** Container network mode. Defaults to none; trusted OpenClaw/Hermes profiles default to bridge and must explicitly opt into host. */
   network?: string;
+  /** Run the task container with a read-only root filesystem. Defaults true for trusted-operator lanes. */
+  readOnlyRootFilesystem?: boolean;
+  /** Optional container user (uid[:gid]). Trusted-operator lanes default to a non-root user unless explicitly disabled. */
+  user?: string;
   /** Explicit trusted-operator mode. Public safe-default mode is used when false/absent. */
   trustedOperator?: boolean;
   /** Max PIDs inside the task container (fork-bomb guard). Default 512. */

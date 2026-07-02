@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -164,6 +164,25 @@ test("broker snapshot export helpers write canonical versioned JSON atomically",
     const exported = JSON.parse(readFileSync(temp.filePath, "utf8"));
     assert.equal(exported.version, CURRENT_BROKER_STATE_VERSION);
     assert.deepEqual(exported.tasks.map((task: BrokerSnapshot["tasks"][number]) => task.id), ["task-export"]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("JsonFileBrokerStateStore recovers from corrupt primary snapshot using one-generation backup", () => {
+  const temp = withTempFile("recover/state.json");
+  try {
+    const first: BrokerSnapshot = { ...emptySnapshot(), tasks: [makeTask("task-before-crash", "queued", "worker-a")] };
+    const second: BrokerSnapshot = { ...emptySnapshot(), tasks: [makeTask("task-after-crash", "queued", "worker-a")] };
+    const store = new JsonFileBrokerStateStore(temp.filePath);
+
+    store.save(first);
+    store.save(second);
+    assert.ok(existsSync(`${temp.filePath}.bak`), "second save should retain a one-generation backup");
+
+    writeFileSync(temp.filePath, "{not-json", "utf8");
+    const recovered = new JsonFileBrokerStateStore(temp.filePath).load();
+    assert.deepEqual(recovered.tasks.map((task) => task.id), ["task-before-crash"]);
   } finally {
     temp.cleanup();
   }

@@ -122,7 +122,9 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     defaultTimeoutMs: Number(env.A2A_DOCKER_RUNNER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     memory: env.A2A_DOCKER_RUNNER_MEMORY || "2g",
     cpus: env.A2A_DOCKER_RUNNER_CPUS || "2",
-    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code") ? "host" : "none"),
+    network: env.A2A_DOCKER_RUNNER_NETWORK || (trustedOperator && (profile === "openclaw" || profile === "hermes" || profile === "claude-code") ? "bridge" : "none"),
+    readOnlyRootFilesystem: normalizeDefaultTrue(env.A2A_DOCKER_RUNNER_READ_ONLY_ROOTFS, trustedOperator),
+    user: normalizeContainerUser(env.A2A_DOCKER_RUNNER_USER, trustedOperator),
     trustedOperator,
     pidsLimit: env.A2A_DOCKER_RUNNER_PIDS_LIMIT || "512",
     noNewPrivileges: !isTruthy(env.A2A_DOCKER_RUNNER_ALLOW_PRIVILEGE_ESCALATION),
@@ -507,6 +509,25 @@ function containedSubagentsEnabledByDefault(value: string | undefined, profile: 
 function isTruthy(value?: string): boolean {
   if (!value) return false;
   return /^(1|true|yes|on)$/i.test(value.trim());
+}
+
+function isFalsy(value?: string): boolean {
+  if (!value) return false;
+  return /^(0|false|no|off)$/i.test(value.trim());
+}
+
+function normalizeDefaultTrue(value: string | undefined, enabledByDefault: boolean): boolean {
+  if (value !== undefined && value.trim() !== "") return !isFalsy(value);
+  return enabledByDefault;
+}
+
+function normalizeContainerUser(value: string | undefined, trustedOperator: boolean): string | undefined {
+  if (value !== undefined && value.trim() !== "") {
+    const trimmed = value.trim();
+    if (/^(0|root)$/i.test(trimmed)) return undefined;
+    return trimmed;
+  }
+  return trustedOperator ? "1000:1000" : undefined;
 }
 
 function parseCommaList(value?: string): string[] {

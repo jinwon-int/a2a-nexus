@@ -496,6 +496,12 @@ export function buildRunArgs(config: RunnerConfig, task: RunnerTask, workDir: st
   if (config.noNewPrivileges !== false) {
     args.push("--security-opt", "no-new-privileges");
   }
+  if (config.readOnlyRootFilesystem === true) {
+    args.push("--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m");
+  }
+  if (config.user) {
+    args.push("--user", config.user);
+  }
   for (const cap of config.capDrop ?? []) {
     args.push("--cap-drop", cap);
   }

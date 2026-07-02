@@ -2062,7 +2062,7 @@ export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServ
     }
   });
 
-  const gracefulShutdown = (signal: NodeJS.Signals) => {
+  const gracefulShutdown = (signal: NodeJS.Signals | "uncaughtException") => {
     console.log(`[a2a-broker] received ${signal}, stopping stale reaper and closing server`);
     runtime.stopStaleReaper();
     runtime.stopPoller();
@@ -2085,6 +2085,26 @@ export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServ
   };
   process.once("SIGINT", gracefulShutdown);
   process.once("SIGTERM", gracefulShutdown);
+  process.on("unhandledRejection", (reason) => {
+    console.error(JSON.stringify({
+      level: "error",
+      component: "a2a-broker",
+      event: "unhandledRejection",
+      message: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    }));
+  });
+  process.once("uncaughtException", (error) => {
+    console.error(JSON.stringify({
+      level: "fatal",
+      component: "a2a-broker",
+      event: "uncaughtException",
+      message: error.message,
+      stack: error.stack,
+    }));
+    process.exitCode = 1;
+    gracefulShutdown("uncaughtException");
+  });
 
   return runtime;
 }

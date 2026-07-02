@@ -106,6 +106,21 @@ test("buildRunArgs uses configured container network", () => {
   assert.equal(args[networkIndex + 1], "host");
 });
 
+test("buildRunArgs applies trusted-lane rootfs and user hardening", () => {
+  const args = buildRunArgs(
+    { ...config, trustedOperator: true, readOnlyRootFilesystem: true, user: "1000:1000" },
+    task,
+    "/tmp/a2a-work",
+    "ci-run-hardened",
+  );
+
+  assert.ok(args.includes("--read-only"));
+  assert.ok(args.includes("--tmpfs"));
+  assert.ok(args.includes("/tmp:rw,noexec,nosuid,size=256m"));
+  const userIndex = args.indexOf("--user");
+  assert.equal(args[userIndex + 1], "1000:1000");
+});
+
 // ---------------------------------------------------------------------------
 // Safe patch command paths: buildRunArgs injection behaviour
 // ---------------------------------------------------------------------------
