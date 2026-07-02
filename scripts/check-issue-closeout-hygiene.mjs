@@ -17,15 +17,25 @@
 import process from 'node:process';
 
 export const EXCEPTION_LABEL = 'closeout-exception';
+// Enforcement starts when the monitor itself landed (#1212 merge). The first
+// live run found 51 checklist-incomplete closes in the trailing 14 days — the
+// practice predates the rule's enforcement, so failing on legacy closes would
+// bury real regressions in noise. Closes before the cutoff are reported as a
+// legacy count only; closes at/after it are violations.
+export const ENFORCEMENT_CUTOFF = '2026-07-02T06:00:00Z';
 const UNCHECKED_BOX = /^\s*[-*]\s+\[ \]\s+\S/m;
 const DISPOSITION_MARKER = /disposition/i;
 
 /**
  * Pure evaluation over already-fetched issues. Each issue may carry
- * `commentBodies` (string[]) for exception verification.
+ * `commentBodies` (string[]) for exception verification. Returns
+ * `{ violations, legacy }` — `legacy` counts checklist-incomplete closes that
+ * predate the enforcement cutoff.
  */
-export function evaluateClosedIssues(issues) {
+export function evaluateClosedIssues(issues, { cutoff = ENFORCEMENT_CUTOFF } = {}) {
+  const cutoffMs = Date.parse(cutoff);
   const violations = [];
+  const legacy = [];
   for (const issue of issues) {
     if (issue.pull_request) continue; // issues API mixes PRs in
     if (issue.state_reason !== 'completed') continue;
@@ -35,6 +45,8 @@ export function evaluateClosedIssues(issues) {
     if (labels.includes(EXCEPTION_LABEL)) {
       const hasDisposition = (issue.commentBodies ?? []).some((body) => DISPOSITION_MARKER.test(body ?? ''));
       if (hasDisposition) continue;
+      // Label without disposition is judged regardless of cutoff — the label
+      // itself is a post-rule mechanism, so using it half-way is always wrong.
       violations.push({
         number: issue.number,
         title: issue.title,
@@ -42,13 +54,18 @@ export function evaluateClosedIssues(issues) {
       });
       continue;
     }
-    violations.push({
+    const finding = {
       number: issue.number,
       title: issue.title,
       reason: 'closed as completed with unchecked task-list items and no closeout-exception label',
-    });
+    };
+    if (issue.closed_at && Date.parse(issue.closed_at) < cutoffMs) {
+      legacy.push(finding);
+    } else {
+      violations.push(finding);
+    }
   }
-  return violations;
+  return { violations, legacy };
 }
 
 async function githubJson(token, url) {
@@ -87,7 +104,10 @@ async function main() {
     }
   }
 
-  const violations = evaluateClosedIssues(issues);
+  const { violations, legacy } = evaluateClosedIssues(issues);
+  if (legacy.length) {
+    console.log(`note: ${legacy.length} checklist-incomplete close(s) predate the ${ENFORCEMENT_CUTOFF} enforcement cutoff (reported only, not failed).`);
+  }
   if (violations.length) {
     console.error(`issue closeout hygiene FAILED (${violations.length} violation(s) in the last ${days} day(s)):`);
     for (const violation of violations) {
