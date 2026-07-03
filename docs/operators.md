@@ -50,6 +50,20 @@ This rule is machine-monitored (#1210): the scheduled [`closeout-hygiene`](../.g
 - **Oracle independence.** Never judge a round with a detector or gate that the same round built — the detector's blind spots are the implementation's blind spots (#1194 RC-A; observed in #1204). The reference for completion is always the issue's own acceptance criteria, read from the issue text.
 - **Standard rejection reasons.** A PR that adds a new gate, scanner rule, or test without a red→green log (the check failing on the pre-change tree) is returned, not merged. A task whose spec demands mutation evidence is returned without the mutation log. These are standard dispositions, not discretionary calls.
 - **Verification methodology.** When judging that an artifact is absent, sweep synonyms before concluding (a doc named `process-local-*` satisfies a "per-process" requirement), and trace config-layer defaults before reading runtime conditionals as opt-in (`config.ts` defaults flow into `runner.ts` guards). Both failure modes produced false findings in #1209.
+- **Red→green evidence is a blocking closeout check (#1236).** A lane PR that introduces or extends a gate, scanner rule, or validator must carry the pre-change FAIL log in its PR body at review time. A finalizer retro-filling the log afterward (as happened for #1233 and #1234) is a recorded deviation (`evidenceGateDeviationCount` in the round-quality scorecard), not a substitute — closing the lane with neither the log nor a deviation record is a NO-GO.
+
+### Failure classification (#1236)
+
+When a round lane fails or a closeout PR is rejected, the finalizer records a failure category in the disposition comment — one of the closed set below. Classification is the finalizer's call, never the implementing worker's (oracle independence). Aggregated counts land in [`docs/ops/round-quality-scorecard.json`](ops/round-quality-scorecard.json) as the optional `failureBreakdown` object, validated fail-closed by `scripts/check-round-quality-scorecard.mjs`: unknown category keys, negative counts, and categories counted without a matching evidence narrative all fail the gate.
+
+| Category | Judgment criterion |
+| --- | --- |
+| `spec_ambiguity` | The issue/spec admitted more than one reasonable reading and the lane implemented a reading the finalizer rejected. Accumulation points at the dispatch template. |
+| `implementation_defect` | The spec was unambiguous; the delivered change is wrong or incomplete against it. Accumulation points at the worker guardpack. |
+| `environment` | The failure came from the execution environment (missing binaries, network, container limits), not the spec or the change. Accumulation points at runner provisioning. |
+| `acceptance_misconfigured` | The acceptance command or expectation was wrong for the lane (vacuous, wrong exit code, inapplicable path). Accumulation points at the acceptance contract docs (#1218). |
+| `scope_drift` | The change stepped outside the declared scope (`diffHygiene.scopeDrift` evidence once #1235 lands). Accumulation points at declaredScope discipline (#1234). |
+| `other` | Anything else — requires a free-text explanation in the evidence line; reclassify when better information surfaces. |
 
 ## Approval records
 
