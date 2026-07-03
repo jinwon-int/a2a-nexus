@@ -21,7 +21,9 @@ const PATCH_TASK_INTENTS = new Set(["propose_patch", "apply_local_change"]);
 const PATCH_TASK_MODES = new Set(["github-propose-patch", "propose-patch", "patch"]);
 
 export function normalizeTaskReadinessMode(value: unknown): TaskReadinessMode {
-  return value === "enforce" ? "enforce" : DEFAULT_TASK_READINESS_MODE;
+  if (value === undefined) return DEFAULT_TASK_READINESS_MODE;
+  if (value === "warn" || value === "enforce") return value;
+  throw new Error("task readiness mode must be one of: warn, enforce");
 }
 
 export function evaluateTaskReadiness(
