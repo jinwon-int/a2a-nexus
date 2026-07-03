@@ -32,7 +32,22 @@ After the handler succeeds, `A2ABrokerWorker` runs the acceptance command and re
 
 ## Fail-closed evidence rule
 
-`validateTaskCompletionEvidence()` rejects completion when a task declares `payload.acceptance` but the submitted result has no `validation.verdict === "pass"`. This holds even for custom handlers that never ran the acceptance step: absence of evidence is a failure, not a pass. Custom handlers may also run the command themselves (or an equivalent check) and submit their own passing validation payload.
+`validateTaskCompletionEvidence()` rejects completion when a task declares `payload.acceptance` but the submitted result has no passing smoke validation evidence. This holds even for custom handlers that never ran the acceptance step: absence of evidence is a failure, not a pass. Custom handlers may also run the command themselves (or an equivalent check) and submit their own passing validation payload.
+
+For tasks that require several evidence kinds, submit the optional multi-validation form:
+
+```json
+{
+  "result": {
+    "validations": [
+      { "kind": "smoke", "verdict": "pass", "metrics": { "acceptance": true } },
+      { "kind": "review", "nodeId": "reviewer-b", "verdict": "pass", "note": "diff matches spec" }
+    ]
+  }
+}
+```
+
+When `result.validations[]` is present, acceptance evidence is matched by `kind: "smoke"`. The legacy singleton `result.validation` path remains accepted in this phase for backward compatibility, but a singleton non-smoke validation that satisfies `payload.acceptance` emits a structured warning so operators can find fail-open combined acceptance/review submissions before the cutoff.
 
 ## Dispatcher guidance
 

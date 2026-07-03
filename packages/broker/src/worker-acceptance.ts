@@ -3,7 +3,8 @@
  *
  * A dispatcher can attach a machine-checkable acceptance command to a task via
  * `task.payload.acceptance`. The worker must run it after the handler succeeds
- * and submit the outcome as `result.validation`; completion evidence is
+ * and submit the outcome as `result.validation` or `result.validations[]`;
+ * completion evidence is
  * rejected fail-closed when an acceptance-bearing task arrives without a
  * passing validation payload. This turns "what must pass for this task to be
  * done" from prose in an issue into part of the task contract itself.
@@ -103,21 +104,45 @@ export function runTaskAcceptance(spec: TaskAcceptanceSpec): TaskValidationPaylo
 
 /**
  * Fail-closed completion-evidence rule: a task that declares acceptance may
- * only complete with a passing validation payload. This holds even for custom
+ * only complete with a passing smoke validation payload. This holds even for custom
  * handlers that never ran the acceptance step — absence of evidence is a
  * failure, not a pass (#1194 RC-B).
  */
+function validationByKind(result: TaskResult | undefined, kind: TaskValidationPayload["kind"]): TaskValidationPayload | undefined {
+  if (!result) return undefined;
+  if (Array.isArray(result.validations)) {
+    return result.validations.find((validation) => validation?.kind === kind);
+  }
+  return result.validation;
+}
+
+function warnLegacyAcceptanceValidation(validation: TaskValidationPayload | undefined): void {
+  if (!validation || validation.kind === "smoke") return;
+  console.warn(JSON.stringify({
+    level: "warn",
+    code: "legacy_acceptance_validation_kind_mismatch",
+    message: "result.validation satisfied payload.acceptance without kind=smoke; submit result.validations[] with a smoke validation for combined acceptance/review tasks",
+    validationKind: validation.kind,
+  }));
+}
+
 export function validateAcceptanceEvidence(task: TaskRecord, result?: TaskResult): TaskError | null {
   const parsed = parseTaskAcceptance(task);
   if (parsed === null) return null;
   if (parsed.error) return parsed.error;
-  const verdict = result?.validation?.verdict;
-  if (verdict === "pass") return null;
+  const validation = validationByKind(result, "smoke");
+  const verdict = validation?.verdict;
+  if (verdict === "pass") {
+    if (!Array.isArray(result?.validations)) warnLegacyAcceptanceValidation(validation);
+    return null;
+  }
   return {
     code: "acceptance_evidence_missing",
     message:
       verdict === undefined
-        ? "task declares payload.acceptance but the result has no validation payload; run the acceptance command and submit its verdict"
-        : `task declares payload.acceptance but result.validation.verdict is "${verdict}" (requires "pass")`,
+        ? Array.isArray(result?.validations)
+          ? "task declares payload.acceptance but result.validations has no smoke validation payload; run the acceptance command and submit its verdict"
+          : "task declares payload.acceptance but the result has no validation payload; run the acceptance command and submit its verdict"
+        : `task declares payload.acceptance but ${Array.isArray(result?.validations) ? "result.validations[kind=smoke]" : "result.validation"}.verdict is "${verdict}" (requires "pass")`,
   };
 }

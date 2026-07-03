@@ -212,6 +212,11 @@ function collectRetainedArtifactIds(
     for (const artifactId of task?.result?.validation?.artifactIds ?? []) {
       retainedArtifactIds.add(artifactId);
     }
+    for (const validation of task?.result?.validations ?? []) {
+      for (const artifactId of validation.artifactIds ?? []) {
+        retainedArtifactIds.add(artifactId);
+      }
+    }
     for (const artifactId of task?.result?.apply?.artifactIds ?? []) {
       retainedArtifactIds.add(artifactId);
     }
