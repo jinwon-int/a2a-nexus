@@ -84,6 +84,9 @@ export function statusCodeFor(code: BrokerError["code"]): number {
       return 409;
     case "github_completion_evidence_missing":
     case "github_completion_receipt_invalid":
+    case "review_evidence_missing":
+    case "review_not_independent":
+    case "review_verdict_failed":
       return 400;
     case "rate_limited":
       return 429;

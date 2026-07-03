@@ -34,7 +34,7 @@ export type ProposalStatus =
   | "rejected"
   | "applied"
   | "rolled_back";
-export type ValidationKind = "backfill" | "paper" | "replay" | "smoke";
+export type ValidationKind = "backfill" | "paper" | "replay" | "review" | "smoke";
 export type ValidationVerdict = "pass" | "fail" | "warn";
 export type TaskKind = A2AExchangeIntent;
 export type TaskStatus =

@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
 import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
+import { validateReviewEvidence } from "./worker-review.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
 import type {
   A2APartyKind,
@@ -702,7 +703,7 @@ function assertSafeHttpSignatureParamValue(value: string, label: string): void {
 }
 
 export function validateTaskCompletionEvidence(task: TaskRecord, result?: TaskResult): TaskError | null {
-  return validateAcceptanceEvidence(task, result) ?? validateGithubTaskCompletionEvidence(task, result);
+  return validateAcceptanceEvidence(task, result) ?? validateReviewEvidence(task, result) ?? validateGithubTaskCompletionEvidence(task, result);
 }
 
 /**
