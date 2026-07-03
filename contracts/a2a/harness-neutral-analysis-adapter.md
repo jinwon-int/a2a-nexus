@@ -36,7 +36,7 @@ Adapters MAY add harness-specific fields, but finalizer classification MUST NOT 
 The adapter output SHOULD be JSON or be convertible to JSON with these fields:
 
 - `analysisStatus`: one of `done`, `wrapper_only`, `source_blocked`, `handler_artifact_failure`, `queued_unclaimed`, `provider_or_model_failure`.
-- `evidenceClass`: one of `substantive`, `wrapper_only`, `source_blocked`, `handler_artifact_failure`, `queued_unclaimed`, `provider_or_model_failure`.
+- `evidenceClass`: one of `substantive`, `readiness_only`, `generic_ack`, `wrapper_only`, `source_blocked`, `handler_artifact_failure`, `queued_unclaimed`, `provider_or_model_failure`.
 - `summary`: short human-readable result.
 - `findings[]`: concrete findings, each with severity, title, evidence refs, and recommendation when applicable.
 - `risks[]`: optional risks or caveats.
@@ -50,6 +50,8 @@ If the adapter cannot inspect source or cannot run the model bridge, it MUST ret
 Finalizers and round collectors MUST classify lanes as follows:
 
 - `substantive`: `analysisStatus=done`, file/issue/PR-backed findings or recommendations exist, and the output distinguishes evidence from assumptions.
+- `readiness_only`: the lane proves source readability, no-live/source-only boundary, source-projection budget/quality, or bridge health, but does not answer the requested issue/PR/design question. Count as dispatch/readiness evidence only.
+- `generic_ack`: the lane only acknowledges task acceptance/completion (for example “analysis bridge done” or “task accepted”) without task-specific findings, risks, recommendations, or evidence. Count as liveness evidence only.
 - `wrapper_only`: the adapter only proves task lifecycle/plumbing, e.g. “analysis-only completed”, “reference worker dry-run completed”, or prompt echo without analysis. Count as liveness only.
 - `source_blocked`: repo roots, source bundles, GitHub refs, or embedded evidence were missing/unreadable/truncated. Do not infer a code/design opinion.
 - `handler_artifact_failure`: the worker adapter or model bridge could not execute because of local artifact/path/permission/runtime failure, e.g. `EACCES`, missing executable, missing cwd, or `spawn ... ENOENT`.
@@ -68,11 +70,13 @@ Finalizers and round collectors MUST classify lanes as follows:
 The frozen fixture is [`fixtures/contract/harness-neutral-analysis-adapter.json`](../../fixtures/contract/harness-neutral-analysis-adapter.json). It covers these mandatory scenarios:
 
 1. substantive analysis;
-2. wrapper-only success;
-3. source-mapping blocked;
-4. handler artifact failure;
-5. queued/unclaimed lane;
-6. provider/model failure.
+2. readiness-only success;
+3. generic acknowledgement success;
+4. wrapper-only success;
+5. source-mapping blocked;
+6. handler artifact failure;
+7. queued/unclaimed lane;
+8. provider/model failure.
 
 Run:
 

@@ -127,6 +127,75 @@ function hasEmptySubstantiveOutput(output) {
   return allArraysEmpty && (!summary || summary === 'analysis complete' || summary === 'analysis-only completed');
 }
 
+function lowerEvidenceStrings(output) {
+  return [
+    output.analysisSummary,
+    output.summary,
+    ...(Array.isArray(output.findings) ? output.findings : []),
+    ...(Array.isArray(output.risks) ? output.risks : []),
+    ...(Array.isArray(output.recommendations) ? output.recommendations : []),
+  ].map((value) => nestedText(value).trim().toLowerCase()).filter(Boolean);
+}
+
+function classifyExplicitEvidenceClass(output) {
+  const explicit = String(output.evidenceClass ?? '').trim().toLowerCase();
+  if (explicit === 'readiness_only') {
+    return {
+      evidenceClass: 'readiness_only',
+      countsTowardQuorum: false,
+      reason: 'worker explicitly classified the lane as readiness-only evidence',
+    };
+  }
+  if (explicit === 'generic_ack') {
+    return {
+      evidenceClass: 'generic_ack',
+      countsTowardQuorum: false,
+      reason: 'worker explicitly classified the lane as a generic acknowledgement',
+    };
+  }
+  return null;
+}
+
+function classifyReadinessOrGenericDoneOutput(output) {
+  const analysisStatus = String(output.analysisStatus ?? output.status ?? '').trim().toLowerCase();
+  if (analysisStatus !== 'done') return null;
+
+  const evidenceStrings = lowerEvidenceStrings(output);
+  if (evidenceStrings.length === 0) return null;
+  const joined = evidenceStrings.join(' ');
+  const risks = Array.isArray(output.risks) ? output.risks.filter((item) => hasText(nestedText(item))) : [];
+  const recommendations = Array.isArray(output.recommendations) ? output.recommendations.filter((item) => hasText(nestedText(item))) : [];
+  const findings = Array.isArray(output.findings) ? output.findings.filter((item) => hasText(nestedText(item))) : [];
+
+  const substantiveSignals = /\b(false[- ]?negative|false[- ]?positive|misclassif|substring|auto[- ]?read|edge\s+case|regression\s+test|bug|defect|vulnerab|race|deadlock|root\s+cause|fix|patch|security|permission|rollback|data\s+loss)\b/i;
+  const readinessSignals = /\b(source[- ]?only|no[- ]?live|readiness|source\s+files?\s+readable|sourceprojection\s+quality|within\s+budget|local\s+bridge\s+verified|bridge\s+verified|boundary\s+confirmed|runid|health\s+lane|deterministic\s+local\s+bridge)\b/i;
+  const genericAckSignals = /^\s*(analysis\s+bridge\s+done|analysis\s+done|analysis\s+complete|task\s+accepted|accepted|done)\s*$/i;
+
+  if (substantiveSignals.test(joined)) return null;
+
+  const genericSummary = genericAckSignals.test(String(output.analysisSummary ?? output.summary ?? '').trim());
+  const onlyGenericFindings = findings.every((item) => /\b(task\s+accepted|accepted|done|runid)\b/i.test(nestedText(item)));
+  if (genericSummary && risks.length === 0 && recommendations.length === 0 && onlyGenericFindings) {
+    return {
+      evidenceClass: 'generic_ack',
+      countsTowardQuorum: false,
+      reason: 'analysisStatus=done only acknowledged task/bridge completion without task-specific findings',
+    };
+  }
+
+  const readinessCount = evidenceStrings.filter((item) => readinessSignals.test(item)).length;
+  const hasReadinessProjection = String(output.sourceProjection?.quality ?? '').trim().toLowerCase() === 'complete';
+  if (readinessCount >= 2 || (hasReadinessProjection && readinessCount >= 1)) {
+    return {
+      evidenceClass: 'readiness_only',
+      countsTowardQuorum: false,
+      reason: 'analysisStatus=done reported only readiness/source-only/no-live evidence, not task-specific findings',
+    };
+  }
+
+  return null;
+}
+
 function classifyLaneEvidence(lane) {
   const output = lane.output ?? lane.result?.output ?? {};
   const error = lane.error ?? lane.result?.error ?? {};
@@ -157,6 +226,9 @@ function classifyLaneEvidence(lane) {
     };
   }
 
+  const explicitEvidence = classifyExplicitEvidenceClass(output);
+  if (explicitEvidence) return explicitEvidence;
+
   if (statusBucket === 'pending' && worker === 'mobilebeta') {
     const laneStatus = String(lane.status || '').trim().toLowerCase();
     if (laneStatus === 'claimed' || laneStatus === 'running') {
@@ -186,6 +258,8 @@ function classifyLaneEvidence(lane) {
       reason: 'analysisStatus=done with empty findings/recommendations/evidenceRefs is not substantive worker evidence',
     };
   }
+  const readinessOrGeneric = classifyReadinessOrGenericDoneOutput(output);
+  if (readinessOrGeneric) return readinessOrGeneric;
   if (analysisStatus === 'blocked' || analysisStatus === 'block' || analysisStatus === 'source_blocked') {
     const sourceProjection = classifySourceProjectionEvidence(evidenceText);
     if (sourceProjection) {
