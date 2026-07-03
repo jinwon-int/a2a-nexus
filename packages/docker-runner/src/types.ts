@@ -633,6 +633,8 @@ export interface SourcePublicExecutionPreflight {
   };
 }
 
+export type RunnerPostPatchVerificationBaselineMode = "off" | "record" | "require-red";
+
 export interface RunnerPostPatchVerification {
   /** argv executed in the task container after patch application; defaults to `npm run check` when the object is present without a command. */
   command?: string[];
@@ -640,6 +642,13 @@ export interface RunnerPostPatchVerification {
   expectExitCode?: number;
   /** Timeout in milliseconds for the verification command. Defaults to 300000. */
   timeoutMs?: number;
+  /**
+   * Optional pre-patch baseline policy (#1233).
+   * - off: preserve legacy post-patch-only behavior.
+   * - record: run the command before patching and record whether it already met expectation (default).
+   * - require-red: fail closed when the pre-patch command already meets expectation.
+   */
+  baseline?: RunnerPostPatchVerificationBaselineMode;
 }
 
 export interface RunnerDiffHygienePolicy {
@@ -657,6 +666,16 @@ export interface RunnerDiffHygienePolicy {
   churnMinLines?: number;
 }
 
+export interface RunnerPostPatchVerificationBaselineEvidence {
+  mode: Exclude<RunnerPostPatchVerificationBaselineMode, "off">;
+  exitCode: number;
+  metExpectation: boolean;
+  durationMs?: number;
+  logSha256?: string;
+  logPath: "artifacts/post-patch-verification-baseline.log";
+  verdict: "recorded" | "vacuous";
+}
+
 export interface RunnerPostPatchVerificationEvidence {
   schemaVersion: "a2a.runner.post-patch-verification.v1";
   command: string[];
@@ -666,6 +685,8 @@ export interface RunnerPostPatchVerificationEvidence {
   logSha256?: string;
   logPath: string;
   status: "passed" | "failed";
+  /** Optional pre-patch baseline evidence for red→green/vacuous-verification detection (#1233). */
+  baseline?: RunnerPostPatchVerificationBaselineEvidence;
 }
 
 export interface RunnerDiffHygieneEvidence {

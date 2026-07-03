@@ -680,7 +680,21 @@ function isPostPatchVerificationEvidence(value: unknown): value is RunnerPostPat
     && typeof entry.exitCode === "number"
     && typeof entry.expectedExitCode === "number"
     && entry.logPath === "artifacts/post-patch-verification.log"
-    && (entry.status === "passed" || entry.status === "failed");
+    && (entry.status === "passed" || entry.status === "failed")
+    && isPostPatchVerificationBaselineEvidence(entry.baseline);
+}
+
+function isPostPatchVerificationBaselineEvidence(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return (entry.mode === "record" || entry.mode === "require-red")
+    && typeof entry.exitCode === "number"
+    && typeof entry.metExpectation === "boolean"
+    && (entry.durationMs === undefined || (Number.isInteger(entry.durationMs) && (entry.durationMs as number) >= 0))
+    && (entry.logSha256 === undefined || (typeof entry.logSha256 === "string" && /^[a-f0-9]{64}$/.test(entry.logSha256)))
+    && entry.logPath === "artifacts/post-patch-verification-baseline.log"
+    && (entry.verdict === "recorded" || entry.verdict === "vacuous");
 }
 
 function isDiffHygieneEvidence(value: unknown): value is RunnerDiffHygieneEvidence {
