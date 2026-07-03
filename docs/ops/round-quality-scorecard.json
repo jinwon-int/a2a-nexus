@@ -96,7 +96,7 @@
         "implemented via PR #1243 (merge 8bfd904): diffHygiene.scope mode off/warn/block with warn default, scopeDrift evidence {declared,outside,level}, directory-boundary prefix matching, skip when declaredScope absent, P2 follow-up normalizeTaskReadinessMode now fails closed on typo values",
         "first fully evidence-compliant lane: pre-change RED logs attached in the PR body at review time (TS build failure on scopeDrift types; broker typo-mode test pre-fix FAIL) — evidenceGateDeviationCount drops to 0 after two consecutive retro-filled rounds",
         "independent finalizer review on merged main: runner-manifest tests 32/32, task-readiness tests 7/7, 7 reviewer-side semantic probes all correct including prefix-boundary (packages/broker does not match packages/broker-evil), verdict PASS (#1235 review comment)",
-        "failure classification (#1236 first live use): other: 2 — T1 Sogyo and T2 Dungae plan lanes reported failed in the PR #1243 readback without repo-visible failure logs; reclassify if lane logs surface",
+        "failure classification (#1236 first live use): other: 2 — two plan lanes reported failed in the PR #1243 readback without repo-visible failure logs; reclassify if lane logs surface",
         "dogfooding: the dispatch carried the #1234 readiness payload (acceptance/declaredScope/evidenceGate) — first live use of the Definition-of-Ready fields",
         "non-blocking findings for a later drive-by: warn-level/skip/default-warn semantics verified by reviewer probes but not pinned by unit tests; dead SCOPE_DECLARED_PATHS shell variable; block reuses shared exit 5 (accepted variant, distinguishable via summary line and scopeDrift.level)"
       ],
