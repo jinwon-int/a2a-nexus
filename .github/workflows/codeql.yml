@@ -1,0 +1,39 @@
+# CodeQL SAST (#1228 L2).
+#
+# Static analysis on every PR, on main pushes, and on a weekly schedule so
+# query-pack updates re-scan the unchanged tree. TypeScript/JavaScript only —
+# that is the entire source surface of this monorepo. Findings land in the
+# repository Security tab (code scanning alerts).
+
+name: codeql
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly off-peak re-scan; offset minute mirrors closeout-hygiene.yml's
+    # convention of avoiding the top-of-hour thundering herd.
+    - cron: '23 2 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege: analyze needs to upload code-scanning results and read the
+# checkout. Enforced by scripts/check-workflow-permissions.mjs.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:javascript-typescript'

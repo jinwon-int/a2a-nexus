@@ -53,6 +53,16 @@
       "note": "Fail-closed validation of docs/ops/round-quality-scorecard.json (#1220 PR 3) — the round-quality feedback loop must stay machine-readable."
     },
     {
+      "name": "workflow-permissions",
+      "command": "node",
+      "args": [
+        "scripts/check-workflow-permissions.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Every GitHub Actions workflow must declare a minimal top-level permissions block (#1228 L1, OpenSSF Scorecard Token-Permissions). Absence-detection: a new workflow without one turns this red."
+    },
+    {
       "name": "packages",
       "command": "npm",
       "args": [

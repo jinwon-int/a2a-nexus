@@ -20,6 +20,12 @@ defaults:
   run:
     shell: bash
 
+# Least-privilege default for GITHUB_TOKEN (#1228 L1): every job only reads
+# the repository unless it widens its own job-level scope (paths-filter adds
+# pull-requests: read). Enforced by scripts/check-workflow-permissions.mjs.
+permissions:
+  contents: read
+
 env:
   # Pin the secret scanner to a reviewed release instead of @latest so a new
   # gitleaks release can't silently change the readiness gate. Centralized here
