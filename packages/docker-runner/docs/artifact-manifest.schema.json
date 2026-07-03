@@ -98,7 +98,21 @@
         "durationMs": { "type": "integer", "minimum": 0 },
         "logSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "logPath": { "const": "artifacts/post-patch-verification.log" },
-        "status": { "enum": ["passed", "failed"] }
+        "status": { "enum": ["passed", "failed"] },
+        "baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "exitCode", "metExpectation", "logPath", "verdict"],
+          "properties": {
+            "mode": { "enum": ["record", "require-red"] },
+            "exitCode": { "type": "integer" },
+            "metExpectation": { "type": "boolean" },
+            "durationMs": { "type": "integer", "minimum": 0 },
+            "logSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "logPath": { "const": "artifacts/post-patch-verification-baseline.log" },
+            "verdict": { "enum": ["recorded", "vacuous"] }
+          }
+        }
       }
     },
     "diffHygiene": {

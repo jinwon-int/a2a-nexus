@@ -466,6 +466,8 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     ``,
     startCommentBlock,
     ``,
+    buildPostPatchVerificationBaselineBlock(task),
+    ``,
     patchCommandBlock,
     ``,
     buildDiffHygieneBlock(task, baseBranch),
@@ -617,7 +619,7 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
   ].join("\n");
 }
 
-function normalizePostPatchVerification(task: RunnerTask): { command: string[]; expectExitCode: number; timeoutMs: number } | undefined {
+function normalizePostPatchVerification(task: RunnerTask): { command: string[]; expectExitCode: number; timeoutMs: number; baseline: "off" | "record" | "require-red" } | undefined {
   const raw = task.postPatchVerification;
   if (!raw) return undefined;
   const command = raw.command ?? ["npm", "run", "check"];
@@ -628,7 +630,59 @@ function normalizePostPatchVerification(task: RunnerTask): { command: string[]; 
   if (!Number.isInteger(expectExitCode)) throw new Error("task.postPatchVerification.expectExitCode must be an integer");
   const timeoutMs = raw.timeoutMs ?? 300_000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("task.postPatchVerification.timeoutMs must be positive");
-  return { command, expectExitCode, timeoutMs };
+  const baseline = raw.baseline ?? "record";
+  if (baseline !== "off" && baseline !== "record" && baseline !== "require-red") {
+    throw new Error("task.postPatchVerification.baseline must be one of: off, record, require-red");
+  }
+  return { command, expectExitCode, timeoutMs, baseline };
+}
+
+function buildPostPatchVerificationBaselineBlock(task: RunnerTask): string {
+  const spec = normalizePostPatchVerification(task);
+  if (!spec || spec.baseline === "off") return "";
+  const command = spec.command.map(shellSingleQuote).join(" ");
+  const commandJson = JSON.stringify(spec.command);
+  const timeoutSeconds = Math.max(1, Math.ceil(spec.timeoutMs / 1000));
+  const mode = spec.baseline;
+  return [
+    `# Pre-patch verification baseline (#1233): detect vacuous acceptance before the patch runs.`,
+    `POST_PATCH_BASELINE_JSON=`,
+    `printf 'post_patch_verification_baseline=started\\n' | tee -a /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification_baseline.mode=%s\\n' ${shellSingleQuote(mode)} | tee -a /work/artifacts/summary.txt`,
+    `POST_PATCH_BASELINE_START_MS="$(node -e 'console.log(Date.now())')"`,
+    `set +e`,
+    `timeout ${timeoutSeconds}s ${command} > /work/artifacts/post-patch-verification-baseline.log 2>&1`,
+    `POST_PATCH_BASELINE_RC=$?`,
+    `set -e`,
+    `POST_PATCH_BASELINE_END_MS="$(node -e 'console.log(Date.now())')"`,
+    `POST_PATCH_BASELINE_DURATION_MS="$((POST_PATCH_BASELINE_END_MS - POST_PATCH_BASELINE_START_MS))"`,
+    `POST_PATCH_BASELINE_SHA="$(sha256sum /work/artifacts/post-patch-verification-baseline.log | awk '{print $1}')"`,
+    `if [ "$POST_PATCH_BASELINE_RC" -eq ${spec.expectExitCode} ]; then`,
+    `  POST_PATCH_BASELINE_MET_EXPECTATION=true`,
+    `else`,
+    `  POST_PATCH_BASELINE_MET_EXPECTATION=false`,
+    `fi`,
+    `POST_PATCH_BASELINE_VERDICT=recorded`,
+    `if [ ${shellSingleQuote(mode)} = 'require-red' ] && [ "$POST_PATCH_BASELINE_MET_EXPECTATION" = true ]; then`,
+    `  POST_PATCH_BASELINE_VERDICT=vacuous`,
+    `fi`,
+    `printf 'post_patch_verification_baseline.exitCode=%s\\n' "$POST_PATCH_BASELINE_RC" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification_baseline.metExpectation=%s\\n' "$POST_PATCH_BASELINE_MET_EXPECTATION" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification_baseline.durationMs=%s\\n' "$POST_PATCH_BASELINE_DURATION_MS" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification_baseline.logSha256=%s\\n' "$POST_PATCH_BASELINE_SHA" >> /work/artifacts/summary.txt`,
+    `printf 'post_patch_verification_baseline.verdict=%s\\n' "$POST_PATCH_BASELINE_VERDICT" >> /work/artifacts/summary.txt`,
+    `POST_PATCH_BASELINE_JSON=",\"baseline\":{\"mode\":\"${mode}\",\"exitCode\":$POST_PATCH_BASELINE_RC,\"metExpectation\":$POST_PATCH_BASELINE_MET_EXPECTATION,\"durationMs\":$POST_PATCH_BASELINE_DURATION_MS,\"logSha256\":\"$POST_PATCH_BASELINE_SHA\",\"logPath\":\"artifacts/post-patch-verification-baseline.log\",\"verdict\":\"$POST_PATCH_BASELINE_VERDICT\"}"`,
+    `if [ "$POST_PATCH_BASELINE_VERDICT" = vacuous ]; then`,
+    `  printf 'post_patch_verification_baseline=blocked_vacuous\\n' | tee -a /work/artifacts/summary.txt`,
+    `  printf 'pre-patch verification already met expected exit code; require-red baseline blocks vacuous acceptance\\n' > /work/artifacts/post-patch-verification.log`,
+    `  POST_PATCH_VERIFICATION_SHA="$(sha256sum /work/artifacts/post-patch-verification.log | awk '{print $1}')"`,
+    `  cat > /work/artifacts/post-patch-verification.json <<A2A_POST_PATCH_VERIFICATION_JSON`,
+    `{"schemaVersion":"a2a.runner.post-patch-verification.v1","command":${commandJson},"exitCode":$POST_PATCH_BASELINE_RC,"expectedExitCode":${spec.expectExitCode},"durationMs":$POST_PATCH_BASELINE_DURATION_MS,"logSha256":"$POST_PATCH_VERIFICATION_SHA","logPath":"artifacts/post-patch-verification.log","status":"failed"$POST_PATCH_BASELINE_JSON}`,
+    `A2A_POST_PATCH_VERIFICATION_JSON`,
+    `  exit 44`,
+    `fi`,
+    `printf 'post_patch_verification_baseline=recorded\\n' | tee -a /work/artifacts/summary.txt`,
+  ].join("\n");
 }
 
 function buildPostPatchVerificationBlock(task: RunnerTask): string {
@@ -648,13 +702,14 @@ function buildPostPatchVerificationBlock(task: RunnerTask): string {
     `POST_PATCH_VERIFICATION_END_MS="$(node -e 'console.log(Date.now())')"`,
     `POST_PATCH_VERIFICATION_DURATION_MS="$((POST_PATCH_VERIFICATION_END_MS - POST_PATCH_VERIFICATION_START_MS))"`,
     `POST_PATCH_VERIFICATION_SHA="$(sha256sum /work/artifacts/post-patch-verification.log | awk '{print $1}')"`,
+    `: "${"${POST_PATCH_BASELINE_JSON:=}"}"`,
     `printf 'post_patch_verification.command=%s\\n' ${shellSingleQuote(commandJson)} >> /work/artifacts/summary.txt`,
     `printf 'post_patch_verification.exitCode=%s\\n' "$POST_PATCH_VERIFICATION_RC" >> /work/artifacts/summary.txt`,
     `printf 'post_patch_verification.expectedExitCode=%s\\n' ${spec.expectExitCode} >> /work/artifacts/summary.txt`,
     `printf 'post_patch_verification.durationMs=%s\\n' "$POST_PATCH_VERIFICATION_DURATION_MS" >> /work/artifacts/summary.txt`,
     `printf 'post_patch_verification.logSha256=%s\\n' "$POST_PATCH_VERIFICATION_SHA" >> /work/artifacts/summary.txt`,
     `cat > /work/artifacts/post-patch-verification.json <<A2A_POST_PATCH_VERIFICATION_JSON`,
-    `{"schemaVersion":"a2a.runner.post-patch-verification.v1","command":${commandJson},"exitCode":$POST_PATCH_VERIFICATION_RC,"expectedExitCode":${spec.expectExitCode},"durationMs":$POST_PATCH_VERIFICATION_DURATION_MS,"logSha256":"$POST_PATCH_VERIFICATION_SHA","logPath":"artifacts/post-patch-verification.log","status":"$([ "$POST_PATCH_VERIFICATION_RC" -eq ${spec.expectExitCode} ] && printf passed || printf failed)"}`,
+    `{"schemaVersion":"a2a.runner.post-patch-verification.v1","command":${commandJson},"exitCode":$POST_PATCH_VERIFICATION_RC,"expectedExitCode":${spec.expectExitCode},"durationMs":$POST_PATCH_VERIFICATION_DURATION_MS,"logSha256":"$POST_PATCH_VERIFICATION_SHA","logPath":"artifacts/post-patch-verification.log","status":"$([ "$POST_PATCH_VERIFICATION_RC" -eq ${spec.expectExitCode} ] && printf passed || printf failed)"${"$POST_PATCH_BASELINE_JSON"}}`,
     `A2A_POST_PATCH_VERIFICATION_JSON`,
     `if [ "$POST_PATCH_VERIFICATION_RC" -ne ${spec.expectExitCode} ]; then`,
     `  printf 'post_patch_verification=failed\\n' | tee -a /work/artifacts/summary.txt`,

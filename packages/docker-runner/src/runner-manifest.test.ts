@@ -116,11 +116,107 @@ test("buildContainerScript embeds fail-closed post-patch and diff hygiene gates"
 
   const script = buildContainerScript(task);
 
+  assert.match(script, /post_patch_verification_baseline=started/);
+  assert.match(script, /post_patch_verification_baseline\.mode=%s/);
+  assert.match(script, /'record'/);
   assert.match(script, /post_patch_verification=started/);
   assert.match(script, /timeout 120s 'node' 'scripts\/worker-artifact-rollout-guard\.mjs' '--deployed'/);
   assert.match(script, /diff_hygiene=started/);
   assert.match(script, /LOCKFILE_CHANGES=/);
   assert.match(script, /diff-hygiene\.json/);
+  assert.ok(
+    script.indexOf("post_patch_verification_baseline=started") < script.indexOf("patch_mode=script"),
+    "baseline command runs before patch command",
+  );
+  assert.ok(
+    script.indexOf("post_patch_verification_baseline=started") < script.indexOf("post_patch_verification=started"),
+    "baseline command runs before post-patch command",
+  );
+});
+
+test("buildContainerScript blocks vacuous require-red post-patch verification baselines", () => {
+  const task = normalizeTask({
+    id: "issue-1233-vacuous",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    postPatchVerification: { command: ["npm", "run", "check"], expectExitCode: 0, timeoutMs: 120000, baseline: "require-red" },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /post_patch_verification_baseline\.mode=%s/);
+  assert.match(script, /'require-red'/);
+  assert.match(script, /post_patch_verification_baseline\.verdict=%s/);
+  assert.match(script, /POST_PATCH_BASELINE_VERDICT=vacuous/);
+  assert.match(script, /POST_PATCH_BASELINE_MET_EXPECTATION/);
+  assert.match(script, /exit 44/);
+});
+
+test("buildContainerScript omits baseline evidence for explicit off policy", () => {
+  const task = normalizeTask({
+    id: "issue-1233-off",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    postPatchVerification: { command: ["npm", "run", "check"], expectExitCode: 0, timeoutMs: 120000, baseline: "off" },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.doesNotMatch(script, /post_patch_verification_baseline=started/);
+  assert.doesNotMatch(script, /post-patch-verification-baseline\.log/);
+  assert.match(script, /post_patch_verification=started/);
+  assert.match(script, /POST_PATCH_BASELINE_JSON:=/);
+});
+
+test("normalizeTask rejects unknown post-patch baseline policies", () => {
+  assert.throws(
+    () => normalizeTask({
+      id: "issue-1233-invalid",
+      intent: "patch",
+      mode: "github-propose-patch",
+      repo: "jinwon-int/a2a-nexus",
+      baseBranch: "main",
+      postPatchVerification: { command: ["npm", "run", "check"], baseline: "green" as never },
+    }),
+    /task\.postPatchVerification\.baseline must be one of: off, record, require-red/,
+  );
+});
+
+test("buildArtifactManifest preserves #1233 baseline evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "a2a-1233-baseline-"));
+  try {
+    const manifest = await buildArtifactManifest(dir, [], {
+      postPatchVerification: {
+        schemaVersion: "a2a.runner.post-patch-verification.v1",
+        command: ["npm", "run", "check"],
+        exitCode: 0,
+        expectedExitCode: 0,
+        durationMs: 25,
+        logSha256: "a".repeat(64),
+        logPath: "artifacts/post-patch-verification.log",
+        status: "passed",
+        baseline: {
+          mode: "record",
+          exitCode: 1,
+          metExpectation: false,
+          durationMs: 20,
+          logSha256: "b".repeat(64),
+          logPath: "artifacts/post-patch-verification-baseline.log",
+          verdict: "recorded",
+        },
+      },
+    });
+
+    assert.equal(manifest.postPatchVerification?.baseline?.mode, "record");
+    assert.equal(manifest.postPatchVerification?.baseline?.metExpectation, false);
+    assert.equal(manifest.postPatchVerification?.baseline?.logPath, "artifacts/post-patch-verification-baseline.log");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("redactAndBound redacts secret-like values and truncates large output", () => {
