@@ -69,6 +69,7 @@ import {
 import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCpuDiagnostics } from "./diagnostics/system-metrics.js";
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
+import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -427,6 +428,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   brokerId?: string;
   /** Team/tenant identity stamped onto new tasks for lifecycle ownership checks. Env: `A2A_TEAM_ID`. */
   teamId?: string;
+  /** Definition-of-Ready lint rollout mode for patch/implementation task creation. Env: `A2A_TASK_READINESS_MODE` or `BROKER_TASK_READINESS_MODE` (`warn` default, `enforce` fail-closed). */
+  taskReadinessMode?: TaskReadinessMode;
   /**
    * SSE heartbeat interval for `/a2a/tasks/:id/events`. Comments (`: heartbeat ...`) keep
    * intermediaries from timing out idle subscriptions. `0` disables heartbeats. Env:
@@ -625,6 +628,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   );
   const trustedProxy = options.trustedProxy ?? process.env.TRUSTED_PROXY === "1";
   const retentionPolicy = resolveBrokerRetentionPolicy(options.retentionPolicy);
+  const taskReadinessMode = normalizeTaskReadinessMode(
+    options.taskReadinessMode ?? process.env.A2A_TASK_READINESS_MODE ?? process.env.BROKER_TASK_READINESS_MODE,
+  );
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -770,6 +776,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       workerHeartbeatPersistIntervalMs,
       brokerId,
       teamId,
+      taskReadinessMode,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

@@ -72,6 +72,7 @@ export function durablePersistenceAckErrorCode(message: string): BrokerError["co
 export function statusCodeFor(code: BrokerError["code"]): number {
   switch (code) {
     case "bad_request":
+    case "spec_underspecified":
       return 400;
     case "unauthorized":
       return 401;

@@ -41,3 +41,22 @@ After the handler succeeds, `A2ABrokerWorker` runs the acceptance command and re
 - Timeouts: pick roughly 2× the command's normal duration; the default 120s suits most gate scripts.
 
 Implementation: `src/worker-acceptance.ts`; behavior tests: `src/worker-acceptance.test.ts` (including a real broker + worker round trip for pass and fail paths).
+
+## Broker-side Definition-of-Ready lint (#1234)
+
+Patch/implementation tasks are also linted at creation time so underspecified work is visible before a worker starts. The rollout is deliberately two-stage:
+
+- Default mode is `warn`: the broker accepts the task and emits a structured `spec_underspecified` warning.
+- `enforce` mode rejects new underspecified patch tasks with `error.code: "spec_underspecified"` and `error.details.missing`.
+
+Enable enforce mode with `A2A_TASK_READINESS_MODE=enforce` (or `BROKER_TASK_READINESS_MODE=enforce`) or by passing `taskReadinessMode: "enforce"` to `createBrokerServer` / `InMemoryA2ABroker`. Existing task-id idempotency is checked before readiness lint, so replaying an already-created task does not retroactively apply a stricter mode.
+
+Required fields for patch/implementation tasks:
+
+| Payload field | Meaning |
+| --- | --- |
+| `acceptance` | Machine-checkable acceptance command using the contract above. |
+| `declaredScope.paths` | Non-empty list of repo paths the patch is allowed/expected to touch. P2 defines this field; scope-drift lanes consume it later. |
+| `evidenceGate` | Non-empty operator-facing RED/GREEN evidence description. |
+
+Analysis/read-only tasks (`intent: "analyze"`, read-only validation modes, etc.) are exempt. Implementation: `src/task-readiness.ts`; behavior tests: `src/task-readiness.test.ts`.
