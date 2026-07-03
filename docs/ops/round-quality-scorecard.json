@@ -101,6 +101,30 @@
         "non-blocking findings for a later drive-by: warn-level/skip/default-warn semantics verified by reviewer probes but not pinned by unit tests; dead SCOPE_DECLARED_PATHS shell variable; block reuses shared exit 5 (accepted variant, distinguishable via summary line and scopeDrift.level)"
       ],
       "recordedAt": "2026-07-03"
+    },
+    {
+      "id": "a2a-nexus-1237-p5-closeout-2026-07-03",
+      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "scope": "#1237 broker independent-review evidence P5 closeout under umbrella #1232 (final lane)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "acceptance_misconfigured": 2,
+        "environment": 3
+      },
+      "evidence": [
+        "implemented via PR #1246 (merge 5cdc391): opt-in payload.review.required contract, ValidationKind review, three fail-closed rejection codes (evidence missing / not independent / verdict failed, warn also rejected), operators.md reviewer-input protocol and medium+ guidance",
+        "second consecutive evidence-compliant lane: pre-change RED logs in the PR body (ValidationKind TS error, three failing rejection tests) — evidenceGateDeviationCount holds at 0",
+        "independent finalizer review on merged main: worker-review tests 9/9 (6 unit + 2 completeTask integration + 1 server route), spec reconciliation complete, verdict PASS (#1237 review comment)",
+        "failure classification acceptance_misconfigured: 2 — both R1 team waves attached executable acceptance to planning lanes (exit 127 in worker runtime cwd); taxonomy loop closed live: R2 dispatch corrected and retained declaredScope/evidenceGate dogfooding",
+        "failure classification environment: 3 — two T1 lanes blocked on zero_files source projection and one T2 lane handler failure before analysis, per the PR #1246 readback",
+        "follow-up candidates recorded in the #1237 review comment: single result.validation slot overload when acceptance and review.required combine (review verdict satisfies the acceptance gate); P3 drive-bys (test pins, dead shell variable) deferred by documented finalizer decision"
+      ],
+      "recordedAt": "2026-07-03"
     }
   ]
 }
