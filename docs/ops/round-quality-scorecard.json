@@ -37,6 +37,24 @@
         "baseline comparison: previous improvement-track-2026-07 had carryOverCount=2 and falseFindingCount=2; this closeout records 0/0 at close time"
       ],
       "recordedAt": "2026-07-02"
+    },
+    {
+      "id": "a2a-nexus-1233-p1-closeout-2026-07-03",
+      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "scope": "#1233 docker-runner red-green baseline P1 closeout under umbrella #1232",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1
+      },
+      "evidence": [
+        "implemented via PR #1238 (merge 49a2983): baseline policy off/record/require-red with record default, pre-patch run ordering asserted structurally, vacuous verdict blocks with dedicated exit 44 before patch application",
+        "independent finalizer review on merged main: runner-manifest tests 29/29, spec reconciliation 5/5 Scope items, verdict PASS (#1233 review comment)",
+        "evidence-gate deviation: required pre-change RED log missing from the PR body; retro-filled in the #1233 review comment (pre-#1238 schema REJECTS baseline evidence via ajv, post-#1238 ACCEPTS) — P2+ lanes must attach the RED log at PR time",
+        "baseline comparison: previous rounds recorded carryOver 2->0 and falseFinding 2->0; this closeout holds 0/0/0 with one process deviation retro-corrected"
+      ],
+      "recordedAt": "2026-07-03"
     }
   ]
 }
