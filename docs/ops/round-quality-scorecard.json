@@ -1,5 +1,5 @@
 {
-  "$comment": "Round-quality scorecard (#1220 PR 3). One entry per closed improvement track or A2AD round wave. Metrics are the feedback loop for guardpack/process changes: carryOverCount = deliverables that had to be re-tracked in a follow-up issue; falseFindingCount = audit/verification findings later corrected as wrong; reworkIssueCount = issues opened solely to redo or complete previously-closed work; legacyIncompleteCloses = checklist-incomplete completed-closes observed (one-time baseline from the first closeout-hygiene run). Validated fail-closed by scripts/check-round-quality-scorecard.mjs. Counts only — no personal identifiers, no private channels.",
+  "$comment": "Round-quality scorecard (#1220 PR 3). One entry per closed improvement track or A2AD round wave. Metrics are the feedback loop for guardpack/process changes: carryOverCount = deliverables that had to be re-tracked in a follow-up issue; falseFindingCount = audit/verification findings later corrected as wrong; reworkIssueCount = issues opened solely to redo or complete previously-closed work; legacyIncompleteCloses = checklist-incomplete completed-closes observed (one-time baseline from the first closeout-hygiene run). Optional failureBreakdown (#1236) maps finalizer-assigned failure categories (spec_ambiguity | implementation_defect | environment | acceptance_misconfigured | scope_drift | other) to counts; every counted category needs an evidence narrative. Validated fail-closed by scripts/check-round-quality-scorecard.mjs. Counts only — no personal identifiers, no private channels.",
   "entries": [
     {
       "id": "improvement-track-2026-07",
@@ -30,11 +30,15 @@
         "acceptancePayloadLanes": 6,
         "acceptancePayloadPassed": 4
       },
+      "failureBreakdown": {
+        "other": 2
+      },
       "evidence": [
         "A2A round a2a-nexus-1219-acceptance-r1-20260702 dispatched 6 lanes with task payload acceptance.command=node scripts/worker-artifact-rollout-guard.mjs --deployed",
         "implementation adds postPatchVerification, diffHygiene, and reproducibility manifest evidence for #1219 PR1/PR2/PR3 scope",
         "local gates: docker-runner package parity and npm run check passed before merge",
-        "baseline comparison: previous improvement-track-2026-07 had carryOverCount=2 and falseFindingCount=2; this closeout records 0/0 at close time"
+        "baseline comparison: previous improvement-track-2026-07 had carryOverCount=2 and falseFindingCount=2; this closeout records 0/0 at close time",
+        "failure classification (retro, #1236): other: 2 — the two failed acceptance lanes predate the taxonomy and per-lane failure logs were not retained in repo-visible evidence; reclassify if the round logs surface"
       ],
       "recordedAt": "2026-07-02"
     },

@@ -5,7 +5,9 @@
  * Validates docs/ops/round-quality-scorecard.json fail-closed so the quality
  * feedback loop stays machine-readable: unique entry ids, ISO dates, and
  * non-negative integer metrics for carryOverCount / falseFindingCount /
- * reworkIssueCount (plus optional extra counters). The scorecard is how
+ * reworkIssueCount (plus optional extra counters), and the optional
+ * failureBreakdown classification (#1236) restricted to the closed category
+ * set with an evidence narrative per counted category. The scorecard is how
  * guardpack and process changes get judged by data instead of anecdotes —
  * a malformed entry silently dropped from aggregation would defeat that.
  */
@@ -14,6 +16,22 @@ import path from 'node:path';
 
 const REQUIRED_METRICS = ['carryOverCount', 'falseFindingCount', 'reworkIssueCount'];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Closed failure-classification taxonomy (#1236). Categories are assigned by
+ * the finalizer in disposition comments (never by the implementing worker —
+ * oracle independence) and aggregated per round in the optional
+ * failureBreakdown object. Definitions and judgment criteria:
+ * docs/operators.md "Failure classification".
+ */
+export const FAILURE_CATEGORIES = [
+  'spec_ambiguity',
+  'implementation_defect',
+  'environment',
+  'acceptance_misconfigured',
+  'scope_drift',
+  'other',
+];
 
 export function evaluateScorecard(doc) {
   const failures = [];
@@ -43,6 +61,23 @@ export function evaluateScorecard(doc) {
     if (!Array.isArray(entry?.evidence) || entry.evidence.length === 0 || !entry.evidence.every((line) => typeof line === 'string' && line.length > 0)) {
       failures.push(`${where}: evidence must be a non-empty string array`);
     }
+    const breakdown = entry?.failureBreakdown;
+    if (breakdown !== undefined) {
+      if (!breakdown || typeof breakdown !== 'object' || Array.isArray(breakdown)) {
+        failures.push(`${where}: failureBreakdown must be an object mapping failure categories to counts`);
+        return;
+      }
+      const evidenceText = Array.isArray(entry?.evidence) ? entry.evidence.join('\n') : '';
+      for (const [category, count] of Object.entries(breakdown)) {
+        if (!FAILURE_CATEGORIES.includes(category)) {
+          failures.push(`${where}: failureBreakdown.${category} is not a known failure category (expected one of: ${FAILURE_CATEGORIES.join(', ')})`);
+        } else if (!Number.isInteger(count) || count < 0) {
+          failures.push(`${where}: failureBreakdown.${category} must be a non-negative integer`);
+        } else if (count > 0 && !evidenceText.includes(category)) {
+          failures.push(`${where}: failureBreakdown.${category} is counted but no evidence line explains it (a classification without a narrative cannot be audited)`);
+        }
+      }
+    }
   });
   return failures;
 }
@@ -64,7 +99,14 @@ function main() {
     },
     Object.fromEntries(REQUIRED_METRICS.map((metric) => [metric, 0])),
   );
-  console.log(`round quality scorecard ok (${doc.entries.length} entr${doc.entries.length === 1 ? 'y' : 'ies'}; totals ${JSON.stringify(totals)})`);
+  const failureTotals = {};
+  for (const entry of doc.entries) {
+    for (const [category, count] of Object.entries(entry.failureBreakdown ?? {})) {
+      failureTotals[category] = (failureTotals[category] ?? 0) + count;
+    }
+  }
+  const failureSummary = Object.keys(failureTotals).length ? `; failures ${JSON.stringify(failureTotals)}` : '';
+  console.log(`round quality scorecard ok (${doc.entries.length} entr${doc.entries.length === 1 ? 'y' : 'ies'}; totals ${JSON.stringify(totals)}${failureSummary})`);
 }
 
 const isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());

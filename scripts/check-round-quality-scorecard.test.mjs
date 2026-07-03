@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { evaluateScorecard } from './check-round-quality-scorecard.mjs';
+import { evaluateScorecard, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts/check-round-quality-scorecard.mjs');
@@ -42,6 +42,40 @@ test('duplicate ids and empty evidence fail closed', () => {
   assert.ok(failures.some((f) => f.includes('evidence must be a non-empty string array')));
 });
 
+test('failureBreakdown accepts known categories with an evidence narrative', () => {
+  assert.deepEqual(FAILURE_CATEGORIES, ['spec_ambiguity', 'implementation_defect', 'environment', 'acceptance_misconfigured', 'scope_drift', 'other']);
+  const failures = evaluateScorecard({
+    entries: [{
+      ...VALID_ENTRY,
+      failureBreakdown: { implementation_defect: 1, other: 1 },
+      evidence: [
+        'failure classification: implementation_defect: 1 — lane B patch reverted a guard',
+        'failure classification: other: 1 — container image pull flaked once, not reproducible',
+      ],
+    }],
+  });
+  assert.deepEqual(failures, []);
+});
+
+test('failureBreakdown unknown keys, negative counts, and unevidenced categories fail closed', () => {
+  const failures = evaluateScorecard({
+    entries: [
+      { ...VALID_ENTRY, failureBreakdown: { typo_category: 1 } },
+      { ...VALID_ENTRY, id: 'round-y', failureBreakdown: { spec_ambiguity: -5 } },
+      { ...VALID_ENTRY, id: 'round-z', failureBreakdown: { environment: 2 }, evidence: ['no classification narrative at all'] },
+      { ...VALID_ENTRY, id: 'round-w', failureBreakdown: ['environment'] },
+    ],
+  });
+  assert.ok(failures.some((f) => f.includes('failureBreakdown.typo_category is not a known failure category')));
+  assert.ok(failures.some((f) => f.includes('failureBreakdown.spec_ambiguity must be a non-negative integer')));
+  assert.ok(failures.some((f) => f.includes('failureBreakdown.environment is counted but no evidence line explains it')));
+  assert.ok(failures.some((f) => f.includes('failureBreakdown must be an object mapping failure categories to counts')));
+});
+
+test('zero-count categories do not require an evidence narrative', () => {
+  assert.deepEqual(evaluateScorecard({ entries: [{ ...VALID_ENTRY, failureBreakdown: { scope_drift: 0 } }] }), []);
+});
+
 test('committed baseline scorecard validates and records the 2026-07 track', () => {
   const doc = JSON.parse(fs.readFileSync(path.join(repo, 'docs/ops/round-quality-scorecard.json'), 'utf8'));
   assert.deepEqual(evaluateScorecard(doc), []);
@@ -49,6 +83,9 @@ test('committed baseline scorecard validates and records the 2026-07 track', () 
   assert.ok(baseline, 'baseline entry for the 2026-07 improvement track must exist');
   assert.equal(baseline.metrics.carryOverCount, 2);
   assert.equal(baseline.metrics.falseFindingCount, 2);
+  const r1 = doc.entries.find((entry) => entry.id === 'a2a-nexus-1219-q2-closeout-2026-07-02');
+  assert.ok(r1, 'the r1 acceptance round entry must exist');
+  assert.equal(r1.failureBreakdown?.other, 2, 'the two r1 lane failures must carry the retro #1236 classification');
 });
 
 test('cli fails closed on a malformed scorecard file', () => {
