@@ -112,6 +112,7 @@ import {
   type BrokerStateStore,
 } from "./store.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
+import { validateReviewEvidence } from "../worker-review.js";
 import {
   evaluateTaskReadiness,
   normalizeTaskReadinessMode,
@@ -1905,12 +1906,18 @@ export class InMemoryA2ABroker {
     }
 
     const normalizedResult = normalizeTaskResult(result);
-    const completionEvidenceError = validateGithubTaskCompletionEvidence(task, normalizedResult);
+    const completionEvidenceError =
+      validateReviewEvidence(task, normalizedResult, workerId) ?? validateGithubTaskCompletionEvidence(task, normalizedResult);
     if (completionEvidenceError) {
-      throw new BrokerError(
+      const brokerErrorCode =
+        completionEvidenceError.code === "review_evidence_missing" ||
+        completionEvidenceError.code === "review_not_independent" ||
+        completionEvidenceError.code === "review_verdict_failed" ||
         completionEvidenceError.code === "github_completion_receipt_invalid"
-          ? "github_completion_receipt_invalid"
-          : "github_completion_evidence_missing",
+          ? completionEvidenceError.code
+          : "github_completion_evidence_missing";
+      throw new BrokerError(
+        brokerErrorCode,
         completionEvidenceError.message,
         completionEvidenceError.details,
       );

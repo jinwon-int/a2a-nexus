@@ -65,6 +65,23 @@ When a round lane fails or a closeout PR is rejected, the finalizer records a fa
 | `scope_drift` | The change stepped outside the declared scope (`diffHygiene.scopeDrift`). Forbidden paths remain the security boundary; scope drift is a quality/spec boundary and does not replace forbidden-path blocking. Accumulation points at declaredScope discipline (#1234/#1235). |
 | `other` | Anything else — requires a free-text explanation in the evidence line; reclassify when better information surfaces. |
 
+## Independent review evidence for medium+ tasks (#1237)
+
+Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.
+
+When `review.required` is true, successful completion must include `result.validation` as the independent reviewer verdict:
+
+- `nodeId`: reviewer node id;
+- `kind`: `"review"`;
+- `verdict`: `"pass"` or `"fail"` (`"pass"` is required for completion);
+- `note`: reviewer reason.
+
+The reviewer node must differ from the author/completing worker. Missing reviewer evidence rejects completion as `review_evidence_missing`; same-node review rejects as `review_not_independent`; failing review rejects as `review_verdict_failed`. If `payload.review` is absent or `required` is false, existing task completion behavior is unchanged.
+
+Reviewer input should be limited to the diff, the original task specification, and the acceptance result. Do not feed the reviewer the author's self-narrative as the primary evidence; that preserves oracle independence.
+
+Use this contract as guidance for medium+ tasks when declared scope spans multiple broker packages, touches a completion gate or validator, or changes safety-sensitive lifecycle behavior. Hard auto-enforcement of the medium+ threshold is deferred.
+
 ## Approval records
 
 Approval-sensitive execution records live under `fixtures/approvals/` and are validated by `npm run check:approval-records`. New approval records must use `approverRole: "operator"` and must not include personal-channel or raw-secret fields.
