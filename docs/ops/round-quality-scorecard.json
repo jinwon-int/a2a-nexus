@@ -59,6 +59,25 @@
         "baseline comparison: previous rounds recorded carryOver 2->0 and falseFinding 2->0; this closeout holds 0/0/0 with one process deviation retro-corrected"
       ],
       "recordedAt": "2026-07-03"
+    },
+    {
+      "id": "a2a-nexus-1234-p2-closeout-2026-07-03",
+      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "scope": "#1234 broker Definition-of-Ready task-readiness lint P2 closeout under umbrella #1232",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1
+      },
+      "evidence": [
+        "implemented via PR #1240 (merge bdd96a4): task-readiness.ts requires acceptance/declaredScope.paths/evidenceGate on patch tasks, spec_underspecified + details.missing on enforce, warn default pinned by test, idempotent replay precedes the lint",
+        "independent finalizer review on merged main: task-readiness tests 6/6, gate targeting verified non-vacuous against real TaskKind values, verdict PASS (#1234 review comment)",
+        "retro functional red-green probe by the reviewer: PRE-#1240 tree returns 201 for an underspecified patch task even with enforce requested; POST-#1240 returns 400 spec_underspecified (#1234 review comment)",
+        "evidence-gate deviation (2nd consecutive): required pre-change RED log missing from the PR body despite the flag raised after P1 — proposal recorded to make the RED log a blocking finalizer closeout check when P4 lands disposition rules",
+        "non-blocking findings carried to P3/P4 lanes: normalizeTaskReadinessMode coerces unknown config values to warn (fail-open typo path); warn-mode evidence annotation not implemented (console.warn only)"
+      ],
+      "recordedAt": "2026-07-03"
     }
   ]
 }
