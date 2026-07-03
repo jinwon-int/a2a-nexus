@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { buildArtifactManifest, buildContainerScript, buildGitHubCommentProjection, buildResultSummary, buildRunnerEvidenceHints, buildSourcePublicApprovalRehearsal, redactAndBound, sanitizeCleanupRehearsal, RESULT_STREAM_LIMIT, sanitizeReceiptTrace, sanitizeSourcePublicApprovalRehearsal, sanitizeTaskArtifactPayload } from "./runner.js";
-import { normalizeTask } from "./task-normalizer.js";
+import { evaluateDeclaredScopeDrift, normalizeTask } from "./task-normalizer.js";
 import { buildBlockCommentBody } from "./github-evidence.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -74,6 +74,11 @@ test("buildArtifactManifest projects #1219 verification, hygiene, and reproducib
         lockfileChanges: [],
         whitespaceOnly: false,
         churn: { totalLines: 400, whitespaceLines: 391, ratio: 0.9775, level: "block" },
+        scopeDrift: {
+          declared: ["packages/docker-runner/"],
+          outside: [],
+          level: "ok",
+        },
       },
       reproducibility: {
         schemaVersion: "a2a.runner.reproducibility.v1",
@@ -86,6 +91,7 @@ test("buildArtifactManifest projects #1219 verification, hygiene, and reproducib
     assert.equal(manifest.postPatchVerification?.status, "passed");
     assert.equal(manifest.diffHygiene?.changedPaths[0], "packages/docker-runner/src/runner.ts");
     assert.equal(manifest.diffHygiene?.churn?.level, "block");
+    assert.equal(manifest.diffHygiene?.scopeDrift?.level, "ok");
     assert.equal(manifest.reproducibility?.runnerRevision, "abc123");
 
     const summary = buildResultSummary(
@@ -951,4 +957,50 @@ test("buildContainerScript embeds two-stage reformat churn detection (#1225)", (
   assert.match(script, /-v warn=0\.5/);
   assert.match(script, /-v block=0\.9/);
   assert.match(script, /CHURN_MIN_LINES=100/);
+});
+
+
+test("declared-scope drift blocks outside-path fixtures in block mode", () => {
+  const result = evaluateDeclaredScopeDrift(
+    ["packages/docker-runner/src/runner.ts", "README.md"],
+    ["packages/docker-runner/", "docs/operators.md"],
+    "block",
+  );
+
+  assert.deepEqual(result, {
+    declared: ["packages/docker-runner/", "docs/operators.md"],
+    outside: ["README.md"],
+    level: "block",
+  });
+});
+
+test("buildContainerScript embeds declared-scope drift evidence and block mode", () => {
+  const task = normalizeTask({
+    id: "issue-1235-scope-drift",
+    intent: "patch",
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    baseBranch: "main",
+    declaredScope: { paths: ["packages/docker-runner/", "docs/operators.md"] },
+    diffHygiene: { scope: { mode: "block" } },
+  });
+
+  const script = buildContainerScript(task);
+
+  assert.match(script, /SCOPE_MODE='block'/);
+  assert.match(script, /SCOPE_DECLARED_PATHS=/);
+  assert.match(script, /diff_hygiene_scope_drift_level=/);
+  assert.match(script, /"scopeDrift":\{"declared":/);
+  assert.match(script, /"level":"\$SCOPE_LEVEL"/);
+  assert.match(script, /\[ "\$SCOPE_LEVEL" = block \]/);
+});
+
+test("artifact manifest schema accepts optional diffHygiene scopeDrift without requiring it", async () => {
+  const schema = JSON.parse(await readFile(join(repoRoot, "docs", "artifact-manifest.schema.json"), "utf8"));
+  const diffHygiene = schema.properties.diffHygiene;
+
+  assert.equal(diffHygiene.additionalProperties, false);
+  assert.ok(!diffHygiene.required.includes("scopeDrift"));
+  assert.deepEqual(diffHygiene.properties.scopeDrift.required, ["declared", "outside", "level"]);
+  assert.deepEqual(diffHygiene.properties.scopeDrift.properties.level.enum, ["ok", "warn", "block"]);
 });

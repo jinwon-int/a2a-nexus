@@ -709,7 +709,19 @@ function isDiffHygieneEvidence(value: unknown): value is RunnerDiffHygieneEviden
     && Array.isArray(entry.lockfileChanges)
     && entry.lockfileChanges.every((part) => typeof part === "string")
     && typeof entry.whitespaceOnly === "boolean"
-    && isDiffHygieneChurn(entry.churn);
+    && isDiffHygieneChurn(entry.churn)
+    && isDiffHygieneScopeDrift(entry.scopeDrift);
+}
+
+function isDiffHygieneScopeDrift(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const scopeDrift = value as Record<string, unknown>;
+  return Array.isArray(scopeDrift.declared)
+    && scopeDrift.declared.every((part) => typeof part === "string")
+    && Array.isArray(scopeDrift.outside)
+    && scopeDrift.outside.every((part) => typeof part === "string")
+    && (scopeDrift.level === "ok" || scopeDrift.level === "warn" || scopeDrift.level === "block");
 }
 
 function isDiffHygieneChurn(value: unknown): boolean {

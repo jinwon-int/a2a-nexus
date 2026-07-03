@@ -62,7 +62,7 @@ When a round lane fails or a closeout PR is rejected, the finalizer records a fa
 | `implementation_defect` | The spec was unambiguous; the delivered change is wrong or incomplete against it. Accumulation points at the worker guardpack. |
 | `environment` | The failure came from the execution environment (missing binaries, network, container limits), not the spec or the change. Accumulation points at runner provisioning. |
 | `acceptance_misconfigured` | The acceptance command or expectation was wrong for the lane (vacuous, wrong exit code, inapplicable path). Accumulation points at the acceptance contract docs (#1218). |
-| `scope_drift` | The change stepped outside the declared scope (`diffHygiene.scopeDrift` evidence once #1235 lands). Accumulation points at declaredScope discipline (#1234). |
+| `scope_drift` | The change stepped outside the declared scope (`diffHygiene.scopeDrift`). Forbidden paths remain the security boundary; scope drift is a quality/spec boundary and does not replace forbidden-path blocking. Accumulation points at declaredScope discipline (#1234/#1235). |
 | `other` | Anything else — requires a free-text explanation in the evidence line; reclassify when better information surfaces. |
 
 ## Approval records

@@ -1,4 +1,4 @@
-import type { NormalizedRunnerTask, RunnerRepo, RunnerTask } from "./types.js";
+import type { NormalizedRunnerTask, RunnerDiffHygieneScopeDriftEvidence, RunnerDiffHygieneScopeMode, RunnerRepo, RunnerTask } from "./types.js";
 
 const GITHUB_REPO_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const FAMILY_WIKI_READONLY_AUDIT_MODE = "family-wiki-readonly-audit";
@@ -12,6 +12,35 @@ const READ_ONLY_VALIDATION_MODES = new Set([
   FAMILY_WIKI_READONLY_AUDIT_MODE,
 ]);
 const PATCH_PROPOSAL_MODES = new Set(["github-propose-patch", "propose_patch"]);
+
+export function evaluateDeclaredScopeDrift(
+  changedPaths: string[],
+  declaredPaths: string[],
+  mode: RunnerDiffHygieneScopeMode = "warn",
+): RunnerDiffHygieneScopeDriftEvidence {
+  if (mode !== "off" && mode !== "warn" && mode !== "block") {
+    throw new Error("task.diffHygiene.scope.mode must be one of: off, warn, block");
+  }
+  const declared = normalizeScopePaths(declaredPaths);
+  const outside = mode === "off" || declared.length === 0
+    ? []
+    : normalizeScopePaths(changedPaths).filter((path) => !declared.some((prefix) => isPathInDeclaredScope(path, prefix)));
+  return {
+    declared,
+    outside,
+    level: outside.length === 0 ? "ok" : mode === "block" ? "block" : "warn",
+  };
+}
+
+function normalizeScopePaths(paths: string[]): string[] {
+  return paths.map((path) => path.trim()).filter(Boolean);
+}
+
+function isPathInDeclaredScope(path: string, declaredPath: string): boolean {
+  return declaredPath.endsWith("/")
+    ? path.startsWith(declaredPath)
+    : path === declaredPath || path.startsWith(`${declaredPath}/`);
+}
 
 export function normalizeTask(task: RunnerTask): NormalizedRunnerTask {
   const repos = normalizeRepos(task);
@@ -563,6 +592,20 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
   if (!Number.isInteger(churnMinLines) || churnMinLines < 1) {
     throw new Error("task.diffHygiene.churnMinLines must be a positive integer");
   }
+  const scopeMode = policy.scope?.mode ?? "warn";
+  if (scopeMode !== "off" && scopeMode !== "warn" && scopeMode !== "block") {
+    throw new Error("task.diffHygiene.scope.mode must be one of: off, warn, block");
+  }
+  const declaredScopePaths = task.declaredScope?.paths ?? [];
+  if (task.declaredScope !== undefined && (
+    !Array.isArray(declaredScopePaths)
+    || declaredScopePaths.some((path) => typeof path !== "string" || path.trim().length === 0 || /[\0\r\n]/.test(path))
+  )) {
+    throw new Error("task.declaredScope.paths must be a non-empty string array when declaredScope is provided");
+  }
+  const normalizedDeclaredScopePaths = normalizeScopePaths(declaredScopePaths);
+  const scopeEnabled = scopeMode !== "off" && normalizedDeclaredScopePaths.length > 0;
+  const declaredScopeList = normalizedDeclaredScopePaths.map(shellSingleQuote).join(" ");
   return [
     `# Fail-closed diff hygiene gate (#1219).`,
     `CHANGED_PATHS="$( {`,
@@ -603,16 +646,54 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
     `CHURN_LEVEL="$(awk -v r="$CHURN_RATIO" -v w="$WS_CHURN" -v m="$CHURN_MIN_LINES" -v warn=${churnWarnRatio} -v block=${churnBlockRatio} 'BEGIN{ if (r >= block && w >= m) print "block"; else if (r >= warn && w > 0) print "warn"; else print "none" }')"`,
     `printf 'diff_hygiene_churn_level=%s\\n' "$CHURN_LEVEL" | tee -a /work/artifacts/summary.txt`,
     `printf 'diff_hygiene_churn_ratio=%s total=%s whitespace=%s\\n' "$CHURN_RATIO" "$TOTAL_CHURN" "$WS_CHURN" >> /work/artifacts/summary.txt`,
+    `SCOPE_DRIFT_JSON=`,
+    ...(scopeEnabled ? [
+      `# Declared-scope drift detection (#1235): quality/spec boundary, not a forbidden-path substitute.`,
+      `SCOPE_MODE=${shellSingleQuote(scopeMode)}`,
+      `SCOPE_DECLARED_PATHS=${shellSingleQuote(declaredScopeList)}`,
+      `SCOPE_OUTSIDE=""`,
+      `while IFS= read -r path; do`,
+      `  [ -n "$path" ] || continue`,
+      `  SCOPE_MATCH=0`,
+      `  for declared in ${declaredScopeList}; do`,
+      `    case "$declared" in`,
+      `      */) case "$path" in "$declared"* ) SCOPE_MATCH=1 ;; esac ;;`,
+      `      *) case "$path" in "$declared"|"$declared"/* ) SCOPE_MATCH=1 ;; esac ;;`,
+      `    esac`,
+      `    [ "$SCOPE_MATCH" = 1 ] && break`,
+      `  done`,
+      `  [ "$SCOPE_MATCH" = 1 ] || SCOPE_OUTSIDE="\${SCOPE_OUTSIDE}\${SCOPE_OUTSIDE:+$'\\n'}$path"`,
+      `done <<< "$CHANGED_PATHS"`,
+      `if [ -z "$SCOPE_OUTSIDE" ]; then`,
+      `  SCOPE_LEVEL=ok`,
+      `elif [ "$SCOPE_MODE" = block ]; then`,
+      `  SCOPE_LEVEL=block`,
+      `else`,
+      `  SCOPE_LEVEL=warn`,
+      `fi`,
+      `printf 'diff_hygiene_scope_drift_level=%s\\n' "$SCOPE_LEVEL" | tee -a /work/artifacts/summary.txt`,
+      `printf '%s\\n' "$SCOPE_OUTSIDE" | sed '/^$/d; s#^#diff_hygiene_scope_drift_outside=#' >> /work/artifacts/summary.txt`,
+      `SCOPE_DECLARED_JSON="$(printf '%s\\n' ${shellSingleQuote(normalizedDeclaredScopePaths.join("\n"))} | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+      `SCOPE_OUTSIDE_JSON="$(printf '%s\\n' "$SCOPE_OUTSIDE" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+      `SCOPE_DRIFT_JSON=",\"scopeDrift\":{\"declared\":$SCOPE_DECLARED_JSON,\"outside\":$SCOPE_OUTSIDE_JSON,\"level\":\"$SCOPE_LEVEL\"}"`,
+    ] : [
+      `SCOPE_LEVEL=ok`,
+    ]),
     `CHANGED_PATHS_JSON="$(printf '%s\\n' "$CHANGED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
     `BLOCKED_PATHS_JSON="$(printf '%s\\n' "$BLOCKED_PATHS" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
     `LOCKFILE_CHANGES_JSON="$(printf '%s\\n' "$LOCKFILE_CHANGES" | node -e 'const fs=require("fs"); console.log(JSON.stringify(fs.readFileSync(0,"utf8").split(/\\r?\\n/).filter(Boolean)))')"`,
+    `DIFF_HYGIENE_STATUS=passed`,
+    `if [ -n "$BLOCKED_PATHS" ] || [ "$WHITESPACE_ONLY" = 1 ] || [ "$CHURN_LEVEL" = block ] || [ "$SCOPE_LEVEL" = block ]; then`,
+    `  DIFF_HYGIENE_STATUS=blocked`,
+    `fi`,
     `cat > /work/artifacts/diff-hygiene.json <<A2A_DIFF_HYGIENE_JSON`,
-    `{"schemaVersion":"a2a.runner.diff-hygiene.v1","status":"$([ -z \"$BLOCKED_PATHS\" ] && [ \"$WHITESPACE_ONLY\" != 1 ] && [ \"$CHURN_LEVEL\" != block ] && printf passed || printf blocked)","changedPaths":$CHANGED_PATHS_JSON,"blockedPaths":$BLOCKED_PATHS_JSON,"lockfileChanges":$LOCKFILE_CHANGES_JSON,"whitespaceOnly":$([ "$WHITESPACE_ONLY" = 1 ] && printf true || printf false),"churn":{"totalLines":$TOTAL_CHURN,"whitespaceLines":$WS_CHURN,"ratio":$CHURN_RATIO,"level":"$CHURN_LEVEL"}}`,
+    `{"schemaVersion":"a2a.runner.diff-hygiene.v1","status":"$DIFF_HYGIENE_STATUS","changedPaths":$CHANGED_PATHS_JSON,"blockedPaths":$BLOCKED_PATHS_JSON,"lockfileChanges":$LOCKFILE_CHANGES_JSON,"whitespaceOnly":$([ "$WHITESPACE_ONLY" = 1 ] && printf true || printf false),"churn":{"totalLines":$TOTAL_CHURN,"whitespaceLines":$WS_CHURN,"ratio":$CHURN_RATIO,"level":"$CHURN_LEVEL"}$SCOPE_DRIFT_JSON}`,
     `A2A_DIFF_HYGIENE_JSON`,
-    `if [ -n "$BLOCKED_PATHS" ] || [ "$WHITESPACE_ONLY" = 1 ] || [ "$CHURN_LEVEL" = block ]; then`,
+    `if [ "$DIFF_HYGIENE_STATUS" = blocked ]; then`,
     `  printf 'diff_hygiene=blocked\\n' | tee -a /work/artifacts/summary.txt`,
     `  printf '%s\\n' "$BLOCKED_PATHS" | sed '/^$/d; s#^#diff_hygiene_blocked_path=#' >> /work/artifacts/summary.txt`,
     `  [ "$WHITESPACE_ONLY" = 1 ] && printf 'diff_hygiene_whitespace_only=1\\n' >> /work/artifacts/summary.txt`,
+    `  [ "$SCOPE_LEVEL" = block ] && printf 'diff_hygiene_scope_drift=blocked\\n' >> /work/artifacts/summary.txt`,
     `  exit 5`,
     `fi`,
     `printf 'diff_hygiene=passed\\n' | tee -a /work/artifacts/summary.txt`,

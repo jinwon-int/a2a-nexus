@@ -7,6 +7,7 @@ import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import {
   evaluateTaskReadiness,
   DEFAULT_TASK_READINESS_MODE,
+  normalizeTaskReadinessMode,
   type TaskReadinessMode,
 } from "./task-readiness.js";
 
@@ -108,6 +109,16 @@ test("readiness evaluator accepts a complete patch task and exempts analysis tas
 
 test("warn mode is the default task-readiness rollout mode", () => {
   assert.equal(DEFAULT_TASK_READINESS_MODE, "warn");
+  assert.equal(normalizeTaskReadinessMode(undefined), "warn");
+  assert.equal(normalizeTaskReadinessMode("warn"), "warn");
+  assert.equal(normalizeTaskReadinessMode("enforce"), "enforce");
+});
+
+test("task-readiness mode rejects typo values instead of silently downgrading to warn", () => {
+  assert.throws(
+    () => normalizeTaskReadinessMode("enforced"),
+    /task readiness mode must be one of: warn, enforce/,
+  );
 });
 
 test("POST /tasks rejects underspecified patch tasks in enforce mode with details.missing", async () => {

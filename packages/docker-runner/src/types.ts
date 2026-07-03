@@ -634,6 +634,7 @@ export interface SourcePublicExecutionPreflight {
 }
 
 export type RunnerPostPatchVerificationBaselineMode = "off" | "record" | "require-red";
+export type RunnerDiffHygieneScopeMode = "off" | "warn" | "block";
 
 export interface RunnerPostPatchVerification {
   /** argv executed in the task container after patch application; defaults to `npm run check` when the object is present without a command. */
@@ -664,6 +665,15 @@ export interface RunnerDiffHygienePolicy {
   churnBlockRatio?: number;
   /** ...and at least this many whitespace-churn lines exist (default 100). */
   churnMinLines?: number;
+  /** Compare changed paths against task.declaredScope.paths (default mode: warn). */
+  scope?: {
+    mode?: RunnerDiffHygieneScopeMode;
+  };
+}
+
+export interface RunnerDeclaredScope {
+  /** Repo-relative file paths or directory prefixes the task is expected to touch. */
+  paths: string[];
 }
 
 export interface RunnerPostPatchVerificationBaselineEvidence {
@@ -689,6 +699,12 @@ export interface RunnerPostPatchVerificationEvidence {
   baseline?: RunnerPostPatchVerificationBaselineEvidence;
 }
 
+export interface RunnerDiffHygieneScopeDriftEvidence {
+  declared: string[];
+  outside: string[];
+  level: "ok" | "warn" | "block";
+}
+
 export interface RunnerDiffHygieneEvidence {
   schemaVersion: "a2a.runner.diff-hygiene.v1";
   status: "passed" | "blocked";
@@ -703,6 +719,8 @@ export interface RunnerDiffHygieneEvidence {
     ratio: number;
     level: "none" | "warn" | "block";
   };
+  /** Optional declared-scope drift check (#1235). */
+  scopeDrift?: RunnerDiffHygieneScopeDriftEvidence;
 }
 
 export interface RunnerReproducibilityMetadata {
@@ -804,6 +822,8 @@ export interface RunnerTask {
   postPatchVerification?: RunnerPostPatchVerification;
   /** Optional fail-closed diff hygiene policy run before PR/artifact success. */
   diffHygiene?: RunnerDiffHygienePolicy;
+  /** Optional declared path scope consumed by diffHygiene.scope (#1235). */
+  declaredScope?: RunnerDeclaredScope;
   /** Safe broker/run identifier to carry into release-gate evidence when present. */
   runId?: string;
   /** Safe distributed trace identifier to carry into release-gate evidence when present. */

@@ -136,6 +136,16 @@
             "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
             "level": { "enum": ["none", "warn", "block"] }
           }
+        },
+        "scopeDrift": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["declared", "outside", "level"],
+          "properties": {
+            "declared": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
+            "outside": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 240 } },
+            "level": { "enum": ["ok", "warn", "block"] }
+          }
         }
       }
     },
