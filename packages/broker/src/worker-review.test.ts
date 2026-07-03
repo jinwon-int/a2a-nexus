@@ -6,6 +6,7 @@ import { InMemoryA2ABroker } from "./core/broker.js";
 import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
 import { createBrokerServer } from "./server.js";
 import { validateTaskCompletionEvidence } from "./worker.js";
+import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
 import type { TaskRecord } from "./core/types.js";
 
 const EDGE_SECRET = "review-test-edge-secret";
@@ -121,6 +122,51 @@ test("review evidence: independent pass satisfies opt-in gate", () => {
     validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "diff matches spec" },
   });
   assert.equal(error, null);
+});
+
+test("review evidence: validations array selects the review item (#1249)", () => {
+  const error = validateTaskCompletionEvidence(taskWith({ review: { required: true } }), {
+    validations: [
+      { kind: "smoke", verdict: "pass", metrics: { acceptance: true }, note: "acceptance passed" },
+      { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "diff matches spec" },
+    ],
+  });
+  assert.equal(error, null);
+});
+
+test("review evidence: validations array without review item rejects review.required (#1249)", () => {
+  const error = validateTaskCompletionEvidence(taskWith({ review: { required: true } }), {
+    validations: [{ kind: "smoke", verdict: "pass", metrics: { acceptance: true }, note: "acceptance passed" }],
+  });
+  assert.equal(error?.code, "review_evidence_missing");
+  assert.match(error?.message ?? "", /result\.validations.*review/);
+});
+
+test("completion evidence: combined acceptance and review accepts separate validations (#1249)", () => {
+  const error = validateTaskCompletionEvidence(taskWith({ acceptance: { command: [process.execPath, "-e", "process.exit(0)"] }, review: { required: true } }), {
+    validations: [
+      { kind: "smoke", verdict: "pass", metrics: { acceptance: true }, note: "acceptance passed" },
+      { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "diff matches spec" },
+    ],
+  });
+  assert.equal(error, null);
+});
+
+test("completion evidence: combined acceptance and review rejects review-only validations (#1249)", () => {
+  const error = validateTaskCompletionEvidence(taskWith({ acceptance: { command: [process.execPath, "-e", "process.exit(0)"] }, review: { required: true } }), {
+    validations: [{ nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "review only" }],
+  });
+  assert.equal(error?.code, "acceptance_evidence_missing");
+});
+
+test("task result normalizer preserves validations array artifact evidence (#1249)", () => {
+  const normalized = normalizeTaskResult({
+    validations: [
+      { kind: "smoke", verdict: "pass", artifactIds: ["artifact-a", "artifact-a"], metrics: { acceptance: true } },
+      { nodeId: "reviewer-b", kind: "review", verdict: "pass", artifactIds: ["artifact-b"], note: "review passed" },
+    ],
+  });
+  assert.deepEqual(normalized.validations?.map((validation) => validation.artifactIds), [["artifact-a"], ["artifact-b"]]);
 });
 
 test("review evidence: unspecified review remains a no-op", () => {

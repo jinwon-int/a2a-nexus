@@ -69,12 +69,25 @@ When a round lane fails or a closeout PR is rejected, the finalizer records a fa
 
 Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.
 
-When `review.required` is true, successful completion must include `result.validation` as the independent reviewer verdict:
+When `review.required` is true, successful completion must include independent reviewer evidence. The preferred shape for combined acceptance + review tasks is `result.validations[]` with separate entries:
+
+```json
+{
+  "validations": [
+    { "kind": "smoke", "verdict": "pass", "metrics": { "acceptance": true } },
+    { "nodeId": "reviewer-b", "kind": "review", "verdict": "pass", "note": "diff matches spec" }
+  ]
+}
+```
+
+The review entry requires:
 
 - `nodeId`: reviewer node id;
 - `kind`: `"review"`;
 - `verdict`: `"pass"` or `"fail"` (`"pass"` is required for completion);
 - `note`: reviewer reason.
+
+The legacy singleton `result.validation` shape remains accepted for review-only or backward-compatible submissions. When `result.validations[]` is present, the broker matches review evidence by `kind: "review"`; when it is absent, it falls back to the singleton field.
 
 The reviewer node must differ from the author/completing worker. Missing reviewer evidence rejects completion as `review_evidence_missing`; same-node review rejects as `review_not_independent`; failing review rejects as `review_verdict_failed`. If `payload.review` is absent or `required` is false, existing task completion behavior is unchanged.
 

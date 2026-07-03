@@ -106,6 +106,46 @@ test("evidence: passing validation satisfies the rule; failing verdict does not"
   assert.ok(error);
 });
 
+test("evidence: validations array requires a smoke item for acceptance (#1249)", () => {
+  const task = taskWith({ acceptance: passingAcceptance });
+  assert.equal(
+    validateAcceptanceEvidence(task, {
+      validations: [
+        { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "diff matches spec" },
+        { kind: "smoke", verdict: "pass", metrics: { acceptance: true } },
+      ],
+    }),
+    null,
+  );
+
+  const error = validateAcceptanceEvidence(task, {
+    validations: [{ nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "review only" }],
+  });
+  assert.equal(error?.code, "acceptance_evidence_missing");
+  assert.match(error?.message ?? "", /result\.validations.*smoke/);
+});
+
+test("evidence: legacy singleton non-smoke validation remains compatible but warns (#1249 phase 1)", () => {
+  const task = taskWith({ acceptance: passingAcceptance });
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+  try {
+    assert.equal(
+      validateAcceptanceEvidence(task, {
+        validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "legacy review verdict" },
+      }),
+      null,
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /legacy_acceptance_validation_kind_mismatch/);
+});
+
 test("evidence: worker completion validator enforces acceptance (red before wiring)", () => {
   const error = validateTaskCompletionEvidence(taskWith({ acceptance: passingAcceptance }), { summary: "no validation" });
   assert.ok(error, "acceptance-bearing task must not complete without a passing validation payload");

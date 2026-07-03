@@ -412,7 +412,10 @@ export interface TaskResult {
   note?: string;
   artifactIds?: string[];
   output?: Record<string, unknown>;
+  /** Legacy single validation payload. Preserved for backward compatibility. */
   validation?: TaskValidationPayload;
+  /** Optional multi-validation payload for tasks that require more than one evidence kind. */
+  validations?: TaskValidationPayload[];
   apply?: TaskApplyPayload;
 }
 

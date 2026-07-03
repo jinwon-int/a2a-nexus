@@ -5,7 +5,7 @@
 import { uniqueIds } from "./broker-helpers.js";
 import { normalizeOwnershipString } from "./broker-task-request-normalizers.js";
 import { normalizeTaskWakeState } from "./broker-wake-normalizers.js";
-import type { TaskError, TaskRecord, TaskResult } from "./types.js";
+import type { TaskError, TaskRecord, TaskResult, TaskValidationPayload } from "./types.js";
 
 export function normalizeTaskPayload(
   payload: Record<string, unknown> | undefined,
@@ -119,6 +119,17 @@ export function sameOwnershipToken(left: string | undefined, right: string | und
   return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
 }
 
+function normalizeValidationPayload(validation: TaskValidationPayload): TaskValidationPayload {
+  return {
+    nodeId: validation.nodeId,
+    kind: validation.kind,
+    verdict: validation.verdict,
+    metrics: validation.metrics ? { ...validation.metrics } : undefined,
+    artifactIds: uniqueIds(validation.artifactIds ?? []),
+    note: validation.note,
+  };
+}
+
 export function normalizeTaskResult(result: TaskResult | undefined): TaskResult {
   if (!result) {
     return {};
@@ -129,15 +140,9 @@ export function normalizeTaskResult(result: TaskResult | undefined): TaskResult 
     note: result.note,
     artifactIds: uniqueIds(result.artifactIds ?? []),
     output: result.output ? { ...result.output } : undefined,
-    validation: result.validation
-      ? {
-          nodeId: result.validation.nodeId,
-          kind: result.validation.kind,
-          verdict: result.validation.verdict,
-          metrics: result.validation.metrics ? { ...result.validation.metrics } : undefined,
-          artifactIds: uniqueIds(result.validation.artifactIds ?? []),
-          note: result.validation.note,
-        }
+    validation: result.validation ? normalizeValidationPayload(result.validation) : undefined,
+    validations: Array.isArray(result.validations)
+      ? result.validations.map((validation) => normalizeValidationPayload(validation))
       : undefined,
     apply: result.apply
       ? {
