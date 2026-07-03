@@ -305,6 +305,103 @@ test('empty analysisStatus=done success is non-substantive (#983)', () => {
   assert.equal(t1?.evidenceClass, 'empty_substantive_output');
 });
 
+test('readiness-only analysis bridge success is non-substantive while broker status stays succeeded (#1230)', () => {
+  const tasks = [
+    lane('gongmyoung-readiness', 'succeeded', { worker: 'gongmyoung', top: { output: {
+      analysisStatus: 'done',
+      analysisKind: 'analysis_bridge',
+      analysisSummary: 'analysis bridge done: source-only local bridge verified no-live evidence path for email-system-issue21-a2a-20260703T0337Z',
+      findings: [
+        'runId email-system-issue21-a2a-20260703T0337Z',
+        'source files readable',
+        'no-live/source-only boundary confirmed',
+        'sourceProjection quality complete / within budget',
+      ],
+      risks: [],
+      recommendations: ['keep source-only health lanes on deterministic local bridge unless provider-backed lane is approved'],
+      evidenceRefs: ['task:email-system-issue21-a2a-20260703T0337Z:gongmyoung'],
+      sourceProjection: { quality: 'complete', projectedFileCount: 4 },
+    } } }),
+    lane('soonwook-substantive', 'succeeded', { worker: 'soonwook', top: { output: {
+      analysisStatus: 'done',
+      analysisKind: 'analysis_bridge',
+      findings: ['Sender substring matching can misclassify finance mail and create false negatives.'],
+      risks: ['False-negative classification may trigger auto-read behavior for messages that should stay visible.'],
+      recommendations: ['Add regression tests for sender exact matching, auto-read suppression, and edge cases.'],
+      evidenceRefs: ['runtime/app-src/email_classifier.py', 'issue:#21'],
+    } } }),
+    lane('third-substantive', 'succeeded', { worker: 'workerEta' }),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites soonwook-substantive and third-substantive.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.nonSubstantive, 1);
+  const readiness = result.missingLanes.find((l) => l.taskId === 'gongmyoung-readiness');
+  assert.equal(readiness?.status, 'succeeded');
+  assert.equal(readiness?.evidenceClass, 'readiness_only');
+  assert.match(readiness?.reason ?? '', /readiness|source-only|no-live/i);
+});
+
+test('substantive analysis remains quorum evidence even with source-only/no-live caveats (#1230)', () => {
+  const tasks = [
+    lane('soonwook-substantive', 'succeeded', { worker: 'soonwook', top: { output: {
+      analysisStatus: 'done',
+      analysisKind: 'analysis_bridge',
+      summary: 'source-only no-live review found email classifier risks',
+      findings: ['Sender substring matching can misclassify messages when a short sender fragment matches an unrelated address.'],
+      risks: ['False negatives can mark important classification events as safe and auto-read them.'],
+      recommendations: ['Add regression tests for exact sender matching and classification edge cases.'],
+      evidenceRefs: ['runtime/app-src/email_classifier.py', 'issue:#21'],
+    } } }),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites soonwook-substantive t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+});
+
+test('generic acknowledgement success is non-substantive (#1230)', () => {
+  const tasks = [
+    lane('generic-ack', 'succeeded', { top: { output: {
+      analysisStatus: 'done',
+      summary: 'analysis bridge done',
+      findings: ['task accepted'],
+      risks: [],
+      recommendations: [],
+      evidenceRefs: [],
+    } } }),
+    lane('t2', 'succeeded'),
+    lane('t3', 'succeeded'),
+  ];
+
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const ack = result.missingLanes.find((l) => l.taskId === 'generic-ack');
+  assert.equal(ack?.evidenceClass, 'generic_ack');
+});
+
 test('provider/model failure success is non-substantive (#983 #984)', () => {
   const tasks = [
     lane('t1', 'succeeded', { worker: 'mobileAlpha', top: { output: {

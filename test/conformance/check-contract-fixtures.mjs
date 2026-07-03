@@ -1697,9 +1697,11 @@ for (const field of ['parentRoundId', 'parentRoundTotal', 'parentRoundOrder', 'o
 assert.deepEqual(
   [...harnessNeutralAnalysisAdapter.evidenceClasses].sort(),
   [
+    'generic_ack',
     'handler_artifact_failure',
     'provider_or_model_failure',
     'queued_unclaimed',
+    'readiness_only',
     'source_blocked',
     'substantive',
     'wrapper_only',
@@ -1711,6 +1713,8 @@ const hnaScenarios = new Map(harnessNeutralAnalysisAdapter.scenarios.map((scenar
 for (const name of [
   'substantive-analysis',
   'wrapper-only-success',
+  'readiness-only-success',
+  'generic-ack-success',
   'source-mapping-blocked',
   'handler-artifact-failure',
   'queued-unclaimed-lane',
@@ -1727,6 +1731,8 @@ assert.ok(hnaScenarios.get('substantive-analysis').output.evidenceRefs.length > 
 
 for (const name of [
   'wrapper-only-success',
+  'readiness-only-success',
+  'generic-ack-success',
   'source-mapping-blocked',
   'handler-artifact-failure',
   'queued-unclaimed-lane',
@@ -1734,8 +1740,20 @@ for (const name of [
 ]) {
   const scenario = hnaScenarios.get(name);
   assert.equal(scenario.expect.countsAsWorkerOpinion, false, name + ' must not count as worker opinion');
+}
+for (const name of [
+  'wrapper-only-success',
+  'source-mapping-blocked',
+  'handler-artifact-failure',
+  'queued-unclaimed-lane',
+  'provider-model-failure',
+]) {
+  const scenario = hnaScenarios.get(name);
   assert.equal(scenario.output.findings.length, 0, name + ' must not carry substantive findings');
 }
+assert.equal(hnaScenarios.get('readiness-only-success').output.evidenceClass, 'readiness_only');
+assert.ok(hnaScenarios.get('readiness-only-success').output.findings.length > 0, 'readiness fixture should preserve operational readiness findings');
+assert.equal(hnaScenarios.get('generic-ack-success').output.evidenceClass, 'generic_ack');
 
 assert.ok(
   harnessNeutralAnalysisAdapter.finalizerAssertions.includes('Only substantive lanes count as worker opinions.'),

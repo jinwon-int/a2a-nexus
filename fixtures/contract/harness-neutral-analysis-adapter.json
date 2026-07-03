@@ -65,7 +65,9 @@
     "source_blocked",
     "handler_artifact_failure",
     "queued_unclaimed",
-    "provider_or_model_failure"
+    "provider_or_model_failure",
+    "readiness_only",
+    "generic_ack"
   ],
   "classificationRules": {
     "substantive": {
@@ -73,6 +75,22 @@
       "countsAsWorkerOpinion": true,
       "requiresFindings": true,
       "requiresEvidenceRefs": true
+    },
+    "readiness_only": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "source files readable and no-live boundary confirmed",
+        "sourceProjection quality complete / within budget",
+        "local bridge verified source-only evidence path"
+      ]
+    },
+    "generic_ack": {
+      "countsAsWorkerOpinion": false,
+      "examples": [
+        "analysis bridge done",
+        "task accepted",
+        "done without task-specific findings"
+      ]
     },
     "wrapper_only": {
       "countsAsWorkerOpinion": false,
@@ -147,17 +165,70 @@
           {
             "severity": "medium",
             "title": "Finalizer needs a harness-neutral evidence class",
-            "evidenceRefs": ["contracts/a2a/harness-neutral-analysis-adapter.md"],
+            "evidenceRefs": [
+              "contracts/a2a/harness-neutral-analysis-adapter.md"
+            ],
             "recommendation": "Add conformance fixture and classify only analysisStatus=done as worker opinion."
           }
         ],
         "risks": [],
-        "recommendations": ["Add a deterministic fixture checker."],
-        "evidenceRefs": ["#666", "contracts/a2a/harness-neutral-analysis-adapter.md"]
+        "recommendations": [
+          "Add a deterministic fixture checker."
+        ],
+        "evidenceRefs": [
+          "#666",
+          "contracts/a2a/harness-neutral-analysis-adapter.md"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": true,
         "finalizerMayUseForSynthesis": true
+      }
+    },
+    {
+      "id": "HNA-02A",
+      "name": "readiness-only-success",
+      "output": {
+        "analysisStatus": "done",
+        "evidenceClass": "readiness_only",
+        "summary": "source-only local bridge verified no-live evidence path for email-system-issue21-a2a-20260703T0337Z",
+        "findings": [
+          "runId recorded",
+          "source files readable",
+          "no-live/source-only boundary confirmed",
+          "sourceProjection quality complete / within budget"
+        ],
+        "risks": [],
+        "recommendations": [
+          "Keep source-only health lanes on deterministic local bridge unless provider-backed lane is approved."
+        ],
+        "evidenceRefs": [
+          "task:email-system-issue21-a2a-20260703T0337Z:gongmyoung"
+        ]
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false,
+        "dispatchSucceeded": true
+      }
+    },
+    {
+      "id": "HNA-02B",
+      "name": "generic-ack-success",
+      "output": {
+        "analysisStatus": "done",
+        "evidenceClass": "generic_ack",
+        "summary": "analysis bridge done",
+        "findings": [
+          "task accepted"
+        ],
+        "risks": [],
+        "recommendations": [],
+        "evidenceRefs": []
+      },
+      "expect": {
+        "countsAsWorkerOpinion": false,
+        "finalizerMayUseForSynthesis": false
       }
     },
     {
@@ -168,9 +239,13 @@
         "evidenceClass": "wrapper_only",
         "summary": "analysis-only completed",
         "findings": [],
-        "risks": ["No source-backed analysis was produced."],
+        "risks": [
+          "No source-backed analysis was produced."
+        ],
         "recommendations": [],
-        "evidenceRefs": ["task:wrapper-only-redacted"]
+        "evidenceRefs": [
+          "task:wrapper-only-redacted"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": false,
@@ -185,9 +260,15 @@
         "evidenceClass": "source_blocked",
         "summary": "Repo root unavailable and sourceBundle.files was empty.",
         "findings": [],
-        "risks": ["Worker did not inspect source."],
-        "recommendations": ["Retry with compact embedded sourceBundle.files."],
-        "evidenceRefs": ["task:source-blocked-redacted"]
+        "risks": [
+          "Worker did not inspect source."
+        ],
+        "recommendations": [
+          "Retry with compact embedded sourceBundle.files."
+        ],
+        "evidenceRefs": [
+          "task:source-blocked-redacted"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": false,
@@ -202,9 +283,16 @@
         "evidenceClass": "handler_artifact_failure",
         "summary": "Analysis bridge could not execute: EACCES.",
         "findings": [],
-        "risks": ["Worker artifact preflight failed."],
-        "recommendations": ["Fix worker artifact executable-bit preflight before retrying source review."],
-        "evidenceRefs": ["#659", "#655"]
+        "risks": [
+          "Worker artifact preflight failed."
+        ],
+        "recommendations": [
+          "Fix worker artifact executable-bit preflight before retrying source review."
+        ],
+        "evidenceRefs": [
+          "#659",
+          "#655"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": false,
@@ -219,9 +307,15 @@
         "evidenceClass": "queued_unclaimed",
         "summary": "Task stayed queued until finalizer cutoff.",
         "findings": [],
-        "risks": ["No worker evidence exists for this lane."],
-        "recommendations": ["Classify as missing evidence, not as a worker opinion."],
-        "evidenceRefs": ["task:queued-redacted"]
+        "risks": [
+          "No worker evidence exists for this lane."
+        ],
+        "recommendations": [
+          "Classify as missing evidence, not as a worker opinion."
+        ],
+        "evidenceRefs": [
+          "task:queued-redacted"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": false,
@@ -236,9 +330,15 @@
         "evidenceClass": "provider_or_model_failure",
         "summary": "Model bridge returned invalid JSON after provider failure.",
         "findings": [],
-        "risks": ["Prompt echo or generic error JSON must not be treated as analysis."],
-        "recommendations": ["Run bridge readiness smoke and retry only after strict JSON output is proven."],
-        "evidenceRefs": ["task:model-failure-redacted"]
+        "risks": [
+          "Prompt echo or generic error JSON must not be treated as analysis."
+        ],
+        "recommendations": [
+          "Run bridge readiness smoke and retry only after strict JSON output is proven."
+        ],
+        "evidenceRefs": [
+          "task:model-failure-redacted"
+        ]
       },
       "expect": {
         "countsAsWorkerOpinion": false,
@@ -250,7 +350,9 @@
     "Only substantive lanes count as worker opinions.",
     "Wrapper-only, source-blocked, handler-artifact, queued, and provider/model failure lanes are operational evidence only.",
     "A synthesis candidate is not an automatic winner.",
-    "Closes is reserved for issues fully satisfied by a PR; Refs is used for partial progress."
+    "Closes is reserved for issues fully satisfied by a PR; Refs is used for partial progress.",
+    "Dispatch/readiness success is not the same as substantive domain analysis.",
+    "readiness_only and generic_ack lanes are operational evidence only."
   ],
   "validationCommands": [
     "node test/conformance/check-contract-fixtures.mjs"
