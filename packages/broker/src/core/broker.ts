@@ -112,6 +112,11 @@ import {
   type BrokerStateStore,
 } from "./store.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
+import {
+  evaluateTaskReadiness,
+  normalizeTaskReadinessMode,
+  type TaskReadinessMode,
+} from "../task-readiness.js";
 import { TaskEventStream } from "./task-event-stream.js";
 import {
   TerminalTaskEventOutbox,
@@ -321,6 +326,10 @@ export interface InMemoryA2ABrokerOptions {
    * configured with the same team id.
    */
   teamId?: string;
+  /**
+   * Definition-of-Ready lint mode for patch/implementation task creation. Default warn keeps rollout non-breaking; enforce fails underspecified new tasks closed.
+   */
+  taskReadinessMode?: TaskReadinessMode;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /** Optional non-core state to include in full broker snapshots. */
@@ -494,6 +503,7 @@ export class InMemoryA2ABroker {
   private readonly snapshotExtensions: SnapshotExtensionRegistry;
   private readonly brokerId?: string;
   private readonly teamId?: string;
+  private readonly taskReadinessMode: TaskReadinessMode;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
 
@@ -516,6 +526,7 @@ export class InMemoryA2ABroker {
     this.snapshotExtensions = new SnapshotExtensionRegistry(options.snapshotExtensions);
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
+    this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
@@ -1374,6 +1385,8 @@ export class InMemoryA2ABroker {
         return existing;
       }
     }
+
+    this.assertTaskReadiness(normalizedRequest);
 
     if (normalizedRequest.exchangeId) {
       this.requireExchange(normalizedRequest.exchangeId);
@@ -3179,6 +3192,33 @@ export class InMemoryA2ABroker {
     assertA2ARoundTaskPolicy(request, this.brokerId);
     assertWorkModeDecisionEvidence(request);
     assertTerminalBriefMetadata(request.payload, this.brokerId);
+  }
+
+  private assertTaskReadiness(request: CreateTaskRequest): void {
+    const result = evaluateTaskReadiness(request.payload, {
+      intent: request.intent,
+      mode: this.taskReadinessMode,
+    });
+    if (result.ok || !result.applies) {
+      return;
+    }
+
+    const details = {
+      missing: result.missing,
+      mode: result.mode,
+      taskId: request.id,
+      intent: request.intent,
+    };
+    if (result.mode === "warn") {
+      console.warn("[a2a-broker] task readiness spec_underspecified", details);
+      return;
+    }
+
+    throw new BrokerError(
+      "spec_underspecified",
+      `task readiness specification is underspecified: missing ${result.missing.join(", ")}`,
+      details,
+    );
   }
 
   private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {

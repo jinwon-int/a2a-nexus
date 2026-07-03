@@ -8,6 +8,7 @@ export type BrokerErrorCode =
   | "not_found"
   | "policy_denied"
   | "invalid_transition"
+  | "spec_underspecified"
   | "github_completion_evidence_missing"
   | "github_completion_receipt_invalid"
   | "queue_saturated"
