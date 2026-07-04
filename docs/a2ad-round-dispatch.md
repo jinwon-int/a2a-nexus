@@ -165,6 +165,77 @@ Dry-run therefore fails closed before `POST /tasks` when
 `github-read-only-validation` for analysis-only evidence, and reserve
 `github-propose-patch` for an explicit PR-first patch lane.
 
+### Designated antithesis lanes (#1297)
+
+Ordinary A2A rounds may use a weak dialectic without switching to a full
+`decision-dialectic` flow. When the work is a design choice, safety gate, or
+implementation plan, the dispatcher should give at least half the lanes (minimum
+one lane) an explicit antithesis stance instead of sending every worker the same
+prompt.
+
+Use the independent review contract from [`docs/operators.md`](operators.md)
+(#1237): the antithesis/review lane must be authored by a different node than the
+thesis/implementation lane, and its result should surface a `kind: "review"`
+validation or equivalent reviewer evidence when the lane is used for closeout.
+
+Copyable lane block:
+
+```jsonc
+{
+  "target": { "id": "review-lane-1", "role": "reviewer" },
+  "intent": "analyze",
+  "payload": {
+    "mode": "analysis-only",
+    "roundMode": "a2ad",
+    "sourceOnly": true,
+    "noLive": true,
+    "review": {
+      "required": true,
+      "kind": "antithesis",
+      "targetLaneId": "thesis-or-implementation-lane-id"
+    }
+  },
+  "message": "Antithesis stance: assume the referenced plan or implementation is wrong or risky. Name at least one concrete rebuttal point, cite at least one evidenceRef, prefer at least one evidenceRef not used by the thesis, and return a pass/fail recommendation. Do not mutate GitHub or live systems."
+}
+```
+
+A substantive antithesis response should include at least one rebuttal point and
+at least one `evidenceRef`; a thesis-unused evidence reference is recommended and
+keeps the lane aligned with the independent-evidence direction in #1293. If the
+response merely agrees with the thesis or restates it without evidence, finalizers
+record the antithesis as not performed.
+
+Finalizers classify antithesis output with the existing
+[`scripts/a2ad-finalizer-gate.mjs`](../scripts/a2ad-finalizer-gate.mjs) evidence
+classes. `generic_ack`, `wrapper_only`, `empty_substantive_output`, projection
+failures, and provider/model failures do not count as substantive antithesis and
+should be excluded from `substantiveLaneCount` / `dispatchedLaneCount` health
+metrics (#1296).
+
+### Plan-round mini-cycle (#1297)
+
+Use this mini-cycle when full A2AD would be too heavy but a single-pass plan
+round is too weak for a consequential implementation direction or gate design:
+
+1. **Collect.** Dispatch ordinary source-only analysis lanes and select the best
+   candidate plan or implementation thesis. Prefer, in order: complete source
+   projection, dense evidenceRefs, feasible dispatch/verification steps, and clear
+   operator-visible boundaries.
+2. **Antithesis pass.** Dispatch one or two designated antithesis lanes against
+   that specific thesis using the block above. Use a distinct rebuttal round id
+   (for example `<planRoundId>-rebuttal`) or otherwise unique lane ids so the
+   follow-up pass cannot collide with the collection round's idempotency keys.
+   Limit this to one rebuttal pass; do not start an unbounded debate loop.
+3. **Synthesize.** The finalizer compares the original plan, antithesis evidence,
+   source verification, and approval boundaries. If antithesis finds a material
+   defect, revise the plan or run another bounded round before implementation.
+
+The mini-cycle is optional for mechanical changes such as pure formatting,
+renames, or one-file documentation edits. If a planning round skips the mini-cycle
+after considering it, record a one-line reason in the PR or issue disposition so
+future scorecard reviews can distinguish deliberate omission from forgotten
+review.
+
 ### Deterministic lane ids (idempotency)
 
 If a lane omits `id`, the CLI derives `${roundId}:${order}` (1-based order). This
