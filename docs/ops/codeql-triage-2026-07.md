@@ -63,7 +63,7 @@ Two all-worker source-only rounds were dispatched across Team1 and Team2:
 | Round | Team | Terminal readback | Notes |
 | --- | --- | ---: | --- |
 | R1 | Team1 | 5/5 | Four lanes failed closed with `source_projection_blocked`; one mobile lane failed with `acceptance_malformed` due an invalid acceptance shape in the first manifest. |
-| R1 | Team2 | 5/5 dispatched | Dispatch succeeded, but readback collection initially failed because the local readback helper had not been copied onto the Gwakga node. |
+| R1 | Team2 | 5/5 dispatched | Dispatch succeeded, but readback collection initially failed because the local readback helper had not been copied onto the second broker node. |
 | R2 | Team1 | 5/5 | One lane returned a bounded `analysisStatus=blocked`; three lanes failed closed with `source_projection_blocked`; one lane failed through the OpenClaw analysis adapter. |
 | R2 | Team2 | 4/5 by readback cutoff | Two lanes produced `analysisStatus=done`; two lanes failed closed through the handler; one mobile lane remained queued at cutoff. |
 
