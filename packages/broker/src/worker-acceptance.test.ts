@@ -7,6 +7,7 @@ import {
   runTaskAcceptance,
   validateAcceptanceEvidence,
   DEFAULT_ACCEPTANCE_TIMEOUT_MS,
+  LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
 } from "./worker-acceptance.js";
 import { A2ABrokerWorker, createBuiltinWorkerHandler, validateTaskCompletionEvidence } from "./worker.js";
 import { createBrokerServer } from "./server.js";
@@ -125,7 +126,7 @@ test("evidence: validations array requires a smoke item for acceptance (#1249)",
   assert.match(error?.message ?? "", /result\.validations.*smoke/);
 });
 
-test("evidence: legacy singleton non-smoke validation remains compatible but warns (#1249 phase 1)", () => {
+test("evidence: legacy singleton non-smoke validation remains compatible but warns before cutoff (#1249 phase 1)", () => {
   const task = taskWith({ acceptance: passingAcceptance });
   const warnings: string[] = [];
   const originalWarn = console.warn;
@@ -144,6 +145,38 @@ test("evidence: legacy singleton non-smoke validation remains compatible but war
   }
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /legacy_acceptance_validation_kind_mismatch/);
+});
+
+test("evidence: legacy singleton non-smoke validation is rejected after cutoff (#1252)", () => {
+  const task = {
+    ...taskWith({ acceptance: passingAcceptance }),
+    createdAt: LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
+    updatedAt: LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
+  } as TaskRecord;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+  try {
+    const error = validateAcceptanceEvidence(task, {
+      validation: { nodeId: "reviewer-b", kind: "review", verdict: "pass", note: "legacy review verdict" },
+    });
+    assert.equal(error?.code, "acceptance_evidence_missing");
+    assert.match(error?.message ?? "", /cutoff requires/);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 0);
+});
+
+test("evidence: singleton smoke validation after cutoff remains valid without requiring metrics", () => {
+  const task = {
+    ...taskWith({ acceptance: passingAcceptance }),
+    createdAt: LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
+    updatedAt: LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO,
+  } as TaskRecord;
+  assert.equal(validateAcceptanceEvidence(task, { validation: { kind: "smoke", verdict: "pass" } }), null);
 });
 
 test("evidence: worker completion validator enforces acceptance (red before wiring)", () => {

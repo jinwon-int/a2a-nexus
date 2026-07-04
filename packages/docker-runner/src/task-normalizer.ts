@@ -650,7 +650,6 @@ function buildDiffHygieneBlock(task: RunnerTask, baseBranch: string): string {
     ...(scopeEnabled ? [
       `# Declared-scope drift detection (#1235): quality/spec boundary, not a forbidden-path substitute.`,
       `SCOPE_MODE=${shellSingleQuote(scopeMode)}`,
-      `SCOPE_DECLARED_PATHS=${shellSingleQuote(declaredScopeList)}`,
       `SCOPE_OUTSIDE=""`,
       `while IFS= read -r path; do`,
       `  [ -n "$path" ] || continue`,

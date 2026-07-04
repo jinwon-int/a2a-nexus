@@ -8,6 +8,7 @@ All notable public-safe changes for **A2A Nexus** are collected here. This file 
 
 - Every GitHub Actions workflow now declares a minimal top-level `permissions:` block (OpenSSF Scorecard Token-Permissions); `ci.yml` defaults to `contents: read` with job-level widening only where needed. Enforced fail-closed by the new core release-gate step `workflow-permissions` (`scripts/check-workflow-permissions.mjs`).
 - CodeQL SAST workflow (`.github/workflows/codeql.yml`) scans `javascript-typescript` on every pull request, on `main` pushes, and weekly; findings surface as code-scanning alerts.
+- External GitHub Actions references are pinned to full commit SHAs with source tag comments, enforced by the core `workflow-action-pinning` gate (`scripts/check-workflow-action-pinning.mjs`).
 
 ### Changed — docker-runner trusted-lane defaults (behavior change, #1204/#1209)
 

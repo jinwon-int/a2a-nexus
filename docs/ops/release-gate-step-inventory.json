@@ -63,6 +63,16 @@
       "note": "Every GitHub Actions workflow must declare a minimal top-level permissions block (#1228 L1, OpenSSF Scorecard Token-Permissions). Absence-detection: a new workflow without one turns this red."
     },
     {
+      "name": "workflow-action-pinning",
+      "command": "node",
+      "args": [
+        "scripts/check-workflow-action-pinning.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Every external GitHub Actions workflow reference must be pinned to a full commit SHA while retaining a source tag comment (#1228 L3, OpenSSF Scorecard Pinned-Dependencies)."
+    },
+    {
       "name": "packages",
       "command": "npm",
       "args": [

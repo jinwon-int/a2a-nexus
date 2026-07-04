@@ -960,6 +960,56 @@ test("buildContainerScript embeds two-stage reformat churn detection (#1225)", (
 });
 
 
+test("declared-scope drift accepts in-scope fixtures", () => {
+  const result = evaluateDeclaredScopeDrift(
+    ["packages/docker-runner/src/runner.ts", "docs/operators.md"],
+    ["packages/docker-runner/", "docs/operators.md"],
+    "block",
+  );
+
+  assert.deepEqual(result, {
+    declared: ["packages/docker-runner/", "docs/operators.md"],
+    outside: [],
+    level: "ok",
+  });
+});
+
+test("declared-scope drift warns outside-path fixtures in warn mode", () => {
+  const result = evaluateDeclaredScopeDrift(
+    ["packages/docker-runner/src/runner.ts", "README.md"],
+    ["packages/docker-runner/", "docs/operators.md"],
+    "warn",
+  );
+
+  assert.deepEqual(result, {
+    declared: ["packages/docker-runner/", "docs/operators.md"],
+    outside: ["README.md"],
+    level: "warn",
+  });
+});
+
+test("declared-scope drift skips when disabled or undeclared", () => {
+  assert.deepEqual(evaluateDeclaredScopeDrift(["README.md"], [], "block"), {
+    declared: [],
+    outside: [],
+    level: "ok",
+  });
+  assert.deepEqual(evaluateDeclaredScopeDrift(["README.md"], ["packages/docker-runner/"], "off"), {
+    declared: ["packages/docker-runner/"],
+    outside: [],
+    level: "ok",
+  });
+});
+
+test("declared-scope drift default mode is warn", () => {
+  const result = evaluateDeclaredScopeDrift(["README.md"], ["packages/docker-runner/"]);
+  assert.deepEqual(result, {
+    declared: ["packages/docker-runner/"],
+    outside: ["README.md"],
+    level: "warn",
+  });
+});
+
 test("declared-scope drift blocks outside-path fixtures in block mode", () => {
   const result = evaluateDeclaredScopeDrift(
     ["packages/docker-runner/src/runner.ts", "README.md"],
@@ -988,7 +1038,7 @@ test("buildContainerScript embeds declared-scope drift evidence and block mode",
   const script = buildContainerScript(task);
 
   assert.match(script, /SCOPE_MODE='block'/);
-  assert.match(script, /SCOPE_DECLARED_PATHS=/);
+  assert.doesNotMatch(script, /SCOPE_DECLARED_PATHS=/);
   assert.match(script, /diff_hygiene_scope_drift_level=/);
   assert.match(script, /"scopeDrift":\{"declared":/);
   assert.match(script, /"level":"\$SCOPE_LEVEL"/);

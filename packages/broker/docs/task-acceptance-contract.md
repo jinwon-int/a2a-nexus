@@ -47,7 +47,9 @@ For tasks that require several evidence kinds, submit the optional multi-validat
 }
 ```
 
-When `result.validations[]` is present, acceptance evidence is matched by `kind: "smoke"`. The legacy singleton `result.validation` path remains accepted in this phase for backward compatibility, but a singleton non-smoke validation that satisfies `payload.acceptance` emits a structured warning so operators can find fail-open combined acceptance/review submissions before the cutoff.
+When `result.validations[]` is present, acceptance evidence is matched by `kind: "smoke"`. The legacy singleton `result.validation` path remains accepted only for tasks created before `2026-07-04T02:30:00.000Z`; for tasks created at or after that cutoff, a singleton non-smoke validation is rejected with `acceptance_evidence_missing`. Pre-cutoff singleton non-smoke passes still emit `legacy_acceptance_validation_kind_mismatch` so old task records remain auditable without retroactive invalidation.
+
+A `kind: "smoke"` validation with `verdict: "pass"` is the required broker evidence. `metrics.acceptance`/`metrics.exitCode` are recommended and produced by `runTaskAcceptance()`, but they are not required at this cutoff: custom handlers may submit equivalent smoke evidence, and the phase-2 change is intentionally limited to closing the review-verdict-as-acceptance fail-open path.
 
 ## Dispatcher guidance
 
