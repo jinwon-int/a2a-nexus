@@ -251,6 +251,26 @@
         "V3 inputs partially ready: all lanes carried DoR payloads; broker warn-log tallies (spec_underspecified / source_projection_empty counts) still need operator collection before the enforce verdict on #1263"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-1265-v2-closeout-2026-07-04",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1265 V2 source-carrier contract unification closeout under umbrella #1261",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "implemented via PR #1268 (merge 644f186): bridge now merges the same three source carriers the readiness gate accepts, content-field reading aligned (content/contentText/text/summary), carrier-set equality invariant documented, per-carrier regression fixtures both complete with canonicalFileCount 2",
+        "eighth consecutive evidence-compliant round: RED in the PR body shows both carrier tests failing blocked!==done on the pre-fix tree; bridge tests 6/6 re-run independently",
+        "carry-over: 작업 단위 2 (V1 blocked-lane excerpt confirmation) not recorded and the issue closed without a disposition (3rd consecutive) — folded into the #1257 standing final criterion, which supersedes it: next organic round at source_projection_blocked 0 resolves both",
+        "reviewer wiring finding fixed in this record PR: scripts/a2a-warn-log-aggregate.test.mjs was registered nowhere and never ran in CI — manifest entry added, full manifest suite re-run green; meta-gap noted (nothing enforces manifest registration of new scripts test files — small absence-sweep gate candidate)",
+        "accepted variant: carrier logic remains two parallel copies (TS gate vs mjs bridge) instead of the spec's shared single-source helper — per-carrier tests mitigate; a shared JSON parity fixture asserted by both suites is the drive-by candidate",
+        "failureBreakdown omitted with reason: the V2 planning-round readback regressed to several-lanes wording (expected pre-fix reproductions, but integer counts were still due) — readback discipline re-flagged for the next dispatch; honest missing-log record for warn tallies keeps the V3 verdict blocked on retained host logs or task-readback-derived evidence"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
