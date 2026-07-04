@@ -468,6 +468,27 @@ function normalizedBridgeAnalysisStatus(value) {
   return ["blocked", "block", "source_blocked"].includes(status) ? "blocked" : "done";
 }
 
+function projectionFailureDetails(response, output) {
+  const projection = output?.sourceProjection;
+  if (!projection || typeof projection !== "object" || Array.isArray(projection)) return undefined;
+  const quality = safeText(projection.quality, "");
+  if (!["zero_files", "insufficient"].includes(quality)) return undefined;
+  const readback = response?.failureReadback && typeof response.failureReadback === "object" && !Array.isArray(response.failureReadback)
+    ? response.failureReadback
+    : {};
+  const budgetReason = safeText(projection.budgetReason, "unknown");
+  return {
+    stage: "projection",
+    excerpt: safeText(
+      readback.excerpt,
+      `stage=projection quality=${quality} budgetReason=${budgetReason} canonicalFileCount=${projection.canonicalFileCount ?? 0} projectedFileCount=${projection.projectedFileCount ?? 0} canonicalBytes=${projection.canonicalBytes ?? 0} projectedBytes=${projection.projectedBytes ?? 0}`,
+    ),
+    quality,
+    budgetReason,
+    sourceProjection: projection,
+  };
+}
+
 const ANALYSIS_RECOVERY_SOURCES = new Set(["direct_stdout", "abort_stdout", "state_db", "retry_stdout", "retry_state_db", "claude_result_text"]);
 
 function normalizedAnalysisRecoverySource(value) {
@@ -855,6 +876,24 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     else output.doneCommentUrl = comment.url;
     output.githubCommentUrl = comment.url;
     output.githubCommentReused = comment.reused || undefined;
+  }
+
+  const projectionFailure = status === "blocked" ? projectionFailureDetails(response, output) : undefined;
+  if (projectionFailure) {
+    return {
+      error: {
+        code: "source_projection_blocked",
+        message: `analysis bridge blocked by source projection: ${projectionFailure.excerpt}`,
+        details: {
+          ...projectionFailure,
+          analysisKind: output.analysisKind,
+          bridgeAdapter: output.bridgeAdapter,
+          bridgeCommand: output.bridgeCommand,
+          taskId: output.taskId,
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
   }
 
   return {

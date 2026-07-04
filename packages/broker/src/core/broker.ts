@@ -3215,17 +3215,18 @@ export class InMemoryA2ABroker {
       mode: result.mode,
       taskId: request.id,
       intent: request.intent,
+      ...(result.details ?? {}),
     };
+    const code = result.code ?? "spec_underspecified";
     if (result.mode === "warn") {
-      console.warn("[a2a-broker] task readiness spec_underspecified", details);
+      console.warn(`[a2a-broker] task readiness ${code}`, details);
       return;
     }
 
-    throw new BrokerError(
-      "spec_underspecified",
-      `task readiness specification is underspecified: missing ${result.missing.join(", ")}`,
-      details,
-    );
+    const message = code === "source_projection_empty"
+      ? "source-only analysis task has no source files; refusing zero_files projection at dispatch"
+      : `task readiness specification is underspecified: missing ${result.missing.join(", ")}`;
+    throw new BrokerError(code, message, details);
   }
 
   private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {

@@ -68,6 +68,24 @@ function headers(): HeadersInit {
   };
 }
 
+
+function sourceOnlyAnalysisTask(payload: Record<string, unknown>) {
+  return {
+    id: `source-projection-${Math.random().toString(16).slice(2)}`,
+    intent: "analyze",
+    message: "source-only analysis",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    assignedWorkerId: "worker-a",
+    payload: {
+      mode: "analysis-only",
+      sourceOnly: true,
+      noLive: true,
+      ...payload,
+    },
+  };
+}
+
 function githubPatchTask(payload: Record<string, unknown>) {
   return {
     id: `readiness-${Math.random().toString(16).slice(2)}`,
@@ -95,6 +113,42 @@ test("readiness evaluator reports each missing Definition-of-Ready field", () =>
   assert.deepEqual(result.missing, ["acceptance", "declaredScope", "evidenceGate"]);
 });
 
+test("readiness evaluator reports empty source-only analysis bundles as source_projection_empty (#1257)", () => {
+  const result = evaluateTaskReadiness(sourceOnlyAnalysisTask({ sourceBundle: { files: [] } }).payload, {
+    intent: "analyze",
+    mode: "enforce",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.applies, true);
+  assert.equal(result.code, "source_projection_empty");
+  assert.deepEqual(result.missing, ["sourceFiles"]);
+  assert.equal(result.details?.["stage"], "dispatch");
+  assert.match(String(result.details?.["excerpt"]), /quality=zero_files/);
+});
+
+test("readiness evaluator accepts source-only analysis with any equivalent source carrier (#1257)", () => {
+  for (const payload of [
+    { sourceBundle: { files: [{ path: "a.md", content: "body" }] } },
+    { sourceFiles: [{ path: "a.md", contentText: "body" }] },
+    { sourceEvidence: [{ path: "a.md", text: "body" }] },
+  ]) {
+    const result = evaluateTaskReadiness(sourceOnlyAnalysisTask(payload).payload, {
+      intent: "analyze",
+      mode: "enforce",
+    });
+    assert.equal(result.ok, true);
+  }
+});
+
+test("readiness evaluator does not apply source_projection_empty to patch tasks (#1257)", () => {
+  const result = evaluateTaskReadiness(githubPatchTask({ sourceBundle: { files: [] } }).payload, {
+    intent: "propose_patch",
+    mode: "enforce",
+  });
+  assert.equal(result.code, "spec_underspecified");
+  assert.deepEqual(result.missing, ["acceptance", "declaredScope", "evidenceGate"]);
+});
+
 test("readiness evaluator accepts a complete patch task and exempts analysis tasks", () => {
   const complete = evaluateTaskReadiness(githubPatchTask({
     acceptance: { command: ["npm", "run", "check"], expectExitCode: 0 },
@@ -119,6 +173,38 @@ test("task-readiness mode rejects typo values instead of silently downgrading to
     () => normalizeTaskReadinessMode("enforced"),
     /task readiness mode must be one of: warn, enforce/,
   );
+});
+
+test("POST /tasks rejects empty source-only analysis bundles in enforce mode (#1257)", async () => {
+  const server = await startTestServer({ taskReadinessMode: "enforce" });
+  try {
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(sourceOnlyAnalysisTask({ sourceBundle: { files: [] } })),
+    });
+    const body = await response.json() as { error?: { code?: string; message?: string; details?: { stage?: string; excerpt?: string } } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error?.code, "source_projection_empty");
+    assert.equal(body.error?.details?.stage, "dispatch");
+    assert.match(body.error?.details?.excerpt ?? "", /sourceBundle\.files=0/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /tasks only warns for empty source-only analysis bundles by default (#1257 phase 1)", async () => {
+  const server = await startTestServer();
+  try {
+    const response = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(sourceOnlyAnalysisTask({ sourceBundle: { files: [] } })),
+    });
+    assert.equal(response.status, 201, await response.text());
+  } finally {
+    await server.close();
+  }
 });
 
 test("POST /tasks rejects underspecified patch tasks in enforce mode with details.missing", async () => {

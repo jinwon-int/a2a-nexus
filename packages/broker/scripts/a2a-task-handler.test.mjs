@@ -657,6 +657,61 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
   }
 });
 
+test("analysis bridge source projection blocks fail the task with stage/excerpt readback (#1257)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-source-projection-block-"));
+  const bin = join(dir, "source-projection-block.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "blocked",
+  summary: "source-only local bridge blocked round-1257: no_source_files",
+  findings: ["sourceProjection quality=zero_files reason=no_source_files"],
+  risks: ["source-only local evidence contract was not fully satisfied"],
+  recommendations: ["retry with sourceBundle.files"],
+  evidenceRefs: [],
+  sourceProjection: {
+    quality: "zero_files",
+    budgetReason: "no_source_files",
+    canonicalFileCount: 0,
+    projectedFileCount: 0,
+    canonicalBytes: 0,
+    projectedBytes: 0
+  },
+  failureReadback: {
+    stage: "projection",
+    excerpt: "stage=projection quality=zero_files budgetReason=no_source_files canonicalFileCount=0 projectedFileCount=0 canonicalBytes=0 projectedBytes=0"
+  }
+};
+console.log(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-source-projection-block",
+      intent: "analyze",
+      assignedWorkerId: "workeralpha",
+      message: "Analyze empty source bundle",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        noLive: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workeralpha",
+    });
+
+    assert.equal(result.result, undefined);
+    assert.equal(result.error?.code, "source_projection_blocked");
+    assert.equal(result.error?.details.stage, "projection");
+    assert.match(result.error?.details.excerpt ?? "", /quality=zero_files/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("analysis bridge .mjs commands are invoked through the current Node binary for Termux service contexts (#1141)", () => {
   const invocation = __test.resolveNodeScriptInvocation("/data/data/com.termux/files/home/a2a-broker-worker/scripts/claude-a2a-patch-bridge.mjs", ["agent", "--json"]);
 

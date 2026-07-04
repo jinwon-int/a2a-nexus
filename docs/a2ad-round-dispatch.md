@@ -134,8 +134,17 @@ The bridge emits `sourceProjection` telemetry (`canonicalFileCount`,
 `projectedFileCount`, projected bytes, truncated files, missing required files,
 `quality`, and `budgetReason`) in the worker result. Finalizers must treat
 `quality=insufficient` or `quality=zero_files` as non-substantive source
-projection evidence, even if the worker process itself exited successfully. This
-keeps cases like “broker payload had files but the worker saw 0 files / only a
+projection evidence, even if the worker process itself exited successfully. For
+new source-only analysis lanes, the broker readiness guard also records
+`source_projection_empty` at dispatch when all equivalent source carriers are
+empty (`sourceBundle.files[]`, `sourceFiles[]`, and `sourceEvidence[]`). In warn
+mode this is a structured warning; in enforce mode it rejects the task with
+`error.details.stage="dispatch"` and a bounded count-only `excerpt`. If the
+analysis bridge reaches projection and still blocks with `quality=zero_files` or
+`quality=insufficient`, the task fails with `source_projection_blocked` and
+`error.details.stage="projection"` plus a machine-generated excerpt containing
+only quality, budget reason, file counts, and byte counts. This keeps cases like
+“broker payload had files but the worker saw 0 files / only a
 README slice” from being counted as quorum evidence (#1145).
 
 ### GitHub patch lanes are write-capable
