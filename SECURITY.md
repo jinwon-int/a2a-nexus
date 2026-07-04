@@ -51,6 +51,11 @@ Use redacted evidence only. Before opening a PR or posting task evidence, verify
 
 If any of those files would enter a branch or artifact bundle, fail closed and report the exact repo-relative paths.
 
+
+## Dependency update monitoring
+
+Dependabot monitors both GitHub Actions and the npm workspace lockfile. npm dependency updates arrive as reviewed PRs; minor and patch updates may be grouped, while major updates stay separate. The dependency advisory gate is warn-only in this alpha stage: it summarizes `npm audit --omit=dev --json` output when registry access is available, warns on high/critical production advisories, and skips with a reason when the audit endpoint is unavailable. Enforcement can be tightened only after observing noise and recording a separate cutoff decision.
+
 ## Supported versions
 
 No stable release, npm package, Docker image, or production deployment is supported yet. Treat all packages in this public alpha monorepo as alpha candidates until the compatibility matrix and promotion-readiness gates are complete.

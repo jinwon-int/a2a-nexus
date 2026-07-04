@@ -216,6 +216,16 @@
       "note": "Public-readiness or visibility hygiene; do not retire as generic cleanup."
     },
     {
+      "name": "dependency-advisories",
+      "command": "node",
+      "args": [
+        "scripts/check-dependency-advisories.mjs"
+      ],
+      "tier": "public-readiness",
+      "retirement": "keep",
+      "note": "Warn-only npm production dependency advisory signal for #1287; skips with reason when registry audit access is unavailable and does not mutate dependencies."
+    },
+    {
       "name": "markdown-links",
       "command": "npm",
       "args": [
