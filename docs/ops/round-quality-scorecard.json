@@ -166,6 +166,29 @@
         "process nit recorded (not a carry-over): second consecutive issue closed without a disposition comment; finalizer review comments are filling the role but the closer should leave the item-by-item disposition per protocol"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-1255-sweep-closeout-2026-07-04",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1252/#1250/#1228-L3 consolidated hardening sweep via PR #1255 (operator-directed 3-lane exception)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "implemented via PR #1255 (merge b35d133): #1252 createdAt-based cutoff rejecting legacy non-smoke singleton acceptance (pre-cutoff keeps warning), #1250 scope-drift warn/skip/default pin tests + dead shell variable removal, #1228 L3 SHA-pinning across all 6 workflows with source tag comments behind the new workflow-action-pinning core gate (25 core / 35 of 54)",
+        "fifth consecutive evidence-compliant round: per-lane RED/mutation logs in the PR body, including the mutation-evidence form #1250 prescribed (default-warn pin failing on a mutated tree)",
+        "independent finalizer review on merged main: pinning+permissions gates green, gate/tiering tests 15/15, broker acceptance 15/15, runner-manifest 36/36; reviewer boundary probes exact (pre-cutoff warn-accept, post-cutoff reject, smoke unaffected; pinning gate catches tag-pinned and comment-less mutations), verdict PASS x3 (PR #1255 review comment)",
+        "consolidation: three lanes in one PR under an explicit operator sweep instruction with per-lane evidence — recorded as an accepted operator-directed exception to 1-lane-1-PR, not a deviation",
+        "verification boundary: SHA-tag correspondence rests on the round's lookup plus behavioral evidence (CI executed all pinned actions green); the new gate prevents regression to tag pins",
+        "failure classification environment: 1 — one lane failed with handler_exit_nonzero per the readback; zero_files projection lanes (5th consecutive round) still reported as several without per-lane counts despite the #1248 contract existing — next round should instruct workers/finalizers to emit the 5-field failed-lane readback, and the zero_files root cause deserves its own dispatch-infra lane"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
