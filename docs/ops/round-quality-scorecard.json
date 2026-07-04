@@ -271,6 +271,30 @@
         "failureBreakdown omitted with reason: the V2 planning-round readback regressed to several-lanes wording (expected pre-fix reproductions, but integer counts were still due) — readback discipline re-flagged for the next dispatch; honest missing-log record for warn tallies keeps the V3 verdict blocked on retained host logs or task-readback-derived evidence"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-v4-dispatch-wave-20260704",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1270 V4 final-verdict dispatch wave (NOT GO — issue stays open) plus V2 rollout, sourceFiles-only canary, and the #1271 hotfix",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "implementation_defect": 5,
+        "environment": 1
+      },
+      "evidence": [
+        "operator rollout to 58ea913 across both brokers and nine workers; the rollout canary caught a real defect before the wave — the Hermes bridge still dropped sourceFiles[] (3rd parallel-copy drift instance), hotfixed as PR #1271 with RED blocked!==done evidence and re-verified green on both brokers",
+        "V4 dispatch 10/10 lanes with fully-integer readback: source_projection_blocked 5, openclaw_analysis_failed 1, queued nonterminal 1, substantive NO-GO 2 (required files missing from projection), no-live confirmation 1 — the readback discipline holds",
+        "verdict NOT GO: the #1257 final criterion (blocked 0) is unmet, but the failure surface moved — small canary passes both brokers while large organic manifests block on Hermes-path workers only; size-dependent, Hermes-specific",
+        "failure classification implementation_defect: 5 — reviewer code investigation found the 4th parallel-copy drift (Hermes normalizeEmbeddedSourceFile lacks the summary content field the gate and local bridge accept) and live budget-drop candidates (16 files / 24KB / 160KB caps); exact drop condition pends V5 excerpt exposure because current excerpts carry counts but not drop reasons; environment: 1 — openclaw_analysis_failed lane",
+        "V3 verdict inputs recorded on the wave: spec_underspecified 0 and source_projection_empty 0 during the V4 dispatch window (retained logs and task readback agree) — the DoR and projection entry gates saw zero violations from a fully-populated organic dispatch",
+        "next lane specced as V5 #1272: shared carrier/content normalization helper for both bridges + handler, parity fixture across four test suites, drop-reason excerpt exposure, V4-shape reproduction fixture (operator to provide payload field shapes); #1270 L1-L3 re-dispatch after V5"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
