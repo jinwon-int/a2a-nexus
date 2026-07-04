@@ -53,7 +53,7 @@ jobs:
       scripts: ${{ steps.filter.outputs.scripts }}
       root: ${{ steps.filter.outputs.root }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
@@ -92,12 +92,12 @@ jobs:
     outputs:
       cache-key: ${{ steps.npm-cache.outputs.cache-key }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
@@ -112,17 +112,17 @@ jobs:
     needs: [setup, paths-filter]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}
@@ -137,17 +137,17 @@ jobs:
     if: ${{ needs.paths-filter.outputs.broker == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/broker/dist
           key: tsbuild-broker-${{ runner.os }}-${{ hashFiles('packages/broker/**/*.ts', 'packages/broker/tsconfig.json') }}
@@ -162,7 +162,7 @@ jobs:
             --out artifacts/a2a-inspector/bridge.json
       - name: Upload a2a-inspector bridge artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: a2a-inspector-bridge
           path: artifacts/a2a-inspector/bridge.json
@@ -173,17 +173,17 @@ jobs:
     if: ${{ needs.paths-filter.outputs.docker-runner == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/docker-runner/dist
           key: tsbuild-docker-runner-${{ runner.os }}-${{ hashFiles('packages/docker-runner/**/*.ts', 'packages/docker-runner/tsconfig.json') }}
@@ -197,17 +197,17 @@ jobs:
     if: ${{ needs.paths-filter.outputs.plugin == 'true' || needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/openclaw-plugin-a2a/dist
           key: tsbuild-plugin-${{ runner.os }}-${{ hashFiles('packages/openclaw-plugin-a2a/**/*.ts', 'packages/openclaw-plugin-a2a/tsconfig.json') }}
@@ -221,20 +221,20 @@ jobs:
     if: ${{ needs.paths-filter.outputs.contracts == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: gitleaks-bin
         with:
           path: ~/go/bin/gitleaks
@@ -255,20 +255,20 @@ jobs:
     if: ${{ needs.paths-filter.outputs.docs == 'true' && needs.paths-filter.outputs.broker != 'true' && needs.paths-filter.outputs.docker-runner != 'true' && needs.paths-filter.outputs.plugin != 'true' && needs.paths-filter.outputs.contracts != 'true' && needs.paths-filter.outputs.scripts != 'true' && needs.paths-filter.outputs.root != 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: gitleaks-bin
         with:
           path: ~/go/bin/gitleaks
@@ -289,12 +289,12 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' || needs.paths-filter.outputs.docs == 'true' || needs.paths-filter.outputs.scripts == 'true' || needs.paths-filter.outputs.root == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
@@ -310,20 +310,20 @@ jobs:
     needs: [setup, paths-filter]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: npm-deps
         with:
           path: node_modules
           key: ${{ needs.setup.outputs.cache-key }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: gitleaks-bin
         with:
           path: ~/go/bin/gitleaks
@@ -331,7 +331,7 @@ jobs:
       - run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
         if: steps.gitleaks-bin.outputs.cache-hit != 'true'
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: packages/*/dist
           key: tsbuild-all-${{ runner.os }}-${{ hashFiles('packages/**/*.ts', 'packages/**/tsconfig.json') }}

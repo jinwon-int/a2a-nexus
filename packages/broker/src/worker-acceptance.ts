@@ -108,6 +108,14 @@ export function runTaskAcceptance(spec: TaskAcceptanceSpec): TaskValidationPaylo
  * handlers that never ran the acceptance step — absence of evidence is a
  * failure, not a pass (#1194 RC-B).
  */
+export const LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO = "2026-07-04T02:30:00.000Z";
+const LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_MS = Date.parse(LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_ISO);
+
+function isAtOrAfterLegacySingletonCutoff(task: TaskRecord): boolean {
+  const createdAtMs = Date.parse(task.createdAt);
+  return Number.isFinite(createdAtMs) && createdAtMs >= LEGACY_SINGLETON_ACCEPTANCE_CUTOFF_MS;
+}
+
 function validationByKind(result: TaskResult | undefined, kind: TaskValidationPayload["kind"]): TaskValidationPayload | undefined {
   if (!result) return undefined;
   if (Array.isArray(result.validations)) {
@@ -133,7 +141,17 @@ export function validateAcceptanceEvidence(task: TaskRecord, result?: TaskResult
   const validation = validationByKind(result, "smoke");
   const verdict = validation?.verdict;
   if (verdict === "pass") {
-    if (!Array.isArray(result?.validations)) warnLegacyAcceptanceValidation(validation);
+    if (!Array.isArray(result?.validations) && validation?.kind !== "smoke") {
+      if (isAtOrAfterLegacySingletonCutoff(task)) {
+        return {
+          code: "acceptance_evidence_missing",
+          message:
+            `task declares payload.acceptance but legacy result.validation.kind is "${validation?.kind ?? "unknown"}"; ` +
+            "cutoff requires result.validation.kind=smoke or result.validations[] with a passing smoke validation",
+        };
+      }
+      warnLegacyAcceptanceValidation(validation);
+    }
     return null;
   }
   return {

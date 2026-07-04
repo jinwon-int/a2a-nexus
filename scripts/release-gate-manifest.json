@@ -60,6 +60,7 @@
     { "file": "scripts/check-issue-closeout-hygiene.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1210 closeout hygiene monitor (skips without GITHUB_TOKEN)." },
     { "file": "scripts/check-disposition-references.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1220 disposition reference checker (skips without GITHUB_TOKEN)." },
     { "file": "scripts/check-round-quality-scorecard.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1220 round-quality scorecard gate and its committed baseline." },
-    { "file": "scripts/check-workflow-permissions.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1228 workflow token-permissions absence gate (OpenSSF Scorecard Token-Permissions)." }
+    { "file": "scripts/check-workflow-permissions.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1228 workflow token-permissions absence gate (OpenSSF Scorecard Token-Permissions)." },
+    { "file": "scripts/check-workflow-action-pinning.test.mjs", "class": "gate", "round": null, "note": "Unit tests for the #1228 workflow action SHA-pinning gate (OpenSSF Scorecard Pinned-Dependencies)." }
   ]
 }
