@@ -367,6 +367,62 @@ test("Hermes A2A analysis bridge consumes sourceFiles as equivalent embedded evi
   }
 });
 
+test("Hermes A2A analysis bridge consumes summary as a first-class content field (#1272)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-summary-carrier-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('SUMMARY_CONTENT_MARKER')) throw new Error('summary content marker missing from prompt');",
+      "console.log(JSON.stringify({status:'done',summary:'summary carrier ok',findings:[],risks:[],recommendations:[],evidenceRefs:['SUMMARY-ONLY.md']}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const payload = {
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      repo: "jinwon-int/a2a-nexus",
+      sourceFiles: [{ path: "SUMMARY-ONLY.md", summary: "SUMMARY_CONTENT_MARKER\n" + "s".repeat(80) }],
+      sourceProjectionPolicy: {
+        requiredPaths: ["SUMMARY-ONLY.md"],
+        minProjectedBytesPerRequiredFile: 40,
+      },
+    };
+    const message = [
+      "V5 summary-only carrier regression.",
+      "Payload JSON:\n" + JSON.stringify(payload),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payloadOut = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payloadOut.status, "done");
+    assert.equal(payloadOut.sourceProjection.quality, "complete");
+    assert.equal(payloadOut.sourceProjection.canonicalFileCount, 1);
+    assert.match(readFileSync(promptPath, "utf8"), /SUMMARY_CONTENT_MARKER/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge fails closed before model call when required source projection is missing (#1145)", () => {
   const payload = {
     mode: "analysis-only",

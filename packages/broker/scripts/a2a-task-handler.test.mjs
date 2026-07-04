@@ -674,7 +674,9 @@ const response = {
     canonicalFileCount: 0,
     projectedFileCount: 0,
     canonicalBytes: 0,
-    projectedBytes: 0
+    projectedBytes: 0,
+    droppedByReason: { empty_content: 2 },
+    warnings: ["skipped empty embedded source file: embedded:SUMMARY-ONLY.md", "skipped empty embedded source file: embedded:PAYLOAD.md"]
   },
   failureReadback: {
     stage: "projection",
@@ -707,6 +709,100 @@ console.log(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));
     assert.equal(result.error?.code, "source_projection_blocked");
     assert.equal(result.error?.details.stage, "projection");
     assert.match(result.error?.details.excerpt ?? "", /quality=zero_files/);
+    assert.deepEqual(result.error?.details.droppedByReason, { empty_content: 2 });
+    assert.deepEqual(result.error?.details.warnings, [
+      "skipped empty embedded source file: embedded:SUMMARY-ONLY.md",
+      "skipped empty embedded source file: embedded:PAYLOAD.md",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis bridge reports carrier stats at task receipt and payload-file write (#1272)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-source-carrier-stats-"));
+  const bin = join(dir, "source-carrier-stats.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const stats = JSON.parse(process.env.A2A_ANALYSIS_SOURCE_CARRIER_STATS || "{}");
+const response = {
+  status: "done",
+  summary: "carrier stats visible",
+  findings: ["source carrier stats visible to bridge"],
+  sourceProjection: { quality: "complete", sourceCarrierStats: stats },
+  evidenceRefs: []
+};
+console.log(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-source-carrier-stats",
+      intent: "analyze",
+      assignedWorkerId: "workeralpha",
+      message: "Analyze carrier stats",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        noLive: true,
+        sourceFiles: [{ path: "A.md", content: "aaa" }],
+        sourceBundle: { files: [{ path: "B.md", summary: "bbbb" }] },
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workeralpha",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.sourceCarrierStats.taskReceipt.sourceFiles, 1);
+    assert.equal(result.result.output.sourceCarrierStats.taskReceipt.sourceBundleFiles, 1);
+    assert.equal(result.result.output.sourceCarrierStats.payloadFile.totalFiles, 2);
+    assert.equal(result.result.output.sourceCarrierStats.lossyRecoveryUsed, false);
+    assert.equal(result.result.output.sourceProjection.sourceCarrierStats.payloadFile.totalBytes, 7);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("analysis bridge fails closed when lossy JSON recovery reports zero_files (#1272)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-lossy-recovery-"));
+  const bin = join(dir, "lossy-recovery.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "blocked",
+  summary: "zero files after lossy recovery",
+  sourceProjection: { quality: "zero_files", canonicalFileCount: 0, projectedFileCount: 0 },
+};
+console.log(JSON.stringify({ payloads: [{ text: "truncated payload prefix sourceFiles=[lost] " + JSON.stringify(response) + " trailing noise" }] }));
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-lossy-recovery",
+      intent: "analyze",
+      assignedWorkerId: "workeralpha",
+      message: "Analyze lossy recovery",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        noLive: true,
+        sourceFiles: [{ path: "A.md", content: "aaa" }],
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workeralpha",
+    });
+
+    assert.equal(result.result, undefined);
+    assert.equal(result.error?.code, "payload_recovery_lossy");
+    assert.equal(result.error?.details.stage, "payload_recovery");
+    assert.equal(result.error?.details.sourceCarrierStats.taskReceipt.sourceFiles, 1);
+    assert.equal(result.error?.details.recovery.lossy, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

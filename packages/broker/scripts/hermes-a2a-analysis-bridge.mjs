@@ -4,6 +4,12 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import {
+  collectSourceCarrierItems,
+  normalizeSourceCarrierFile,
+  sourceCarrierContent,
+} from "./lib/source-carriers.mjs";
+
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
 const DEFAULT_MAX_FILE_BYTES = 24 * 1024;
@@ -272,35 +278,11 @@ function defaultAnalysisPaths(payload) {
 }
 
 function collectEmbeddedSourceEvidence(payload) {
-  const candidates = [];
-  for (const item of toArray(payload.embeddedSourceEvidence)) candidates.push(item);
-  const sourceBundle = payload.sourceBundle;
-  if (sourceBundle && typeof sourceBundle === "object" && !Array.isArray(sourceBundle)) {
-    for (const item of toArray(sourceBundle.files)) candidates.push(item);
-  }
-  for (const item of toArray(payload.sourceFiles)) candidates.push(item);
-  for (const item of toArray(payload.sourceEvidence)) candidates.push(item);
-  return candidates;
+  return collectSourceCarrierItems(payload).map((entry) => entry.item);
 }
 
 function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remainingBytes) {
-  if (!item || typeof item !== "object" || Array.isArray(item)) return { warning: "skipped malformed embedded source evidence" };
-  const repo = safeText(item.repo || item.repository || fallbackRepo || "embedded", "embedded");
-  const path = safeText(item.path || item.file || item.name, "");
-  if (!isSafeRelativePath(path)) return { warning: `skipped unsafe embedded source path: ${path || "<empty>"}` };
-  const rawContent = typeof item.content === "string"
-    ? item.content
-    : typeof item.contentText === "string"
-      ? item.contentText
-    : typeof item.text === "string"
-      ? item.text
-      : "";
-  if (!rawContent) return { warning: `skipped empty embedded source file: ${repo}:${path}` };
-  const maxBytes = Math.max(0, Math.min(maxFileBytes, remainingBytes));
-  const buffer = Buffer.from(rawContent, "utf8");
-  const truncated = buffer.length > maxBytes;
-  const content = buffer.subarray(0, maxBytes).toString("utf8");
-  return { file: { repo, path, content, truncated, bytes: buffer.length } };
+  return normalizeSourceCarrierFile(item, { fallbackRepo, maxFileBytes, remainingBytes });
 }
 
 function truthyEnv(value) {
@@ -510,16 +492,21 @@ function collectSourceBundle(payload, env) {
 
   const fallbackRepo = safeText(payload.repo || payload.repository || "embedded", "embedded");
   for (const embedded of collectEmbeddedSourceEvidence(payload)) {
-    if (files.length >= maxFiles || totalBytes >= maxTotalBytes) break;
+    if (files.length >= maxFiles) {
+      warnings.push(`dropped embedded source files: reason=max_files maxFiles=${maxFiles}`);
+      break;
+    }
+    if (totalBytes >= maxTotalBytes) {
+      warnings.push(`dropped embedded source files: reason=max_total_bytes maxTotalBytes=${maxTotalBytes}`);
+      break;
+    }
     const remaining = Math.max(0, maxTotalBytes - totalBytes);
     const normalized = normalizeEmbeddedSourceFile(embedded, fallbackRepo, maxFileBytes, remaining);
-    if (normalized.warning) {
-      warnings.push(normalized.warning);
-      continue;
-    }
+    if (normalized.warning) warnings.push(normalized.warning);
     if (normalized.file) {
       files.push(normalized.file);
       totalBytes += Math.min(normalized.file.bytes, maxFileBytes, remaining);
+      continue;
     }
   }
 
@@ -705,13 +692,7 @@ function summarizeSourceEvidenceForPrompt(value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const repo = safeText(item.repo || item.repository, "");
     const path = safeText(item.path || item.file || item.name, "");
-    const content = typeof item.content === "string"
-      ? item.content
-      : typeof item.contentText === "string"
-        ? item.contentText
-        : typeof item.text === "string"
-          ? item.text
-          : "";
+    const { content } = sourceCarrierContent(item);
     files.push({
       ...(repo ? { repo } : {}),
       ...(path ? { path } : {}),
@@ -769,6 +750,28 @@ function sourceProjectionQuality({ sourceBundle, projectedFiles, truncatedFiles,
   if (omittedFiles.length > 0) return { quality: "partial", budgetReason: "file_omitted" };
   if (truncatedFiles.length > 0) return { quality: "partial", budgetReason: "per_file_truncation" };
   return { quality: "complete", budgetReason: "ok" };
+}
+
+function sourceProjectionWarningReason(warning) {
+  const text = safeText(warning, "");
+  const explicit = /reason=([A-Za-z0-9_-]+)/.exec(text);
+  if (explicit) return explicit[1];
+  if (/unsafe/i.test(text)) return "unsafe_path";
+  if (/empty/i.test(text)) return "empty_content";
+  if (/malformed/i.test(text)) return "malformed";
+  if (/truncat/i.test(text)) return "per_file_budget";
+  if (/max_files/i.test(text)) return "max_files";
+  if (/max_total_bytes/i.test(text)) return "max_total_bytes";
+  return text ? "other" : "unknown";
+}
+
+function summarizeDroppedByReason(warnings) {
+  const counts = {};
+  for (const warning of warnings || []) {
+    const reason = sourceProjectionWarningReason(warning);
+    counts[reason] = (counts[reason] || 0) + 1;
+  }
+  return counts;
 }
 
 function payloadForPrompt(payload) {
@@ -883,6 +886,7 @@ function buildSourceProjectionForPrompt(sourceBundle, payload) {
     requiredFilesMissing,
     requiredFilesBelowMin,
   });
+  const warnings = sourceBundle.warnings.slice(0, 20);
   const sourceProjection = {
     canonicalFileCount: sourceBundle.files.length,
     canonicalBytes,
@@ -894,6 +898,9 @@ function buildSourceProjectionForPrompt(sourceBundle, payload) {
     requiredFilesBelowMin,
     quality,
     budgetReason,
+    droppedByReason: summarizeDroppedByReason(sourceBundle.warnings),
+    warnings,
+    warningCount: sourceBundle.warnings.length,
     requiredPaths: policy.requiredPaths,
     priorityPaths: policy.priorityPaths,
     minProjectedBytesPerRequiredFile: policy.minProjectedBytesPerRequiredFile,

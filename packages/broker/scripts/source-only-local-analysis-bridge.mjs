@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 
+import {
+  normalizeStringArray,
+  payloadSourceFiles,
+  sourceCarrierBytes,
+  sourceCarrierContent,
+  sourceCarrierPath,
+  sourceCarrierRepo,
+} from "./lib/source-carriers.mjs";
+
 function safeText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -14,42 +23,10 @@ function readJsonFile(path, fallback = {}) {
   }
 }
 
-function carrierFiles(value) {
-  return Array.isArray(value) ? value.filter((file) => file && typeof file === "object") : [];
-}
-
-function payloadSourceFiles(payload) {
-  return [
-    ...carrierFiles(payload?.sourceBundle?.files),
-    ...carrierFiles(payload?.sourceFiles),
-    ...carrierFiles(payload?.sourceEvidence),
-  ];
-}
-
-function filePath(file) {
-  return safeText(file?.path || file?.name || file?.id, "<unnamed>");
-}
-
-function fileRepo(file) {
-  return safeText(file?.repo || file?.repository || file?.carrier, "sourceCarrier");
-}
-
-function fileContent(file) {
-  if (typeof file?.content === "string") return file.content;
-  if (typeof file?.contentText === "string") return file.contentText;
-  if (typeof file?.text === "string") return file.text;
-  if (typeof file?.summary === "string") return file.summary;
-  return "";
-}
-
 function matchesPath(file, wanted) {
-  const path = filePath(file);
+  const path = sourceCarrierPath(file);
   const target = safeText(wanted, "");
   return path === target || path.endsWith(`/${target}`) || target.endsWith(`/${path}`);
-}
-
-function normalizeStringArray(value) {
-  return Array.isArray(value) ? value.map((item) => safeText(item, "")).filter(Boolean) : [];
 }
 
 function projectionPolicy(payload) {
@@ -72,12 +49,12 @@ function buildSourceProjection(payload, files) {
       requiredFilesMissing.push(required);
       continue;
     }
-    const bytes = Buffer.byteLength(fileContent(file), "utf8");
+    const bytes = sourceCarrierBytes(file);
     if (policy.minProjectedBytesPerRequiredFile > 0 && bytes < policy.minProjectedBytesPerRequiredFile) {
       requiredFilesBelowMinBytes.push({ path: required, projectedBytes: bytes, minProjectedBytes: policy.minProjectedBytesPerRequiredFile });
     }
   }
-  const canonicalBytes = files.reduce((sum, file) => sum + Buffer.byteLength(fileContent(file), "utf8"), 0);
+  const canonicalBytes = files.reduce((sum, file) => sum + sourceCarrierBytes(file), 0);
   const quality = files.length === 0
     ? "zero_files"
     : (requiredFilesMissing.length || requiredFilesBelowMinBytes.length ? "insufficient" : "complete");
@@ -118,8 +95,8 @@ function buildAnalysis({ task, payload }) {
   const files = payloadSourceFiles(payload);
   const projection = buildSourceProjection(payload, files);
   const runId = safeText(payload.runId || payload.parentRoundId || task.id, "unknown-run");
-  const evidenceRefs = files.map((file) => `${fileRepo(file)}:${filePath(file)}`);
-  const healthFileNames = files.map(filePath).join(", ") || "no files";
+  const evidenceRefs = files.map((file) => `${sourceCarrierRepo(file)}:${sourceCarrierPath(file)}`);
+  const healthFileNames = files.map(sourceCarrierPath).join(", ") || "no files";
   const boundaryOk = noLiveBoundary(payload) && sourceOnlyBoundary(payload);
   const projectionBlocked = projection.quality === "insufficient" || projection.quality === "zero_files";
   const status = projectionBlocked || !boundaryOk ? "blocked" : "done";
@@ -131,6 +108,9 @@ function buildAnalysis({ task, payload }) {
     boundaryOk ? "no-live/source-only boundary confirmed" : "no-live/source-only boundary missing or incomplete",
     `sourceProjection quality=${projection.quality} reason=${projection.budgetReason}`,
   ];
+  if (files.some((file) => sourceCarrierContent(file).field === "summary")) {
+    findings.push("summary content field accepted as first-class source carrier content");
+  }
   if (projection.requiredFilesMissing.length) {
     findings.push(`missing required source files: ${projection.requiredFilesMissing.join(", ")}`);
   }
