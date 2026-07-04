@@ -278,6 +278,7 @@ function collectEmbeddedSourceEvidence(payload) {
   if (sourceBundle && typeof sourceBundle === "object" && !Array.isArray(sourceBundle)) {
     for (const item of toArray(sourceBundle.files)) candidates.push(item);
   }
+  for (const item of toArray(payload.sourceFiles)) candidates.push(item);
   for (const item of toArray(payload.sourceEvidence)) candidates.push(item);
   return candidates;
 }
