@@ -79,6 +79,15 @@ The broker standard field is `result.error.details` / `task.error.details` with 
 
 `other` is still allowed, but it must explain why a narrower category is impossible. The scorecard gate prints a warning when consecutive new scorecard entries have `failureBreakdown.other` as the majority, because that pattern means failed-lane readback is not giving the finalizer enough repo-visible evidence.
 
+### Dialectic health counters (#1296)
+
+When a round uses ordinary A2A lanes as a weak dialectic, the finalizer should record aggregate lane-health counters in the scorecard when readback evidence is available:
+
+- `dispatchedLaneCount`: total lanes dispatched for the round.
+- `substantiveLaneCount`: lanes that produced substantive analysis by the existing `a2ad-finalizer-gate.mjs` evidence-class criterion.
+
+Do not invent a second classifier for this field. `readiness_only`, `generic_ack`, `wrapper_only`, `empty_substantive_output`, projection/infra failures, and provider/model failures are non-substantive. Record counts only — no worker names, node ids, private prompts, or raw excerpts. The scorecard gate validates `substantiveLaneCount <= dispatchedLaneCount` and warns when consecutive scorecard entries fall below the configured substantive-lane ratio threshold.
+
 ## Independent review evidence for medium+ tasks (#1237)
 
 Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.

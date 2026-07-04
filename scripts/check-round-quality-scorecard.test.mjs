@@ -76,6 +76,20 @@ test('zero-count categories do not require an evidence narrative', () => {
   assert.deepEqual(evaluateScorecard({ entries: [{ ...VALID_ENTRY, failureBreakdown: { scope_drift: 0 } }] }), []);
 });
 
+test('substantive lane metrics require paired non-inverted counts', () => {
+  assert.deepEqual(evaluateScorecard({
+    entries: [{ ...VALID_ENTRY, metrics: { ...VALID_ENTRY.metrics, substantiveLaneCount: 2, dispatchedLaneCount: 10 } }],
+  }), []);
+  const failures = evaluateScorecard({
+    entries: [
+      { ...VALID_ENTRY, metrics: { ...VALID_ENTRY.metrics, substantiveLaneCount: 2 } },
+      { ...VALID_ENTRY, id: 'round-y', metrics: { ...VALID_ENTRY.metrics, substantiveLaneCount: 11, dispatchedLaneCount: 10 } },
+    ],
+  });
+  assert.ok(failures.some((f) => f.includes('metrics.dispatchedLaneCount is required')));
+  assert.ok(failures.some((f) => f.includes('metrics.substantiveLaneCount must be <= metrics.dispatchedLaneCount')));
+});
+
 test('other-majority streak emits a warning without failing the scorecard', () => {
   const doc = { entries: [
     {
@@ -121,6 +135,25 @@ test('other-majority warning can ignore legacy baseline entries', () => {
   }), []);
 });
 
+test('low substantive-lane ratio streak emits a warning without failing the scorecard', () => {
+  const doc = { entries: [
+    {
+      ...VALID_ENTRY,
+      id: 'dialectic-a',
+      metrics: { ...VALID_ENTRY.metrics, substantiveLaneCount: 2, dispatchedLaneCount: 10 },
+    },
+    {
+      ...VALID_ENTRY,
+      id: 'dialectic-b',
+      metrics: { ...VALID_ENTRY.metrics, substantiveLaneCount: 1, dispatchedLaneCount: 4 },
+    },
+  ] };
+  assert.deepEqual(evaluateScorecard(doc), []);
+  const warnings = evaluateScorecardWarnings(doc, { substantiveLaneWindow: 2, substantiveLaneThreshold: 0.5 });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /substantive lane ratio below 0\.5/);
+});
+
 test('committed baseline scorecard validates and records the 2026-07 track', () => {
   const doc = JSON.parse(fs.readFileSync(path.join(repo, 'docs/ops/round-quality-scorecard.json'), 'utf8'));
   assert.deepEqual(evaluateScorecard(doc), []);
@@ -132,6 +165,10 @@ test('committed baseline scorecard validates and records the 2026-07 track', () 
   const r1 = doc.entries.find((entry) => entry.id === 'a2a-nexus-1219-q2-closeout-2026-07-02');
   assert.ok(r1, 'the r1 acceptance round entry must exist');
   assert.equal(r1.failureBreakdown?.other, 2, 'the two r1 lane failures must carry the retro #1236 classification');
+  const v4 = doc.entries.find((entry) => entry.id === 'a2a-nexus-v4-dispatch-wave-20260704');
+  assert.ok(v4, 'the V4 dispatch wave entry must exist');
+  assert.equal(v4.metrics.substantiveLaneCount, 2);
+  assert.equal(v4.metrics.dispatchedLaneCount, 10);
 });
 
 test('cli fails closed on a malformed scorecard file', () => {

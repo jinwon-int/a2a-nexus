@@ -15,6 +15,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const REQUIRED_METRICS = ['carryOverCount', 'falseFindingCount', 'reworkIssueCount'];
+const SUBSTANTIVE_LANE_METRICS = ['substantiveLaneCount', 'dispatchedLaneCount'];
+const DEFAULT_SUBSTANTIVE_LANE_WARNING_WINDOW = 2;
+const DEFAULT_SUBSTANTIVE_LANE_WARNING_THRESHOLD = 0.5;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -60,6 +63,17 @@ export function evaluateScorecard(doc) {
     for (const [metric, value] of Object.entries(metrics)) {
       if (!Number.isInteger(value) || value < 0) failures.push(`${where}: metrics.${metric} must be a non-negative integer`);
     }
+    const hasSubstantiveLaneCount = SUBSTANTIVE_LANE_METRICS.some((metric) => metric in metrics);
+    if (hasSubstantiveLaneCount) {
+      for (const metric of SUBSTANTIVE_LANE_METRICS) {
+        if (!(metric in metrics)) failures.push(`${where}: metrics.${metric} is required when recording dialectic health lane counts`);
+      }
+      if (Number.isInteger(metrics.substantiveLaneCount)
+        && Number.isInteger(metrics.dispatchedLaneCount)
+        && metrics.substantiveLaneCount > metrics.dispatchedLaneCount) {
+        failures.push(`${where}: metrics.substantiveLaneCount must be <= metrics.dispatchedLaneCount`);
+      }
+    }
     if (!Array.isArray(entry?.evidence) || entry.evidence.length === 0 || !entry.evidence.every((line) => typeof line === 'string' && line.length > 0)) {
       failures.push(`${where}: evidence must be a non-empty string array`);
     }
@@ -89,28 +103,48 @@ function failureBreakdownTotal(breakdown) {
   return Object.values(breakdown).reduce((sum, value) => sum + (Number.isInteger(value) && value > 0 ? value : 0), 0);
 }
 
+function substantiveLaneRatio(entry) {
+  const metrics = entry?.metrics;
+  if (!metrics || typeof metrics !== 'object') return null;
+  if (!Number.isInteger(metrics.substantiveLaneCount) || !Number.isInteger(metrics.dispatchedLaneCount) || metrics.dispatchedLaneCount <= 0) return null;
+  return metrics.substantiveLaneCount / metrics.dispatchedLaneCount;
+}
+
 export function evaluateScorecardWarnings(doc, options = {}) {
   if (!doc || !Array.isArray(doc.entries)) return [];
-  const windowSize = options.otherMajorityWindow ?? DEFAULT_OTHER_MAJORITY_WARNING_WINDOW;
-  if (!Number.isInteger(windowSize) || windowSize <= 0) return [];
+  const otherWindowSize = options.otherMajorityWindow ?? DEFAULT_OTHER_MAJORITY_WARNING_WINDOW;
+  const substantiveWindowSize = options.substantiveLaneWindow ?? DEFAULT_SUBSTANTIVE_LANE_WARNING_WINDOW;
+  const substantiveThreshold = options.substantiveLaneThreshold ?? DEFAULT_SUBSTANTIVE_LANE_WARNING_THRESHOLD;
   const ignored = new Set(options.ignoreEntryIds ?? []);
   const warnings = [];
-  const streak = [];
+  const otherStreak = [];
+  const substantiveStreak = [];
   for (const entry of doc.entries) {
     if (!entry?.id || ignored.has(entry.id)) {
-      streak.length = 0;
+      otherStreak.length = 0;
+      substantiveStreak.length = 0;
       continue;
     }
     const breakdown = entry.failureBreakdown;
     const total = failureBreakdownTotal(breakdown);
     const other = Number.isInteger(breakdown?.other) ? breakdown.other : 0;
-    if (total > 0 && other > total / 2) {
-      streak.push(entry.id);
-      if (streak.length >= windowSize) {
-        warnings.push(`failureBreakdown.other majority in ${streak.length} consecutive entries (${streak.join(', ')}); failed-lane readback excerpts may be too sparse for narrower classification`);
+    if (Number.isInteger(otherWindowSize) && otherWindowSize > 0 && total > 0 && other > total / 2) {
+      otherStreak.push(entry.id);
+      if (otherStreak.length >= otherWindowSize) {
+        warnings.push(`failureBreakdown.other majority in ${otherStreak.length} consecutive entries (${otherStreak.join(', ')}); failed-lane readback excerpts may be too sparse for narrower classification`);
       }
     } else {
-      streak.length = 0;
+      otherStreak.length = 0;
+    }
+
+    const ratio = substantiveLaneRatio(entry);
+    if (Number.isInteger(substantiveWindowSize) && substantiveWindowSize > 0 && typeof substantiveThreshold === 'number' && ratio !== null && ratio < substantiveThreshold) {
+      substantiveStreak.push(`${entry.id}=${entry.metrics.substantiveLaneCount}/${entry.metrics.dispatchedLaneCount}`);
+      if (substantiveStreak.length >= substantiveWindowSize) {
+        warnings.push(`substantive lane ratio below ${substantiveThreshold} in ${substantiveStreak.length} consecutive entries (${substantiveStreak.join(', ')}); A2AD weak-dialectic lanes may be collapsing to too few substantive voices`);
+      }
+    } else if (ratio !== null) {
+      substantiveStreak.length = 0;
     }
   }
   return warnings;
@@ -142,7 +176,21 @@ function main() {
     }
   }
   const failureSummary = Object.keys(failureTotals).length ? `; failures ${JSON.stringify(failureTotals)}` : '';
-  console.log(`round quality scorecard ok (${doc.entries.length} entr${doc.entries.length === 1 ? 'y' : 'ies'}; totals ${JSON.stringify(totals)}${failureSummary})`);
+  const substantiveLaneTotals = doc.entries.reduce(
+    (acc, entry) => {
+      const ratio = substantiveLaneRatio(entry);
+      if (ratio !== null) {
+        acc.substantiveLaneCount += entry.metrics.substantiveLaneCount;
+        acc.dispatchedLaneCount += entry.metrics.dispatchedLaneCount;
+      }
+      return acc;
+    },
+    { substantiveLaneCount: 0, dispatchedLaneCount: 0 },
+  );
+  const substantiveSummary = substantiveLaneTotals.dispatchedLaneCount > 0
+    ? `; substantive lanes ${substantiveLaneTotals.substantiveLaneCount}/${substantiveLaneTotals.dispatchedLaneCount}`
+    : '';
+  console.log(`round quality scorecard ok (${doc.entries.length} entr${doc.entries.length === 1 ? 'y' : 'ies'}; totals ${JSON.stringify(totals)}${failureSummary}${substantiveSummary})`);
 }
 
 const isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());
