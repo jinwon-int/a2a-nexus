@@ -674,7 +674,9 @@ const response = {
     canonicalFileCount: 0,
     projectedFileCount: 0,
     canonicalBytes: 0,
-    projectedBytes: 0
+    projectedBytes: 0,
+    droppedByReason: { empty_content: 2 },
+    warnings: ["skipped empty embedded source file: embedded:SUMMARY-ONLY.md", "skipped empty embedded source file: embedded:PAYLOAD.md"]
   },
   failureReadback: {
     stage: "projection",
@@ -707,6 +709,11 @@ console.log(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));
     assert.equal(result.error?.code, "source_projection_blocked");
     assert.equal(result.error?.details.stage, "projection");
     assert.match(result.error?.details.excerpt ?? "", /quality=zero_files/);
+    assert.deepEqual(result.error?.details.droppedByReason, { empty_content: 2 });
+    assert.deepEqual(result.error?.details.warnings, [
+      "skipped empty embedded source file: embedded:SUMMARY-ONLY.md",
+      "skipped empty embedded source file: embedded:PAYLOAD.md",
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

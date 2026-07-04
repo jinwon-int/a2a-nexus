@@ -477,14 +477,23 @@ function projectionFailureDetails(response, output) {
     ? response.failureReadback
     : {};
   const budgetReason = safeText(projection.budgetReason, "unknown");
+  const warnings = Array.isArray(projection.warnings)
+    ? projection.warnings.map((item) => safeText(item, "")).filter(Boolean).slice(0, 10)
+    : [];
+  const droppedByReason = projection.droppedByReason && typeof projection.droppedByReason === "object" && !Array.isArray(projection.droppedByReason)
+    ? projection.droppedByReason
+    : undefined;
+  const defaultExcerpt = `stage=projection quality=${quality} budgetReason=${budgetReason} canonicalFileCount=${projection.canonicalFileCount ?? 0} projectedFileCount=${projection.projectedFileCount ?? 0} canonicalBytes=${projection.canonicalBytes ?? 0} projectedBytes=${projection.projectedBytes ?? 0}${warnings.length ? ` warnings=${warnings.join(" | ")}` : ""}`;
   return {
     stage: "projection",
     excerpt: safeText(
       readback.excerpt,
-      `stage=projection quality=${quality} budgetReason=${budgetReason} canonicalFileCount=${projection.canonicalFileCount ?? 0} projectedFileCount=${projection.projectedFileCount ?? 0} canonicalBytes=${projection.canonicalBytes ?? 0} projectedBytes=${projection.projectedBytes ?? 0}`,
+      defaultExcerpt,
     ),
     quality,
     budgetReason,
+    ...(warnings.length ? { warnings } : {}),
+    ...(droppedByReason ? { droppedByReason } : {}),
     sourceProjection: projection,
   };
 }
