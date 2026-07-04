@@ -137,7 +137,10 @@ The bridge emits `sourceProjection` telemetry (`canonicalFileCount`,
 projection evidence, even if the worker process itself exited successfully. For
 new source-only analysis lanes, the broker readiness guard also records
 `source_projection_empty` at dispatch when all equivalent source carriers are
-empty (`sourceBundle.files[]`, `sourceFiles[]`, and `sourceEvidence[]`). In warn
+empty (`sourceBundle.files[]`, `sourceFiles[]`, and `sourceEvidence[]`). The
+source-only bridge consumes that same carrier set; a carrier that satisfies the
+readiness guard must also be visible to projection (`sourceBundle.files[]`,
+`sourceFiles[]`, and `sourceEvidence[]` are equivalent source carriers). In warn
 mode this is a structured warning; in enforce mode it rejects the task with
 `error.details.stage="dispatch"` and a bounded count-only `excerpt`. If the
 analysis bridge reaches projection and still blocks with `quality=zero_files` or

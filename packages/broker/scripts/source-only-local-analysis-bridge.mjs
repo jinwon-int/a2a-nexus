@@ -14,9 +14,16 @@ function readJsonFile(path, fallback = {}) {
   }
 }
 
+function carrierFiles(value) {
+  return Array.isArray(value) ? value.filter((file) => file && typeof file === "object") : [];
+}
+
 function payloadSourceFiles(payload) {
-  const files = payload?.sourceBundle?.files;
-  return Array.isArray(files) ? files.filter((file) => file && typeof file === "object") : [];
+  return [
+    ...carrierFiles(payload?.sourceBundle?.files),
+    ...carrierFiles(payload?.sourceFiles),
+    ...carrierFiles(payload?.sourceEvidence),
+  ];
 }
 
 function filePath(file) {
@@ -24,12 +31,14 @@ function filePath(file) {
 }
 
 function fileRepo(file) {
-  return safeText(file?.repo || file?.repository, "sourceBundle");
+  return safeText(file?.repo || file?.repository || file?.carrier, "sourceCarrier");
 }
 
 function fileContent(file) {
   if (typeof file?.content === "string") return file.content;
+  if (typeof file?.contentText === "string") return file.contentText;
   if (typeof file?.text === "string") return file.text;
+  if (typeof file?.summary === "string") return file.summary;
   return "";
 }
 
