@@ -1,9 +1,12 @@
 {
-  "$comment": "Round-quality scorecard (#1220 PR 3). One entry per closed improvement track or A2AD round wave. Metrics are the feedback loop for guardpack/process changes: carryOverCount = deliverables that had to be re-tracked in a follow-up issue; falseFindingCount = audit/verification findings later corrected as wrong; reworkIssueCount = issues opened solely to redo or complete previously-closed work; legacyIncompleteCloses = checklist-incomplete completed-closes observed (one-time baseline from the first closeout-hygiene run). Optional failureBreakdown (#1236) maps finalizer-assigned failure categories (spec_ambiguity | implementation_defect | environment | acceptance_misconfigured | scope_drift | other) to counts; every counted category needs an evidence narrative. Validated fail-closed by scripts/check-round-quality-scorecard.mjs. Counts only — no personal identifiers, no private channels.",
+  "$comment": "Round-quality scorecard (#1220 PR 3). One entry per closed improvement track or A2AD round wave. Metrics are the feedback loop for guardpack/process changes: carryOverCount = deliverables that had to be re-tracked in a follow-up issue; falseFindingCount = audit/verification findings later corrected as wrong; reworkIssueCount = issues opened solely to redo or complete previously-closed work; legacyIncompleteCloses = checklist-incomplete completed-closes observed (one-time baseline from the first closeout-hygiene run). Optional failureBreakdown (#1236) maps finalizer-assigned failure categories (spec_ambiguity | implementation_defect | environment | acceptance_misconfigured | scope_drift | other) to counts; every counted category needs an evidence narrative. Validated fail-closed by scripts/check-round-quality-scorecard.mjs. Optional dialectic health metrics substantiveLaneCount/dispatchedLaneCount record aggregate lane counts only; substantive counts reuse the a2ad-finalizer-gate evidence-class criterion. Counts only — no personal identifiers, no private channels.",
   "entries": [
     {
       "id": "improvement-track-2026-07",
-      "window": { "from": "2026-07-01", "to": "2026-07-02" },
+      "window": {
+        "from": "2026-07-01",
+        "to": "2026-07-02"
+      },
       "scope": "#1183/#1198/#1217 umbrellas and their child issues",
       "metrics": {
         "carryOverCount": 2,
@@ -21,7 +24,10 @@
     },
     {
       "id": "a2a-nexus-1219-q2-closeout-2026-07-02",
-      "window": { "from": "2026-07-02", "to": "2026-07-02" },
+      "window": {
+        "from": "2026-07-02",
+        "to": "2026-07-02"
+      },
       "scope": "#1219 docker-runner verification-embedded Q2 closeout under umbrella #1217",
       "metrics": {
         "carryOverCount": 0,
@@ -44,7 +50,10 @@
     },
     {
       "id": "a2a-nexus-1233-p1-closeout-2026-07-03",
-      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-03"
+      },
       "scope": "#1233 docker-runner red-green baseline P1 closeout under umbrella #1232",
       "metrics": {
         "carryOverCount": 0,
@@ -62,7 +71,10 @@
     },
     {
       "id": "a2a-nexus-1234-p2-closeout-2026-07-03",
-      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-03"
+      },
       "scope": "#1234 broker Definition-of-Ready task-readiness lint P2 closeout under umbrella #1232",
       "metrics": {
         "carryOverCount": 0,
@@ -81,7 +93,10 @@
     },
     {
       "id": "a2a-nexus-1235-p3-closeout-2026-07-03",
-      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-03"
+      },
       "scope": "#1235 docker-runner declared-scope drift P3 closeout under umbrella #1232",
       "metrics": {
         "carryOverCount": 0,
@@ -104,7 +119,10 @@
     },
     {
       "id": "a2a-nexus-1237-p5-closeout-2026-07-03",
-      "window": { "from": "2026-07-03", "to": "2026-07-03" },
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-03"
+      },
       "scope": "#1237 broker independent-review evidence P5 closeout under umbrella #1232 (final lane)",
       "metrics": {
         "carryOverCount": 0,
@@ -128,7 +146,10 @@
     },
     {
       "id": "a2a-nexus-1249-f2-closeout-2026-07-04",
-      "window": { "from": "2026-07-03", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-03",
+        "to": "2026-07-04"
+      },
       "scope": "#1249 multi-validation evidence F2 phase-1 closeout (#1232 follow-up track)",
       "metrics": {
         "carryOverCount": 1,
@@ -147,7 +168,10 @@
     },
     {
       "id": "a2a-nexus-1248-f1-closeout-2026-07-04",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1248 failed-lane readback preservation F1 closeout (#1232 follow-up track)",
       "metrics": {
         "carryOverCount": 0,
@@ -169,7 +193,10 @@
     },
     {
       "id": "a2a-nexus-1255-sweep-closeout-2026-07-04",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1252/#1250/#1228-L3 consolidated hardening sweep via PR #1255 (operator-directed 3-lane exception)",
       "metrics": {
         "carryOverCount": 0,
@@ -192,7 +219,10 @@
     },
     {
       "id": "a2a-nexus-1257-closeout-2026-07-04",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1257 zero_files source-projection root-cause lane closeout (dispatch-infra track)",
       "metrics": {
         "carryOverCount": 0,
@@ -211,7 +241,10 @@
     },
     {
       "id": "a2a-rollout-canary-20260704",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "revision 176a788 live-fleet rollout and sourceBundle canary verification (operator-executed, #1257 효과 측정 1단계)",
       "metrics": {
         "carryOverCount": 0,
@@ -230,7 +263,10 @@
     },
     {
       "id": "a2a-nexus-v1-codeql-triage-20260704",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1262 V1 organic observation round: CodeQL triage 21/21 + gate dogfooding under umbrella #1261",
       "metrics": {
         "carryOverCount": 0,
@@ -254,7 +290,10 @@
     },
     {
       "id": "a2a-nexus-1265-v2-closeout-2026-07-04",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1265 V2 source-carrier contract unification closeout under umbrella #1261",
       "metrics": {
         "carryOverCount": 1,
@@ -274,13 +313,18 @@
     },
     {
       "id": "a2a-nexus-v4-dispatch-wave-20260704",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1270 V4 final-verdict dispatch wave (NOT GO — issue stays open) plus V2 rollout, sourceFiles-only canary, and the #1271 hotfix",
       "metrics": {
         "carryOverCount": 0,
         "falseFindingCount": 0,
         "reworkIssueCount": 0,
-        "evidenceGateDeviationCount": 0
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 10
       },
       "failureBreakdown": {
         "implementation_defect": 5,
@@ -292,13 +336,17 @@
         "verdict NOT GO: the #1257 final criterion (blocked 0) is unmet, but the failure surface moved — small canary passes both brokers while large organic manifests block on Hermes-path workers only; size-dependent, Hermes-specific",
         "failure classification implementation_defect: 5 — reviewer code investigation found the 4th parallel-copy drift (Hermes normalizeEmbeddedSourceFile lacks the summary content field the gate and local bridge accept) and live budget-drop candidates (16 files / 24KB / 160KB caps); exact drop condition pends V5 excerpt exposure because current excerpts carry counts but not drop reasons; environment: 1 — openclaw_analysis_failed lane",
         "V3 verdict inputs recorded on the wave: spec_underspecified 0 and source_projection_empty 0 during the V4 dispatch window (retained logs and task readback agree) — the DoR and projection entry gates saw zero violations from a fully-populated organic dispatch",
-        "next lane specced as V5 #1272: shared carrier/content normalization helper for both bridges + handler, parity fixture across four test suites, drop-reason excerpt exposure, V4-shape reproduction fixture (operator to provide payload field shapes); #1270 L1-L3 re-dispatch after V5"
+        "next lane specced as V5 #1272: shared carrier/content normalization helper for both bridges + handler, parity fixture across four test suites, drop-reason excerpt exposure, V4-shape reproduction fixture (operator to provide payload field shapes); #1270 L1-L3 re-dispatch after V5",
+        "dialectic health: V4 dispatched 10 lanes and produced 2 substantive lanes by the existing a2ad-finalizer-gate evidence-class criterion; readiness_only/generic_ack/wrapper/projection failures are counted non-substantive"
       ],
       "recordedAt": "2026-07-04"
     },
     {
       "id": "a2a-nexus-v5-closeout-wave-20260704",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1272 V5 implementation + fleet rollout + V4 retry closeout (PRs #1274/#1276/#1277/#1278, final revision 18d5312) — the zero_files mystery is CLOSED",
       "metrics": {
         "carryOverCount": 0,
@@ -322,7 +370,10 @@
     },
     {
       "id": "a2a-nexus-final-lanes-closeout-20260704",
-      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-04"
+      },
       "scope": "#1261 track-closing round: manifest coverage gate + create-time acceptance validation + read-only review routing fix (PRs #1280/#1281/#1282) — umbrella #1261 and #1275 closed",
       "metrics": {
         "carryOverCount": 0,
@@ -345,7 +396,10 @@
     },
     {
       "id": "a2a-nexus-1263-enforce-confirmation-20260705",
-      "window": { "from": "2026-07-04", "to": "2026-07-05" },
+      "window": {
+        "from": "2026-07-04",
+        "to": "2026-07-05"
+      },
       "scope": "#1263 A2A_TASK_READINESS_MODE=enforce flip + confirmation canaries (operator-executed) — the convergence track and the 2026-07 quality campaign close",
       "metrics": {
         "carryOverCount": 0,
