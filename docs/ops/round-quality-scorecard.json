@@ -125,6 +125,47 @@
         "follow-up candidates recorded in the #1237 review comment: single result.validation slot overload when acceptance and review.required combine (review verdict satisfies the acceptance gate); P3 drive-bys (test pins, dead shell variable) deferred by documented finalizer decision"
       ],
       "recordedAt": "2026-07-03"
+    },
+    {
+      "id": "a2a-nexus-1249-f2-closeout-2026-07-04",
+      "window": { "from": "2026-07-03", "to": "2026-07-04" },
+      "scope": "#1249 multi-validation evidence F2 phase-1 closeout (#1232 follow-up track)",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "implemented via PR #1251 (merge 579626d): optional result.validations[] with kind-aware matching (acceptance->smoke, review->review), legacy singleton preserved with structured legacy_acceptance_validation_kind_mismatch warning, normalizer deep-copy and retention reachability for array artifactIds",
+        "third consecutive evidence-compliant lane, best RED form yet: functional probes on the pre-change tree in the PR body (validations[] rejected as acceptance_evidence_missing; singleton fail-open path produced no warning)",
+        "independent finalizer review on merged main: worker-acceptance + worker-review tests 27/27, spec items 1-3 reconciled, verdict PASS phase 1 (#1249 review comment)",
+        "carry-over: 작업 단위 4 (warn->reject cutoff, operator-approval-gated) deliberately deferred by the PR but the issue closed without a disposition tracking it — re-tracked as #1252; first non-zero core metric since the baseline, counted per the carryOverCount definition",
+        "failureBreakdown omitted: the readback reports lanes blocked/degraded by zero_files projection and handler failures (3rd consecutive round) but lane-level counts are not recoverable — exactly the countability gap #1248 (F1) is scoped to close; recurring zero_files projection flagged as a dispatch-infra defect candidate"
+      ],
+      "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-1248-f1-closeout-2026-07-04",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1248 failed-lane readback preservation F1 closeout (#1232 follow-up track)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "implemented via PR #1254 (merge 4c7e150): failed-lane readback contract in operators.md (5 fields), TaskError.details stage/excerpt normalized at broker write time (stage whitelist, excerpt bounded 20 lines / 4000 chars, secret/PII/private-path redaction), safe-subset projection in task list read paths, scorecard other-majority warning (non-blocking, legacy-ignorable)",
+        "fourth consecutive evidence-compliant lane: pre-change RED probes in the PR body (missing redaction contract assertion; evaluateScorecardWarnings export absent)",
+        "independent finalizer review on merged main: broker tests 14/14 + scorecard tests 10/10 + hostile-fixture reviewer probe with zero leaks across token/header/env/email/phone/path/chat-id patterns, verdict PASS (#1248 review comment)",
+        "failure classification environment: 2 — two lanes hit handler failures per the PR #1254 readback; the zero-file projection lanes (4th consecutive round) remain uncounted because the readback contract landed after this round's dispatch — countability is expected from the next round onward",
+        "process nit recorded (not a carry-over): second consecutive issue closed without a disposition comment; finalizer review comments are filling the role but the closer should leave the item-by-item disposition per protocol"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
