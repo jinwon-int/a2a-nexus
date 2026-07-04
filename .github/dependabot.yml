@@ -14,3 +14,19 @@ updates:
       github-actions:
         patterns:
           - "*"
+  # Keep npm workspace dependencies visible through reviewed PRs. Minor/patch
+  # updates are grouped to reduce noise; major updates stay separate.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+      npm-major:
+        update-types:
+          - major

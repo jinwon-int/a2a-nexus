@@ -2,6 +2,12 @@
   "$comment": "Source of truth for `npm run test:release-gate`. Order is preserved exactly from the historical hand-enumerated `node --test` line (issue #646). Behavior preservation is the hard requirement: every entry runs by default. See docs/scripts-lifecycle.md for classes and the archival flow. Classification: `round` only when the filename clearly references a specific team round (rNN pattern / person+round combo); everything else is conservatively `gate`.",
   "entries": [
     {
+      "file": "scripts/check-dependency-advisories.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Dependency advisory warn-only gate tests for #1287."
+    },
+    {
       "file": "scanner/readiness/fail-closed-gates.test.mjs",
       "class": "gate",
       "round": null,
