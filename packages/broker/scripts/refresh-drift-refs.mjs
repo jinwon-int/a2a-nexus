@@ -22,8 +22,11 @@ const REFS = [
   { repo: "a2aproject/a2a-samples", label: "a2a-samples" },
 ];
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 const now = new Date().toISOString().replace(/\.\d{3}Z$/, "KST")
-  .replace(/T/, "T")
   .replace(/:\d{2}KST$/, ":00KST");
 
 const results = [];
@@ -56,13 +59,13 @@ for (const r of results) {
   if (!r.ok) continue;
   // Update the refreshedAt timestamp for each matching repo
   const repoRegex = new RegExp(
-    `(repo:\\s*"${r.repo.replace(/\//g, "\\/")}".*?refreshedAt:\\s*)"[^"]*"`,
+    `(repo:\\s*"${escapeRegExp(r.repo)}".*?refreshedAt:\\s*)"[^"]*"`,
     "s",
   );
   updated = updated.replace(repoRegex, `$1"${now}"`);
   // Also update the pinned ref
   const refRegex = new RegExp(
-    `(repo:\\s*"${r.repo.replace(/\//g, "\\/")}".*?ref:\\s*)"[^"]*"`,
+    `(repo:\\s*"${escapeRegExp(r.repo)}".*?ref:\\s*)"[^"]*"`,
     "s",
   );
   updated = updated.replace(refRegex, `$1"${r.sha}"`);
