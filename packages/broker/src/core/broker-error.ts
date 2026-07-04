@@ -10,6 +10,7 @@ export type BrokerErrorCode =
   | "invalid_transition"
   | "spec_underspecified"
   | "source_projection_empty"
+  | "acceptance_malformed"
   | "github_completion_evidence_missing"
   | "github_completion_receipt_invalid"
   | "review_evidence_missing"

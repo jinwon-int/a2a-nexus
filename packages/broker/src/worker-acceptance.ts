@@ -50,6 +50,7 @@ export function parseTaskAcceptance(task: TaskRecord): ParsedTaskAcceptance {
     error: {
       code: "acceptance_malformed",
       message: `task.payload.acceptance is malformed: ${detail}`,
+      details: { reason: detail },
     },
   });
 

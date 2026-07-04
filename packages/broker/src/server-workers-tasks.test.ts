@@ -88,6 +88,47 @@ test("POST /tasks fails closed when payload exceeds configured task payload budg
   }
 });
 
+test("POST /tasks rejects malformed acceptance at create time without mutating in-flight tasks (#1261 L2)", async () => {
+  const server = await startTestServer({ enforceRequesterIdentity: false });
+  try {
+    await registerTestWorker(server.baseUrl, "worker-a", "analyst");
+    server.runtime.broker.createTask({
+      id: "existing-inflight-malformed-acceptance",
+      requester: { id: "hub", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      intent: "analyze",
+      message: "legacy in-flight task created before POST validation",
+      payload: { acceptance: { command: "node scripts/check.js" } },
+      taskOrigin: "api",
+    });
+
+    const res = await fetch(server.baseUrl + "/tasks", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        id: "task-malformed-acceptance-rejected-at-create",
+        requester: { id: "hub", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        targetNodeId: "worker-a",
+        intent: "analyze",
+        message: "malformed acceptance should be rejected before task creation",
+        payload: { acceptance: { command: "node scripts/check.js" } },
+        taskOrigin: "api",
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: { code: string; message: string; details?: Record<string, unknown> } };
+    assert.equal(body.error.code, "acceptance_malformed");
+    assert.match(body.error.message, /task\.payload\.acceptance is malformed/);
+    assert.equal(body.error.details?.reason, "command must be a non-empty string array");
+    assert.equal(server.runtime.broker.getTask("task-malformed-acceptance-rejected-at-create"), null);
+    const existing = server.runtime.broker.getTask("existing-inflight-malformed-acceptance");
+    assert.equal(existing?.status, "queued");
+  } finally {
+    await server.close();
+  }
+});
+
 test("GET /rounds/:id/status rejects a malformed percent-encoded id with 400 (#743)", async () => {
   const server = await startTestServer({ enforceRequesterIdentity: false });
   try {
