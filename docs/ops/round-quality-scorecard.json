@@ -319,6 +319,29 @@
         "V3 verdict inputs complete: spec_underspecified 0 and source_projection_empty 0 held across the V4/V5 waves in both retained logs and task readbacks — enforce promotion conditions for the shared A2A_TASK_READINESS_MODE knob are met"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-final-lanes-closeout-20260704",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1261 track-closing round: manifest coverage gate + create-time acceptance validation + read-only review routing fix (PRs #1280/#1281/#1282) — umbrella #1261 and #1275 closed",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 4
+      },
+      "evidence": [
+        "L1 PR #1280: check-release-gate-manifest-coverage.mjs core gate (discovered=56 missing=0 on final main; tiering bumped to core 26 / 36 of 55); natural RED independently reproduced by the finalizer on the pre-#1269 tree — missing=1 naming exactly scripts/a2a-warn-log-aggregate.test.mjs, exit 1",
+        "require-red HOLD lifted (#1263): first live opt-in use ran on the L1 lane and behaved exactly as designed — the acceptance command fails on the pre-patch tree and passes after; no vacuous false positives observed",
+        "L2 PR #1281: malformed payload.acceptance now rejected at POST /tasks with 400 acceptance_malformed + details.reason (create-route throw verified in diff, reviewer parse probe returns acceptance_malformed, in-flight tasks unaffected by test); L3 PR #1282: read-only GO/NO-GO review lanes route to the analysis bridge instead of the docker patch/no-diff path, gongyung canary PASS (analysisStatus=done, taskReceipt.totalFiles=1) — #1275 closed",
+        "failure classification environment: 4 — handler_exit_nonzero lanes (1 Team1 + 3 Team2) per the round readback; the 23 acceptance_failed lanes are NOT counted as lane defects: the broad dispatch started before the three implementation PRs merged, so post-patch acceptance evaluated stale source — sequencing artifact per the established pre-fix-reproduction precedent",
+        "process lesson recorded: dispatch implementation lanes after (or pinned to) the revision their acceptance targets, or re-dispatch after merge — authoritative closeout for this round is the per-PR RED/GREEN evidence plus the post-merge gongyung canary, as the operator recorded on #1261/#1275",
+        "enforce counters clean for the third consecutive window (spec_underspecified 0 / source_projection_empty 0 / acceptance_malformed 0); the A2A_TASK_READINESS_MODE=enforce flip remains the only open action, approval-gated on #1263 — scope-block template recommendation stays HOLD (still no scope-warn observations)"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
