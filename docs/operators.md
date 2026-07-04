@@ -88,6 +88,22 @@ When a round uses ordinary A2A lanes as a weak dialectic, the finalizer should r
 
 Do not invent a second classifier for this field. `readiness_only`, `generic_ack`, `wrapper_only`, `empty_substantive_output`, projection/infra failures, and provider/model failures are non-substantive. Record counts only — no worker names, node ids, private prompts, or raw excerpts. The scorecard gate validates `substantiveLaneCount <= dispatchedLaneCount` and warns when consecutive scorecard entries fall below the configured substantive-lane ratio threshold.
 
+### Designated antithesis and plan mini-cycle closeout (#1297)
+
+For ordinary A2A rounds that use designated antithesis lanes, finalizers judge
+the antithesis as reviewer evidence rather than as another implementation vote:
+
+- The antithesis must name the thesis/plan/implementation it is attacking.
+- A substantive antithesis contains at least one concrete rebuttal point and at
+  least one `evidenceRef`; a thesis-unused evidence reference is recommended.
+  Agreement-only PASS, generic acknowledgements, wrapper output, and source-only
+  readiness notes are non-substantive and excluded from #1296 health counters.
+- When a plan-round mini-cycle is used, the closeout note should name the selected
+  thesis, the antithesis lane ids, and whether the final plan changed.
+- When a consequential plan round deliberately skips the mini-cycle, record a
+  one-line reason in the disposition evidence. This is a reporting convention,
+  not a new hard gate or a new scorecard schema field.
+
 ## Independent review evidence for medium+ tasks (#1237)
 
 Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.
