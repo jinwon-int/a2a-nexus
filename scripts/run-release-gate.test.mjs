@@ -58,7 +58,7 @@ test('real manifest parses and matches schema expectations', () => {
   }
 });
 
-test('--list output matches manifest order exactly (non-archived)', () => {
+test('--list output matches manifest order exactly (non-archived default path)', () => {
   const parsed = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const expected = parsed.entries
     .filter((e) => e.archived !== true)
@@ -67,6 +67,27 @@ test('--list output matches manifest order exactly (non-archived)', () => {
   assert.equal(res.status, 0, res.stderr);
   const lines = res.stdout.split('\n').filter((l) => l.length > 0);
   assert.deepEqual(lines, expected);
+});
+
+
+
+test('--include-archived --list output includes historical entries in manifest order', () => {
+  const parsed = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  const expected = parsed.entries.map((e) => e.file);
+  const archivedCount = parsed.entries.filter((e) => e.archived === true).length;
+  assert.equal(archivedCount, 19);
+  const res = runRunner(['--include-archived', '--list']);
+  assert.equal(res.status, 0, res.stderr);
+  const lines = res.stdout.split('\n').filter((l) => l.length > 0);
+  assert.deepEqual(lines, expected);
+});
+
+test('default --list excludes the #1288 historical opt-in candidate set', () => {
+  const parsed = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  const active = parsed.entries.filter((e) => e.archived !== true);
+  assert.equal(parsed.entries.length, 64);
+  assert.equal(active.length, 45);
+  assert.equal(parsed.entries.length - active.length, 19);
 });
 
 test('loadManifest accepts a well-formed temp manifest', async () => {
@@ -125,7 +146,7 @@ test('archived entries are skipped with a loud warning and excluded from --list'
         entries: [
           { file: realFile, class: 'gate', round: null, note: 'active' },
           {
-            file: 'scripts/old-round.test.mjs',
+            file: 'scripts/release-gate.mjs',
             class: 'round',
             round: 'team9-r99',
             note: 'retired',
@@ -140,15 +161,17 @@ test('archived entries are skipped with a loud warning and excluded from --list'
       `import { loadManifest, resolveEntries } from ${JSON.stringify(RUNNER)};\n` +
         `const m = loadManifest(${JSON.stringify(manifestPath)});\n` +
         `const { active, skipped } = resolveEntries(m, { repoRoot: ${JSON.stringify(REPO_ROOT)} });\n` +
+        `const included = resolveEntries(m, { repoRoot: ${JSON.stringify(REPO_ROOT)}, includeArchived: true });\n` +
         `for (const e of skipped) console.warn('SKIP ' + e.file + ' ' + e.round);\n` +
-        `console.log(JSON.stringify({ active, skippedCount: skipped.length }));\n`,
+        `console.log(JSON.stringify({ active, skippedCount: skipped.length, included: included.active }));\n`,
     );
     const res = spawnSync(process.execPath, [driver], { encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);
-    assert.match(res.stderr, /SKIP scripts\/old-round\.test\.mjs team9-r99/);
+    assert.match(res.stderr, /SKIP scripts\/release-gate\.mjs team9-r99/);
     const out = JSON.parse(res.stdout.trim());
     assert.deepEqual(out.active, [realFile]);
     assert.equal(out.skippedCount, 1);
+    assert.deepEqual(out.included, [realFile, 'scripts/release-gate.mjs']);
   });
 });
 
