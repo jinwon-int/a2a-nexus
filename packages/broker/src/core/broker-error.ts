@@ -9,6 +9,7 @@ export type BrokerErrorCode =
   | "policy_denied"
   | "invalid_transition"
   | "spec_underspecified"
+  | "source_projection_empty"
   | "github_completion_evidence_missing"
   | "github_completion_receipt_invalid"
   | "review_evidence_missing"

@@ -92,6 +92,15 @@ function noLiveBoundary(payload) {
   return payload?.noLive === true || payload?.no_live === true;
 }
 
+function buildProjectionFailureReadback(projection) {
+  const quality = safeText(projection?.quality, "unknown");
+  const budgetReason = safeText(projection?.budgetReason, "unknown");
+  return {
+    stage: "projection",
+    excerpt: `stage=projection quality=${quality} budgetReason=${budgetReason} canonicalFileCount=${projection?.canonicalFileCount ?? 0} projectedFileCount=${projection?.projectedFileCount ?? 0} canonicalBytes=${projection?.canonicalBytes ?? 0} projectedBytes=${projection?.projectedBytes ?? 0}`,
+  };
+}
+
 function sourceOnlyBoundary(payload) {
   return payload?.sourceOnly === true || payload?.source_only === true;
 }
@@ -103,7 +112,9 @@ function buildAnalysis({ task, payload }) {
   const evidenceRefs = files.map((file) => `${fileRepo(file)}:${filePath(file)}`);
   const healthFileNames = files.map(filePath).join(", ") || "no files";
   const boundaryOk = noLiveBoundary(payload) && sourceOnlyBoundary(payload);
-  const status = projection.quality === "insufficient" || projection.quality === "zero_files" || !boundaryOk ? "blocked" : "done";
+  const projectionBlocked = projection.quality === "insufficient" || projection.quality === "zero_files";
+  const status = projectionBlocked || !boundaryOk ? "blocked" : "done";
+  const failureReadback = projectionBlocked ? buildProjectionFailureReadback(projection) : undefined;
 
   const findings = [
     `runId ${runId}`,
@@ -130,6 +141,7 @@ function buildAnalysis({ task, payload }) {
     ],
     evidenceRefs,
     sourceProjection: projection,
+    ...(failureReadback ? { failureReadback } : {}),
     bridgeAdapter: "source_only_local",
     requestedModel: safeText(process.env.A2A_OPENCLAW_ANALYSIS_MODEL || process.env.A2A_HERMES_ANALYSIS_MODEL || "source-only-local", "source-only-local"),
     modelInheritanceMode: "local_source_only_no_provider",

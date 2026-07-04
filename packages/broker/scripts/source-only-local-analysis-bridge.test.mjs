@@ -72,6 +72,17 @@ test("workertheta bridge alias uses the source-only local bridge (#1147)", () =>
   assert.ok(analysis.recommendations.some((item) => item.includes("workertheta") || item.includes("source-only")));
 });
 
+test("source-only local bridge records projection failure readback details for zero_files (#1257)", () => {
+  const { child, envelope } = runBridge(bridgePath, { sourceBundle: { files: [] } });
+  assert.equal(child.status, 0, child.stderr);
+  const analysis = analysisFromEnvelope(envelope);
+  assert.equal(analysis.status, "blocked");
+  assert.equal(analysis.sourceProjection.quality, "zero_files");
+  assert.equal(analysis.failureReadback.stage, "projection");
+  assert.match(analysis.failureReadback.excerpt, /quality=zero_files/);
+  assert.match(analysis.failureReadback.excerpt, /canonicalFileCount=0/);
+});
+
 test("source-only local bridge blocks when required source is missing (#1147)", () => {
   const { child, envelope } = runBridge(bridgePath, {
     sourceProjectionPolicy: { requiredPaths: ["missing-required.md"] },
