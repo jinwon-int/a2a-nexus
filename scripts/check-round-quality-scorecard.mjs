@@ -33,6 +33,8 @@ export const FAILURE_CATEGORIES = [
   'other',
 ];
 
+export const DEFAULT_OTHER_MAJORITY_WARNING_WINDOW = 2;
+
 export function evaluateScorecard(doc) {
   const failures = [];
   if (!doc || !Array.isArray(doc.entries)) return ['entries must be an array'];
@@ -82,6 +84,38 @@ export function evaluateScorecard(doc) {
   return failures;
 }
 
+function failureBreakdownTotal(breakdown) {
+  if (!breakdown || typeof breakdown !== 'object' || Array.isArray(breakdown)) return 0;
+  return Object.values(breakdown).reduce((sum, value) => sum + (Number.isInteger(value) && value > 0 ? value : 0), 0);
+}
+
+export function evaluateScorecardWarnings(doc, options = {}) {
+  if (!doc || !Array.isArray(doc.entries)) return [];
+  const windowSize = options.otherMajorityWindow ?? DEFAULT_OTHER_MAJORITY_WARNING_WINDOW;
+  if (!Number.isInteger(windowSize) || windowSize <= 0) return [];
+  const ignored = new Set(options.ignoreEntryIds ?? []);
+  const warnings = [];
+  const streak = [];
+  for (const entry of doc.entries) {
+    if (!entry?.id || ignored.has(entry.id)) {
+      streak.length = 0;
+      continue;
+    }
+    const breakdown = entry.failureBreakdown;
+    const total = failureBreakdownTotal(breakdown);
+    const other = Number.isInteger(breakdown?.other) ? breakdown.other : 0;
+    if (total > 0 && other > total / 2) {
+      streak.push(entry.id);
+      if (streak.length >= windowSize) {
+        warnings.push(`failureBreakdown.other majority in ${streak.length} consecutive entries (${streak.join(', ')}); failed-lane readback excerpts may be too sparse for narrower classification`);
+      }
+    } else {
+      streak.length = 0;
+    }
+  }
+  return warnings;
+}
+
 function main() {
   const scorecardPath = process.env.ROUND_QUALITY_SCORECARD || 'docs/ops/round-quality-scorecard.json';
   const resolved = path.resolve(process.cwd(), scorecardPath);
@@ -92,6 +126,8 @@ function main() {
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
   }
+  const warnings = evaluateScorecardWarnings(doc);
+  for (const warning of warnings) console.error(`round quality scorecard warning: ${warning}`);
   const totals = doc.entries.reduce(
     (acc, entry) => {
       for (const metric of REQUIRED_METRICS) acc[metric] += entry.metrics[metric];

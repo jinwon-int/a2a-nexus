@@ -5,6 +5,7 @@
 // valid unchanged.
 import { BrokerError } from "./core/broker-error.js";
 import { SqliteBrokerStateStore } from "./core/store.js";
+import { failureReadbackFromError } from "./core/task-error-details.js";
 import type { InMemoryA2ABroker, TaskDiagnosticsOptions } from "./core/broker.js";
 import type { BrokerStateStore, SqliteTaskListItemProjection } from "./core/store.js";
 import type {
@@ -66,7 +67,7 @@ export interface TaskListItem {
   taskOrigin?: TaskOrigin;
   artifactIds?: string[];
   resultSummary?: string;
-  error?: Pick<NonNullable<TaskRecord["error"]>, "code" | "message">;
+  error?: Pick<NonNullable<TaskRecord["error"]>, "code" | "message"> & { details?: Record<string, unknown> };
   requeueCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -91,7 +92,13 @@ export function projectTaskListItem(task: TaskRecord): TaskListItem {
     taskOrigin: task.taskOrigin,
     artifactIds,
     resultSummary: task.result?.summary ?? task.result?.note,
-    error: task.error ? { code: task.error.code, message: task.error.message } : undefined,
+    error: task.error
+      ? {
+          code: task.error.code,
+          message: task.error.message,
+          ...(failureReadbackFromError(task.error) ? { details: failureReadbackFromError(task.error) } : {}),
+        }
+      : undefined,
     requeueCount: task.requeueCount,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,

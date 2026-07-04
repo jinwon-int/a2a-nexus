@@ -695,6 +695,74 @@ test("E2E: failure lifecycle through HTTP endpoints produces correct dashboard +
   }
 });
 
+test("E2E: fail-path preserves bounded redacted readback details", async () => {
+  const server = await startTestServer({ edgeSecret: "s" });
+  try {
+    const hdrs = h("s");
+    await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({
+        nodeId: "w1", role: "analyst",
+        capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["ws"], environments: ["research"] },
+      }),
+    });
+
+    const taskRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: h("s", { "x-a2a-requester-id": "hub-1", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-1", kind: "node", role: "hub" },
+        target: { id: "w1", kind: "node", role: "analyst" },
+        assignedWorkerId: "w1",
+        message: "e2e fail-readback-path",
+      }),
+    });
+    const task = await taskRes.json();
+
+    await fetch(`${server.baseUrl}/tasks/${task.id}/claim`, {
+      method: "POST",
+      headers: h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({ workerId: "w1" }),
+    });
+    await fetch(`${server.baseUrl}/tasks/${task.id}/start`, {
+      method: "POST",
+      headers: h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({ workerId: "w1" }),
+    });
+    const rawToken = `ghp_${"a".repeat(36)}`;
+    const failRes = await fetch(`${server.baseUrl}/tasks/${task.id}/fail`, {
+      method: "POST",
+      headers: h("s", { "x-a2a-requester-id": "w1", "x-a2a-requester-role": "analyst" }),
+      body: JSON.stringify({
+        workerId: "w1",
+        error: {
+          code: "handler_exit_nonzero",
+          message: "handler exited with code 1",
+          details: {
+            stage: "HANDLER",
+            excerpt: `GH_TOKEN=${rawToken}\n/root/.openclaw/private/session.json\nhandler failed`,
+          },
+        },
+      }),
+    });
+    assert.equal(failRes.status, 200);
+    const failed = await failRes.json();
+    assert.equal(failed.error.details.stage, "handler");
+    assert.match(failed.error.details.excerpt, /GH_TOKEN=<redacted>/);
+    assert.match(failed.error.details.excerpt, /<redacted-private-path>/);
+    assert.doesNotMatch(failed.error.details.excerpt, new RegExp(rawToken));
+
+    const list = await (await fetch(`${server.baseUrl}/tasks?status=failed`, { headers: hdrs })).json();
+    const item = list.items.find((entry: { id: string }) => entry.id === task.id);
+    assert.equal(item.error.details.stage, "handler");
+    assert.match(item.error.details.excerpt, /GH_TOKEN=<redacted>/);
+  } finally {
+    await server.close();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // E2E: Cancel at running state via HTTP
 // ---------------------------------------------------------------------------

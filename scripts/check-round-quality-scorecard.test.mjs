@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { evaluateScorecard, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
+import { evaluateScorecard, evaluateScorecardWarnings, FAILURE_CATEGORIES } from './check-round-quality-scorecard.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(repo, 'scripts/check-round-quality-scorecard.mjs');
@@ -76,9 +76,55 @@ test('zero-count categories do not require an evidence narrative', () => {
   assert.deepEqual(evaluateScorecard({ entries: [{ ...VALID_ENTRY, failureBreakdown: { scope_drift: 0 } }] }), []);
 });
 
+test('other-majority streak emits a warning without failing the scorecard', () => {
+  const doc = { entries: [
+    {
+      ...VALID_ENTRY,
+      id: 'new-other-a',
+      failureBreakdown: { other: 3, environment: 1 },
+      evidence: [
+        'failure classification: other: 3 — no repo-visible failure readback excerpts, so narrower classification is impossible',
+        'failure classification: environment: 1 — worker runtime missing binary',
+      ],
+    },
+    {
+      ...VALID_ENTRY,
+      id: 'new-other-b',
+      failureBreakdown: { other: 2 },
+      evidence: ['failure classification: other: 2 — no bounded logs surfaced'],
+    },
+  ] };
+  assert.deepEqual(evaluateScorecard(doc), []);
+  const warnings = evaluateScorecardWarnings(doc, { otherMajorityWindow: 2 });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /failureBreakdown\.other majority/);
+});
+
+test('other-majority warning can ignore legacy baseline entries', () => {
+  const doc = { entries: [
+    {
+      ...VALID_ENTRY,
+      id: 'legacy-other-a',
+      failureBreakdown: { other: 2 },
+      evidence: ['failure classification: other: 2 — legacy no logs'],
+    },
+    {
+      ...VALID_ENTRY,
+      id: 'new-other-b',
+      failureBreakdown: { other: 2 },
+      evidence: ['failure classification: other: 2 — still no logs'],
+    },
+  ] };
+  assert.deepEqual(evaluateScorecardWarnings(doc, {
+    otherMajorityWindow: 2,
+    ignoreEntryIds: ['legacy-other-a'],
+  }), []);
+});
+
 test('committed baseline scorecard validates and records the 2026-07 track', () => {
   const doc = JSON.parse(fs.readFileSync(path.join(repo, 'docs/ops/round-quality-scorecard.json'), 'utf8'));
   assert.deepEqual(evaluateScorecard(doc), []);
+  assert.deepEqual(evaluateScorecardWarnings(doc), []);
   const baseline = doc.entries.find((entry) => entry.id === 'improvement-track-2026-07');
   assert.ok(baseline, 'baseline entry for the 2026-07 improvement track must exist');
   assert.equal(baseline.metrics.carryOverCount, 2);
