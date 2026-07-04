@@ -13,7 +13,7 @@ import {
   type A2AWorkerRouteScope,
   type RequesterIdentity,
 } from "../core/request-security.js";
-import type { CreateTaskRequest } from "../core/types.js";
+import type { CreateTaskRequest, TaskRecord } from "../core/types.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { assertCreateTaskRequestParties, optionalString } from "../request-parsers.js";
 import {
@@ -25,6 +25,7 @@ import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { DEFAULT_TASK_LIST_LIMIT, numberQueryParam, taskFiltersFromUrl } from "./read-path-filters.js";
 import { sendJson } from "./response.js";
+import { parseTaskAcceptance } from "../worker-acceptance.js";
 
 export interface TasksCollectionRouteContext {
   method: string | undefined;
@@ -84,6 +85,15 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
   });
 }
 
+function assertTaskAcceptanceShapeAtCreate(body: CreateTaskRequest): void {
+  const parsed = parseTaskAcceptance({ payload: body.payload } as TaskRecord);
+  if (!parsed || !parsed.error) return;
+  const reason = typeof parsed.error.details?.reason === "string"
+    ? parsed.error.details.reason
+    : parsed.error.message;
+  throw new BrokerError("acceptance_malformed", parsed.error.message, { reason });
+}
+
 /** POST /tasks — create a task; 202 (with the created task) on a persistence-ack timeout. */
 export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext): Promise<void> {
   const body = await readJson<CreateTaskRequest>(ctx.req);
@@ -91,6 +101,7 @@ export async function handleCreateTaskRequest(ctx: TasksCollectionRouteContext):
     throw new BrokerError("bad_request", "request body is required");
   }
   assertCreateTaskRequestParties(body);
+  assertTaskAcceptanceShapeAtCreate(body);
   if (ctx.enforceRequesterIdentity) {
     assertRequesterMatchesParty(
       ctx.requesterIdentity,
