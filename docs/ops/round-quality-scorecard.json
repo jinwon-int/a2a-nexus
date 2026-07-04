@@ -295,6 +295,30 @@
         "next lane specced as V5 #1272: shared carrier/content normalization helper for both bridges + handler, parity fixture across four test suites, drop-reason excerpt exposure, V4-shape reproduction fixture (operator to provide payload field shapes); #1270 L1-L3 re-dispatch after V5"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-v5-closeout-wave-20260704",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1272 V5 implementation + fleet rollout + V4 retry closeout (PRs #1274/#1276/#1277/#1278, final revision 18d5312) — the zero_files mystery is CLOSED",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "acceptance_misconfigured": 1,
+        "environment": 1
+      },
+      "evidence": [
+        "final criterion met: V4 retry lanes on the previously-blocked nodes all succeeded with source_projection_blocked 0 and openclaw_analysis_failed 0 (aggregate 3/3 succeeded); carrier readback exposes totalFiles=19 with max_files/per_file_truncation coordinates instead of silent loss — the 7-round zero_files mystery is closed and the V2 excerpt carry-over resolves with it",
+        "root cause confirmed in code by the #1278 fix: the Hermes bridge extracted payload from truncatable message text instead of the intact structured payload file the handler wrote (payload = payloadFromStructuredEnv(...) || extractPayload(message) inverts the priority) — matching the finalizer's delivery-loss diagnosis on #1272; #1277 additionally stopped model-reported zero_files from overwriting bridge-local projection telemetry",
+        "the large-manifest canary on a previously-blocked node — added per the coverage-gap finding — caught both hotfix defects before the retry wave (canary regime working twice in one day); rollout lesson recorded operator-side: large-manifest canary is now a release blocker",
+        "independent finalizer verification: PR #1274 reviewed line-by-line with merge-unblock disposition (gongyung GO substituted by jingun blocker-catching review + bangtong GO per the #1237 contract), all suites re-run 77/77 pre-merge and 79/79 on final main",
+        "failure classification acceptance_misconfigured: 1 — read-only GO/NO-GO review lane routed down a patch/no-diff adapter path, filed as #1275; environment: 1 — one Hermes SIGABRT lane in the review wave; pre-fix zero_files reproductions during review waves are not re-counted (they are the tracked defect under repair)",
+        "V3 verdict inputs complete: spec_underspecified 0 and source_projection_empty 0 held across the V4/V5 waves in both retained logs and task readbacks — enforce promotion conditions for the shared A2A_TASK_READINESS_MODE knob are met"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
