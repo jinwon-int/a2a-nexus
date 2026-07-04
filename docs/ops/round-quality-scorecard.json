@@ -208,6 +208,25 @@
         "success criterion carried forward: next round's zero_files lanes must appear as integer counts in failureBreakdown instead of several, and zero occurrences after the enforce flip"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-rollout-canary-20260704",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "revision 176a788 live-fleet rollout and sourceBundle canary verification (operator-executed, #1257 효과 측정 1단계)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "operator-executed rollout: both live brokers rebuilt to revision 176a788, 7 persistent + 2 mobile workers synced (artifact + Docker runner env), all health checks and service states green; approval-sensitive actions (broker rebuild/recreate, worker restarts) performed directly by the operator",
+        "canary a2a-rollout-canary-20260704T041612Z, identical on both brokers: empty sourceBundle lane failed-closed (no longer flows as blocked-but-successful), normal sourceBundle lane succeeded with the rollout source-visible marker confirmed — the #1257/#1258 guards are proven in production without false positives",
+        "no repo source changes in this round — deployment and verification only; the fleet now runs every gate from the #1232 track plus the follow-up lanes (F1/F2 cutoff/#1257 guards)",
+        "standing obligation unchanged: the next organic (non-canary) dispatch wave must report integer error-code counts (source_projection_empty vs source_projection_blocked) to localize the historical zero_files root cause — recorded on #1257",
+        "boundary: no Gateway restart, DB prune/replay/migration, ACK/outbox mutation, release/tag/publish, or GitHub settings/history change per the operator rollout report"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
