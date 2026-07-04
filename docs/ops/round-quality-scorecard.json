@@ -342,6 +342,25 @@
         "enforce counters clean for the third consecutive window (spec_underspecified 0 / source_projection_empty 0 / acceptance_malformed 0); the A2A_TASK_READINESS_MODE=enforce flip remains the only open action, approval-gated on #1263 — scope-block template recommendation stays HOLD (still no scope-warn observations)"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-1263-enforce-confirmation-20260705",
+      "window": { "from": "2026-07-04", "to": "2026-07-05" },
+      "scope": "#1263 A2A_TASK_READINESS_MODE=enforce flip + confirmation canaries (operator-executed) — the convergence track and the 2026-07 quality campaign close",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 1,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "operator flipped A2A_TASK_READINESS_MODE=enforce on both brokers with restart, /livez 200 and build revision confirmed; 6/6 confirmation canaries PASS (per broker: DoR-compliant lane succeeded, underspecified patch task 400 spec_underspecified, empty source-only task 400 source_projection_empty)",
+        "first-hour watch: zero unexpected rejections of healthy lanes — the enforce flip is clean; the DoR lint (#1234) and empty-projection entry gate (#1257/#1258) are now fail-closed in production, completing the two-stage rollouts started in the #1232 track",
+        "false finding: 1 — the operator's cron log scanner misclassified 8 Node SQLite ExperimentalWarning lines (4 x 2 brokers) as unexpected canary failures; corrected publicly on #1263 before close (runtime-warning allowlist noted as a scanner lesson) — the falseFindingCount metric applies to ops tooling exactly as it applied to finalizer audits in the baseline entry",
+        "campaign ledger at close: #1263 and umbrella #1261 CLOSED, open issues 0, open PRs 0; require-red template recommendation GO, scope-block recommendation remains the sole HOLD pending scope-warn observations in future rounds",
+        "campaign totals across 17 entries: reworkIssueCount 2 and falseFindingCount 3 are dominated by the pre-gate baseline (2/2); since the gates landed, rounds recorded rework 0, false findings 1 (this entry, ops tooling), carry-overs 2 (both re-tracked and resolved) — the prevention/learning loop held through eleven consecutive evidence-compliant rounds"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
