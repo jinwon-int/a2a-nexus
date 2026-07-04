@@ -11,6 +11,7 @@ const guardPath = join(testDir, 'worker-artifact-rollout-guard.mjs');
 
 const handlerSource = `
 import { resolveWorkerModelInputs } from './worker-model-policy.mjs';
+import { sourceCarrierStats } from './lib/source-carriers.mjs';
 const HANDLER_VERSION = '0.2.12';
 const sourceSha256 = 'computed';
 export const BUILD_INFO = {
@@ -28,18 +29,26 @@ const workerModelPolicySource = `
 export function resolveWorkerModelInputs() { return { model: 'minimax-m3', fromPayload: false }; }
 `;
 
+const sourceCarriersSource = `
+export function sourceCarrierStats() { return { totalFiles: 0, totalBytes: 0 }; }
+`;
+
 function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecutable = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-artifact-'));
   const scripts = join(root, 'scripts');
   const handlers = join(root, 'handlers');
   mkdirSync(scripts);
   mkdirSync(handlers);
+  mkdirSync(join(scripts, 'lib'), { recursive: true });
+  mkdirSync(join(handlers, 'lib'), { recursive: true });
 
   const files = {
     sourceHandler: join(scripts, 'a2a-task-handler.mjs'),
     compatHandler: join(handlers, 'a2a-task-handler.mjs'),
     sourceWorkerModelPolicy: join(scripts, 'worker-model-policy.mjs'),
     compatWorkerModelPolicy: join(handlers, 'worker-model-policy.mjs'),
+    sourceCarriers: join(scripts, 'lib', 'source-carriers.mjs'),
+    compatSourceCarriers: join(handlers, 'lib', 'source-carriers.mjs'),
     sourceBridge: join(scripts, 'hermes-a2a-analysis-bridge.mjs'),
     compatBridge: join(handlers, 'hermes-a2a-analysis-bridge.mjs'),
     sourceOnlyBridge: join(scripts, 'source-only-local-analysis-bridge.mjs'),
@@ -49,6 +58,8 @@ function makeWorkerRoot({ bridgeHandlersContent = 'bridge-ok\n', handlersExecuta
   writeFileSync(files.compatHandler, handlerSource);
   writeFileSync(files.sourceWorkerModelPolicy, workerModelPolicySource);
   writeFileSync(files.compatWorkerModelPolicy, workerModelPolicySource);
+  writeFileSync(files.sourceCarriers, sourceCarriersSource);
+  writeFileSync(files.compatSourceCarriers, sourceCarriersSource);
   writeFileSync(files.sourceBridge, 'bridge-ok\n');
   writeFileSync(files.compatBridge, bridgeHandlersContent);
   writeFileSync(files.sourceOnlyBridge, 'source-only-bridge-ok\n');
@@ -99,6 +110,19 @@ test('deployed guard fails closed when handler transitive support module is miss
   assert.notEqual(result.status, 0);
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, false);
+  assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
+});
+
+
+
+test('deployed guard fails closed when source carrier support module is missing from handlers compat path (#1274)', () => {
+  const { root, files } = makeWorkerRoot();
+  rmSync(files.compatSourceCarriers);
+  const result = runGuard(root);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, false);
+  assert.match(JSON.stringify(output.results), /lib\/source-carriers\.mjs/);
   assert.equal(output.results.some((r) => r.guard === 'handler-support-compat-path' && r.ok === false), true);
 });
 

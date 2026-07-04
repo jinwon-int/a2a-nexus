@@ -38,15 +38,17 @@ RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit
 COPY --from=build /app/packages/broker/dist ./dist
 COPY packages/broker/scripts/generate-build-info.mjs ./scripts/generate-build-info.mjs
 COPY packages/broker/scripts/export-sqlite-state.mjs ./scripts/export-sqlite-state.mjs
+COPY packages/broker/scripts/lib ./scripts/lib
 # Generate dist/build-info.json from Docker build ARGs so /health.build.revision
 # and org.opencontainers.image.revision use the actual build-time values.
 RUN node scripts/generate-build-info.mjs --runtime docker
 COPY packages/broker/scripts/a2a-task-handler.mjs ./scripts/a2a-task-handler.mjs
 COPY packages/broker/scripts/worker-model-policy.mjs ./scripts/worker-model-policy.mjs
 COPY packages/broker/scripts/hermes-a2a-analysis-bridge.mjs ./scripts/hermes-a2a-analysis-bridge.mjs
-RUN mkdir -p /var/lib/a2a-broker ./handlers \
+RUN mkdir -p /var/lib/a2a-broker ./handlers ./handlers/lib \
   && cp scripts/a2a-task-handler.mjs ./handlers/a2a-task-handler.mjs \
   && cp scripts/worker-model-policy.mjs ./handlers/worker-model-policy.mjs \
+  && cp scripts/lib/source-carriers.mjs ./handlers/lib/source-carriers.mjs \
   && cp scripts/hermes-a2a-analysis-bridge.mjs ./handlers/hermes-a2a-analysis-bridge.mjs \
   && chown -R node:node /app /var/lib/a2a-broker
 USER node
