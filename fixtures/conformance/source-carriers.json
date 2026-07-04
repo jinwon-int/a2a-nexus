@@ -1,0 +1,38 @@
+{
+  "fixtureId": "a2a-nexus.conformance.source-carriers.v1",
+  "issue": 1272,
+  "repo": "jinwon-int/a2a-nexus",
+  "requiredPaths": [
+    "ISSUE-1270.md",
+    "V2-CANARY-EVIDENCE.md",
+    "packages/broker/scripts/hermes-a2a-analysis-bridge.mjs"
+  ],
+  "payload": {
+    "sourceBundle": {
+      "files": [
+        { "repo": "jinwon-int/a2a-nexus", "path": "ISSUE-1270.md", "content": "issue 1270 content marker" },
+        { "repo": "jinwon-int/a2a-nexus", "path": "bundle-contentText.md", "contentText": "bundle contentText marker" },
+        { "repo": "jinwon-int/a2a-nexus", "path": "bundle-text.md", "text": "bundle text marker" },
+        { "repo": "jinwon-int/a2a-nexus", "path": "bundle-summary.md", "summary": "bundle summary marker" }
+      ]
+    },
+    "sourceFiles": [
+      { "repo": "jinwon-int/a2a-nexus", "path": "V2-CANARY-EVIDENCE.md", "content": "sourceFiles content marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceFiles-contentText.md", "contentText": "sourceFiles contentText marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceFiles-text.md", "text": "sourceFiles text marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceFiles-summary.md", "summary": "sourceFiles summary marker" }
+    ],
+    "sourceEvidence": [
+      { "repo": "jinwon-int/a2a-nexus", "path": "packages/broker/scripts/hermes-a2a-analysis-bridge.mjs", "content": "sourceEvidence content marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceEvidence-contentText.md", "contentText": "sourceEvidence contentText marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceEvidence-text.md", "text": "sourceEvidence text marker" },
+      { "repo": "jinwon-int/a2a-nexus", "path": "sourceEvidence-summary.md", "summary": "sourceEvidence summary marker" }
+    ]
+  },
+  "v4ReproductionShape": {
+    "carrierCopies": 2,
+    "itemsPerCarrier": 8,
+    "contentField": "content",
+    "minimumTotalBytes": 100000
+  }
+}

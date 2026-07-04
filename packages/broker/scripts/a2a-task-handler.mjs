@@ -14,6 +14,7 @@ import {
   resolveWorkerModelInputs,
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
+import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 
 const HANDLER_VERSION = "0.2.14";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -587,9 +588,23 @@ function writeAnalysisBridgeInputFiles(task, payload) {
   const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-bridge-"));
   const taskFile = join(dir, "task.json");
   const payloadFile = join(dir, "payload.json");
-  writeFileSync(taskFile, `${JSON.stringify(task, null, 2)}\n`, "utf8");
-  writeFileSync(payloadFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  return { dir, taskFile, payloadFile };
+  const taskText = `${JSON.stringify(task, null, 2)}\n`;
+  const payloadText = `${JSON.stringify(payload, null, 2)}\n`;
+  writeFileSync(taskFile, taskText, "utf8");
+  writeFileSync(payloadFile, payloadText, "utf8");
+  let payloadFileStats = sourceCarrierStats(payload);
+  try {
+    payloadFileStats = sourceCarrierStats(JSON.parse(readFileSync(payloadFile, "utf8")));
+  } catch {
+    // Keep receipt stats if readback is unexpectedly unavailable; spawn will fail separately if files are unreadable.
+  }
+  const carrierStats = {
+    taskReceipt: sourceCarrierStats(payload),
+    payloadFile: payloadFileStats,
+    payloadFileBytes: Buffer.byteLength(payloadText, "utf8"),
+    lossyRecoveryUsed: false,
+  };
+  return { dir, taskFile, payloadFile, sourceCarrierStats: carrierStats };
 }
 
 function githubIssueTargetFromTask(task) {
@@ -769,6 +784,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
         ...env,
         A2A_ANALYSIS_TASK_FILE: bridgeFiles.taskFile,
         A2A_ANALYSIS_PAYLOAD_FILE: bridgeFiles.payloadFile,
+        A2A_ANALYSIS_SOURCE_CARRIER_STATS: JSON.stringify(bridgeFiles.sourceCarrierStats),
       },
       encoding: "utf8",
       maxBuffer: 50 * 1024 * 1024,
@@ -836,6 +852,26 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     };
   }
 
+  const responseRecovery = response.__a2aJsonRecovery;
+  const recoveredProjection = response.sourceProjection && typeof response.sourceProjection === "object" && !Array.isArray(response.sourceProjection)
+    ? response.sourceProjection
+    : {};
+  if (responseRecovery?.lossy && normalizedBridgeAnalysisStatus(response.status) === "blocked" && safeText(recoveredProjection.quality, "") === "zero_files") {
+    return {
+      error: {
+        code: "payload_recovery_lossy",
+        message: "analysis bridge response required lossy brace recovery while reporting zero_files source projection",
+        details: {
+          stage: "payload_recovery",
+          recovery: responseRecovery,
+          sourceProjection: recoveredProjection,
+          sourceCarrierStats: bridgeFiles.sourceCarrierStats,
+          buildInfo: BUILD_INFO,
+        },
+      },
+    };
+  }
+
   const status = normalizedBridgeAnalysisStatus(response.status);
   const analysisSummary = safeText(response.summary, safeText(task.message, "analysis completed"));
   const postGithubComment = shouldPostAnalysisEvidenceComment(task, env);
@@ -850,6 +886,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     evidenceRefs: normalizeStringArray(response.evidenceRefs),
     ...(response.sourceProjection && typeof response.sourceProjection === "object" && !Array.isArray(response.sourceProjection) ? { sourceProjection: response.sourceProjection } : {}),
     recoverySource: normalizedAnalysisRecoverySource(response.recoverySource),
+    sourceCarrierStats: bridgeFiles.sourceCarrierStats,
     bridgeReportedAdapter: safeText(response.bridgeAdapter, undefined),
     requestedModel: safeText(response.requestedModel, undefined),
     requestedThinking: safeText(response.requestedThinking, undefined),
@@ -1280,18 +1317,36 @@ function stripCodeFences(text) {
   return match ? match[1].trim() : trimmed;
 }
 
+function attachJsonRecovery(value, recovery) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    Object.defineProperty(value, "__a2aJsonRecovery", {
+      value: recovery,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return value;
+}
+
 function parseJsonFromLooseText(text) {
   const trimmed = stripCodeFences(text);
-  const candidates = [trimmed];
+  const candidates = [{ text: trimmed, recovery: { lossy: false, trimmedBytes: 0 } }];
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
   if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+    const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+    candidates.push({
+      text: candidate,
+      recovery: {
+        lossy: candidate.length !== trimmed.length,
+        trimmedBytes: Buffer.byteLength(trimmed, "utf8") - Buffer.byteLength(candidate, "utf8"),
+      },
+    });
   }
 
   for (const candidate of candidates) {
     try {
-      return JSON.parse(candidate);
+      return attachJsonRecovery(JSON.parse(candidate.text), candidate.recovery);
     } catch {
       // keep trying looser candidates
     }
