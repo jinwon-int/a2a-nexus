@@ -1154,7 +1154,16 @@ function main() {
   let response;
   try {
     response = normalizeResponse(parsed, { recoverySource: hermesResult.recoverySource });
-    if (!response.sourceProjection && promptBundle.sourceProjection) response.sourceProjection = promptBundle.sourceProjection;
+    if (promptBundle.sourceProjection) {
+      const reportedSourceProjection = response.sourceProjection && typeof response.sourceProjection === "object" && !Array.isArray(response.sourceProjection)
+        ? response.sourceProjection
+        : undefined;
+      if (reportedSourceProjection) response.bridgeReportedSourceProjection = reportedSourceProjection;
+      response.sourceProjection = {
+        ...(reportedSourceProjection || {}),
+        ...promptBundle.sourceProjection,
+      };
+    }
   } catch (error) {
     die(`invalid Hermes analysis JSON schema: ${error.message}`);
   }

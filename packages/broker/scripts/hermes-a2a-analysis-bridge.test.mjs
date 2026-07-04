@@ -113,6 +113,59 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
   }
 });
 
+
+test("Hermes A2A analysis bridge treats local source projection telemetry as authoritative (#1272)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-authoritative-projection-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({",
+      "  status: 'blocked',",
+      "  summary: 'model claimed zero files despite prompt telemetry',",
+      "  findings: [], risks: [], recommendations: [], evidenceRefs: [],",
+      "  sourceProjection: { quality: 'zero_files' }",
+      "}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "You are A2A worker bangtong. Complete this read-only A2A analysis task.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "readonly-analysis",
+        noLive: true,
+        sourceOnly: true,
+        sourceBundle: {
+          repo: "jinwon-int/a2a-nexus",
+          files: [{ path: "fixtures/canary.ts", content: "export const canary = true;" }],
+        },
+      }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.bridgeReportedSourceProjection.quality, "zero_files");
+    assert.notEqual(payload.sourceProjection.quality, "zero_files");
+    assert.equal(payload.sourceProjection.canonicalFileCount, 1);
+    assert.equal(payload.sourceProjection.projectedFileCount, 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge honors explicit analysis provider/model env (#766)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-model-policy-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
