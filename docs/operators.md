@@ -65,6 +65,20 @@ When a round lane fails or a closeout PR is rejected, the finalizer records a fa
 | `scope_drift` | The change stepped outside the declared scope (`diffHygiene.scopeDrift`). Forbidden paths remain the security boundary; scope drift is a quality/spec boundary and does not replace forbidden-path blocking. Accumulation points at declaredScope discipline (#1234/#1235). |
 | `other` | Anything else — requires a free-text explanation in the evidence line; reclassify when better information surfaces. |
 
+#### Failed-lane readback contract (#1248)
+
+When a lane fails, the PR body or finalizer disposition readback must preserve enough bounded evidence for a later finalizer to choose a category narrower than `other` when possible. Each failed lane entry should include:
+
+- lane/task id;
+- failure stage: `dispatch`, `projection`, `handler`, `acceptance`, or `verification`;
+- exit code or broker error code;
+- finalizer category from the closed set above;
+- a bounded, redacted excerpt from the failure output.
+
+The broker standard field is `result.error.details` / `task.error.details` with optional `stage` and `excerpt` keys. `excerpt` must be operator-safe: no raw prompts, session dumps, secrets, personal data, private host paths, provider targets, or full unbounded logs. The broker normalizer bounds and redacts `excerpt`; writers should still submit only the minimum lines needed to explain the failure.
+
+`other` is still allowed, but it must explain why a narrower category is impossible. The scorecard gate prints a warning when consecutive new scorecard entries have `failureBreakdown.other` as the majority, because that pattern means failed-lane readback is not giving the finalizer enough repo-visible evidence.
+
 ## Independent review evidence for medium+ tasks (#1237)
 
 Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.

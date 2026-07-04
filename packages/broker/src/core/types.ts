@@ -422,6 +422,12 @@ export interface TaskResult {
 export interface TaskError {
   code?: string;
   message: string;
+  /**
+   * Optional structured diagnostics. For repo-visible failed-lane readback,
+   * `stage` is one of dispatch/projection/handler/acceptance/verification and
+   * `excerpt` is bounded+redacted by the broker normalizer. Other keys remain
+   * additive metadata and must not contain raw secrets or private prompts.
+   */
   details?: Record<string, unknown>;
 }
 

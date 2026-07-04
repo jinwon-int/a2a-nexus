@@ -5,6 +5,7 @@
 import { uniqueIds } from "./broker-helpers.js";
 import { normalizeOwnershipString } from "./broker-task-request-normalizers.js";
 import { normalizeTaskWakeState } from "./broker-wake-normalizers.js";
+import { normalizeFailureReadbackDetails } from "./task-error-details.js";
 import type { TaskError, TaskRecord, TaskResult, TaskValidationPayload } from "./types.js";
 
 export function normalizeTaskPayload(
@@ -162,7 +163,7 @@ export function normalizeTaskError(error: TaskError | undefined): TaskError {
   return {
     code: error.code,
     message: error.message || "task failed",
-    details: error.details ? { ...error.details } : undefined,
+    details: normalizeFailureReadbackDetails(error.details),
   };
 }
 
