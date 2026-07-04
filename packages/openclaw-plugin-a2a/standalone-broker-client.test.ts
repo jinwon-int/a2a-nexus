@@ -27,6 +27,7 @@ import {
   A2ABrokerClientError,
   A2ABrokerMalformedResponseError,
   normalizeA2ABrokerBaseUrl,
+  parseA2ABrokerTaskSseFrames,
   type A2ABrokerTaskRecord,
 } from "./dist/standalone-broker-client.js";
 
@@ -75,6 +76,23 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+async function collectAsync<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const rows: T[] = [];
+  for await (const row of iterable) rows.push(row);
+  return rows;
+}
+
+describe("parseA2ABrokerTaskSseFrames", () => {
+  it("strips frame-boundary newlines without regex backtracking", async () => {
+    const noisyBoundary = "\r\n".repeat(2048);
+    const frames = await collectAsync(parseA2ABrokerTaskSseFrames([
+      `${noisyBoundary}event: task\ndata: {\"ok\":true}${noisyBoundary}\n\n`,
+    ]));
+
+    assert.deepEqual(frames, [{ event: "task", data: '{"ok":true}' }]);
+  });
+});
 
 // A legacy broker task-record envelope as returned by the REST task verbs.
 function legacyTaskRecord(overrides: Partial<A2ABrokerTaskRecord> = {}): A2ABrokerTaskRecord {

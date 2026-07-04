@@ -775,8 +775,23 @@ export async function* parseA2ABrokerTaskSseFrames(
 ): AsyncIterable<SseFrame> {
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  const stripFrameBoundaryNewlines = (value: string): string => {
+    let start = 0;
+    let end = value.length;
+    while (start < end) {
+      const code = value.charCodeAt(start);
+      if (code !== 10 && code !== 13) break;
+      start += 1;
+    }
+    while (end > start) {
+      const code = value.charCodeAt(end - 1);
+      if (code !== 10 && code !== 13) break;
+      end -= 1;
+    }
+    return start === 0 && end === value.length ? value : value.slice(start, end);
+  };
   const flush = (raw: string): SseFrame | undefined => {
-    const trimmed = raw.replace(/^\r?\n+|\r?\n+$/g, "");
+    const trimmed = stripFrameBoundaryNewlines(raw);
     if (!trimmed) {
       return undefined;
     }

@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
@@ -22,7 +22,7 @@ const RUNBOOK_PATH = resolve(REPO_ROOT, 'docs/caddy-502-log-redaction.md');
 
 function runPreflight(args = []) {
   try {
-    const stdout = execSync(`node ${PREFLIGHT_PATH} ${args.join(' ')}`, {
+    const stdout = execFileSync(process.execPath, [PREFLIGHT_PATH, ...args], {
       cwd: REPO_ROOT,
       encoding: 'utf-8',
       timeout: 10_000,
