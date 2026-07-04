@@ -189,6 +189,25 @@
         "failure classification environment: 1 — one lane failed with handler_exit_nonzero per the readback; zero_files projection lanes (5th consecutive round) still reported as several without per-lane counts despite the #1248 contract existing — next round should instruct workers/finalizers to emit the 5-field failed-lane readback, and the zero_files root cause deserves its own dispatch-infra lane"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-1257-closeout-2026-07-04",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1257 zero_files source-projection root-cause lane closeout (dispatch-infra track)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "implemented via PR #1258 (merge c4f96e9): source_projection_empty entry gate counting all three source carriers with dispatch-stage count-only excerpt (warn default, enforce rollout shared with #1234), and source_projection_blocked task failure converting blocked-but-successful bridge runs into real failures carrying the #1248 stage/excerpt contract",
+        "sixth consecutive evidence-compliant round: pre-change RED probes in the PR body (enforce-mode 201-accept of an empty source-only analysis task; bridge zero_files without failureReadback)",
+        "independent finalizer review on merged main: task-readiness 12/12 + bridge/handler 46/46, five reviewer boundary probes exact (empty rejected with dispatch-stage excerpt, either carrier ok, plain analyze exempt, patch DoR regression-free), verdict PASS (#1257 review comment)",
+        "discovery status: the localization mechanism is structural (empty-at-dispatch vs lost-before-worker distinguished by error code); the root-cause finding comment on #1257 is pending the next live round, whose evaluation must record which code fired",
+        "success criterion carried forward: next round's zero_files lanes must appear as integer counts in failureBreakdown instead of several, and zero occurrences after the enforce flip"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
