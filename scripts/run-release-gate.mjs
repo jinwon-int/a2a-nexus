@@ -8,9 +8,12 @@
 // Flags:
 //   --list   Print the resolved file list (manifest order) and exit 0. Used for
 //            before/after list-equality verification. No tests are run.
+//   --include-archived
+//            Opt into historical/archived manifest entries. Used when an operator
+//            intentionally wants to re-run completed round validators.
 //
-// Per-entry `"archived": true` skips that entry loudly (one warning line). By
-// default nothing is archived: behavior is preserved exactly.
+// Per-entry `"archived": true` skips that entry loudly (one warning line) by
+// default, but keeps the file available through `--include-archived`.
 
 import { readFileSync } from 'node:fs';
 import { existsSync } from 'node:fs';
@@ -80,13 +83,13 @@ export function loadManifest(manifestPath = MANIFEST_PATH) {
 }
 
 // Returns { active: [...files], skipped: [{file, ...}] }.
-export function resolveEntries(manifest, { repoRoot = REPO_ROOT } = {}) {
+export function resolveEntries(manifest, { repoRoot = REPO_ROOT, includeArchived = false } = {}) {
   const active = [];
   const skipped = [];
   const missing = [];
 
   for (const entry of manifest.entries) {
-    if (entry.archived === true) {
+    if (entry.archived === true && !includeArchived) {
       skipped.push(entry);
       continue;
     }
@@ -108,15 +111,20 @@ export function resolveEntries(manifest, { repoRoot = REPO_ROOT } = {}) {
 function main() {
   const args = process.argv.slice(2);
   const listOnly = args.includes('--list');
+  const includeArchived = args.includes('--include-archived');
+  const unknownArgs = args.filter((arg) => !['--list', '--include-archived'].includes(arg));
+  if (unknownArgs.length) fail(`unknown argument(s): ${unknownArgs.join(', ')}`);
 
   const manifest = loadManifest();
-  const { active, skipped } = resolveEntries(manifest);
+  const { active, skipped } = resolveEntries(manifest, { includeArchived });
 
-  for (const entry of skipped) {
-    console.warn(
-      `release-gate: SKIP archived entry ${entry.file}` +
-        (entry.round ? ` (round ${entry.round})` : ''),
-    );
+  if (!includeArchived) {
+    for (const entry of skipped) {
+      console.warn(
+        `release-gate: SKIP archived entry ${entry.file}` +
+          (entry.round ? ` (round ${entry.round})` : ''),
+      );
+    }
   }
 
   if (listOnly) {

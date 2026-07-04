@@ -172,8 +172,9 @@
     {
       "file": "scripts/archive/check-team1-workerDelta-public-readiness-after-78261-close.test.mjs",
       "class": "gate",
-      "round": null,
-      "note": "Public readiness after issue #78261 close; references an issue id, not an rNN round, kept as gate (conservative)."
+      "round": "issue-78261",
+      "note": "Public readiness after issue #78261 close; references an issue id, not an rNN round, kept as gate (conservative).",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-public-readiness-gate-synthesis.test.mjs",
@@ -196,110 +197,128 @@
     {
       "file": "scripts/archive/check-team1-workerDelta-plane-gates-527-497-294.test.mjs",
       "class": "gate",
-      "round": null,
-      "note": "Plane gates for issues 527/497/294; issue ids, not an rNN round, kept as gate (conservative)."
+      "round": "issues-527-497-294",
+      "note": "Plane gates for issues 527/497/294; issue ids, not an rNN round, kept as gate (conservative).",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-plane-gates-527-497-294-r22-lightweight.test.mjs",
       "class": "round",
       "round": "team1-workerDelta-r22",
-      "note": "Team1 workerDelta round 22 lightweight plane-gates variant."
+      "note": "Team1 workerDelta round 22 lightweight plane-gates variant.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-stability-r7-risk-review.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r7",
-      "note": "Team2 workerEta round 7 stability risk review."
+      "note": "Team2 workerEta round 7 stability risk review.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r9-concise-terminal-brief-runtime-readiness.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r9",
-      "note": "Team2 workerEta round 9 concise terminal brief runtime readiness."
+      "note": "Team2 workerEta round 9 concise terminal brief runtime readiness.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r9b-terminal-brief-activation-readiness.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r9b",
-      "note": "Team2 workerEta round 9b terminal brief activation readiness."
+      "note": "Team2 workerEta round 9b terminal brief activation readiness.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r8-ops-dashboard-readiness.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r8",
-      "note": "Team2 workerEta round 8 ops dashboard readiness."
+      "note": "Team2 workerEta round 8 ops dashboard readiness.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r11-libero-cross-team-risk-review.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r11",
-      "note": "Team2 workerEta round 11 cross-team risk review."
+      "note": "Team2 workerEta round 11 cross-team risk review.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r12-libero-cross-team-origin-routing-risk-review.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r12",
-      "note": "Team2 workerEta round 12 cross-team origin routing risk review."
+      "note": "Team2 workerEta round 12 cross-team origin routing risk review.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r13-terminal-brief-realround-libero.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r13",
-      "note": "Team2 workerEta round 13 terminal brief realround."
+      "note": "Team2 workerEta round 13 terminal brief realround.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r15-structured-terminal-brief-libero.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r15",
-      "note": "Team2 workerEta round 15 structured terminal brief."
+      "note": "Team2 workerEta round 15 structured terminal brief.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-r15-allhands-structured-terminal-brief-lane.test.mjs",
       "class": "round",
       "round": "team1-workerDelta-r15",
-      "note": "Team1 workerDelta round 15 all-hands structured terminal brief lane."
+      "note": "Team1 workerDelta round 15 all-hands structured terminal brief lane.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r16-terminal-brief-libero.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r16",
-      "note": "Team2 workerEta round 16 terminal brief."
+      "note": "Team2 workerEta round 16 terminal brief.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r20-libero-go-nogo-retry.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r20",
-      "note": "Team2 workerEta round 20 go/no-go retry."
+      "note": "Team2 workerEta round 20 go/no-go retry.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r22-broker-lightweight-libero.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r22",
-      "note": "Team2 workerEta round 22 broker lightweight."
+      "note": "Team2 workerEta round 22 broker lightweight.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team2-workerEta-r23-terminal-brief-taskflow-monorepo-libero.test.mjs",
       "class": "round",
       "round": "team2-workerEta-r23",
-      "note": "Team2 workerEta round 23 terminal brief taskflow monorepo."
+      "note": "Team2 workerEta round 23 terminal brief taskflow monorepo.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerGamma-r25-ops-readiness-terminal-brief.test.mjs",
       "class": "round",
       "round": "team1-workerGamma-r25",
-      "note": "Team1 workerGamma round 25 ops readiness terminal brief."
+      "note": "Team1 workerGamma round 25 ops readiness terminal brief.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-r25-team2-terminal-brief-ops-readiness-libero.test.mjs",
       "class": "round",
       "round": "team1-workerDelta-r25",
-      "note": "Team1 workerDelta round 25 team2 terminal brief ops readiness."
+      "note": "Team1 workerDelta round 25 team2 terminal brief ops readiness.",
+      "archived": true
     },
     {
       "file": "scripts/archive/check-team1-workerDelta-r27-canary-hardening-libero.test.mjs",
       "class": "round",
       "round": "team1-workerDelta-r27",
-      "note": "Team1 workerDelta round 27 canary hardening."
+      "note": "Team1 workerDelta round 27 canary hardening.",
+      "archived": true
     },
     {
       "file": "scripts/check-team1-dispatch-wrapper-runbook.test.mjs",
