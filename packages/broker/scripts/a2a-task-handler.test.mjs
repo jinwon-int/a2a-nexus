@@ -657,6 +657,62 @@ process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n")
   }
 });
 
+test("github-read-only-validation prefers analysis bridge over docker patch/no-diff routing (#1275)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-readonly-routing-"));
+  const runner = join(dir, "fake-runner.mjs");
+  const bin = join(dir, "fake-analysis.mjs");
+  writeFileSync(runner, `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ ok: true, status: "done", noDiff: true }) + "\\n");
+`);
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "read-only review reached analysis bridge instead of docker patch path",
+  findings: ["analysis bridge invoked"],
+  risks: ["none"],
+  recommendations: ["continue"],
+  evidenceRefs: ["#1275"]
+};
+process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }) + "\\n");
+`);
+  chmodSync(runner, 0o755);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-readonly-routing",
+      intent: "analyze",
+      assignedWorkerId: "gongyung",
+      message: "GO/NO-GO read-only review should not require a patch diff",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1275",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_SCOPE: "all-github",
+      A2A_DOCKER_RUNNER_BIN: runner,
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "1",
+      A2A_NODE_ID: "gongyung",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.output.analysisKind, "analysis_bridge");
+    assert.equal(result.result.output.bridgeAdapter, "openclaw");
+    assert.equal(result.result.output.analysisStatus, "done");
+    assert.equal(result.result.output.findings[0], "analysis bridge invoked");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("analysis bridge source projection blocks fail the task with stage/excerpt readback (#1257)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-source-projection-block-"));
   const bin = join(dir, "source-projection-block.mjs");
