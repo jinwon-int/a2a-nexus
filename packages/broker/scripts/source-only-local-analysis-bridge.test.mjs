@@ -83,6 +83,27 @@ test("source-only local bridge records projection failure readback details for z
   assert.match(analysis.failureReadback.excerpt, /canonicalFileCount=0/);
 });
 
+for (const [carrierName, carrierPayload] of [
+  ["sourceFiles", { sourceBundle: { files: [] }, sourceFiles: [
+    { path: "health-check-request.md", contentText: "runId: round-1147\nliveActionsAllowed: false\nproviderCanaryAllowed: false" },
+    { path: "capacity-snapshot.json", contentText: "{\"onlineWorkers\":[{\"nodeId\":\"workertheta\"}]}" },
+  ] }],
+  ["sourceEvidence", { sourceBundle: { files: [] }, sourceEvidence: [
+    { path: "health-check-request.md", text: "runId: round-1147\nliveActionsAllowed: false\nproviderCanaryAllowed: false" },
+    { path: "capacity-snapshot.json", text: "{\"onlineWorkers\":[{\"nodeId\":\"workertheta\"}]}" },
+  ] }],
+]) {
+  test(`source-only local bridge consumes ${carrierName} as an equivalent source carrier (#1265)`, () => {
+    const { child, envelope } = runBridge(bridgePath, carrierPayload);
+    assert.equal(child.status, 0, child.stderr);
+    const analysis = analysisFromEnvelope(envelope);
+    assert.equal(analysis.status, "done");
+    assert.equal(analysis.sourceProjection.quality, "complete");
+    assert.equal(analysis.sourceProjection.canonicalFileCount, 2);
+    assert.ok(analysis.evidenceRefs.some((ref) => ref.endsWith(":health-check-request.md")));
+  });
+}
+
 test("source-only local bridge blocks when required source is missing (#1147)", () => {
   const { child, envelope } = runBridge(bridgePath, {
     sourceProjectionPolicy: { requiredPaths: ["missing-required.md"] },
