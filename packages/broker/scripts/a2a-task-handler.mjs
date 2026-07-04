@@ -2098,20 +2098,20 @@ export function handleTask(task, env = process.env) {
     return overrideValidation;
   }
 
-  if (shouldUseDockerRunner(task, env)) {
-    return runDockerRunner(task, env);
-  }
-
-  if (shouldUseOpenClawBridge(task, env)) {
-    return runOpenClawBridge(task, env);
-  }
-
   if (shouldUseDecisionDialecticBridge(task, env)) {
     return runDecisionDialecticBridge(task, env);
   }
 
   if (shouldUseOpenClawAnalysisBridge(task, env)) {
     return runOpenClawAnalysisBridge(task, env);
+  }
+
+  if (shouldUseDockerRunner(task, env)) {
+    return runDockerRunner(task, env);
+  }
+
+  if (shouldUseOpenClawBridge(task, env)) {
+    return runOpenClawBridge(task, env);
   }
 
   return handleBuiltinTask(task, env);
