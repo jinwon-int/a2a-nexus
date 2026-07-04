@@ -227,6 +227,30 @@
         "boundary: no Gateway restart, DB prune/replay/migration, ACK/outbox mutation, release/tag/publish, or GitHub settings/history change per the operator rollout report"
       ],
       "recordedAt": "2026-07-04"
+    },
+    {
+      "id": "a2a-nexus-v1-codeql-triage-20260704",
+      "window": { "from": "2026-07-04", "to": "2026-07-04" },
+      "scope": "#1262 V1 organic observation round: CodeQL triage 21/21 + gate dogfooding under umbrella #1261",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 11,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "implemented via PR #1264 (merge 9bff3ad): all 21 open CodeQL alerts classified (3 fixed / 2 hardened / 12 false-positive / 4 acceptable-risk) with per-alert rationale in docs/ops/codeql-triage-2026-07.md; 3 real fixes verified line-by-line by the reviewer (ReDoS linear scanner + 2048-CRLF regression test, escapeRegExp on both dynamic regexes, execSync to execFileSync) — plugin 15/15 and preflight 11/11 re-run green",
+        "first integer-count readback in scorecard history: the #1257 discovery data landed — source_projection_empty 0, source_projection_blocked 7 — eliminating the dispatch-build hypothesis and localizing the historical zero_files loss to the broker-to-worker side (#1257 discovery comment)",
+        "reviewer code finding during evaluation: intake/consumption contract mismatch — the readiness gate accepts three source carriers while the bridge reads only sourceBundle.files; specced as V2 #1265 with the excerpt-confirmation step (no guessing)",
+        "failure classification environment: 11 — 7 source_projection_blocked lanes (reclassify per V2 excerpt confirmation if the carrier mismatch explains them as implementation_defect), 1 bounded blocked analysis, 1 adapter failure, 2 handler failures; acceptance_misconfigured: 1 — invalid acceptance shape in the first manifest, corrected in R2 (2nd occurrence of this category: dispatch-template acceptance lint is a candidate)",
+        "uncounted with reason: 1 lane non-terminal at readback cutoff; 5 lanes on the second broker lost readback because the readback helper was not provisioned there (ops gap, noted in the #1262 review)",
+        "V3 inputs partially ready: all lanes carried DoR payloads; broker warn-log tallies (spec_underspecified / source_projection_empty counts) still need operator collection before the enforce verdict on #1263"
+      ],
+      "recordedAt": "2026-07-04"
     }
   ]
 }
