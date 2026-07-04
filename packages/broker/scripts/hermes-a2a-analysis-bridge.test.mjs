@@ -114,6 +114,59 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
 });
 
 
+
+test("Hermes A2A analysis bridge prefers structured payload file over truncated prompt payload (#1272)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-payload-file-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const payloadPath = join(tempDir, "payload.json");
+
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "readonly-analysis",
+      noLive: true,
+      sourceOnly: true,
+      sourceBundle: {
+        repo: "jinwon-int/a2a-nexus",
+        files: [{ path: "fixtures/large-canary.ts", content: "export const largeCanary = 'from-payload-file';" }],
+      },
+    }));
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "if (!prompt.includes('fixtures/large-canary.ts')) throw new Error('payload-file source path missing from prompt');",
+      "if (!prompt.includes('from-payload-file')) throw new Error('payload-file source content missing from prompt');",
+      "console.log(JSON.stringify({status:'done',summary:'payload file source projected',findings:[],risks:[],recommendations:[],evidenceRefs:['fixtures/large-canary.ts']}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "You are A2A worker bangtong. Complete this read-only A2A analysis task.",
+      "Payload JSON:\n" + JSON.stringify({ mode: "readonly-analysis", noLive: true, sourceOnly: true, sourceBundle: { files: [] } }),
+    ].join("\n\n");
+
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.sourceProjection.canonicalFileCount, 1);
+    assert.equal(payload.sourceProjection.projectedFileCount, 1);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge treats local source projection telemetry as authoritative (#1272)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-authoritative-projection-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");

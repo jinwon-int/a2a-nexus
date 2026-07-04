@@ -66,6 +66,16 @@ function parseJsonObject(text, label = "JSON") {
   }
 }
 
+function readJsonObjectFile(path, label) {
+  const filePath = safeText(path, "");
+  if (!filePath) return null;
+  return parseJsonObject(readFileSync(filePath, "utf8"), label);
+}
+
+function payloadFromStructuredEnv(env = process.env) {
+  return readJsonObjectFile(env.A2A_ANALYSIS_PAYLOAD_FILE, "A2A_ANALYSIS_PAYLOAD_FILE");
+}
+
 function extractBalancedJson(text, startIndex) {
   const first = text.slice(startIndex).search(/[\[{]/);
   if (first < 0) return "";
@@ -1118,7 +1128,7 @@ function main() {
 
   let payload;
   try {
-    payload = extractPayload(message);
+    payload = payloadFromStructuredEnv(process.env) || extractPayload(message);
   } catch (error) {
     die(error.message);
   }
