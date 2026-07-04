@@ -588,6 +588,16 @@
       "note": "Keeps this report-only inventory in lockstep with scripts/release-gate.mjs so future gate tiering stays source-backed."
     },
     {
+      "name": "release-gate-manifest-coverage",
+      "command": "node",
+      "args": [
+        "scripts/check-release-gate-manifest-coverage.mjs"
+      ],
+      "tier": "core",
+      "retirement": "keep",
+      "note": "Absence-sweep gate for #1261 L1/#1270 L2: scripts/*.test.mjs and scripts/lib/*.test.mjs must be registered in the release-gate manifest, tier inventory, or an implementation command; no root npm script added so root script budget stays 100/100."
+    },
+    {
       "name": "script-surface-manifest",
       "command": "node",
       "args": [
