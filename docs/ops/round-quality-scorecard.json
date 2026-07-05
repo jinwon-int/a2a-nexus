@@ -576,6 +576,34 @@
         "operational: the recommended absorb-then-canary redeploy happened at the DW3 merge revision with post-deploy smokes PASS — production is current through DW3, with only L-broker-6 (merged after) pending the next deploy window; broker.ts 3075→3046, store.ts 2880 remains, #1289 correctly open"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da1-lbroker7-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA1 #1293 dialectic substance warnings (#1334) + #1289 L-broker-7 capability profile helpers (#1335) — two-team design rounds per lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 11,
+        "dispatchedLaneCount": 20
+      },
+      "failureBreakdown": {
+        "environment": 9
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 560ccd8: broker suite 3712/3712 pass; DA1 audit — all four deterministic checks match the #1293 spec (contradiction cross-reference via token overlap or explicit thesis-part reference incl. Korean terms, independent evidenceRef, non-trivial failureModes, rebuttal concededRisks/residualRisks), warn-default with opt-in enforce via domainContext.decisionDialecticSubstanceGate throwing antithesis_not_substantive/rebuttal_not_substantive, warnings projected to contract and read-model, prompt-spec aligned; L-broker-7 is a clean parameter-injected pure move (broker.ts 3046→3043)",
+        "evidence-gate deviation 1: DA1 (#1334) is a contract change whose PR body again carries GREEN only — no pre-change RED log; second consecutive contract-lane deviation (DA2 #1329 was the first) after the long compliant streak. Per the #1236 precedent (two consecutive retro-fills escalated the check to blocking), the finalizer is repeating the escalation: contract-lane PRs must show the new tests failing on the base tree, and the next deviation should block the verdict rather than be recorded",
+        "two non-blocking DA1 notes: enforce mode throws before appendSubstanceWarnings so a rejected patch carries no per-code detail (operators must re-run in warn to see which check failed — worth a follow-up line when enforce promotion is considered); the #1335 body's full-suite count (3708) was run against a pre-DA1 checkout while its base already carried 3712 — the tip is green so no defect, but suite counts in PR bodies should be from the PR's own base",
+        "failure classification environment: 9 — handler_exit_nonzero across all four design rounds (DA1 T1 2 + T2 1; L-broker-7 T1 4 + T2 2), a 45% infra-failure rate in the worst round. The trend flagged in the L-broker-6 verdict has fully materialized: the finalizer's stated criterion for a dedicated environment-diagnosis pass (same failure class recurring next round) is met — recommended before the next dispatch wave rather than more retry rounds",
+        "dialectic health counters: dispatched 20 / substantive 11 (DA1 7/10, L-broker-7 4/10) — classifiable from per-team counts plus failure classes; per-lane substance lines are still missing from both PR bodies (partial readback compliance: better than count-only, short of the documented rule), noted with the reminder that #1332 remains the compliance model",
+        "substance consensus recorded by the lanes themselves: the prior append.antithesis checked only role/order/duplicate — the DA1 rounds independently confirmed the gap the #1292 track review identified, and the deterministic-check approach shipped without an LLM judge"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
