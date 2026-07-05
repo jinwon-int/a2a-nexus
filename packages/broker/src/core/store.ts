@@ -41,6 +41,41 @@ import {
   type TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
+import {
+  CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
+  DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
+} from "./store-contracts.js";
+import type {
+  BrokerHotTableLoadMetricEntry,
+  BrokerHotTableLoadMetrics,
+  BrokerHotTableRuntimeLoadLimits,
+  BrokerPersistenceInfo,
+  BrokerSnapshot,
+  BrokerStateSaveHints,
+  BrokerStateStore,
+  JsonFileBrokerStateStoreOptions,
+  SqliteAuditRuntimeRepositoryOptions,
+  SqliteBrokerLoadSource,
+  SqliteBrokerStateStoreOptions,
+} from "./store-contracts.js";
+export {
+  CURRENT_BROKER_STATE_VERSION,
+  DEFAULT_BROKER_STATE_MAX_BYTES,
+} from "./store-contracts.js";
+export type {
+  BrokerHotTableLoadMetricEntry,
+  BrokerHotTableLoadMetrics,
+  BrokerHotTableRuntimeLoadMetric,
+  BrokerHotTableRuntimeLoadLimits,
+  BrokerPersistenceInfo,
+  BrokerSnapshot,
+  BrokerStateSaveHints,
+  BrokerStateStore,
+  JsonFileBrokerStateStoreOptions,
+  SqliteAuditRuntimeRepositoryOptions,
+  SqliteBrokerLoadSource,
+  SqliteBrokerStateStoreOptions,
+} from "./store-contracts.js";
 import type {
   BrokerHotAuditDiagnostics,
   BrokerHotEntityDiagnostics,
@@ -63,151 +98,6 @@ export type {
   BrokerHotTerminalOutboxDiagnostics,
   BrokerInvalidHotEntityRow,
 } from "./hot-diagnostics.js";
-
-export const CURRENT_BROKER_STATE_VERSION = 8;
-export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
-
-export interface BrokerSnapshot {
-  version: number;
-  exchanges: A2AExchangeState[];
-  exchangeMessages: A2AExchangeMessageRecord[];
-  proposals: ChangeProposal[];
-  artifacts: ArtifactRecord[];
-  validations: ValidationResult[];
-  auditEvents: AuditEvent[];
-  workers: WorkerRecord[];
-  tasks: TaskRecord[];
-  goals?: GoalRecord[];
-  tombstones?: TaskTombstone[];
-  terminalOutbox?: TerminalTaskOutboxEvent[];
-  crossBrokerTerminalBriefs?: CrossBrokerTerminalBriefProjection[];
-  pushNotificationConfigs?: TaskPushNotificationConfig[];
-}
-
-export interface BrokerStateStore {
-  load(): BrokerSnapshot;
-  save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void;
-  /**
-   * Persist dirty hot-table rows without requiring the caller to build a full
-   * BrokerSnapshot first. Stores that cannot support granular writes should
-   * leave this undefined so callers can fall back to save().
-   */
-  saveHotEntities?(hints: BrokerStateSaveHints): void;
-  /**
-   * Optional durable-write acknowledgement hook for queued/asynchronous stores.
-   * Mutating HTTP routes call this after broker mutation and before returning
-   * success, preserving the existing "persistState returned" ACK boundary.
-   */
-  awaitDurablePersistenceAck?(): Promise<void>;
-  getPersistenceInfo?(): BrokerPersistenceInfo;
-}
-
-export interface BrokerStateSaveHints {
-  hotExchanges?: A2AExchangeState[];
-  hotExchangeMessages?: A2AExchangeMessageRecord[];
-  hotProposals?: ChangeProposal[];
-  hotArtifacts?: ArtifactRecord[];
-  hotValidations?: ValidationResult[];
-  hotTasks?: TaskRecord[];
-  hotTombstones?: TaskTombstone[];
-  hotAuditEvents?: AuditEvent[];
-  hotWorkers?: WorkerRecord[];
-  /** Dirty terminal-outbox rows whose ack/receipt state must be table-persisted immediately. */
-  hotTerminalOutboxEvents?: TerminalTaskOutboxEvent[];
-}
-
-export interface BrokerPersistenceInfo {
-  kind: string;
-  stateVersion: number;
-  loadSource?: string;
-  schemaVersion?: number;
-  stateFile?: string;
-  dbFile?: string;
-  journalMode?: string;
-  hotEntityTables?: string[];
-  hotEntityHintTables?: string[];
-  hotEntityHintCoverage?: BrokerHotEntityHintCoverage;
-  hotEntityMirror?: BrokerHotEntityMirrorStatus;
-  hotEntityDiagnostics?: BrokerHotEntityDiagnostics;
-  hotTableLoadMetrics?: BrokerHotTableLoadMetrics;
-  hotTableRuntimeLoadLimits?: BrokerHotTableRuntimeLoadLimits;
-  importedFromJsonFile?: string;
-  lastImportAt?: string;
-  /** ISO timestamp of the most recent persist. */
-  lastPersistAt?: string;
-  /** Whether the most recent persist skipped full snapshot serialization (incremental hot-table mode). */
-  lastPersistSkippedFullSnapshot?: boolean;
-  /** Dirty-table hint counts for the most recent persist. */
-  lastHotHintCounts?: BrokerHotHintCounts;
-}
-
-export interface BrokerHotTableRuntimeLoadLimits {
-  /** Terminal task rows retained in live memory; active tasks always hydrate. */
-  terminalTasks: number;
-  auditEvents: number;
-  terminalOutboxEvents: number;
-}
-
-export interface BrokerHotTableRuntimeLoadMetric {
-  /** Configured runtime hydration cap for this table/window. */
-  limit: number;
-  /** Rows expected to hydrate into the in-memory runtime snapshot. */
-  loadedCount: number;
-  /** Rows left queryable in SQLite but skipped from startup/runtime hydration. */
-  skippedCount: number;
-  /** Only set for broker_tasks: active rows are always hydrated outside the terminal cap. */
-  activeCount?: number;
-  /** Only set for broker_tasks: completed/failed/canceled rows subject to the terminal cap. */
-  terminalCount?: number;
-}
-
-export interface BrokerHotTableLoadMetricEntry {
-  count: number;
-  maxPayloadBytes: number;
-  /** Sum of serialized payload bytes for rows in this hot table, when available. */
-  totalPayloadBytes?: number;
-  runtimeLoad?: BrokerHotTableRuntimeLoadMetric;
-  /** Only set for broker_terminal_outbox. */
-  unackedCount?: number;
-}
-
-export interface BrokerHotTableLoadMetrics {
-  tables: Record<string, BrokerHotTableLoadMetricEntry>;
-}
-
-export interface JsonFileBrokerStateStoreOptions {
-  maxBytes?: number;
-}
-
-export type SqliteBrokerLoadSource = "snapshot" | "hot-tables";
-
-export interface SqliteBrokerStateStoreOptions {
-  maxBytes?: number;
-  importJsonFile?: string;
-  loadSource?: SqliteBrokerLoadSource;
-  /**
-   * Maximum non-terminal (queued/claimed/running/blocked) task rows to hydrate into live
-   * memory when using loadSource=hot-tables. Non-terminal tasks are always loaded up to this
-   * limit (ordered by updated_at DESC, id ASC). Default: 500.
-   */
-  maxHotRuntimeNonTerminalTasks?: number;
-  /**
-   * Maximum terminal task rows to hydrate into live memory when using
-   * loadSource=hot-tables. Active/non-terminal tasks are always loaded.
-   */
-  maxHotRuntimeTerminalTasks?: number;
-  /** Maximum audit rows to hydrate into live memory when using loadSource=hot-tables. */
-  maxHotRuntimeAuditEvents?: number;
-  /** Maximum heartbeat audit rows retained in the SQLite hot audit table. */
-  maxHotRuntimeHeartbeatAuditEvents?: number;
-  /** Maximum terminal outbox rows to hydrate into live memory when using loadSource=hot-tables. */
-  maxHotRuntimeTerminalOutboxEvents?: number;
-}
-
-export interface SqliteAuditRuntimeRepositoryOptions {
-  maxHotAuditEvents?: number;
-  maxHotHeartbeatAuditEvents?: number;
-}
 
 export interface SqliteTaskHotTableFilters {
   id?: string;
@@ -835,7 +725,7 @@ const pushNotificationConfigSchema = z
 
 const brokerSnapshotSchema = z
   .object({
-    version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
+    version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION_VALUE),
     exchanges: z.array(exchangeStateSchema).optional().default([]),
     exchangeMessages: z.array(exchangeMessageSchema).optional().default([]),
     proposals: z.array(proposalSchema).optional().default([]),
@@ -864,7 +754,7 @@ export class JsonFileBrokerStateStore implements BrokerStateStore {
     private readonly filePath: string,
     options: JsonFileBrokerStateStoreOptions = {},
   ) {
-    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES);
+    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES_VALUE);
   }
 
   load(): BrokerSnapshot {
@@ -890,7 +780,7 @@ export class JsonFileBrokerStateStore implements BrokerStateStore {
     return {
       kind: "json-file",
       stateFile: this.filePath,
-      stateVersion: CURRENT_BROKER_STATE_VERSION,
+      stateVersion: CURRENT_BROKER_STATE_VERSION_VALUE,
     };
   }
 }
@@ -911,7 +801,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     private readonly dbFile: string,
     options: SqliteBrokerStateStoreOptions = {},
   ) {
-    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES);
+    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES_VALUE);
     this.importJsonFile = options.importJsonFile;
     this.loadSource = options.loadSource ?? "snapshot";
     this.maxHotRuntimeNonTerminalTasks = normalizeNonNegativeSqliteLimit(
@@ -965,7 +855,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   readHotRuntimeSnapshot(): BrokerSnapshot {
     const pushNotificationConfigs = this.readCanonicalPushNotificationConfigs();
     const snapshot: BrokerSnapshot = {
-      version: CURRENT_BROKER_STATE_VERSION,
+      version: CURRENT_BROKER_STATE_VERSION_VALUE,
       exchanges: this.readHotExchanges(),
       exchangeMessages: this.readHotExchangeMessages(),
       proposals: this.readHotProposals(),
@@ -1216,7 +1106,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const info: BrokerPersistenceInfo = {
       kind: "sqlite",
       dbFile: this.dbFile,
-      stateVersion: CURRENT_BROKER_STATE_VERSION,
+      stateVersion: CURRENT_BROKER_STATE_VERSION_VALUE,
       loadSource: this.loadSource,
       schemaVersion: SQLITE_SCHEMA_VERSION,
       journalMode: this.journalMode,
@@ -1917,7 +1807,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ON broker_tasks(task_origin, status);
     `);
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
-    this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+    this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
     return journal?.journal_mode ?? "unknown";
   }
 
@@ -1999,7 +1889,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       const hasSnapshotOnlySidecarState = snapshot.pushNotificationConfigs !== undefined;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
-      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot });
     });
   }
@@ -2008,7 +1898,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
       this.writeHotEntityHintRows(hints);
-      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
     });
   }
@@ -2036,7 +1926,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
            payload = excluded.payload,
            updated_at = excluded.updated_at`,
       )
-      .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
+      .run(CURRENT_BROKER_STATE_VERSION_VALUE, payload, updatedAt);
   }
 
   private writePersistDiagnostics(
@@ -2945,7 +2835,7 @@ export class SqliteTombstoneRuntimeRepository implements TombstoneRuntimeReposit
 
 export function emptySnapshot(): BrokerSnapshot {
   return {
-    version: CURRENT_BROKER_STATE_VERSION,
+    version: CURRENT_BROKER_STATE_VERSION_VALUE,
     exchanges: [],
     exchangeMessages: [],
     proposals: [],
@@ -2992,12 +2882,12 @@ function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCa
 
 export function serializeBrokerSnapshot(
   snapshot: BrokerSnapshot,
-  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES,
+  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
 ): string {
   const payload = JSON.stringify(
     {
       ...snapshot,
-      version: CURRENT_BROKER_STATE_VERSION,
+      version: CURRENT_BROKER_STATE_VERSION_VALUE,
     },
     null,
     2,
@@ -3012,7 +2902,7 @@ export function serializeBrokerSnapshot(
 export function writeBrokerSnapshotFile(
   filePath: string,
   snapshot: BrokerSnapshot,
-  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES,
+  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
 ): void {
   mkdirSync(dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.tmp`;
