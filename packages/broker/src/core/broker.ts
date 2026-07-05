@@ -94,6 +94,12 @@ import {
 import { buildBrokerDashboard } from "./broker-dashboard.js";
 import { readBrokerExchangeMessages } from "./broker-exchange-message-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
+import {
+  listBrokerArtifactsForProposal,
+  listBrokerAuditEvents,
+  listBrokerValidationsForProposal,
+  readBrokerArtifact,
+} from "./broker-evidence-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
@@ -1878,69 +1884,19 @@ export class InMemoryA2ABroker {
   }
 
   getArtifact(id: string): ArtifactRecord | null {
-    const repositoryArtifact = this.artifactRepository?.getArtifact(id);
-    if (repositoryArtifact) {
-      this.artifacts.set(repositoryArtifact.id, repositoryArtifact);
-      return repositoryArtifact;
-    }
-    return this.artifacts.get(id) ?? null;
+    return readBrokerArtifact(this.artifacts, this.artifactRepository, id);
   }
 
   listArtifactsForProposal(proposalId: string): ArtifactRecord[] {
-    const repositoryArtifacts = this.artifactRepository?.listArtifactsForProposal(proposalId);
-    if (repositoryArtifacts) {
-      for (const artifact of repositoryArtifacts) {
-        this.artifacts.set(artifact.id, artifact);
-      }
-      return sortedCopy(repositoryArtifacts, sortNewestFirst);
-    }
-    return sortedCopy(
-      [...this.artifacts.values()].filter((artifact) => artifact.proposalId === proposalId),
-      sortNewestFirst,
-    );
+    return listBrokerArtifactsForProposal(this.artifacts, this.artifactRepository, proposalId);
   }
 
   listValidationsForProposal(proposalId: string): ValidationResult[] {
-    const repositoryValidations = this.validationRepository?.listValidationsForProposal(proposalId);
-    if (repositoryValidations) {
-      for (const validation of repositoryValidations) {
-        this.validations.set(validation.id, validation);
-      }
-      return sortedCopy(repositoryValidations, sortNewestFirst);
-    }
-    return sortedCopy(
-      [...this.validations.values()].filter((validation) => validation.proposalId === proposalId),
-      sortNewestFirst,
-    );
+    return listBrokerValidationsForProposal(this.validations, this.validationRepository, proposalId);
   }
 
   listAuditEvents(filters?: AuditListFilters): AuditEvent[] {
-    const eventsById = new Map(this.auditEvents);
-    if (this.auditRepository) {
-      const events = this.auditRepository.listAuditEvents(filters);
-      for (const event of events) {
-        this.auditEvents.set(event.id, event);
-        eventsById.set(event.id, event);
-      }
-    }
-    return sortedCopy(
-      [...eventsById.values()].filter((event) => {
-        if (filters?.proposalId && event.proposalId !== filters.proposalId) {
-          return false;
-        }
-        if (filters?.actorId && event.actorId !== filters.actorId) {
-          return false;
-        }
-        if (filters?.action && event.action !== filters.action) {
-          return false;
-        }
-        if (filters?.targetId && event.targetId !== filters.targetId) {
-          return false;
-        }
-        return true;
-      }),
-      sortNewestFirst,
-    );
+    return listBrokerAuditEvents(this.auditEvents, this.auditRepository, filters);
   }
 
 
