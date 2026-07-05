@@ -71,3 +71,42 @@ test('lane reliability ledger rejects worker/node/url identifiers in anonymous a
   assert.ok(failures.some((failure) => failure.includes('modelClass')));
   assert.ok(failures.some((failure) => failure.includes('taskClass')));
 });
+
+test('lane reliability correction entries supersede originals without double-counting (#1359)', () => {
+  const corrected = structuredClone(validLedger);
+  corrected.entries.push({
+    ...structuredClone(validLedger.entries[0]),
+    id: 'lr-hermes-analysis-frontier-review-2026-07-fg1-correction',
+    supersedes: 'lr-hermes-analysis-frontier-review-2026-07',
+    correctedBy: 'FG1-1359',
+    substantiveCount: 3,
+    evidenceClassBreakdown: {
+      substantive: 3,
+      readiness_only: 1,
+    },
+  });
+
+  assert.deepEqual(evaluateLaneReliabilityLedger(corrected), []);
+  assert.deepEqual(summarizeLaneReliabilityLedger(corrected), {
+    entries: 1,
+    dispatchedCount: 4,
+    substantiveCount: 3,
+    acceptancePassCount: 1,
+    acceptanceFailCount: 1,
+    reviewPassCount: 1,
+    evidenceClassBreakdown: { substantive: 3, readiness_only: 1 },
+  });
+});
+
+test('lane reliability corrections fail closed when supersedes/correctedBy is not auditable (#1359)', () => {
+  const invalid = structuredClone(validLedger);
+  invalid.entries.push({
+    ...structuredClone(validLedger.entries[0]),
+    id: 'lr-hermes-analysis-frontier-review-2026-07-fg1-correction',
+    supersedes: 'missing-entry',
+  });
+
+  const failures = evaluateLaneReliabilityLedger(invalid);
+  assert.ok(failures.some((failure) => failure.includes('supersedes')));
+  assert.ok(failures.some((failure) => failure.includes('correctedBy')));
+});
