@@ -901,11 +901,7 @@ export function createExternalWorkerHandler(config: ExternalWorkerHandlerConfig)
 
     if (code !== 0) {
       return {
-        error: {
-          code: "handler_exit_nonzero",
-          message: stderr.trim() || `handler exited with code ${code}${signal ? ` (${signal})` : ""}`,
-          details: { command: config.command, args, code, signal, stdout: stdout.trim() || undefined },
-        },
+        error: handlerExitNonzeroError({ command: config.command, args, code, signal, stdout, stderr }),
       } satisfies WorkerHandlerOutcome;
     }
 
@@ -1320,6 +1316,65 @@ async function runExternalHandler(options: {
 
     child.stdin.end(options.input);
   });
+}
+
+function boundedDiagnosticExcerpt(value: unknown, maxLength = 500): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
+}
+
+function parseHandlerStdoutError(stdout: string): TaskError | undefined {
+  const trimmed = stdout.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const error = (parsed as Record<string, unknown>).error;
+    if (!error) return undefined;
+    return normalizeExternalTaskError(error);
+  } catch {
+    return undefined;
+  }
+}
+
+function handlerExitNonzeroError(options: {
+  command: string;
+  args: string[];
+  code: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+}): TaskError {
+  const nested = parseHandlerStdoutError(options.stdout);
+  const nestedDetails = nested?.details;
+  const nestedStage = typeof nestedDetails?.stage === "string" ? nestedDetails.stage : undefined;
+  const nestedExcerpt = typeof nestedDetails?.excerpt === "string" ? nestedDetails.excerpt : undefined;
+  const stderrExcerpt = boundedDiagnosticExcerpt(options.stderr);
+  const stdoutExcerpt = boundedDiagnosticExcerpt(options.stdout);
+  const fallbackExcerpt = stderrExcerpt ?? stdoutExcerpt ?? `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`;
+
+  return {
+    code: "handler_exit_nonzero",
+    message: options.stderr.trim() || `handler exited with code ${options.code}${options.signal ? ` (${options.signal})` : ""}`,
+    details: {
+      stage: nestedStage ?? "handler",
+      excerpt: nestedExcerpt ?? fallbackExcerpt,
+      command: options.command,
+      args: options.args,
+      code: options.code,
+      signal: options.signal,
+      stdout: options.stdout.trim() || undefined,
+      nestedError: nested
+        ? {
+            code: nested.code,
+            message: nested.message,
+            details: nested.details,
+          }
+        : undefined,
+    },
+  };
 }
 
 function normalizeExternalTaskError(value: unknown): TaskError {
