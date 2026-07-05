@@ -28,6 +28,7 @@ function formatDecisionFields(task: DecisionDialecticTaskV1): string {
   const verdict = task.decision?.action ?? task.synthesis?.verdict;
   const route = formatRoute(task.decision?.routeTo);
   const basisRevision = task.decision?.decisionBasisRevision;
+  const confidence = formatConfidence(task);
   const parts: string[] = [];
 
   if (verdict) {
@@ -42,7 +43,24 @@ function formatDecisionFields(task: DecisionDialecticTaskV1): string {
     parts.push(`basis r${basisRevision}`);
   }
 
+  if (confidence) {
+    parts.push(confidence);
+  }
+
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+function formatConfidence(task: DecisionDialecticTaskV1): string | null {
+  const thesis = task.thesis?.confidence;
+  const antithesis = task.antithesis?.confidence;
+  if (thesis === undefined && antithesis === undefined) {
+    return null;
+  }
+  const parts = [
+    thesis !== undefined ? `thesis ${thesis.toFixed(2)}` : null,
+    antithesis !== undefined ? `antithesis ${antithesis.toFixed(2)}` : null,
+  ].filter((part): part is string => part !== null);
+  return `confidence ${parts.join("/")}`;
 }
 
 function formatOutcome(task: DecisionDialecticTaskV1): string {

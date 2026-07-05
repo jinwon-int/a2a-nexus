@@ -117,6 +117,7 @@ ${requiredFields}
 Verdict policy for synthesis:
 - VETO when a blocker vetoFlag or policy violation should stop the decision.
 - WAIT when the decision may be valid but needs more evidence, timing, or prerequisite work.
+- For synthesis, explicitly consider thesis.confidence and antithesis.confidence; if either side is below 0.5, prefer WAIT unless strong cited evidence and guardrails justify a different verdict.
 - PROCEED_WITH_GUARDRAILS when the decision can move in a constrained pilot or bounded rollout.
 - ABSTAIN when the evidence cannot support a decision.
 - PROCEED only when the positive case is strong and guardrails are already satisfied.

@@ -225,5 +225,6 @@ export type DecisionDialecticPatchErrorCode =
   | "hard_veto_required"
   | "verdict_policy_violation"
   | "decision_basis_mismatch"
+  | "dialectic_roles_not_independent"
   | "task_expired"
   | "task_terminal";
