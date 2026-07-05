@@ -494,6 +494,58 @@
         "evidence-gate compliance: both PR bodies carry line-count proofs, clean-env full-suite runs, per-lane readback, and explicit non-completion declarations for #1289 (broker.ts 3137 and store.ts 2880 remain); substantive ratio for the R4 broker sub-track now reads 4/5 → 19/20 round-over-round"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker4-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-4 evidence read helpers (#1326) — R4 continuation, three A2A rounds (discovery + impl-review + one-lane retry)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 7,
+        "dispatchedLaneCount": 11
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 68a66f7: broker suite 3704/3704 pass; verbatim-move audit — all four extracted read helpers (artifact get/list, validation list, audit list) are line-for-line identical to the removed broker.ts blocks with state injected as parameters, cache write-through preserved; broker.ts 3137→3093",
+        "discovery-round antithesis input was actually consumed: two lanes raised source-bundle coverage/truncation objections in r1 and the PR body records them as inputs to the r2 implementation review — the objection-to-input loop the DW2 template intends",
+        "failure classification environment: 1 — one impl-review lane exited handler_exit_nonzero, was excluded from that round's evidence, and was retried in a dedicated third round where it PASSed on import/API compatibility; the retry-in-a-fresh-round pattern kept the failure out of quorum without losing the lane's perspective",
+        "dialectic health counters: dispatched 11 / substantive 7, conservatively counted — three r1 lanes reported only a bare succeeded status without classifiable substance and are excluded per the evidence-class criterion; the dip from 19/20 is a readback-verbosity artifact, not a lane-quality regression, and the finalizer has asked for one-line substance per lane in future PR bodies (as #1323/#1324 already did)",
+        "evidence-gate compliance: line-count proof, clean-env full-suite run, per-lane readback, and the explicit non-completion declaration (broker.ts 3093, store.ts 2880 remain) all present in the PR body"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker5-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-5 task read helpers (#1327) — R4 continuation; DA2 #1294 design round started in parallel (no PR yet)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 7ce0ace: broker suite 3704/3704 pass; move audit — readBrokerTask/listBrokerTasks are line-for-line identical with cache write-through and normalize/filter/limit/sort semantics preserved; broker.ts 3093→3075",
+        "one narrow semantic delta accepted as non-blocking: getRoundStatus previously routed through the public this.listTasks() and now calls the extracted helper directly, so external subclasses overriding listTasks would no longer affect round status — no in-repo subclass or test relies on that virtual dispatch (the sqlite read-path tests that monkey-patch listTasks never query round status), but future extraction PRs should note virtual-dispatch changes explicitly",
+        "failure classification acceptance_misconfigured: 1 — the first design round failed closed because the dispatch manifest set payload.review.required=true while lanes emitted no worker validation object; the round was retried without the flag. Second occurrence of this pattern (L-broker-1 hit review_evidence_missing the same way): the formal #1237 review.required path is currently not satisfiable by the deployed workers and teams route around it with labeled analysis lanes — recommend a tracking issue for worker-side kind:review validation emission before DA1/DA2 harden the review contract further",
+        "dialectic health counters omitted: the PR body lists round ids but carries no per-lane readback (the commit message says impl-review 5/5 succeeded without per-lane substance), so nothing is classifiable under the evidence-class criterion — second consecutive readback-verbosity regression after the 19/20 high-water mark; the finalizer re-raised the per-lane one-line request on #1289 and suggests adding it to the dispatch template checklist",
+        "evidence-gate compliance otherwise held: line-count proof, clean-env full-suite run, explicit non-completion declaration (broker.ts 3075, store.ts 2880 remain), and the r1 fail-closed disclosure are all in the PR body"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
