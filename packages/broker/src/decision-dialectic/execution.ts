@@ -26,7 +26,12 @@ const TerminalDecisionStates = new Set<DecisionDialecticTaskV1["state"]>([
 
 export class DecisionDialecticExecutionError extends Error {
   constructor(
-    public readonly code: DecisionDialecticPatchErrorCode | "missing_contract" | "wrong_kind" | "invalid_contract",
+    public readonly code:
+      | DecisionDialecticPatchErrorCode
+      | "missing_contract"
+      | "wrong_kind"
+      | "invalid_contract"
+      | "dialectic_roles_not_independent",
     message: string,
   ) {
     super(message);
@@ -51,12 +56,14 @@ export function extractDecisionDialecticTaskInput(payload: Record<string, unknow
   if (!contract.task || typeof contract.task !== "object") {
     throw new DecisionDialecticExecutionError("invalid_contract", "decision.dialectic contract is missing task body");
   }
+  const task = contract.task as DecisionDialecticTaskV1;
+  assertDialecticRolesIndependent(task);
   return {
     contract: {
       kind: DECISION_DIALECTIC_KIND,
       version: DECISION_DIALECTIC_VERSION,
       phase: contract.phase,
-      task: contract.task as DecisionDialecticTaskV1,
+      task,
     },
   };
 }
@@ -243,6 +250,40 @@ function assertAuthor(authorAgent: string, expected: DecisionDialecticAgentRef):
     throw new DecisionDialecticExecutionError(
       "author_not_allowed",
       "author " + authorAgent + " is not allowed for this decision.dialectic phase",
+    );
+  }
+}
+
+function agentIdentitySet(agent: DecisionDialecticAgentRef): Set<string> {
+  const identities = new Set<string>();
+  identities.add(agent.agentId);
+  if (agent.nodeId) {
+    identities.add(agent.nodeId);
+  }
+  return identities;
+}
+
+function agentRefsOverlap(left: DecisionDialecticAgentRef, right: DecisionDialecticAgentRef): boolean {
+  const rightIdentities = agentIdentitySet(right);
+  for (const identity of agentIdentitySet(left)) {
+    if (rightIdentities.has(identity)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertDialecticRolesIndependent(task: DecisionDialecticTaskV1): void {
+  if (agentRefsOverlap(task.roles.thesisAgent, task.roles.antithesisAgent)) {
+    throw new DecisionDialecticExecutionError(
+      "dialectic_roles_not_independent",
+      "decision.dialectic thesisAgent and antithesisAgent must be independent",
+    );
+  }
+  if (agentRefsOverlap(task.roles.thesisAgent, task.roles.synthAgent)) {
+    throw new DecisionDialecticExecutionError(
+      "dialectic_roles_not_independent",
+      "decision.dialectic synthAgent must be independent from thesisAgent",
     );
   }
 }

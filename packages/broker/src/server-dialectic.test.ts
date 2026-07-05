@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DECISION_DIALECTIC_KIND, DECISION_DIALECTIC_VERSION, type DecisionDialecticTaskInputV1, type DecisionDialecticTaskV1 } from "./decision-dialectic/types.js";
+import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput } from "./decision-dialectic/execution.js";
 import { TRADING_DIALECTIC_KIND, TRADING_DIALECTIC_VERSION, type TradingDialecticTaskInputV1, type TradingDialecticTaskV1 } from "./trading-dialectic/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
@@ -227,6 +228,35 @@ function buildDecisionDialecticPayload(
   };
 }
 
+test("decision-dialectic rejects non-independent roles using agentId/nodeId aliases", () => {
+  const base = buildDecisionDialecticTaskFixture();
+  const invalidThesisAntithesis = buildDecisionDialecticPayload({
+    roles: {
+      ...base.roles,
+      thesisAgent: { agentId: "workerbeta", nodeId: "workerbeta-node" },
+      antithesisAgent: { agentId: "workeralpha", nodeId: "workerbeta" },
+    },
+  });
+
+  assert.throws(
+    () => extractDecisionDialecticTaskInput(invalidThesisAntithesis as unknown as Record<string, unknown>),
+    (error) => error instanceof DecisionDialecticExecutionError && error.code === "dialectic_roles_not_independent",
+  );
+
+  const invalidSynth = buildDecisionDialecticPayload({
+    roles: {
+      ...base.roles,
+      thesisAgent: { agentId: "workerbeta", nodeId: "workerbeta-node" },
+      synthAgent: { agentId: "workerbeta-node" },
+    },
+  });
+
+  assert.throws(
+    () => extractDecisionDialecticTaskInput(invalidSynth as unknown as Record<string, unknown>),
+    (error) => error instanceof DecisionDialecticExecutionError && error.code === "dialectic_roles_not_independent",
+  );
+});
+
 test("decision-dialectic read model returns generic stage rail and dynamic role routing", async () => {
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",
@@ -295,6 +325,11 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
     assert.equal(body.decisionCard.decisionBasisRevision, 3);
     assert.equal(body.decisionCard.ttlSec, 1800);
     assert.equal(body.decisionCard.decidedBy.agentId, "workerdelta");
+    assert.equal(body.summary.confidence.thesis, 0.72);
+    assert.equal(body.summary.confidence.antithesis, 0.64);
+    assert.equal(body.summary.confidence.minimum, 0.64);
+    assert.equal(body.summary.confidence.lowConfidence, false);
+    assert.match(body.summary.headline, /confidence thesis 0\.72\/antithesis 0\.64/);
     assert.match(body.summary.decision, /PROCEED_WITH_GUARDRAILS/);
   } finally {
     await server.close();
