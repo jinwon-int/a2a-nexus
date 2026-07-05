@@ -15,6 +15,7 @@ import {
   type DecisionDialecticPhase,
   type DecisionDialecticRebuttalV1,
   type DecisionDialecticState,
+  type DecisionDialecticSubstanceWarningV1,
   type DecisionDialecticSynthesisV1,
   type DecisionDialecticTaskV1,
   type DecisionDialecticThesisV1,
@@ -110,6 +111,7 @@ export interface DecisionDialecticReadModelV1 {
   roles: DecisionDialecticTaskV1["roles"];
   context: DecisionDialecticContextV1;
   stages: DecisionDialecticStages;
+  substanceWarnings: DecisionDialecticSubstanceWarningV1[];
   decisionCard: DecisionDialecticDecisionCard;
   summary: {
     headline: string;
@@ -166,6 +168,7 @@ export function projectDecisionDialecticReadModel(
     roles: dialectic.roles,
     context: dialectic.context,
     stages: buildStages(dialectic),
+    substanceWarnings: dialectic.substanceWarnings ?? [],
     decisionCard: buildDecisionCard(dialectic),
     summary: {
       headline: summarizeDecisionDialecticTask(dialectic),

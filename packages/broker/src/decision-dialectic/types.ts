@@ -113,6 +113,19 @@ export type DecisionDialecticRebuttalV1 = {
   residualRisks: string[];
 };
 
+export type DecisionDialecticSubstanceWarningCode =
+  | "antithesis_contradiction_not_cross_referenced"
+  | "antithesis_missing_independent_evidence"
+  | "antithesis_failure_modes_not_substantive"
+  | "rebuttal_missing_risk_acknowledgement";
+
+export type DecisionDialecticSubstanceWarningV1 = {
+  phase: "antithesis" | "rebuttal";
+  code: DecisionDialecticSubstanceWarningCode;
+  severity: "warn";
+  message: string;
+};
+
 export type DecisionDialecticSynthesisV1 = {
   author: DecisionDialecticAgentRef;
   submittedAt: string;
@@ -171,6 +184,7 @@ export type DecisionDialecticTaskV1 = {
   thesis?: DecisionDialecticThesisV1;
   antithesis?: DecisionDialecticAntithesisV1;
   rebuttal?: DecisionDialecticRebuttalV1;
+  substanceWarnings?: DecisionDialecticSubstanceWarningV1[];
   synthesis?: DecisionDialecticSynthesisV1;
   decision?: DecisionDialecticDecisionV1;
   outcome?: DecisionDialecticOutcomeV1;
@@ -226,5 +240,7 @@ export type DecisionDialecticPatchErrorCode =
   | "verdict_policy_violation"
   | "decision_basis_mismatch"
   | "dialectic_roles_not_independent"
+  | "antithesis_not_substantive"
+  | "rebuttal_not_substantive"
   | "task_expired"
   | "task_terminal";
