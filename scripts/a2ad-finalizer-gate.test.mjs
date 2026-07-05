@@ -426,6 +426,66 @@ test('provider/model failure success is non-substantive (#983 #984)', () => {
   assert.equal(t1?.evidenceClass, 'provider_or_model_failure');
 });
 
+test('taxonomy-name discussion does not become provider/model failure evidence (#1359)', () => {
+  const tasks = [
+    lane('taxonomy-review', 'succeeded', { worker: 'workerAlpha', top: { output: {
+      analysisStatus: 'done',
+      analysisKind: 'analysis_bridge',
+      summary: 'Ledger review found a classifier false-positive risk.',
+      findings: [
+        'The report should include evidenceClassBreakdown keys such as substantive, readiness_only, wrapper_only, and provider_or_model_failure without treating those class names as the lane outcome.',
+      ],
+      risks: [
+        'A regex over normal analysis text can misclassify meta-level work that names wrapper_only or provider_or_model_failure as part of the taxonomy.',
+      ],
+      recommendations: [
+        'Restrict provider/model failure classification to structured status or error-code signals and add a regression test for taxonomy mentions.',
+      ],
+      evidenceRefs: ['issue:#1359', 'scripts/a2ad-finalizer-gate.mjs'],
+    } } }),
+    lane('t2', 'succeeded', { worker: 'workerBeta' }),
+    lane('t3', 'succeeded', { worker: 'workerGamma' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites taxonomy-review t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'FINAL');
+  assert.equal(result.succeeded, 3);
+  assert.equal(result.nonSubstantive, 0);
+});
+
+test('structured provider/model failure code still excludes non-opinion evidence (#1359)', () => {
+  const tasks = [
+    lane('provider-failed', 'succeeded', { worker: 'workerAlpha', top: {
+      output: {
+        analysisStatus: 'done',
+        findings: ['wrapper returned no usable worker opinion'],
+        recommendations: ['retry after model availability recovers'],
+      },
+      error: {
+        code: 'provider_or_model_failure',
+        details: { bridgeStatus: 'provider_or_model_failure' },
+      },
+    } }),
+    lane('t2', 'succeeded', { worker: 'workerBeta' }),
+    lane('t3', 'succeeded', { worker: 'workerGamma' }),
+  ];
+  const result = computeVerdict(tasks, {
+    round: ROUND,
+    quorum: null,
+    perTarget: null,
+    draft: 'Cites t2 t3.',
+  });
+
+  assert.equal(result.verdict, 'BLOCKED');
+  const failed = result.missingLanes.find((l) => l.taskId === 'provider-failed');
+  assert.equal(failed?.evidenceClass, 'provider_or_model_failure');
+});
+
 test('source projection blocked lanes expose detailed source bundle classes (#984 #986)', () => {
   const cases = [
     ['manifest', 'manifest missing sourceBundle.files[] before projection', 'source_projection_manifest_missing'],

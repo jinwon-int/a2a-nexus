@@ -178,6 +178,13 @@ function classifyExplicitEvidenceClass(output) {
       reason: 'worker explicitly classified the lane as a generic acknowledgement',
     };
   }
+  if (explicit === 'wrapper_only') {
+    return {
+      evidenceClass: 'wrapper_only',
+      countsTowardQuorum: false,
+      reason: 'worker explicitly classified the lane as wrapper-only evidence',
+    };
+  }
   return null;
 }
 
@@ -219,6 +226,57 @@ function classifyReadinessOrGenericDoneOutput(output) {
   }
 
   return null;
+}
+
+function normalizedSignal(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function hasProviderOrModelFailureSignal(lane, output, error) {
+  const details = error && typeof error === 'object' ? error.details ?? {} : {};
+  const nestedError = details && typeof details === 'object' ? details.error ?? {} : {};
+  const nestedDetails = nestedError && typeof nestedError === 'object' ? nestedError.details ?? {} : {};
+  const signals = [
+    output.analysisStatus,
+    output.status,
+    output.evidenceClass,
+    output.bridgeStatus,
+    output.providerStatus,
+    output.modelStatus,
+    lane.bridgeStatus,
+    lane.providerStatus,
+    lane.modelStatus,
+    error.code,
+    error.kind,
+    error.status,
+    details.code,
+    details.kind,
+    details.status,
+    details.bridgeStatus,
+    nestedError.code,
+    nestedError.kind,
+    nestedError.status,
+    nestedDetails.code,
+    nestedDetails.kind,
+    nestedDetails.status,
+    nestedDetails.bridgeStatus,
+  ].map(normalizedSignal).filter(Boolean);
+  return signals.some((signal) => signal === 'provider_or_model_failure' || signal === 'provider_failure' || signal === 'model_failure');
+}
+
+function wrapperOnlyReason(output, lane) {
+  const summaryText = nestedText({
+    summary: output.summary,
+    analysisSummary: output.analysisSummary,
+    message: lane.message,
+  });
+  if (/generic\s+a2ad-review\s+task\s+accepted/i.test(summaryText)) {
+    return 'generic a2ad-review task accepted by versioned A2A task handler';
+  }
+  if (/analysis-only completed|echo handled task|prompt echo/i.test(summaryText)) {
+    return 'wrapper/echo output is not substantive worker analysis';
+  }
+  return '';
 }
 
 function classifyLaneEvidence(lane) {
@@ -269,7 +327,7 @@ function classifyLaneEvidence(lane) {
       reason: 'mobileBeta lane is mobile/policy-limited and pending; exclude from formal A2AD quorum unless the task mode is explicitly supported.',
     };
   }
-  if (analysisStatus === 'provider_or_model_failure' || /provider_or_model_failure|provider\s+failure|model\s+failure/i.test(evidenceText)) {
+  if (hasProviderOrModelFailureSignal(lane, output, error)) {
     return {
       evidenceClass: 'provider_or_model_failure',
       countsTowardQuorum: false,
@@ -300,18 +358,12 @@ function classifyLaneEvidence(lane) {
       reason: 'analysis bridge returned blocked status',
     };
   }
-  if (/generic\s+a2ad-review\s+task\s+accepted/i.test(evidenceText)) {
+  const wrapperReason = wrapperOnlyReason(output, lane);
+  if (wrapperReason) {
     return {
       evidenceClass: 'wrapper_only',
       countsTowardQuorum: false,
-      reason: 'generic a2ad-review task accepted by versioned A2A task handler',
-    };
-  }
-  if (/\b(wrapper_only|analysis-only completed|echo handled task|prompt echo)\b/i.test(evidenceText)) {
-    return {
-      evidenceClass: 'wrapper_only',
-      countsTowardQuorum: false,
-      reason: 'wrapper/echo output is not substantive worker analysis',
+      reason: wrapperReason,
     };
   }
   if (/openclaw_analysis_failed|Hermes analysis bridge response did not contain valid JSON|invalid Hermes analysis JSON schema|Hermes response JSON must be an object|JSON must be an object|candidate was not valid JSON|not valid JSON/i.test(evidenceText)) {

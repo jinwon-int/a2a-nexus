@@ -63,17 +63,36 @@ function breakdownTotal(breakdown) {
   return Object.values(breakdown ?? {}).reduce((sum, value) => sum + (Number.isInteger(value) && value > 0 ? value : 0), 0);
 }
 
+function effectiveEntries(entries) {
+  const superseded = new Set(entries.filter((entry) => isNonEmptyString(entry?.supersedes)).map((entry) => entry.supersedes));
+  return entries.filter((entry) => !superseded.has(entry.id));
+}
+
 export function evaluateLaneReliabilityLedger(doc) {
   if (!doc || !Array.isArray(doc.entries)) return ['entries must be an array'];
   const failures = [];
   const seen = new Set();
   const evidenceSet = new Set(EVIDENCE_CLASSES);
+  const allEntryIds = new Set(doc.entries.map((entry) => entry?.id).filter(isNonEmptyString));
 
   doc.entries.forEach((entry, index) => {
     const where = `entry #${index} (${entry?.id ?? 'no id'})`;
     if (!isNonEmptyString(entry?.id)) failures.push(`${where}: id is required`);
     else if (seen.has(entry.id)) failures.push(`${where}: duplicate id`);
     else seen.add(entry.id);
+
+    const hasSupersedes = Object.hasOwn(entry ?? {}, 'supersedes');
+    const hasCorrectedBy = Object.hasOwn(entry ?? {}, 'correctedBy');
+    if (hasSupersedes || hasCorrectedBy) {
+      if (!isNonEmptyString(entry?.supersedes)) {
+        failures.push(`${where}: supersedes is required for correction entries`);
+      } else if (entry.supersedes === entry.id) {
+        failures.push(`${where}: supersedes must not reference the same entry`);
+      } else if (!allEntryIds.has(entry.supersedes)) {
+        failures.push(`${where}: supersedes must reference an existing ledger entry`);
+      }
+      if (!isNonEmptyString(entry?.correctedBy)) failures.push(`${where}: correctedBy is required for correction entries`);
+    }
 
     for (const field of ['adapterClass', 'modelClass', 'taskClass']) validateAxis(entry, field, where, failures);
     if (!isNonEmptyString(entry?.window)) failures.push(`${where}: window is required`);
@@ -128,8 +147,9 @@ export function evaluateLaneReliabilityLedger(doc) {
 }
 
 export function summarizeLaneReliabilityLedger(doc) {
+  const entries = effectiveEntries(doc?.entries ?? []);
   const summary = {
-    entries: Array.isArray(doc?.entries) ? doc.entries.length : 0,
+    entries: entries.length,
     dispatchedCount: 0,
     substantiveCount: 0,
     acceptancePassCount: 0,
@@ -137,7 +157,7 @@ export function summarizeLaneReliabilityLedger(doc) {
     reviewPassCount: 0,
     evidenceClassBreakdown: {},
   };
-  for (const entry of doc?.entries ?? []) {
+  for (const entry of entries) {
     for (const field of COUNT_FIELDS) summary[field] += Number.isInteger(entry?.[field]) ? entry[field] : 0;
     for (const [evidenceClass, count] of Object.entries(entry.evidenceClassBreakdown ?? {})) {
       if (Number.isInteger(count) && count > 0) summary.evidenceClassBreakdown[evidenceClass] = (summary.evidenceClassBreakdown[evidenceClass] ?? 0) + count;
