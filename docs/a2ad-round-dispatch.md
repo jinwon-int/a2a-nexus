@@ -245,8 +245,8 @@ classifiable — the finalizer must then conservatively exclude the lane from
 `substantiveLaneCount`, which understates round health (observed: a 19/20 round
 followed by 7/11 and then no counters at all, purely from readback terseness).
 
-Good: `sogyo: succeeded; PASS; confirmed heartbeat/persist order is preserved.`
-Not classifiable: `sogyo: succeeded.`
+Good: `worker-a: succeeded; PASS; confirmed heartbeat/persist order is preserved.`
+Not classifiable: `worker-a: succeeded.`
 
 Failed lanes stay in the list with their failure class (for example
 `handler_exit_nonzero, excluded from quorum, retried in r3`) so the dispatched
