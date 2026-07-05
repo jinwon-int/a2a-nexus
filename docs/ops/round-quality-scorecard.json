@@ -791,6 +791,36 @@
         "meta note for the trend line: this incident closes the loop the track was designed for — the reliability ledger's very first entry was contaminated by the classifier that feeds it, the contamination was caught within one round by comparing operator triage against finalizer code inspection, and the correction landed with immunity tests within hours; the same defect would previously have silently depressed every future meta-level round's substantive counts"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-h1-wave1-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1353 Wave 1: H1 #1347 implementation-pipeline docs/skill contract (#1362) + 3-worker artifact sync residual (#1337)",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 1,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "PR #1362 merged as 9426661a7cfed3c9c8ccbe688e25d32c6daef7a9, adding docs/implementation-pipeline.md with the H1 explorer->implementer->verifier contract, Medium+ trigger criteria, role/tier rules, verifier-vs-A2A-review boundary, first-application gate, and no-live/no-mutation safety boundaries.",
+        "Operator skill a2a-closeout-ops was updated outside the repo with references/a2a-nexus-h1-implementation-pipeline-20260706.md and a skill-index link, satisfying the H1-c skill-reflection requirement while keeping repo changes docs-only.",
+        "A2A Wave 1 readback: Team1 round a2a-nexus-1353-wave1-h1-sync-20260706-team1-r1 created 5/5 lanes; Team2 broker-of-record round a2a-nexus-1353-wave1-h1-sync-20260706-team2-r2 created 5/5 lanes. Substantive counters are 8/10: successful lanes converged that verifier PASS is a process checkpoint, not A2AD quorum evidence, and that GREEN-3 belongs to the next Medium+ implementation PR.",
+        "Failure classification environment 1: one Team2 lane failed handler_exit_nonzero with nested openclaw_analysis_failed. Failure classification acceptance_misconfigured 1: one Team1 mobile lane failed its acceptance command on a source-only analysis task and produced no substantive H1 output.",
+        "RED/GREEN evidence: pre-branch RED showed docs/implementation-pipeline.md absent and no existing verifier PASS/explorer note/implementation-pipeline records in .github, docs, or packages/broker/docs; GREEN ran git diff --check, npm run check:markdown-links, and npm run check before PR approval/merge.",
+        "3-worker sync residual was closed after #1362: the two mobile/reference workers and one persistent worker named by the ENV1 checklist were aligned to 9426661a7cfed3c9c8ccbe688e25d32c6daef7a9; the mobile/native checks and Team2 supervisor checks passed, and the persistent worker service was active with worker/runner deploy markers at the target SHA.",
+        "Carry-over 1: H1's practical first-application gate remains intentionally open for the next Medium+ implementation PR (planned N2 #1352 under #1353), which must include an explorer summary and verifier PASS/fix-resolution line in the PR body before #1347 closes."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
