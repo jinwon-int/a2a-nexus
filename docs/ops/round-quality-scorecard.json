@@ -442,6 +442,31 @@
         "dialectic health counters omitted for this entry: the finalizer had no lane-level readback for the wave (merged PRs only), and operators.md scopes the counters to rounds where readback evidence is available — operator may retro-fill dispatched/substantive counts from broker records"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker1-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-1 contracts extraction (#1322) — R4 continuation, first broker.ts lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 5
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main d251837: broker suite 3704/3704 pass; pure-move audit — broker.ts additions are import/re-export lists only, the extracted broker-contracts.ts (238 lines) carries zero runtime functions, and both moved constants are byte-identical to the removed originals; broker.ts 3408→3220",
+        "the weak dialectic caught a real defect pre-merge: the second-team review lane issued a conditional BLOCK on a missing BrokerProfilingOperation re-export (a genuine public-surface gap), the fix landed before the PR opened and validation was re-run — first recorded instance in the R4 track of a review lane preventing a surface regression",
+        "first live dialectic health counters (per operators.md #1296): dispatched 5 / substantive 4 in the impl-review round — three PASS reviews with confirmations plus the defect-finding BLOCK; one succeeded lane reported analysis without a classifiable verdict and is conservatively excluded from the substantive count",
+        "process hygiene: an earlier online round was rejected by the broker finalizer as review_evidence_missing (the #1237 review contract fail-closing on wrapper output as designed) and was re-dispatched analysis-only rather than counting wrapper/finalizer failures as evidence — the exclusion discipline the evidence classes exist for",
+        "honest environment disclosure in the PR body: a non-clean-env broker test run failed on local EDGE_SECRET leakage (401 in server persistence tests) and the clean-env rerun passed — disclosed rather than hidden, consistent with the finalizer's own environment-artifact experience this window",
+        "#1289 correctly stays open: the PR body explicitly declines to claim completion (broker.ts 3220 and store.ts 2880 follow-up split lanes declared); umbrella bookkeeping matches"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
