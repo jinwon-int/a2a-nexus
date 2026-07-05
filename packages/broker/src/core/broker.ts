@@ -81,8 +81,6 @@ import {
 // in broker-worker-status.js alongside the logic that classifies against them.
 export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
 import {
-  taskMatchesFilters,
-  applyTaskListLimit,
   workerMatchesFilters,
 } from "./broker-list-filters.js";
 import {
@@ -93,6 +91,7 @@ import {
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
 import { readBrokerExchangeMessages } from "./broker-exchange-message-read.js";
+import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
@@ -104,7 +103,7 @@ import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
 
-import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
+import type { RoundStatusSummary } from "./round-status.js";
 
 import {
   assertProposalApplyAllowed,
@@ -1289,33 +1288,16 @@ export class InMemoryA2ABroker {
   }
 
   getTask(id: string): TaskRecord | null {
-    const repositoryTask = this.taskRepository?.getTask(id);
-    if (repositoryTask) {
-      const task = normalizeTaskRecord(repositoryTask);
-      this.tasks.set(task.id, task);
-      return task;
-    }
-    return this.tasks.get(id) ?? null;
+    return readBrokerTask(this.tasks, this.taskRepository, id);
   }
 
   listTasks(filters?: TaskListFilters): TaskRecord[] {
-    const tasksById = new Map(this.tasks);
-    if (this.taskRepository) {
-      for (const repositoryTask of this.taskRepository.listTasks(filters).map(normalizeTaskRecord)) {
-        this.tasks.set(repositoryTask.id, repositoryTask);
-        tasksById.set(repositoryTask.id, repositoryTask);
-      }
-    }
-    const tasks = sortedCopy(
-      [...tasksById.values()].filter((task) => taskMatchesFilters(task, filters)),
-      sortNewestFirst,
-    );
-    return applyTaskListLimit(tasks, filters?.limit);
+    return listBrokerTasks(this.tasks, this.taskRepository, filters);
   }
 
   /** Aggregate lane completion for an A2A/A2AD parent round (#629). */
   getRoundStatus(parentRoundId: string): RoundStatusSummary {
-    return summarizeRoundStatus(this.listTasks(), parentRoundId);
+    return getBrokerRoundStatus(this.tasks, this.taskRepository, parentRoundId);
   }
 
   updateTaskPayload(
