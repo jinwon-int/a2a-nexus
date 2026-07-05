@@ -258,6 +258,7 @@ import { handleTasksDecisionRouteIfMatched } from "./http/tasks-decision-routes.
 import { handleTasksWorkerRouteIfMatched } from "./http/tasks-worker-routes.js";
 import { handleWorkersWriteRouteIfMatched } from "./http/workers-write-routes.js";
 import { handleTasksCollectionRouteIfMatched } from "./http/tasks-collection-routes.js";
+import { handleTaskStatsRouteIfMatched } from "./http/task-stats-routes.js";
 import { handleGitHubRouteIfMatched } from "./http/github-routes.js";
 import { handleTasksReadRouteIfMatched } from "./http/tasks-read.js";
 import { handleA2ATerminalOutboxRouteIfMatched } from "./http/a2a-terminal-outbox-routes.js";
@@ -1288,6 +1289,10 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
 
       if (handleRoundStatusRouteIfMatched({ method: req.method, segments, res, broker })) {
+        return;
+      }
+
+      if (handleTaskStatsRouteIfMatched({ method: req.method, path, res, url, broker, stateStore })) {
         return;
       }
 

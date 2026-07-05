@@ -19,6 +19,8 @@ const SUBSTANTIVE_LANE_METRICS = ['substantiveLaneCount', 'dispatchedLaneCount']
 const DEFAULT_SUBSTANTIVE_LANE_WARNING_WINDOW = 2;
 const DEFAULT_SUBSTANTIVE_LANE_WARNING_THRESHOLD = 0.5;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const IMPLEMENTATION_MODES = ['solo', 'h1-pipeline', 'h2-hybrid'];
+const IMPLEMENTATION_DURATION_BANDS = ['<1h', '1-4h', '>4h'];
 
 /**
  * Closed failure-classification taxonomy (#1236). Categories are assigned by
@@ -76,6 +78,20 @@ export function evaluateScorecard(doc) {
     }
     if (!Array.isArray(entry?.evidence) || entry.evidence.length === 0 || !entry.evidence.every((line) => typeof line === 'string' && line.length > 0)) {
       failures.push(`${where}: evidence must be a non-empty string array`);
+    }
+    const hasImplementationMode = entry?.implementationMode !== undefined;
+    const hasImplementationDurationBand = entry?.implementationDurationBand !== undefined;
+    if (hasImplementationMode || hasImplementationDurationBand) {
+      if (!hasImplementationMode) {
+        failures.push(`${where}: implementationMode is required when implementationDurationBand is present`);
+      } else if (!IMPLEMENTATION_MODES.includes(entry.implementationMode)) {
+        failures.push(`${where}: implementationMode must be one of: ${IMPLEMENTATION_MODES.join(', ')}`);
+      }
+      if (!hasImplementationDurationBand) {
+        failures.push(`${where}: implementationDurationBand is required when implementationMode is present`);
+      } else if (!IMPLEMENTATION_DURATION_BANDS.includes(entry.implementationDurationBand)) {
+        failures.push(`${where}: implementationDurationBand must be one of: ${IMPLEMENTATION_DURATION_BANDS.join(', ')}`);
+      }
     }
     const breakdown = entry?.failureBreakdown;
     if (breakdown !== undefined) {
