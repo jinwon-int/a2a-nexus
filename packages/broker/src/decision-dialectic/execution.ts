@@ -12,6 +12,12 @@ import {
   type DecisionDialecticTaskV1,
   type DecisionDialecticVerdict,
 } from "./types.js";
+import {
+  appendSubstanceWarnings,
+  decisionDialecticSubstanceMode,
+  validateAntithesisSubstance,
+  validateRebuttalSubstance,
+} from "./substance.js";
 
 const DecisionDialecticPhases = ["thesis", "antithesis", "rebuttal", "synthesis", "outcome"] as const;
 const TerminalDecisionStates = new Set<DecisionDialecticTaskV1["state"]>([
@@ -171,6 +177,16 @@ export function applyDecisionDialecticPatch(
       assertAuthor(patch.authorAgent, next.roles.antithesisAgent);
       assertPresent(next.thesis, "missing_prerequisite", "thesis is required before antithesis");
       assertMissing(next.antithesis, "duplicate_phase", "antithesis already submitted");
+      {
+        const warnings = validateAntithesisSubstance(next, patch.payload);
+        if (warnings.length > 0 && decisionDialecticSubstanceMode(next) === "enforce") {
+          throw new DecisionDialecticExecutionError(
+            "antithesis_not_substantive",
+            "antithesis does not satisfy deterministic substance requirements",
+          );
+        }
+        appendSubstanceWarnings(next, warnings);
+      }
       next.antithesis = patch.payload;
       next.state = "ANTITHESIS_SUBMITTED";
       break;
@@ -178,6 +194,16 @@ export function applyDecisionDialecticPatch(
       assertAuthor(patch.authorAgent, next.roles.rebuttalAgent ?? next.roles.thesisAgent);
       assertPresent(next.antithesis, "missing_prerequisite", "antithesis is required before rebuttal");
       assertMissing(next.rebuttal, "duplicate_phase", "rebuttal already submitted");
+      {
+        const warnings = validateRebuttalSubstance(patch.payload);
+        if (warnings.length > 0 && decisionDialecticSubstanceMode(next) === "enforce") {
+          throw new DecisionDialecticExecutionError(
+            "rebuttal_not_substantive",
+            "rebuttal does not satisfy deterministic substance requirements",
+          );
+        }
+        appendSubstanceWarnings(next, warnings);
+      }
       next.rebuttal = patch.payload;
       next.state = "REBUTTAL_SUBMITTED";
       break;
