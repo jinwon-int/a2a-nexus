@@ -546,6 +546,36 @@
         "evidence-gate compliance otherwise held: line-count proof, clean-env full-suite run, explicit non-completion declaration (broker.ts 3075, store.ts 2880 remain), and the r1 fail-closed disclosure are all in the PR body"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da2-dw3-lbroker6-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA2 #1294 dialectic contract hardening (#1329) + DW3 #1330 worker review-validation emission (#1331, operator deploy + live canary) + #1289 L-broker-6 worker read helpers (#1332)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 7
+      },
+      "failureBreakdown": {
+        "environment": 3,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main e68aaf7: broker suite 3708/3708 pass across all three merges; DA2 audit — dialectic_roles_not_independent fail-closed at contract extraction covering thesis/antithesis and thesis/synth overlap via agentId+nodeId alias sets, confidence consumed per the spec's preferred option (read-model min/spread/lowConfidence/waitRecommended at the 0.5 threshold, summary line, synthesis WAIT guidance) — the grep-zero-consumers finding from the #1292 review is resolved",
+        "DW3 closed the loop the spec demanded: RED failing-test log in the PR body, fail-closed no-verdict path, contract round-trip through validateReviewEvidence, and the blocking live canary honored after an operator deploy (broker /health.build.revision at the DW3 merge commit; review.required task succeeded end-to-end with an emitted kind=review/verdict=pass validation from a distinct reviewer node) — the first review.required task ever to close without fail-closing, resolving the two-occurrence workaround pattern",
+        "evidence-gate deviation 1: DA2 (#1329) is a contract change whose PR body carries GREEN verification only — no pre-change RED log at review time (the new dialectic tests would have failed pre-change but the log is absent); DW3 and the refactor lane were compliant, so the blocking-check narrative applies to one PR",
+        "failure classification — environment 3: handler_exit_nonzero lanes in the L-broker-6 rounds (two in r1, one repeat in r2; the repeat lane was excluded rather than retried a third time); acceptance_misconfigured 1: the DW3 r1–r3 dispatch attempts failed preflight because the manifest carried GitHub read-only-validation fields with taskOrigin=local — the fail-closed preflight caught it before any lane ran, r4 dispatched correctly",
+        "dialectic health counters cover L-broker-6 only (dispatched 7 / substantive 4, matching the PR's own effective-readback arithmetic): the DA2 rounds predate the per-lane readback requirement (exempt) and the DW3 r4 round reported worker list + 5/5 succeeded without per-lane substance despite the requirement being in its base — first PR after the rule fully complied (#1332, per-lane substance including the truncation-blocked partial verdict), one did not (#1331)",
+        "finalizer self-report: the per-lane readback doc example the finalizer wrote used a concrete worker pseudonym; the public-readiness scan flagged it and the DW3 PR fixed the example to worker-a — the redaction slip was the finalizer's, recorded here under the same disclosure standard applied to worker lanes",
+        "operational: the recommended absorb-then-canary redeploy happened at the DW3 merge revision with post-deploy smokes PASS — production is current through DW3, with only L-broker-6 (merged after) pending the next deploy window; broker.ts 3075→3046, store.ts 2880 remains, #1289 correctly open"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
