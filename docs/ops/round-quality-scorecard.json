@@ -415,6 +415,58 @@
         "campaign totals across 17 entries: reworkIssueCount 2 and falseFindingCount 3 are dominated by the pre-gate baseline (2/2); since the gates landed, rounds recorded rework 0, false findings 1 (this entry, ops tooling), carry-overs 2 (both re-tracked and resolved) — the prevention/learning loop held through eleven consecutive evidence-compliant rounds"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-r-dw-wave-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1285 R-track first wave (R1 #1286, R2 #1287, R3 #1288, R4 #1289) + #1292 dialectic lanes DW1 #1296 / DW2 #1297 — PRs #1305–#1307, #1311–#1320 and the operator-executed v0.1.0-alpha tag/Release",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main d80e852: root release gate passes on every step except external-secrets, which fail-closed because the verification sandbox lacks gitleaks/trufflehog (environment, not a lane defect; the release prep run recorded a passing scan with 23 synthetic fixture findings); broker suite 3704/3704 pass, adjudicating the #1320 PR-body flaky-timeout note as benign",
+        "reclassification after connector recovery: the provisional R3 unit-3 carry-over was withdrawn — the #1288 closeout comment records unit 3 as not applicable because the ratchet was conditional on a root npm script-count reduction that did not occur (root=100/100 within cap), a documented disposition rather than a dropped deliverable; carryOverCount adjusted 2→1 before the scorecard PR opened",
+        "R1 #1286 complete: release evidence packet + CHANGELOG promotion (#1314), annotated tag v0.1.0-alpha on f8cae80 and a published pre-release GitHub Release; npm/Docker publication, deploy, and visibility changes stayed out of scope exactly per the operator approval boundary",
+        "R2 #1287 complete: dependabot npm ecosystem (weekly, grouped minor/patch vs separate major) + warn-only dependency-advisories signal gate registered in the release-gate inventory (56 steps), tiering counts updated consistently (37/56 default)",
+        "R3 #1288 units 1/2/4 verified: 231-line retirement inventory with embedded RED baseline, 19 completed historical validators demoted to --include-archived opt-in (default 64→45, zero deletion), broker test one-liner converted to a 16-entry manifest runner with legacyEquivalent preserved; unit 3 recorded not-applicable in the closeout (ratchet conditional on a script-count reduction that did not occur) — the closeout also discloses one Hermes SIGABRT lane in the unit-4 wave, correctly excluded from substantive evidence",
+        "R4 #1289 first six lanes verified surface-preserving: store.ts 3594→2880 and server.ts 2137→1799 via five extracted modules plus re-export shims (#1315–#1320), additions are import/re-export lists only, full unmodified suite green; broker.ts (3408) remains and the issue stays open by design",
+        "DW1 #1296 complete per spec: paired substantiveLaneCount/dispatchedLaneCount with fail-closed <= invariant, consecutive low-ratio warning (window 2, threshold 0.5), operators.md single-classifier rule, V4 wave retro-fill 2/10 asserted in tests; minor note: the PR also reformatted every existing scorecard window object to multiline — cosmetic churn outside the declared scope, recorded here since the gate accepts both forms",
+        "DW2 #1297 complete per spec: designated antithesis lane block (half-lanes/min-1, #1237 review-contract reuse, finalizer-gate evidence-class exclusions) plus a bounded plan-round mini-cycle with a skip-reason reporting convention; RED absence grep and GREEN markdown-links/check present in the PR body",
+        "carry-over 1 (remaining): the release evidence packet leaves its final merged-PR/commit backfill placeholders unfilled now that the tag landed — a one-line follow-up edit; evidence-gate compliance otherwise held across all sampled PR bodies (twelfth-plus consecutive compliant round)",
+        "dialectic health counters omitted for this entry: the finalizer had no lane-level readback for the wave (merged PRs only), and operators.md scopes the counters to rounds where readback evidence is available — operator may retro-fill dispatched/substantive counts from broker records"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker1-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-1 contracts extraction (#1322) — R4 continuation, first broker.ts lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 5
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main d251837: broker suite 3704/3704 pass; pure-move audit — broker.ts additions are import/re-export lists only, the extracted broker-contracts.ts (238 lines) carries zero runtime functions, and both moved constants are byte-identical to the removed originals; broker.ts 3408→3220",
+        "the weak dialectic caught a real defect pre-merge: the second-team review lane issued a conditional BLOCK on a missing BrokerProfilingOperation re-export (a genuine public-surface gap), the fix landed before the PR opened and validation was re-run — first recorded instance in the R4 track of a review lane preventing a surface regression",
+        "first live dialectic health counters (per operators.md #1296): dispatched 5 / substantive 4 in the impl-review round — three PASS reviews with confirmations plus the defect-finding BLOCK; one succeeded lane reported analysis without a classifiable verdict and is conservatively excluded from the substantive count",
+        "process hygiene: an earlier online round was rejected by the broker finalizer as review_evidence_missing (the #1237 review contract fail-closing on wrapper output as designed) and was re-dispatched analysis-only rather than counting wrapper/finalizer failures as evidence — the exclusion discipline the evidence classes exist for",
+        "honest environment disclosure in the PR body: a non-clean-env broker test run failed on local EDGE_SECRET leakage (401 in server persistence tests) and the clean-env rerun passed — disclosed rather than hidden, consistent with the finalizer's own environment-artifact experience this window",
+        "#1289 correctly stays open: the PR body explicitly declines to claim completion (broker.ts 3220 and store.ts 2880 follow-up split lanes declared); umbrella bookkeeping matches"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
