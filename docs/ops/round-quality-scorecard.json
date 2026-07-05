@@ -657,6 +657,60 @@
         "process note: #1337 was closed at confirmation and reopened with a four-item ENV1-e residual checklist after the finalizer verdict asked for the remediation phase to stay visible — the close/reopen round-trip cost nothing and the checklist now matches the class-based prescriptions exactly"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da3-env1e-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA3 #1295 dialectic hygiene gates (#1340) + the sourceProjectionPolicy design round doubling as the ENV1-e projection-class confirmation — the #1292 dialectic track's final lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 417c3cc: new-gate tests pass, check-dialectic-hygiene reports skip-with-reason when no snapshot is supplied (fail-open avoided by explicit reason), the script is audited read-only (no state mutation — EXPIRED transitions stay finalizer-owned), the decision-quality ledger validates with its seed entry showing verdict-vs-outcome tracking live (outcomeMatchedVerdict pending), tiering/manifest coverage green, root release gate green except the known sandbox external-secrets scanner absence (operator-local scan passed)",
+        "the RED-deviation streak broke on the template's first use: #1340 carries a RED section (ERR_MODULE_NOT_FOUND absence proofs for both new gates — the standard new-gate RED), full GREEN battery, round ids, and the ENV1-e rate check in the body; evidenceGateDeviationCount returns to 0 after three consecutive contract-lane deviations",
+        "failure classification environment: 1 — the ENV1-e projection-class confirmation was achieved by the same round: sourceProjectionPolicy applied to the design-round manifest, handler_exit_nonzero 1/10 (<=1/wave criterion met on a real workload, not just healthy canaries), and the single environment failure carried top-level stage/excerpt with nested openclaw_analysis_failed — the readback attribution ENV1 was built to provide, pointing at the one remediation still open (model-bridge retry discipline) alongside the 3-worker sync",
+        "dialectic health counters omitted under the established conservative rule: the PR reports succeeded counts and a specific five-point substantive convergence but does not enumerate per-lane substance; the new template checklist item is expected to close this gap structurally",
+        "operational hygiene beyond spec: the root script-budget ceiling (100/100) was respected by registering gates directly in the release-gate manifest instead of adding root aliases, an untracked local .env backup blocking the secret scan was moved outside the worktree without printing or committing content, and the pitfall was written back into the fleet skill — the learning loop closing in the same wave",
+        "track milestone: with DA3 merged, all six #1292 lanes (DA1-DA3, DW1-DW3) are complete — the dialectic track opened 2026-07-04 closes with every original review finding (substance validation, role independence, confidence consumption, stall sweep, outcome ledger, health measurement, designated antithesis, review-contract satisfiability) resolved and verified"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-r4-lbroker8-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "R4 #1289 L-broker-8 exchange helper extraction (#1342) after A2A Team1+Team2 sourceProjectionPolicy design wave",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 7,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 1,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "A2A sourceProjectionPolicy design rounds a2a-nexus-1289-r4-lbroker8-sourcepolicy-20260705-{team1,team2}-r1 created 10/10 lanes and completed 9/10 succeeded; one Team2 lane failed with handler_exit_nonzero and nested openclaw_analysis_failed, with top-level stage/excerpt present, so the environment bucket counts 1.",
+        "Substantive convergence counted 7/10 lanes: exchange cluster was the narrow/safe majority recommendation across three lanes, proposal-write had two substantive but higher-risk recommendations, and smaller alternate seams were proposed by two lanes. One lane returned sourceProjection.quality=insufficient / required_below_min_bytes and is counted as acceptance_misconfigured rather than substantive.",
+        "Implementation PR #1342 selected the exchange cluster to avoid proposal-write state-transition/audit/persist risk. It moved exchange start/list-message/add-message logic into broker-exchange.ts while keeping public InMemoryA2ABroker methods as delegators and leaving private exchange-task decision helpers in broker.ts for a later slice.",
+        "Verification: baseline broker build + targeted exchange/runtime tests passed before move; after move build passed, node --check broker.js and broker-exchange.js passed, targeted exchange/runtime tests passed 61/61, full broker suite passed 3713/3713, root npm run check passed, GitHub CI/CodeQL green. Line count moved broker.ts 3043 -> 2972, with store.ts still 2880 and issue #1289 remaining open.",
+        "Boundary preserved: no live broker/Gateway restart, provider send/canary, DB replay/prune/migration, ACK, worker sync/restart, release/tag/package publication, GitHub settings mutation, or raw secret recording."
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
