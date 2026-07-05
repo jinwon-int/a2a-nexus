@@ -38,8 +38,8 @@ test("promoted TCK gate is documented separately from the non-gating measurement
 });
 
 test("broker test suite covers TCK harness passthrough and promoted gate guards", () => {
-  const pkg = JSON.parse(readRepo("packages/broker/package.json"));
-  const testScript = pkg.scripts.test;
+  const manifest = JSON.parse(readRepo("packages/broker/scripts/test-manifest.json"));
+  const testScript = manifest.legacyEquivalent;
 
   assert.match(testScript, /a2a-tck-harness-args\.test\.mjs/);
   assert.match(testScript, /check-tck-promoted-gate\.test\.mjs/);
