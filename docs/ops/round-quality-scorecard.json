@@ -657,6 +657,32 @@
         "process note: #1337 was closed at confirmation and reopened with a four-item ENV1-e residual checklist after the finalizer verdict asked for the remediation phase to stay visible — the close/reopen round-trip cost nothing and the checklist now matches the class-based prescriptions exactly"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da3-env1e-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA3 #1295 dialectic hygiene gates (#1340) + the sourceProjectionPolicy design round doubling as the ENV1-e projection-class confirmation — the #1292 dialectic track's final lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 417c3cc: new-gate tests pass, check-dialectic-hygiene reports skip-with-reason when no snapshot is supplied (fail-open avoided by explicit reason), the script is audited read-only (no state mutation — EXPIRED transitions stay finalizer-owned), the decision-quality ledger validates with its seed entry showing verdict-vs-outcome tracking live (outcomeMatchedVerdict pending), tiering/manifest coverage green, root release gate green except the known sandbox external-secrets scanner absence (operator-local scan passed)",
+        "the RED-deviation streak broke on the template's first use: #1340 carries a RED section (ERR_MODULE_NOT_FOUND absence proofs for both new gates — the standard new-gate RED), full GREEN battery, round ids, and the ENV1-e rate check in the body; evidenceGateDeviationCount returns to 0 after three consecutive contract-lane deviations",
+        "failure classification environment: 1 — the ENV1-e projection-class confirmation was achieved by the same round: sourceProjectionPolicy applied to the design-round manifest, handler_exit_nonzero 1/10 (<=1/wave criterion met on a real workload, not just healthy canaries), and the single environment failure carried top-level stage/excerpt with nested openclaw_analysis_failed — the readback attribution ENV1 was built to provide, pointing at the one remediation still open (model-bridge retry discipline) alongside the 3-worker sync",
+        "dialectic health counters omitted under the established conservative rule: the PR reports succeeded counts and a specific five-point substantive convergence but does not enumerate per-lane substance; the new template checklist item is expected to close this gap structurally",
+        "operational hygiene beyond spec: the root script-budget ceiling (100/100) was respected by registering gates directly in the release-gate manifest instead of adding root aliases, an untracked local .env backup blocking the secret scan was moved outside the worktree without printing or committing content, and the pitfall was written back into the fleet skill — the learning loop closing in the same wave",
+        "track milestone: with DA3 merged, all six #1292 lanes (DA1-DA3, DW1-DW3) are complete — the dialectic track opened 2026-07-04 closes with every original review finding (substance validation, role independence, confidence consumption, stall sweep, outcome ledger, health measurement, designated antithesis, review-contract satisfiability) resolved and verified"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
