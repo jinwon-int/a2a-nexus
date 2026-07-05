@@ -604,6 +604,35 @@
         "substance consensus recorded by the lanes themselves: the prior append.antithesis checked only role/order/duplicate — the DA1 rounds independently confirmed the gap the #1292 track review identified, and the deterministic-check approach shipped without an LLM judge"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-env1-diagnosis-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "ENV1 #1337 handler_exit_nonzero diagnosis (skill-export analysis + operator hash/readback pulls + induced canaries) + #1338 handler exit diagnostics promotion",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 1,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "root-cause classes established from 75 failed-task readbacks across both brokers: openclaw_analysis_failed 32 (model-bridge invalid output, the historic dominant class), source_projection_blocked 19 (dispatch-side source-bundle sizing — consistent with the spike arriving with payload-heavy design rounds), no_stdout 24 (pre-#1338 instrumentation gap, retroactively unclassifiable); the spike is payload/model-side, not VPS infrastructure",
+        "false finding 1 (finalizer's own): the document-derived fleet-wide artifact-drift framing was overstated — operator hash parity showed 7/7 VPS persistent workers main-aligned including the worst-casualty team-1 lanes; the drift finding survives only as a 3-worker residue (two mobile, one source-only)",
+        "carry-over 1: the 3-worker artifact-drift trio needs a separate sync (operator-executed) — recorded as the explicit follow-up alongside ENV1-e (remediation + confirmation round), which stays open on #1337",
+        "ENV1-d delivered as #1338: handler stdout JSON errors now promote to details.stage/excerpt with a bounded 500-char excerpt and preserved nestedError, live-verified by three induced canaries whose nested class (source_projection_blocked) surfaced end-to-end; finalizer independent verification on 7e0c5cd: broker suite 3713/3713",
+        "evidence-gate deviation 1 (third consecutive contract lane, first under the blocking rule): #1338's PR body carries diagnostic-round consensus but no pre-change failing-test log; the finalizer retro-filled the RED independently (base 560ccd8 + new worker tests: 43 pass / 2 fail exactly on the two new tests; merged tip 3713/3713) — verdict unblocked by retro-fill, and the structural remedy ships in this PR: the pull-request template gains a blocking RED-evidence section and a per-lane readback checklist item",
+        "diagnostic-round health: dispatched 10 / substantive 8 (consensus recorded; 2 repeated handler_exit_nonzero classified environment) — the diagnosis round itself exhibited the failure it was diagnosing, which is why the induced-canary path was the right confirmation vehicle",
+        "one non-blocking #1338 note: details.stdout passes through unbounded at worker-error creation (excerpt is bounded, full stdout is not) — recommend bounding or relying on broker-side normalize before large-payload rounds resume"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
