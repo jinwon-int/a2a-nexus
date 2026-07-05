@@ -1,0 +1,28 @@
+{
+  "$comment": "Report-only lane reliability ledger (#1299 M1). Entries aggregate anonymous lane outcomes by adapterClass/modelClass/taskClass/window. Do not record worker names, node ids, URLs, raw prompts, secrets, or private paths here.",
+  "entries": [
+    {
+      "id": "lr-hermes-analysis-mixed-review-2026-07",
+      "adapterClass": "hermes-analysis",
+      "modelClass": "mixed",
+      "taskClass": "review",
+      "window": "2026-07",
+      "dispatchedCount": 10,
+      "substantiveCount": 3,
+      "acceptancePassCount": 0,
+      "acceptanceFailCount": 0,
+      "reviewPassCount": 0,
+      "evidenceClassBreakdown": {
+        "substantive": 3,
+        "failed": 1,
+        "provider_or_model_failure": 4,
+        "analysis_bridge_invalid_json": 1,
+        "readiness_only": 1
+      },
+      "sourceRoundIds": [
+        "a2a-nexus-1299-m1-ledger-20260706-team1-r1",
+        "a2a-nexus-1299-m1-ledger-20260706-team2-r1"
+      ]
+    }
+  ]
+}

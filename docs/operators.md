@@ -88,6 +88,17 @@ When a round uses ordinary A2A lanes as a weak dialectic, the finalizer should r
 
 Do not invent a second classifier for this field. `readiness_only`, `generic_ack`, `wrapper_only`, `empty_substantive_output`, projection/infra failures, and provider/model failures are non-substantive. Record counts only — no worker names, node ids, private prompts, or raw excerpts. The scorecard gate validates `substantiveLaneCount <= dispatchedLaneCount` and warns when consecutive scorecard entries fall below the configured substantive-lane ratio threshold.
 
+### Lane reliability ledger update (#1299)
+
+When a finalizer has bounded lane readback for a completed round, add a report-only ledger update before closeout when it can be done without guessing:
+
+1. Export the task/finalizer readback as JSON with lane status, evidence class, and any `validations[]` acceptance/review entries.
+2. Run `scripts/lane-reliability-aggregate.mjs` against `docs/ops/lane-reliability-ledger.json` with anonymous routing axes only (`adapterClass`, `modelClass`, `taskClass`, `window`).
+3. Run `scripts/check-lane-reliability-ledger.mjs` and the aggregate tests.
+4. If the source readback lacks evidence classes or only has private/raw logs, skip the ledger update and record that skip in the disposition; do not infer classes from memory.
+
+The ledger is not a router and does not authorize dispatch changes. M2 may consume it later. M1 records counts only — no worker names, node ids, URLs, raw prompts, secrets, private paths, or provider targets.
+
 ### Designated antithesis and plan mini-cycle closeout (#1297)
 
 For ordinary A2A rounds that use designated antithesis lanes, finalizers judge

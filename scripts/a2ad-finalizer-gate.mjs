@@ -37,6 +37,31 @@ const FAILED_STATUSES = new Set(['failed', 'canceled', 'blocked', 'timeout']);
 // Non-terminal statuses — their presence always blocks finality.
 const PENDING_STATUSES = new Set(['queued', 'approval_pending', 'claimed', 'running']);
 
+// Closed evidence-class taxonomy used by the finalizer and by the report-only
+// lane reliability ledger (#1299). Keep this list synchronized with
+// classifyLaneEvidence returns; downstream ledgers fail closed on unknown keys.
+export const EVIDENCE_CLASSES = [
+  'substantive',
+  'readiness_only',
+  'generic_ack',
+  'wrapper_only',
+  'empty_substantive_output',
+  'source_projection_manifest_missing',
+  'source_projection_payload_dropped',
+  'source_projection_prompt_budget_truncated',
+  'source_projection_worker_insufficient',
+  'source_projection_blocked',
+  'provider_or_model_failure',
+  'analysis_blocked',
+  'analysis_bridge_invalid_json',
+  'evidence_contract_failure',
+  'nonterminal_claimed_missing_evidence',
+  'mobile_limited',
+  'superseded_by_supplement',
+  'failed',
+  'missing_evidence',
+];
+
 function classify(status) {
   const s = String(status || '').trim().toLowerCase();
   if (SUCCEEDED_STATUSES.has(s)) return 'succeeded';
