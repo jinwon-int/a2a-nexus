@@ -1016,7 +1016,7 @@ test("worker fails closed when local home-broker lease points at a different bro
   }
 });
 
-test("worker fails tasks when an external handler exits non-zero", async () => {
+test("external worker records handler stderr on non-zero exit", async () => {
   const server = await startTestServer();
   const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-test-"));
   const scriptPath = join(tempDir, "handler.mjs");
@@ -1084,6 +1084,78 @@ test("worker fails tasks when an external handler exits non-zero", async () => {
     assert.equal(failedTask.claimedBy, "worker-a");
     assert.equal(failedTask.error.code, "handler_exit_nonzero");
     assert.match(failedTask.error.message, /external handler rejected/);
+    assert.equal(failedTask.error.details.stage, "handler");
+    assert.match(failedTask.error.details.excerpt, /external handler rejected/);
+  } finally {
+    await worker.stop();
+    await server.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("external worker promotes structured stdout failure details on non-zero exit", async () => {
+  const server = await startTestServer();
+  const tempDir = await mkdtemp(join(tmpdir(), "a2a-worker-test-"));
+  const scriptPath = join(tempDir, "handler.mjs");
+
+  await writeFile(
+    scriptPath,
+    [
+      "const failure = { error: { code: 'source_projection_blocked', message: 'projection blocked', details: { stage: 'projection', excerpt: 'stage=projection quality=insufficient' } } };",
+      "process.stdout.write(JSON.stringify(failure));",
+      "process.exitCode = 1;",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const worker = new A2ABrokerWorker({
+    brokerUrl: server.baseUrl,
+    requesterKind: "node",
+    pollIntervalMs: 25,
+    heartbeatIntervalMs: 25,
+    handlerTimeoutMs: 1_000,
+    userAgent: "a2a-broker-worker-test",
+    handler: createExternalWorkerHandler({
+      command: process.execPath,
+      args: [scriptPath],
+      timeoutMs: 1_000,
+    }),
+    worker: {
+      nodeId: "worker-a",
+      role: "analyst",
+      capabilities: {
+        canAnalyze: true,
+        canBackfill: false,
+        canPatchWorkspace: false,
+        canPromoteLive: false,
+        workspaceIds: ["test"],
+        environments: ["research"],
+      },
+    },
+  });
+
+  try {
+    await worker.register();
+    const task = await createTask(server.baseUrl, {
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run external",
+    });
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const failedTask = await taskResponse.json();
+
+    assert.equal(failedTask.status, "failed");
+    assert.equal(failedTask.error.code, "handler_exit_nonzero");
+    assert.equal(failedTask.error.details.stage, "projection");
+    assert.equal(failedTask.error.details.excerpt, "stage=projection quality=insufficient");
+    assert.equal(failedTask.error.details.nestedError.code, "source_projection_blocked");
   } finally {
     await worker.stop();
     await server.close();
