@@ -633,6 +633,30 @@
         "one non-blocking #1338 note: details.stdout passes through unbounded at worker-error creation (excerpt is bounded, full stdout is not) — recommend bounding or relying on broker-side normalize before large-payload rounds resume"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-env1-confirmation-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "ENV1 #1337 live reflection + induced/healthy confirmation rounds (operator-executed) — broker at the #1338 revision, VPS worker artifact sync, no new source commits",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "live reflection verified by operator readback: broker health at build.revision=7e0c5cd (#1338), VPS worker artifacts synced across both teams with the rollout guard reporting all 10 checks passed, worker services restarted only — the exact remediation the fleet skill prescribes for handler-touching merges",
+        "induced canary proved the #1338 promotion end-to-end: three intentionally undersized-source lanes surfaced top-level error.details.stage=projection with a bounded excerpt and preserved nestedError.code=source_projection_blocked; one lane succeeded despite the induced shape (non-blocking for the readback-normalization check, noted)",
+        "healthy confirmation round: 4/4 succeeded across both teams with handler_exit_nonzero 0/4 — the ENV1-e baseline criterion (<=1/wave) met for healthy payloads on synced artifacts; the two class remediations (sourceProjectionPolicy on heavy design bundles, model-bridge retry discipline) remain unexercised and stay on the #1337 residual checklist with the 3-worker drift sync",
+        "timeline refinement of the prior entry's self-charged false finding: the VPS artifact sync happened at live-reflection time, before the parity hashes were pulled — so the finalizer's drift claim was stale at utterance but accurate for the spike window (the DA1/L-broker-7 waves ran on pre-sync artifacts); the drift's causal share of the spike is retroactively unknowable because the no_stdout class predates #1338 instrumentation — the falseFindingCount stands, with this context recorded",
+        "process note: #1337 was closed at confirmation and reopened with a four-item ENV1-e residual checklist after the finalizer verdict asked for the remediation phase to stay visible — the close/reopen round-trip cost nothing and the checklist now matches the class-based prescriptions exactly"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
