@@ -1,13 +1,15 @@
 # Weekly closeout hygiene monitor (#1210, #1220).
 #
-# Two paired read-only checks: (1) issues closed as "completed" while their
+# Three read-only checks: (1) issues closed as "completed" while their
 # body task-list still has unchecked items — the finalizer reconciliation rule
 # in docs/operators.md had no enforcement and was violated twice (#1204,
 # #1198); (2) disposition comments whose citations (PRs, workflow runs, repo
 # paths) do not exist — a reconciliation that points at nothing is not a
-# reconciliation. The job never mutates issue state; violations fail the run
-# so they surface in the Actions tab. Exceptions require the
-# closeout-exception label plus an item-by-item disposition comment.
+# reconciliation; (3) decision.dialectic hygiene reports expired non-terminal
+# dialectics without mutating broker state (#1295). The job never mutates issue
+# or dialectic state; violations fail the run so they surface in Actions.
+# Exceptions require the closeout-exception label plus an item-by-item
+# disposition comment.
 
 name: closeout-hygiene
 on:
@@ -34,3 +36,5 @@ jobs:
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: node scripts/check-dialectic-hygiene.mjs
+        if: always()
