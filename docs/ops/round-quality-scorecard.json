@@ -739,6 +739,36 @@
         "Boundary preserved: no live broker/Gateway restart, provider send/canary, DB replay/prune/migration, ACK, worker sync/restart, release/tag/package publication, GitHub settings mutation, or raw secret recording."
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-m1-ledger-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1299 M1 lane reliability ledger (#1358) + two-team design round (finalizer consensus BLOCKED — classifier self-interference defect discovered, FG1 #1359)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 1,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 3,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 1,
+        "other": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 276d34e: M1 ledger gates pass (schema/PII/invariant checks, aggregate CLI), EVIDENCE_CLASSES exported from the finalizer gate as the single taxonomy source per spec, operators.md flow documented, tiering/coverage green — the M1 deliverable itself is spec-conformant and report-only as designed",
+        "false finding 1 (ops tooling — the finalizer gate itself): the classifier at a2ad-finalizer-gate.mjs:247 ORs a full-body regex onto the structured analysisStatus check, so four lanes across both teams that discussed evidence-class names (unavoidable when designing the class ledger) were misclassified provider_or_model_failure and excluded from quorum, flipping both team finalizers to BLOCKED; the finalizer code-confirmed and reproduced the false positive (taxonomy-mention fixture classifies as failure, healthy text does not) — nominal substantive 3/10, estimated 7/10 pending the FG1 #1359 reclassification, counted as one incident per the cron-scanner precedent",
+        "the first ledger entry is seeded with the misclassified round — FG1-c defines the append-only correction rule (correctedBy/supersedes) so the reliability ledger's opening data gets fixed auditably rather than edited in place",
+        "failure classification — environment 1: one lane failed handler_exit_nonzero with nested openclaw_analysis_failed and a no-stdin warning (the exact model-bridge class that remains open as ENV1 #1337 residual item 1 — this occurrence is its latest data point); other 1: one lane failed its acceptance gate (npm run check exit 1) with no substantive evidence and no retained failure log — root cause undiagnosed, narrower classification impossible until the worker-host log is pulled, reclassify when it is",
+        "one lane succeeded readiness-only (source/no-live checks without task-specific findings) — the FG1-d dispatch-prompt rider requires at least one task-specific finding going forward",
+        "evidence-gate deviation 1 (second post-template occurrence): #1358 carries GREEN validation but no RED section; the finalizer retro-filled it (both new test files fail ERR_MODULE_NOT_FOUND on base 8dcbb45 — the standard new-gate absence RED); also noted: the PR was authored and merged by the same account with the blocked design round disclosed honestly as diagnostic-only evidence — acceptable for a report-only lane, not a precedent for contract-hardening lanes",
+        "process judgment: proceeding to implement despite BLOCKED formal consensus was defensible here (3 substantive lanes converged on the shape, the deliverable is report-only, and the blockage itself was caused by the classifier defect the round uncovered) — the operator's own triage of the seven problem lanes matched the finalizer's independent verification on all counts"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
