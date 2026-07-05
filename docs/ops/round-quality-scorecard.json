@@ -769,6 +769,28 @@
         "process judgment: proceeding to implement despite BLOCKED formal consensus was defensible here (3 substantive lanes converged on the shape, the deliverable is report-only, and the blockage itself was caused by the classifier defect the round uncovered) — the operator's own triage of the seven problem lanes matched the finalizer's independent verification on all counts"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-fg1-classifier-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "FG1 #1359 finalizer classifier self-interference fix (#1361) — structured-signal-only classification, taxonomy-mention immunity, preserved-readback reclassification, append-only ledger correction",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 10c8f76: gate + ledger tests 42/42 pass, the ledger gate now reports the corrected effective view (substantive 7/10, provider_or_model_failure 4→0), and the taxonomy-mention immunity behavior is pinned by the new test suite — the exact false positive the finalizer reproduced pre-fix is now a regression test",
+        "spec-exceeding depth credited: while narrowing the provider/model path the implementation discovered the adjacent wrapper_only class had the same full-body-scan defect and narrowed it in the same PR, then published a per-class regex/signal audit across the whole taxonomy (source_projection_* already structurally gated; analysis_bridge_invalid_json flagged for a later narrow audit if meta-rounds start quoting exact error phrases) — the FG1-a-4 sweep executed, not just checked off",
+        "reclassification honesty: the preserved-readback rerun corrected the M1 round to 7/10 substantive via an auditable supersedes/correctedBy entry (original retained), and the PR reports that one team's verdict remains BLOCKED under current finalizer rules rather than forcing finality — the correction fixed the data without bending the rules",
+        "evidence-gate compliance: RED section present (the immunity test failing BLOCKED on the previous classifier) — the deviation streak resets after one occurrence this time, and the PR body also carries the FG1-d prompt rider and the no-re-dispatch boundary (reclassification from preserved readback only, zero model cost)",
+        "meta note for the trend line: this incident closes the loop the track was designed for — the reliability ledger's very first entry was contaminated by the classifier that feeds it, the contamination was caught within one round by comparing operator triage against finalizer code inspection, and the correction landed with immunity tests within hours; the same defect would previously have silently depressed every future meta-level round's substantive counts"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
