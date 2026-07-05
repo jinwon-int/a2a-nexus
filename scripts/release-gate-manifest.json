@@ -409,6 +409,18 @@
       "class": "gate",
       "round": null,
       "note": "Unit tests for #1261 L1 release-gate manifest absence-sweep; keeps new scripts/*.test.mjs and scripts/lib/*.test.mjs registered."
+    },
+    {
+      "file": "scripts/check-dialectic-hygiene.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for #1295 DA3 decision dialectic expired non-terminal hygiene monitor."
+    },
+    {
+      "file": "scripts/check-decision-quality-ledger.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for #1295 DA3 decision quality ledger fail-closed taxonomy gate."
     }
   ]
 }
