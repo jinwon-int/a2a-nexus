@@ -103,7 +103,10 @@ A valid source-only/no-live A2AD manifest should put shared values under
 `defaults.payload` and `defaults.terminalBrief`, then let lane-specific payload
 fields such as `focus` or `parentRoundOrder` override only the narrow per-lane
 parts. Missing ownership metadata fails closed in `--dry-run`, so the live broker
-is not the first place the operator sees the error.
+is not the first place the operator sees the error. Prompts for substantive
+analysis lanes should also require at least one task-specific `finding`, `risk`,
+or `recommendation`; outputs that only confirm source-only/no-live/readiness
+boundaries are classified as `readiness_only`, not quorum evidence.
 
 #### Source projection policy for broad/finalizer lanes
 
