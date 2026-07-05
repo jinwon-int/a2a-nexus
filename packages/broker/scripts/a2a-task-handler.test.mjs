@@ -713,6 +713,141 @@ process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response
   }
 });
 
+
+test("review.required analysis bridge output emits review validation (#1330)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-review-validation-"));
+  const bin = join(dir, "fake-review-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "PASS: source projection matches the requested helper boundary",
+  findings: ["PASS: helper boundary is isolated"],
+  risks: ["none"],
+  recommendations: ["merge"],
+  evidenceRefs: ["#1330"]
+};
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const reviewTask = {
+      id: "task-review-required",
+      intent: "analyze",
+      assignedWorkerId: "author-worker",
+      message: "Review the patch and return explicit PASS/FAIL with note.",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        review: { required: true, targetLaneId: "lane-1" },
+      },
+    };
+    const result = handleTask(reviewTask, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "reviewer-node",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.result.validations, [{
+      kind: "review",
+      verdict: "pass",
+      nodeId: "reviewer-node",
+      note: "source projection matches the requested helper boundary",
+    }]);
+
+    const { validateReviewEvidence } = await import("../dist/worker-review.js");
+    assert.equal(validateReviewEvidence({
+      id: reviewTask.id,
+      intent: "analyze",
+      status: "running",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "author-worker", kind: "node", role: "analyst" },
+      targetNodeId: "author-worker",
+      assignedWorkerId: "author-worker",
+      claimedBy: "author-worker",
+      payload: reviewTask.payload,
+      createdAt: "2026-07-05T00:00:00.000Z",
+      updatedAt: "2026-07-05T00:00:00.000Z",
+    }, result.result), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("review.required analysis bridge omits validation when verdict is absent (#1330)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-review-validation-absent-"));
+  const bin = join(dir, "fake-review-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = {
+  status: "done",
+  summary: "source projection has observations but no verdict",
+  findings: ["helper boundary exists"],
+  risks: ["unknown"],
+  recommendations: ["inspect manually"]
+};
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-review-no-verdict",
+      intent: "analyze",
+      assignedWorkerId: "author-worker",
+      message: "Review the patch.",
+      payload: {
+        mode: "analysis-only",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        review: { required: true },
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "reviewer-node",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.validations, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("non-review analysis bridge output does not emit review validation (#1330)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-review-validation-nonreview-"));
+  const bin = join(dir, "fake-review-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const response = { status: "done", summary: "PASS: ordinary analysis", findings: [] };
+process.stdout.write(JSON.stringify({ text: JSON.stringify(response) }) + "\\n");
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-review-not-required",
+      intent: "analyze",
+      assignedWorkerId: "workerbeta",
+      message: "Analyze only.",
+      payload: { mode: "analysis-only", sourceOnly: true, readOnlyValidation: true },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_NODE_ID: "workerbeta",
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.validations, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("analysis bridge source projection blocks fail the task with stage/excerpt readback (#1257)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-source-projection-block-"));
   const bin = join(dir, "source-projection-block.mjs");

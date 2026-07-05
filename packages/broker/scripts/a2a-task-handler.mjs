@@ -469,6 +469,103 @@ function normalizedBridgeAnalysisStatus(value) {
   return ["blocked", "block", "source_blocked"].includes(status) ? "blocked" : "done";
 }
 
+function reviewPayload(task) {
+  const review = taskPayload(task).review;
+  return review && typeof review === "object" && !Array.isArray(review) ? review : {};
+}
+
+function isReviewRequiredTask(task) {
+  return reviewPayload(task).required === true;
+}
+
+function reviewerNodeId(task, env = process.env) {
+  return safeText(
+    env.A2A_NODE_ID,
+    safeText(env.NODE_ID, safeText(env.A2A_WORKER_ID, safeText(env.WORKER_ID, safeText(task?.assignedWorkerId, "")))),
+  );
+}
+
+function reviewInstructionForPrompt(task) {
+  if (!isReviewRequiredTask(task)) return "";
+  return [
+    "This task has payload.review.required=true. Return a pass/fail recommendation with explicit reviewer evidence.",
+    "Use an explicit top-level verdict field (\"pass\" or \"fail\") or begin summary with PASS: / FAIL: followed by the review note.",
+    "If you cannot make a clear pass/fail determination from the provided source, do not invent one; explain the missing evidence instead.",
+  ].join("\n");
+}
+
+function normalizeReviewVerdict(value) {
+  const text = safeText(value, "").toLowerCase();
+  if (text === "pass" || text === "passed" || text === "approve" || text === "approved") return "pass";
+  if (text === "fail" || text === "failed" || text === "block" || text === "blocked" || text === "reject" || text === "rejected") return "fail";
+  const labelled = text.match(/(?:^|\b)(?:verdict|recommendation|decision)\s*[:=-]\s*(pass|fail|passed|failed|approve|approved|block|blocked|reject|rejected)\b/);
+  if (labelled) return normalizeReviewVerdict(labelled[1]);
+  const leading = text.match(/^\s*(pass|fail|passed|failed|approve|approved|block|blocked|reject|rejected)\b\s*[:\-—–]?/);
+  return leading ? normalizeReviewVerdict(leading[1]) : "";
+}
+
+function stripLeadingReviewVerdict(text) {
+  return safeText(text, "")
+    .replace(/^\s*(?:verdict|recommendation|decision)\s*[:=-]\s*(?:pass|fail|passed|failed|approve|approved|block|blocked|reject|rejected)\b\s*[:\-—–]?\s*/i, "")
+    .replace(/^\s*(?:pass|fail|passed|failed|approve|approved|block|blocked|reject|rejected)\b\s*[:\-—–]?\s*/i, "")
+    .trim();
+}
+
+function firstString(values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function reviewValidationFromAnalysis(task, response, env = process.env) {
+  if (!isReviewRequiredTask(task)) return undefined;
+  const review = response?.review && typeof response.review === "object" && !Array.isArray(response.review) ? response.review : {};
+  const textCandidates = [
+    response?.verdict,
+    review.verdict,
+    response?.summary,
+    ...(Array.isArray(response?.findings) ? response.findings : []),
+    ...(Array.isArray(response?.recommendations) ? response.recommendations : []),
+  ];
+  let verdict = "";
+  let verdictText = "";
+  for (const candidate of textCandidates) {
+    verdict = normalizeReviewVerdict(candidate);
+    if (verdict) {
+      verdictText = safeText(candidate, "");
+      break;
+    }
+  }
+  if (!verdict) return undefined;
+  const nodeId = reviewerNodeId(task, env);
+  if (!nodeId) return undefined;
+  const note = firstString([
+    review.note,
+    response?.reviewNote,
+    response?.note,
+    stripLeadingReviewVerdict(verdictText),
+    response?.summary,
+    ...(Array.isArray(response?.findings) ? response.findings : []),
+  ]).slice(0, 1000);
+  if (!note) return undefined;
+  return {
+    kind: "review",
+    verdict,
+    nodeId,
+    note,
+  };
+}
+
+function withReviewValidation(result, validation) {
+  if (!validation) return result;
+  const validations = Array.isArray(result.validations) ? result.validations.filter(Boolean) : [];
+  return {
+    ...result,
+    validations: [...validations, validation],
+  };
+}
+
 function projectionFailureDetails(response, output) {
   const projection = output?.sourceProjection;
   if (!projection || typeof projection !== "object" || Array.isArray(projection)) return undefined;
@@ -742,8 +839,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     "Do not modify files, deploy, restart services, send providers, acknowledge terminal rows, mutate databases, or move credentials.",
     "Use only the evidence provided in the task unless an approved read-only tool result is present in the payload.",
     "If the task cannot be analyzed from the provided material, return status=blocked with the exact missing evidence.",
+    reviewInstructionForPrompt(task),
     "Return JSON only, no markdown, with exactly this shape:",
-    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"verdict":"pass|fail optional for review.required tasks","doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
     "All human-readable text should be Korean unless quoting code/test output.",
     `Task id: ${safeText(task.id, "unknown")}`,
     `Intent: ${safeText(task.intent, "unknown")}`,
@@ -942,8 +1040,10 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     };
   }
 
+  const reviewValidation = reviewValidationFromAnalysis(task, response, env);
+
   return {
-    result: {
+    result: withReviewValidation({
       summary: `analysis bridge ${status}: ${analysisSummary}`,
       note: "read-only A2A analysis completed through analysis bridge",
       handler: BUILD_INFO,
@@ -955,7 +1055,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
         exchangeId: safeText(task.exchangeId, undefined),
       },
       output,
-    },
+    }, reviewValidation),
   };
 }
 
@@ -1978,10 +2078,11 @@ function handleBuiltinTask(task, env = process.env) {
     const artifacts = Array.isArray(payload.artifacts) ? [...payload.artifacts] : [];
     const noLive = payload.noLive === true || payload.no_live === true || undefined;
     const sourceOnly = payload.sourceOnly === true || payload.source_only === true || undefined;
+    const reviewValidation = reviewValidationFromAnalysis(task, payload, env);
 
     if (blockCommentUrl) {
       return {
-        result: {
+        result: withReviewValidation({
           summary: `analysis-only blocked: ${analysisSummary}`,
           note: `analysis-only task blocked with Block evidence`,
           handler: BUILD_INFO,
@@ -2011,12 +2112,12 @@ function handleBuiltinTask(task, env = process.env) {
             effectiveThinking,
             modelFromPayload: modelFromPayload || undefined,
           },
-        },
+        }, reviewValidation),
       };
     }
 
     return {
-      result: {
+      result: withReviewValidation({
         summary: `analysis-only completed: ${analysisSummary}`,
         note: `analysis-only task completed with Done evidence (no PR required)`,
         handler: BUILD_INFO,
@@ -2046,7 +2147,7 @@ function handleBuiltinTask(task, env = process.env) {
           effectiveThinking,
           modelFromPayload: modelFromPayload || undefined,
         },
-      },
+      }, reviewValidation),
     };
   }
 
