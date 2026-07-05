@@ -176,11 +176,14 @@ import type {
   WorkerCapabilityCardQuery,
   WorkerCapabilityCardRepository,
 } from "./worker-capability-card.js";
+import { InMemoryWorkerCapabilityCardRepository } from "./worker-capability-card.js";
 import {
-  InMemoryWorkerCapabilityCardRepository,
-  queryWorkerCapabilityCards,
-  createDefaultCapabilityCard,
-} from "./worker-capability-card.js";
+  deleteBrokerCapabilityProfile,
+  listBrokerCapabilityProfiles,
+  readBrokerCapabilityProfile,
+  registerDefaultBrokerCapabilityProfile,
+  storeBrokerCapabilityProfile,
+} from "./broker-capability-profiles.js";
 import type {
   ApplyProposalRequest,
   ArtifactRecord,
@@ -788,7 +791,7 @@ export class InMemoryA2ABroker {
    * Overwrites any previous profile for the same worker.
    */
   storeCapabilityProfile(card: WorkerCapabilityCard): void {
-    this.capabilityCards.store(card);
+    storeBrokerCapabilityProfile(this.capabilityCards, card);
   }
 
   /**
@@ -796,7 +799,7 @@ export class InMemoryA2ABroker {
    * has been registered for that worker.
    */
   getCapabilityProfile(workerId: string): WorkerCapabilityCard | null {
-    return this.capabilityCards.get(workerId);
+    return readBrokerCapabilityProfile(this.capabilityCards, workerId);
   }
 
   /**
@@ -804,18 +807,14 @@ export class InMemoryA2ABroker {
    * when provided. Only valid cards pass the filter.
    */
   listCapabilityProfiles(query?: WorkerCapabilityCardQuery): WorkerCapabilityCard[] {
-    const cards = this.capabilityCards.list();
-    if (!query || Object.keys(query).length === 0) {
-      return cards;
-    }
-    return queryWorkerCapabilityCards(cards, query);
+    return listBrokerCapabilityProfiles(this.capabilityCards, query);
   }
 
   /**
    * Remove a stored capability profile. No-op when the worker has no profile.
    */
   deleteCapabilityProfile(workerId: string): void {
-    this.capabilityCards.delete(workerId);
+    deleteBrokerCapabilityProfile(this.capabilityCards, workerId);
   }
 
   /**
@@ -834,9 +833,7 @@ export class InMemoryA2ABroker {
       supportedTaskTypes?: A2AExchangeIntent[];
     },
   ): WorkerCapabilityCard {
-    const card = createDefaultCapabilityCard(worker, defaults);
-    this.capabilityCards.store(card);
-    return card;
+    return registerDefaultBrokerCapabilityProfile(this.capabilityCards, worker, defaults);
   }
 
   createProposal(request: CreateProposalRequest): ChangeProposal {
