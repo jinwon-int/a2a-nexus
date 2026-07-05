@@ -18,10 +18,16 @@ import {
   buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
 import {
-  workerMetadataMateriallyEqual,
   normalizeWorkerRecord,
   chooseFresherWorkerRecord,
 } from "./broker-worker-identity.js";
+import {
+  applyWorkerHeartbeatRuntimeUpdate,
+  buildRegisteredWorkerRecord,
+  normalizeWorkerRegistrationCapabilities,
+  workerHeartbeatRequestFromRegistration,
+  workerRegistrationMateriallyChanges,
+} from "./broker-worker-runtime.js";
 import {
   normalizeTaskPayload,
   normalizeTaskResult,
@@ -69,7 +75,6 @@ import {
   getHeartbeatAuditEventId,
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
-import { normalizeCapabilities } from "./broker-capability-normalizers.js";
 import {
   toWorkerViewRecord,
   isWorkerStale,
@@ -683,44 +688,21 @@ export class InMemoryA2ABroker {
 
     const now = isoNow();
     const existing = this.getWorkerCachedFirst(request.nodeId);
-    const capabilities = normalizeCapabilities(request.capabilities);
-    const materialChange = !existing ||
-      existing.role !== request.role ||
-      existing.displayName !== request.displayName ||
-      existing.brokerUrl !== request.brokerUrl ||
-      existing.workerMode !== request.workerMode ||
-      existing.managementPlane !== request.managementPlane ||
-      JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities) ||
-      !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
+    const capabilities = normalizeWorkerRegistrationCapabilities(request);
+    const materialChange = workerRegistrationMateriallyChanges(existing, request, capabilities);
 
     const identityWarning = existing && materialChange
       ? this.workerChurn.recordFingerprintChange(existing, request, capabilities)
       : undefined;
 
     if (existing && !materialChange) {
-      return this.heartbeatWorker(request.nodeId, {
-        displayName: request.displayName,
-        brokerUrl: request.brokerUrl,
-        capabilities,
-        workerMode: request.workerMode,
-        metadata: request.metadata,
-        managementPlane: request.managementPlane,
-      });
+      return this.heartbeatWorker(
+        request.nodeId,
+        workerHeartbeatRequestFromRegistration(request, capabilities),
+      );
     }
 
-    const worker: WorkerRecord = {
-      nodeId: request.nodeId,
-      role: request.role,
-      displayName: request.displayName,
-      brokerUrl: request.brokerUrl,
-      capabilities,
-      workerMode: request.workerMode,
-      metadata: request.metadata,
-      managementPlane: request.managementPlane,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      lastSeenAt: now,
-    };
+    const worker = buildRegisteredWorkerRecord(request, capabilities, existing, now);
 
     this.setWorkerRecord(worker);
     this.appendAuditEvent({
@@ -751,37 +733,7 @@ export class InMemoryA2ABroker {
     const worker = this.requireWorkerCachedFirst(nodeId);
     const nowMs = Date.now();
     const now = new Date(nowMs).toISOString();
-
-    const nextCapabilities = request?.capabilities
-      ? normalizeCapabilities(request.capabilities)
-      : worker.capabilities;
-    const nextDisplayName = request?.displayName ?? worker.displayName;
-    const nextBrokerUrl = request?.brokerUrl ?? worker.brokerUrl;
-    const nextWorkerMode = request?.workerMode ?? worker.workerMode;
-    const nextMetadata = request?.metadata ?? worker.metadata;
-    const nextManagementPlane = request?.managementPlane ?? worker.managementPlane;
-    const capabilitiesChanged =
-      request?.capabilities !== undefined &&
-      JSON.stringify(nextCapabilities) !== JSON.stringify(worker.capabilities);
-    const metadataChanged =
-      request?.metadata !== undefined &&
-      !workerMetadataMateriallyEqual(worker.metadata, nextMetadata);
-    const materialChange =
-      nextDisplayName !== worker.displayName ||
-      nextBrokerUrl !== worker.brokerUrl ||
-      nextWorkerMode !== worker.workerMode ||
-      nextManagementPlane !== worker.managementPlane ||
-      capabilitiesChanged ||
-      metadataChanged;
-
-    worker.displayName = nextDisplayName;
-    worker.brokerUrl = nextBrokerUrl;
-    worker.capabilities = nextCapabilities;
-    worker.workerMode = nextWorkerMode;
-    worker.metadata = nextMetadata;
-    worker.managementPlane = nextManagementPlane;
-    worker.updatedAt = now;
-    worker.lastSeenAt = now;
+    const { materialChange } = applyWorkerHeartbeatRuntimeUpdate(worker, request, now);
 
     const shouldPersistHeartbeat = this.workerHeartbeatPersist.shouldPersist(
       worker.nodeId,
