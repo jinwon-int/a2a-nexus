@@ -576,6 +576,63 @@
         "operational: the recommended absorb-then-canary redeploy happened at the DW3 merge revision with post-deploy smokes PASS — production is current through DW3, with only L-broker-6 (merged after) pending the next deploy window; broker.ts 3075→3046, store.ts 2880 remains, #1289 correctly open"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da1-lbroker7-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA1 #1293 dialectic substance warnings (#1334) + #1289 L-broker-7 capability profile helpers (#1335) — two-team design rounds per lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 11,
+        "dispatchedLaneCount": 20
+      },
+      "failureBreakdown": {
+        "environment": 9
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 560ccd8: broker suite 3712/3712 pass; DA1 audit — all four deterministic checks match the #1293 spec (contradiction cross-reference via token overlap or explicit thesis-part reference incl. Korean terms, independent evidenceRef, non-trivial failureModes, rebuttal concededRisks/residualRisks), warn-default with opt-in enforce via domainContext.decisionDialecticSubstanceGate throwing antithesis_not_substantive/rebuttal_not_substantive, warnings projected to contract and read-model, prompt-spec aligned; L-broker-7 is a clean parameter-injected pure move (broker.ts 3046→3043)",
+        "evidence-gate deviation 1: DA1 (#1334) is a contract change whose PR body again carries GREEN only — no pre-change RED log; second consecutive contract-lane deviation (DA2 #1329 was the first) after the long compliant streak. Per the #1236 precedent (two consecutive retro-fills escalated the check to blocking), the finalizer is repeating the escalation: contract-lane PRs must show the new tests failing on the base tree, and the next deviation should block the verdict rather than be recorded",
+        "two non-blocking DA1 notes: enforce mode throws before appendSubstanceWarnings so a rejected patch carries no per-code detail (operators must re-run in warn to see which check failed — worth a follow-up line when enforce promotion is considered); the #1335 body's full-suite count (3708) was run against a pre-DA1 checkout while its base already carried 3712 — the tip is green so no defect, but suite counts in PR bodies should be from the PR's own base",
+        "failure classification environment: 9 — handler_exit_nonzero across all four design rounds (DA1 T1 2 + T2 1; L-broker-7 T1 4 + T2 2), a 45% infra-failure rate in the worst round. The trend flagged in the L-broker-6 verdict has fully materialized: the finalizer's stated criterion for a dedicated environment-diagnosis pass (same failure class recurring next round) is met — recommended before the next dispatch wave rather than more retry rounds",
+        "dialectic health counters: dispatched 20 / substantive 11 (DA1 7/10, L-broker-7 4/10) — classifiable from per-team counts plus failure classes; per-lane substance lines are still missing from both PR bodies (partial readback compliance: better than count-only, short of the documented rule), noted with the reminder that #1332 remains the compliance model",
+        "substance consensus recorded by the lanes themselves: the prior append.antithesis checked only role/order/duplicate — the DA1 rounds independently confirmed the gap the #1292 track review identified, and the deterministic-check approach shipped without an LLM judge"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-env1-diagnosis-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "ENV1 #1337 handler_exit_nonzero diagnosis (skill-export analysis + operator hash/readback pulls + induced canaries) + #1338 handler exit diagnostics promotion",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 1,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "root-cause classes established from 75 failed-task readbacks across both brokers: openclaw_analysis_failed 32 (model-bridge invalid output, the historic dominant class), source_projection_blocked 19 (dispatch-side source-bundle sizing — consistent with the spike arriving with payload-heavy design rounds), no_stdout 24 (pre-#1338 instrumentation gap, retroactively unclassifiable); the spike is payload/model-side, not VPS infrastructure",
+        "false finding 1 (finalizer's own): the document-derived fleet-wide artifact-drift framing was overstated — operator hash parity showed 7/7 VPS persistent workers main-aligned including the worst-casualty team-1 lanes; the drift finding survives only as a 3-worker residue (two mobile, one source-only)",
+        "carry-over 1: the 3-worker artifact-drift trio needs a separate sync (operator-executed) — recorded as the explicit follow-up alongside ENV1-e (remediation + confirmation round), which stays open on #1337",
+        "ENV1-d delivered as #1338: handler stdout JSON errors now promote to details.stage/excerpt with a bounded 500-char excerpt and preserved nestedError, live-verified by three induced canaries whose nested class (source_projection_blocked) surfaced end-to-end; finalizer independent verification on 7e0c5cd: broker suite 3713/3713",
+        "evidence-gate deviation 1 (third consecutive contract lane, first under the blocking rule): #1338's PR body carries diagnostic-round consensus but no pre-change failing-test log; the finalizer retro-filled the RED independently (base 560ccd8 + new worker tests: 43 pass / 2 fail exactly on the two new tests; merged tip 3713/3713) — verdict unblocked by retro-fill, and the structural remedy ships in this PR: the pull-request template gains a blocking RED-evidence section and a per-lane readback checklist item",
+        "diagnostic-round health: dispatched 10 / substantive 8 (consensus recorded; 2 repeated handler_exit_nonzero classified environment) — the diagnosis round itself exhibited the failure it was diagnosing, which is why the induced-canary path was the right confirmation vehicle",
+        "one non-blocking #1338 note: details.stdout passes through unbounded at worker-error creation (excerpt is bounded, full stdout is not) — recommend bounding or relying on broker-side normalize before large-payload rounds resume"
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
