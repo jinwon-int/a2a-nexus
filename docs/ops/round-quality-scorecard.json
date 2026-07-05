@@ -711,6 +711,34 @@
         "Boundary preserved: no live broker/Gateway restart, provider send/canary, DB replay/prune/migration, ACK, worker sync/restart, release/tag/package publication, GitHub settings mutation, or raw secret recording."
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-dependabot-train-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "Dependabot train closeout after A2A Team1+Team2 source-only review (#1308/#1309/#1310)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 1,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 6,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "A2A compact source-only review round a2a-nexus-dependabot-train-20260705 created 10/10 lanes and completed 7/10 succeeded; two adapter handler failures were classified as environment and one analysis acceptance wrapper failure as acceptance_misconfigured. Earlier oversized-source attempts failed projection/readiness before r4 and were retried with a 12KB compact bundle.",
+        "Substantive convergence counted 6/10 lanes: PR #1308 and #1309 were merge-safe after fresh branch update/local checks/CI; PR #1310 was block/defer because the TypeScript/@types-node major bump already failed promoted TCK, layout, broker, contracts, promotion-capstone, and check jobs.",
+        "Implementation outcome: PR #1344 first repaired a public-readiness regression in the previous scorecard entry; PR #1308 then merged the picomatch patch update after npm ci, npm run check, and fresh CI; PR #1309 then merged the SHA-pinned GitHub Actions update after workflow permission/action-pinning checks, npm run check, and fresh CI; PR #1310 was commented and closed as deferred major-toolchain work.",
+        "Verification: final main after the train passed npm ci --include=dev and npm run check; live GitHub open PR list for jinwon-int/a2a-nexus returned an empty array.",
+        "Boundary preserved: no live broker/Gateway restart, provider send/canary, DB replay/prune/migration, ACK, worker sync/restart, release/tag/package publication, GitHub settings mutation, or raw secret recording."
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
