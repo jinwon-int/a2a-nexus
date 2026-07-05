@@ -6,11 +6,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 const inventoryPath = new URL('./npm-scripts-inventory.mjs', import.meta.url).pathname;
-const brokerPackagePath = new URL('../package.json', import.meta.url).pathname;
+const brokerTestManifestPath = new URL('./test-manifest.json', import.meta.url).pathname;
 
-test('broker npm test removes ignored dist artifacts before incremental build', () => {
-  const pkg = JSON.parse(readFileSync(brokerPackagePath, 'utf8'));
-  assert.match(pkg.scripts?.test ?? '', /npm run clean:dist && npm run build/);
+test('broker npm test manifest removes ignored dist artifacts before incremental build', () => {
+  const manifest = JSON.parse(readFileSync(brokerTestManifestPath, 'utf8'));
+  assert.match(manifest.legacyEquivalent ?? '', /npm run clean:dist && npm run build/);
+  assert.deepEqual(manifest.entries.slice(0, 2).map((entry) => entry.command), [
+    'npm run clean:dist',
+    'npm run build',
+  ]);
 });
 
 test('npm scripts inventory emits caller audit refs without reading package files as callers', () => {
