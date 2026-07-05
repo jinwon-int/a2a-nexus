@@ -421,6 +421,18 @@
       "class": "gate",
       "round": null,
       "note": "Unit tests for #1295 DA3 decision quality ledger fail-closed taxonomy gate."
+    },
+    {
+      "file": "scripts/check-lane-reliability-ledger.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for #1299 M1 lane reliability ledger schema, taxonomy sync, and privacy gate."
+    },
+    {
+      "file": "scripts/lane-reliability-aggregate.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for #1299 M1 lane reliability aggregate CLI idempotency and unknown-evidence fail-closed behavior."
     }
   ]
 }
