@@ -12,6 +12,12 @@ import {
   type DecisionDialecticTaskV1,
   type DecisionDialecticVerdict,
 } from "./types.js";
+import {
+  appendSubstanceWarnings,
+  decisionDialecticSubstanceMode,
+  validateAntithesisSubstance,
+  validateRebuttalSubstance,
+} from "./substance.js";
 
 const DecisionDialecticPhases = ["thesis", "antithesis", "rebuttal", "synthesis", "outcome"] as const;
 const TerminalDecisionStates = new Set<DecisionDialecticTaskV1["state"]>([
@@ -26,7 +32,12 @@ const TerminalDecisionStates = new Set<DecisionDialecticTaskV1["state"]>([
 
 export class DecisionDialecticExecutionError extends Error {
   constructor(
-    public readonly code: DecisionDialecticPatchErrorCode | "missing_contract" | "wrong_kind" | "invalid_contract",
+    public readonly code:
+      | DecisionDialecticPatchErrorCode
+      | "missing_contract"
+      | "wrong_kind"
+      | "invalid_contract"
+      | "dialectic_roles_not_independent",
     message: string,
   ) {
     super(message);
@@ -51,12 +62,14 @@ export function extractDecisionDialecticTaskInput(payload: Record<string, unknow
   if (!contract.task || typeof contract.task !== "object") {
     throw new DecisionDialecticExecutionError("invalid_contract", "decision.dialectic contract is missing task body");
   }
+  const task = contract.task as DecisionDialecticTaskV1;
+  assertDialecticRolesIndependent(task);
   return {
     contract: {
       kind: DECISION_DIALECTIC_KIND,
       version: DECISION_DIALECTIC_VERSION,
       phase: contract.phase,
-      task: contract.task as DecisionDialecticTaskV1,
+      task,
     },
   };
 }
@@ -164,6 +177,16 @@ export function applyDecisionDialecticPatch(
       assertAuthor(patch.authorAgent, next.roles.antithesisAgent);
       assertPresent(next.thesis, "missing_prerequisite", "thesis is required before antithesis");
       assertMissing(next.antithesis, "duplicate_phase", "antithesis already submitted");
+      {
+        const warnings = validateAntithesisSubstance(next, patch.payload);
+        if (warnings.length > 0 && decisionDialecticSubstanceMode(next) === "enforce") {
+          throw new DecisionDialecticExecutionError(
+            "antithesis_not_substantive",
+            "antithesis does not satisfy deterministic substance requirements",
+          );
+        }
+        appendSubstanceWarnings(next, warnings);
+      }
       next.antithesis = patch.payload;
       next.state = "ANTITHESIS_SUBMITTED";
       break;
@@ -171,6 +194,16 @@ export function applyDecisionDialecticPatch(
       assertAuthor(patch.authorAgent, next.roles.rebuttalAgent ?? next.roles.thesisAgent);
       assertPresent(next.antithesis, "missing_prerequisite", "antithesis is required before rebuttal");
       assertMissing(next.rebuttal, "duplicate_phase", "rebuttal already submitted");
+      {
+        const warnings = validateRebuttalSubstance(patch.payload);
+        if (warnings.length > 0 && decisionDialecticSubstanceMode(next) === "enforce") {
+          throw new DecisionDialecticExecutionError(
+            "rebuttal_not_substantive",
+            "rebuttal does not satisfy deterministic substance requirements",
+          );
+        }
+        appendSubstanceWarnings(next, warnings);
+      }
       next.rebuttal = patch.payload;
       next.state = "REBUTTAL_SUBMITTED";
       break;
@@ -243,6 +276,40 @@ function assertAuthor(authorAgent: string, expected: DecisionDialecticAgentRef):
     throw new DecisionDialecticExecutionError(
       "author_not_allowed",
       "author " + authorAgent + " is not allowed for this decision.dialectic phase",
+    );
+  }
+}
+
+function agentIdentitySet(agent: DecisionDialecticAgentRef): Set<string> {
+  const identities = new Set<string>();
+  identities.add(agent.agentId);
+  if (agent.nodeId) {
+    identities.add(agent.nodeId);
+  }
+  return identities;
+}
+
+function agentRefsOverlap(left: DecisionDialecticAgentRef, right: DecisionDialecticAgentRef): boolean {
+  const rightIdentities = agentIdentitySet(right);
+  for (const identity of agentIdentitySet(left)) {
+    if (rightIdentities.has(identity)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertDialecticRolesIndependent(task: DecisionDialecticTaskV1): void {
+  if (agentRefsOverlap(task.roles.thesisAgent, task.roles.antithesisAgent)) {
+    throw new DecisionDialecticExecutionError(
+      "dialectic_roles_not_independent",
+      "decision.dialectic thesisAgent and antithesisAgent must be independent",
+    );
+  }
+  if (agentRefsOverlap(task.roles.thesisAgent, task.roles.synthAgent)) {
+    throw new DecisionDialecticExecutionError(
+      "dialectic_roles_not_independent",
+      "decision.dialectic synthAgent must be independent from thesisAgent",
     );
   }
 }

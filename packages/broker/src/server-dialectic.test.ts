@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DECISION_DIALECTIC_KIND, DECISION_DIALECTIC_VERSION, type DecisionDialecticTaskInputV1, type DecisionDialecticTaskV1 } from "./decision-dialectic/types.js";
+import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput, applyDecisionDialecticPatch } from "./decision-dialectic/execution.js";
 import { TRADING_DIALECTIC_KIND, TRADING_DIALECTIC_VERSION, type TradingDialecticTaskInputV1, type TradingDialecticTaskV1 } from "./trading-dialectic/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
@@ -227,6 +228,184 @@ function buildDecisionDialecticPayload(
   };
 }
 
+test("decision-dialectic rejects non-independent roles using agentId/nodeId aliases", () => {
+  const base = buildDecisionDialecticTaskFixture();
+  const invalidThesisAntithesis = buildDecisionDialecticPayload({
+    roles: {
+      ...base.roles,
+      thesisAgent: { agentId: "workerbeta", nodeId: "workerbeta-node" },
+      antithesisAgent: { agentId: "workeralpha", nodeId: "workerbeta" },
+    },
+  });
+
+  assert.throws(
+    () => extractDecisionDialecticTaskInput(invalidThesisAntithesis as unknown as Record<string, unknown>),
+    (error) => error instanceof DecisionDialecticExecutionError && error.code === "dialectic_roles_not_independent",
+  );
+
+  const invalidSynth = buildDecisionDialecticPayload({
+    roles: {
+      ...base.roles,
+      thesisAgent: { agentId: "workerbeta", nodeId: "workerbeta-node" },
+      synthAgent: { agentId: "workerbeta-node" },
+    },
+  });
+
+  assert.throws(
+    () => extractDecisionDialecticTaskInput(invalidSynth as unknown as Record<string, unknown>),
+    (error) => error instanceof DecisionDialecticExecutionError && error.code === "dialectic_roles_not_independent",
+  );
+});
+
+test("decision-dialectic warns on non-substantive antithesis by default", () => {
+  const task = buildDecisionDialecticTaskFixture({
+    revision: 1,
+    state: "THESIS_SUBMITTED",
+    antithesis: undefined,
+    rebuttal: undefined,
+    synthesis: undefined,
+    decision: undefined,
+    outcome: undefined,
+  });
+
+  const updated = applyDecisionDialecticPatch(task, {
+    patchId: "patch-antithesis-weak",
+    taskId: task.taskId,
+    expectedRevision: 1,
+    authorAgent: "workeralpha",
+    at: "2026-05-18T00:10:00.000Z",
+    op: "append.antithesis",
+    payload: {
+      author: { agentId: "workeralpha" },
+      submittedAt: "2026-05-18T00:10:00.000Z",
+      counterClaim: "Reduce redundant idle polling.",
+      whyThesisMayFail: "It may fail.",
+      failureModes: [],
+      contradictions: ["unclear"],
+      vetoFlags: [],
+      evidenceRefs: ["ev-01"],
+      confidence: 0.4,
+    },
+  });
+
+  assert.equal(updated.state, "ANTITHESIS_SUBMITTED");
+  assert.deepEqual(
+    updated.substanceWarnings?.map((warning) => warning.code).sort(),
+    [
+      "antithesis_contradiction_not_cross_referenced",
+      "antithesis_failure_modes_not_substantive",
+      "antithesis_missing_independent_evidence",
+    ],
+  );
+});
+
+test("decision-dialectic enforce mode rejects non-substantive antithesis", () => {
+  const task = buildDecisionDialecticTaskFixture({
+    revision: 1,
+    state: "THESIS_SUBMITTED",
+    antithesis: undefined,
+    rebuttal: undefined,
+    synthesis: undefined,
+    decision: undefined,
+    outcome: undefined,
+    context: {
+      ...buildDecisionDialecticTaskFixture().context,
+      domainContext: { decisionDialecticSubstanceGate: "enforce" },
+    },
+  });
+
+  assert.throws(
+    () => applyDecisionDialecticPatch(task, {
+      patchId: "patch-antithesis-weak-enforce",
+      taskId: task.taskId,
+      expectedRevision: 1,
+      authorAgent: "workeralpha",
+      at: "2026-05-18T00:10:00.000Z",
+      op: "append.antithesis",
+      payload: {
+        author: { agentId: "workeralpha" },
+        submittedAt: "2026-05-18T00:10:00.000Z",
+        counterClaim: "Reduce redundant idle polling.",
+        whyThesisMayFail: "It may fail.",
+        failureModes: [],
+        contradictions: ["unclear"],
+        vetoFlags: [],
+        evidenceRefs: ["ev-01"],
+        confidence: 0.4,
+      },
+    }),
+    (error) => error instanceof DecisionDialecticExecutionError && error.code === "antithesis_not_substantive",
+  );
+});
+
+test("decision-dialectic accepts substantive antithesis without warnings", () => {
+  const task = buildDecisionDialecticTaskFixture({
+    revision: 1,
+    state: "THESIS_SUBMITTED",
+    antithesis: undefined,
+    rebuttal: undefined,
+    synthesis: undefined,
+    decision: undefined,
+    outcome: undefined,
+  });
+
+  const updated = applyDecisionDialecticPatch(task, {
+    patchId: "patch-antithesis-strong",
+    taskId: task.taskId,
+    expectedRevision: 1,
+    authorAgent: "workeralpha",
+    at: "2026-05-18T00:10:00.000Z",
+    op: "append.antithesis",
+    payload: {
+      author: { agentId: "workeralpha" },
+      submittedAt: "2026-05-18T00:10:00.000Z",
+      counterClaim: "Reduced idle polling can hide heartbeat stalls.",
+      whyThesisMayFail: "The proposal assumes explicit heartbeat updates always survive scheduler pressure.",
+      failureModes: ["heartbeat updates stall while duplicate scans are bounded"],
+      contradictions: ["The thesis claim about lower event-loop pressure conflicts with the assumption that foreground sessions remain the report channel"],
+      vetoFlags: [],
+      evidenceRefs: ["ev-02"],
+      confidence: 0.62,
+    },
+  });
+
+  assert.equal(updated.state, "ANTITHESIS_SUBMITTED");
+  assert.deepEqual(updated.substanceWarnings ?? [], []);
+});
+
+test("decision-dialectic warns on rebuttal with no risk acknowledgement", () => {
+  const task = buildDecisionDialecticTaskFixture({
+    revision: 2,
+    state: "ANTITHESIS_SUBMITTED",
+    rebuttal: undefined,
+    synthesis: undefined,
+    decision: undefined,
+    outcome: undefined,
+  });
+
+  const updated = applyDecisionDialecticPatch(task, {
+    patchId: "patch-rebuttal-empty-risks",
+    taskId: task.taskId,
+    expectedRevision: 2,
+    authorAgent: "workergamma",
+    at: "2026-05-18T00:15:00.000Z",
+    op: "append.rebuttal",
+    payload: {
+      author: { agentId: "workergamma" },
+      submittedAt: "2026-05-18T00:15:00.000Z",
+      response: "The thesis still stands.",
+      defendedClaims: ["operator visibility remains explicit"],
+      concededRisks: [],
+      residualRisks: [],
+    },
+  });
+
+  assert.equal(updated.state, "REBUTTAL_SUBMITTED");
+  assert.deepEqual(updated.substanceWarnings?.map((warning) => warning.code), [
+    "rebuttal_missing_risk_acknowledgement",
+  ]);
+});
+
 test("decision-dialectic read model returns generic stage rail and dynamic role routing", async () => {
   const server = await startTestServer({
     edgeSecret: "test-edge-secret",
@@ -284,6 +463,7 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
     }
     assert.equal(body.stages.thesis.author.agentId, "workerbeta");
     assert.equal(body.stages.antithesis.vetoFlags[0].code, "drops_operator_visibility");
+    assert.deepEqual(body.substanceWarnings, []);
     assert.equal(body.stages.synthesis.verdict, "PROCEED_WITH_GUARDRAILS");
     assert.equal(body.stages.outcome.present, false);
 
@@ -295,6 +475,11 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
     assert.equal(body.decisionCard.decisionBasisRevision, 3);
     assert.equal(body.decisionCard.ttlSec, 1800);
     assert.equal(body.decisionCard.decidedBy.agentId, "workerdelta");
+    assert.equal(body.summary.confidence.thesis, 0.72);
+    assert.equal(body.summary.confidence.antithesis, 0.64);
+    assert.equal(body.summary.confidence.minimum, 0.64);
+    assert.equal(body.summary.confidence.lowConfidence, false);
+    assert.match(body.summary.headline, /confidence thesis 0\.72\/antithesis 0\.64/);
     assert.match(body.summary.decision, /PROCEED_WITH_GUARDRAILS/);
   } finally {
     await server.close();

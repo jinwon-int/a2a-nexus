@@ -4,9 +4,15 @@ All notable public-safe changes for **A2A Nexus** are collected here. This file 
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## v0.1.0-alpha — 2026-07-05
+
+Status: **release candidate prepared for operator-approved tag/release**. This entry is the release-note source for the initial `v0.1.0-alpha` tag. npm, Docker/GHCR publication, repository visibility changes, production deployment, provider sends, and database/outbox mutations remain out of scope unless separately approved.
+
 ### Added — supply-chain hardening for CI workflows (#1228)
 
-- Every GitHub Actions workflow now declares a minimal top-level `permissions:` block (OpenSSF Scorecard Token-Permissions); `ci.yml` defaults to `contents: read` with job-level widening only where needed. Enforced fail-closed by the new core release-gate step `workflow-permissions` (`scripts/check-workflow-permissions.mjs`).
+- Every GitHub Actions workflow now declares a minimal top-level `permissions:` block (OpenSSF Scorecard Token-Permissions); `ci.yml` defaults to `contents: read` with job-level widening only where needed. Enforced fail-closed by the core release-gate step `workflow-permissions` (`scripts/check-workflow-permissions.mjs`).
 - CodeQL SAST workflow (`.github/workflows/codeql.yml`) scans `javascript-typescript` on every pull request, on `main` pushes, and weekly; findings surface as code-scanning alerts.
 - External GitHub Actions references are pinned to full commit SHAs with source tag comments, enforced by the core `workflow-action-pinning` gate (`scripts/check-workflow-action-pinning.mjs`).
 
@@ -20,16 +26,14 @@ All notable public-safe changes for **A2A Nexus** are collected here. This file 
 - Broker entrypoint installs `unhandledRejection`/`uncaughtException` handlers with structured logging and graceful-shutdown reuse.
 - Process-local security limits (replay cache, rate limiter) are documented in [`packages/broker/docs/process-local-security-limits.md`](packages/broker/docs/process-local-security-limits.md); restarts reset both and horizontal scaling needs a shared store.
 
-## v0.1.0-alpha — operator decision candidate
-
-Status: **draft / unreleased**. Use this entry as the operator decision surface for either an initial `v0.1.0-alpha` tag or a later `v0.1.0` after every public-readiness gate closes.
-
 ### Included scope
 
 - Sanitized A2A Nexus workspace layout for broker, adapter plugin, Docker runner, shared contracts, examples, and public-safe documentation.
 - Integrated local/CI release gate through `npm run check`, including layout checks, package-local checks, public-readiness scan, and compatibility-baseline validation.
 - Public-safe quickstart, canonical demo, known limitations, security policy, issue templates, and release-gate documentation.
 - Compatibility contracts for task lifecycle, terminal semantics, worker registration/read-model assumptions, and broker-to-broker handoff boundaries.
+- Acceptance contracts, Definition-of-Ready linting, scope-drift/readback guardrails, and terminal evidence semantics used to keep delegated work reviewable before merge.
+- Round quality and evidence scorecard gates, including weak-dialectic health signals and source-projection/readback checks for A2A/A2AD review lanes.
 - Release evidence paths for redacted public-readiness and external secret/history scan disposition.
 
 ### Required pre-tag evidence

@@ -8,20 +8,20 @@ import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
   countStateSaveHints,
-  sortWorkersNewestFirst,
-  sortExchangeMessages,
 } from "./broker-record-helpers.js";
 import {
-  collectThreadMessageIds,
   getTaskRequeueReason,
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
+import { normalizeWorkerRecord } from "./broker-worker-identity.js";
 import {
-  workerMetadataMateriallyEqual,
-  normalizeWorkerRecord,
-  chooseFresherWorkerRecord,
-} from "./broker-worker-identity.js";
+  applyWorkerHeartbeatRuntimeUpdate,
+  buildRegisteredWorkerRecord,
+  normalizeWorkerRegistrationCapabilities,
+  workerHeartbeatRequestFromRegistration,
+  workerRegistrationMateriallyChanges,
+} from "./broker-worker-runtime.js";
 import {
   normalizeTaskPayload,
   normalizeTaskResult,
@@ -69,20 +69,12 @@ import {
   getHeartbeatAuditEventId,
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
-import { normalizeCapabilities } from "./broker-capability-normalizers.js";
 import {
-  toWorkerViewRecord,
   isWorkerStale,
 } from "./broker-worker-status.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
 export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
-import {
-  taskMatchesFilters,
-  applyTaskListLimit,
-  proposalMatchesFilters,
-  workerMatchesFilters,
-} from "./broker-list-filters.js";
 import {
   isoNow,
   uniqueIds,
@@ -90,11 +82,31 @@ import {
   sortNewestFirst,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
+import {
+  addBrokerExchangeMessage,
+  listBrokerExchangeMessages,
+  startBrokerExchange,
+} from "./broker-exchange.js";
+import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
+import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
+import {
+  listBrokerArtifactsForProposal,
+  listBrokerAuditEvents,
+  listBrokerValidationsForProposal,
+  readBrokerArtifact,
+} from "./broker-evidence-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
+import {
+  listBrokerWorkerViews,
+  listBrokerWorkers,
+  readBrokerWorker,
+  readBrokerWorkerCachedFirst,
+  readBrokerWorkerView,
+} from "./broker-worker-read.js";
 
-import { summarizeRoundStatus, type RoundStatusSummary } from "./round-status.js";
+import type { RoundStatusSummary } from "./round-status.js";
 
 import {
   assertProposalApplyAllowed,
@@ -147,7 +159,6 @@ import {
   assertTaskOwnership,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
-import { assertExchangeMessageActor } from "./broker-exchange-guards.js";
 import { readExchange, readExchanges } from "./broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
@@ -168,11 +179,14 @@ import type {
   WorkerCapabilityCardQuery,
   WorkerCapabilityCardRepository,
 } from "./worker-capability-card.js";
+import { InMemoryWorkerCapabilityCardRepository } from "./worker-capability-card.js";
 import {
-  InMemoryWorkerCapabilityCardRepository,
-  queryWorkerCapabilityCards,
-  createDefaultCapabilityCard,
-} from "./worker-capability-card.js";
+  deleteBrokerCapabilityProfile,
+  listBrokerCapabilityProfiles,
+  readBrokerCapabilityProfile,
+  registerDefaultBrokerCapabilityProfile,
+  storeBrokerCapabilityProfile,
+} from "./broker-capability-profiles.js";
 import type {
   ApplyProposalRequest,
   ArtifactRecord,
@@ -229,6 +243,19 @@ import type {
 } from "./types.js";
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
+import {
+  DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
+  DEFAULT_WORKER_OFFLINE_AFTER_MS,
+  type BrokerCompactDiagnostics,
+  type BrokerProfilingListener,
+  type BrokerRetentionPolicy,
+  type BrokerStateChange,
+  type BrokerStateListener,
+  type BufferedTaskEvent,
+  type InMemoryA2ABrokerOptions,
+  type TaskDiagnosticsOptions,
+  type TaskUpdateListener,
+} from "./broker-contracts.js";
 // Re-exported to preserve the public surface; BrokerError/BrokerErrorCode and
 // REQUEUE_EXHAUSTED_ERROR_CODE now live in broker-error.js so other modules can
 // throw, type, and reference broker errors without importing the full broker
@@ -236,129 +263,27 @@ import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from 
 export { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE };
 export type { BrokerErrorCode };
 
-export interface BrokerRetentionPolicy {
-  terminalRetentionMs: number;
-  maxTerminalExchanges: number;
-  maxTerminalTasks: number;
-  maxTerminalProposals: number;
-  inactiveWorkerRetentionMs: number;
-  maxInactiveWorkers: number;
-  auditRetentionMs: number;
-  /**
-   * Maximum meaningful, non-heartbeat audit events retained after the age
-   * window. Heartbeat audit rows use maxHeartbeatAuditEvents instead so
-   * liveness chatter cannot evict terminal/proposal/approval evidence.
-   */
-  maxAuditEvents: number;
-  /** Maximum heartbeat audit rows retained after the age window. */
-  maxHeartbeatAuditEvents: number;
-  /** Minimum interval for recording identical task heartbeat audit evidence. */
-  heartbeatAuditSampleIntervalMs: number;
-}
+export {
+  DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS,
+  DEFAULT_WORKER_OFFLINE_AFTER_MS,
+};
+export type {
+  BrokerCompactDiagnostics,
+  BrokerProfilingListener,
+  BrokerProfilingOperation,
+  BrokerProfilingSample,
+  BrokerRetentionPolicy,
+  BrokerStateChange,
+  BrokerStateListener,
+  BufferedTaskEvent,
+  InMemoryA2ABrokerOptions,
+  TaskDiagnosticsOptions,
+  TaskUpdate,
+  TaskUpdateListener,
+  TaskUpdateReason,
+} from "./broker-contracts.js";
 
-export interface InMemoryA2ABrokerOptions {
-  /** Optional table-native repository for high-churn task lifecycle state. */
-  taskRepository?: TaskRuntimeRepository;
-  /** Optional table-native repository for append-only audit diagnostics. */
-  auditRepository?: AuditRuntimeRepository;
-  /** Optional table-native repository for terminal task tombstones. */
-  tombstoneRepository?: TombstoneRuntimeRepository;
-  /** Optional table-native repository for high-churn worker runtime state. */
-  workerRepository?: WorkerRuntimeRepository;
-  /** Optional table-native repository for A2A exchange runtime state. */
-  exchangeRepository?: ExchangeRuntimeRepository;
-  /** Optional table-native repository for A2A exchange message runtime state. */
-  exchangeMessageRepository?: ExchangeMessageRuntimeRepository;
-  /** Optional table-native repository for change proposal runtime state. */
-  proposalRepository?: ProposalRuntimeRepository;
-  /** Optional table-native repository for proposal artifact metadata. */
-  artifactRepository?: ArtifactRuntimeRepository;
-  /** Optional table-native repository for proposal validation results. */
-  validationRepository?: ValidationRuntimeRepository;
-  /** Optional repository for worker capability profile storage and retrieval. */
-  capabilityCardRepository?: WorkerCapabilityCardRepository;
-  retention?: Partial<BrokerRetentionPolicy>;
-  /**
-   * Maximum number of times the stale-task reaper (or manual requeue) is allowed to recycle a
-   * single task back to `queued`. Once the cap is reached the next stale-recovery pass marks
-   * the task `failed` with a `exceeded_requeue_limit` error instead of requeuing it again, so
-   * a flapping worker or poisoned payload cannot thrash the queue forever. `0` disables the
-   * cap (unlimited requeues, legacy behavior).
-   */
-  maxRequeueAttempts?: number;
-  /**
-   * Checkpoint/interrupt timeout in milliseconds (contract §1.4/§2.3): a
-   * paused or awaiting_operator checkpoint that is not resumed within this
-   * window is canceled by the stale-task sweep. Default 24h; 0 disables
-   * timeout cancellation.
-   */
-  checkpointTimeoutMs?: number;
-  /**
-   * Max buffered SSE events per task for replay after reconnect.
-   * Events beyond this limit are discarded (oldest first).
-   * Default: 100.
-   */
-  maxBufferedEventsPerTask?: number;
-  /**
-   * Max retained {@link TaskStatusEvent}s in the broker-wide
-   * {@link TaskEventStream}. Older events are evicted FIFO when exceeded.
-   * Default: 1000.
-   */
-  maxTaskStatusEvents?: number;
-  /**
-   * Max retained terminal outbox records for external operator notifiers.
-   * Older records are evicted FIFO when exceeded. Default: 1000.
-   */
-  maxTerminalTaskOutboxEvents?: number;
-  /**
-   * Minimum interval for persisting unchanged worker heartbeats. Set `0` to persist every heartbeat.
-   * In-memory worker liveness still updates on every heartbeat. Default: disabled.
-   */
-  workerHeartbeatPersistIntervalMs?: number;
-  /**
-   * Stable broker identity for ownership-guarded tasks. When a task carries
-   * brokerOfRecord metadata, lifecycle mutation is accepted only by a broker
-   * configured with the same id.
-   */
-  brokerId?: string;
-  /**
-   * Stable team/tenant identity for ownership-guarded tasks. When a task
-   * carries teamId metadata, lifecycle mutation is accepted only by a broker
-   * configured with the same team id.
-   */
-  teamId?: string;
-  /**
-   * Definition-of-Ready lint mode for patch/implementation task creation. Default warn keeps rollout non-breaking; enforce fails underspecified new tasks closed.
-   */
-  taskReadinessMode?: TaskReadinessMode;
-  /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
-  profilingListener?: BrokerProfilingListener;
-  /** Optional non-core state to include in full broker snapshots. */
-  snapshotExtensions?: () => Partial<BrokerSnapshot>;
-}
-
-export interface TaskDiagnosticsOptions {
-  /** Threshold in ms after which a running task without heartbeat is stale. */
-  staleAfterMs?: number;
-  /** Threshold in ms after which a running task is long-running. */
-  longRunningAfterMs?: number;
-  /** Threshold in ms after which an assigned worker is considered stale/offline. */
-  workerOfflineAfterMs?: number;
-  nowMs?: number;
-}
-
-/**
- * Worker heartbeats are high-churn liveness hints. Persist unchanged heartbeats
- * only when explicitly configured; in-memory liveness remains updated on every
- * request. Material heartbeat changes still persist immediately.
- */
-export const DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS = Number.POSITIVE_INFINITY;
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
-/**
- * Default milliseconds after which a persistent worker is considered stale.
- * @see WorkerMode
- */
-export const DEFAULT_WORKER_OFFLINE_AFTER_MS = 90_000;
 
 /** Frozen interrupt decision types (contracts/a2a/checkpoint-interrupt.md §2.2). */
 const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
@@ -369,105 +294,6 @@ const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
 ];
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
-
-export type TaskUpdateReason =
-  | "created"
-  | "approved"
-  | "claimed"
-  | "started"
-  | "succeeded"
-  | "failed"
-  | "canceled"
-  | "updated"
-  | "checkpointed"
-  | "resumed"
-  | "reassigned"
-  | "requeued"
-  | "dead_lettered"
-  | "wake_planned"
-  | "wake_scheduled"
-  | "wake_skipped"
-  | "wake_failed";
-
-export interface TaskUpdate {
-  task: TaskRecord;
-  reason: TaskUpdateReason;
-  /** Terminal updates should be the last event a subscriber sees for this task. */
-  final: boolean;
-  /** Monotonically increasing sequence number per task for SSE `id:` field and replay. */
-  seq: number;
-}
-
-/** Buffered SSE event for replay after reconnect. */
-export interface BufferedTaskEvent {
-  seq: number;
-  event: string;
-  data: TaskUpdate;
-}
-
-export type TaskUpdateListener = (update: TaskUpdate) => void;
-export type BrokerStateChange =
-  | { kind: "state.persisted" }
-  | { kind: "worker.heartbeat"; workerId: string; materialChange: boolean };
-
-export type BrokerStateListener = (change: BrokerStateChange) => void;
-
-export type BrokerProfilingOperation = "persistState";
-
-export interface BrokerProfilingSample {
-  operation: BrokerProfilingOperation;
-  startedAt: string;
-  durationMs: number;
-  persistenceMode?: "full" | "hot";
-  retentionApplied?: boolean;
-  snapshotExported?: boolean;
-  saveHints?: {
-    hotExchanges: number;
-    hotExchangeMessages: number;
-    hotProposals: number;
-    hotArtifacts: number;
-    hotValidations: number;
-    hotTasks: number;
-    hotTombstones: number;
-    hotAuditEvents: number;
-    hotWorkers: number;
-    hotTerminalOutboxEvents: number;
-  };
-}
-
-export type BrokerProfilingListener = (sample: BrokerProfilingSample) => void;
-
-export interface BrokerCompactDiagnostics {
-  generatedAt: string;
-  tasks: {
-    total: number;
-    byStatus: Record<TaskStatus, number>;
-    stale: number;
-    longRunning: number;
-    bufferedEventStreams: number;
-  };
-  workers: {
-    total: number;
-    stale: number;
-  };
-  audit: {
-    total: number;
-    requeued: number;
-    deadLettered: number;
-  };
-  retention: BrokerRetentionPolicy;
-  runtimeRepositories: {
-    tasks: boolean;
-    audit: boolean;
-    tombstones: boolean;
-    workers: boolean;
-    exchanges: boolean;
-    exchangeMessages: boolean;
-    proposals: boolean;
-    artifacts: boolean;
-    validations: boolean;
-  };
-}
 
 const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
 
@@ -729,40 +555,11 @@ export class InMemoryA2ABroker {
   }
 
   startExchange(request: A2AExchangeRequest): A2AExchangeState {
-    const now = isoNow();
-    const exchangeId = randomUUID();
-    const rootMessage: A2AExchangeMessageRecord = {
-      id: randomUUID(),
-      exchangeId,
-      kind: "root",
-      message: request.message,
-      requester: request.requester,
-      via: request.via,
-      targetNodeId: request.target.id,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const exchange: A2AExchangeState = {
-      id: exchangeId,
-      requester: request.requester,
-      target: request.target,
-      targetNodeId: request.target.id,
-      message: request.message,
-      maxTurns: request.maxTurns ?? 8,
-      intent: request.intent ?? "chat",
-      status: "queued",
-      rootMessageId: rootMessage.id,
-      latestMessageId: rootMessage.id,
-      messageCount: 1,
-      lastMessageAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.setExchangeMessageRecord(rootMessage);
-    this.setExchangeRecord(exchange);
-    this.persistState();
-    return exchange;
+    return startBrokerExchange(request, {
+      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+      persistState: () => this.persistState(),
+    });
   }
 
   getExchange(id: string): A2AExchangeState | null {
@@ -780,90 +577,29 @@ export class InMemoryA2ABroker {
       includeDescendants?: boolean;
     },
   ): A2AExchangeMessageRecord[] {
-    const exchange = this.requireExchange(exchangeId);
-    const messagesById = new Map(
-      [...this.exchangeMessages.entries()].filter(([, message]) => message.exchangeId === exchangeId),
-    );
-    if (this.exchangeMessageRepository) {
-      for (const repositoryMessage of this.exchangeMessageRepository
-        .listExchangeMessages(exchangeId)
-        .map(normalizeExchangeMessageRecord)) {
-        this.exchangeMessages.set(repositoryMessage.id, repositoryMessage);
-        messagesById.set(repositoryMessage.id, repositoryMessage);
-      }
-    }
-    const items = sortedCopy(messagesById.values(), sortExchangeMessages);
-
-    if (!filters?.parentMessageId) {
-      return items;
-    }
-
-    this.requireExchangeMessage(exchange.id, filters.parentMessageId);
-    if (filters.includeDescendants) {
-      const allowedIds = collectThreadMessageIds(items, filters.parentMessageId);
-      return items.filter((message) => allowedIds.has(message.id));
-    }
-    return items.filter((message) => message.parentMessageId === filters.parentMessageId);
+    return listBrokerExchangeMessages(exchangeId, filters, {
+      exchangeMessages: this.exchangeMessages,
+      exchangeMessageRepository: this.exchangeMessageRepository,
+      requireExchange: (id) => this.requireExchange(id),
+      requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
+    });
   }
 
   addExchangeMessage(exchangeId: string, request: A2AExchangeMessageRequest): A2AExchangeMessageRecord {
-    const exchange = this.requireExchange(exchangeId);
-
-    if (!request.actor?.id) {
-      throw new BrokerError("bad_request", "actor.id is required");
-    }
-    if (!request.message) {
-      throw new BrokerError("bad_request", "message is required");
-    }
-
-    assertExchangeMessageActor(exchange, request);
-
-    if (request.targetNodeId) {
-      this.requireWorker(request.targetNodeId);
-    }
-    if (request.assignedWorkerId) {
-      this.requireWorker(request.assignedWorkerId);
-    }
-    if (request.parentMessageId) {
-      this.requireExchangeMessage(exchange.id, request.parentMessageId);
-    }
-
-    const now = isoNow();
-    const message: A2AExchangeMessageRecord = {
-      id: randomUUID(),
-      exchangeId,
-      kind: "thread",
-      message: request.message,
-      actor: request.actor,
-      via: request.via,
-      decision: request.decision,
-      targetNodeId: request.targetNodeId ?? exchange.target.id,
-      assignedWorkerId: request.assignedWorkerId,
-      parentMessageId: request.parentMessageId ?? exchange.rootMessageId,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.setExchangeMessageRecord(message);
-    exchange.messageCount += 1;
-    exchange.lastMessageAt = now;
-    exchange.latestMessageId = message.id;
-    exchange.updatedAt = now;
-    this.applyExchangeMessageDecision(
-      exchange,
-      message,
-      Boolean(request.targetNodeId || request.assignedWorkerId),
-    );
-    this.setExchangeRecord(exchange);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "exchange.message.added",
-      targetType: "exchange-message",
-      targetId: message.id,
-      note: request.decision ? `${request.decision}: ${request.message}` : request.message,
+    return addBrokerExchangeMessage(exchangeId, request, {
+      requireExchange: (id) => this.requireExchange(id),
+      requireWorker: (nodeId) => this.requireWorker(nodeId),
+      requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
+      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+      applyExchangeMessageDecision: (exchange, message, hasExplicitAssignment) => this.applyExchangeMessageDecision(
+        exchange,
+        message,
+        hasExplicitAssignment,
+      ),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
     });
-    this.persistState();
-    return message;
   }
 
   registerWorker(request: RegisterWorkerRequest): WorkerRecord {
@@ -871,44 +607,21 @@ export class InMemoryA2ABroker {
 
     const now = isoNow();
     const existing = this.getWorkerCachedFirst(request.nodeId);
-    const capabilities = normalizeCapabilities(request.capabilities);
-    const materialChange = !existing ||
-      existing.role !== request.role ||
-      existing.displayName !== request.displayName ||
-      existing.brokerUrl !== request.brokerUrl ||
-      existing.workerMode !== request.workerMode ||
-      existing.managementPlane !== request.managementPlane ||
-      JSON.stringify(existing.capabilities) !== JSON.stringify(capabilities) ||
-      !workerMetadataMateriallyEqual(existing.metadata, request.metadata);
+    const capabilities = normalizeWorkerRegistrationCapabilities(request);
+    const materialChange = workerRegistrationMateriallyChanges(existing, request, capabilities);
 
     const identityWarning = existing && materialChange
       ? this.workerChurn.recordFingerprintChange(existing, request, capabilities)
       : undefined;
 
     if (existing && !materialChange) {
-      return this.heartbeatWorker(request.nodeId, {
-        displayName: request.displayName,
-        brokerUrl: request.brokerUrl,
-        capabilities,
-        workerMode: request.workerMode,
-        metadata: request.metadata,
-        managementPlane: request.managementPlane,
-      });
+      return this.heartbeatWorker(
+        request.nodeId,
+        workerHeartbeatRequestFromRegistration(request, capabilities),
+      );
     }
 
-    const worker: WorkerRecord = {
-      nodeId: request.nodeId,
-      role: request.role,
-      displayName: request.displayName,
-      brokerUrl: request.brokerUrl,
-      capabilities,
-      workerMode: request.workerMode,
-      metadata: request.metadata,
-      managementPlane: request.managementPlane,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      lastSeenAt: now,
-    };
+    const worker = buildRegisteredWorkerRecord(request, capabilities, existing, now);
 
     this.setWorkerRecord(worker);
     this.appendAuditEvent({
@@ -939,37 +652,7 @@ export class InMemoryA2ABroker {
     const worker = this.requireWorkerCachedFirst(nodeId);
     const nowMs = Date.now();
     const now = new Date(nowMs).toISOString();
-
-    const nextCapabilities = request?.capabilities
-      ? normalizeCapabilities(request.capabilities)
-      : worker.capabilities;
-    const nextDisplayName = request?.displayName ?? worker.displayName;
-    const nextBrokerUrl = request?.brokerUrl ?? worker.brokerUrl;
-    const nextWorkerMode = request?.workerMode ?? worker.workerMode;
-    const nextMetadata = request?.metadata ?? worker.metadata;
-    const nextManagementPlane = request?.managementPlane ?? worker.managementPlane;
-    const capabilitiesChanged =
-      request?.capabilities !== undefined &&
-      JSON.stringify(nextCapabilities) !== JSON.stringify(worker.capabilities);
-    const metadataChanged =
-      request?.metadata !== undefined &&
-      !workerMetadataMateriallyEqual(worker.metadata, nextMetadata);
-    const materialChange =
-      nextDisplayName !== worker.displayName ||
-      nextBrokerUrl !== worker.brokerUrl ||
-      nextWorkerMode !== worker.workerMode ||
-      nextManagementPlane !== worker.managementPlane ||
-      capabilitiesChanged ||
-      metadataChanged;
-
-    worker.displayName = nextDisplayName;
-    worker.brokerUrl = nextBrokerUrl;
-    worker.capabilities = nextCapabilities;
-    worker.workerMode = nextWorkerMode;
-    worker.metadata = nextMetadata;
-    worker.managementPlane = nextManagementPlane;
-    worker.updatedAt = now;
-    worker.lastSeenAt = now;
+    const { materialChange } = applyWorkerHeartbeatRuntimeUpdate(worker, request, now);
 
     const shouldPersistHeartbeat = this.workerHeartbeatPersist.shouldPersist(
       worker.nodeId,
@@ -1001,59 +684,31 @@ export class InMemoryA2ABroker {
   }
 
   getWorker(nodeId: string): WorkerRecord | null {
-    const cachedWorker = this.workers.get(nodeId) ?? null;
-    const repositoryWorker = this.workerRepository?.getWorker(nodeId);
-    if (repositoryWorker) {
-      const worker = chooseFresherWorkerRecord(cachedWorker, normalizeWorkerRecord(repositoryWorker));
-      this.workers.set(worker.nodeId, worker);
-      return worker;
-    }
-    return cachedWorker;
+    return readBrokerWorker({ workers: this.workers, workerRepository: this.workerRepository }, nodeId);
   }
 
   getWorkerCachedFirst(nodeId: string): WorkerRecord | null {
-    return this.workers.get(nodeId) ?? this.getWorker(nodeId);
+    return readBrokerWorkerCachedFirst({ workers: this.workers, workerRepository: this.workerRepository }, nodeId);
   }
 
   listWorkers(filters?: WorkerListFilters): WorkerRecord[] {
-    if (this.workerRepository) {
-      const workersById = new Map<string, WorkerRecord>();
-      for (const worker of this.workerRepository.listWorkers(filters).map(normalizeWorkerRecord)) {
-        const cachedWorker = this.workers.get(worker.nodeId) ?? null;
-        workersById.set(worker.nodeId, chooseFresherWorkerRecord(cachedWorker, worker));
-      }
-      for (const worker of this.workers.values()) {
-        const existing = workersById.get(worker.nodeId) ?? null;
-        workersById.set(worker.nodeId, chooseFresherWorkerRecord(existing, worker));
-      }
-      const workers = [...workersById.values()];
-      for (const worker of workers) {
-        this.workers.set(worker.nodeId, worker);
-      }
-      return sortedCopy(
-        workers.filter((worker) => workerMatchesFilters(worker, filters)),
-        sortWorkersNewestFirst,
-      );
-    }
-    return sortedCopy(
-      [...this.workers.values()].filter((worker) => {
-        return workerMatchesFilters(worker, filters);
-      }),
-      sortWorkersNewestFirst,
-    );
+    return listBrokerWorkers({ workers: this.workers, workerRepository: this.workerRepository }, filters);
   }
 
   listWorkerViews(offlineAfterMs: number, filters?: WorkerListFilters): WorkerView[] {
-    return this.listWorkers(filters).map((worker) => toWorkerViewRecord(worker, offlineAfterMs));
+    return listBrokerWorkerViews(
+      { workers: this.workers, workerRepository: this.workerRepository },
+      offlineAfterMs,
+      filters,
+    );
   }
 
   getWorkerView(nodeId: string, offlineAfterMs: number): WorkerView | null {
-    const worker = this.getWorker(nodeId);
-    if (!worker) {
-      return null;
-    }
-
-    return toWorkerViewRecord(worker, offlineAfterMs);
+    return readBrokerWorkerView(
+      { workers: this.workers, workerRepository: this.workerRepository },
+      nodeId,
+      offlineAfterMs,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1065,7 +720,7 @@ export class InMemoryA2ABroker {
    * Overwrites any previous profile for the same worker.
    */
   storeCapabilityProfile(card: WorkerCapabilityCard): void {
-    this.capabilityCards.store(card);
+    storeBrokerCapabilityProfile(this.capabilityCards, card);
   }
 
   /**
@@ -1073,7 +728,7 @@ export class InMemoryA2ABroker {
    * has been registered for that worker.
    */
   getCapabilityProfile(workerId: string): WorkerCapabilityCard | null {
-    return this.capabilityCards.get(workerId);
+    return readBrokerCapabilityProfile(this.capabilityCards, workerId);
   }
 
   /**
@@ -1081,18 +736,14 @@ export class InMemoryA2ABroker {
    * when provided. Only valid cards pass the filter.
    */
   listCapabilityProfiles(query?: WorkerCapabilityCardQuery): WorkerCapabilityCard[] {
-    const cards = this.capabilityCards.list();
-    if (!query || Object.keys(query).length === 0) {
-      return cards;
-    }
-    return queryWorkerCapabilityCards(cards, query);
+    return listBrokerCapabilityProfiles(this.capabilityCards, query);
   }
 
   /**
    * Remove a stored capability profile. No-op when the worker has no profile.
    */
   deleteCapabilityProfile(workerId: string): void {
-    this.capabilityCards.delete(workerId);
+    deleteBrokerCapabilityProfile(this.capabilityCards, workerId);
   }
 
   /**
@@ -1111,9 +762,7 @@ export class InMemoryA2ABroker {
       supportedTaskTypes?: A2AExchangeIntent[];
     },
   ): WorkerCapabilityCard {
-    const card = createDefaultCapabilityCard(worker, defaults);
-    this.capabilityCards.store(card);
-    return card;
+    return registerDefaultBrokerCapabilityProfile(this.capabilityCards, worker, defaults);
   }
 
   createProposal(request: CreateProposalRequest): ChangeProposal {
@@ -1158,29 +807,11 @@ export class InMemoryA2ABroker {
   }
 
   getProposal(id: string): ChangeProposal | null {
-    const repositoryProposal = this.proposalRepository?.getProposal(id);
-    if (repositoryProposal) {
-      this.proposals.set(repositoryProposal.id, repositoryProposal);
-      return repositoryProposal;
-    }
-    return this.proposals.get(id) ?? null;
+    return readBrokerProposal(this.proposals, this.proposalRepository, id);
   }
 
   listProposals(filters?: ProposalListFilters): ChangeProposal[] {
-    if (this.proposalRepository) {
-      const repositoryProposals = this.proposalRepository.listProposals(filters);
-      for (const repositoryProposal of repositoryProposals) {
-        this.proposals.set(repositoryProposal.id, repositoryProposal);
-      }
-      return sortedCopy(
-        repositoryProposals.filter((proposal) => proposalMatchesFilters(proposal, filters)),
-        sortNewestFirst,
-      );
-    }
-    return sortedCopy(
-      [...this.proposals.values()].filter((proposal) => proposalMatchesFilters(proposal, filters)),
-      sortNewestFirst,
-    );
+    return listBrokerProposals(this.proposals, this.proposalRepository, filters);
   }
 
   getProposalDetails(id: string): ProposalDetails | null {
@@ -1554,33 +1185,16 @@ export class InMemoryA2ABroker {
   }
 
   getTask(id: string): TaskRecord | null {
-    const repositoryTask = this.taskRepository?.getTask(id);
-    if (repositoryTask) {
-      const task = normalizeTaskRecord(repositoryTask);
-      this.tasks.set(task.id, task);
-      return task;
-    }
-    return this.tasks.get(id) ?? null;
+    return readBrokerTask(this.tasks, this.taskRepository, id);
   }
 
   listTasks(filters?: TaskListFilters): TaskRecord[] {
-    const tasksById = new Map(this.tasks);
-    if (this.taskRepository) {
-      for (const repositoryTask of this.taskRepository.listTasks(filters).map(normalizeTaskRecord)) {
-        this.tasks.set(repositoryTask.id, repositoryTask);
-        tasksById.set(repositoryTask.id, repositoryTask);
-      }
-    }
-    const tasks = sortedCopy(
-      [...tasksById.values()].filter((task) => taskMatchesFilters(task, filters)),
-      sortNewestFirst,
-    );
-    return applyTaskListLimit(tasks, filters?.limit);
+    return listBrokerTasks(this.tasks, this.taskRepository, filters);
   }
 
   /** Aggregate lane completion for an A2A/A2AD parent round (#629). */
   getRoundStatus(parentRoundId: string): RoundStatusSummary {
-    return summarizeRoundStatus(this.listTasks(), parentRoundId);
+    return getBrokerRoundStatus(this.tasks, this.taskRepository, parentRoundId);
   }
 
   updateTaskPayload(
@@ -2149,69 +1763,19 @@ export class InMemoryA2ABroker {
   }
 
   getArtifact(id: string): ArtifactRecord | null {
-    const repositoryArtifact = this.artifactRepository?.getArtifact(id);
-    if (repositoryArtifact) {
-      this.artifacts.set(repositoryArtifact.id, repositoryArtifact);
-      return repositoryArtifact;
-    }
-    return this.artifacts.get(id) ?? null;
+    return readBrokerArtifact(this.artifacts, this.artifactRepository, id);
   }
 
   listArtifactsForProposal(proposalId: string): ArtifactRecord[] {
-    const repositoryArtifacts = this.artifactRepository?.listArtifactsForProposal(proposalId);
-    if (repositoryArtifacts) {
-      for (const artifact of repositoryArtifacts) {
-        this.artifacts.set(artifact.id, artifact);
-      }
-      return sortedCopy(repositoryArtifacts, sortNewestFirst);
-    }
-    return sortedCopy(
-      [...this.artifacts.values()].filter((artifact) => artifact.proposalId === proposalId),
-      sortNewestFirst,
-    );
+    return listBrokerArtifactsForProposal(this.artifacts, this.artifactRepository, proposalId);
   }
 
   listValidationsForProposal(proposalId: string): ValidationResult[] {
-    const repositoryValidations = this.validationRepository?.listValidationsForProposal(proposalId);
-    if (repositoryValidations) {
-      for (const validation of repositoryValidations) {
-        this.validations.set(validation.id, validation);
-      }
-      return sortedCopy(repositoryValidations, sortNewestFirst);
-    }
-    return sortedCopy(
-      [...this.validations.values()].filter((validation) => validation.proposalId === proposalId),
-      sortNewestFirst,
-    );
+    return listBrokerValidationsForProposal(this.validations, this.validationRepository, proposalId);
   }
 
   listAuditEvents(filters?: AuditListFilters): AuditEvent[] {
-    const eventsById = new Map(this.auditEvents);
-    if (this.auditRepository) {
-      const events = this.auditRepository.listAuditEvents(filters);
-      for (const event of events) {
-        this.auditEvents.set(event.id, event);
-        eventsById.set(event.id, event);
-      }
-    }
-    return sortedCopy(
-      [...eventsById.values()].filter((event) => {
-        if (filters?.proposalId && event.proposalId !== filters.proposalId) {
-          return false;
-        }
-        if (filters?.actorId && event.actorId !== filters.actorId) {
-          return false;
-        }
-        if (filters?.action && event.action !== filters.action) {
-          return false;
-        }
-        if (filters?.targetId && event.targetId !== filters.targetId) {
-          return false;
-        }
-        return true;
-      }),
-      sortNewestFirst,
-    );
+    return listBrokerAuditEvents(this.auditEvents, this.auditRepository, filters);
   }
 
 

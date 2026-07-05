@@ -236,6 +236,23 @@ after considering it, record a one-line reason in the PR or issue disposition so
 future scorecard reviews can distinguish deliberate omission from forgotten
 review.
 
+### Per-lane readback in PR bodies (#1296 closeout requirement)
+
+A PR that lands A2A-implemented work should list, for every dispatched lane in
+its evidence rounds, **one line of substance per lane**: what the lane concluded
+or objected to, or the failure class it exited with. A bare `succeeded` is not
+classifiable — the finalizer must then conservatively exclude the lane from
+`substantiveLaneCount`, which understates round health (observed: a 19/20 round
+followed by 7/11 and then no counters at all, purely from readback terseness).
+
+Good: `worker-a: succeeded; PASS; confirmed heartbeat/persist order is preserved.`
+Not classifiable: `worker-a: succeeded.`
+
+Failed lanes stay in the list with their failure class (for example
+`handler_exit_nonzero, excluded from quorum, retried in r3`) so the dispatched
+denominator and the taxonomy classification stay auditable. Counts and role
+labels only — no private prompts or raw session output.
+
 ### Deterministic lane ids (idempotency)
 
 If a lane omits `id`, the CLI derives `${roundId}:${order}` (1-based order). This

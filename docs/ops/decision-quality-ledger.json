@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "id": "dql-20260705-da3-seed-001",
+      "dialecticId": "a2a-nexus-1295-da3-sourcepolicy-a2a-20260705",
+      "scope": "DA3 decision-quality seed from sourceProjectionPolicy design round",
+      "topic": "decision dialectic hygiene and outcome ledger design",
+      "verdict": "PROCEED_WITH_GUARDRAILS",
+      "outcomeRecorded": false,
+      "outcomeMatchedVerdict": "pending",
+      "recordedAt": "2026-07-05",
+      "evidenceRefs": [
+        "gh:jinwon-int/a2a-nexus#1295",
+        "gh:jinwon-int/a2a-nexus#1337",
+        "a2a-round:a2a-nexus-1295-da3-sourcepolicy-a2a-20260705"
+      ],
+      "notes": "Seed entry records the finalizer-owned outcome slot for the DA3 sourceProjectionPolicy design round. Outcome match remains pending until operator/finalizer judgment."
+    }
+  ]
+}

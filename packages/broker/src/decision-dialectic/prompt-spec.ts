@@ -27,9 +27,9 @@ const PhaseResponsibilities: Record<DecisionDialecticPhase, string> = {
   thesis:
     "produce the strongest actionable case for the proposed decision without balancing both sides",
   antithesis:
-    "attack the thesis, identify failure modes, contradictions, and any domain hard veto flags",
+    "attack the thesis with substantive contradictions that cross-reference the thesis, cite independent evidence, identify non-trivial failure modes, and include any domain hard veto flags",
   rebuttal:
-    "respond to the antithesis, defend still-valid claims, and concede live residual risk",
+    "respond to the antithesis, defend still-valid claims, and concede or carry forward at least one live residual risk",
   synthesis:
     "weigh the prior stages, choose one verdict, and route the decision with guardrails",
   outcome:
@@ -117,9 +117,14 @@ ${requiredFields}
 Verdict policy for synthesis:
 - VETO when a blocker vetoFlag or policy violation should stop the decision.
 - WAIT when the decision may be valid but needs more evidence, timing, or prerequisite work.
+- For synthesis, explicitly consider thesis.confidence and antithesis.confidence; if either side is below 0.5, prefer WAIT unless strong cited evidence and guardrails justify a different verdict.
 - PROCEED_WITH_GUARDRAILS when the decision can move in a constrained pilot or bounded rollout.
 - ABSTAIN when the evidence cannot support a decision.
 - PROCEED only when the positive case is strong and guardrails are already satisfied.
+
+Substance policy:
+- For antithesis, contradictions must refer to thesis.claim, thesis.proposal, or thesis.assumptions; evidenceRefs must include at least one independent ref not already used by the thesis; failureModes must include at least one non-trivial item.
+- For rebuttal, concededRisks plus residualRisks must include at least one non-trivial risk acknowledgement.
 
 No markdown, no prose outside JSON.`,
   };

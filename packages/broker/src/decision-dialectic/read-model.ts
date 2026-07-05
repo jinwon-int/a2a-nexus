@@ -15,6 +15,7 @@ import {
   type DecisionDialecticPhase,
   type DecisionDialecticRebuttalV1,
   type DecisionDialecticState,
+  type DecisionDialecticSubstanceWarningV1,
   type DecisionDialecticSynthesisV1,
   type DecisionDialecticTaskV1,
   type DecisionDialecticThesisV1,
@@ -85,6 +86,15 @@ export interface DecisionDialecticDecisionCard {
   decidedAt?: string;
 }
 
+export interface DecisionDialecticConfidenceSummary {
+  thesis?: number;
+  antithesis?: number;
+  minimum?: number;
+  spread?: number;
+  lowConfidence: boolean;
+  waitRecommended: boolean;
+}
+
 export interface DecisionDialecticReadModelV1 {
   kind: typeof DECISION_DIALECTIC_KIND;
   version: typeof DECISION_DIALECTIC_VERSION;
@@ -101,10 +111,12 @@ export interface DecisionDialecticReadModelV1 {
   roles: DecisionDialecticTaskV1["roles"];
   context: DecisionDialecticContextV1;
   stages: DecisionDialecticStages;
+  substanceWarnings: DecisionDialecticSubstanceWarningV1[];
   decisionCard: DecisionDialecticDecisionCard;
   summary: {
     headline: string;
     decision: string;
+    confidence: DecisionDialecticConfidenceSummary;
   };
 }
 
@@ -156,10 +168,12 @@ export function projectDecisionDialecticReadModel(
     roles: dialectic.roles,
     context: dialectic.context,
     stages: buildStages(dialectic),
+    substanceWarnings: dialectic.substanceWarnings ?? [],
     decisionCard: buildDecisionCard(dialectic),
     summary: {
       headline: summarizeDecisionDialecticTask(dialectic),
       decision: summarizeDecisionDialecticDecision(dialectic),
+      confidence: buildConfidenceSummary(dialectic),
     },
   };
 }
@@ -280,6 +294,23 @@ function buildDecisionCard(task: DecisionDialecticTaskV1): DecisionDialecticDeci
     ttlSec: decision.ttlSec,
     decidedBy: task.synthesis?.author,
     decidedAt: task.synthesis?.submittedAt,
+  };
+}
+
+function buildConfidenceSummary(task: DecisionDialecticTaskV1): DecisionDialecticConfidenceSummary {
+  const thesis = task.thesis?.confidence;
+  const antithesis = task.antithesis?.confidence;
+  const values = [thesis, antithesis].filter((value): value is number => typeof value === "number");
+  const minimum = values.length > 0 ? Math.min(...values) : undefined;
+  const spread = thesis !== undefined && antithesis !== undefined ? Math.abs(thesis - antithesis) : undefined;
+  const lowConfidence = minimum !== undefined && minimum < 0.5;
+  return {
+    ...(thesis !== undefined ? { thesis } : {}),
+    ...(antithesis !== undefined ? { antithesis } : {}),
+    ...(minimum !== undefined ? { minimum } : {}),
+    ...(spread !== undefined ? { spread } : {}),
+    lowConfidence,
+    waitRecommended: lowConfidence,
   };
 }
 

@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -41,243 +41,106 @@ import {
   type TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
+import {
+  CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
+  DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
+} from "./store-contracts.js";
+import type {
+  BrokerHotTableLoadMetricEntry,
+  BrokerHotTableLoadMetrics,
+  BrokerHotTableRuntimeLoadLimits,
+  BrokerPersistenceInfo,
+  BrokerSnapshot,
+  BrokerStateSaveHints,
+  BrokerStateStore,
+  JsonFileBrokerStateStoreOptions,
+  SqliteAuditRuntimeRepositoryOptions,
+  SqliteBrokerLoadSource,
+  SqliteBrokerStateStoreOptions,
+} from "./store-contracts.js";
+export {
+  CURRENT_BROKER_STATE_VERSION,
+  DEFAULT_BROKER_STATE_MAX_BYTES,
+} from "./store-contracts.js";
+export type {
+  BrokerHotTableLoadMetricEntry,
+  BrokerHotTableLoadMetrics,
+  BrokerHotTableRuntimeLoadMetric,
+  BrokerHotTableRuntimeLoadLimits,
+  BrokerPersistenceInfo,
+  BrokerSnapshot,
+  BrokerStateSaveHints,
+  BrokerStateStore,
+  JsonFileBrokerStateStoreOptions,
+  SqliteAuditRuntimeRepositoryOptions,
+  SqliteBrokerLoadSource,
+  SqliteBrokerStateStoreOptions,
+} from "./store-contracts.js";
+import type {
+  BrokerHotAuditDiagnostics,
+  BrokerHotEntityDiagnostics,
+  BrokerHotEntityHintCoverage,
+  BrokerHotEntityMirrorMismatch,
+  BrokerHotEntityMirrorRetentionWindow,
+  BrokerHotEntityMirrorStatus,
+  BrokerHotHintCounts,
+  BrokerHotTerminalOutboxDiagnostics,
+  BrokerInvalidHotEntityRow,
+} from "./hot-diagnostics.js";
+import {
+  partyRefSchema,
+  workspaceRefSchema,
+  exchangeViaObjectSchema,
+  exchangeViaSchema,
+  exchangeStateSchema,
+  exchangeMessageSchema,
+  taskValidationPayloadSchema,
+  taskApplyPayloadSchema,
+  taskResultSchema,
+  taskErrorSchema,
+  taskCancellationSchema,
+  taskApprovalSchema,
+  taskApprovalOutcomeSchema,
+  taskPolicyContextSchema,
+  taskWakeSchema,
+  taskSchema,
+  proposalSchema,
+  artifactSchema,
+  validationSchema,
+  auditEventSchema,
+  workerCapabilitiesSchema,
+  workerSchema,
+  tombstoneSchema,
+  terminalOutboxEventSchema,
+  crossBrokerTerminalBriefProjectionSchema,
+  pushNotificationConfigSchema,
+} from "./store-schemas.js";
+import {
+  JsonFileBrokerStateStore,
+  emptySnapshot,
+  parseSnapshotPayload,
+  serializeBrokerSnapshot,
+} from "./store-snapshot-io.js";
 
-export const CURRENT_BROKER_STATE_VERSION = 8;
-export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
+export {
+  JsonFileBrokerStateStore,
+  emptySnapshot,
+  serializeBrokerSnapshot,
+  writeBrokerSnapshotFile,
+} from "./store-snapshot-io.js";
 
-export interface BrokerSnapshot {
-  version: number;
-  exchanges: A2AExchangeState[];
-  exchangeMessages: A2AExchangeMessageRecord[];
-  proposals: ChangeProposal[];
-  artifacts: ArtifactRecord[];
-  validations: ValidationResult[];
-  auditEvents: AuditEvent[];
-  workers: WorkerRecord[];
-  tasks: TaskRecord[];
-  goals?: GoalRecord[];
-  tombstones?: TaskTombstone[];
-  terminalOutbox?: TerminalTaskOutboxEvent[];
-  crossBrokerTerminalBriefs?: CrossBrokerTerminalBriefProjection[];
-  pushNotificationConfigs?: TaskPushNotificationConfig[];
-}
 
-export interface BrokerStateStore {
-  load(): BrokerSnapshot;
-  save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void;
-  /**
-   * Persist dirty hot-table rows without requiring the caller to build a full
-   * BrokerSnapshot first. Stores that cannot support granular writes should
-   * leave this undefined so callers can fall back to save().
-   */
-  saveHotEntities?(hints: BrokerStateSaveHints): void;
-  /**
-   * Optional durable-write acknowledgement hook for queued/asynchronous stores.
-   * Mutating HTTP routes call this after broker mutation and before returning
-   * success, preserving the existing "persistState returned" ACK boundary.
-   */
-  awaitDurablePersistenceAck?(): Promise<void>;
-  getPersistenceInfo?(): BrokerPersistenceInfo;
-}
-
-export interface BrokerStateSaveHints {
-  hotExchanges?: A2AExchangeState[];
-  hotExchangeMessages?: A2AExchangeMessageRecord[];
-  hotProposals?: ChangeProposal[];
-  hotArtifacts?: ArtifactRecord[];
-  hotValidations?: ValidationResult[];
-  hotTasks?: TaskRecord[];
-  hotTombstones?: TaskTombstone[];
-  hotAuditEvents?: AuditEvent[];
-  hotWorkers?: WorkerRecord[];
-  /** Dirty terminal-outbox rows whose ack/receipt state must be table-persisted immediately. */
-  hotTerminalOutboxEvents?: TerminalTaskOutboxEvent[];
-}
-
-export interface BrokerPersistenceInfo {
-  kind: string;
-  stateVersion: number;
-  loadSource?: string;
-  schemaVersion?: number;
-  stateFile?: string;
-  dbFile?: string;
-  journalMode?: string;
-  hotEntityTables?: string[];
-  hotEntityHintTables?: string[];
-  hotEntityHintCoverage?: BrokerHotEntityHintCoverage;
-  hotEntityMirror?: BrokerHotEntityMirrorStatus;
-  hotEntityDiagnostics?: BrokerHotEntityDiagnostics;
-  hotTableLoadMetrics?: BrokerHotTableLoadMetrics;
-  hotTableRuntimeLoadLimits?: BrokerHotTableRuntimeLoadLimits;
-  importedFromJsonFile?: string;
-  lastImportAt?: string;
-  /** ISO timestamp of the most recent persist. */
-  lastPersistAt?: string;
-  /** Whether the most recent persist skipped full snapshot serialization (incremental hot-table mode). */
-  lastPersistSkippedFullSnapshot?: boolean;
-  /** Dirty-table hint counts for the most recent persist. */
-  lastHotHintCounts?: BrokerHotHintCounts;
-}
-
-export interface BrokerHotHintCounts {
-  hotExchanges: number;
-  hotExchangeMessages: number;
-  hotProposals: number;
-  hotArtifacts: number;
-  hotValidations: number;
-  hotTasks: number;
-  hotTombstones: number;
-  hotAuditEvents: number;
-  hotWorkers: number;
-  hotTerminalOutboxEvents: number;
-}
-
-export interface BrokerHotEntityDiagnostics {
-  invalidRows: BrokerInvalidHotEntityRow[];
-}
-
-export interface BrokerInvalidHotEntityRow {
-  table: string;
-  primaryKey: string;
-  schemaError: string;
-  count: number;
-}
-
-export interface BrokerHotEntityHintCoverage {
-  ok: boolean;
-  supportedTables: string[];
-  missingTables: string[];
-  supportedCount: number;
-  totalCount: number;
-}
-
-export interface BrokerHotEntityMirrorStatus {
-  ok: boolean;
-  tableCounts: Record<string, number>;
-  snapshotCounts?: Record<string, number>;
-  mismatches: BrokerHotEntityMirrorMismatch[];
-  retentionWindows?: BrokerHotEntityMirrorRetentionWindow[];
-}
-
-export interface BrokerHotEntityMirrorMismatch {
-  table: string;
-  snapshotKey: string;
-  tableCount: number;
-  snapshotCount: number;
-  reason?: "count_drift" | "id_drift" | "audit_hot_retention";
-}
-
-export interface BrokerHotEntityMirrorRetentionWindow extends BrokerHotEntityMirrorMismatch {
-  reason: "audit_hot_retention";
-  prunedCount: number;
-}
-
-export interface BrokerHotAuditDiagnostics {
-  total: number;
-  heartbeat: number;
-  heartbeatRatio: number;
-  workerHeartbeat: number;
-  workerHeartbeatRatio: number;
-  taskHeartbeat: number;
-  taskHeartbeatRatio: number;
-  recentWindowMs: number;
-  recentTotal: number;
-  recentHeartbeat: number;
-  recentHeartbeatRatio: number;
-  recentWorkerHeartbeat: number;
-  recentWorkerHeartbeatRatio: number;
-  recentTaskHeartbeat: number;
-  recentTaskHeartbeatRatio: number;
-  warnings: string[];
-}
-
-export interface BrokerHotTerminalOutboxDiagnostics {
-  total: number;
-  acked: number;
-  rawUnacked: number;
-  unacked: number;
-  ackEligibleUnacked: number;
-  ackIneligibleUnacked: number;
-  unackedRatio: number;
-  oldestUnackedCreatedAt: string | null;
-  oldestUnackedAgeMs: number | null;
-  classification: "clean" | "recent_unacked_watch" | "ack_ineligible_historical_residue" | "actionable_review_required";
-  actionableBacklog: boolean;
-  ageBuckets: Record<"lt1d" | "1to7d" | "7to14d" | "gte14d" | "unknown", number>;
-  byTerminalStatus: Record<string, number>;
-  byReceiptStatus: Record<string, number>;
-  byBrokerOfRecord: Record<string, number>;
-  byWorker: Record<string, number>;
-  warnings: string[];
-}
-
-export interface BrokerHotTableRuntimeLoadLimits {
-  /** Terminal task rows retained in live memory; active tasks always hydrate. */
-  terminalTasks: number;
-  auditEvents: number;
-  terminalOutboxEvents: number;
-}
-
-export interface BrokerHotTableRuntimeLoadMetric {
-  /** Configured runtime hydration cap for this table/window. */
-  limit: number;
-  /** Rows expected to hydrate into the in-memory runtime snapshot. */
-  loadedCount: number;
-  /** Rows left queryable in SQLite but skipped from startup/runtime hydration. */
-  skippedCount: number;
-  /** Only set for broker_tasks: active rows are always hydrated outside the terminal cap. */
-  activeCount?: number;
-  /** Only set for broker_tasks: completed/failed/canceled rows subject to the terminal cap. */
-  terminalCount?: number;
-}
-
-export interface BrokerHotTableLoadMetricEntry {
-  count: number;
-  maxPayloadBytes: number;
-  /** Sum of serialized payload bytes for rows in this hot table, when available. */
-  totalPayloadBytes?: number;
-  runtimeLoad?: BrokerHotTableRuntimeLoadMetric;
-  /** Only set for broker_terminal_outbox. */
-  unackedCount?: number;
-}
-
-export interface BrokerHotTableLoadMetrics {
-  tables: Record<string, BrokerHotTableLoadMetricEntry>;
-}
-
-export interface JsonFileBrokerStateStoreOptions {
-  maxBytes?: number;
-}
-
-export type SqliteBrokerLoadSource = "snapshot" | "hot-tables";
-
-export interface SqliteBrokerStateStoreOptions {
-  maxBytes?: number;
-  importJsonFile?: string;
-  loadSource?: SqliteBrokerLoadSource;
-  /**
-   * Maximum non-terminal (queued/claimed/running/blocked) task rows to hydrate into live
-   * memory when using loadSource=hot-tables. Non-terminal tasks are always loaded up to this
-   * limit (ordered by updated_at DESC, id ASC). Default: 500.
-   */
-  maxHotRuntimeNonTerminalTasks?: number;
-  /**
-   * Maximum terminal task rows to hydrate into live memory when using
-   * loadSource=hot-tables. Active/non-terminal tasks are always loaded.
-   */
-  maxHotRuntimeTerminalTasks?: number;
-  /** Maximum audit rows to hydrate into live memory when using loadSource=hot-tables. */
-  maxHotRuntimeAuditEvents?: number;
-  /** Maximum heartbeat audit rows retained in the SQLite hot audit table. */
-  maxHotRuntimeHeartbeatAuditEvents?: number;
-  /** Maximum terminal outbox rows to hydrate into live memory when using loadSource=hot-tables. */
-  maxHotRuntimeTerminalOutboxEvents?: number;
-}
-
-export interface SqliteAuditRuntimeRepositoryOptions {
-  maxHotAuditEvents?: number;
-  maxHotHeartbeatAuditEvents?: number;
-}
+export type {
+  BrokerHotAuditDiagnostics,
+  BrokerHotEntityDiagnostics,
+  BrokerHotEntityHintCoverage,
+  BrokerHotEntityMirrorMismatch,
+  BrokerHotEntityMirrorRetentionWindow,
+  BrokerHotEntityMirrorStatus,
+  BrokerHotHintCounts,
+  BrokerHotTerminalOutboxDiagnostics,
+  BrokerInvalidHotEntityRow,
+} from "./hot-diagnostics.js";
 
 export interface SqliteTaskHotTableFilters {
   id?: string;
@@ -489,365 +352,6 @@ const SQLITE_HOT_ENTITY_SNAPSHOT_KEYS: Record<SqliteHotEntityTable, BrokerSnapsh
   broker_terminal_outbox: "terminalOutbox",
 };
 
-const partyRefSchema = z
-  .object({
-    id: z.string().min(1),
-    kind: z.string().optional(),
-    role: z.string().optional(),
-  })
-  .passthrough();
-
-const workspaceRefSchema = z
-  .object({
-    nodeId: z.string().min(1),
-    workspaceId: z.string().min(1),
-    pathHint: z.string().optional(),
-    branch: z.string().optional(),
-    strategyId: z.string().optional(),
-  })
-  .passthrough();
-
-const exchangeViaObjectSchema = z
-  .object({
-    transport: z.string().min(1).optional(),
-    channel: z.string().min(1).optional(),
-    nodeId: z.string().min(1).optional(),
-    sessionId: z.string().min(1).optional(),
-    traceId: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-const exchangeViaSchema = z.union([
-  exchangeViaObjectSchema,
-  z.string().min(1).transform((transport) => ({ transport })),
-]);
-
-const exchangeStateSchema = z
-  .object({
-    id: z.string().min(1),
-    requester: partyRefSchema,
-    target: partyRefSchema,
-    targetNodeId: z.string().min(1),
-    assignedWorkerId: z.string().min(1).optional(),
-    message: z.string(),
-    maxTurns: z.number(),
-    intent: z.string().min(1),
-    status: z.string().min(1),
-    currentDecision: z.string().min(1).optional(),
-    rootMessageId: z.string(),
-    latestMessageId: z.string(),
-    messageCount: z.number(),
-    lastMessageAt: z.string(),
-    activeTaskId: z.string().min(1).optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .passthrough();
-
-const exchangeMessageSchema = z
-  .object({
-    id: z.string().min(1),
-    exchangeId: z.string().min(1),
-    kind: z.string().min(1),
-    message: z.string(),
-    requester: partyRefSchema.optional(),
-    actor: partyRefSchema.optional(),
-    via: exchangeViaSchema.optional(),
-    decision: z.string().min(1).optional(),
-    targetNodeId: z.string().min(1).optional(),
-    assignedWorkerId: z.string().min(1).optional(),
-    parentMessageId: z.string().min(1).optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .passthrough();
-
-const taskValidationPayloadSchema = z
-  .object({
-    nodeId: z.string().min(1).optional(),
-    kind: z.string().min(1),
-    verdict: z.string().min(1),
-    metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-    artifactIds: z.array(z.string()).optional(),
-    note: z.string().optional(),
-  })
-  .passthrough();
-
-const taskApplyPayloadSchema = z
-  .object({
-    workspace: workspaceRefSchema.optional(),
-    artifactIds: z.array(z.string()).optional(),
-    note: z.string().optional(),
-  })
-  .passthrough();
-
-const taskResultSchema = z
-  .object({
-    summary: z.string().optional(),
-    note: z.string().optional(),
-    artifactIds: z.array(z.string()).optional(),
-    output: z.record(z.string(), z.unknown()).optional(),
-    validation: taskValidationPayloadSchema.optional(),
-    apply: taskApplyPayloadSchema.optional(),
-  })
-  .passthrough();
-
-const taskErrorSchema = z
-  .object({
-    code: z.string().optional(),
-    message: z.string().min(1),
-    details: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
-
-const taskCancellationSchema = z
-  .object({
-    requestedAt: z.string(),
-    requestedBy: z.string().min(1),
-    kind: z.enum(["operator_cancel", "superseded"]).optional(),
-    reason: z.string().optional(),
-    sourceTaskId: z.string().min(1).optional(),
-    supersededByTaskId: z.string().min(1).optional(),
-    supersededByPrUrl: z.string().min(1).optional(),
-    roundId: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-const taskApprovalSchema = z
-  .object({
-    approvalId: z.string().min(1),
-    approvedAt: z.string(),
-    approvedBy: z.string().min(1),
-    actorRole: z.string().optional(),
-    requesterRole: z.string().optional(),
-    reason: z.string().optional(),
-  })
-  .passthrough();
-
-const taskApprovalOutcomeSchema = z
-  .object({
-    status: z.enum(["approved", "rejected", "expired", "canceled"]),
-    approvalId: z.string().min(1),
-    decidedAt: z.string(),
-    decidedBy: z.string().min(1),
-    actorRole: z.string().optional(),
-    requesterRole: z.string().optional(),
-    reason: z.string().optional(),
-  })
-  .passthrough();
-
-const taskPolicyContextSchema = z
-  .object({
-    requiresApproval: z.boolean().optional(),
-    liveImpact: z.boolean().optional(),
-    targetEnvironment: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-
-const taskWakeSchema = z
-  .object({
-    status: z.enum(["planned", "scheduled", "skipped", "failed"]),
-    wakeKey: z.string().min(1),
-    idempotencyKey: z.string().min(1),
-    targetSessionKey: z.string().min(1),
-    targetNodeId: z.string().min(1).optional(),
-    waitRunId: z.string().min(1).optional(),
-    correlationId: z.string().min(1).optional(),
-    parentRunId: z.string().min(1).optional(),
-    coalesced: z.boolean().optional(),
-    runtimeRunId: z.string().min(1).optional(),
-    code: z.string().min(1).optional(),
-    message: z.string().optional(),
-    plannedAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-    decidedAt: z.string().min(1).optional(),
-    replayCount: z.number().int().nonnegative().optional(),
-  })
-  .passthrough();
-
-const taskSchema = z
-  .object({
-    id: z.string().min(1),
-    exchangeId: z.string().min(1).optional(),
-    parentTaskId: z.string().min(1).optional(),
-    intent: z.string().min(1),
-    requester: partyRefSchema,
-    target: partyRefSchema,
-    workspace: workspaceRefSchema.optional(),
-    message: z.string().optional(),
-    proposalId: z.string().min(1).optional(),
-    artifactIds: z.array(z.string()).optional(),
-    assignedWorkerId: z.string().min(1).optional(),
-    via: exchangeViaSchema.optional(),
-    policyContext: taskPolicyContextSchema.optional(),
-    createdAt: z.string(),
-    status: z.string().min(1),
-    targetNodeId: z.string().min(1),
-    payload: z.record(z.string(), z.unknown()),
-    updatedAt: z.string(),
-    claimedAt: z.string().optional(),
-    completedAt: z.string().optional(),
-    claimedBy: z.string().min(1).optional(),
-    result: taskResultSchema.optional(),
-    error: taskErrorSchema.optional(),
-    cancellation: taskCancellationSchema.optional(),
-    approval: taskApprovalSchema.optional(),
-    approvalOutcome: taskApprovalOutcomeSchema.optional(),
-    requeueCount: z.number().int().nonnegative().optional(),
-    lastHeartbeatAt: z.string().optional(),
-    attemptId: z.string().min(1).optional(),
-    wake: taskWakeSchema.optional(),
-    taskOrigin: z.enum(["github", "api", "sessions_send", "operator", "unknown"]).optional(),
-  })
-  .passthrough();
-
-const proposalSchema = z
-  .object({
-    id: z.string().min(1),
-    source: partyRefSchema,
-    target: partyRefSchema,
-    sourceNodeId: z.string().min(1),
-    targetNodeId: z.string().min(1),
-    kind: z.string().min(1),
-    summary: z.string().min(1),
-    rationale: z.string().optional(),
-    workspace: workspaceRefSchema,
-    patchText: z.string().optional(),
-    parameterPayload: z.record(z.string(), z.unknown()).optional(),
-    artifactIds: z.array(z.string()),
-    status: z.string().min(1),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .passthrough();
-
-const artifactSchema = z
-  .object({
-    id: z.string().min(1),
-    proposalId: z.string().min(1),
-    kind: z.string().min(1),
-    uri: z.string().min(1),
-    contentType: z.string().optional(),
-    sizeBytes: z.number().optional(),
-    summary: z.string().optional(),
-    createdAt: z.string(),
-  })
-  .passthrough();
-
-const validationSchema = z
-  .object({
-    id: z.string().min(1),
-    proposalId: z.string().min(1),
-    nodeId: z.string().min(1),
-    kind: z.string().min(1),
-    verdict: z.string().min(1),
-    metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
-    artifactIds: z.array(z.string()),
-    note: z.string().optional(),
-    createdAt: z.string(),
-  })
-  .passthrough();
-
-const auditEventSchema = z
-  .object({
-    id: z.string().min(1),
-    actorId: z.string().min(1),
-    action: z.string().min(1),
-    targetType: z.string().min(1),
-    targetId: z.string().min(1),
-    proposalId: z.string().min(1).optional(),
-    note: z.string().optional(),
-    createdAt: z.string(),
-  })
-  .passthrough();
-
-const workerCapabilitiesSchema = z
-  .object({
-    canAnalyze: z.boolean(),
-    canBackfill: z.boolean(),
-    canPatchWorkspace: z.boolean(),
-    canPromoteLive: z.boolean(),
-    workspaceIds: z.array(z.string()),
-    environments: z.array(z.string()),
-  })
-  .passthrough();
-
-const workerSchema = z
-  .object({
-    nodeId: z.string().min(1),
-    role: z.string().min(1),
-    displayName: z.string().optional(),
-    brokerUrl: z.string().optional(),
-    capabilities: workerCapabilitiesSchema,
-    metadata: z.record(z.string(), z.string()).optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-    lastSeenAt: z.string(),
-  })
-  .passthrough();
-
-const tombstoneSchema = z
-  .object({
-    taskId: z.string().min(1),
-    terminalStatus: z.string().min(1),
-    tombstoneReason: z.string().min(1),
-    durationMs: z.number(),
-    requeueCount: z.number(),
-    error: taskErrorSchema.optional(),
-    result: taskResultSchema.optional(),
-    tombstonedAt: z.string().min(1),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
-
-const terminalOutboxEventSchema = z
-  .object({
-    id: z.string().min(1),
-    kind: z.literal("task.terminal"),
-    taskEventId: z.number().int().nonnegative(),
-    payload: z
-      .object({
-        taskId: z.string().min(1),
-        status: z.enum(["succeeded", "failed", "canceled", "blocked"]),
-        worker: z.string().optional(),
-        repo: z.string().optional(),
-        issue: z.number().int().nonnegative().optional(),
-        terminalBriefTitle: z.string().optional(),
-        prUrl: z.string().url().optional(),
-        doneUrl: z.string().url().optional(),
-        blockUrl: z.string().url().optional(),
-        testSummary: z.string().optional(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
-        completedAt: z.string().optional(),
-      })
-      .passthrough(),
-    createdAt: z.string(),
-    ack: z
-      .object({
-        status: z.literal("receipt_confirmed"),
-        evidence: z.enum(["current_session_visible", "operator_visible", "operator_confirmed", "provider_delivery_receipt"]),
-        acknowledgedAt: z.string(),
-        receiptId: z.string().optional(),
-        note: z.string().optional(),
-      })
-      .passthrough()
-      .optional(),
-    receipt: z
-      .object({
-        status: z.enum(["accepted", "started", "produced", "provider_sent", "provider_accepted", "current_session_visible", "operator_visible", "timed_out", "stale", "failed", "sent", "provider_delivered_if_known"]),
-        updatedAt: z.string(),
-        evidence: z.enum(["current_session_visible", "operator_visible", "operator_confirmed", "provider_delivery_receipt"]).optional(),
-        receiptId: z.string().optional(),
-        note: z.string().optional(),
-      })
-      .passthrough()
-      .optional(),
-    deliveredAt: z.string().optional(),
-    attempts: z.number().int().nonnegative(),
-  })
-  .passthrough();
 
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
@@ -855,114 +359,10 @@ export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
 export const DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS = DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION;
 
-const crossBrokerTerminalBriefProjectionSchema = z
-  .object({
-    id: z.string().min(1),
-    parentRoundId: z.string().min(1),
-    originBrokerId: z.string().min(1),
-    brokerOfRecordId: z.string().min(1).optional(),
-    childTaskId: z.string().min(1).optional(),
-    childRunId: z.string().min(1).optional(),
-    childWorkerId: z.string().min(1).optional(),
-    status: z.enum(["succeeded", "failed", "canceled", "blocked"]),
-    summary: z.string().optional(),
-    taskBrief: z.string().optional(),
-    terminalBriefTitle: z.string().optional(),
-    evidenceUrl: z.string().url().optional(),
-    completedAt: z.string(),
-    emittedAt: z.string(),
-    receivedAt: z.string(),
-    sourceDigest: z.string().min(1),
-    replayCount: z.number().int().nonnegative(),
-    parentRoundTotal: z.number().int().positive().optional(),
-    parentRoundOrder: z.number().int().positive().optional(),
-    ack: z
-      .object({
-        decision: z.enum(["accepted", "duplicate_replay"]),
-        terminalAck: z.literal(false),
-        reason: z.string(),
-        updatedAt: z.string(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
-const pushNotificationConfigSchema = z
-  .object({
-    id: z.string().min(1),
-    taskId: z.string().min(1),
-    url: z.string().min(1),
-    token: z.string().optional(),
-    authentication: z
-      .object({
-        schemes: z.array(z.string()).optional(),
-        credentials: z.string().optional(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
-
-const brokerSnapshotSchema = z
-  .object({
-    version: z.number().int().nonnegative().optional().default(CURRENT_BROKER_STATE_VERSION),
-    exchanges: z.array(exchangeStateSchema).optional().default([]),
-    exchangeMessages: z.array(exchangeMessageSchema).optional().default([]),
-    proposals: z.array(proposalSchema).optional().default([]),
-    artifacts: z.array(artifactSchema).optional().default([]),
-    validations: z.array(validationSchema).optional().default([]),
-    auditEvents: z.array(auditEventSchema).optional().default([]),
-    workers: z.array(workerSchema).optional().default([]),
-    tasks: z.array(taskSchema).optional().default([]),
-    tombstones: z.array(tombstoneSchema).optional().default([]),
-    terminalOutbox: z.array(terminalOutboxEventSchema).optional().default([]),
-    crossBrokerTerminalBriefs: z.array(crossBrokerTerminalBriefProjectionSchema).optional().default([]),
-    pushNotificationConfigs: z.array(pushNotificationConfigSchema).optional(),
-  })
-  .passthrough();
-
 function coerceSqliteCount(row: { count?: number | bigint } | undefined): number {
   return typeof row?.count === "bigint"
     ? Number(row.count)
     : typeof row?.count === "number" ? row.count : 0;
-}
-
-export class JsonFileBrokerStateStore implements BrokerStateStore {
-  private readonly maxBytes: number;
-
-  constructor(
-    private readonly filePath: string,
-    options: JsonFileBrokerStateStoreOptions = {},
-  ) {
-    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES);
-  }
-
-  load(): BrokerSnapshot {
-    try {
-      return readBrokerSnapshotFile(this.filePath, this.maxBytes);
-    } catch (error) {
-      if (isMissingFileError(error)) {
-        return emptySnapshot();
-      }
-      const backupPath = brokerSnapshotBackupPath(this.filePath);
-      if (existsSync(backupPath)) {
-        return readBrokerSnapshotFile(backupPath, this.maxBytes);
-      }
-      throw error;
-    }
-  }
-
-  save(snapshot: BrokerSnapshot, _hints?: BrokerStateSaveHints): void {
-    writeBrokerSnapshotFile(this.filePath, snapshot, this.maxBytes);
-  }
-
-  getPersistenceInfo(): BrokerPersistenceInfo {
-    return {
-      kind: "json-file",
-      stateFile: this.filePath,
-      stateVersion: CURRENT_BROKER_STATE_VERSION,
-    };
-  }
 }
 
 export class SqliteBrokerStateStore implements BrokerStateStore {
@@ -981,7 +381,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     private readonly dbFile: string,
     options: SqliteBrokerStateStoreOptions = {},
   ) {
-    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES);
+    this.maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_BROKER_STATE_MAX_BYTES_VALUE);
     this.importJsonFile = options.importJsonFile;
     this.loadSource = options.loadSource ?? "snapshot";
     this.maxHotRuntimeNonTerminalTasks = normalizeNonNegativeSqliteLimit(
@@ -1035,7 +435,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   readHotRuntimeSnapshot(): BrokerSnapshot {
     const pushNotificationConfigs = this.readCanonicalPushNotificationConfigs();
     const snapshot: BrokerSnapshot = {
-      version: CURRENT_BROKER_STATE_VERSION,
+      version: CURRENT_BROKER_STATE_VERSION_VALUE,
       exchanges: this.readHotExchanges(),
       exchangeMessages: this.readHotExchangeMessages(),
       proposals: this.readHotProposals(),
@@ -1286,7 +686,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const info: BrokerPersistenceInfo = {
       kind: "sqlite",
       dbFile: this.dbFile,
-      stateVersion: CURRENT_BROKER_STATE_VERSION,
+      stateVersion: CURRENT_BROKER_STATE_VERSION_VALUE,
       loadSource: this.loadSource,
       schemaVersion: SQLITE_SCHEMA_VERSION,
       journalMode: this.journalMode,
@@ -1987,7 +1387,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ON broker_tasks(task_origin, status);
     `);
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
-    this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+    this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
     return journal?.journal_mode ?? "unknown";
   }
 
@@ -2069,7 +1469,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       const hasSnapshotOnlySidecarState = snapshot.pushNotificationConfigs !== undefined;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
-      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot });
     });
   }
@@ -2078,7 +1478,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
       this.writeHotEntityHintRows(hints);
-      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION));
+      this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
     });
   }
@@ -2106,7 +1506,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
            payload = excluded.payload,
            updated_at = excluded.updated_at`,
       )
-      .run(CURRENT_BROKER_STATE_VERSION, payload, updatedAt);
+      .run(CURRENT_BROKER_STATE_VERSION_VALUE, payload, updatedAt);
   }
 
   private writePersistDiagnostics(
@@ -3013,32 +2413,6 @@ export class SqliteTombstoneRuntimeRepository implements TombstoneRuntimeReposit
   }
 }
 
-export function emptySnapshot(): BrokerSnapshot {
-  return {
-    version: CURRENT_BROKER_STATE_VERSION,
-    exchanges: [],
-    exchangeMessages: [],
-    proposals: [],
-    artifacts: [],
-    validations: [],
-    auditEvents: [],
-    workers: [],
-    tasks: [],
-    tombstones: [],
-    terminalOutbox: [],
-    crossBrokerTerminalBriefs: [],
-  };
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
 function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.trunc(value));
@@ -3058,94 +2432,6 @@ function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCa
     workers: snapshot.workers.length,
     terminalOutbox: snapshot.terminalOutbox?.length ?? 0,
   };
-}
-
-export function serializeBrokerSnapshot(
-  snapshot: BrokerSnapshot,
-  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES,
-): string {
-  const payload = JSON.stringify(
-    {
-      ...snapshot,
-      version: CURRENT_BROKER_STATE_VERSION,
-    },
-    null,
-    2,
-  );
-  const bytes = Buffer.byteLength(payload, "utf8");
-  if (bytes > maxBytes) {
-    throw new Error(`broker snapshot exceeds max size (${bytes} > ${maxBytes} bytes)`);
-  }
-  return payload;
-}
-
-export function writeBrokerSnapshotFile(
-  filePath: string,
-  snapshot: BrokerSnapshot,
-  maxBytes: number = DEFAULT_BROKER_STATE_MAX_BYTES,
-): void {
-  mkdirSync(dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp`;
-  const backupPath = brokerSnapshotBackupPath(filePath);
-  const payload = serializeBrokerSnapshot(snapshot, maxBytes);
-  writeFileSync(tempPath, payload, "utf8");
-  fsyncFile(tempPath);
-  if (existsSync(filePath)) {
-    copyFileSync(filePath, backupPath);
-    fsyncFile(backupPath);
-  }
-  renameSync(tempPath, filePath);
-  fsyncDirectory(dirname(filePath));
-}
-
-function brokerSnapshotBackupPath(filePath: string): string {
-  return `${filePath}.bak`;
-}
-
-function readBrokerSnapshotFile(filePath: string, maxBytes: number): BrokerSnapshot {
-  const stat = statSync(filePath);
-  if (stat.size > maxBytes) {
-    throw new Error(
-      `broker snapshot exceeds max size (${stat.size} > ${maxBytes} bytes): ${filePath}`,
-    );
-  }
-  return parseSnapshotPayload(readFileSync(filePath, "utf8"), filePath, maxBytes);
-}
-
-function fsyncFile(filePath: string): void {
-  const fd = openSync(filePath, "r");
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function fsyncDirectory(dirPath: string): void {
-  try {
-    const fd = openSync(dirPath, "r");
-    try {
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-  } catch (error) {
-    if (process.platform !== "win32") throw error;
-  }
-}
-
-function parseSnapshotPayload(payload: string, source: string, maxBytes: number): BrokerSnapshot {
-  const bytes = Buffer.byteLength(payload, "utf8");
-  if (bytes > maxBytes) {
-    throw new Error(`broker snapshot exceeds max size (${bytes} > ${maxBytes} bytes): ${source}`);
-  }
-  const parsed = brokerSnapshotSchema.safeParse(JSON.parse(payload));
-  if (!parsed.success) {
-    throw new Error(
-      `invalid broker snapshot at ${source}: ${parsed.error.issues[0]?.message ?? "unknown schema error"}`,
-    );
-  }
-  return parsed.data as BrokerSnapshot;
 }
 
 function buildHotTableSelect(

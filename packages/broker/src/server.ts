@@ -4,6 +4,41 @@ import { summarizeTerminalOutboxForSchedz } from "./terminal-outbox-schedz.js";
 import { createDefaultStateStore, resolvePublicBaseUrl, firstNonEmpty } from "./server-config.js";
 // Re-exported to preserve the public surface (tests import firstNonEmpty from here).
 export { firstNonEmpty };
+import type {
+  A2AHttpSignatureVerifiedWorker,
+  A2AHttpSignatureWorkerAuthMode,
+  A2AHttpSignatureWorkerKeySource,
+  BrokerBuildInfo,
+  BrokerPersistenceQueueDiagnostics,
+  BrokerPersistenceQueueDiagnosticsProvider,
+  BrokerPersistenceQueueState,
+  BrokerServerOptions,
+  BrokerServerRuntime,
+  BrokerStaleReaperStatus,
+  BufferedOperatorEvent,
+  OperatorEventName,
+  OperatorEventPayload,
+  OperatorReplayWindow,
+  OperatorSnapshotEvent,
+} from "./server-contracts.js";
+export type {
+  A2AHttpSignatureVerifiedWorker,
+  A2AHttpSignatureWorkerAuthMode,
+  A2AHttpSignatureWorkerKeySource,
+  BrokerBuildInfo,
+  BrokerPersistenceQueueDiagnostics,
+  BrokerPersistenceQueueDiagnosticsProvider,
+  BrokerPersistenceQueueMode,
+  BrokerPersistenceQueueState,
+  BrokerServerOptions,
+  BrokerServerRuntime,
+  BrokerStaleReaperStatus,
+  BufferedOperatorEvent,
+  OperatorEventName,
+  OperatorEventPayload,
+  OperatorReplayWindow,
+  OperatorSnapshotEvent,
+} from "./server-contracts.js";
 import {
   resolveA2AHttpSignatureWorkerAuthMode,
   validateBrokerStartupSecurity,
@@ -15,6 +50,11 @@ import {
   stringListBodyField,
 } from "./http/request-params.js";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
+import {
+  DEFAULT_KEEPALIVE_TIMEOUT_MS,
+  HEADERS_TIMEOUT_MARGIN_MS,
+  startBrokerServerWithFactory,
+} from "./server-lifecycle.js";
 import { readHostLoadSnapshot } from "./host-load-snapshot.js";
 import { readHttpServerDiagnostics } from "./http-server-diagnostics.js";
 import { OperatorEventStream } from "./operator-event-stream.js";
@@ -238,311 +278,8 @@ import {
   requestHeadersForA2AHttpSignature,
 } from "./http/worker-route-auth.js";
 
-export interface BrokerBuildInfo {
-  component: string;
-  revision: string;
-  source: string;
-  builtAt?: string;
-  runtime?: string;
-  image?: {
-    tag?: string;
-    digest?: string;
-  };
-}
-
-export type BrokerPersistenceQueueMode = "inline" | "worker_thread";
-export type BrokerPersistenceQueueState = "disabled" | "healthy" | "saturated" | "draining" | "aborted" | "unavailable";
-
-export interface BrokerPersistenceQueueDiagnostics {
-  kind: "broker.persistence.queue";
-  enabled: boolean;
-  mode: BrokerPersistenceQueueMode;
-  state: BrokerPersistenceQueueState;
-  capacity: number | null;
-  queued: number;
-  active: number;
-  inFlight: number;
-  available: number | null;
-  closing: boolean;
-  aborted: boolean;
-  lastErrorCode?: BrokerError["code"] | string;
-  lastErrorAt?: string;
-  lastErrorMessage?: string;
-}
-
-export type BrokerPersistenceQueueDiagnosticsProvider = () => BrokerPersistenceQueueDiagnostics | undefined;
-
-export interface OperatorSnapshotEvent {
-  summary: OperatorSummary;
-  alerts: AlertScanResult;
-}
-
-interface OperatorSummaryUpdateEvent {
-  summary: OperatorSummary;
-  alerts: AlertScanResult;
-}
-
-interface OperatorAlertEvent {
-  alert: Alert;
-}
-
-export type OperatorEventName =
-  | "operator-snapshot"
-  | "operator-summary-update"
-  | "operator-alert-opened"
-  | "operator-alert-resolved";
-
-export type OperatorEventPayload =
-  | OperatorSnapshotEvent
-  | OperatorSummaryUpdateEvent
-  | OperatorAlertEvent;
-
-export interface BufferedOperatorEvent {
-  seq: number;
-  event: OperatorEventName;
-  data: OperatorEventPayload;
-}
-
-export interface OperatorReplayWindow {
-  oldestBufferedSeq: number | null;
-  currentSeq: number;
-}
-
-const DEFAULT_DASHBOARD_RECENT_HISTORY_LIMIT = 10;
-const DEFAULT_DASHBOARD_OLDEST_PENDING_LIMIT = 5;
-const DEFAULT_DASHBOARD_PENDING_ACTION_LIMIT = 5;
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
 const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
-
-
-
-
-export type A2AHttpSignatureWorkerAuthMode = "off" | "optional" | "strict";
-export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
-
-export interface A2AHttpSignatureVerifiedWorker {
-  keyid: string;
-  requesterId: string;
-  scopes?: readonly string[];
-}
-
-export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
-  host?: string;
-  port?: number;
-  serviceName?: string;
-  publicBaseUrl?: string;
-  stateFile?: string;
-  sqliteFile?: string;
-  persistenceBackend?: "json-file" | "sqlite";
-  sqliteLoadSource?: SqliteBrokerLoadSource;
-  workerOfflineAfterSec?: number;
-  /**
-   * Minimum interval between unchanged durable worker heartbeat writes. In-memory
-   * read paths stay fresh on every heartbeat; SQLite persistence is bounded to
-   * keep heartbeat churn off the hot request path. Env:
-   * `BROKER_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS`.
-   */
-  workerHeartbeatPersistIntervalMs?: number;
-  rateLimitWindowSec?: number;
-  rateLimitMaxRequests?: number;
-  workerRateLimitWindowSec?: number;
-  workerRateLimitMaxRequests?: number;
-  enforceRequesterIdentity?: boolean;
-  edgeSecret?: string;
-  /** Explicit dev-only opt-in for unauthenticated local broker startup. Env: `A2A_ALLOW_INSECURE_DEV=1`. */
-  allowInsecureDev?: boolean;
-  /**
-   * Worker-plane A2A HTTP Signature rollout mode.
-   * - off: no route-level signature checks (default/backwards compatible)
-   * - optional: verify signed worker requests when signature headers are present
-   * - strict: require valid signatures for worker lifecycle/poll/mutation routes
-   * Env: `A2A_HTTP_SIGNATURE_WORKER_AUTH`.
-   */
-  a2aHttpSignatureWorkerAuth?: A2AHttpSignatureWorkerAuthMode;
-  /** In-memory key registry for worker HTTP Signature verification. */
-  a2aHttpSignatureKeyRegistry?: A2AHttpSignatureKeyRegistry;
-  /** JSON file containing public worker HTTP Signature keys. Env: `A2A_HTTP_SIGNATURE_KEY_REGISTRY_FILE`. */
-  a2aHttpSignatureKeyRegistryFile?: string;
-  /**
-   * Shared secret for GitHub webhook deliveries. When set, POST /github/webhook
-   * requires a valid X-Hub-Signature-256 header (HMAC-SHA256 of the raw body).
-   */
-  githubWebhookSecret?: string;
-  agentCard?: AgentCard;
-  /**
-   * Enable A2A 1.0 task push-notification config CRUD and advertise
-   * capabilities.pushNotifications on the agent card. Falls back to
-   * A2A_PUSH_NOTIFICATIONS_ENABLED. Off by default.
-   */
-  pushNotificationsEnabled?: boolean;
-  /** PEM private key file (Ed25519 or EC P-256) for A2A 1.0 signed agent cards. Falls back to AGENT_CARD_SIGNING_KEY_FILE. */
-  agentCardSigningKeyFile?: string;
-  /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
-  agentCardSigningKid?: string;
-  /**
-   * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
-   * the cross-broker terminal-brief receiver. When set, every inbound
-   * projection must carry a request-bound `senderProof` (a JWS over
-   * { brokerId, bodyHash, issuedAt, nonce } signed by the pinned key) —
-   * NOT merely a signed agent card, which is public and replayable.
-   * Enabling this fail-closes peers that do not emit senderProof yet, so
-   * roll out sender-side support before pinning a peer's key. Falls back
-   * to CROSS_BROKER_SENDER_PROOF_KEYS_FILE. Unset keeps today's behavior.
-   */
-  crossBrokerSenderProofKeysFile?: string;
-  /**
-   * Enable the embedded default A2A agent: register a built-in worker and
-   * drive its tasks in-process so a worker-less SendMessage produces a task
-   * (single-agent / conformance mode). Falls back to A2A_DEFAULT_AGENT_MODE.
-   * Off by default; production multi-worker routing is unchanged.
-   */
-  defaultAgentMode?: boolean;
-  stateStore?: BrokerStateStore;
-  broker?: InMemoryA2ABroker;
-  /**
-   * Optional O(1) worker-thread persistence queue counters for /health, /schedz,
-   * and operator dashboard surfaces. The provider must not perform DB or network IO.
-   */
-  persistenceQueueDiagnostics?: BrokerPersistenceQueueDiagnosticsProvider;
-  /** Max worker-thread durable write ACK wait in ms before returning retryable 503. */
-  persistenceQueueAckTimeoutMs?: number;
-  /**
-   * Max bytes allowed for CreateTaskRequest.payload. Keeps large sourceBundle
-   * blobs from entering hot task rows/read paths; externalize larger bundles.
-   * Env: `BROKER_MAX_TASK_PAYLOAD_BYTES` (or legacy `A2A_MAX_TASK_PAYLOAD_BYTES`).
-   */
-  maxTaskPayloadBytes?: number;
-  retentionPolicy?: Partial<BrokerRetentionPolicy>;
-  maxSnapshotBytes?: number;
-  trustedProxy?: boolean;
-  staleReaperEnabled?: boolean;
-  staleReaperIntervalSec?: number;
-  staleReaperOlderThanSec?: number;
-  /**
-   * Max times the stale-task reaper (or manual requeue) may recycle a single task back to
-   * `queued` before dead-lettering it to `failed`. `0` disables the cap. Env:
-   * `BROKER_MAX_REQUEUE_ATTEMPTS`.
-   */
-  maxRequeueAttempts?: number;
-  /** Optional broker identity exposed on health/worker registration and stamped onto new tasks as broker-of-record. Env: `A2A_BROKER_ID` or `BROKER_ID`. */
-  brokerId?: string;
-  /** Team/tenant identity stamped onto new tasks for lifecycle ownership checks. Env: `A2A_TEAM_ID`. */
-  teamId?: string;
-  /** Definition-of-Ready lint rollout mode for patch/implementation task creation. Env: `A2A_TASK_READINESS_MODE` or `BROKER_TASK_READINESS_MODE` (`warn` default, `enforce` fail-closed). */
-  taskReadinessMode?: TaskReadinessMode;
-  /**
-   * SSE heartbeat interval for `/a2a/tasks/:id/events`. Comments (`: heartbeat ...`) keep
-   * intermediaries from timing out idle subscriptions. `0` disables heartbeats. Env:
-   * `TASK_SUBSCRIBE_HEARTBEAT_SEC`.
-   */
-  taskSubscribeHeartbeatSec?: number;
-  /**
-   * Enables the read-only `a2a.peer.status` JSON-RPC method. Default-off until
-   * canary proof validates the Round 7 wake-layer rollout. Env: `A2A_PEER_STATUS_ENABLED`.
-   */
-  peerStatusEnabled?: boolean;
-  /**
-   * Optional deployment/build revision to expose on health and operator status surfaces.
-   * Env priority: `A2A_BROKER_REVISION`, `BROKER_RELEASE_REVISION`, `RELEASE_REVISION`.
-   */
-  buildRevision?: string;
-  /** Backward-compatible alias for older draft callers. Prefer `buildRevision`. */
-  releaseRevision?: string;
-  /** Optional broker version override. Defaults to package metadata. Env: `A2A_BROKER_VERSION`. */
-  version?: string;
-  /** Optional generated build-info JSON path. Defaults to bundled `dist/build-info.json` when present. */
-  buildInfoFile?: string;
-  /**
-   * HTTP server `keepAliveTimeout` in ms. Controls how long idle TCP connections are
-   * kept open by the server. Must be shorter than `headersTimeoutMs`.
-   * Default: 62000ms (62s), chosen to exceed the default 30s worker heartbeat interval
-   * so heartbeat connections survive between beats.
-   * The Node.js default is 5000ms, which forces every heartbeat to open a new connection.
-   * Env: `A2A_SERVER_KEEPALIVE_TIMEOUT_MS`.
-   */
-  keepAliveTimeoutMs?: number;
-  /**
-   * HTTP server `headersTimeout` in ms. Controls how long the server waits to receive
-   * the complete request headers. Must exceed `keepAliveTimeoutMs` (Node.js requirement,
-   * otherwise the server throws on listen). Defaults to `keepAliveTimeoutMs + 10000`.
-   * Env: `A2A_SERVER_HEADERS_TIMEOUT_MS`.
-   */
-  headersTimeoutMs?: number;
-}
-
-export interface BrokerStaleReaperStatus {
-  enabled: boolean;
-  intervalSec: number;
-  olderThanSec: number;
-  maxRequeueAttempts: number;
-  lastRunAt?: string;
-  lastRequeued?: number;
-  lastDeadLettered?: number;
-  totalDeadLettered: number;
-  lastError?: string;
-  runCount: number;
-}
-
-export interface BrokerServerRuntime {
-  server: Server;
-  handler: RequestListener<typeof IncomingMessage, typeof ServerResponse>;
-  broker: InMemoryA2ABroker;
-  /** Run the stale-task reaper sweep once. Returns the number of requeued tasks. */
-  runStaleReaperSweep: () => number;
-  /** Stop the periodic stale-task reaper timer (if started). Safe to call multiple times. */
-  stopStaleReaper: () => void;
-  /** Current reaper configuration and last-run observations for ops visibility. */
-  getStaleReaperStatus: () => BrokerStaleReaperStatus;
-  /** GitHub /a2a assign ingestion service — exposed for diagnostics and direct calls. */
-  githubIngestion: GitHubIngestionService;
-  /** Bounded poller for periodic GitHub event fetch — exposed for diagnostics. */
-  boundedPoller?: BoundedPoller;
-  /** Stop the bounded poller (if started). Safe to call multiple times. */
-  stopPoller: () => void;
-  /** Drain and terminate the worker-thread persistence queue, if enabled. */
-  closeWorkerPersistence: () => Promise<void>;
-  config: {
-    host: string;
-    port: number;
-    serviceName: string;
-    publicBaseUrl: string;
-    stateFile: string;
-    sqliteFile?: string;
-    persistenceBackend: "json-file" | "sqlite";
-    sqliteLoadSource?: SqliteBrokerLoadSource;
-    workerOfflineAfterSec: number;
-    workerHeartbeatPersistIntervalMs: number;
-    rateLimitWindowSec: number;
-    rateLimitMaxRequests: number;
-    workerRateLimitWindowSec: number;
-    workerRateLimitMaxRequests: number;
-    enforceRequesterIdentity: boolean;
-    edgeSecret?: string;
-    a2aHttpSignatureWorkerAuth: A2AHttpSignatureWorkerAuthMode;
-    a2aHttpSignatureWorkerKeyCount: number;
-    a2aHttpSignatureWorkerKeySource: A2AHttpSignatureWorkerKeySource;
-    githubWebhookSecret?: string;
-    retentionPolicy: BrokerRetentionPolicy;
-    maxSnapshotBytes: number;
-    maxHotRuntimeNonTerminalTasks: number;
-    maxHotRuntimeTerminalTasks: number;
-    maxHotRuntimeAuditEvents: number;
-    maxHotRuntimeHeartbeatAuditEvents: number;
-    maxHotRuntimeTerminalOutboxEvents: number;
-    trustedProxy: boolean;
-    staleReaperEnabled: boolean;
-    staleReaperIntervalSec: number;
-    staleReaperOlderThanSec: number;
-    maxRequeueAttempts: number;
-    taskSubscribeHeartbeatSec: number;
-    peerStatusEnabled: boolean;
-    brokerId: string;
-    version: string;
-    build: BrokerBuildInfo;
-  };
-}
-
-
 
 export function createBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
@@ -2040,80 +1777,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   };
 }
 
-/**
- * Default keepAliveTimeout for the HTTP server (62s). Chosen to exceed the default
- * 30s worker heartbeat interval so that heartbeat TCP connections survive between
- * heartbeats and can be reused. Node.js defaults to 5000ms, which forces every
- * heartbeat to create a new TCP connection.
- */
-const DEFAULT_KEEPALIVE_TIMEOUT_MS = 62000;
-
-/**
- * Margin applied to headersTimeout above keepAliveTimeout. Node.js requires
- * headersTimeout > keepAliveTimeout or server.listen() throws an error.
- */
-const HEADERS_TIMEOUT_MARGIN_MS = 10000;
-
 export function startBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
-  const runtime = createBrokerServer(options);
-  runtime.server.listen(runtime.config.port, runtime.config.host, () => {
-    console.log(`${runtime.config.serviceName} listening on ${runtime.config.publicBaseUrl}`);
-    if (runtime.config.staleReaperEnabled) {
-      const cap =
-        runtime.config.maxRequeueAttempts === 0
-          ? "unlimited"
-          : `${runtime.config.maxRequeueAttempts}`;
-      console.log(
-        `[a2a-broker] stale reaper enabled: interval=${runtime.config.staleReaperIntervalSec}s olderThan=${runtime.config.staleReaperOlderThanSec}s maxRequeueAttempts=${cap}`,
-      );
-    }
-  });
-
-  const gracefulShutdown = (signal: NodeJS.Signals | "uncaughtException") => {
-    console.log(`[a2a-broker] received ${signal}, stopping stale reaper and closing server`);
-    runtime.stopStaleReaper();
-    runtime.stopPoller();
-    runtime.server.close(() => {
-      runtime.closeWorkerPersistence()
-        .catch((error) => {
-          console.error("[a2a-broker] worker-thread persistence shutdown failed:", error);
-          process.exitCode = 1;
-        })
-        .finally(() => process.exit());
-    });
-    // server.close() only fires its callback once every connection ends, but
-    // SSE streams are kept alive by heartbeats and never end on their own.
-    // Close idle connections immediately and force-close any still-open ones
-    // after a grace period so shutdown cannot hang until SIGKILL.
-    runtime.server.closeIdleConnections?.();
-    setTimeout(() => {
-      runtime.server.closeAllConnections?.();
-    }, SHUTDOWN_FORCE_CLOSE_MS).unref?.();
-  };
-  process.once("SIGINT", gracefulShutdown);
-  process.once("SIGTERM", gracefulShutdown);
-  process.on("unhandledRejection", (reason) => {
-    console.error(JSON.stringify({
-      level: "error",
-      component: "a2a-broker",
-      event: "unhandledRejection",
-      message: reason instanceof Error ? reason.message : String(reason),
-      stack: reason instanceof Error ? reason.stack : undefined,
-    }));
-  });
-  process.once("uncaughtException", (error) => {
-    console.error(JSON.stringify({
-      level: "fatal",
-      component: "a2a-broker",
-      event: "uncaughtException",
-      message: error.message,
-      stack: error.stack,
-    }));
-    process.exitCode = 1;
-    gracefulShutdown("uncaughtException");
-  });
-
-  return runtime;
+  return startBrokerServerWithFactory(createBrokerServer, options);
 }
 
 if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {
@@ -2128,9 +1793,6 @@ if (import.meta.url === new URL(process.argv[1] ?? "", "file://").href) {
  * (A2A_GITHUB_WEBHOOK_SECRET=secret) and silently disable signature
  * verification — a fail-open. Trimming and skipping blanks closes that gap.
  */
-// Grace period after server.close() before force-closing lingering (e.g. SSE)
-// connections so a graceful shutdown cannot hang indefinitely.
-const SHUTDOWN_FORCE_CLOSE_MS = 5_000;
 
 // HTTP/SSE plumbing, error mapping, and streaming response helpers extracted to
 // ./http/* (issue #645 phase 2). They take all state via explicit parameters and

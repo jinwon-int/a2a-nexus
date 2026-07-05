@@ -415,6 +415,302 @@
         "campaign totals across 17 entries: reworkIssueCount 2 and falseFindingCount 3 are dominated by the pre-gate baseline (2/2); since the gates landed, rounds recorded rework 0, false findings 1 (this entry, ops tooling), carry-overs 2 (both re-tracked and resolved) — the prevention/learning loop held through eleven consecutive evidence-compliant rounds"
       ],
       "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-r-dw-wave-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1285 R-track first wave (R1 #1286, R2 #1287, R3 #1288, R4 #1289) + #1292 dialectic lanes DW1 #1296 / DW2 #1297 — PRs #1305–#1307, #1311–#1320 and the operator-executed v0.1.0-alpha tag/Release",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main d80e852: root release gate passes on every step except external-secrets, which fail-closed because the verification sandbox lacks gitleaks/trufflehog (environment, not a lane defect; the release prep run recorded a passing scan with 23 synthetic fixture findings); broker suite 3704/3704 pass, adjudicating the #1320 PR-body flaky-timeout note as benign",
+        "reclassification after connector recovery: the provisional R3 unit-3 carry-over was withdrawn — the #1288 closeout comment records unit 3 as not applicable because the ratchet was conditional on a root npm script-count reduction that did not occur (root=100/100 within cap), a documented disposition rather than a dropped deliverable; carryOverCount adjusted 2→1 before the scorecard PR opened",
+        "R1 #1286 complete: release evidence packet + CHANGELOG promotion (#1314), annotated tag v0.1.0-alpha on f8cae80 and a published pre-release GitHub Release; npm/Docker publication, deploy, and visibility changes stayed out of scope exactly per the operator approval boundary",
+        "R2 #1287 complete: dependabot npm ecosystem (weekly, grouped minor/patch vs separate major) + warn-only dependency-advisories signal gate registered in the release-gate inventory (56 steps), tiering counts updated consistently (37/56 default)",
+        "R3 #1288 units 1/2/4 verified: 231-line retirement inventory with embedded RED baseline, 19 completed historical validators demoted to --include-archived opt-in (default 64→45, zero deletion), broker test one-liner converted to a 16-entry manifest runner with legacyEquivalent preserved; unit 3 recorded not-applicable in the closeout (ratchet conditional on a script-count reduction that did not occur) — the closeout also discloses one Hermes SIGABRT lane in the unit-4 wave, correctly excluded from substantive evidence",
+        "R4 #1289 first six lanes verified surface-preserving: store.ts 3594→2880 and server.ts 2137→1799 via five extracted modules plus re-export shims (#1315–#1320), additions are import/re-export lists only, full unmodified suite green; broker.ts (3408) remains and the issue stays open by design",
+        "DW1 #1296 complete per spec: paired substantiveLaneCount/dispatchedLaneCount with fail-closed <= invariant, consecutive low-ratio warning (window 2, threshold 0.5), operators.md single-classifier rule, V4 wave retro-fill 2/10 asserted in tests; minor note: the PR also reformatted every existing scorecard window object to multiline — cosmetic churn outside the declared scope, recorded here since the gate accepts both forms",
+        "DW2 #1297 complete per spec: designated antithesis lane block (half-lanes/min-1, #1237 review-contract reuse, finalizer-gate evidence-class exclusions) plus a bounded plan-round mini-cycle with a skip-reason reporting convention; RED absence grep and GREEN markdown-links/check present in the PR body",
+        "carry-over 1 (remaining): the release evidence packet leaves its final merged-PR/commit backfill placeholders unfilled now that the tag landed — a one-line follow-up edit; evidence-gate compliance otherwise held across all sampled PR bodies (twelfth-plus consecutive compliant round)",
+        "dialectic health counters omitted for this entry: the finalizer had no lane-level readback for the wave (merged PRs only), and operators.md scopes the counters to rounds where readback evidence is available — operator may retro-fill dispatched/substantive counts from broker records"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker1-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-1 contracts extraction (#1322) — R4 continuation, first broker.ts lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 5
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main d251837: broker suite 3704/3704 pass; pure-move audit — broker.ts additions are import/re-export lists only, the extracted broker-contracts.ts (238 lines) carries zero runtime functions, and both moved constants are byte-identical to the removed originals; broker.ts 3408→3220",
+        "the weak dialectic caught a real defect pre-merge: the second-team review lane issued a conditional BLOCK on a missing BrokerProfilingOperation re-export (a genuine public-surface gap), the fix landed before the PR opened and validation was re-run — first recorded instance in the R4 track of a review lane preventing a surface regression",
+        "first live dialectic health counters (per operators.md #1296): dispatched 5 / substantive 4 in the impl-review round — three PASS reviews with confirmations plus the defect-finding BLOCK; one succeeded lane reported analysis without a classifiable verdict and is conservatively excluded from the substantive count",
+        "process hygiene: an earlier online round was rejected by the broker finalizer as review_evidence_missing (the #1237 review contract fail-closing on wrapper output as designed) and was re-dispatched analysis-only rather than counting wrapper/finalizer failures as evidence — the exclusion discipline the evidence classes exist for",
+        "honest environment disclosure in the PR body: a non-clean-env broker test run failed on local EDGE_SECRET leakage (401 in server persistence tests) and the clean-env rerun passed — disclosed rather than hidden, consistent with the finalizer's own environment-artifact experience this window",
+        "#1289 correctly stays open: the PR body explicitly declines to claim completion (broker.ts 3220 and store.ts 2880 follow-up split lanes declared); umbrella bookkeeping matches"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker23-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-2 worker-runtime helpers (#1323) + L-broker-3 read helpers (#1324) — R4 continuation, four A2A rounds (discovery + impl-review per lane)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 19,
+        "dispatchedLaneCount": 20
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 9fd4230: broker suite 3704/3704 pass; verbatim-move audit on all three extracted modules — helper state is injected via parameters/callbacks, the heartbeat helper preserves in-place mutation semantics including lastSeenAt (the finalizer's one flagged risk, independently confirmed by a review lane's heartbeat/persist-order check), cache write-through and parent-thread filtering preserved line-for-line; broker.ts 3220→3137",
+        "the DW2 mini-cycle pattern is visibly in production use: each lane ran a discovery/design round whose conditional PASSes set explicit boundaries (side effects stay in broker.ts; repository/cache/parent-thread semantics preserved), then an implementation round confirmed against those boundaries, with the second-team lane explicitly labeled as antithesis review in both PRs",
+        "dialectic health counters: dispatched 20 / substantive 19 across the four rounds (5 lanes x discovery + impl-review x 2 PRs) — every succeeded lane produced classifiable substantive output this wave",
+        "failure classification environment: 1 — one discovery lane exited handler_exit_nonzero and was explicitly excluded from quorum evidence in the PR body, per the established evidence-class discipline (same class as the V4-wave handler exits)",
+        "evidence-gate compliance: both PR bodies carry line-count proofs, clean-env full-suite runs, per-lane readback, and explicit non-completion declarations for #1289 (broker.ts 3137 and store.ts 2880 remain); substantive ratio for the R4 broker sub-track now reads 4/5 → 19/20 round-over-round"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker4-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-4 evidence read helpers (#1326) — R4 continuation, three A2A rounds (discovery + impl-review + one-lane retry)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 7,
+        "dispatchedLaneCount": 11
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 68a66f7: broker suite 3704/3704 pass; verbatim-move audit — all four extracted read helpers (artifact get/list, validation list, audit list) are line-for-line identical to the removed broker.ts blocks with state injected as parameters, cache write-through preserved; broker.ts 3137→3093",
+        "discovery-round antithesis input was actually consumed: two lanes raised source-bundle coverage/truncation objections in r1 and the PR body records them as inputs to the r2 implementation review — the objection-to-input loop the DW2 template intends",
+        "failure classification environment: 1 — one impl-review lane exited handler_exit_nonzero, was excluded from that round's evidence, and was retried in a dedicated third round where it PASSed on import/API compatibility; the retry-in-a-fresh-round pattern kept the failure out of quorum without losing the lane's perspective",
+        "dialectic health counters: dispatched 11 / substantive 7, conservatively counted — three r1 lanes reported only a bare succeeded status without classifiable substance and are excluded per the evidence-class criterion; the dip from 19/20 is a readback-verbosity artifact, not a lane-quality regression, and the finalizer has asked for one-line substance per lane in future PR bodies (as #1323/#1324 already did)",
+        "evidence-gate compliance: line-count proof, clean-env full-suite run, per-lane readback, and the explicit non-completion declaration (broker.ts 3093, store.ts 2880 remain) all present in the PR body"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-1289-lbroker5-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "#1289 L-broker-5 task read helpers (#1327) — R4 continuation; DA2 #1294 design round started in parallel (no PR yet)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 7ce0ace: broker suite 3704/3704 pass; move audit — readBrokerTask/listBrokerTasks are line-for-line identical with cache write-through and normalize/filter/limit/sort semantics preserved; broker.ts 3093→3075",
+        "one narrow semantic delta accepted as non-blocking: getRoundStatus previously routed through the public this.listTasks() and now calls the extracted helper directly, so external subclasses overriding listTasks would no longer affect round status — no in-repo subclass or test relies on that virtual dispatch (the sqlite read-path tests that monkey-patch listTasks never query round status), but future extraction PRs should note virtual-dispatch changes explicitly",
+        "failure classification acceptance_misconfigured: 1 — the first design round failed closed because the dispatch manifest set payload.review.required=true while lanes emitted no worker validation object; the round was retried without the flag. Second occurrence of this pattern (L-broker-1 hit review_evidence_missing the same way): the formal #1237 review.required path is currently not satisfiable by the deployed workers and teams route around it with labeled analysis lanes — recommend a tracking issue for worker-side kind:review validation emission before DA1/DA2 harden the review contract further",
+        "dialectic health counters omitted: the PR body lists round ids but carries no per-lane readback (the commit message says impl-review 5/5 succeeded without per-lane substance), so nothing is classifiable under the evidence-class criterion — second consecutive readback-verbosity regression after the 19/20 high-water mark; the finalizer re-raised the per-lane one-line request on #1289 and suggests adding it to the dispatch template checklist",
+        "evidence-gate compliance otherwise held: line-count proof, clean-env full-suite run, explicit non-completion declaration (broker.ts 3075, store.ts 2880 remain), and the r1 fail-closed disclosure are all in the PR body"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da2-dw3-lbroker6-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA2 #1294 dialectic contract hardening (#1329) + DW3 #1330 worker review-validation emission (#1331, operator deploy + live canary) + #1289 L-broker-6 worker read helpers (#1332)",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 7
+      },
+      "failureBreakdown": {
+        "environment": 3,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main e68aaf7: broker suite 3708/3708 pass across all three merges; DA2 audit — dialectic_roles_not_independent fail-closed at contract extraction covering thesis/antithesis and thesis/synth overlap via agentId+nodeId alias sets, confidence consumed per the spec's preferred option (read-model min/spread/lowConfidence/waitRecommended at the 0.5 threshold, summary line, synthesis WAIT guidance) — the grep-zero-consumers finding from the #1292 review is resolved",
+        "DW3 closed the loop the spec demanded: RED failing-test log in the PR body, fail-closed no-verdict path, contract round-trip through validateReviewEvidence, and the blocking live canary honored after an operator deploy (broker /health.build.revision at the DW3 merge commit; review.required task succeeded end-to-end with an emitted kind=review/verdict=pass validation from a distinct reviewer node) — the first review.required task ever to close without fail-closing, resolving the two-occurrence workaround pattern",
+        "evidence-gate deviation 1: DA2 (#1329) is a contract change whose PR body carries GREEN verification only — no pre-change RED log at review time (the new dialectic tests would have failed pre-change but the log is absent); DW3 and the refactor lane were compliant, so the blocking-check narrative applies to one PR",
+        "failure classification — environment 3: handler_exit_nonzero lanes in the L-broker-6 rounds (two in r1, one repeat in r2; the repeat lane was excluded rather than retried a third time); acceptance_misconfigured 1: the DW3 r1–r3 dispatch attempts failed preflight because the manifest carried GitHub read-only-validation fields with taskOrigin=local — the fail-closed preflight caught it before any lane ran, r4 dispatched correctly",
+        "dialectic health counters cover L-broker-6 only (dispatched 7 / substantive 4, matching the PR's own effective-readback arithmetic): the DA2 rounds predate the per-lane readback requirement (exempt) and the DW3 r4 round reported worker list + 5/5 succeeded without per-lane substance despite the requirement being in its base — first PR after the rule fully complied (#1332, per-lane substance including the truncation-blocked partial verdict), one did not (#1331)",
+        "finalizer self-report: the per-lane readback doc example the finalizer wrote used a concrete worker pseudonym; the public-readiness scan flagged it and the DW3 PR fixed the example to worker-a — the redaction slip was the finalizer's, recorded here under the same disclosure standard applied to worker lanes",
+        "operational: the recommended absorb-then-canary redeploy happened at the DW3 merge revision with post-deploy smokes PASS — production is current through DW3, with only L-broker-6 (merged after) pending the next deploy window; broker.ts 3075→3046, store.ts 2880 remains, #1289 correctly open"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da1-lbroker7-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA1 #1293 dialectic substance warnings (#1334) + #1289 L-broker-7 capability profile helpers (#1335) — two-team design rounds per lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 11,
+        "dispatchedLaneCount": 20
+      },
+      "failureBreakdown": {
+        "environment": 9
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 560ccd8: broker suite 3712/3712 pass; DA1 audit — all four deterministic checks match the #1293 spec (contradiction cross-reference via token overlap or explicit thesis-part reference incl. Korean terms, independent evidenceRef, non-trivial failureModes, rebuttal concededRisks/residualRisks), warn-default with opt-in enforce via domainContext.decisionDialecticSubstanceGate throwing antithesis_not_substantive/rebuttal_not_substantive, warnings projected to contract and read-model, prompt-spec aligned; L-broker-7 is a clean parameter-injected pure move (broker.ts 3046→3043)",
+        "evidence-gate deviation 1: DA1 (#1334) is a contract change whose PR body again carries GREEN only — no pre-change RED log; second consecutive contract-lane deviation (DA2 #1329 was the first) after the long compliant streak. Per the #1236 precedent (two consecutive retro-fills escalated the check to blocking), the finalizer is repeating the escalation: contract-lane PRs must show the new tests failing on the base tree, and the next deviation should block the verdict rather than be recorded",
+        "two non-blocking DA1 notes: enforce mode throws before appendSubstanceWarnings so a rejected patch carries no per-code detail (operators must re-run in warn to see which check failed — worth a follow-up line when enforce promotion is considered); the #1335 body's full-suite count (3708) was run against a pre-DA1 checkout while its base already carried 3712 — the tip is green so no defect, but suite counts in PR bodies should be from the PR's own base",
+        "failure classification environment: 9 — handler_exit_nonzero across all four design rounds (DA1 T1 2 + T2 1; L-broker-7 T1 4 + T2 2), a 45% infra-failure rate in the worst round. The trend flagged in the L-broker-6 verdict has fully materialized: the finalizer's stated criterion for a dedicated environment-diagnosis pass (same failure class recurring next round) is met — recommended before the next dispatch wave rather than more retry rounds",
+        "dialectic health counters: dispatched 20 / substantive 11 (DA1 7/10, L-broker-7 4/10) — classifiable from per-team counts plus failure classes; per-lane substance lines are still missing from both PR bodies (partial readback compliance: better than count-only, short of the documented rule), noted with the reminder that #1332 remains the compliance model",
+        "substance consensus recorded by the lanes themselves: the prior append.antithesis checked only role/order/duplicate — the DA1 rounds independently confirmed the gap the #1292 track review identified, and the deterministic-check approach shipped without an LLM judge"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-env1-diagnosis-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "ENV1 #1337 handler_exit_nonzero diagnosis (skill-export analysis + operator hash/readback pulls + induced canaries) + #1338 handler exit diagnostics promotion",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 1,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 1,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "root-cause classes established from 75 failed-task readbacks across both brokers: openclaw_analysis_failed 32 (model-bridge invalid output, the historic dominant class), source_projection_blocked 19 (dispatch-side source-bundle sizing — consistent with the spike arriving with payload-heavy design rounds), no_stdout 24 (pre-#1338 instrumentation gap, retroactively unclassifiable); the spike is payload/model-side, not VPS infrastructure",
+        "false finding 1 (finalizer's own): the document-derived fleet-wide artifact-drift framing was overstated — operator hash parity showed 7/7 VPS persistent workers main-aligned including the worst-casualty team-1 lanes; the drift finding survives only as a 3-worker residue (two mobile, one source-only)",
+        "carry-over 1: the 3-worker artifact-drift trio needs a separate sync (operator-executed) — recorded as the explicit follow-up alongside ENV1-e (remediation + confirmation round), which stays open on #1337",
+        "ENV1-d delivered as #1338: handler stdout JSON errors now promote to details.stage/excerpt with a bounded 500-char excerpt and preserved nestedError, live-verified by three induced canaries whose nested class (source_projection_blocked) surfaced end-to-end; finalizer independent verification on 7e0c5cd: broker suite 3713/3713",
+        "evidence-gate deviation 1 (third consecutive contract lane, first under the blocking rule): #1338's PR body carries diagnostic-round consensus but no pre-change failing-test log; the finalizer retro-filled the RED independently (base 560ccd8 + new worker tests: 43 pass / 2 fail exactly on the two new tests; merged tip 3713/3713) — verdict unblocked by retro-fill, and the structural remedy ships in this PR: the pull-request template gains a blocking RED-evidence section and a per-lane readback checklist item",
+        "diagnostic-round health: dispatched 10 / substantive 8 (consensus recorded; 2 repeated handler_exit_nonzero classified environment) — the diagnosis round itself exhibited the failure it was diagnosing, which is why the induced-canary path was the right confirmation vehicle",
+        "one non-blocking #1338 note: details.stdout passes through unbounded at worker-error creation (excerpt is bounded, full stdout is not) — recommend bounding or relying on broker-side normalize before large-payload rounds resume"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-env1-confirmation-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "ENV1 #1337 live reflection + induced/healthy confirmation rounds (operator-executed) — broker at the #1338 revision, VPS worker artifact sync, no new source commits",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "live reflection verified by operator readback: broker health at build.revision=7e0c5cd (#1338), VPS worker artifacts synced across both teams with the rollout guard reporting all 10 checks passed, worker services restarted only — the exact remediation the fleet skill prescribes for handler-touching merges",
+        "induced canary proved the #1338 promotion end-to-end: three intentionally undersized-source lanes surfaced top-level error.details.stage=projection with a bounded excerpt and preserved nestedError.code=source_projection_blocked; one lane succeeded despite the induced shape (non-blocking for the readback-normalization check, noted)",
+        "healthy confirmation round: 4/4 succeeded across both teams with handler_exit_nonzero 0/4 — the ENV1-e baseline criterion (<=1/wave) met for healthy payloads on synced artifacts; the two class remediations (sourceProjectionPolicy on heavy design bundles, model-bridge retry discipline) remain unexercised and stay on the #1337 residual checklist with the 3-worker drift sync",
+        "timeline refinement of the prior entry's self-charged false finding: the VPS artifact sync happened at live-reflection time, before the parity hashes were pulled — so the finalizer's drift claim was stale at utterance but accurate for the spike window (the DA1/L-broker-7 waves ran on pre-sync artifacts); the drift's causal share of the spike is retroactively unknowable because the no_stdout class predates #1338 instrumentation — the falseFindingCount stands, with this context recorded",
+        "process note: #1337 was closed at confirmation and reopened with a four-item ENV1-e residual checklist after the finalizer verdict asked for the remediation phase to stay visible — the close/reopen round-trip cost nothing and the checklist now matches the class-based prescriptions exactly"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-da3-env1e-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "DA3 #1295 dialectic hygiene gates (#1340) + the sourceProjectionPolicy design round doubling as the ENV1-e projection-class confirmation — the #1292 dialectic track's final lane",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 417c3cc: new-gate tests pass, check-dialectic-hygiene reports skip-with-reason when no snapshot is supplied (fail-open avoided by explicit reason), the script is audited read-only (no state mutation — EXPIRED transitions stay finalizer-owned), the decision-quality ledger validates with its seed entry showing verdict-vs-outcome tracking live (outcomeMatchedVerdict pending), tiering/manifest coverage green, root release gate green except the known sandbox external-secrets scanner absence (operator-local scan passed)",
+        "the RED-deviation streak broke on the template's first use: #1340 carries a RED section (ERR_MODULE_NOT_FOUND absence proofs for both new gates — the standard new-gate RED), full GREEN battery, round ids, and the ENV1-e rate check in the body; evidenceGateDeviationCount returns to 0 after three consecutive contract-lane deviations",
+        "failure classification environment: 1 — the ENV1-e projection-class confirmation was achieved by the same round: sourceProjectionPolicy applied to the design-round manifest, handler_exit_nonzero 1/10 (<=1/wave criterion met on a real workload, not just healthy canaries), and the single environment failure carried top-level stage/excerpt with nested openclaw_analysis_failed — the readback attribution ENV1 was built to provide, pointing at the one remediation still open (model-bridge retry discipline) alongside the 3-worker sync",
+        "dialectic health counters omitted under the established conservative rule: the PR reports succeeded counts and a specific five-point substantive convergence but does not enumerate per-lane substance; the new template checklist item is expected to close this gap structurally",
+        "operational hygiene beyond spec: the root script-budget ceiling (100/100) was respected by registering gates directly in the release-gate manifest instead of adding root aliases, an untracked local .env backup blocking the secret scan was moved outside the worktree without printing or committing content, and the pitfall was written back into the fleet skill — the learning loop closing in the same wave",
+        "track milestone: with DA3 merged, all six #1292 lanes (DA1-DA3, DW1-DW3) are complete — the dialectic track opened 2026-07-04 closes with every original review finding (substance validation, role independence, confidence consumption, stall sweep, outcome ledger, health measurement, designated antithesis, review-contract satisfiability) resolved and verified"
+      ],
+      "recordedAt": "2026-07-05"
+    },
+    {
+      "id": "a2a-nexus-r4-lbroker8-20260705",
+      "window": {
+        "from": "2026-07-05",
+        "to": "2026-07-05"
+      },
+      "scope": "R4 #1289 L-broker-8 exchange helper extraction (#1342) after A2A Team1+Team2 sourceProjectionPolicy design wave",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 7,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 1,
+        "acceptance_misconfigured": 1
+      },
+      "evidence": [
+        "A2A sourceProjectionPolicy design rounds a2a-nexus-1289-r4-lbroker8-sourcepolicy-20260705-{team1,team2}-r1 created 10/10 lanes and completed 9/10 succeeded; dungae failed with handler_exit_nonzero and nested openclaw_analysis_failed, with top-level stage/excerpt present, so the environment bucket counts 1.",
+        "Substantive convergence counted 7/10 lanes: exchange cluster was the narrow/safe majority recommendation (bangtong/gongyung/soonwook), proposal-write had two substantive but higher-risk recommendations (yukson/daegyo), and smaller alternate seams were proposed by nosuk/jingun. gongmyoung returned sourceProjection.quality=insufficient / required_below_min_bytes and is counted as acceptance_misconfigured rather than substantive.",
+        "Implementation PR #1342 selected the exchange cluster to avoid proposal-write state-transition/audit/persist risk. It moved exchange start/list-message/add-message logic into broker-exchange.ts while keeping public InMemoryA2ABroker methods as delegators and leaving private exchange-task decision helpers in broker.ts for a later slice.",
+        "Verification: baseline broker build + targeted exchange/runtime tests passed before move; after move build passed, node --check broker.js and broker-exchange.js passed, targeted exchange/runtime tests passed 61/61, full broker suite passed 3713/3713, root npm run check passed, GitHub CI/CodeQL green. Line count moved broker.ts 3043 -> 2972, with store.ts still 2880 and issue #1289 remaining open.",
+        "Boundary preserved: no live broker/Gateway restart, provider send/canary, DB replay/prune/migration, ACK, worker sync/restart, release/tag/package publication, GitHub settings mutation, or raw secret recording."
+      ],
+      "recordedAt": "2026-07-05"
     }
   ]
 }
