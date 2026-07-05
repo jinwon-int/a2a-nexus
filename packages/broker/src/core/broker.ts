@@ -82,7 +82,11 @@ import {
   sortNewestFirst,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
-import { readBrokerExchangeMessages } from "./broker-exchange-message-read.js";
+import {
+  addBrokerExchangeMessage,
+  listBrokerExchangeMessages,
+  startBrokerExchange,
+} from "./broker-exchange.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
@@ -155,7 +159,6 @@ import {
   assertTaskOwnership,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
-import { assertExchangeMessageActor } from "./broker-exchange-guards.js";
 import { readExchange, readExchanges } from "./broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
@@ -552,40 +555,11 @@ export class InMemoryA2ABroker {
   }
 
   startExchange(request: A2AExchangeRequest): A2AExchangeState {
-    const now = isoNow();
-    const exchangeId = randomUUID();
-    const rootMessage: A2AExchangeMessageRecord = {
-      id: randomUUID(),
-      exchangeId,
-      kind: "root",
-      message: request.message,
-      requester: request.requester,
-      via: request.via,
-      targetNodeId: request.target.id,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const exchange: A2AExchangeState = {
-      id: exchangeId,
-      requester: request.requester,
-      target: request.target,
-      targetNodeId: request.target.id,
-      message: request.message,
-      maxTurns: request.maxTurns ?? 8,
-      intent: request.intent ?? "chat",
-      status: "queued",
-      rootMessageId: rootMessage.id,
-      latestMessageId: rootMessage.id,
-      messageCount: 1,
-      lastMessageAt: now,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.setExchangeMessageRecord(rootMessage);
-    this.setExchangeRecord(exchange);
-    this.persistState();
-    return exchange;
+    return startBrokerExchange(request, {
+      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+      persistState: () => this.persistState(),
+    });
   }
 
   getExchange(id: string): A2AExchangeState | null {
@@ -603,74 +577,29 @@ export class InMemoryA2ABroker {
       includeDescendants?: boolean;
     },
   ): A2AExchangeMessageRecord[] {
-    const exchange = this.requireExchange(exchangeId);
-    return readBrokerExchangeMessages({
-      exchangeId: exchange.id,
+    return listBrokerExchangeMessages(exchangeId, filters, {
       exchangeMessages: this.exchangeMessages,
       exchangeMessageRepository: this.exchangeMessageRepository,
-      filters,
-      requireParentMessage: (messageId) => this.requireExchangeMessage(exchange.id, messageId),
+      requireExchange: (id) => this.requireExchange(id),
+      requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
     });
   }
 
   addExchangeMessage(exchangeId: string, request: A2AExchangeMessageRequest): A2AExchangeMessageRecord {
-    const exchange = this.requireExchange(exchangeId);
-
-    if (!request.actor?.id) {
-      throw new BrokerError("bad_request", "actor.id is required");
-    }
-    if (!request.message) {
-      throw new BrokerError("bad_request", "message is required");
-    }
-
-    assertExchangeMessageActor(exchange, request);
-
-    if (request.targetNodeId) {
-      this.requireWorker(request.targetNodeId);
-    }
-    if (request.assignedWorkerId) {
-      this.requireWorker(request.assignedWorkerId);
-    }
-    if (request.parentMessageId) {
-      this.requireExchangeMessage(exchange.id, request.parentMessageId);
-    }
-
-    const now = isoNow();
-    const message: A2AExchangeMessageRecord = {
-      id: randomUUID(),
-      exchangeId,
-      kind: "thread",
-      message: request.message,
-      actor: request.actor,
-      via: request.via,
-      decision: request.decision,
-      targetNodeId: request.targetNodeId ?? exchange.target.id,
-      assignedWorkerId: request.assignedWorkerId,
-      parentMessageId: request.parentMessageId ?? exchange.rootMessageId,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.setExchangeMessageRecord(message);
-    exchange.messageCount += 1;
-    exchange.lastMessageAt = now;
-    exchange.latestMessageId = message.id;
-    exchange.updatedAt = now;
-    this.applyExchangeMessageDecision(
-      exchange,
-      message,
-      Boolean(request.targetNodeId || request.assignedWorkerId),
-    );
-    this.setExchangeRecord(exchange);
-    this.appendAuditEvent({
-      actorId: request.actor.id,
-      action: "exchange.message.added",
-      targetType: "exchange-message",
-      targetId: message.id,
-      note: request.decision ? `${request.decision}: ${request.message}` : request.message,
+    return addBrokerExchangeMessage(exchangeId, request, {
+      requireExchange: (id) => this.requireExchange(id),
+      requireWorker: (nodeId) => this.requireWorker(nodeId),
+      requireExchangeMessage: (id, messageId) => this.requireExchangeMessage(id, messageId),
+      setExchangeMessageRecord: (message) => this.setExchangeMessageRecord(message),
+      setExchangeRecord: (exchange) => this.setExchangeRecord(exchange),
+      applyExchangeMessageDecision: (exchange, message, hasExplicitAssignment) => this.applyExchangeMessageDecision(
+        exchange,
+        message,
+        hasExplicitAssignment,
+      ),
+      appendAuditEvent: (input) => this.appendAuditEvent(input),
+      persistState: () => this.persistState(),
     });
-    this.persistState();
-    return message;
   }
 
   registerWorker(request: RegisterWorkerRequest): WorkerRecord {
