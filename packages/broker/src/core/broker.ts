@@ -8,17 +8,13 @@ import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
   countStateSaveHints,
-  sortWorkersNewestFirst,
 } from "./broker-record-helpers.js";
 import {
   getTaskRequeueReason,
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
-import {
-  normalizeWorkerRecord,
-  chooseFresherWorkerRecord,
-} from "./broker-worker-identity.js";
+import { normalizeWorkerRecord } from "./broker-worker-identity.js";
 import {
   applyWorkerHeartbeatRuntimeUpdate,
   buildRegisteredWorkerRecord,
@@ -74,15 +70,11 @@ import {
   pruneMapEntries,
 } from "./broker-retention-selectors.js";
 import {
-  toWorkerViewRecord,
   isWorkerStale,
 } from "./broker-worker-status.js";
 // Re-exported to preserve the existing public surface; the thresholds now live
 // in broker-worker-status.js alongside the logic that classifies against them.
 export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-worker-status.js";
-import {
-  workerMatchesFilters,
-} from "./broker-list-filters.js";
 import {
   isoNow,
   uniqueIds,
@@ -102,6 +94,13 @@ import {
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
+import {
+  listBrokerWorkerViews,
+  listBrokerWorkers,
+  readBrokerWorker,
+  readBrokerWorkerCachedFirst,
+  readBrokerWorkerView,
+} from "./broker-worker-read.js";
 
 import type { RoundStatusSummary } from "./round-status.js";
 
@@ -753,59 +752,31 @@ export class InMemoryA2ABroker {
   }
 
   getWorker(nodeId: string): WorkerRecord | null {
-    const cachedWorker = this.workers.get(nodeId) ?? null;
-    const repositoryWorker = this.workerRepository?.getWorker(nodeId);
-    if (repositoryWorker) {
-      const worker = chooseFresherWorkerRecord(cachedWorker, normalizeWorkerRecord(repositoryWorker));
-      this.workers.set(worker.nodeId, worker);
-      return worker;
-    }
-    return cachedWorker;
+    return readBrokerWorker({ workers: this.workers, workerRepository: this.workerRepository }, nodeId);
   }
 
   getWorkerCachedFirst(nodeId: string): WorkerRecord | null {
-    return this.workers.get(nodeId) ?? this.getWorker(nodeId);
+    return readBrokerWorkerCachedFirst({ workers: this.workers, workerRepository: this.workerRepository }, nodeId);
   }
 
   listWorkers(filters?: WorkerListFilters): WorkerRecord[] {
-    if (this.workerRepository) {
-      const workersById = new Map<string, WorkerRecord>();
-      for (const worker of this.workerRepository.listWorkers(filters).map(normalizeWorkerRecord)) {
-        const cachedWorker = this.workers.get(worker.nodeId) ?? null;
-        workersById.set(worker.nodeId, chooseFresherWorkerRecord(cachedWorker, worker));
-      }
-      for (const worker of this.workers.values()) {
-        const existing = workersById.get(worker.nodeId) ?? null;
-        workersById.set(worker.nodeId, chooseFresherWorkerRecord(existing, worker));
-      }
-      const workers = [...workersById.values()];
-      for (const worker of workers) {
-        this.workers.set(worker.nodeId, worker);
-      }
-      return sortedCopy(
-        workers.filter((worker) => workerMatchesFilters(worker, filters)),
-        sortWorkersNewestFirst,
-      );
-    }
-    return sortedCopy(
-      [...this.workers.values()].filter((worker) => {
-        return workerMatchesFilters(worker, filters);
-      }),
-      sortWorkersNewestFirst,
-    );
+    return listBrokerWorkers({ workers: this.workers, workerRepository: this.workerRepository }, filters);
   }
 
   listWorkerViews(offlineAfterMs: number, filters?: WorkerListFilters): WorkerView[] {
-    return this.listWorkers(filters).map((worker) => toWorkerViewRecord(worker, offlineAfterMs));
+    return listBrokerWorkerViews(
+      { workers: this.workers, workerRepository: this.workerRepository },
+      offlineAfterMs,
+      filters,
+    );
   }
 
   getWorkerView(nodeId: string, offlineAfterMs: number): WorkerView | null {
-    const worker = this.getWorker(nodeId);
-    if (!worker) {
-      return null;
-    }
-
-    return toWorkerViewRecord(worker, offlineAfterMs);
+    return readBrokerWorkerView(
+      { workers: this.workers, workerRepository: this.workerRepository },
+      nodeId,
+      offlineAfterMs,
+    );
   }
 
   // ---------------------------------------------------------------------------
