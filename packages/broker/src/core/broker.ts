@@ -9,10 +9,8 @@ import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
   countStateSaveHints,
   sortWorkersNewestFirst,
-  sortExchangeMessages,
 } from "./broker-record-helpers.js";
 import {
-  collectThreadMessageIds,
   getTaskRequeueReason,
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
@@ -85,7 +83,6 @@ export { MOBILE_OFFLINE_AFTER_MS, MOBILE_DISCONNECTED_AFTER_MS } from "./broker-
 import {
   taskMatchesFilters,
   applyTaskListLimit,
-  proposalMatchesFilters,
   workerMatchesFilters,
 } from "./broker-list-filters.js";
 import {
@@ -95,6 +92,8 @@ import {
   sortNewestFirst,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./broker-dashboard.js";
+import { readBrokerExchangeMessages } from "./broker-exchange-message-read.js";
+import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
@@ -598,29 +597,13 @@ export class InMemoryA2ABroker {
     },
   ): A2AExchangeMessageRecord[] {
     const exchange = this.requireExchange(exchangeId);
-    const messagesById = new Map(
-      [...this.exchangeMessages.entries()].filter(([, message]) => message.exchangeId === exchangeId),
-    );
-    if (this.exchangeMessageRepository) {
-      for (const repositoryMessage of this.exchangeMessageRepository
-        .listExchangeMessages(exchangeId)
-        .map(normalizeExchangeMessageRecord)) {
-        this.exchangeMessages.set(repositoryMessage.id, repositoryMessage);
-        messagesById.set(repositoryMessage.id, repositoryMessage);
-      }
-    }
-    const items = sortedCopy(messagesById.values(), sortExchangeMessages);
-
-    if (!filters?.parentMessageId) {
-      return items;
-    }
-
-    this.requireExchangeMessage(exchange.id, filters.parentMessageId);
-    if (filters.includeDescendants) {
-      const allowedIds = collectThreadMessageIds(items, filters.parentMessageId);
-      return items.filter((message) => allowedIds.has(message.id));
-    }
-    return items.filter((message) => message.parentMessageId === filters.parentMessageId);
+    return readBrokerExchangeMessages({
+      exchangeId: exchange.id,
+      exchangeMessages: this.exchangeMessages,
+      exchangeMessageRepository: this.exchangeMessageRepository,
+      filters,
+      requireParentMessage: (messageId) => this.requireExchangeMessage(exchange.id, messageId),
+    });
   }
 
   addExchangeMessage(exchangeId: string, request: A2AExchangeMessageRequest): A2AExchangeMessageRecord {
@@ -922,29 +905,11 @@ export class InMemoryA2ABroker {
   }
 
   getProposal(id: string): ChangeProposal | null {
-    const repositoryProposal = this.proposalRepository?.getProposal(id);
-    if (repositoryProposal) {
-      this.proposals.set(repositoryProposal.id, repositoryProposal);
-      return repositoryProposal;
-    }
-    return this.proposals.get(id) ?? null;
+    return readBrokerProposal(this.proposals, this.proposalRepository, id);
   }
 
   listProposals(filters?: ProposalListFilters): ChangeProposal[] {
-    if (this.proposalRepository) {
-      const repositoryProposals = this.proposalRepository.listProposals(filters);
-      for (const repositoryProposal of repositoryProposals) {
-        this.proposals.set(repositoryProposal.id, repositoryProposal);
-      }
-      return sortedCopy(
-        repositoryProposals.filter((proposal) => proposalMatchesFilters(proposal, filters)),
-        sortNewestFirst,
-      );
-    }
-    return sortedCopy(
-      [...this.proposals.values()].filter((proposal) => proposalMatchesFilters(proposal, filters)),
-      sortNewestFirst,
-    );
+    return listBrokerProposals(this.proposals, this.proposalRepository, filters);
   }
 
   getProposalDetails(id: string): ProposalDetails | null {
