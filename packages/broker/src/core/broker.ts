@@ -88,6 +88,7 @@ import {
   startBrokerExchange,
 } from "./broker-exchange.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
+import { planClassAwareTaskRetry } from "./task-retry-policy.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
@@ -296,6 +297,11 @@ const TASK_INTERRUPT_DECISION_TYPES: readonly TaskInterruptDecisionType[] = [
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
+
+function uniqueTaskErrorHistory(history: TaskError[] | undefined, error: TaskError): TaskError[] {
+  const values = [...(history ?? []), error];
+  return values.slice(-5).map((item) => normalizeTaskError(item));
+}
 
 export class InMemoryA2ABroker {
   private readonly exchanges = new Map<string, A2AExchangeState>();
@@ -1598,7 +1604,51 @@ export class InMemoryA2ABroker {
     task.updatedAt = now;
     task.completedAt = now;
     task.error = normalizedError;
+
+    const retryPlan = planClassAwareTaskRetry(task, normalizedError, {
+      maxRequeueAttempts: this.maxRequeueAttempts,
+      nowMs: Date.parse(now),
+      taskIdExists: (id) => this.tasks.has(id),
+    });
+    let retryTask: TaskRecord | undefined;
+    if (retryPlan.shouldRetry && retryPlan.retryTaskId && retryPlan.nextAttempt !== undefined) {
+      task.retriedBy = retryPlan.retryTaskId;
+      const retryPayload = {
+        ...task.payload,
+        retryClass: retryPlan.retryClass,
+        retryAttempt: retryPlan.nextAttempt,
+        retryOfTaskId: task.retryOfTaskId ?? task.id,
+        retriedFromTaskId: task.id,
+        ...(retryPlan.retryNotBeforeAt ? { retryNotBeforeAt: retryPlan.retryNotBeforeAt } : {}),
+      };
+      retryTask = normalizeTaskRecord({
+        ...task,
+        id: retryPlan.retryTaskId,
+        parentTaskId: task.parentTaskId ?? task.id,
+        referenceTaskIds: uniqueIds([...(task.referenceTaskIds ?? []), task.id]),
+        status: "queued",
+        payload: retryPayload,
+        retryOfTaskId: task.retryOfTaskId ?? task.id,
+        attempt: retryPlan.nextAttempt,
+        retriedBy: undefined,
+        requeueCount: retryPlan.nextRequeueCount,
+        claimedAt: undefined,
+        claimedBy: undefined,
+        completedAt: undefined,
+        result: undefined,
+        error: undefined,
+        errorHistory: uniqueTaskErrorHistory(task.errorHistory, normalizedError),
+        checkpoint: undefined,
+        attemptId: undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
     this.setTaskRecord(task);
+    if (retryTask) {
+      this.setTaskRecord(retryTask);
+    }
     this.syncExchangeStateFromTask(task, "failed");
     this.appendAuditEvent({
       actorId: workerId,
@@ -1608,6 +1658,16 @@ export class InMemoryA2ABroker {
       proposalId: task.proposalId,
       note: normalizedError.message,
     });
+    if (retryTask) {
+      this.appendAuditEvent({
+        actorId: "broker",
+        action: "task.retry_scheduled",
+        targetType: "task",
+        targetId: task.id,
+        proposalId: task.proposalId,
+        note: `scheduled retry ${retryTask.id} attempt ${retryTask.attempt} class ${retryPlan.retryClass}`,
+      });
+    }
     // writeTombstone mutates state (tombstone + audit event) without persisting,
     // so it must run before persistState() — otherwise a crash between the two
     // loses the tombstone until the next unrelated persist.

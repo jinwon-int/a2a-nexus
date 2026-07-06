@@ -852,6 +852,37 @@
         "Safety boundary: source-only implementation and verification; no production deploy, broker/Gateway/worker restart, provider send, DB/outbox/ACK/replay/prune/migration, release, settings mutation, force-push, or raw sensitive-value recording."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-wave3-n1-env1-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1353 Wave 3: N1 #1351 class-aware terminal retry policy plus ENV1 #1337 model-bridge retry discipline after #1367 pre-merge",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 2,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "Precondition evidence: PR #1367 was merged first so the Wave 3 implementation branch started from the CI fix SHA 3f29e7e4e05aae535d588fef0ad3a4f13d45b575 rather than carrying a known red test forward.",
+        "N1 implementation evidence: terminal failed tasks now use an explicit payload.retryPolicy allowlist for environment, worker_lost, and timeout retry classes; deterministic source_projection_blocked, acceptance_*, spec_underspecified, and retry_policy_malformed classes are hard-denied even if policy text attempts to include them.",
+        "N1 safety evidence: malformed retry policies fail closed at the readiness gate with retry_policy_malformed; retry budget is shared with stale requeue accounting through requeueCount; failed roots record retriedBy while queued retry children record retryOfTaskId, attempt, retryClass, retryAttempt, and optional retryNotBeforeAt; audit evidence is task.retry_scheduled and remains count-only/redacted.",
+        "ENV1 implementation evidence: the analysis bridge now carries strictJsonInstruction into the model prompt, advertises the payload-file path, limits inline payload excerpts, and records strictJsonInstructionApplied, promptPayloadLimit, and bridgeInputMode=payload_file in result output so model-bridge retry discipline is inspectable without dumping source bundles into prompts.",
+        "RED/GREEN evidence: new tests first failed on the absence of class-aware terminal retry/readiness policy behavior, then passed after implementation. GREEN runs include npx tsx --test packages/broker/src/core/lifecycle.test.ts packages/broker/src/task-readiness.test.ts, package-local npx tsx --test src/openclaw-handler-artifact.test.ts with edge-secret env cleared, npm --workspace packages/broker run build, and npm run check.",
+        "A2A Wave 3 readback: Team1 and Team2 broker-of-record rounds dispatched 10 lanes with 8 succeeded/substantive outputs. Successful lanes converged on opt-in class-aware retries, hard-deny deterministic failures, shared retry budgets, and bounded model-bridge prompts; two failed lanes were environment-class handler_exit_nonzero model-bridge failures, preserving ENV1 evidence without counting them as implementation defects.",
+        "Safety boundary and carry-over: source-only implementation and verification; no production deploy, broker/Gateway/worker restart, provider send, DB/outbox/ACK/replay/prune/migration, release, settings mutation, force-push, or raw sensitive-value recording. Carry-over 2 remains for issue-close gates that require an operator-approved live canary/rollout readback: #1351 retry behavior in a deployed broker and #1337 handler_exit_nonzero rate confirmation after deployment."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }

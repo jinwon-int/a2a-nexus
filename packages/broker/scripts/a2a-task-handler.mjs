@@ -834,6 +834,13 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     env.A2A_OPENCLAW_ANALYSIS_SESSION_ID,
     `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-analysis`,
   );
+  const strictJsonInstruction = safeText(payload.strictJsonInstruction, "");
+  const expectedSchema = payload.expectedSchema && typeof payload.expectedSchema === "object" && !Array.isArray(payload.expectedSchema)
+    ? jsonForPrompt(payload.expectedSchema, 6000)
+    : "";
+  const promptPayloadLimit = Number.isSafeInteger(Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT))
+    ? Math.max(1000, Math.min(16000, Number(env.A2A_ANALYSIS_PROMPT_PAYLOAD_LIMIT)))
+    : (strictJsonInstruction ? 8000 : 16000);
   const prompt = [
     `You are A2A worker ${nodeId}. Complete this read-only A2A analysis task.`,
     "Do not modify files, deploy, restart services, send providers, acknowledge terminal rows, mutate databases, or move credentials.",
@@ -842,6 +849,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     reviewInstructionForPrompt(task),
     "Return JSON only, no markdown, with exactly this shape:",
     '{"status":"done|blocked","summary":"...","findings":["..."],"risks":["..."],"recommendations":["..."],"evidenceRefs":["..."],"verdict":"pass|fail optional for review.required tasks","doneCommentUrl":"optional","blockCommentUrl":"optional","startCommentUrl":"optional"}',
+    strictJsonInstruction ? `Strict JSON retry discipline: ${strictJsonInstruction}` : "",
+    expectedSchema ? `Expected JSON schema/key summary:\n${expectedSchema}` : "",
+    "Use A2A_ANALYSIS_PAYLOAD_FILE for the full payload; the prompt payload below is an intentionally bounded excerpt to avoid model-bridge oversized-payload failures.",
     "All human-readable text should be Korean unless quoting code/test output.",
     `Task id: ${safeText(task.id, "unknown")}`,
     `Intent: ${safeText(task.intent, "unknown")}`,
@@ -850,8 +860,8 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
     `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
     `Task message:\n${safeText(task.message, "")}`,
-    `Payload JSON:\n${jsonForPrompt(payload, 16000)}`,
-  ].join("\n\n");
+    `Payload JSON excerpt (${promptPayloadLimit} chars max; full payload is in A2A_ANALYSIS_PAYLOAD_FILE):\n${jsonForPrompt(payload, promptPayloadLimit)}`,
+  ].filter(Boolean).join("\n\n");
 
   const baseCommand = analysisBridgeCommand(env);
   const bridgePreflight = analysisBridgeArtifactPreflight(baseCommand, env);
@@ -1003,6 +1013,9 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     noLive: payload.noLive === true || payload.no_live === true || undefined,
     sourceOnly: payload.sourceOnly === true || payload.source_only === true || undefined,
     payloadKeys: Object.keys(payload).sort(),
+    strictJsonInstructionApplied: Boolean(strictJsonInstruction) || undefined,
+    promptPayloadLimit,
+    bridgeInputMode: "payload_file",
     effectiveModel,
     effectiveThinking,
     modelFromPayload: modelFromPayload || undefined,

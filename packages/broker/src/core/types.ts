@@ -192,6 +192,7 @@ export type AuditAction =
   | "task.resumed"
   | "task.reassigned"
   | "task.requeued"
+  | "task.retry_scheduled"
   | "task.succeeded"
   | "task.failed"
   | "task.canceled"
@@ -265,6 +266,16 @@ export type WorkerMode = "persistent" | "mobile";
  * collaboration from API/sessions_send invocations.
  */
 export type TaskOrigin = "github" | "api" | "sessions_send" | "operator" | "unknown";
+export type TaskRetryClass = "environment" | "worker_lost" | "timeout";
+
+export interface TaskRetryPolicy {
+  /** Maximum class-aware terminal retries after the original task attempt. */
+  maxRetries: number;
+  /** Explicit retryable class allowlist. Deterministic failures are rejected before scheduling. */
+  retryOn: TaskRetryClass[];
+  /** Minimum delay before the queued retry should be claimed. Defaults to 30s. */
+  backoffMs?: number;
+}
 
 export interface A2APartyRef {
   id: string;
@@ -607,6 +618,14 @@ export interface TaskRecord extends A2ATaskRequest {
    * request. Optional/additive for backward compatibility.
    */
   taskOrigin?: TaskOrigin;
+  /**
+   * Class-aware terminal retry lineage. `retryOfTaskId` points at the root
+   * failed task, `attempt` starts at 1 for the first broker-scheduled retry,
+   * and `retriedBy` is set on a failed task when the broker enqueues its child.
+   */
+  retryOfTaskId?: string;
+  attempt?: number;
+  retriedBy?: string;
   /** Broker instance that owns claim/start/complete/fail authority. Optional for legacy tasks. */
   brokerOfRecord?: string;
   /** Team/tenant boundary that owns claim/start/complete/fail authority. Optional for legacy tasks. */

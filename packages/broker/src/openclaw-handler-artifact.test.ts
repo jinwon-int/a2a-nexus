@@ -2015,6 +2015,9 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
       summary: "fallback summary should be replaced",
       noLive: true,
       sourceOnly: true,
+      strictJsonInstruction: "First byte must be {; return one RFC8259 JSON object only.",
+      expectedSchema: { verdict: "PASS|BLOCK", explorerSummary: ["string"] },
+      largeNoise: "x".repeat(12_000),
     };
 
     const result = spawnSync(process.execPath, [handlerPath], {
@@ -2041,7 +2044,16 @@ test("analysis-only task can use OpenClaw analysis bridge when explicitly enable
     assert.deepEqual(payload.result.output.findings, ["worker produced substantive analysis"]);
     assert.deepEqual(payload.result.output.recommendations, ["keep generic fallback explicit"]);
     assert.equal(payload.result.output.nodeId, "worker-a");
+    assert.equal(payload.result.output.strictJsonInstructionApplied, true);
+    assert.equal(payload.result.output.promptPayloadLimit, 8000);
+    assert.equal(payload.result.output.bridgeInputMode, "payload_file");
     const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    const promptText = args[args.indexOf("--message") + 1];
+    assert.match(promptText, /Strict JSON retry discipline: First byte must be \{/);
+    assert.match(promptText, /Expected JSON schema\/key summary/);
+    assert.match(promptText, /A2A_ANALYSIS_PAYLOAD_FILE/);
+    assert.match(promptText, /Payload JSON excerpt \(8000 chars max/);
+    assert.ok(!promptText.includes("x".repeat(11_000)), "prompt must not inline the full oversized payload");
     const sessionId = args[args.indexOf("--session-id") + 1];
     assert.match(sessionId, /^a2a-worker-a-task-fixture-1-analysis$/);
   } finally {

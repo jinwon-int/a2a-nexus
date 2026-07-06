@@ -1,4 +1,5 @@
 import { parseTaskAcceptance } from "./worker-acceptance.js";
+import { validateTaskRetryPolicy } from "./core/task-retry-policy.js";
 import type { TaskRecord } from "./core/types.js";
 
 export type TaskReadinessMode = "warn" | "enforce";
@@ -15,7 +16,7 @@ export interface TaskReadinessResult {
   missing: string[];
   applies: boolean;
   mode: TaskReadinessMode;
-  code?: "spec_underspecified" | "source_projection_empty";
+  code?: "spec_underspecified" | "source_projection_empty" | "retry_policy_malformed";
   details?: Record<string, unknown>;
 }
 
@@ -34,6 +35,17 @@ export function evaluateTaskReadiness(
 ): TaskReadinessResult {
   const mode = normalizeTaskReadinessMode(options.mode);
   const record = payload ?? {};
+  const retryPolicy = validateTaskRetryPolicy(record["retryPolicy"]);
+  if (!retryPolicy.ok) {
+    return {
+      ok: false,
+      missing: retryPolicy.missing,
+      applies: true,
+      mode,
+      code: "retry_policy_malformed",
+      details: { missing: retryPolicy.missing },
+    };
+  }
   const sourceProjection = evaluateSourceProjectionReadiness(record, options.intent, mode);
   if (sourceProjection.applies) return sourceProjection;
 

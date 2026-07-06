@@ -23,14 +23,93 @@ function registerWorker(broker: InMemoryA2ABroker, nodeId = "worker-1") {
   });
 }
 
-function createTask(broker: InMemoryA2ABroker, targetNodeId = "worker-1") {
+function createTask(
+  broker: InMemoryA2ABroker,
+  targetNodeId = "worker-1",
+  payload: Record<string, unknown> = {},
+) {
   return broker.createTask({
     intent: "analyze",
     requester: { id: "hub", kind: "node", role: "hub" },
     target: { id: targetNodeId, kind: "node", role: "operator" },
-    payload: {},
+    payload,
   });
 }
+
+describe("class-aware terminal retries", () => {
+  it("schedules one queued retry for retryable environment failures", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { maxRequeueAttempts: 3 });
+    registerWorker(broker, "worker-1");
+    const task = createTask(broker, "worker-1", {
+      retryPolicy: { maxRetries: 1, retryOn: ["environment"], backoffMs: 0 },
+    });
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+
+    const failed = broker.failTask(task.id, "worker-1", {
+      code: "handler_exit_nonzero",
+      message: "handler failed",
+      details: { stage: "handler", nestedError: { code: "openclaw_analysis_failed" } },
+    });
+
+    assert.equal(failed.status, "failed");
+    assert.ok(failed.retriedBy);
+    const retry = broker.getTask(failed.retriedBy!);
+    assert.ok(retry);
+    assert.equal(retry!.status, "queued");
+    assert.equal(retry!.retryOfTaskId, task.id);
+    assert.equal(retry!.attempt, 1);
+    assert.equal(retry!.requeueCount, 1);
+    assert.equal(retry!.payload.retryClass, "environment");
+    assert.equal(retry!.payload.retryNotBeforeAt, undefined);
+
+    const events = broker.listAuditEvents({ action: "task.retry_scheduled" });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].targetId, task.id);
+    assert.match(events[0].note ?? "", /environment/);
+  });
+
+  it("does not retry deterministic hard-deny failures even when policy exists", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { maxRequeueAttempts: 3 });
+    registerWorker(broker, "worker-1");
+    const task = createTask(broker, "worker-1", {
+      retryPolicy: { maxRetries: 2, retryOn: ["environment"], backoffMs: 0 },
+    });
+    broker.claimTask(task.id, "worker-1");
+
+    const failed = broker.failTask(task.id, "worker-1", {
+      code: "source_projection_blocked",
+      message: "same source bundle will fail again",
+      details: { stage: "projection" },
+    });
+
+    assert.equal(failed.retriedBy, undefined);
+    assert.equal(broker.listTasks().filter((item) => item.retryOfTaskId === task.id).length, 0);
+  });
+
+  it("shares retry budget with stale requeue count", () => {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { maxRequeueAttempts: 1 });
+    registerWorker(broker, "worker-1");
+    const task = createTask(broker, "worker-1", {
+      retryPolicy: { maxRetries: 2, retryOn: ["environment"], backoffMs: 0 },
+    });
+    broker.claimTask(task.id, "worker-1");
+    broker.startTask(task.id, "worker-1");
+    const stale = broker.requeueStaleTasksDetailed(0);
+    assert.equal(stale.requeued.length, 1);
+    broker.claimTask(task.id, "worker-1");
+
+    const failed = broker.failTask(task.id, "worker-1", {
+      code: "handler_exit_nonzero",
+      message: "handler failed",
+      details: { stage: "handler", nestedError: { code: "openclaw_analysis_failed" } },
+    });
+
+    assert.equal(failed.requeueCount, 1);
+    assert.equal(failed.retriedBy, undefined);
+    assert.equal(broker.listAuditEvents({ action: "task.retry_scheduled" }).length, 0);
+  });
+});
 
 describe("task heartbeat", () => {
   it("heartbeatTask sets lastHeartbeatAt on claimed task", () => {
