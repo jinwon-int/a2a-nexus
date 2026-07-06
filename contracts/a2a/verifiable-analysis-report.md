@@ -127,17 +127,46 @@ SHA-256 over canonical UTF-8 bytes.
 Keyring: `{ "keys": { "<keyId>": "<PEM public key>" } }`, supplied by the
 consumer. No private key material appears in a bundle, keyring, log, or issue.
 
-## 5. Known limitation — result↔source binding (next K2 wiring)
+## 5. Result↔source binding (K2 #1374; closes #1386 T2)
 
-v1 verifies the result's authenticity AND each source snapshot's authenticity
-**independently**. It does NOT yet cryptographically prove *which* sources fed
-*this* result, because #1380 does not embed source `contentHash`es into the
-signed `result`. The binding step: the K2 executor should record the consumed
-source hashes inside the `result` (so `resultHash` covers them); the verifier
-then asserts every `sources[i].contentHash` is referenced by the result. Tracked
-against K2 (#1374). Until then, a report asserts "this result is authentic and
-these snapshots are authentic," not "this result was derived from exactly these
-snapshots."
+The report cryptographically binds *which* sources fed *this* result. The
+analysis result declares the snapshots it consumed, by content hash, inside the
+signed body:
+
+```jsonc
+"result": {
+  "output": {
+    "…": "…",
+    "sources": [
+      { "sourceId": "s1", "contentHash": "sha256:…" }   // one per consumed snapshot
+    ]
+  },
+  "provenance": { "…": "…" }
+}
+```
+
+Because `result.output.sources` lives inside `result` (and `resultHash` =
+sha256(JCS(result sans provenance))), the declared set is **covered by the
+worker signature** — tampering with it breaks `result-hash`. The verifier's
+`source-binding` check then enforces a bijection on content hashes:
+
+- every `report.sources[i].contentHash` MUST appear in
+  `result.output.sources[].contentHash` — a snapshot cannot claim to have fed
+  the result unless the signed result declares it (**no unbound source**);
+- every declared `contentHash` MUST have its snapshot present in
+  `report.sources` (**no dangling declaration**).
+
+Empty on both sides (analysis with no external source) is allowed. With this,
+the report asserts "this result was derived from exactly these authentic
+snapshots," not merely "these snapshots are authentic."
+
+**Emit-side contract (K2 Wave 2 target)**: the analysis lane receives snapshots
+as signed, delimiter-safe untrusted external data and MUST have no network/fetch
+access (fetching is the docker-runner egress proxy's job, performed before
+analysis); the result assembler records `result.output.sources` from exactly the
+snapshots supplied. It records `contentHash` (and an opaque `sourceId`) only —
+never the snapshot body, which travels in `report.sources` / the attestation
+bundle.
 
 ## 6. Safety boundaries
 

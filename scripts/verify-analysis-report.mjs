@@ -141,8 +141,6 @@ export function verifyReport(report, keyring) {
   }
 
   // 6. Retrieval snapshots: each snapshot self-verifies (byteLen + contentHash + signature).
-  //    v1 verifies each source's authenticity; cryptographic result<->source binding is a
-  //    documented gap pending the K2 executor wiring (see contract §5).
   // An empty sources array is allowed (analysis with no external source).
   report.sources.forEach((snap, i) => {
     const id = `source[${i}]`;
@@ -166,6 +164,30 @@ export function verifyReport(report, keyring) {
     }
     return pass(checks, id);
   });
+
+  // 7. Result<->source binding (K2 #1374 / closes #1386 T2). A snapshot may only
+  //    claim to have fed this result if the SIGNED result declares its
+  //    contentHash in result.output.sources[], and every declared source must
+  //    have its snapshot present. Because result.output.sources is inside the
+  //    signed result, resultHash covers it — so the binding is tamper-bound.
+  //    Empty on both sides (analysis with no external source) is allowed.
+  const declaredSources = Array.isArray(report.result?.output?.sources)
+    ? report.result.output.sources.map((s) => s && s.contentHash).filter((h) => typeof h === "string")
+    : [];
+  const snapshotHashes = report.sources.map((s) => s && s.contentHash).filter((h) => typeof h === "string");
+  if (declaredSources.length > 0 || snapshotHashes.length > 0) {
+    const declaredSet = new Set(declaredSources);
+    const snapshotSet = new Set(snapshotHashes);
+    const unboundSnapshot = snapshotHashes.find((h) => !declaredSet.has(h));
+    const danglingDeclaration = declaredSources.find((h) => !snapshotSet.has(h));
+    if (unboundSnapshot) {
+      fail(checks, "source-binding", `snapshot ${unboundSnapshot} is not declared by result.output.sources (unbound source)`);
+    } else if (danglingDeclaration) {
+      fail(checks, "source-binding", `result.output.sources declares ${danglingDeclaration} with no matching snapshot`);
+    } else {
+      pass(checks, "source-binding");
+    }
+  }
 
   return { green: checks.every((c) => c.ok), checks };
 }

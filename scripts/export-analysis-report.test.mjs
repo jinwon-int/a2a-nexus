@@ -29,8 +29,8 @@ function makeCtx() {
 }
 
 /** Build a completed task record shaped like the broker stores it, with a full provenance chain. */
-function buildSucceededTask(ctx, { taskId = "task-1", omitProvenance = false, omitCountersig = false, status = "succeeded" } = {}) {
-  const result = { summary: "analysis holds", output: { a: 1 } };
+function buildSucceededTask(ctx, { taskId = "task-1", omitProvenance = false, omitCountersig = false, status = "succeeded", declaredSources } = {}) {
+  const result = { summary: "analysis holds", output: { a: 1, ...(declaredSources ? { sources: declaredSources } : {}) } };
   const resultHash = sha256Prefix(canonicalizeJson(result));
   const workerSig = signJws(
     { schemaVersion: RESULT_PROVENANCE_SCHEMA, canonicalization: CANONICALIZATION, taskId, claimedAt: CLAIMED_AT, resultHash },
@@ -89,7 +89,11 @@ test("exporter refuses a non-succeeded task", () => {
 test("signed snapshots pass through and the full bundle stays GREEN", () => {
   const ctx = makeCtx();
   const snapshot = buildSignedSnapshot(ctx);
-  const bundle = buildReportBundle(buildSucceededTask(ctx), { sources: [snapshot] });
+  // Result<->source binding (#1374 / #1386 T2): the SIGNED result must declare
+  // every snapshot it consumed in result.output.sources, or the verifier
+  // fail-closes with an unbound-source rejection.
+  const task = buildSucceededTask(ctx, { declaredSources: [{ sourceId: "s1", contentHash: snapshot.contentHash }] });
+  const bundle = buildReportBundle(task, { sources: [snapshot] });
   assert.equal(bundle.sources.length, 1);
   const res = verifyReport(bundle, ctx.keyring);
   assert.equal(res.green, true, JSON.stringify(res.checks));
