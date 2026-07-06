@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildClaudeFinalizerToolArgs } from "./finalizer-tool-policy.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -392,7 +393,12 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
   const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
 
   try {
-    const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(maxTurns)];
+    const args = [
+      "-p", prompt,
+      "--output-format", "json",
+      "--max-turns", String(maxTurns),
+      ...buildClaudeFinalizerToolArgs(),
+    ];
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
       env: buildClaudeChildEnv(env),
       cwd: sessionWorkspace,
