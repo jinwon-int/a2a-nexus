@@ -56,6 +56,7 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
       "if (!args.includes('-Q')) throw new Error('expected Hermes quiet mode');",
       "if (args[args.indexOf('--provider') + 1] !== 'deepseek') throw new Error('provider prefix was not forwarded');",
       "if (args[args.indexOf('--model') + 1] !== 'deepseek-v4-flash') throw new Error('model provider prefix was not stripped after provider forwarding');",
+      "if (args[args.indexOf('--toolsets') + 1] !== 'safe') throw new Error('finalizer toolset policy must ignore env override');",
       "if (!prompt.includes('runtime/app-src/app_chat.py')) throw new Error('source path missing from prompt');",
       "if (!prompt.includes('st.columns([7, 3])')) throw new Error('source content missing from prompt');",
       "console.log(JSON.stringify({",
@@ -90,7 +91,7 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
         HERMES_PROVIDER: "openai-codex",
         CAPTURE_PROMPT_PATH: promptPath,
         A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/seo-web-bridge": repoDir }),
-        A2A_HERMES_ANALYSIS_TOOLSETS: "safe",
+        A2A_HERMES_ANALYSIS_TOOLSETS: "web,terminal,file",
       },
     });
 

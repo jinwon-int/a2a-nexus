@@ -3,6 +3,11 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  CLAUDE_FINALIZER_ALLOWED_TOOLS,
+  CLAUDE_FINALIZER_DISALLOWED_TOOLS,
+  buildClaudeFinalizerToolArgs,
+} from "./finalizer-tool-policy.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -126,8 +131,8 @@ function buildClaudeChildEnv(env = process.env) {
   return child;
 }
 
-const ANALYSIS_ALLOWED_TOOLS = "Read Glob Grep";
-const ANALYSIS_DISALLOWED_TOOLS = "Bash Edit Write NotebookEdit WebFetch WebSearch";
+const ANALYSIS_ALLOWED_TOOLS = CLAUDE_FINALIZER_ALLOWED_TOOLS;
+const ANALYSIS_DISALLOWED_TOOLS = CLAUDE_FINALIZER_DISALLOWED_TOOLS;
 const ANALYSIS_BRIDGE_CONTRACT_VERSION = "claude-a2a-analysis.v1";
 
 function buildReadOnlyClaudeArgs(prompt, maxTurns) {
@@ -135,8 +140,7 @@ function buildReadOnlyClaudeArgs(prompt, maxTurns) {
     "-p", prompt,
     "--output-format", "json",
     "--max-turns", String(maxTurns),
-    "--allowedTools", ANALYSIS_ALLOWED_TOOLS,
-    "--disallowedTools", ANALYSIS_DISALLOWED_TOOLS,
+    ...buildClaudeFinalizerToolArgs(),
   ];
 }
 
