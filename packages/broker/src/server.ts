@@ -283,6 +283,20 @@ import {
 const DEFAULT_OPERATOR_EVENT_BUFFER_LIMIT = 200;
 const DEFAULT_MAX_TASK_PAYLOAD_BYTES = 1 * 1024 * 1024;
 
+/**
+ * Resolve the result-provenance countersigning posture (#1389). Defaults to
+ * "auto" when unset/empty; a non-empty but unrecognized value is a loud
+ * configuration error rather than a silent fallback.
+ */
+function resolveResultProvenanceCountersignMode(raw: string | undefined): "enforce" | "auto" | "off" {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "") return "auto";
+  if (value === "enforce" || value === "auto" || value === "off") return value;
+  throw new Error(
+    `invalid A2A_RESULT_PROVENANCE_COUNTERSIGN='${raw}' (expected enforce | auto | off)`,
+  );
+}
+
 export function createBrokerServer(options: BrokerServerOptions = {}): BrokerServerRuntime {
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
   const port = options.port ?? Number(process.env.PORT ?? 8787);
@@ -565,6 +579,24 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
   const signingKeyPem = signingKeyFile ? readFileSync(signingKeyFile, "utf8") : undefined;
   const agentCardSigningKid = options.agentCardSigningKid ?? process.env.AGENT_CARD_SIGNING_KID;
+  // Result-provenance countersigning posture (#1382 G2 / #1389 deploy gap). The
+  // #1389 incident: a new build that unconditionally enforced countersigning
+  // shipped before the signer key/env reached the container, so every provenance-
+  // bearing worker submission failed with "countersigning key is not configured".
+  // "enforce" turns that code-vs-env skew into a LOUD STARTUP failure (mirroring
+  // the "configured-but-unreadable key fails startup" agent-card stance) instead
+  // of a per-task failure discovered later by workers. "auto" (default) never
+  // rejects a worker task for a missing broker key. "off" is a kill switch.
+  const resultProvenanceCountersign = resolveResultProvenanceCountersignMode(
+    options.resultProvenanceCountersign ?? process.env.A2A_RESULT_PROVENANCE_COUNTERSIGN,
+  );
+  if (resultProvenanceCountersign === "enforce" && !signingKeyPem) {
+    throw new Error(
+      "A2A_RESULT_PROVENANCE_COUNTERSIGN=enforce requires a broker signing key, but none is configured. " +
+        "Set AGENT_CARD_SIGNING_KEY_FILE to a readable Ed25519/EC-P256 private key, or set " +
+        "A2A_RESULT_PROVENANCE_COUNTERSIGN=off to disable result-provenance countersigning.",
+    );
+  }
   const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
     options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
   );
@@ -1529,6 +1561,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
               brokerKeyId: agentCardSigningKid ?? brokerId,
             }
           : undefined,
+        resultProvenanceCountersign,
       })) {
         return;
       }

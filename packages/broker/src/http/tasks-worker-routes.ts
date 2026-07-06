@@ -58,6 +58,15 @@ export interface TasksWorkerRouteContext {
     privateKeyPem: string;
     brokerKeyId: string;
   };
+  /**
+   * Countersigning posture for worker result provenance (#1389). "enforce" and
+   * "auto" both verify+countersign when a signer is present; they differ only at
+   * startup (enforce requires the key, auto does not). Under "auto" with no
+   * signer the worker-signed result passes through un-countersigned rather than
+   * failing the submission. "off" passes provenance through untouched (kill
+   * switch). Defaults to "auto" when unset.
+   */
+  resultProvenanceCountersign?: "enforce" | "auto" | "off";
 }
 
 type TaskScopedContext = TasksWorkerRouteContext & { taskId: string };
@@ -102,6 +111,11 @@ function verifyAndCountersignResultProvenance(
   if (!resultHasProvenance(result)) {
     return result;
   }
+  // "off" is a kill switch (#1389): provenance passes through untouched, with no
+  // verification or countersignature. Reserve it for incident recovery.
+  if (ctx.resultProvenanceCountersign === "off") {
+    return result;
+  }
   const normalizedResult = normalizeTaskResult(result);
   if (!resultHasProvenance(normalizedResult)) {
     throw new BrokerError("provenance_invalid", "result provenance was not preserved by result normalization");
@@ -128,7 +142,15 @@ function verifyAndCountersignResultProvenance(
   }
   const signer = ctx.resultProvenanceBrokerSigner;
   if (!signer) {
-    throw new BrokerError("provenance_invalid", "broker result provenance countersigning key is not configured");
+    // "enforce" guarantees a signer at startup, so reaching here means "auto"
+    // with no configured key: pass the worker-signed result through
+    // un-countersigned rather than failing the submission (#1389 — a deployed
+    // build must never start rejecting worker tasks because the broker signer
+    // env/key has not landed yet).
+    if (ctx.resultProvenanceCountersign === "enforce") {
+      throw new BrokerError("provenance_invalid", "broker result provenance countersigning key is not configured");
+    }
+    return normalizedResult;
   }
   return {
     ...normalizedResult,

@@ -150,6 +150,18 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   /** Optional JWS kid header for the agent-card signature. Falls back to AGENT_CARD_SIGNING_KID. */
   agentCardSigningKid?: string;
   /**
+   * Result-provenance broker countersigning posture (#1382 G2, #1389 deploy gap).
+   * Falls back to A2A_RESULT_PROVENANCE_COUNTERSIGN.
+   * - "enforce": the broker MUST countersign worker result provenance — startup
+   *   fails loudly if no signing key is configured, so a code-vs-env skew is
+   *   caught at boot instead of failing worker submissions later.
+   * - "auto" (default): countersign when a signing key is present, otherwise pass
+   *   the worker-signed result through un-countersigned (never fails the task).
+   * - "off": provenance is passed through untouched — a kill switch that never
+   *   verifies or countersigns.
+   */
+  resultProvenanceCountersign?: "enforce" | "auto" | "off";
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over
