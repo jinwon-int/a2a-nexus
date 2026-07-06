@@ -447,6 +447,12 @@
       "note": "Adversarial tests for #1383 V-b finalizer-verdict offline verifier: tamper/subject-binding/keyring-absent/assurance-invariant fail-closed."
     },
     {
+      "file": "scripts/export-analysis-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1378 report exporter: fail-closed emission (no provenance/countersig/non-succeeded refused), live round-trip to the offline verifier, assurance stamping."
+    },
+    {
       "file": "scripts/check-finalizer-verdict.test.mjs",
       "class": "gate",
       "round": null,
