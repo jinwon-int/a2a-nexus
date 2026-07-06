@@ -883,6 +883,52 @@
         "Safety boundary and carry-over: source-only implementation and verification; no production deploy, broker/Gateway/worker restart, provider send, DB/outbox/ACK/replay/prune/migration, release, settings mutation, force-push, or raw sensitive-value recording. Carry-over 2 remains for issue-close gates that require an operator-approved live canary/rollout readback: #1351 retry behavior in a deployed broker and #1337 handler_exit_nonzero rate confirmation after deployment."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-wave2-finalizer-audit-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1353 Wave 2 finalizer independent verification of N2 #1352 / H1 #1347 first-application / H3 #1349 first record (#1364) — feature PASS, one shipped-defect carry-over found post-merge and resolved same-session by #1367",
+      "metrics": {
+        "carryOverCount": 1,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "failureBreakdown": {
+        "implementation_defect": 1
+      },
+      "evidence": [
+        "N2 feature verdict PASS on origin/main 131d28f: /stats/tasks is behind the shared edge-secret auth gate (server.ts:860 precedes the route at 1295; only /livez and the agent-card are public), count-only, and byWorkerClass emits anonymous classes only (source-only/mobile/vps/unclassified via workerClassForStatsTask) with no worker names, payloads, excerpts, or raw logs; invalid/inverted/over-7-day windows fail closed; the ENV1-a 75-row manual table reproduced exactly through one authenticated call",
+        "H1 #1347 first application confirmed (PR #1364 body carries a real explorer summary + verifier line + RED/GREEN + the ENV1-a table), and H3 #1349 first record confirmed (implementationMode/implementationDurationBand gate fails closed on unknown values and requires them as a pair); full-scorecard identifier scan returned zero worker names",
+        "carry-over 1 / implementation_defect 1 (shipped defect found post-merge, now resolved): packages/broker/src/server-task-stats.test.ts hardcoded an absolute query window while its tasks receive real-now completedAt from completeTask/failTask and aggregateTaskStats windows on that terminal timestamp, so it passed only while wall-clock was before 2026-07-06T00:00Z and reddened CI after. Finalizer reproduced it at 00:22Z (suite 3716/3717); filed #1365, fixed directly per operator direction in #1367 (window anchored to Date.now(), merged as 3f29e7e before Wave 3 branched). The merged 33rd entry's merge-time 'all green' was timing-luck, not a false claim, so this is a carry-over not a falseFinding",
+        "process note: the fix was the finalizer's own direct PR (non-A2A path) per the operator's 'A2A for track work, direct PRs for the rest' direction — verified robust on Wave 3 main (Date.now()-anchored window present, the formerly-flaky test now passes wall-clock-independently in a 3722/3722 suite)"
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-wave3-finalizer-audit-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1353 Wave 3 finalizer independent verification of N1 #1351 class-aware retry + ENV1 #1337 model-bridge discipline (#1368) — both PASS, both correctly kept open on operator-approved live-canary gates",
+      "metrics": {
+        "carryOverCount": 2,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0
+      },
+      "evidence": [
+        "finalizer independent verification on origin/main 1584bd7: broker suite 3722/3722 pass. N1 retry policy audited against the #1351 spec — RETRY_HARD_DENY_CODES covers acceptance_*/review_*/source_projection_blocked/spec_underspecified/retry_policy_malformed (deterministic failures cannot be retried even if retryOn lists them), ALLOWED_RETRY_CLASSES is environment/worker_lost/timeout only, and the wiring is real: broker.ts fail path calls planClassAwareTaskRetry, sets task.retriedBy, creates the retry child with retryOfTaskId/attempt/requeueCount, and emits task.retry_scheduled",
+        "the anti-infinite-loop invariant holds as specced: nextRequeueCount = currentRequeueCount + 1 and the plan short-circuits with shared_requeue_budget_exhausted when currentRequeueCount >= maxRequeueAttempts, so the class-aware retry path and the stale reaper share one budget rather than compounding; malformed retryPolicy fails closed at the readiness gate with retry_policy_malformed (create-time, #1281 pattern), not just at fail time",
+        "ENV1 #1337 model-bridge discipline confirmed: the analysis bridge carries strictJsonInstruction into the prompt, advertises A2A_ANALYSIS_PAYLOAD_FILE and sends only a bounded excerpt inline (promptPayloadLimit 8000 under strict, capped) — the exact E2BIG/argv-size mitigation from the fleet skill — with strictJsonInstructionApplied/promptPayloadLimit/bridgeInputMode=payload_file telemetry for inspectability",
+        "carry-over 2 correctly tracked, not defects: #1351 and #1337 both auto-close-then-reopen was the right call — their close gates require an operator-approved deployed-broker live canary (retry behavior in a deployed broker; handler_exit_nonzero rate confirmation post-deploy) that a source-only merge cannot satisfy; the operator's immediate reopen of #1351 matched its issue-body live-canary gate",
+        "trend note resolved-in-motion: the model-bridge openclaw_analysis_failed class that recurred four consecutive rounds is exactly what this wave's ENV1 discipline targets — the two failed Wave 3 lanes were that same class, now preserved as environment evidence rather than counted as implementation defects; the deployed-broker confirmation is the remaining proof that the discipline lowers the rate"
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
