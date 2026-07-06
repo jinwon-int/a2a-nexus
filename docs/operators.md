@@ -115,6 +115,32 @@ the antithesis as reviewer evidence rather than as another implementation vote:
   one-line reason in the disposition evidence. This is a reporting convention,
   not a new hard gate or a new scorecard schema field.
 
+### H3 implementation measurement fields (#1349)
+
+When an implementation lane is being used to measure the H1/H2 pipeline effect,
+record the optional implementation measurement fields in the scorecard entry:
+
+- `implementationMode`: `"solo"`, `"h1-pipeline"`, or `"h2-hybrid"`.
+- `implementationDurationBand`: `"<1h"`, `"1-4h"`, or `">4h"`.
+
+The scorecard gate fails closed for unknown values and requires the two fields as
+a pair when either is present. The fields are top-level entry metadata, not
+`metrics`, so they do not collide with the existing non-negative-integer metrics
+contract. Existing entries are not backfilled.
+
+Comparison protocol:
+
+1. Compare against same-class work where possible (for N2, use the L-broker
+   series and later stats/API slices as rough solo baselines; do not rewrite
+   old entries).
+2. Use the existing quality axes: review/finalizer defects, `reworkIssueCount`,
+   `falseFindingCount`, `evidenceGateDeviationCount`, and failure narratives.
+3. Use only the duration band for speed; do not record exact timestamps or
+   session identifiers.
+4. Promote a mode to the default recommendation only after three consecutive
+   comparable waves show quality no worse than solo and a better duration band.
+   Any quality regression blocks promotion pending cause analysis.
+
 ## Independent review evidence for medium+ tasks (#1237)
 
 Tasks that are large enough to need an author/reviewer split can opt in with `payload.review.required: true`. This first slice is a manual contract only: the dispatcher chooses the reviewer lane; the broker does not auto-assign reviewers.

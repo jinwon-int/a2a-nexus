@@ -154,6 +154,22 @@ test('low substantive-lane ratio streak emits a warning without failing the scor
   assert.match(warnings[0], /substantive lane ratio below 0\.5/);
 });
 
+test('implementation measurement fields are optional but fail closed when present (#1349 H3)', () => {
+  assert.deepEqual(evaluateScorecard({
+    entries: [{ ...VALID_ENTRY, implementationMode: 'h1-pipeline', implementationDurationBand: '1-4h' }],
+  }), []);
+  const failures = evaluateScorecard({
+    entries: [
+      { ...VALID_ENTRY, implementationMode: 'mystery-mode', implementationDurationBand: '1-4h' },
+      { ...VALID_ENTRY, id: 'round-y', implementationMode: 'h1-pipeline', implementationDurationBand: 'minutes' },
+      { ...VALID_ENTRY, id: 'round-z', implementationMode: 'h1-pipeline' },
+    ],
+  });
+  assert.ok(failures.some((f) => f.includes('implementationMode must be one of')));
+  assert.ok(failures.some((f) => f.includes('implementationDurationBand must be one of')));
+  assert.ok(failures.some((f) => f.includes('implementationDurationBand is required when implementationMode is present')));
+});
+
 test('committed baseline scorecard validates and records the 2026-07 track', () => {
   const doc = JSON.parse(fs.readFileSync(path.join(repo, 'docs/ops/round-quality-scorecard.json'), 'utf8'));
   assert.deepEqual(evaluateScorecard(doc), []);

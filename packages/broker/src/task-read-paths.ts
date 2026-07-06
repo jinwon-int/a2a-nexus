@@ -118,6 +118,16 @@ export function taskIsLiveInMutationMap(broker: InMemoryA2ABroker, task: { id: s
   return Boolean(broker.getTask(task.id));
 }
 
+export function listAllTasksForStatsReadPath(
+  stateStore: BrokerStateStore,
+  broker: InMemoryA2ABroker,
+): TaskRecord[] {
+  if (stateStore instanceof SqliteBrokerStateStore) {
+    return stateStore.readHotTasks();
+  }
+  return broker.listTasks();
+}
+
 export function listTasksForReadPath(
   stateStore: BrokerStateStore,
   broker: InMemoryA2ABroker,

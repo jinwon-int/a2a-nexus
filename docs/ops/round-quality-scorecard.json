@@ -821,6 +821,37 @@
         "Carry-over 1: H1's practical first-application gate remains intentionally open for the next Medium+ implementation PR (planned N2 #1352 under #1353), which must include an explorer summary and verifier PASS/fix-resolution line in the PR body before #1347 closes."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-wave2-n2-h1-h3-env1a-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1353 Wave 2: N2 #1352 GET /stats/tasks as the first H1 implementation-pipeline application, H3 #1349 first implementation measurement record, and ENV1-a manual-table vs API one-call comparison",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 8,
+        "dispatchedLaneCount": 10
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "H1 first application: N2 was implemented through the documented explorer -> implementer -> verifier flow. Explorer lanes converged on a new pure aggregateTaskStats seam, a dedicated /stats/tasks HTTP module, existing read-path edge-secret authentication, minimal server.ts wiring, a 7-day maximum window, and anonymous count-only axes; verifier pre-pass called out the same seams and required the PR body to carry explorer and verifier lines before #1347 closes.",
+        "N2 implementation evidence: GET /stats/tasks is read-only and count-only. It returns total, byStatus, byErrorCode, byNestedClass, byStage, byWorkerClass, and byRound.top without task payloads, excerpts, worker names, or raw logs; invalid windows and windows over 7 days fail closed with 400; unauthenticated calls reject like the existing read path.",
+        "RED/GREEN evidence: the new N2 tests were first observed failing with missing task-stats modules, then passed after implementation; GREEN runs include npx tsx --test packages/broker/src/core/task-stats.test.ts packages/broker/src/server-task-stats.test.ts, node --test scripts/check-round-quality-scorecard.test.mjs, npm --workspace packages/broker run build, node --test dist/core/task-stats.test.js dist/server-task-stats.test.js, and npm run check.",
+        "H3 first record: this scorecard entry is the first implementation measurement record with implementationMode=h1-pipeline and implementationDurationBand=1-4h. The scorecard gate now fails closed for unknown implementationMode or implementationDurationBand values and requires them as a pair, while existing entries remain valid without backfill.",
+        "ENV1-a comparison: the 75-row manual failed-task table was replayed into a local broker and compared against one authenticated GET /stats/tasks call. Manual and API matched exactly: total 75; byStatus failed 75; byErrorCode handler_exit_nonzero 51, acceptance_failed 19, acceptance_malformed 5; byNestedClass source_projection_blocked 19, openclaw_analysis_failed 32, no_stdout 24; byStage projection 3; byWorkerClass source-only 75.",
+        "A2A Wave 2 readback: Team1 and Team2 broker-of-record rounds dispatched 10/10 lanes with 8 substantive outputs. Successful lanes identified the same route/core/scorecard seams and the H1 PR-body requirement; two failed lanes were environment-class handler exits (model-bridge stdin/native-binary provisioning), not implementation defects.",
+        "Safety boundary: source-only implementation and verification; no production deploy, broker/Gateway/worker restart, provider send, DB/outbox/ACK/replay/prune/migration, release, settings mutation, force-push, or raw sensitive-value recording."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
