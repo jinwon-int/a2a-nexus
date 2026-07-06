@@ -35,7 +35,10 @@ import { verifyVerdict } from "./verify-finalizer-verdict.mjs";
  * finalizerKeyId, reasons }. `ok` = the verdict fully satisfies the gate;
  * `blocked` = the gate blocks the merge (enforce mode with violations).
  */
-export function evaluateVerdictGate({ verdict, headSha, finalizerKeyring, producingWorkerKeyIds = [], mode = "warn" }) {
+export function evaluateVerdictGate({
+  verdict, headSha, finalizerKeyring, producingWorkerKeyIds = [],
+  attesterAllowlist = [], mode = "warn",
+}) {
   const reasons = [];
   const expectedSubject = { kind: "pr", prHeadSha: headSha };
   const v = verifyVerdict(verdict, finalizerKeyring, { expectedSubject });
@@ -44,6 +47,17 @@ export function evaluateVerdictGate({ verdict, headSha, finalizerKeyring, produc
   }
   if (v.decision !== "go") {
     reasons.push(`decision is '${v.decision ?? "absent"}', gate requires 'go'`);
+  }
+  // Attested identity (S3): verifyVerdict proves the OIDC identity is valid and
+  // trusted-root-chained, but not that it is an ALLOWED finalizer workflow. The
+  // gate enforces the registered attester allowlist.
+  if (v.attesterSubject) {
+    if (!attesterAllowlist.includes(v.attesterSubject)) {
+      reasons.push(`attester subject '${v.attesterSubject}' is not in the registered finalizer attester allowlist`);
+    }
+    if (producingWorkerKeyIds.includes(v.attesterSubject)) {
+      reasons.push(`independence violation: attester subject '${v.attesterSubject}' produced the subject (self-certification)`);
+    }
   }
   if (v.finalizerKeyId && producingWorkerKeyIds.includes(v.finalizerKeyId)) {
     reasons.push(`independence violation: finalizerKeyId '${v.finalizerKeyId}' produced the subject (self-certification)`);
@@ -57,6 +71,7 @@ export function evaluateVerdictGate({ verdict, headSha, finalizerKeyring, produc
     kind: v.kind,
     decision: v.decision,
     finalizerKeyId: v.finalizerKeyId,
+    attesterSubject: v.attesterSubject,
     reasons,
   };
 }

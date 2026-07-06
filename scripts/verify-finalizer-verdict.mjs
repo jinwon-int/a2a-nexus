@@ -25,6 +25,7 @@
  * Exit 0 = verdict integrity OK; non-zero = fail-closed.
  */
 import fs from "node:fs";
+import { X509Certificate } from "node:crypto";
 import { parseArgs } from "node:util";
 
 import { canonicalizeJson, verifyJwsSignature } from "./lib/a2a-offline-verify.mjs";
@@ -32,6 +33,7 @@ import { canonicalizeJson, verifyJwsSignature } from "./lib/a2a-offline-verify.m
 export const VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";
 export const CANONICALIZATION = "rfc8785-jcs-v1";
 export const DECISIONS = ["go", "no-go"];
+export const ATTESTER_KINDS = ["github-oidc"];
 /**
  * Epistemic class of the verdict (#1386 S2). The two kinds have different
  * reproducibility guarantees and MUST NOT be conflated:
@@ -51,6 +53,70 @@ function subjectsEqual(a, b) {
 }
 
 /**
+ * Verify an attested-verdict identity (S3 / #1386 H1): a leaf certificate that
+ * chains to a configured trusted root (e.g. Fulcio), whose SAN carries the OIDC
+ * `attester.subject`, whose validity window covers `producedAt`, and whose key
+ * signs the verdict. The chain-to-trusted-root is the load-bearing anchor: the
+ * operator cannot mint a passing attester identity without the trusted root's
+ * key (GitHub/Sigstore's, not theirs). Broker-independent, node:crypto only.
+ *
+ * v0 scope: cert chain + SAN identity + validity + payload signature are fully
+ * verified here; Rekor transparency-log INCLUSION-PROOF math is left to the
+ * Sigstore library / CI step and is only checked for structural presence (a
+ * documented boundary — see contracts/a2a/finalizer-verdict.md).
+ * Returns { ok, subject } or { ok:false, reason }.
+ */
+export function verifyAttesterIdentity(verdict, roots) {
+  const att = verdict.attester;
+  if (!att || typeof att !== "object" || Array.isArray(att) ||
+      !ATTESTER_KINDS.includes(att.kind) || typeof att.subject !== "string" ||
+      typeof att.leaf !== "string" || !att.sig || typeof att.sig !== "object") {
+    return { ok: false, reason: "malformed attester block" };
+  }
+  if (!Array.isArray(roots) || roots.length === 0) {
+    return { ok: false, reason: "no trusted attester roots configured (fail-closed)" };
+  }
+  let leaf;
+  try {
+    leaf = new X509Certificate(att.leaf);
+  } catch {
+    return { ok: false, reason: "leaf certificate parse failed" };
+  }
+  const chained = roots.some((rootPem) => {
+    try {
+      const root = new X509Certificate(rootPem);
+      return leaf.checkIssued(root) && leaf.verify(root.publicKey);
+    } catch {
+      return false;
+    }
+  });
+  if (!chained) return { ok: false, reason: "leaf does not chain to a trusted attester root" };
+
+  const at = Date.parse(verdict.producedAt);
+  if (!Number.isFinite(at) || at < Date.parse(leaf.validFrom) || at > Date.parse(leaf.validTo)) {
+    return { ok: false, reason: "producedAt is outside the leaf certificate validity window" };
+  }
+
+  const sanIdentities = (leaf.subjectAltName ?? "")
+    .split(",")
+    .map((entry) => entry.trim().replace(/^URI:/, ""));
+  if (!sanIdentities.includes(att.subject)) {
+    return { ok: false, reason: "leaf SAN does not carry attester.subject" };
+  }
+
+  const leafPem = leaf.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const { sig: _omit, ...attesterSansSig } = att;
+  const signedPayload = { ...verdict, attester: attesterSansSig };
+  if (!verifyJwsSignature(signedPayload, att.sig, leafPem)) {
+    return { ok: false, reason: "attester signature failed verification" };
+  }
+  if (!att.rekor || typeof att.rekor !== "object") {
+    return { ok: false, reason: "missing Rekor transparency-log reference (fail-closed)" };
+  }
+  return { ok: true, subject: att.subject };
+}
+
+/**
  * Verify a finalizer verdict's integrity against a keyring
  * `{ keys: { [keyId]: pemPublicKey } }`. Returns { valid, decision, subject,
  * finalizerKeyId, checks }. Never throws — a malformed verdict is a fail-closed
@@ -59,7 +125,12 @@ function subjectsEqual(a, b) {
 export function verifyVerdict(verdict, keyring, opts = {}) {
   const checks = [];
   const keys = (keyring && keyring.keys) || {};
+  const roots = (keyring && keyring.roots) || [];
 
+  // A verdict authenticates EITHER by a static registered key (finalizerKeyId +
+  // sig) OR by an attested identity (attester block, S3). Exactly one is required.
+  const hasStaticKey = typeof verdict?.finalizerKeyId === "string" && verdict?.sig && typeof verdict.sig === "object";
+  const hasAttester = verdict?.attester && typeof verdict.attester === "object" && !Array.isArray(verdict.attester);
   const shapeOk =
     verdict && typeof verdict === "object" && !Array.isArray(verdict) &&
     verdict.schemaVersion === VERDICT_SCHEMA &&
@@ -67,11 +138,10 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
     VERDICT_KINDS.includes(verdict.kind) &&
     verdict.subject && typeof verdict.subject === "object" &&
     DECISIONS.includes(verdict.decision) &&
-    typeof verdict.finalizerKeyId === "string" &&
-    verdict.sig && typeof verdict.sig === "object";
+    (hasStaticKey || hasAttester);
   if (!shapeOk) {
-    fail(checks, "shape", "missing/invalid required fields, schema, kind, or decision");
-    return { valid: false, kind: undefined, decision: undefined, subject: undefined, finalizerKeyId: undefined, checks };
+    fail(checks, "shape", "missing/invalid required fields, schema, kind, decision, or authentication (static key or attester)");
+    return { valid: false, kind: undefined, decision: undefined, subject: undefined, finalizerKeyId: undefined, attesterSubject: undefined, checks };
   }
 
   // Assurance (correctness-separation) invariant — a verdict attests an
@@ -93,17 +163,29 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
     pass(checks, "assurance-invariant");
   }
 
-  // Signature — covers JCS(verdict sans sig), so every signed field (subject,
-  // decision, finalizerKeyId, producedAt) is tamper-bound.
-  const pem = keys[verdict.finalizerKeyId];
-  if (!pem) {
-    fail(checks, "finalizer-signature", `finalizerKeyId '${verdict.finalizerKeyId}' not in keyring (fail-closed)`);
-  } else {
-    const { sig: _omit, ...unsigned } = verdict;
-    if (verifyJwsSignature(unsigned, verdict.sig, pem)) {
-      pass(checks, "finalizer-signature");
+  // Authentication — either the attested-identity path (S3) or the static key.
+  // Both cover JCS(verdict sans their own signature), so every signed field
+  // (subject, decision, producedAt, and the identity itself) is tamper-bound.
+  let attesterSubject;
+  if (hasAttester) {
+    const att = verifyAttesterIdentity(verdict, roots);
+    if (att.ok) {
+      attesterSubject = att.subject;
+      pass(checks, "attester-identity");
     } else {
-      fail(checks, "finalizer-signature", "finalizer signature failed verification");
+      fail(checks, "attester-identity", att.reason);
+    }
+  } else {
+    const pem = keys[verdict.finalizerKeyId];
+    if (!pem) {
+      fail(checks, "finalizer-signature", `finalizerKeyId '${verdict.finalizerKeyId}' not in keyring (fail-closed)`);
+    } else {
+      const { sig: _omit, ...unsigned } = verdict;
+      if (verifyJwsSignature(unsigned, verdict.sig, pem)) {
+        pass(checks, "finalizer-signature");
+      } else {
+        fail(checks, "finalizer-signature", "finalizer signature failed verification");
+      }
     }
   }
 
@@ -122,6 +204,7 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
     decision: verdict.decision,
     subject: verdict.subject,
     finalizerKeyId: verdict.finalizerKeyId,
+    attesterSubject,
     checks,
   };
 }
