@@ -1014,6 +1014,32 @@
         "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, matching the solo R4 seam quality baseline for this wave; because this is only wave 1 of the preregistered three-wave rule, the scorecard records HOLD for process promotion until two further h1-pipeline waves preserve quality and improve the duration band."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave2-solo-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 2 solo control for #1289 R4 seam extraction — store hot-select/projection seam, same evidence gates as Wave 1; #1289 remains open",
+      "implementationMode": "solo",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 1,
+        "dispatchedLaneCount": 1
+      },
+      "evidence": [
+        "solo control: one implementation lane, no h1-pipeline/subagent orchestration; same finalizer/evidence gates as Wave 1, with implementation mode as the variable.",
+        "rounds-to-success: 1; no failed or discarded dispatch/implementation rounds were counted before the successful solo seam extraction, and the duration band covers the whole wave wall-clock per #1391.",
+        "implementation extracted the recommended store hot-select/projection seam into packages/broker/src/core/store-hot-select-projections.ts: normalizeNonNegativeSqliteLimit, normalizeOptionalSqliteLimit, buildHotTableSelect, buildHotTaskListItemSelect, parseHotTaskListItemProjection, parseJsonColumn, optionalStringValue, optionalNumberValue, omitUndefinedProperties, and normalizeRuntimeTaskListLimit moved out of store.ts; broker.ts stayed unchanged.",
+        "surface-preservation proof: broker.ts 2947 unchanged; store.ts 2687→2544; new store-hot-select-projections.ts 169 lines; PURE_MOVE_AUDIT=ok against the pre-branch store.ts function bodies after normalizing only added export prefixes.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, with substantiveLaneCount/dispatchedLaneCount 1/1 for the solo control; this provides the required banded solo anchor for later Wave 3 judgment, not a standalone promotion decision."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }

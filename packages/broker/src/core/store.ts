@@ -33,6 +33,14 @@ import {
   planTerminalOutboxRetentionFromRecords,
   planWorkerRetentionFromRecords,
 } from "./store-hot-retention-planning.js";
+import {
+  buildHotTableSelect,
+  buildHotTaskListItemSelect,
+  normalizeNonNegativeSqliteLimit,
+  normalizeOptionalSqliteLimit,
+  normalizeRuntimeTaskListLimit,
+  parseHotTaskListItemProjection,
+} from "./store-hot-select-projections.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -2419,18 +2427,6 @@ export class SqliteTombstoneRuntimeRepository implements TombstoneRuntimeReposit
   }
 }
 
-function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.trunc(value));
-  }
-  return Math.max(0, Math.trunc(fallback));
-}
-
-function normalizeOptionalSqliteLimit(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  return normalizeNonNegativeSqliteLimit(value, 0);
-}
-
 function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCanonicalSnapshotRetentionSyncResult["before"]> {
   return {
     tasks: snapshot.tasks.length,
@@ -2438,145 +2434,6 @@ function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCa
     workers: snapshot.workers.length,
     terminalOutbox: snapshot.terminalOutbox?.length ?? 0,
   };
-}
-
-function buildHotTableSelect(
-  tableName: SqliteHotEntityTable,
-  filters: Array<[string, string | undefined]>,
-  orderBy: string,
-  limit?: number,
-): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = filters.flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = [
-    ["id", filters.id],
-    ["status", filters.status],
-    ["target_node_id", filters.targetNodeId],
-    ["intent", filters.intent],
-    ["assigned_worker_id", filters.assignedWorkerId],
-    ["task_origin", filters.taskOrigin],
-  ].flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  clauses.push("json_valid(payload)");
-  const limit = filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
-    ? normalizeOptionalSqliteLimit(filters.maxRows)
-    : undefined);
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT
-        id,
-        status,
-        intent,
-        target_node_id AS targetNodeId,
-        assigned_worker_id AS assignedWorkerId,
-        task_origin AS taskOrigin,
-        updated_at AS updatedAt,
-        json_extract(payload, '$.requester') AS requester,
-        json_extract(payload, '$.target') AS target,
-        json_extract(payload, '$.exchangeId') AS exchangeId,
-        json_extract(payload, '$.parentTaskId') AS parentTaskId,
-        json_extract(payload, '$.proposalId') AS proposalId,
-        json_extract(payload, '$.claimedBy') AS claimedBy,
-        COALESCE(json_extract(payload, '$.result.artifactIds'), json_extract(payload, '$.artifactIds')) AS artifactIds,
-        COALESCE(json_extract(payload, '$.result.summary'), json_extract(payload, '$.result.note')) AS resultSummary,
-        json_extract(payload, '$.error') AS error,
-        json_extract(payload, '$.requeueCount') AS requeueCount,
-        json_extract(payload, '$.createdAt') AS createdAt,
-        json_extract(payload, '$.claimedAt') AS claimedAt,
-        json_extract(payload, '$.completedAt') AS completedAt
-      FROM broker_tasks
-      WHERE ${clauses.join(" AND ")}
-      ORDER BY updated_at DESC, id ASC${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItemProjection[] {
-  const record = row as Record<string, unknown>;
-  const id = optionalStringValue(record.id);
-  const intent = optionalStringValue(record.intent) as TaskRecord["intent"] | undefined;
-  const status = optionalStringValue(record.status) as TaskRecord["status"] | undefined;
-  const targetNodeId = optionalStringValue(record.targetNodeId);
-  const requester = parseJsonColumn<TaskRecord["requester"]>(record.requester);
-  const target = parseJsonColumn<TaskRecord["target"]>(record.target);
-  const updatedAt = optionalStringValue(record.updatedAt);
-  const createdAt = optionalStringValue(record.createdAt) ?? updatedAt;
-  if (!id || !intent || !status || !targetNodeId || !requester || !target || !updatedAt || !createdAt) {
-    return [];
-  }
-  const error = parseJsonColumn<TaskRecord["error"]>(record.error);
-  return [omitUndefinedProperties({
-    id,
-    intent,
-    status,
-    targetNodeId,
-    requester,
-    target,
-    exchangeId: optionalStringValue(record.exchangeId),
-    parentTaskId: optionalStringValue(record.parentTaskId),
-    proposalId: optionalStringValue(record.proposalId),
-    assignedWorkerId: optionalStringValue(record.assignedWorkerId),
-    claimedBy: optionalStringValue(record.claimedBy),
-    taskOrigin: optionalStringValue(record.taskOrigin) as TaskRecord["taskOrigin"] | undefined,
-    artifactIds: parseJsonColumn<string[]>(record.artifactIds),
-    resultSummary: optionalStringValue(record.resultSummary),
-    error: error ? { code: error.code, message: error.message } : undefined,
-    requeueCount: optionalNumberValue(record.requeueCount),
-    createdAt,
-    updatedAt,
-    claimedAt: optionalStringValue(record.claimedAt),
-    completedAt: optionalStringValue(record.completedAt),
-  })];
-}
-
-function parseJsonColumn<T>(value: unknown): T | undefined {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return value as T;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function optionalStringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function optionalNumberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
-}
-
-function normalizeRuntimeTaskListLimit(limit: number | undefined): number | undefined {
-  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : undefined;
 }
 
 function countSnapshotEntities(snapshot: BrokerSnapshot): Record<string, number> {
