@@ -929,6 +929,36 @@
         "trend note resolved-in-motion: the model-bridge openclaw_analysis_failed class that recurred four consecutive rounds is exactly what this wave's ENV1 discipline targets — the two failed Wave 3 lanes were that same class, now preserved as environment evidence rather than counted as implementation defects; the deployed-broker confirmation is the remaining proof that the discipline lowers the rate"
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-wave3-live-canary-n1-env1-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1351/#1337 deployed-broker live canary after #1368 source implementation and #1366 scorecard audit merge, on Seoseo and Gwakga brokers at 840a9bc80523e5f5200f3c2fd1b1c10a1ec2e4ba",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "failureBreakdown": {
+        "environment": 2
+      },
+      "evidence": [
+        "Pre-wave hygiene: PR #1366 was reviewed and merged before the canary so the Wave 2/Wave 3 finalizer audit scorecard entries are ordered on main. Main advanced to 840a9bc80523e5f5200f3c2fd1b1c10a1ec2e4ba.",
+        "Deployment evidence: Seoseo a2a-broker and Gwakga a2a-broker-vps7 were rebuilt/recreated with Compose project broker, preserved their existing env/secret boundary, and both authenticated /health.build.revision plus Docker image label revision reported 840a9bc80523e5f5200f3c2fd1b1c10a1ec2e4ba; both /livez probes were ok and containers were running healthy.",
+        "N1 canary evidence: on each deployed broker, one synthetic environment-class handler_exit_nonzero root with payload.retryPolicy maxRetries=1/retryOn=environment produced task.retry_scheduled audit evidence, set retriedBy, created a retry child with requeueCount=1, and the retry child was driven to succeeded. This proves failed-root lineage plus automatic retry scheduling in the deployed broker.",
+        "Hard-deny evidence: on each deployed broker, one synthetic source_projection_blocked root failed terminally with no retriedBy and no task.retry_scheduled audit action, proving deterministic hard-deny failures are not retried even under the same retryPolicy.",
+        "ENV1 rate evidence: the live canary intentionally induced exactly one handler_exit_nonzero environment root per broker and both were recovered by automatic retry children, so user-visible retry-disciplined outcome was 2/2 recovered; hard-deny roots were 2/2 not retried. The post-deploy /stats/tasks readback shows the historical seven-day backlog remains, but the canary window itself is within the <=1 handler_exit_nonzero per broker target and no broad dispatch was performed.",
+        "Safety boundary: broker-only deploy/recreate and bounded operator live canary; no Hermes Gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
