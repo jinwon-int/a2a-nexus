@@ -959,6 +959,36 @@
         "Safety boundary: broker-only deploy/recreate and bounded operator live canary; no Hermes Gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-g2-v0c-dogfood-live-provenance-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1382 G2 result-provenance fleet deployment plus #1378/#1381 V0-c dogfood full-fleet live canary on two deployed broker groups and nine worker classes at 137da5527ac0a227bb3b72e1aaede3033ba0f846, independently offline-verified by the external finalizer",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 9,
+        "dispatchedLaneCount": 9
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "Deployment evidence: two deployed broker groups were rebuilt/recreated at 137da5527ac0a227bb3b72e1aaede3033ba0f846 and nine worker classes were artifact-synced/restarted with per-worker signing keys registered in the broker HTTP-signature registries (9/9 key-registry preflight OK). Identifiers redacted to broker-group/worker-class counts per public-readiness precedent.",
+        "Canary evidence: 9/9 no-op provenance canary tasks succeeded across both broker groups; all nine results carried result.provenance with worker EdDSA signatures (9/9) and broker countersignatures (9/9), including one heterogeneous mobile-class worker result shape.",
+        "Independent offline verification: the external finalizer verified all nine results WITHOUT broker access using scripts/verify-analysis-report.mjs — per-task JCS resultHash recomputation, provenance.claimedAt vs task.claimedAt cross-check, workerKeyId-to-assigned-worker binding, worker signature, and broker countersignature all green (9/9 GREEN). Verification bundle sha256:f35d5f2473f456d315b666e1c0f78e0ef2514196a43cca530792d0051b514779.",
+        "Adversarial non-vacuity: on the same live artifacts, a tampered result field, a cross-task replay, and a wrong-broker-key transplant were each rejected RED by the same verifier, so the 9/9 GREEN is a discriminating verdict rather than a vacuous pass.",
+        "Environment failure narrative (failureBreakdown environment:1): one broker group had an existing agent-card signing key on the host but the live container was not receiving the signing-key env, so its first signed completions failed closed with provenance_invalid (countersigning key not configured). Corrected by injecting the signing-key env and force-recreating only that broker container (a plain restart was insufficient because container env is fixed at create time); the rerun was fully green. The fail-closed complete-path caught a real production misconfiguration exactly as designed.",
+        "Safety boundary: broker container recreate and bounded operator no-op canary only; no gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording; scorecard and wiki narratives carry only anonymized counts and artifact hashes."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
