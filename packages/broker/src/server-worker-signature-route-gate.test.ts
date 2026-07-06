@@ -905,3 +905,247 @@ test("public broker bind fails closed without edge secret, strict worker signatu
     }).server.close());
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1389 — result-provenance countersigning deploy-gap hardening. The incident: a
+// build that unconditionally enforced countersigning shipped before the signer
+// key/env reached the container, so every provenance-bearing worker submission
+// failed. These tests pin the three postures.
+// ---------------------------------------------------------------------------
+
+test("enforce countersign mode without a signing key fails startup loudly (#1389)", () => {
+  assert.throws(
+    () =>
+      createBrokerServer({
+        host: "0.0.0.0",
+        port: 0,
+        publicBaseUrl: "https://broker.test/",
+        brokerId: "brokeralpha",
+        a2aHttpSignatureWorkerAuth: "strict",
+        a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+        resultProvenanceCountersign: "enforce",
+        stateStore: createInMemoryStateStore(),
+      }),
+    /A2A_RESULT_PROVENANCE_COUNTERSIGN=enforce requires a broker signing key/,
+  );
+});
+
+test("enforce countersign mode WITH a signing key starts (#1389)", () => {
+  assert.doesNotThrow(() =>
+    createBrokerServer({
+      host: "0.0.0.0",
+      port: 0,
+      publicBaseUrl: "https://broker.test/",
+      brokerId: "brokeralpha",
+      a2aHttpSignatureWorkerAuth: "strict",
+      a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+      resultProvenanceCountersign: "enforce",
+      agentCardSigningKeyFile: brokerSigningKeyFile(),
+      agentCardSigningKid: "broker:brokeralpha:v1",
+      stateStore: createInMemoryStateStore(),
+    }).server.close(),
+  );
+});
+
+test("an unrecognized countersign mode is a loud configuration error (#1389)", async () => {
+  await withEnv({ A2A_RESULT_PROVENANCE_COUNTERSIGN: "sometimes" }, async () => {
+    assert.throws(
+      () =>
+        createBrokerServer({
+          host: "0.0.0.0",
+          port: 0,
+          publicBaseUrl: "https://broker.test/",
+          brokerId: "brokeralpha",
+          a2aHttpSignatureWorkerAuth: "strict",
+          a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+          stateStore: createInMemoryStateStore(),
+        }),
+      /invalid A2A_RESULT_PROVENANCE_COUNTERSIGN/,
+    );
+  });
+});
+
+test("auto mode (default) with no signing key passes worker provenance through un-countersigned (#1389)", async () => {
+  // The exact gap from the incident: a provenance-bearing completion must NOT
+  // fail just because the broker signer key has not landed yet. Under the default
+  // posture the worker-signed result passes through, minus the countersignature.
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+    // no agentCardSigningKeyFile — broker cannot countersign
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "workerbeta",
+        body: registerBody,
+        nonce: "g2-auto-register-workerbeta",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const taskId = "g2-auto-passthrough-task";
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: taskId,
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
+        intent: "analyze",
+        message: "auto passthrough should complete",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const claimBody = JSON.stringify({ workerId: "workerbeta" });
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/claim`,
+        workerId: "workerbeta",
+        body: claimBody,
+        nonce: "g2-auto-claim-workerbeta",
+      }),
+      body: claimBody,
+    });
+    assert.equal(claimRes.status, 200);
+
+    const result = { summary: "done", artifactIds: [], output: { ok: true } };
+    const provenance = signTaskResultProvenance(result, {
+      taskId,
+      claimedAt: "2026-07-06T00:00:00.000Z",
+      privateKeyPem: routeGatePrivatePem(),
+      workerKeyId: "worker:workerbeta:v1",
+    });
+    const completeBody = JSON.stringify({ workerId: "workerbeta", result: { ...result, provenance } });
+    const completeRes = await fetch(`${server.baseUrl}/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/complete`,
+        workerId: "workerbeta",
+        body: completeBody,
+        nonce: "g2-auto-complete-workerbeta",
+      }),
+      body: completeBody,
+    });
+
+    // The submission SUCCEEDS (this is the whole point of #1389) ...
+    assert.equal(completeRes.status, 200);
+    const completed = (await completeRes.json()) as {
+      result: Record<string, unknown> & {
+        provenance?: { workerKeyId?: string; brokerCountersig?: unknown };
+      };
+    };
+    // ... the worker signature is preserved ...
+    assert.equal(completed.result.provenance?.workerKeyId, "worker:workerbeta:v1");
+    // ... but there is no broker countersignature, because there was no key.
+    assert.equal(completed.result.provenance?.brokerCountersig, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
+test("off mode passes provenance through untouched even when a signing key is present (#1389 kill switch)", async () => {
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+    agentCardSigningKeyFile: brokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
+    resultProvenanceCountersign: "off",
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "workerbeta",
+        body: registerBody,
+        nonce: "g2-off-register-workerbeta",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const taskId = "g2-off-passthrough-task";
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: taskId,
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
+        intent: "analyze",
+        message: "off passthrough should complete",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const claimBody = JSON.stringify({ workerId: "workerbeta" });
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/claim`,
+        workerId: "workerbeta",
+        body: claimBody,
+        nonce: "g2-off-claim-workerbeta",
+      }),
+      body: claimBody,
+    });
+    assert.equal(claimRes.status, 200);
+
+    const result = { summary: "done", artifactIds: [], output: { ok: true } };
+    const provenance = signTaskResultProvenance(result, {
+      taskId,
+      claimedAt: "2026-07-06T00:00:00.000Z",
+      privateKeyPem: routeGatePrivatePem(),
+      workerKeyId: "worker:workerbeta:v1",
+    });
+    const completeBody = JSON.stringify({ workerId: "workerbeta", result: { ...result, provenance } });
+    const completeRes = await fetch(`${server.baseUrl}/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/complete`,
+        workerId: "workerbeta",
+        body: completeBody,
+        nonce: "g2-off-complete-workerbeta",
+      }),
+      body: completeBody,
+    });
+
+    assert.equal(completeRes.status, 200);
+    const completed = (await completeRes.json()) as {
+      result: Record<string, unknown> & {
+        provenance?: { workerKeyId?: string; brokerCountersig?: unknown };
+      };
+    };
+    // Untouched: worker signature preserved, no countersignature added.
+    assert.equal(completed.result.provenance?.workerKeyId, "worker:workerbeta:v1");
+    assert.equal(completed.result.provenance?.brokerCountersig, undefined);
+  } finally {
+    await server.close();
+  }
+});
