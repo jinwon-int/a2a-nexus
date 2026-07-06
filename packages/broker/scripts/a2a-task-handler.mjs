@@ -15,6 +15,7 @@ import {
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
+import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 
 const HANDLER_VERSION = "0.2.14";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -134,6 +135,68 @@ function referencesClaudeDocker(value) {
     /claude-(?:install|output|prompt)\.log|claude-prompt\.md/i,
     /claude(?:\.json|-dir)?/i,
   ].some((pattern) => pattern.test(String(value ?? "")));
+}
+
+function isHybridSubagentTask(task) {
+  const payload = taskPayload(task);
+  return safeText(payload.executionMode ?? payload.execution_mode, "") === "hybrid-subagent";
+}
+
+function hybridSubagentBudgetRemaining(task) {
+  const payload = taskPayload(task);
+  const budget = payload.subagentBudget ?? payload.subagent_budget;
+  if (typeof budget === "number") return budget;
+  if (budget && typeof budget === "object" && !Array.isArray(budget)) {
+    const remaining = Number(budget.remaining ?? budget.available ?? budget.max);
+    return Number.isFinite(remaining) ? remaining : undefined;
+  }
+  return undefined;
+}
+
+function hybridSubagentBudgetPreflight(task) {
+  if (!isHybridSubagentTask(task)) return undefined;
+  const remaining = hybridSubagentBudgetRemaining(task);
+  if (Number.isFinite(remaining) && remaining > 0) return undefined;
+  return {
+    error: {
+      code: "hybrid_subagent_budget_exhausted",
+      message: "hybrid-subagent execution requires subagentBudget.remaining > 0 before runner spawn",
+      details: {
+        executionMode: "hybrid-subagent",
+        subagentBudget: taskPayload(task).subagentBudget ?? taskPayload(task).subagent_budget,
+        remaining,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
+}
+
+function declaredScopePaths(task) {
+  const scope = taskPayload(task).declaredScope;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) return [];
+  return Array.isArray(scope.paths) ? scope.paths.map((item) => safeText(item, "")).filter(Boolean) : [];
+}
+
+function hybridDeclaredScopePreflight(task, touchedFiles) {
+  if (!isHybridSubagentTask(task)) return undefined;
+  const filesChanged = normalizeStringArray(touchedFiles);
+  const declared = declaredScopePaths(task);
+  const decision = evaluateDeclaredWriteSetGate({ declaredWriteSet: declared, touchedFiles: filesChanged });
+  if (decision.allowed) return undefined;
+  return {
+    error: {
+      code: "hybrid_declared_scope_violation",
+      message: `hybrid-subagent runner evidence touched files outside declaredScope.paths: ${decision.outOfScopeFiles.join(", ")}`,
+      details: {
+        executionMode: "hybrid-subagent",
+        declaredScopePaths: declared,
+        filesChanged,
+        outsideDeclaredScope: decision.outOfScopeFiles,
+        reason: decision.reason,
+        buildInfo: BUILD_INFO,
+      },
+    },
+  };
 }
 
 function isOpenClawBridgeConfigured(env = process.env) {
@@ -1781,6 +1844,9 @@ function runDockerRunner(task, env = process.env) {
     };
   }
 
+  const hybridBudgetPreflight = hybridSubagentBudgetPreflight(task);
+  if (hybridBudgetPreflight) return hybridBudgetPreflight;
+
   const tempDir = mkdtempSync(join(tmpdir(), "openclaw-a2a-runner-"));
   const taskPath = join(tempDir, "task.json");
   const runnerTask = buildRunnerTask(task, env);
@@ -1857,6 +1923,8 @@ function runDockerRunner(task, env = process.env) {
     if (tests.length) output.tests = tests;
     const filesChanged = normalizeStringArray(parsed.filesChanged);
     if (filesChanged.length) output.filesChanged = filesChanged;
+    const hybridScopePreflight = hybridDeclaredScopePreflight(task, filesChanged);
+    if (hybridScopePreflight) return hybridScopePreflight;
     const risks = normalizeStringArray(parsed.risks);
     if (risks.length) output.risks = risks;
 

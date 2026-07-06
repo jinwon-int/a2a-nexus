@@ -609,6 +609,42 @@ function writeHybridRunnerStub(path, body) {
   chmodSync(path, 0o755);
 }
 
+test("H2 GREEN: no executionMode flag preserves existing docker runner behavior (#1348)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-no-flag-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9997",
+  branch: "h2-no-flag-compat",
+  filesChanged: ["packages/broker/src/core/store.ts"],
+  tests: ["legacy path still accepts runner evidence"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-no-flag-compat",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1348",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9997");
+    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/store.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("H2 RED: hybrid-subagent budget exhaustion fails closed before runner spawn (#1348)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-h2-budget-red-"));
   const runner = join(dir, "fake-runner.mjs");
@@ -688,6 +724,90 @@ process.stdout.write(JSON.stringify({
     assert.equal(result.result, undefined);
     assert.equal(result.error?.code, "hybrid_declared_scope_violation");
     assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("H2 GREEN: hybrid-subagent accepts in-budget in-scope runner evidence (#1348)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-happy-path-"));
+  const runner = join(dir, "fake-runner.mjs");
+  const invocation = join(dir, "runner-invoked.json");
+  writeHybridRunnerStub(runner, `
+const { readFileSync, writeFileSync } = await import("node:fs");
+const taskPath = process.argv.at(-1);
+const task = JSON.parse(readFileSync(taskPath, "utf8"));
+writeFileSync(${JSON.stringify(invocation)}, JSON.stringify(task, null, 2));
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9996",
+  branch: "h2-happy-path",
+  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  tests: ["hybrid happy path runner invoked"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-happy-path",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1348",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.error, undefined);
+    assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9996");
+    assert.equal(existsSync(invocation), true, "in-budget H2 tasks should invoke the runner");
+    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/broker-exchange-task-decision.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("H2 GREEN: declaredScope uses directory-boundary matching, not substring matching (#1348/#1235)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-scope-boundary-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9995",
+  branch: "h2-boundary-drift",
+  filesChanged: ["packages/broker-evil/src/backdoor.ts"],
+  tests: ["boundary drift should fail"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-scope-boundary",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1348",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/**"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.result, undefined);
+    assert.equal(result.error?.code, "hybrid_declared_scope_violation");
+    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker-evil/src/backdoor.ts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
