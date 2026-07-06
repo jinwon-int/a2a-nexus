@@ -10,6 +10,7 @@ import {
   normalizeSourceCarrierFile,
   sourceCarrierContent,
 } from "./lib/source-carriers.mjs";
+import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 300;
 const DEFAULT_MAX_FILES = 16;
@@ -1130,6 +1131,7 @@ function main() {
   let payload;
   try {
     payload = payloadFromStructuredEnv(process.env) || extractPayload(message);
+    payload = payloadWithRetrievalSnapshotSourceCarriers(payload, process.env).payload;
   } catch (error) {
     die(error.message);
   }

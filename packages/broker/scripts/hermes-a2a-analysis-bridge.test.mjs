@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,29 @@ function openClawArgs(message) {
     "--timeout", "60",
     "--json",
   ];
+}
+
+function sha256Prefix(text) {
+  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+function signedSnapshotFixture(overrides = {}) {
+  const content = overrides.content ?? "# signed Hermes bridge source\nexport const snapshotGrounding = true;\n";
+  return {
+    schemaVersion: "a2a.retrieval.snapshot.v1",
+    canonicalization: "rfc8785-jcs-v1",
+    source: "github",
+    repo: "jinwon-int/a2a-nexus",
+    requestedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    resolvedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    path: "packages/broker/README.md",
+    fetchedAt: "2026-07-06T00:00:00.000Z",
+    byteLen: Buffer.byteLength(content, "utf8"),
+    contentHash: sha256Prefix(content),
+    content,
+    signature: { protected: "signed-header", signature: "signed-body" },
+    ...overrides,
+  };
 }
 
 test("Hermes A2A analysis bridge exists and is executable JavaScript", () => {
@@ -114,6 +138,59 @@ test("Hermes A2A analysis bridge reads requested source files and returns OpenCl
   }
 });
 
+
+test("Hermes A2A analysis bridge wraps signed retrieval snapshots into the read-only prompt (#1378 K2 wave2)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-snapshot-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const payloadPath = join(tempDir, "payload.json");
+  const promptPath = join(tempDir, "prompt.txt");
+  const snapshot = signedSnapshotFixture();
+
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "readonly-analysis",
+      noLive: true,
+      sourceOnly: true,
+      sourceBundle: { files: [] },
+      sourceProjectionPolicy: { requiredPaths: ["packages/broker/README.md"] },
+      retrievalSnapshots: [snapshot],
+    }));
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('<untrusted_external_data ')) throw new Error('untrusted snapshot wrapper missing from prompt');",
+      "if (!prompt.includes('packages/broker/README.md')) throw new Error('snapshot path missing from prompt');",
+      "if (!prompt.includes('snapshotGrounding')) throw new Error('snapshot content missing from prompt');",
+      "console.log(JSON.stringify({status:'done',summary:'signed snapshot source projected',findings:['snapshot source consumed'],risks:[],recommendations:[],evidenceRefs:['jinwon-int/a2a-nexus:packages/broker/README.md']}));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const result = spawnSync(process.execPath, openClawArgs("Payload JSON:\n" + JSON.stringify({ mode: "readonly-analysis", sourceBundle: { files: [] } })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_BIN: fakeHermesPath,
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_HERMES_ANALYSIS_TOOLSETS: "web,terminal,file",
+        CAPTURE_PROMPT_PATH: promptPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.sourceProjection.canonicalFileCount, 1);
+    assert.equal(payload.sourceProjection.quality, "complete");
+    assert.match(readFileSync(promptPath, "utf8"), /<untrusted_external_data /);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 
 test("Hermes A2A analysis bridge prefers structured payload file over truncated prompt payload (#1272)", () => {

@@ -15,6 +15,7 @@ import {
   resolveWorkerThinkingInput,
 } from "./worker-model-policy.mjs";
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
+import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
 
 const HANDLER_VERSION = "0.2.14";
@@ -887,7 +888,21 @@ if (existing?.html_url) {
 }
 
 function runOpenClawAnalysisBridge(task, env = process.env) {
-  const payload = taskPayload(task);
+  let payload = taskPayload(task);
+  let suppliedSnapshotSources = [];
+  try {
+    const augmented = payloadWithRetrievalSnapshotSourceCarriers(payload, env);
+    payload = augmented.payload;
+    suppliedSnapshotSources = augmented.sources;
+  } catch (error) {
+    return {
+      error: {
+        code: "retrieval_snapshot_invalid",
+        message: `signed retrieval snapshot payload rejected before analysis bridge: ${error.message}`,
+        details: { buildInfo: BUILD_INFO },
+      },
+    };
+  }
   // Resolve effective worker model/thinking from task payload overrides
   const { model: effectiveModel, fromPayload: modelFromPayload } = resolveWorkerModel(task, env);
   const { thinking: effectiveThinking, fromPayload: thinkingFromPayload } = resolveWorkerThinking(task);
@@ -1079,6 +1094,7 @@ function runOpenClawAnalysisBridge(task, env = process.env) {
     strictJsonInstructionApplied: Boolean(strictJsonInstruction) || undefined,
     promptPayloadLimit,
     bridgeInputMode: "payload_file",
+    sources: suppliedSnapshotSources.length ? suppliedSnapshotSources : undefined,
     effectiveModel,
     effectiveThinking,
     modelFromPayload: modelFromPayload || undefined,
