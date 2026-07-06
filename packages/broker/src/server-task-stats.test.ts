@@ -51,10 +51,17 @@ test("GET /stats/tasks returns read-only aggregate counts and omits worker ident
     server.runtime.broker.completeTask("stats-succeeded-source-only", "secret-source-worker", { summary: "ok" });
 
     const before = server.runtime.broker.listTasks().map((task) => ({ ...task }));
-    const unauthenticated = await fetch(`${server.baseUrl}/stats/tasks?since=2026-07-05T00:00:00.000Z&until=2026-07-06T00:00:00.000Z`);
+    // completeTask/failTask stamp completedAt/updatedAt with the real wall clock, and
+    // aggregateTaskStats windows on that terminal timestamp. Anchor the query window to
+    // now so the test does not silently fail once wall-clock passes a hardcoded bound
+    // (see #1365); keep the span under the 7-day maximum.
+    const until = new Date(Date.now() + 60_000).toISOString();
+    const since = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    const windowQuery = `since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`;
+    const unauthenticated = await fetch(`${server.baseUrl}/stats/tasks?${windowQuery}`);
     assert.equal(unauthenticated.status, 401);
 
-    const res = await fetch(`${server.baseUrl}/stats/tasks?since=2026-07-05T00:00:00.000Z&until=2026-07-06T00:00:00.000Z`, {
+    const res = await fetch(`${server.baseUrl}/stats/tasks?${windowQuery}`, {
       headers: headers(),
     });
     if (res.status !== 200) {
