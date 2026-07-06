@@ -54,6 +54,7 @@ export function evaluateVerdictGate({ verdict, headSha, finalizerKeyring, produc
     ok: !violations,
     blocked: enforce && violations,
     mode,
+    kind: v.kind,
     decision: v.decision,
     finalizerKeyId: v.finalizerKeyId,
     reasons,
@@ -102,7 +103,7 @@ function main(argv) {
   if (values.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else if (result.ok) {
-    process.stdout.write(`finalizer-verdict gate ok (decision=go, key=${result.finalizerKeyId}, mode=${result.mode})\n`);
+    process.stdout.write(`finalizer-verdict gate ok (kind=${result.kind}, decision=go, key=${result.finalizerKeyId}, mode=${result.mode})\n`);
   } else {
     const label = result.blocked ? "BLOCKED" : "WARN";
     for (const r of result.reasons) process.stdout.write(`${label}  ${r}\n`);

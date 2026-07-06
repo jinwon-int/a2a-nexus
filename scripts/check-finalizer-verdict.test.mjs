@@ -24,12 +24,13 @@ function buildVerdict(signerPriv, keyId, { subject = { kind: "pr", prHeadSha: HE
   const verdict = {
     schemaVersion: VERDICT_SCHEMA,
     canonicalization: CANONICALIZATION,
+    kind: "judgment",
     subject,
     decision,
     evidenceRefs: [{ kind: "suite", ref: "ok" }],
     assurance: {
       proves: ["independent-review-occurred"],
-      doesNotProve: ["analytical-correctness"],
+      doesNotProve: ["analytical-correctness", "reproducibility"],
       disclaimer: "Attests GO, not correctness.",
     },
     finalizerKeyId: keyId,

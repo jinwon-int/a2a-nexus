@@ -22,21 +22,26 @@ function makeCtx() {
 }
 
 function buildVerdict(ctx, opts = {}) {
+  const kind = opts.kind ?? "judgment";
   const verdict = {
     schemaVersion: VERDICT_SCHEMA,
     canonicalization: CANONICALIZATION,
+    kind,
     subject: opts.subject ?? { kind: "pr", prHeadSha: "abc123" },
     decision: opts.decision ?? "go",
     evidenceRefs: [{ kind: "suite", ref: "3738/3738" }],
     assurance: {
       proves: ["independent-review-occurred", "verdict-integrity", "subject-binding"],
-      doesNotProve: opts.doesNotProve ?? ["analytical-correctness"],
+      doesNotProve: opts.doesNotProve ?? (kind === "judgment"
+        ? ["analytical-correctness", "reproducibility"]
+        : ["analytical-correctness"]),
       disclaimer: "Attests an independent GO on this exact artifact; does not certify correctness.",
     },
     finalizerKeyId: opts.finalizerKeyId ?? ctx.finalizerKeyId,
     producedAt: "2026-07-06T00:00:00.000Z",
   };
   if (opts.omitAssurance) delete verdict.assurance;
+  if (opts.omitKind) delete verdict.kind;
   verdict.sig = signJws(verdict, ctx.finalizerPriv, ctx.finalizerKeyId);
   return verdict;
 }
@@ -106,6 +111,30 @@ test("assurance that omits analytical-correctness is rejected", () => {
   const r = verifyVerdict(buildVerdict(ctx, { doesNotProve: ["normative-judgment"] }), ctx.keyring);
   assert.equal(check(r, "assurance-invariant").ok, false);
   assert.equal(r.valid, false);
+});
+
+test("a verdict without a kind is rejected at shape (S2)", () => {
+  const ctx = makeCtx();
+  const r = verifyVerdict(buildVerdict(ctx, { omitKind: true }), ctx.keyring);
+  assert.equal(r.valid, false);
+  assert.equal(check(r, "shape").ok, false);
+});
+
+test("a judgment verdict that does not disclaim reproducibility is rejected (S2/H2)", () => {
+  const ctx = makeCtx();
+  // Correctly signed, but tries to borrow battery-grade reproducibility by omission.
+  const r = verifyVerdict(buildVerdict(ctx, { kind: "judgment", doesNotProve: ["analytical-correctness"] }), ctx.keyring);
+  assert.equal(check(r, "finalizer-signature").ok, true, "signature valid");
+  assert.equal(check(r, "assurance-invariant").ok, false);
+  assert.match(check(r, "assurance-invariant").detail, /reproducibility/);
+  assert.equal(r.valid, false);
+});
+
+test("a battery verdict verifies without a reproducibility disclaimer", () => {
+  const ctx = makeCtx();
+  const r = verifyVerdict(buildVerdict(ctx, { kind: "battery" }), ctx.keyring);
+  assert.equal(r.valid, true, JSON.stringify(r.checks));
+  assert.equal(r.kind, "battery");
 });
 
 test("malformed verdict is a fail-closed result, not a crash", () => {

@@ -1,3 +1,16 @@
+/**
+ * Result/retrieval provenance primitives (G2 #1356/#1380, K2 #1374).
+ *
+ * Scope of proof — read before trusting a provenance chain (#1386 S5):
+ * - PROVES: the keyed worker signed and SUBMITTED this exact result for this
+ *   task (integrity + submission provenance), and the broker countersigned the
+ *   accepted worker signature.
+ * - Does NOT prove AUTHORSHIP: a finished artifact produced elsewhere and fed
+ *   to a signing worker acquires valid provenance. These are process
+ *   attestations, not proofs that the worker created the work.
+ * - Does NOT prove correctness: a signed wrong result is a wrong result with
+ *   good provenance.
+ */
 import { createHash } from "node:crypto";
 
 import {

@@ -32,6 +32,16 @@ import { canonicalizeJson, verifyJwsSignature } from "./lib/a2a-offline-verify.m
 export const VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";
 export const CANONICALIZATION = "rfc8785-jcs-v1";
 export const DECISIONS = ["go", "no-go"];
+/**
+ * Epistemic class of the verdict (#1386 S2). The two kinds have different
+ * reproducibility guarantees and MUST NOT be conflated:
+ * - "battery": the outcome of deterministic checks — re-running the same
+ *   pinned battery on the same artifact reproduces the same verdict.
+ * - "judgment": an attested independent judgment (e.g. an LLM/human finalizer
+ *   review). It attests that the review OCCURRED and what it concluded; the
+ *   judgment itself is NOT reproducible and its assurance must say so.
+ */
+export const VERDICT_KINDS = ["battery", "judgment"];
 
 function fail(checks, id, detail) { checks.push({ id, ok: false, detail }); }
 function pass(checks, id) { checks.push({ id, ok: true }); }
@@ -54,22 +64,31 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
     verdict && typeof verdict === "object" && !Array.isArray(verdict) &&
     verdict.schemaVersion === VERDICT_SCHEMA &&
     verdict.canonicalization === CANONICALIZATION &&
+    VERDICT_KINDS.includes(verdict.kind) &&
     verdict.subject && typeof verdict.subject === "object" &&
     DECISIONS.includes(verdict.decision) &&
     typeof verdict.finalizerKeyId === "string" &&
     verdict.sig && typeof verdict.sig === "object";
   if (!shapeOk) {
-    fail(checks, "shape", "missing/invalid required fields, schema, or decision");
-    return { valid: false, decision: undefined, subject: undefined, finalizerKeyId: undefined, checks };
+    fail(checks, "shape", "missing/invalid required fields, schema, kind, or decision");
+    return { valid: false, kind: undefined, decision: undefined, subject: undefined, finalizerKeyId: undefined, checks };
   }
 
   // Assurance (correctness-separation) invariant — a verdict attests an
-  // independent GO, never that the artifact is correct.
+  // independent GO, never that the artifact is correct. Kind-aware: a
+  // "judgment" verdict is not reproducible and must say so, so the
+  // reproducibility claim of deterministic battery verdicts can never be
+  // borrowed by judgment verdicts (#1386 H2).
   const a = verdict.assurance;
   const doesNotProve = a && Array.isArray(a.doesNotProve) ? a.doesNotProve : [];
-  if (!a || !doesNotProve.includes("analytical-correctness") ||
-      typeof a.disclaimer !== "string" || a.disclaimer.trim().length === 0) {
+  const assuranceBase =
+    a && doesNotProve.includes("analytical-correctness") &&
+    typeof a.disclaimer === "string" && a.disclaimer.trim().length > 0;
+  const judgmentHonest = verdict.kind !== "judgment" || doesNotProve.includes("reproducibility");
+  if (!assuranceBase) {
     fail(checks, "assurance-invariant", "assurance must declare it does NOT prove analytical-correctness with a non-empty disclaimer");
+  } else if (!judgmentHonest) {
+    fail(checks, "assurance-invariant", "a judgment verdict must declare it does NOT prove reproducibility (judgments are attested, not reproducible)");
   } else {
     pass(checks, "assurance-invariant");
   }
@@ -99,6 +118,7 @@ export function verifyVerdict(verdict, keyring, opts = {}) {
 
   return {
     valid: checks.every((c) => c.ok),
+    kind: verdict.kind,
     decision: verdict.decision,
     subject: verdict.subject,
     finalizerKeyId: verdict.finalizerKeyId,
@@ -139,7 +159,7 @@ function main(argv) {
     for (const c of result.checks) {
       process.stdout.write(`${c.ok ? "PASS" : "FAIL"}  ${c.id}${c.detail ? ` — ${c.detail}` : ""}\n`);
     }
-    process.stdout.write(`\n${result.valid ? `OK — verdict integrity verified (decision=${result.decision})` : "RED — verdict verification failed (fail-closed)"}\n`);
+    process.stdout.write(`\n${result.valid ? `OK — verdict integrity verified (kind=${result.kind}, decision=${result.decision})` : "RED — verdict verification failed (fail-closed)"}\n`);
   }
   return result.valid ? 0 : 1;
 }
