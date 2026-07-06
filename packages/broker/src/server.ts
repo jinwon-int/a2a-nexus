@@ -111,6 +111,7 @@ import { readRuntimeMemoryUsage, readEventLoopDelayMs, readGcDiagnostics, readCp
 import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
+import { loadBrokerPolicyFile } from "./core/broker-policy.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -384,6 +385,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const taskReadinessMode = normalizeTaskReadinessMode(
     options.taskReadinessMode ?? process.env.A2A_TASK_READINESS_MODE ?? process.env.BROKER_TASK_READINESS_MODE,
   );
+  // Declarative worker-class policy (#1355 G1). A configured-but-invalid or
+  // unreadable document fails startup loudly (loadBrokerPolicyFile throws);
+  // unset keeps legacy behavior (no policy evaluation).
+  const brokerPolicyFile = options.brokerPolicyFile ?? process.env.A2A_BROKER_POLICY_FILE;
+  const brokerPolicyDocument = brokerPolicyFile ? loadBrokerPolicyFile(brokerPolicyFile) : undefined;
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -530,6 +536,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       brokerId,
       teamId,
       taskReadinessMode,
+      policyDocument: brokerPolicyDocument,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

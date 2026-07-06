@@ -120,6 +120,12 @@ import {
   PolicyError,
 } from "./policy.js";
 import {
+  deriveTaskWorkerClass,
+  evaluateTaskPolicy,
+  type BrokerPolicyDecision,
+  type BrokerPolicyDocument,
+} from "./broker-policy.js";
+import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
   type BrokerStateSaveHints,
@@ -338,6 +344,7 @@ export class InMemoryA2ABroker {
   private readonly brokerId?: string;
   private readonly teamId?: string;
   private readonly taskReadinessMode: TaskReadinessMode;
+  private readonly policyDocument?: BrokerPolicyDocument;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
 
@@ -361,6 +368,7 @@ export class InMemoryA2ABroker {
     this.brokerId = normalizeOwnershipString(options.brokerId);
     this.teamId = normalizeOwnershipString(options.teamId);
     this.taskReadinessMode = normalizeTaskReadinessMode(options.taskReadinessMode);
+    this.policyDocument = options.policyDocument;
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
     this.maxRequeueAttempts = normalizeMaxRequeueAttempts(options.maxRequeueAttempts);
@@ -1037,8 +1045,17 @@ export class InMemoryA2ABroker {
     this.assertA2ARoundWorkerAvailability(normalizedRequest);
     this.assertTaskProposalLink(normalizedRequest);
 
+    // Declarative worker-class policy (#1355 G1). An enforce-mode deny throws
+    // here (nothing is created); a warn-mode deny is audited after the record
+    // exists; require_approval merges into the existing blocked -> operator
+    // approve -> queued flow regardless of mode (blocking is recoverable).
+    const policyDecision = this.evaluateCreateTaskPolicy(normalizedRequest);
+
     const now = isoNow();
-    const policyContext = normalizeTaskPolicyContext(normalizedRequest);
+    const basePolicyContext = normalizeTaskPolicyContext(normalizedRequest);
+    const policyContext = policyDecision?.action === "require_approval"
+      ? { ...(basePolicyContext ?? {}), requiresApproval: true }
+      : basePolicyContext;
     const initialStatus: TaskStatus = policyContext?.requiresApproval === true ? "blocked" : "queued";
     const teamId = normalizeOwnershipString(normalizedRequest.teamId) ?? this.teamId;
     assertTaskCreationOwnership(brokerOfRecord, this.brokerId);
@@ -1082,6 +1099,17 @@ export class InMemoryA2ABroker {
       proposalId: task.proposalId,
       note: task.status === "blocked" ? `approval required: ${task.message ?? task.intent}` : task.message ?? task.intent,
     });
+    if (policyDecision?.action === "deny") {
+      // warn mode (an enforce deny threw before creation): structural evidence
+      // that this task WOULD be denied under enforce, without blocking it.
+      this.appendAuditEvent({
+        actorId: task.requester.id,
+        action: "task.policy_warned",
+        targetType: "task",
+        targetId: task.id,
+        note: `rule ${policyDecision.ruleId}: ${policyDecision.reason}`,
+      });
+    }
     this.persistState();
     this.taskEvents.emit(task, "created");
     return task;
@@ -1456,6 +1484,7 @@ export class InMemoryA2ABroker {
     if (task.policyContext?.requiresApproval === true && !task.approval) {
       throw new BrokerError("policy_denied", "task requires operator or hub approval before claim");
     }
+    this.assertClaimTaskPolicy(task, workerId);
     assertTaskStatus(task.status, ["queued"], "claim");
 
     const now = isoNow();
@@ -2766,6 +2795,109 @@ export class InMemoryA2ABroker {
       ? "source-only analysis task has no source files; refusing zero_files projection at dispatch"
       : `task readiness specification is underspecified: missing ${result.missing.join(", ")}`;
     throw new BrokerError(code, message, details);
+  }
+
+  /**
+   * Anonymous worker class for policy matching (#1355). Mirrors the
+   * /stats/tasks derivation via the shared deriveTaskWorkerClass so budgets
+   * and stats count the same classes.
+   */
+  private workerClassForPolicy(payload: TaskRecord["payload"] | undefined, workerId: string | undefined): string {
+    const worker = workerId ? this.getWorker(workerId) : null;
+    return deriveTaskWorkerClass({
+      sourceOnly: payload?.sourceOnly === true,
+      payloadMode: typeof payload?.mode === "string" ? payload.mode : undefined,
+      workerFound: Boolean(worker),
+      workerMode: worker?.workerMode,
+    });
+  }
+
+  private countTasksCreatedTodayInClass(workerClass: string): number {
+    const utcDay = isoNow().slice(0, 10);
+    let count = 0;
+    for (const task of this.tasks.values()) {
+      if (!task.createdAt?.startsWith(utcDay)) continue;
+      if (this.workerClassForPolicy(task.payload, task.assignedWorkerId ?? task.targetNodeId) === workerClass) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Create-time policy evaluation (#1355 G1-b). Returns the decision for the
+   * caller to fold into task creation, or undefined when no policy document is
+   * configured (legacy behavior — everything allowed). An enforce-mode deny
+   * throws policy_denied after recording audit evidence.
+   */
+  private evaluateCreateTaskPolicy(request: CreateTaskRequest): BrokerPolicyDecision | undefined {
+    const doc = this.policyDocument;
+    if (!doc) return undefined;
+    const workerClass = this.workerClassForPolicy(request.payload, request.assignedWorkerId ?? request.target.id);
+    const decision = evaluateTaskPolicy({
+      intent: request.intent,
+      mode: typeof request.payload?.mode === "string" ? request.payload.mode : undefined,
+      workerClass,
+      countTasksToday: () => this.countTasksCreatedTodayInClass(workerClass),
+    }, doc);
+    if (decision.action === "deny") {
+      if (doc.mode === "enforce") {
+        this.appendAuditEvent({
+          actorId: request.requester.id,
+          action: "task.policy_denied",
+          targetType: "task",
+          targetId: request.id ?? "unassigned",
+          note: `rule ${decision.ruleId}: ${decision.reason}`,
+        });
+        this.persistState();
+        throw new BrokerError("policy_denied", decision.reason, { ruleId: decision.ruleId, workerClass });
+      }
+      console.warn(`[a2a-broker] task policy deny (warn mode, rule ${decision.ruleId})`, {
+        reason: decision.reason,
+        intent: request.intent,
+        workerClass,
+      });
+    }
+    return decision;
+  }
+
+  /**
+   * Claim-time policy re-evaluation (#1355 G1-b): the CLAIMING worker's class
+   * may differ from the create-time target's, so class-match rules are checked
+   * again. Budgets are create-time only, and an operator approval already on
+   * the task satisfies a require_approval rule.
+   */
+  private assertClaimTaskPolicy(task: TaskRecord, workerId: string): void {
+    const doc = this.policyDocument;
+    if (!doc) return;
+    const workerClass = this.workerClassForPolicy(task.payload, workerId);
+    const decision = evaluateTaskPolicy({
+      intent: task.intent,
+      mode: typeof task.payload?.mode === "string" ? task.payload.mode : undefined,
+      workerClass,
+    }, doc);
+    if (decision.action === "allow") return;
+    if (decision.action === "require_approval" && task.approval) return;
+    const note = `rule ${decision.ruleId}: ${decision.reason}`;
+    if (doc.mode === "enforce") {
+      this.appendAuditEvent({
+        actorId: workerId,
+        action: "task.policy_denied",
+        targetType: "task",
+        targetId: task.id,
+        note,
+      });
+      this.persistState();
+      throw new BrokerError("policy_denied", decision.reason, { ruleId: decision.ruleId, workerClass });
+    }
+    console.warn(`[a2a-broker] task policy claim violation (warn mode)`, { note, taskId: task.id, workerClass });
+    this.appendAuditEvent({
+      actorId: workerId,
+      action: "task.policy_warned",
+      targetType: "task",
+      targetId: task.id,
+      note,
+    });
   }
 
   private assertA2ARoundWorkerAvailability(request: CreateTaskRequest): void {

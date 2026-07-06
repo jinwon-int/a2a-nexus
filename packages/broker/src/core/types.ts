@@ -185,6 +185,8 @@ export type AuditAction =
   | "task.created"
   | "task.approved"
   | "task.approval_rejected"
+  | "task.policy_warned"
+  | "task.policy_denied"
   | "task.claimed"
   | "task.started"
   | "task.heartbeat"

@@ -1,6 +1,7 @@
 import type { TaskReadinessMode } from "../task-readiness.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
+import type { BrokerPolicyDocument } from "./broker-policy.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
 import type { TaskRuntimeRepository } from "./task-repository.js";
@@ -109,6 +110,13 @@ export interface InMemoryA2ABrokerOptions {
    * Definition-of-Ready lint mode for patch/implementation task creation. Default warn keeps rollout non-breaking; enforce fails underspecified new tasks closed.
    */
   taskReadinessMode?: TaskReadinessMode;
+  /**
+   * Declarative worker-class policy document (#1355 G1), pre-validated by
+   * validateBrokerPolicyDocument. Evaluated at task create-time and claim-time;
+   * the document's own `mode` decides warn vs enforce. Absent = no policy
+   * evaluation (legacy behavior, everything allowed).
+   */
+  policyDocument?: BrokerPolicyDocument;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /** Optional non-core state to include in full broker snapshots. */
