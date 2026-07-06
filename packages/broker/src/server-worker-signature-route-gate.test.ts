@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createPrivateKey, sign } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBrokerServer } from "./server.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
+import { signTaskResultProvenance, verifyTaskResultProvenance } from "./core/provenance.js";
 import { createInMemoryStateStore, startTestServer, jsonHeaders, withEnv, workerPayload } from "./server-test-helpers.js";
 
 const routeGatePrivateJwk = {
@@ -71,6 +72,31 @@ function signedWorkerHeaders(params: {
     "signature-input": signatureInput,
     signature: `a2a=:${signature}:`,
   };
+}
+
+function routeGatePrivatePem(): string {
+  return createPrivateKey({ key: routeGatePrivateJwk, format: "jwk" })
+    .export({ type: "pkcs8", format: "pem" })
+    .toString();
+}
+
+function routeGatePublicPem(): string {
+  return createPublicKey(createPrivateKey({ key: routeGatePrivateJwk, format: "jwk" }))
+    .export({ type: "spki", format: "pem" })
+    .toString();
+}
+
+function generatedPrivatePem(): string {
+  const { privateKey } = generateKeyPairSync("ed25519");
+  return privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+}
+
+function brokerSigningKeyFile(): string {
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const dir = mkdtempSync(join(tmpdir(), "g2-broker-signing-key-"));
+  const keyFile = join(dir, "broker-signing.pem");
+  writeFileSync(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+  return keyFile;
 }
 
 test("strict A2A HTTP Signature worker route gate rejects unsigned worker requests", async () => {
@@ -374,6 +400,277 @@ test("strict A2A HTTP Signature worker route gate does not let one worker mutate
   }
 });
 
+
+test("worker completion fail-closes invalid present provenance before mutating task", async () => {
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+    agentCardSigningKeyFile: brokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "workerbeta",
+        body: registerBody,
+        nonce: "g2-invalid-register-workerbeta",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const taskId = "g2-invalid-provenance-task";
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: taskId,
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
+        intent: "analyze",
+        message: "invalid provenance must not complete",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const claimBody = JSON.stringify({ workerId: "workerbeta" });
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/claim`,
+        workerId: "workerbeta",
+        body: claimBody,
+        nonce: "g2-invalid-claim-workerbeta",
+      }),
+      body: claimBody,
+    });
+    assert.equal(claimRes.status, 200);
+
+    const result = { summary: "done" };
+    const provenance = signTaskResultProvenance(result, {
+      taskId: "different-task-id",
+      claimedAt: "2026-07-06T00:00:00.000Z",
+      privateKeyPem: routeGatePrivatePem(),
+      workerKeyId: "worker:workerbeta:v1",
+    });
+    const completeBody = JSON.stringify({ workerId: "workerbeta", result: { ...result, provenance } });
+    const completeRes = await fetch(`${server.baseUrl}/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/complete`,
+        workerId: "workerbeta",
+        body: completeBody,
+        nonce: "g2-invalid-complete-workerbeta",
+      }),
+      body: completeBody,
+    });
+
+    assert.equal(completeRes.status, 400);
+    const errorBody = await completeRes.json() as { error: { code: string; message: string } };
+    assert.equal(errorBody.error.code, "provenance_invalid");
+    assert.equal(server.runtime.broker.getTask(taskId)?.status, "claimed");
+  } finally {
+    await server.close();
+  }
+});
+
+test("worker completion verifies provenance with the registered key and stores broker countersignature", async () => {
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+    agentCardSigningKeyFile: brokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "workerbeta",
+        body: registerBody,
+        nonce: "g2-valid-register-workerbeta",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    const taskId = "g2-valid-provenance-task";
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+      body: JSON.stringify({
+        id: taskId,
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        targetNodeId: "workerbeta",
+        intent: "analyze",
+        message: "valid provenance should complete",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const claimBody = JSON.stringify({ workerId: "workerbeta" });
+    const claimRes = await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/claim`,
+        workerId: "workerbeta",
+        body: claimBody,
+        nonce: "g2-valid-claim-workerbeta",
+      }),
+      body: claimBody,
+    });
+    assert.equal(claimRes.status, 200);
+
+    const result = { summary: "done", artifactIds: [], output: { ok: true } };
+    const provenance = signTaskResultProvenance(result, {
+      taskId,
+      claimedAt: "2026-07-06T00:00:00.000Z",
+      privateKeyPem: routeGatePrivatePem(),
+      workerKeyId: "worker:workerbeta:v1",
+    });
+    const completeBody = JSON.stringify({ workerId: "workerbeta", result: { ...result, provenance } });
+    const completeRes = await fetch(`${server.baseUrl}/tasks/${taskId}/complete`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: `/tasks/${taskId}/complete`,
+        workerId: "workerbeta",
+        body: completeBody,
+        nonce: "g2-valid-complete-workerbeta",
+      }),
+      body: completeBody,
+    });
+
+    assert.equal(completeRes.status, 200);
+    const completed = await completeRes.json() as { result: Record<string, unknown> & { provenance?: { brokerCountersig?: { brokerKeyId: string } } } };
+    assert.equal(completed.result.provenance?.brokerCountersig?.brokerKeyId, "broker:brokeralpha:v1");
+    const verification = verifyTaskResultProvenance(completed.result, { taskId, publicKeyPem: routeGatePublicPem() });
+    assert.deepEqual(verification, { ok: true });
+  } finally {
+    await server.close();
+  }
+});
+
+test("worker evidence rejects forged provenance and still accepts unsigned v1-compatible results", async () => {
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: routeGateKeyRegistry,
+    agentCardSigningKeyFile: brokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
+  });
+  try {
+    const registerBody = JSON.stringify(workerPayload("workerbeta"));
+    const registerRes = await fetch(`${server.baseUrl}/workers/register`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/workers/register",
+        workerId: "workerbeta",
+        body: registerBody,
+        nonce: "g2-evidence-register-workerbeta",
+      }),
+      body: registerBody,
+    });
+    assert.equal(registerRes.status, 201);
+
+    for (const taskId of ["g2-forged-evidence-task", "g2-unsigned-evidence-task"]) {
+      const createRes = await fetch(`${server.baseUrl}/tasks`, {
+        method: "POST",
+        headers: jsonHeaders({ "x-a2a-requester-id": "hub-a", "x-a2a-requester-role": "hub" }),
+        body: JSON.stringify({
+          id: taskId,
+          requester: { id: "hub-a", kind: "node", role: "hub" },
+          target: { id: "workerbeta", kind: "node", role: "analyst" },
+          targetNodeId: "workerbeta",
+          intent: "analyze",
+          message: "evidence provenance compatibility",
+        }),
+      });
+      assert.equal(createRes.status, 201);
+      const claimBody = JSON.stringify({ workerId: "workerbeta" });
+      const claimRes = await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, {
+        method: "POST",
+        headers: signedWorkerHeaders({
+          baseUrl: server.baseUrl,
+          method: "POST",
+          path: `/tasks/${taskId}/claim`,
+          workerId: "workerbeta",
+          body: claimBody,
+          nonce: `g2-evidence-claim-${taskId}`,
+        }),
+        body: claimBody,
+      });
+      assert.equal(claimRes.status, 200);
+    }
+
+    const forgedResult = { summary: "done" };
+    const forgedProvenance = signTaskResultProvenance(forgedResult, {
+      taskId: "g2-forged-evidence-task",
+      claimedAt: "2026-07-06T00:00:00.000Z",
+      privateKeyPem: generatedPrivatePem(),
+      workerKeyId: "worker:workerbeta:v1",
+    });
+    const forgedBody = JSON.stringify({ workerId: "workerbeta", outcome: "done", result: { ...forgedResult, provenance: forgedProvenance } });
+    const forgedRes = await fetch(`${server.baseUrl}/tasks/g2-forged-evidence-task/evidence`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/tasks/g2-forged-evidence-task/evidence",
+        workerId: "workerbeta",
+        body: forgedBody,
+        nonce: "g2-forged-evidence",
+      }),
+      body: forgedBody,
+    });
+    assert.equal(forgedRes.status, 400);
+    const forgedError = await forgedRes.json() as { error: { code: string } };
+    assert.equal(forgedError.error.code, "provenance_invalid");
+    assert.equal(server.runtime.broker.getTask("g2-forged-evidence-task")?.status, "claimed");
+
+    const unsignedBody = JSON.stringify({ workerId: "workerbeta", outcome: "done", result: { summary: "legacy done" } });
+    const unsignedRes = await fetch(`${server.baseUrl}/tasks/g2-unsigned-evidence-task/evidence`, {
+      method: "POST",
+      headers: signedWorkerHeaders({
+        baseUrl: server.baseUrl,
+        method: "POST",
+        path: "/tasks/g2-unsigned-evidence-task/evidence",
+        workerId: "workerbeta",
+        body: unsignedBody,
+        nonce: "g2-unsigned-evidence",
+      }),
+      body: unsignedBody,
+    });
+    assert.equal(unsignedRes.status, 200);
+    assert.equal((await unsignedRes.json() as { status: string }).status, "succeeded");
+  } finally {
+    await server.close();
+  }
+});
 
 test("strict A2A HTTP Signature worker route gate binds signed worker to poll query even without requester identity enforcement", async () => {
   const server = await startTestServer({

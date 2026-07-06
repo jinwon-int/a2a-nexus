@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,6 +68,14 @@ const workerSignatureKeyRegistry: A2AHttpSignatureKeyRegistry = {
     publicKeyJwk: workerSignaturePublicJwk,
   },
 };
+
+async function createBrokerSigningKeyFile(): Promise<string> {
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const dir = await mkdtemp(join(tmpdir(), "a2a-worker-broker-signing-"));
+  const keyFile = join(dir, "broker-signing.pem");
+  await writeFile(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+  return keyFile;
+}
 
 function createWorker(baseUrl: string, options: { edgeSecret?: string; homeBrokerId?: string; homeBrokerLeaseFile?: string; httpSignature?: BrokerWorkerConfig["httpSignature"] } = {}) {
   return new A2ABrokerWorker({
@@ -174,6 +182,54 @@ test("worker registers, heartbeats, polls queued work, and completes tasks", asy
     assert.ok(actions.has("task.claimed"));
     assert.ok(actions.has("task.started"));
     assert.ok(actions.has("task.succeeded"));
+  } finally {
+    await worker.stop();
+    await server.close();
+  }
+});
+
+test("worker with HTTP signature key emits signed result provenance and broker stores countersignature", async () => {
+  const server = await startTestServer({
+    brokerId: "brokeralpha",
+    enforceRequesterIdentity: false,
+    a2aHttpSignatureWorkerAuth: "strict",
+    a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
+    agentCardSigningKeyFile: await createBrokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
+  });
+  const worker = createWorker(server.baseUrl, {
+    httpSignature: {
+      keyid: "worker:worker-a:v1",
+      privateKeyJwk: workerSignaturePrivateJwk,
+      brokerId: "brokeralpha",
+      nonceFactory: (() => {
+        let nonce = 0;
+        return () => `worker-provenance-${++nonce}`;
+      })(),
+    },
+  });
+
+  try {
+    await worker.register();
+    const task = await createTask(server.baseUrl, {
+      id: "worker-signed-provenance-task",
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      assignedWorkerId: "worker-a",
+      message: "run signed provenance echo",
+    });
+
+    const processed = await worker.runOnce();
+    assert.equal(processed, 1);
+
+    const taskResponse = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+    assert.equal(taskResponse.status, 200);
+    const completedTask = await taskResponse.json();
+    assert.equal(completedTask.status, "succeeded");
+    assert.equal(completedTask.result.provenance.workerKeyId, "worker:worker-a:v1");
+    assert.equal(completedTask.result.provenance.brokerCountersig.brokerKeyId, "broker:brokeralpha:v1");
+    assert.equal(completedTask.result.provenance.claimedAt, completedTask.claimedAt);
   } finally {
     await worker.stop();
     await server.close();
@@ -391,6 +447,8 @@ test("worker signed requests pass strict broker route gate for register, poll, a
     brokerId: "brokeralpha",
     a2aHttpSignatureWorkerAuth: "strict",
     a2aHttpSignatureKeyRegistry: workerSignatureKeyRegistry,
+    agentCardSigningKeyFile: await createBrokerSigningKeyFile(),
+    agentCardSigningKid: "broker:brokeralpha:v1",
   });
   const worker = createWorker(server.baseUrl, {
     httpSignature: {

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createPublicKey } from "node:crypto";
 import { readPersistenceQueueDiagnostics } from "./persistence-queue-diagnostics.js";
 import { summarizeTerminalOutboxForSchedz } from "./terminal-outbox-schedz.js";
 import { createDefaultStateStore, resolvePublicBaseUrl, firstNonEmpty } from "./server-config.js";
@@ -562,14 +563,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // unsigned exactly as before; a configured-but-unreadable key fails
   // startup loudly instead of silently serving an unsigned card.
   const signingKeyFile = options.agentCardSigningKeyFile ?? process.env.AGENT_CARD_SIGNING_KEY_FILE;
+  const signingKeyPem = signingKeyFile ? readFileSync(signingKeyFile, "utf8") : undefined;
+  const agentCardSigningKid = options.agentCardSigningKid ?? process.env.AGENT_CARD_SIGNING_KID;
   const crossBrokerTrustAnchors = loadCrossBrokerTrustAnchors(
     options.crossBrokerSenderProofKeysFile ?? process.env.CROSS_BROKER_SENDER_PROOF_KEYS_FILE,
   );
   const crossBrokerNonceCache = crossBrokerTrustAnchors ? new CrossBrokerNonceCache() : undefined;
-  const agentCard = signingKeyFile
+  const agentCard = signingKeyPem
     ? signAgentCard(unsignedAgentCard as unknown as Record<string, unknown>, {
-        privateKeyPem: readFileSync(signingKeyFile, "utf8"),
-        kid: options.agentCardSigningKid ?? process.env.AGENT_CARD_SIGNING_KID,
+        privateKeyPem: signingKeyPem,
+        kid: agentCardSigningKid,
       }) as unknown as typeof unsignedAgentCard
     : unsignedAgentCard;
   const peerStatusService = peerStatusEnabled
@@ -814,6 +817,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     return {
       keyid: result.keyid,
       requesterId: result.requesterId,
+      publicKeyPem: verifiedRecord
+        ? createPublicKey({ key: verifiedRecord.publicKeyJwk, format: "jwk" }).export({ type: "spki", format: "pem" }).toString()
+        : undefined,
       scopes: verifiedRecord?.scopes,
     };
   };
@@ -1517,6 +1523,12 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
         requesterIdentity,
         assertWorkerHttpSignatureRoute,
         assertVerifiedWorkerMatches,
+        resultProvenanceBrokerSigner: signingKeyPem
+          ? {
+              privateKeyPem: signingKeyPem,
+              brokerKeyId: agentCardSigningKid ?? brokerId,
+            }
+          : undefined,
       })) {
         return;
       }

@@ -23,11 +23,28 @@ import type {
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import {
-  parseRetentionTimestamp,
   isHeartbeatAuditEvent,
   getHeartbeatAuditEventId,
 } from "./broker-retention-selectors.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+import {
+  buildHotEntityHintCoverage,
+  planAuditRetentionFromRecords,
+  planTaskRetentionFromRecords,
+  planTerminalOutboxRetentionFromRecords,
+  planWorkerRetentionFromRecords,
+} from "./store-hot-retention-planning.js";
+import {
+  buildHotTableSelect,
+  buildHotTaskListItemSelect,
+  normalizeNonNegativeSqliteLimit,
+  normalizeOptionalSqliteLimit,
+  normalizeRuntimeTaskListLimit,
+  parseHotTaskListItemProjection,
+} from "./store-hot-select-projections.js";
+import {
+  taskMatchesRuntimeFilters,
+  workerMatchesRuntimeFilters,
+} from "./store-runtime-filters.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -128,6 +145,7 @@ export {
   serializeBrokerSnapshot,
   writeBrokerSnapshotFile,
 } from "./store-snapshot-io.js";
+export { buildHotEntityHintCoverage } from "./store-hot-retention-planning.js";
 
 
 export type {
@@ -2292,34 +2310,6 @@ export class SqliteValidationRuntimeRepository implements ValidationRuntimeRepos
   }
 }
 
-function taskMatchesRuntimeFilters(task: TaskRecord, filters: TaskListFilters): boolean {
-  if (filters.exchangeId && task.exchangeId !== filters.exchangeId) {
-    return false;
-  }
-  if (filters.status && task.status !== filters.status) {
-    return false;
-  }
-  if (filters.targetNodeId && task.targetNodeId !== filters.targetNodeId) {
-    return false;
-  }
-  if (filters.proposalId && task.proposalId !== filters.proposalId) {
-    return false;
-  }
-  if (filters.intent && task.intent !== filters.intent) {
-    return false;
-  }
-  if (filters.claimedBy && task.claimedBy !== filters.claimedBy) {
-    return false;
-  }
-  if (filters.assignedWorkerId && task.assignedWorkerId !== filters.assignedWorkerId) {
-    return false;
-  }
-  if (filters.taskOrigin && (task.taskOrigin ?? "unknown") !== filters.taskOrigin) {
-    return false;
-  }
-  return true;
-}
-
 export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
   constructor(private readonly store: SqliteBrokerStateStore) {}
 
@@ -2336,36 +2326,6 @@ export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
   upsertWorker(worker: WorkerRecord): void {
     this.store.upsertHotWorkers([worker]);
   }
-}
-
-function workerMatchesRuntimeFilters(worker: WorkerRecord, filters: WorkerListFilters): boolean {
-  if (filters.role && worker.role !== filters.role) {
-    return false;
-  }
-  if (filters.environment && !worker.capabilities.environments.includes(filters.environment)) {
-    return false;
-  }
-  if (filters.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
-    return false;
-  }
-  if (!workerProviderCapabilityMatchesRuntimeFilters(worker.capabilities.providerCapabilities, filters)) {
-    return false;
-  }
-  return true;
-}
-
-function workerProviderCapabilityMatchesRuntimeFilters(
-  capabilities: WorkerRecord["capabilities"]["providerCapabilities"] | undefined,
-  filters: WorkerListFilters,
-): boolean {
-  if (!filters.providerId && !filters.modelFamily && !filters.modelId && !filters.providerAvailability) return true;
-  return (capabilities ?? []).some((capability) => {
-    if (filters.providerId && capability.providerId !== filters.providerId.trim().toLowerCase()) return false;
-    if (filters.modelFamily && capability.modelFamily !== filters.modelFamily.trim().toLowerCase()) return false;
-    if (filters.modelId && capability.modelId !== filters.modelId.trim().toLowerCase()) return false;
-    if (filters.providerAvailability && capability.availability !== filters.providerAvailability) return false;
-    return true;
-  });
 }
 
 export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
@@ -2413,18 +2373,6 @@ export class SqliteTombstoneRuntimeRepository implements TombstoneRuntimeReposit
   }
 }
 
-function normalizeNonNegativeSqliteLimit(value: number | undefined, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.trunc(value));
-  }
-  return Math.max(0, Math.trunc(fallback));
-}
-
-function normalizeOptionalSqliteLimit(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  return normalizeNonNegativeSqliteLimit(value, 0);
-}
-
 function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCanonicalSnapshotRetentionSyncResult["before"]> {
   return {
     tasks: snapshot.tasks.length,
@@ -2432,145 +2380,6 @@ function canonicalSnapshotCounts(snapshot: BrokerSnapshot): NonNullable<SqliteCa
     workers: snapshot.workers.length,
     terminalOutbox: snapshot.terminalOutbox?.length ?? 0,
   };
-}
-
-function buildHotTableSelect(
-  tableName: SqliteHotEntityTable,
-  filters: Array<[string, string | undefined]>,
-  orderBy: string,
-  limit?: number,
-): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = filters.flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT payload FROM ${tableName}${clauses.length ? ` WHERE ${clauses.join(" AND ")}` : ""} ORDER BY ${orderBy}${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function buildHotTaskListItemSelect(filters: SqliteTaskHotTableFilters): { sql: string; params: Array<string | number> } {
-  const params: Array<string | number> = [];
-  const clauses = [
-    ["id", filters.id],
-    ["status", filters.status],
-    ["target_node_id", filters.targetNodeId],
-    ["intent", filters.intent],
-    ["assigned_worker_id", filters.assignedWorkerId],
-    ["task_origin", filters.taskOrigin],
-  ].flatMap(([column, value]) => {
-    if (!value) {
-      return [];
-    }
-    params.push(value);
-    return [`${column} = ?`];
-  });
-  clauses.push("json_valid(payload)");
-  const limit = filters.limit ?? (filters.maxRows !== undefined && filters.maxRows > 0
-    ? normalizeOptionalSqliteLimit(filters.maxRows)
-    : undefined);
-  const hasLimit = typeof limit === "number" && Number.isInteger(limit) && limit > 0;
-  return {
-    sql: `SELECT
-        id,
-        status,
-        intent,
-        target_node_id AS targetNodeId,
-        assigned_worker_id AS assignedWorkerId,
-        task_origin AS taskOrigin,
-        updated_at AS updatedAt,
-        json_extract(payload, '$.requester') AS requester,
-        json_extract(payload, '$.target') AS target,
-        json_extract(payload, '$.exchangeId') AS exchangeId,
-        json_extract(payload, '$.parentTaskId') AS parentTaskId,
-        json_extract(payload, '$.proposalId') AS proposalId,
-        json_extract(payload, '$.claimedBy') AS claimedBy,
-        COALESCE(json_extract(payload, '$.result.artifactIds'), json_extract(payload, '$.artifactIds')) AS artifactIds,
-        COALESCE(json_extract(payload, '$.result.summary'), json_extract(payload, '$.result.note')) AS resultSummary,
-        json_extract(payload, '$.error') AS error,
-        json_extract(payload, '$.requeueCount') AS requeueCount,
-        json_extract(payload, '$.createdAt') AS createdAt,
-        json_extract(payload, '$.claimedAt') AS claimedAt,
-        json_extract(payload, '$.completedAt') AS completedAt
-      FROM broker_tasks
-      WHERE ${clauses.join(" AND ")}
-      ORDER BY updated_at DESC, id ASC${hasLimit ? " LIMIT ?" : ""}`,
-    params: hasLimit ? [...params, limit] : params,
-  };
-}
-
-function parseHotTaskListItemProjection(row: unknown): SqliteTaskListItemProjection[] {
-  const record = row as Record<string, unknown>;
-  const id = optionalStringValue(record.id);
-  const intent = optionalStringValue(record.intent) as TaskRecord["intent"] | undefined;
-  const status = optionalStringValue(record.status) as TaskRecord["status"] | undefined;
-  const targetNodeId = optionalStringValue(record.targetNodeId);
-  const requester = parseJsonColumn<TaskRecord["requester"]>(record.requester);
-  const target = parseJsonColumn<TaskRecord["target"]>(record.target);
-  const updatedAt = optionalStringValue(record.updatedAt);
-  const createdAt = optionalStringValue(record.createdAt) ?? updatedAt;
-  if (!id || !intent || !status || !targetNodeId || !requester || !target || !updatedAt || !createdAt) {
-    return [];
-  }
-  const error = parseJsonColumn<TaskRecord["error"]>(record.error);
-  return [omitUndefinedProperties({
-    id,
-    intent,
-    status,
-    targetNodeId,
-    requester,
-    target,
-    exchangeId: optionalStringValue(record.exchangeId),
-    parentTaskId: optionalStringValue(record.parentTaskId),
-    proposalId: optionalStringValue(record.proposalId),
-    assignedWorkerId: optionalStringValue(record.assignedWorkerId),
-    claimedBy: optionalStringValue(record.claimedBy),
-    taskOrigin: optionalStringValue(record.taskOrigin) as TaskRecord["taskOrigin"] | undefined,
-    artifactIds: parseJsonColumn<string[]>(record.artifactIds),
-    resultSummary: optionalStringValue(record.resultSummary),
-    error: error ? { code: error.code, message: error.message } : undefined,
-    requeueCount: optionalNumberValue(record.requeueCount),
-    createdAt,
-    updatedAt,
-    claimedAt: optionalStringValue(record.claimedAt),
-    completedAt: optionalStringValue(record.completedAt),
-  })];
-}
-
-function parseJsonColumn<T>(value: unknown): T | undefined {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return value as T;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function optionalStringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function optionalNumberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
-}
-
-function normalizeRuntimeTaskListLimit(limit: number | undefined): number | undefined {
-  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : undefined;
 }
 
 function countSnapshotEntities(snapshot: BrokerSnapshot): Record<string, number> {
@@ -2585,205 +2394,6 @@ function hasSnapshotRuntimeRows(snapshot: BrokerSnapshot): boolean {
   );
 }
 
-function planTaskRetentionFromRecords(
-  records: TaskRecord[],
-  options: SqliteTaskHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set(options.protectedTaskIds ?? []);
-  const olderTerminalCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const task of records) {
-    if (!isTerminalTaskStatus(task.status) || retainedIds.has(task.id)) {
-      retainedIds.add(task.id);
-      continue;
-    }
-    const timestampMs = parseRetentionTimestamp(task.completedAt ?? task.updatedAt);
-    if (timestampMs === null || timestampMs >= cutoffMs) {
-      retainedIds.add(task.id);
-      continue;
-    }
-    olderTerminalCandidates.push({ id: task.id, timestampMs });
-  }
-
-  const capSorted = [...olderTerminalCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxTerminalRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_tasks", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planAuditRetentionFromRecords(
-  records: AuditEvent[],
-  options: SqliteAuditHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set<string>();
-  const retentionCandidates: Array<{ id: string; timestampMs: number }> = [];
-  const protectedIds = normalizeAuditRetentionProtection(options.protectedIds);
-
-  for (const event of records) {
-    const timestampMs = parseRetentionTimestamp(event.createdAt);
-    if (isAuditEventProtected(event, protectedIds) || timestampMs === null) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    retentionCandidates.push({ id: event.id, timestampMs });
-  }
-
-  const capSorted = [...retentionCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id))
-    .filter((entry) => entry.timestampMs >= cutoffMs);
-  const capRetained = capSorted.slice(0, options.maxRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_audit_events", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planWorkerRetentionFromRecords(
-  records: WorkerRecord[],
-  options: SqliteWorkerHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set(options.protectedWorkerIds ?? []);
-  const olderInactiveCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const worker of records) {
-    if (retainedIds.has(worker.nodeId)) {
-      continue;
-    }
-    const timestampMs = parseRetentionTimestamp(worker.lastSeenAt);
-    if (timestampMs === null || timestampMs >= cutoffMs) {
-      retainedIds.add(worker.nodeId);
-      continue;
-    }
-    olderInactiveCandidates.push({ id: worker.nodeId, timestampMs });
-  }
-
-  const capSorted = [...olderInactiveCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxInactiveWorkers);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_workers", cutoffMs, records.map((record) => record.nodeId), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-function planTerminalOutboxRetentionFromRecords(
-  records: TerminalTaskOutboxEvent[],
-  options: SqliteTerminalOutboxHotRetentionPlanOptions,
-): SqliteHotRetentionPlan {
-  const nowMs = options.nowMs ?? Date.now();
-  const cutoffMs = nowMs - options.retentionMs;
-  const retainedIds = new Set<string>();
-  const acknowledgedCandidates: Array<{ id: string; timestampMs: number }> = [];
-
-  for (const event of records) {
-    const acknowledgedAt = event.ack?.acknowledgedAt ?? event.deliveredAt;
-    const acknowledgedMs = acknowledgedAt ? parseRetentionTimestamp(acknowledgedAt) : null;
-    if (acknowledgedMs === null) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    if (acknowledgedMs >= cutoffMs) {
-      retainedIds.add(event.id);
-      continue;
-    }
-    acknowledgedCandidates.push({ id: event.id, timestampMs: acknowledgedMs });
-  }
-
-  const capSorted = [...acknowledgedCandidates]
-    .sort((a, b) => b.timestampMs - a.timestampMs || a.id.localeCompare(b.id));
-  const capRetained = capSorted.slice(0, options.maxAcknowledgedRecords);
-  capRetained.forEach((entry) => retainedIds.add(entry.id));
-
-  const plan = buildRetentionPlan("broker_terminal_outbox", cutoffMs, records.map((record) => record.id), retainedIds);
-  plan.retainedByCapCount = capRetained.length;
-  return plan;
-}
-
-export function buildHotEntityHintCoverage(
-  hotEntityTables: readonly string[],
-  hintedWriteTables: readonly string[],
-): BrokerHotEntityHintCoverage {
-  const supportedTables = [...hintedWriteTables];
-  const supported = new Set(supportedTables);
-  const missingTables = hotEntityTables.filter((table) => !supported.has(table));
-  return {
-    ok: missingTables.length === 0,
-    supportedTables,
-    missingTables,
-    supportedCount: supportedTables.length,
-    totalCount: hotEntityTables.length,
-  };
-}
-
-function buildRetentionPlan(
-  table: SqliteHotRetentionPlan["table"],
-  cutoffMs: number,
-  allIds: string[],
-  retainedIds: Set<string>,
-): SqliteHotRetentionPlan {
-  return {
-    table,
-    cutoffMs,
-    retainedIds: allIds.filter((id) => retainedIds.has(id)).sort(),
-    pruneIds: allIds.filter((id) => !retainedIds.has(id)).sort(),
-  };
-}
-
-function normalizeAuditRetentionProtection(
-  input: SqliteAuditHotRetentionProtection | undefined,
-): Required<Record<keyof SqliteAuditHotRetentionProtection, Set<string>>> {
-  return {
-    proposalIds: new Set(input?.proposalIds ?? []),
-    taskIds: new Set(input?.taskIds ?? []),
-    exchangeIds: new Set(input?.exchangeIds ?? []),
-    exchangeMessageIds: new Set(input?.exchangeMessageIds ?? []),
-    artifactIds: new Set(input?.artifactIds ?? []),
-    validationIds: new Set(input?.validationIds ?? []),
-    workerIds: new Set(input?.workerIds ?? []),
-  };
-}
-
-function isAuditEventProtected(
-  event: AuditEvent,
-  protectedIds: Required<Record<keyof SqliteAuditHotRetentionProtection, Set<string>>>,
-): boolean {
-  if (isHeartbeatAuditEvent(event)) {
-    return false;
-  }
-  if (event.proposalId && protectedIds.proposalIds.has(event.proposalId)) {
-    return true;
-  }
-  switch (event.targetType) {
-    case "proposal":
-      return protectedIds.proposalIds.has(event.targetId);
-    case "artifact":
-      return protectedIds.artifactIds.has(event.targetId);
-    case "validation":
-      return protectedIds.validationIds.has(event.targetId);
-    case "worker":
-      return protectedIds.workerIds.has(event.targetId);
-    case "task":
-      return protectedIds.taskIds.has(event.targetId);
-    case "exchange":
-      return protectedIds.exchangeIds.has(event.targetId);
-    case "exchange-message":
-      return protectedIds.exchangeMessageIds.has(event.targetId);
-    case "broker":
-      return false;
-  }
-}
 
 function parseHotEntityPayload<T>(row: unknown, schema: z.ZodType<T>, tableName: string): T {
   const parsed = parseHotEntityPayloadResult(row, schema, tableName);

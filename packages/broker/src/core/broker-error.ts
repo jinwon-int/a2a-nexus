@@ -12,6 +12,7 @@ export type BrokerErrorCode =
   | "source_projection_empty"
   | "retry_policy_malformed"
   | "acceptance_malformed"
+  | "provenance_invalid"
   | "github_completion_evidence_missing"
   | "github_completion_receipt_invalid"
   | "review_evidence_missing"

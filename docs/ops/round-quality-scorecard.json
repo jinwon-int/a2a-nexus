@@ -959,6 +959,113 @@
         "Safety boundary: broker-only deploy/recreate and bounded operator live canary; no Hermes Gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-g2-v0c-dogfood-live-provenance-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "#1382 G2 result-provenance fleet deployment plus #1378/#1381 V0-c dogfood full-fleet live canary on two deployed broker groups and nine worker classes at 137da5527ac0a227bb3b72e1aaede3033ba0f846, independently offline-verified by the external finalizer",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 9,
+        "dispatchedLaneCount": 9
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "Deployment evidence: two deployed broker groups were rebuilt/recreated at 137da5527ac0a227bb3b72e1aaede3033ba0f846 and nine worker classes were artifact-synced/restarted with per-worker signing keys registered in the broker HTTP-signature registries (9/9 key-registry preflight OK). Identifiers redacted to broker-group/worker-class counts per public-readiness precedent.",
+        "Canary evidence: 9/9 no-op provenance canary tasks succeeded across both broker groups; all nine results carried result.provenance with worker EdDSA signatures (9/9) and broker countersignatures (9/9), including one heterogeneous mobile-class worker result shape.",
+        "Independent offline verification: the external finalizer verified all nine results WITHOUT broker access using scripts/verify-analysis-report.mjs — per-task JCS resultHash recomputation, provenance.claimedAt vs task.claimedAt cross-check, workerKeyId-to-assigned-worker binding, worker signature, and broker countersignature all green (9/9 GREEN). Verification bundle sha256:f35d5f2473f456d315b666e1c0f78e0ef2514196a43cca530792d0051b514779.",
+        "Adversarial non-vacuity: on the same live artifacts, a tampered result field, a cross-task replay, and a wrong-broker-key transplant were each rejected RED by the same verifier, so the 9/9 GREEN is a discriminating verdict rather than a vacuous pass.",
+        "Environment failure narrative (failureBreakdown environment:1): one broker group had an existing agent-card signing key on the host but the live container was not receiving the signing-key env, so its first signed completions failed closed with provenance_invalid (countersigning key not configured). Corrected by injecting the signing-key env and force-recreating only that broker container (a plain restart was insufficient because container env is fixed at create time); the rerun was fully green. The fail-closed complete-path caught a real production misconfiguration exactly as designed.",
+        "Safety boundary: broker container recreate and bounded operator no-op canary only; no gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording; scorecard and wiki narratives carry only anonymized counts and artifact hashes."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave1-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 1 measurement for #1289 R4 seam extraction — h1-pipeline treatment, store hot-retention planning seam (#1289 remains open)",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "h1-pipeline dispatch round a2a-nexus-1349-h3-wave1-r4-20260706-r4 created 4/4 source-only analysis lanes and read back 4/4 succeeded with classifiable substance; a preflight lesson from r1-r3 is recorded separately in the PR body: deployed broker treats taskOrigin=local sourceBundle lanes as non-readbackable, so r4 omitted taskOrigin and verified queued/readback before worker completion.",
+        "implementation extracted the store hot-retention planning seam into packages/broker/src/core/store-hot-retention-planning.ts as a parameter-injected pure move: planTaskRetentionFromRecords, planAuditRetentionFromRecords, planWorkerRetentionFromRecords, planTerminalOutboxRetentionFromRecords, buildHotEntityHintCoverage, buildRetentionPlan, normalizeAuditRetentionProtection, and isAuditEventProtected moved out of store.ts while store.ts re-exports buildHotEntityHintCoverage for the existing public test/import surface.",
+        "surface-preservation proof: store.ts 2880→2687, new module 213 lines, broker.ts unchanged at 2947; existing imports from ./store.js continue to see buildHotEntityHintCoverage, and the focused clean-env store suites passed 70/70 after the move.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, matching the solo R4 seam quality baseline for this wave; because this is only wave 1 of the preregistered three-wave rule, the scorecard records HOLD for process promotion until two further h1-pipeline waves preserve quality and improve the duration band."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave2-solo-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 2 solo control for #1289 R4 seam extraction — store hot-select/projection seam, same evidence gates as Wave 1; #1289 remains open",
+      "implementationMode": "solo",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 1,
+        "dispatchedLaneCount": 1
+      },
+      "evidence": [
+        "solo control: one implementation lane, no h1-pipeline/subagent orchestration; same finalizer/evidence gates as Wave 1, with implementation mode as the variable.",
+        "rounds-to-success: 1; no failed or discarded dispatch/implementation rounds were counted before the successful solo seam extraction, and the duration band covers the whole wave wall-clock per #1391.",
+        "implementation extracted the recommended store hot-select/projection seam into packages/broker/src/core/store-hot-select-projections.ts: normalizeNonNegativeSqliteLimit, normalizeOptionalSqliteLimit, buildHotTableSelect, buildHotTaskListItemSelect, parseHotTaskListItemProjection, parseJsonColumn, optionalStringValue, optionalNumberValue, omitUndefinedProperties, and normalizeRuntimeTaskListLimit moved out of store.ts; broker.ts stayed unchanged.",
+        "surface-preservation proof: broker.ts 2947 unchanged; store.ts 2687→2544; new store-hot-select-projections.ts 169 lines; PURE_MOVE_AUDIT=ok against the pre-branch store.ts function bodies after normalizing only added export prefixes.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, with substantiveLaneCount/dispatchedLaneCount 1/1 for the solo control; this provides the required banded solo anchor for later Wave 3 judgment, not a standalone promotion decision."
+      ],
+      "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave3-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 3 final h1-pipeline measurement for #1289 R4 seam extraction — store runtime-filters seam; #1289 remains open",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "<1h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 3,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "h1-pipeline dispatch round a2a-nexus-1349-h3-wave3-r4-20260706-r1 created 4/4 source-only analysis lanes, verified readbackable while running, and read back 4/4 succeeded; 3/4 lanes carried classifiable substantive seam/finalizer guidance, while one succeeded lane returned an ellipsis-only analysis summary and is conservatively excluded from substantiveLaneCount.",
+        "rounds-to-success: 1; no failed or discarded dispatch/implementation rounds were counted before the successful Wave 3 h1-pipeline seam extraction, and the duration band covers the whole wave wall-clock per #1391.",
+        "implementation extracted the recommended store runtime-filters seam into packages/broker/src/core/store-runtime-filters.ts: taskMatchesRuntimeFilters, workerMatchesRuntimeFilters, and workerProviderCapabilityMatchesRuntimeFilters moved out of store.ts; broker.ts stayed unchanged.",
+        "surface-preservation proof: broker.ts 2947 unchanged; store.ts 2544→2490; new store-runtime-filters.ts 64 lines; PURE_MOVE_AUDIT=ok against origin/main function bodies after normalizing only added export prefixes; focused clean-env store suites passed 70/70 and the full broker suite passed 3738/3738.",
+        "final #1349 comparison input: rework/falseFinding/evidenceGateDeviation all remain 0, so quality stayed equal to the solo control; implementationDurationBand matched the Wave 2 solo control at <1h rather than improving beyond it, so the final process recommendation remains HOLD rather than GO."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }

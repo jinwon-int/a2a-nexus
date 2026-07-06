@@ -12,6 +12,13 @@ import type {
   RunnerEngine,
   RunnerExtraMount,
 } from "./types.js";
+import {
+  DEFAULT_EGRESS_MAX_BYTES,
+  DEFAULT_EGRESS_TIMEOUT_MS,
+  GITHUB_EGRESS_ALLOWED_HOSTS,
+  isDeniedInternalHostname,
+  isDeniedInternalIp,
+} from "./egress-allowlist-proxy.js";
 
 /**
  * Stable classification codes for extra-mount / profile-mount configuration
@@ -134,6 +141,9 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
     containedSubagents: loadContainedSubagentsConfig(env, patchCommand.commandProfile, profile),
     proofSigningKeyFile: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KEY_FILE || "").trim() || undefined,
     proofSigningKid: (env.A2A_DOCKER_RUNNER_PROOF_SIGNING_KID || "").trim() || undefined,
+    egressAllowlistHosts: parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS),
+    egressMaxBytes: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_EGRESS_MAX_BYTES, DEFAULT_EGRESS_MAX_BYTES, "A2A_DOCKER_RUNNER_EGRESS_MAX_BYTES"),
+    egressTimeoutMs: parseOptionalPositiveInteger(env.A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS, DEFAULT_EGRESS_TIMEOUT_MS, "A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS"),
     ...patchCommand,
   };
 
@@ -163,6 +173,8 @@ export function validateRunnerConfig(config: RunnerConfig): void {
   if (config.network && !/^(bridge|host|none)$/.test(config.network)) {
     errors.push(`unsupported network mode: ${JSON.stringify(config.network)} (expected bridge, host, or none)`);
   }
+
+  validateEgressAllowlistConfig(config, errors);
 
   if (config.memory && !/^\d+[bkmgtpe]?$/i.test(config.memory)) {
     errors.push(`invalid memory limit: ${JSON.stringify(config.memory)} (expected format like "2g" or "512m")`);
@@ -535,6 +547,50 @@ function parseCommaList(value?: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseOptionalPositiveInteger(value: string | undefined, fallback: number, label: string): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return parsed || fallback;
+}
+
+function validateEgressAllowlistConfig(config: RunnerConfig, errors: string[]): void {
+  const hosts = config.egressAllowlistHosts ?? [];
+  const seen = new Set<string>();
+  for (const rawHost of hosts) {
+    const host = rawHost.trim().replace(/\.$/, "").toLowerCase();
+    if (!host) continue;
+    if (host !== rawHost) {
+      errors.push(`egress allowlist host must be lowercase canonical hostname: ${JSON.stringify(rawHost)}`);
+    }
+    if (seen.has(host)) {
+      errors.push(`duplicate egress allowlist host: ${host}`);
+    }
+    seen.add(host);
+    if (host.includes(":") && !/^\[[0-9a-f:.]+\]$/i.test(host)) {
+      errors.push(`egress allowlist host must not include a port: ${JSON.stringify(rawHost)}`);
+    }
+    const ipHost = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+    if (isDeniedInternalHostname(host) || isDeniedInternalIp(ipHost)) {
+      errors.push(`egress allowlist rejects internal host/IP: ${JSON.stringify(rawHost)}`);
+    }
+    if (!(GITHUB_EGRESS_ALLOWED_HOSTS as readonly string[]).includes(host)) {
+      errors.push(`egress allowlist host is outside the supported GitHub retrieval hosts: ${JSON.stringify(rawHost)}`);
+    }
+  }
+  if (config.egressMaxBytes !== undefined && (!Number.isSafeInteger(config.egressMaxBytes) || config.egressMaxBytes <= 0)) {
+    errors.push(`invalid egressMaxBytes: ${config.egressMaxBytes} (expected positive integer)`);
+  }
+  if (config.egressTimeoutMs !== undefined && (!Number.isSafeInteger(config.egressTimeoutMs) || config.egressTimeoutMs <= 0)) {
+    errors.push(`invalid egressTimeoutMs: ${config.egressTimeoutMs} (expected positive integer)`);
+  }
 }
 
 function parseBoundedInteger(

@@ -75,6 +75,7 @@ export function statusCodeFor(code: BrokerError["code"]): number {
     case "spec_underspecified":
     case "source_projection_empty":
     case "acceptance_malformed":
+    case "provenance_invalid":
       return 400;
     case "unauthorized":
       return 401;

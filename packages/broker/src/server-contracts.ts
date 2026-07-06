@@ -92,6 +92,7 @@ export type A2AHttpSignatureWorkerKeySource = "empty" | "inline" | "file";
 export interface A2AHttpSignatureVerifiedWorker {
   keyid: string;
   requesterId: string;
+  publicKeyPem?: string;
   scopes?: readonly string[];
 }
 
