@@ -427,6 +427,8 @@ export interface TaskResult {
   validation?: TaskValidationPayload;
   /** Optional multi-validation payload for tasks that require more than one evidence kind. */
   validations?: TaskValidationPayload[];
+  /** Optional signed worker/broker provenance for result payloads (G2 v1 additive). */
+  provenance?: unknown;
   apply?: TaskApplyPayload;
 }
 

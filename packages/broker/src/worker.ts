@@ -9,6 +9,8 @@ import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { validateGithubTaskCompletionEvidence } from "./core/github-task-completion.js";
+import { normalizeTaskResult } from "./core/broker-task-record-normalizers.js";
+import { signTaskResultProvenance } from "./core/provenance.js";
 import { parseTaskAcceptance, runTaskAcceptance, validateAcceptanceEvidence } from "./worker-acceptance.js";
 import { validateReviewEvidence } from "./worker-review.js";
 import { buildA2AHttpSignatureBase } from "./core/request-security.js";
@@ -353,7 +355,7 @@ export class A2ABrokerWorker {
 
       stopTaskHeartbeat?.();
       stopTaskHeartbeat = undefined;
-      await this.completeTask(task.id, outcome.result);
+      await this.completeTask(task.id, this.attachResultProvenance(runningTask, outcome.result));
       return true;
     } catch (error) {
       const taskError = toTaskError(error);
@@ -426,6 +428,31 @@ export class A2ABrokerWorker {
     } catch (error) {
       console.error(`[worker:${this.workerId}] task ${taskId} heartbeat failed`, error);
     }
+  }
+
+  private attachResultProvenance(task: TaskRecord, result?: TaskResult): TaskResult | undefined {
+    if (!result) {
+      return result;
+    }
+    const { provenance: _ignored, ...unsignedResult } = result;
+    const normalizedResult = normalizeTaskResult(unsignedResult);
+    const httpSignature = this.config.httpSignature;
+    if (!httpSignature) {
+      return normalizedResult;
+    }
+    const privateKeyPem = createPrivateKey({ key: httpSignature.privateKeyJwk, format: "jwk" })
+      .export({ type: "pkcs8", format: "pem" })
+      .toString();
+    const claimedAt = task.claimedAt ?? new Date().toISOString();
+    return {
+      ...normalizedResult,
+      provenance: signTaskResultProvenance(normalizedResult as Record<string, unknown>, {
+        taskId: task.id,
+        claimedAt,
+        privateKeyPem,
+        workerKeyId: httpSignature.keyid,
+      }),
+    };
   }
 
   private async completeTask(taskId: string, result?: TaskResult): Promise<TaskRecord> {

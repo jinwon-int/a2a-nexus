@@ -9,6 +9,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
+import { normalizeTaskResult } from "../core/broker-task-record-normalizers.js";
 import type { BrokerStateStore } from "../core/store.js";
 import {
   assertRequesterMatchesParty,
@@ -23,6 +24,11 @@ import type {
   TaskRecord,
 } from "../core/types.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
+import {
+  countersignTaskResultProvenance,
+  verifyTaskResultProvenance,
+  type ResultWithProvenance,
+} from "../core/provenance.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
@@ -48,6 +54,10 @@ export interface TasksWorkerRouteContext {
     expectedWorkerId: string | undefined,
     operation: A2AWorkerRouteScope,
   ) => void;
+  resultProvenanceBrokerSigner?: {
+    privateKeyPem: string;
+    brokerKeyId: string;
+  };
 }
 
 type TaskScopedContext = TasksWorkerRouteContext & { taskId: string };
@@ -63,7 +73,7 @@ interface WorkerScopedBody {
 async function authWorkerAction<T extends WorkerScopedBody>(
   ctx: TaskScopedContext,
   scope: A2AWorkerRouteScope,
-): Promise<{ body: T; workerId: string }> {
+): Promise<{ body: T; workerId: string; verifiedWorker: A2AHttpSignatureVerifiedWorker | null }> {
   const verifiedWorker = await ctx.assertWorkerHttpSignatureRoute(ctx.req, ctx.url);
   const body = await readJson<T>(ctx.req);
   if (!body?.workerId) {
@@ -73,11 +83,62 @@ async function authWorkerAction<T extends WorkerScopedBody>(
   if (ctx.enforceRequesterIdentity) {
     assertRequesterMatchesParty(ctx.requesterIdentity, { id: body.workerId }, scope);
   }
-  return { body, workerId: body.workerId };
+  return { body, workerId: body.workerId, verifiedWorker };
 }
 
 function sendTask(ctx: TaskScopedContext, task: TaskRecord): void {
   sendJson(ctx.res, 200, task);
+}
+
+function resultHasProvenance(result: unknown): result is ResultWithProvenance {
+  return Boolean(result && typeof result === "object" && !Array.isArray(result) && "provenance" in result);
+}
+
+function verifyAndCountersignResultProvenance(
+  ctx: TaskScopedContext,
+  result: TaskCompleteRequest["result"],
+  verifiedWorker: A2AHttpSignatureVerifiedWorker | null,
+): TaskCompleteRequest["result"] {
+  if (!resultHasProvenance(result)) {
+    return result;
+  }
+  const normalizedResult = normalizeTaskResult(result);
+  if (!resultHasProvenance(normalizedResult)) {
+    throw new BrokerError("provenance_invalid", "result provenance was not preserved by result normalization");
+  }
+  const provenance = normalizedResult.provenance;
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new BrokerError("provenance_invalid", "result.provenance must be an object when present");
+  }
+  if (!verifiedWorker?.publicKeyPem) {
+    throw new BrokerError("provenance_invalid", "registered worker public key is required to verify result provenance");
+  }
+  if (provenance.workerKeyId !== verifiedWorker.keyid) {
+    throw new BrokerError(
+      "provenance_invalid",
+      "result.provenance.workerKeyId does not match the registered worker signing key",
+    );
+  }
+  const verification = verifyTaskResultProvenance(normalizedResult, {
+    taskId: ctx.taskId,
+    publicKeyPem: verifiedWorker.publicKeyPem,
+  });
+  if (!verification.ok) {
+    throw new BrokerError("provenance_invalid", `result provenance verification failed: ${verification.reason}`);
+  }
+  const signer = ctx.resultProvenanceBrokerSigner;
+  if (!signer) {
+    throw new BrokerError("provenance_invalid", "broker result provenance countersigning key is not configured");
+  }
+  return {
+    ...normalizedResult,
+    provenance: countersignTaskResultProvenance(provenance, {
+      taskId: ctx.taskId,
+      verifiedAt: new Date().toISOString(),
+      privateKeyPem: signer.privateKeyPem,
+      brokerKeyId: signer.brokerKeyId,
+    }),
+  };
 }
 
 /** POST /tasks/:id/claim — a worker claims a queued task. */
@@ -128,18 +189,20 @@ export async function handleCheckpointTaskRequest(ctx: TaskScopedContext): Promi
 
 /** POST /tasks/:id/complete — a worker reports successful completion. */
 export async function handleCompleteTaskRequest(ctx: TaskScopedContext): Promise<void> {
-  const { body, workerId } = await authWorkerAction<TaskCompleteRequest>(ctx, "task.complete");
-  const task = ctx.broker.completeTask(ctx.taskId, workerId, body.result);
+  const { body, workerId, verifiedWorker } = await authWorkerAction<TaskCompleteRequest>(ctx, "task.complete");
+  const result = verifyAndCountersignResultProvenance(ctx, body.result, verifiedWorker);
+  const task = ctx.broker.completeTask(ctx.taskId, workerId, result);
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
 }
 
 /** POST /tasks/:id/evidence — a worker posts outcome evidence (complete or fail). */
 export async function handlePostEvidenceRequest(ctx: TaskScopedContext): Promise<void> {
-  const { body, workerId } = await authWorkerAction<TaskEvidenceRequest>(ctx, "task.evidence");
+  const { body, workerId, verifiedWorker } = await authWorkerAction<TaskEvidenceRequest>(ctx, "task.evidence");
   const outcome = body.outcome ?? "done";
   if (outcome === "done" || outcome === "pr") {
-    const task = ctx.broker.completeTask(ctx.taskId, workerId, body.result);
+    const result = verifyAndCountersignResultProvenance(ctx, body.result, verifiedWorker);
+    const task = ctx.broker.completeTask(ctx.taskId, workerId, result);
     await awaitDurablePersistenceAck(ctx.stateStore);
     sendTask(ctx, task);
     return;
