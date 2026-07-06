@@ -989,6 +989,31 @@
         "Safety boundary: broker container recreate and bounded operator no-op canary only; no gateway restart, provider send outside the canary, DB/outbox/ACK/replay/prune/migration, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording; scorecard and wiki narratives carry only anonymized counts and artifact hashes."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1349-h3-wave1-r4-20260706",
+      "window": {
+        "from": "2026-07-06",
+        "to": "2026-07-06"
+      },
+      "scope": "H3 #1349 Wave 1 measurement for #1289 R4 seam extraction — h1-pipeline treatment, store hot-retention planning seam (#1289 remains open)",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 4,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "h1-pipeline dispatch round a2a-nexus-1349-h3-wave1-r4-20260706-r4 created 4/4 source-only analysis lanes and read back 4/4 succeeded with classifiable substance; a preflight lesson from r1-r3 is recorded separately in the PR body: deployed broker treats taskOrigin=local sourceBundle lanes as non-readbackable, so r4 omitted taskOrigin and verified queued/readback before worker completion.",
+        "implementation extracted the store hot-retention planning seam into packages/broker/src/core/store-hot-retention-planning.ts as a parameter-injected pure move: planTaskRetentionFromRecords, planAuditRetentionFromRecords, planWorkerRetentionFromRecords, planTerminalOutboxRetentionFromRecords, buildHotEntityHintCoverage, buildRetentionPlan, normalizeAuditRetentionProtection, and isAuditEventProtected moved out of store.ts while store.ts re-exports buildHotEntityHintCoverage for the existing public test/import surface.",
+        "surface-preservation proof: store.ts 2880→2687, new module 213 lines, broker.ts unchanged at 2947; existing imports from ./store.js continue to see buildHotEntityHintCoverage, and the focused clean-env store suites passed 70/70 after the move.",
+        "quality comparison input for #1349: rework/falseFinding/evidenceGateDeviation all remain 0, matching the solo R4 seam quality baseline for this wave; because this is only wave 1 of the preregistered three-wave rule, the scorecard records HOLD for process promotion until two further h1-pipeline waves preserve quality and improve the duration band."
+      ],
+      "recordedAt": "2026-07-06"
     }
   ]
 }
