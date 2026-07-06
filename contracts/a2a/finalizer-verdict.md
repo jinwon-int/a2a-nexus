@@ -102,6 +102,43 @@ requires fail-closed:
 `warn` reports violations without blocking; `enforce` blocks the merge (the G1
 warn→enforce pattern).
 
+## 4a. Attested identity — CI-OIDC authentication (S3 / #1386 H1)
+
+A verdict authenticates by **exactly one** of two methods:
+
+- **static key** — `finalizerKeyId` + `sig` resolved in the registered finalizer
+  keyring (§3);
+- **attester identity** — an `attester` block, when the verdict is produced in an
+  attested execution environment (GitHub Actions + OIDC → Sigstore keyless) the
+  operator does not control at signing time. This closes the subject-separation
+  hole where the operator holds the signing key (design:
+  `docs/specs/attested-finalizer-run.md`).
+
+```jsonc
+"attester": {
+  "kind": "github-oidc",
+  "subject": "repo:owner/name:workflow_ref:…:ref:refs/heads/main",  // the OIDC identity
+  "leaf": "<PEM leaf certificate>",     // Fulcio-issued ephemeral cert; SAN URI = subject
+  "sig": { "protected": "…", "signature": "…" },  // JWS over JCS(verdict sans attester.sig)
+  "rekor": { "logIndex": …, "integratedTime": … } // transparency-log reference
+}
+```
+
+Verifier checks (all fail-closed): the leaf **chains to a configured trusted
+root** (Fulcio) — the load-bearing anchor, since the operator cannot mint a
+passing identity without that root's key; `producedAt` is inside the leaf
+validity window; the leaf **SAN equals `attester.subject`**; the leaf key signs
+`JCS(verdict sans attester.sig)`; and a Rekor reference is present. The gate then
+requires `attester.subject` to be in the **registered attester allowlist** (the
+permitted finalizer workflow identities) and not a producing identity
+(independence).
+
+**v0 boundary**: cert chain + SAN identity + validity + payload signature are
+fully verified offline; the Rekor **inclusion-proof** math is the Sigstore
+library / CI step and is only checked here for structural presence. And S3
+reaches *unforgeable + publicly auditable*, not full principal separation — the
+operator still triggers the run and authors the judgment content.
+
 ## 5. Safety boundaries
 
 - Public key ids only; private keys never emitted. Finalizer key
