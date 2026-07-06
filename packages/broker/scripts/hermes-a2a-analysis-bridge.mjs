@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { HERMES_FINALIZER_TOOLSETS } from "./finalizer-tool-policy.mjs";
 
 import {
   collectSourceCarrierItems,
@@ -1075,7 +1076,7 @@ function runHermes(prompt, flags, env) {
   const { provider, model } = resolveHermesModelRequest(flags.model, env);
   if (provider) args.push("--provider", provider);
   if (model) args.push("--model", model);
-  const toolsets = safeText(env.A2A_HERMES_ANALYSIS_TOOLSETS, "safe");
+  const toolsets = HERMES_FINALIZER_TOOLSETS;
   if (toolsets) args.push("--toolsets", toolsets);
   const timeoutSec = Math.max(1, Number(flags.timeout || env.A2A_HERMES_ANALYSIS_TIMEOUT_SEC || DEFAULT_TIMEOUT_SEC));
   const maxAttempts = Math.max(1, Number(env.A2A_HERMES_ANALYSIS_MAX_ATTEMPTS || DEFAULT_HERMES_MAX_ATTEMPTS));
