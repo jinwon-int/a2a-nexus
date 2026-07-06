@@ -11,6 +11,8 @@ export const PROVENANCE_CANONICALIZATION = "rfc8785-jcs-v1" as const;
 export const RESULT_PROVENANCE_SCHEMA = "a2a.result.provenance.v1" as const;
 export const RETRIEVAL_SNAPSHOT_SCHEMA = "a2a.retrieval.snapshot.v1" as const;
 export const UNTRUSTED_EXTERNAL_DATA_TAG = "untrusted_external_data" as const;
+export const UNTRUSTED_EXTERNAL_DATA_TEXT_ENCODING = "xml-text-escaped" as const;
+export const UNTRUSTED_EXTERNAL_DATA_METADATA_ENCODING = "base64url-json" as const;
 
 export interface BrokerCounterSignature {
   brokerKeyId: string;
@@ -239,6 +241,17 @@ export function verifyRetrievalSnapshot(
   return ok ? { ok: true } : { ok: false, reason: "retrieval signature invalid" };
 }
 
+function delimiterSafeMetadata(metadata: Record<string, unknown>): string {
+  return Buffer.from(canonicalizeJson(metadata), "utf8").toString("base64url");
+}
+
+function delimiterSafeExternalDataText(content: string): string {
+  return content
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export function retrievalSnapshotToSourceCarrier(snapshot: RetrievalSnapshot): RetrievalSourceCarrierFile {
   const metadata = {
     source: snapshot.source,
@@ -250,9 +263,10 @@ export function retrievalSnapshotToSourceCarrier(snapshot: RetrievalSnapshot): R
     contentHash: snapshot.contentHash,
     byteLen: snapshot.byteLen,
   };
+  const metadataText = delimiterSafeMetadata(metadata);
   const contentText = [
-    `<${UNTRUSTED_EXTERNAL_DATA_TAG} ${canonicalizeJson(metadata)}>`,
-    snapshot.content,
+    `<${UNTRUSTED_EXTERNAL_DATA_TAG} metadataEncoding="${UNTRUSTED_EXTERNAL_DATA_METADATA_ENCODING}" metadata="${metadataText}" textEncoding="${UNTRUSTED_EXTERNAL_DATA_TEXT_ENCODING}">`,
+    delimiterSafeExternalDataText(snapshot.content),
     `</${UNTRUSTED_EXTERNAL_DATA_TAG}>`,
   ].join("\n");
   return {
