@@ -182,6 +182,55 @@ test("loadConfig keeps public safe defaults unless trusted operator mode is set"
   assert.deepEqual(trusted.capAdd, ["SYS_ADMIN"]);
 });
 
+test("loadConfig adds an explicit deny-by-default egress allowlist layer without opening container network", async () => {
+  const defaultCfg = await loadConfig({ ...baseEnv });
+  assert.deepEqual(defaultCfg.egressAllowlistHosts, [], "no env means no allowed egress hosts");
+  assert.equal(defaultCfg.network, "none", "analysis lanes still default to no container network");
+
+  const cfg = await loadConfig({
+    ...baseEnv,
+    A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS: "api.github.com,raw.githubusercontent.com",
+    A2A_DOCKER_RUNNER_EGRESS_MAX_BYTES: "4096",
+    A2A_DOCKER_RUNNER_EGRESS_TIMEOUT_MS: "2500",
+  });
+  assert.deepEqual(cfg.egressAllowlistHosts, ["api.github.com", "raw.githubusercontent.com"]);
+  assert.equal(cfg.egressMaxBytes, 4096);
+  assert.equal(cfg.egressTimeoutMs, 2500);
+  assert.equal(cfg.network, "none");
+});
+
+test("validateRunnerConfig rejects internal egress allowlist entries", () => {
+  const base: RunnerConfig = {
+    rootDir: "/tmp/a2a-runner",
+    image: "node:22-bookworm-slim",
+    defaultTimeoutMs: 1000,
+    network: "none",
+    noNewPrivileges: true,
+    capDrop: [],
+    trustedOperator: false,
+  };
+  assert.throws(
+    () => validateRunnerConfig({ ...base, egressAllowlistHosts: ["localhost"] }),
+    /egress allowlist rejects internal host\/IP: "localhost"/,
+  );
+  assert.throws(
+    () => validateRunnerConfig({ ...base, egressAllowlistHosts: ["169.254.169.254"] }),
+    /egress allowlist rejects internal host\/IP: "169.254.169.254"/,
+  );
+  assert.throws(
+    () => validateRunnerConfig({ ...base, egressAllowlistHosts: ["svc.internal"] }),
+    /egress allowlist rejects internal host\/IP: "svc.internal"/,
+  );
+  assert.throws(
+    () => validateRunnerConfig({ ...base, egressAllowlistHosts: ["[::1]"] }),
+    /egress allowlist rejects internal host\/IP: "\[::1\]"/,
+  );
+  assert.throws(
+    () => validateRunnerConfig({ ...base, egressAllowlistHosts: ["example.com"] }),
+    /egress allowlist host is outside the supported GitHub retrieval hosts: "example.com"/,
+  );
+});
+
 test("loadEnvFile parses service-style runner env files without shell execution", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-runner-env-"));
   try {
