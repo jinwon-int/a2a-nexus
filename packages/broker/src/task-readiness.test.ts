@@ -149,6 +149,38 @@ test("readiness evaluator does not apply source_projection_empty to patch tasks 
   assert.deepEqual(result.missing, ["acceptance", "declaredScope", "evidenceGate"]);
 });
 
+test("readiness evaluator fail-closes malformed retry policies (#1351)", () => {
+  const invalidShape = evaluateTaskReadiness(githubPatchTask({
+    retryPolicy: { maxRetries: 1, retryOn: "environment" },
+    acceptance: { command: ["npm", "run", "check"], expectExitCode: 0 },
+    declaredScope: { paths: ["packages/broker/"] },
+    evidenceGate: "retry policy validation",
+  }).payload, { intent: "propose_patch", mode: "enforce" });
+  assert.equal(invalidShape.ok, false);
+  assert.equal(invalidShape.code, "retry_policy_malformed");
+  assert.deepEqual(invalidShape.missing, ["retryPolicy.retryOn"]);
+
+  const hardDeny = evaluateTaskReadiness(githubPatchTask({
+    retryPolicy: { maxRetries: 1, retryOn: ["source_projection_blocked"], backoffMs: 0 },
+    acceptance: { command: ["npm", "run", "check"], expectExitCode: 0 },
+    declaredScope: { paths: ["packages/broker/"] },
+    evidenceGate: "retry policy validation",
+  }).payload, { intent: "propose_patch", mode: "enforce" });
+  assert.equal(hardDeny.ok, false);
+  assert.equal(hardDeny.code, "retry_policy_malformed");
+  assert.deepEqual(hardDeny.missing, ["retryPolicy.retryOn"]);
+});
+
+test("readiness evaluator accepts explicit environment retry policy (#1351)", () => {
+  const result = evaluateTaskReadiness(githubPatchTask({
+    retryPolicy: { maxRetries: 1, retryOn: ["environment"], backoffMs: 0 },
+    acceptance: { command: ["npm", "run", "check"], expectExitCode: 0 },
+    declaredScope: { paths: ["packages/broker/"] },
+    evidenceGate: "retry policy validation",
+  }).payload, { intent: "propose_patch", mode: "enforce" });
+  assert.equal(result.ok, true);
+});
+
 test("readiness evaluator accepts a complete patch task and exempts analysis tasks", () => {
   const complete = evaluateTaskReadiness(githubPatchTask({
     acceptance: { command: ["npm", "run", "check"], expectExitCode: 0 },

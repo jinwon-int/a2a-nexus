@@ -153,6 +153,46 @@ only quality, budget reason, file counts, and byte counts. This keeps cases like
 “broker payload had files but the worker saw 0 files / only a
 README slice” from being counted as quorum evidence (#1145).
 
+### Class-aware retry policy for implementation/analysis lanes (#1351)
+
+`payload.retryPolicy` is an explicit opt-in contract for terminal `failed` tasks.
+It is separate from the stale-task reaper: the reaper recovers stuck
+`claimed`/`running` leases, while this policy handles terminal failures whose
+structured error class is safe to try again.
+
+```jsonc
+{
+  "payload": {
+    "retryPolicy": {
+      "maxRetries": 1,
+      "retryOn": ["environment"],
+      "backoffMs": 30000
+    }
+  }
+}
+```
+
+Rules:
+
+- `retryOn` is an allowlist; there is no “retry everything” mode.
+- Allowed classes are `environment`, `worker_lost`, and `timeout`.
+- Deterministic failures such as `source_projection_blocked`, `acceptance_*`,
+  `spec_underspecified`, and `retry_policy_malformed` are hard-denied even if a
+  caller attempts to include them in a policy.
+- Malformed retry policies fail closed at the Definition-of-Ready/readiness gate
+  with `retry_policy_malformed`.
+- Retry budget is shared with stale requeue accounting through `requeueCount`, so
+  a task cannot loop forever by alternating stale recovery and terminal retry.
+- The failed task records `retriedBy`; the queued child records `retryOfTaskId`,
+  `attempt`, `retryClass`, `retryAttempt`, and optional `retryNotBeforeAt`.
+- Audit evidence uses `task.retry_scheduled` and must remain redacted/count-only.
+
+For model-bridge ENV1 lanes, pair retry policy with bounded bridge prompts:
+provide `payload.strictJsonInstruction` and keep full payloads in the analysis
+bridge payload file instead of expanding the whole source bundle into the prompt.
+The handler records `strictJsonInstructionApplied`, `promptPayloadLimit`, and
+`bridgeInputMode: "payload_file"` in result output when this discipline is used.
+
 ### GitHub patch lanes are write-capable
 
 `payload.mode: "github-propose-patch"` is a PR/patch execution lane, not a
