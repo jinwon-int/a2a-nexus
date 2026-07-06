@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,29 @@ function bridgeArgs(message) {
     "--timeout", "60",
     "--json",
   ];
+}
+
+function sha256Prefix(text) {
+  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+function signedSnapshotFixture(overrides = {}) {
+  const content = overrides.content ?? "# signed Claude bridge source\nconst claudeSnapshotGrounding = true;\n";
+  return {
+    schemaVersion: "a2a.retrieval.snapshot.v1",
+    canonicalization: "rfc8785-jcs-v1",
+    source: "github",
+    repo: "jinwon-int/a2a-nexus",
+    requestedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    resolvedRef: "838e58a7587d0f352cc1d19e6a0c5edae9903251",
+    path: "packages/broker/README.md",
+    fetchedAt: "2026-07-06T00:00:00.000Z",
+    byteLen: Buffer.byteLength(content, "utf8"),
+    contentHash: sha256Prefix(content),
+    content,
+    signature: { protected: "signed-header", signature: "signed-body" },
+    ...overrides,
+  };
 }
 
 test("Claude Code A2A analysis bridge exists and is executable JavaScript", () => {
@@ -98,6 +122,66 @@ test("Claude Code A2A analysis bridge calls claude -p and returns OpenClaw envel
     assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
     assert.equal(args.includes("--model"), false, "Claude bridge should not pass A2A worker model as a raw Claude --model value");
     assert.match(readFileSync(promptPath, "utf8"), /Claude Code CLI-backed A2A analysis bridge/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Claude Code A2A analysis bridge injects signed retrieval snapshots without widening tool policy (#1378 K2 wave2)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-snapshot-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsPath = join(tempDir, "claude-args.json");
+  const promptPath = join(tempDir, "claude-prompt.txt");
+  const payloadPath = join(tempDir, "payload.json");
+  const snapshot = signedSnapshotFixture();
+
+  try {
+    writeFileSync(payloadPath, JSON.stringify({
+      mode: "analysis-only",
+      noLive: true,
+      sourceOnly: true,
+      sourceBundle: { files: [] },
+      sourceProjectionPolicy: { requiredPaths: ["packages/broker/README.md"] },
+      retrievalSnapshots: [snapshot],
+    }));
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(args));",
+      "const prompt = args[args.indexOf('-p') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "if (!prompt.includes('<untrusted_external_data ')) throw new Error('untrusted snapshot wrapper missing from Claude prompt');",
+      "if (!prompt.includes('packages/broker/README.md')) throw new Error('snapshot path missing from Claude prompt');",
+      "if (!prompt.includes('claudeSnapshotGrounding')) throw new Error('snapshot content missing from Claude prompt');",
+      "const analysis = { status: 'done', summary: 'snapshot projected into Claude prompt', findings: ['snapshot source consumed'], risks: [], recommendations: ['keep Read Glob Grep only'], evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/README.md'] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_MAX_TURNS: "3",
+        A2A_ANALYSIS_PAYLOAD_FILE: payloadPath,
+        A2A_CLAUDE_CODE_ALLOWED_TOOLS: "Bash WebFetch WebSearch",
+        CAPTURE_ARGS_PATH: argsPath,
+        CAPTURE_PROMPT_PATH: promptPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    const payload = JSON.parse(envelope.payloads[0]?.text);
+    assert.equal(payload.status, "done");
+    assert.equal(payload.summary, "snapshot projected into Claude prompt");
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    assert.equal(args[args.indexOf("--allowedTools") + 1], "Read Glob Grep");
+    assert.equal(args[args.indexOf("--disallowedTools") + 1], "Bash Edit Write NotebookEdit WebFetch WebSearch");
+    assert.match(readFileSync(promptPath, "utf8"), /<untrusted_external_data /);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
