@@ -438,7 +438,7 @@
       "file": "scripts/verify-analysis-report.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Adversarial tests for #1378 V0-b independent offline verifier: tamper/transplant/keyring-absent/assurance-invariant fail-closed."
+      "note": "Adversarial + #1380-conformance tests for #1378 v1 independent offline verifier: tamper/replay/keyring-absent/assurance-invariant fail-closed, real broker-signer round-trip."
     }
   ]
 }
