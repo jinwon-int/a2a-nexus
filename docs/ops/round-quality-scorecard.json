@@ -1066,6 +1066,33 @@
         "final #1349 comparison input: rework/falseFinding/evidenceGateDeviation all remain 0, so quality stayed equal to the solo control; implementationDurationBand matched the Wave 2 solo control at <1h rather than improving beyond it, so the final process recommendation remains HOLD rather than GO."
       ],
       "recordedAt": "2026-07-06"
+    },
+    {
+      "id": "a2a-nexus-1374-k2-executor-wave1-2-20260707",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "K2 executor (#1374): Wave 1 docker-runner egress-allowlist proxy + signed retrieval snapshots (#1397), Wave 2 analysis-lane snapshot feed + result<->source binding (#1399), on the #1378 contract-first binding verifier (#1398); completes the #1378 verifiable analysis report source-grounding path and independently offline-verified by the external finalizer",
+      "implementationMode": "h1-pipeline",
+      "implementationDurationBand": "1-4h",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "evidenceGateDeviationCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "Wave 1 (#1397) added packages/docker-runner/src/egress-allowlist-proxy.ts: deny-by-default host allowlist hard-limited to api.github.com/raw.githubusercontent.com, internal-range denial (RFC1918/169.254/loopback/::1/ULA/.internal incl IPv4-mapped IPv6), DNS-resolve-then-pin against rebinding, per-hop redirect revalidation with protocol-downgrade block, 40-hex commit-SHA enforcement, and byte/timeout caps.",
+        "External finalizer adversarial verification of Wave 1: drove 12 attack classes through the compiled proxy with injected DNS/request deps (non-allowlist host, internal IP literal, DNS rebind to 169.254 and RFC1918, IPv4-mapped-IPv6, IPv6 ULA, HTTP downgrade, redirect-to-internal, redirect-to-non-allowlist, redirect-downgrade, symbolic ref, path traversal) — all fail-closed; positive round-trip signed snapshot verified, tampered/symbolic/non-2xx rejected.",
+        "Wave 2 (#1399) fed Wave 1 signed snapshots into the network-isolated analysis lane as delimiter-safe untrusted external data and bound consumed snapshots into result.output.sources[{sourceId, contentHash}] per the #1398 contract; the analysis tool policy stayed Read/Glob/Grep with an adversarial env-override regression test proving it cannot be widened.",
+        "External finalizer end-to-end verification of Wave 2: reconstructed the chain (signed snapshot -> isolated bridge consumption -> declared binding -> worker signature -> broker countersignature) and confirmed a source-grounded report verifies GREEN offline including the source-binding check; consumption-boundary revalidation rejected tampered content, unsigned snapshot, duplicate declaration, and over-cap, and an unbound snapshot was rejected RED by the offline verifier.",
+        "Scope boundary: merge does not activate live fetch; live GitHub fetch over the deployed proxy still requires worker/runner redeploy plus an operator-gated live fetch canary (out of this record's scope). Dispatch friction: 4 lanes dispatched across the two waves' A2A rounds with 2 substantive lanes used as implementation input; no worker names, secrets, endpoints, or private keys recorded.",
+        "Safety boundary: source refactor plus offline verifier/contract; no deploy/restart, DB/outbox/ACK/replay/prune/migration, provider send, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
+      ],
+      "recordedAt": "2026-07-07"
     }
   ]
 }
