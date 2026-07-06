@@ -145,6 +145,7 @@ export function normalizeTaskResult(result: TaskResult | undefined): TaskResult 
     validations: Array.isArray(result.validations)
       ? result.validations.map((validation) => normalizeValidationPayload(validation))
       : undefined,
+    provenance: result.provenance === undefined ? undefined : structuredClone(result.provenance),
     apply: result.apply
       ? {
           workspace: result.apply.workspace,
