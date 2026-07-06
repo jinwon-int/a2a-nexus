@@ -433,6 +433,12 @@
       "class": "gate",
       "round": null,
       "note": "Unit tests for #1299 M1 lane reliability aggregate CLI idempotency and unknown-evidence fail-closed behavior."
+    },
+    {
+      "file": "scripts/verify-analysis-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Adversarial tests for #1378 V0-b independent offline verifier: tamper/transplant/keyring-absent/assurance-invariant fail-closed."
     }
   ]
 }
