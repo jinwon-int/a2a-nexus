@@ -24,6 +24,26 @@ The design mirrors provenance exactly (validity ≠ quality):
 Neither collapses into the other. The gate gives the independent verdict teeth;
 the independence gives the gate's decision legitimacy.
 
+## 2a. Verdict kinds — battery vs judgment (#1386 S2)
+
+Every verdict declares its epistemic class in a required `kind` field, because
+the two classes carry **different reproducibility guarantees** and must never
+be conflated:
+
+- **`battery`** — the outcome of deterministic, pinned checks. Re-running the
+  same battery version on the same artifact reproduces the same verdict.
+  Reproducibility is a real property of this kind.
+- **`judgment`** — an attested independent judgment (e.g. an LLM or human
+  finalizer review). It proves the review *occurred* and what it concluded;
+  the judgment itself is **not reproducible** — a re-run may conclude
+  differently. A judgment verdict's `assurance.doesNotProve` MUST include
+  `"reproducibility"`, and the verifier fails it closed otherwise, so judgment
+  verdicts can never borrow the reproducibility claim of battery verdicts.
+
+The "anyone can re-run and get the same verdict" property holds for `battery`
+verdicts only. Marketing or downstream consumers MUST NOT apply it to
+`judgment` verdicts.
+
 ## 2. Two invariants
 
 1. **Independence (judge ≠ player)** — the `finalizerKeyId` MUST NOT be a key
@@ -43,12 +63,13 @@ the independence gives the gate's decision legitimacy.
 {
   "schemaVersion": "a2a.finalizer.verdict.v1",
   "canonicalization": "rfc8785-jcs-v1",
+  "kind": "judgment",                               // battery | judgment (required — see §2a)
   "subject": { "kind": "pr", "prHeadSha": "…" },   // pr | task-result | round; resultHash / roundId for the others
   "decision": "go",                                 // go | no-go
   "evidenceRefs": [ { "kind": "red-green|conformance|suite", "ref": "…" } ],
   "assurance": {
     "proves": ["independent-review-occurred", "verdict-integrity", "subject-binding"],
-    "doesNotProve": ["analytical-correctness"],
+    "doesNotProve": ["analytical-correctness", "reproducibility"],  // "reproducibility" REQUIRED for kind=judgment
     "disclaimer": "Attests an independent GO on this exact artifact; does not certify correctness."
   },
   "finalizerKeyId": "…",

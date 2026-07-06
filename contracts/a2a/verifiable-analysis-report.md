@@ -20,12 +20,20 @@ correctness-separation invariant. The reference verifier
 
 The load-bearing boundary of the whole design.
 
-- **Proves**: process provenance (*who* produced the result, and that each cited
-  source snapshot is authentic), and integrity (signed content was *not
-  tampered* after production).
+- **Proves**: process provenance (*which worker key* signed and submitted the
+  result, and that each cited source snapshot is authentic), and integrity
+  (signed content was *not tampered* after production).
 - **Does NOT prove**: that the analysis is **correct**, or that any judgment is
   **right**. Provenance is cryptographic; correctness is not. A signed wrong
   analysis is a wrong analysis with good provenance.
+- **Does NOT prove authorship** (#1386 S5): the worker signature proves the
+  keyed worker *submitted* the result through the verified pipeline — not that
+  the worker *created* the work. A finished artifact produced elsewhere and fed
+  to a signing worker acquires valid provenance ("laundering"). Provenance
+  therefore cannot distinguish pipeline-originated work from externally
+  originated work; claims like "this was produced by the A2A round" remain
+  process attestations, not authorship proofs. Do not read or market them as
+  the latter.
 
 A conforming bundle MUST carry an `assurance` block declaring this, and the
 verifier MUST refuse GREEN for a bundle that omits it — so no report can present
