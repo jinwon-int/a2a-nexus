@@ -136,10 +136,31 @@ Comparison protocol:
 2. Use the existing quality axes: review/finalizer defects, `reworkIssueCount`,
    `falseFindingCount`, `evidenceGateDeviationCount`, and failure narratives.
 3. Use only the duration band for speed; do not record exact timestamps or
-   session identifiers.
-4. Promote a mode to the default recommendation only after three consecutive
+   session identifiers. **The band covers the whole wave wall-clock, including
+   failed or discarded dispatch rounds before the successful one** — dispatch
+   friction is part of a mode's real cost, and counting only the successful
+   round understates it (ratified after Wave 1, where rounds r1–r3 were
+   excluded from evidence but still consumed wall-clock). Record
+   rounds-to-success as a one-line note in the entry narrative. Do not
+   backfill earlier entries.
+4. **Speed comparison requires a measured solo control.** Pre-H3 baseline
+   entries (the #1289 L-broker series) carry quality counters but no duration
+   bands, so a speed verdict against them is indeterminate. A promotion series
+   must therefore include at least one fresh solo control wave on same-class
+   work with the band recorded, run under the same evidence gates and the same
+   finalizer verification as the h1/h2 waves (implementation mode is the only
+   variable).
+5. Promote a mode to the default recommendation only after three consecutive
    comparable waves show quality no worse than solo and a better duration band.
    Any quality regression blocks promotion pending cause analysis.
+
+Solo baseline reference (H3-c; #1289 L-broker series, same-class R4 seam work,
+entries unchanged): across the seven entries, `reworkIssueCount` and
+`falseFindingCount` were 0 throughout, `evidenceGateDeviationCount` was 1 in
+two waves, and substantive-lane rates ranged roughly 63–95%. No duration bands
+exist for these entries (pre-H3-a) — hence rule 4. Quality parity against this
+baseline means holding the zero counters; the substantive-lane rate is a
+secondary signal, not a promotion axis.
 
 ## Independent review evidence for medium+ tasks (#1237)
 
