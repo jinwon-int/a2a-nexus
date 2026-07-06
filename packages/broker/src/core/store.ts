@@ -41,6 +41,10 @@ import {
   normalizeRuntimeTaskListLimit,
   parseHotTaskListItemProjection,
 } from "./store-hot-select-projections.js";
+import {
+  taskMatchesRuntimeFilters,
+  workerMatchesRuntimeFilters,
+} from "./store-runtime-filters.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
@@ -2306,34 +2310,6 @@ export class SqliteValidationRuntimeRepository implements ValidationRuntimeRepos
   }
 }
 
-function taskMatchesRuntimeFilters(task: TaskRecord, filters: TaskListFilters): boolean {
-  if (filters.exchangeId && task.exchangeId !== filters.exchangeId) {
-    return false;
-  }
-  if (filters.status && task.status !== filters.status) {
-    return false;
-  }
-  if (filters.targetNodeId && task.targetNodeId !== filters.targetNodeId) {
-    return false;
-  }
-  if (filters.proposalId && task.proposalId !== filters.proposalId) {
-    return false;
-  }
-  if (filters.intent && task.intent !== filters.intent) {
-    return false;
-  }
-  if (filters.claimedBy && task.claimedBy !== filters.claimedBy) {
-    return false;
-  }
-  if (filters.assignedWorkerId && task.assignedWorkerId !== filters.assignedWorkerId) {
-    return false;
-  }
-  if (filters.taskOrigin && (task.taskOrigin ?? "unknown") !== filters.taskOrigin) {
-    return false;
-  }
-  return true;
-}
-
 export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
   constructor(private readonly store: SqliteBrokerStateStore) {}
 
@@ -2350,36 +2326,6 @@ export class SqliteWorkerRuntimeRepository implements WorkerRuntimeRepository {
   upsertWorker(worker: WorkerRecord): void {
     this.store.upsertHotWorkers([worker]);
   }
-}
-
-function workerMatchesRuntimeFilters(worker: WorkerRecord, filters: WorkerListFilters): boolean {
-  if (filters.role && worker.role !== filters.role) {
-    return false;
-  }
-  if (filters.environment && !worker.capabilities.environments.includes(filters.environment)) {
-    return false;
-  }
-  if (filters.workspaceId && !worker.capabilities.workspaceIds.includes(filters.workspaceId)) {
-    return false;
-  }
-  if (!workerProviderCapabilityMatchesRuntimeFilters(worker.capabilities.providerCapabilities, filters)) {
-    return false;
-  }
-  return true;
-}
-
-function workerProviderCapabilityMatchesRuntimeFilters(
-  capabilities: WorkerRecord["capabilities"]["providerCapabilities"] | undefined,
-  filters: WorkerListFilters,
-): boolean {
-  if (!filters.providerId && !filters.modelFamily && !filters.modelId && !filters.providerAvailability) return true;
-  return (capabilities ?? []).some((capability) => {
-    if (filters.providerId && capability.providerId !== filters.providerId.trim().toLowerCase()) return false;
-    if (filters.modelFamily && capability.modelFamily !== filters.modelFamily.trim().toLowerCase()) return false;
-    if (filters.modelId && capability.modelId !== filters.modelId.trim().toLowerCase()) return false;
-    if (filters.providerAvailability && capability.availability !== filters.providerAvailability) return false;
-    return true;
-  });
 }
 
 export class SqliteAuditRuntimeRepository implements AuditRuntimeRepository {
