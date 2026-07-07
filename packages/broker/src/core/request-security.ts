@@ -325,6 +325,17 @@ export type A2AHttpSignatureVerificationResult =
 export interface A2AHttpSignatureVerifyOptions {
   nowEpochSeconds?: number;
   /**
+   * Accepted forward clock skew (seconds) on the signature `created` timestamp
+   * (#1402). A healthy worker whose clock is a fraction of a second ahead of
+   * the broker flips `created > floor(broker_now)` at second boundaries,
+   * producing intermittent-burst a2a_signature_time_invalid failures. Accepting
+   * `created <= now + skew` absorbs that; `expires` stays strict, and the 60s
+   * window + nonce cache keep the replay surface bounded. Default 0 (strict,
+   * back-compat); the server defaults this to a small window via
+   * A2A_SIGNATURE_CLOCK_SKEW_SEC.
+   */
+  clockSkewSeconds?: number;
+  /**
    * Optional nonce cache for replay protection. When provided, the verifier
    * rejects any request whose nonce has already been seen (and is still within
    * its expiry window). Omitted preserves backward-compatible behavior without
@@ -487,7 +498,10 @@ export function verifyA2AHttpSignature(
   }
 
   const nowEpochSeconds = options.nowEpochSeconds ?? Math.floor(Date.now() / 1000);
-  if (parsed.created > nowEpochSeconds || parsed.expires <= nowEpochSeconds || parsed.expires <= parsed.created) {
+  const clockSkewSeconds = Math.max(0, Math.floor(options.clockSkewSeconds ?? 0));
+  // `created` tolerates a small forward skew (#1402); `expires` stays strict so
+  // the acceptance window never extends past the signer's stated expiry.
+  if (parsed.created > nowEpochSeconds + clockSkewSeconds || parsed.expires <= nowEpochSeconds || parsed.expires <= parsed.created) {
     return signatureFailure("a2a_signature_time_invalid", "A2A HTTP signature created/expires window is invalid");
   }
   if (keyRecord.notBefore !== undefined && nowEpochSeconds < Math.floor(Date.parse(keyRecord.notBefore) / 1000)) {
