@@ -837,6 +837,106 @@ process.stdout.write(JSON.stringify({
   }
 });
 
+test("H2 RED: write-point readback catches an under-reporting runner (out-of-scope write, filesChanged:[]) (#1376)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-writepoint-red-"));
+  const runner = join(dir, "fake-runner.mjs");
+  // The runner writes an OUT-OF-SCOPE file into a git worktree it controls but
+  // UNDER-REPORTS filesChanged:[] — the self-report gate would pass. The handler
+  // must independently git-inspect workDir and fail closed.
+  writeHybridRunnerStub(runner, `
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
+spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
+const evil = join(wd, "packages/broker/src/core/store.ts");
+mkdirSync(dirname(evil), { recursive: true });
+writeFileSync(evil, "// out-of-scope write the runner hid\\n");
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9994",
+  branch: "h2-underreport",
+  workDir: wd,
+  filesChanged: [],
+  tests: ["under-report should be caught by write-point readback"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-underreport",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1376",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.result, undefined, "under-reporting runner must not produce accepted evidence");
+    assert.equal(result.error?.code, "hybrid_declared_scope_writepoint_violation");
+    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("H2 GREEN: write-point readback accepts an in-scope actual git diff (#1376)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-h2-writepoint-green-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
+spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
+const inScope = join(wd, "packages/broker/src/core/broker-exchange-task-decision.ts");
+mkdirSync(dirname(inScope), { recursive: true });
+writeFileSync(inScope, "// in-scope change\\n");
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9993",
+  branch: "h2-writepoint-ok",
+  workDir: wd,
+  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  tests: ["in-scope write-point readback passes"]
+}) + "\\n");
+`);
+
+  try {
+    const result = handleTask(patchTask({
+      id: "task-h2-writepoint-ok",
+      payload: {
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#1376",
+        issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
+        executionMode: "hybrid-subagent",
+        subagentBudget: { max: 2, remaining: 1 },
+        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+      },
+    }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+
+    assert.equal(result.error, undefined, result.error?.message ?? "");
+    assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9993");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("github-read-only-validation uses the read-only analysis bridge when enabled (#884)", () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-openclaw-analysis-"));
   const bin = join(dir, "fake-openclaw.mjs");
