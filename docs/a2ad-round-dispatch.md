@@ -483,3 +483,39 @@ secret and the forbidden banner never appear in output.
 ```bash
 npm run dispatch:round:test
 ```
+
+## Durable wave plan (#1357 G3)
+
+The manual wave rhythm — dispatch → readback → quorum/gate → implement → review
+→ merge → next stage — is objectified as a broker-side **wave plan** so a
+multi-stage campaign survives broker restarts and advances by gate decision
+instead of operator memory. v1 is linear stages only (no DAG/branching/cron).
+
+State machine (`packages/broker/src/core/wave-plan.ts`, explicit transition
+table, illegal transitions fail closed):
+
+```
+draft --start--> running --gate met--> stage_ready --advance--> running(next) | completed
+                    |                                    ^
+                    | gate not met (onGateFail)          |
+                    +--> halted   (halt, or retry-once budget spent)
+                    +--> running  (retry-once, one more attempt)
+any non-terminal --abort--> aborted
+```
+
+Per-stage `gate`:
+
+- `quorum` (`minSubstantive`): met when the stage's substantive lane count is at
+  or above the threshold. Substantive classification is the finalizer-gate
+  evidence-class criterion (single source; the broker computes the count and
+  feeds it to the pure evaluator).
+- `approval`: routed through the existing `approval_required` path.
+- `manual`: operator-recorded pass only.
+
+**Load-bearing contract — `stage_ready` is a signal, not an action.** When a
+gate is met the broker records readiness and emits a `wave.stage_ready`
+event/audit; it does NOT dispatch the next stage. The next-stage dispatch is a
+privileged action taken only by an explicit operator/hub `advance` call. A
+plan holds stage ids + dispatch manifest refs + gate specs — never worker
+names or prompt text. Persistence/resume and the HTTP routes
+(create/advance/abort/status) are the G3-c slice.
