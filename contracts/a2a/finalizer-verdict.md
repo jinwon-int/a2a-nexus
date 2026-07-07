@@ -189,7 +189,11 @@ operator still triggers the run and authors the judgment content.
   EdDSA (a golden JCS pin guards drift from the offline verifier). Without a
   keyring, signature authenticity stays deferred to the merge gate. The attester
   (S3) path's X509/Fulcio chain verification remains the merge gate's job (kept
-  out of the completion hot path).
+  out of the completion hot path). **Keyring lifecycle**: each entry may be a
+  bare PEM (active, no window) or a record
+  `{ pem, status: "active"|"revoked", notBefore, expiresAt }` — a revoked key is
+  rejected immediately (closing the revocation-lag gap), and the verdict's
+  `producedAt` must fall within the notBefore/expiresAt window.
 - **Auto-derived producing worker keys**: the gate should read the producing
   worker key ids from the round's `result.provenance` rather than a CLI arg.
 - **Multi-finalizer panels** (M-of-N verdicts) for higher-stakes subjects.

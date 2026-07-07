@@ -97,3 +97,51 @@ test("loadFinalizerKeyring validates shape and rejects non-finalizer-namespace k
   assert.throws(() => loadFinalizerKeyring({ keys: { "finalizer:x": 5 } as never }), /must be a PEM string/);
   assert.throws(() => loadFinalizerKeyring({} as never), /keys/);
 });
+
+// --- lifecycle (#1383 V-c follow-up: immediate revocation + validity window) ---
+
+function signedVerdict(privateKey: import("node:crypto").KeyObject, producedAt: string) {
+  return signVerdict(
+    { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1", producedAt },
+    privateKey, "finalizer:panel:v1",
+  );
+}
+
+test("a revoked finalizer key is rejected regardless of a valid signature (immediate revocation)", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": { pem: k.pem, status: "revoked" } } };
+  const verdict = signedVerdict(k.privateKey, "2026-07-07T00:00:00.000Z");
+  assert.match(verifyFinalizerVerdictSignature(verdict, keyring).reason ?? "", /revoked/);
+});
+
+test("producedAt outside the key validity window is rejected; inside passes", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = {
+    keys: { "finalizer:panel:v1": { pem: k.pem, notBefore: "2026-07-01T00:00:00.000Z", expiresAt: "2026-08-01T00:00:00.000Z" } },
+  };
+  assert.equal(verifyFinalizerVerdictSignature(signedVerdict(k.privateKey, "2026-07-15T00:00:00.000Z"), keyring).ok, true);
+  assert.match(verifyFinalizerVerdictSignature(signedVerdict(k.privateKey, "2026-06-15T00:00:00.000Z"), keyring).reason ?? "", /window|notBefore/);
+  assert.match(verifyFinalizerVerdictSignature(signedVerdict(k.privateKey, "2026-09-15T00:00:00.000Z"), keyring).reason ?? "", /window|expiresAt/);
+});
+
+test("a validity window with no producedAt on the verdict fails closed", () => {
+  const k = ed25519();
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": { pem: k.pem, expiresAt: "2026-08-01T00:00:00.000Z" } } };
+  const noProducedAt = signVerdict(
+    { schemaVersion: "a2a.finalizer.verdict.v1", subject: { kind: "task-result", resultHash: "sha256:abc" }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    k.privateKey, "finalizer:panel:v1",
+  );
+  assert.equal(verifyFinalizerVerdictSignature(noProducedAt, keyring).ok, false);
+});
+
+test("loadFinalizerKeyring accepts the record form and validates lifecycle fields", () => {
+  const k = ed25519();
+  const loaded = loadFinalizerKeyring({ keys: { "finalizer:panel:v1": { pem: k.pem, status: "active", notBefore: "2026-07-01T00:00:00.000Z" } } });
+  assert.equal((loaded.keys["finalizer:panel:v1"] as { status: string }).status, "active");
+  assert.throws(() => loadFinalizerKeyring({ keys: { "finalizer:x:v1": { pem: k.pem, status: "paused" } } as never }), /status/);
+  assert.throws(() => loadFinalizerKeyring({ keys: { "finalizer:x:v1": { pem: k.pem, notBefore: "not-a-date" } } as never }), /notBefore|ISO|instant/i);
+  assert.throws(
+    () => loadFinalizerKeyring({ keys: { "finalizer:x:v1": { pem: k.pem, notBefore: "2026-08-01T00:00:00.000Z", expiresAt: "2026-07-01T00:00:00.000Z" } } as never }),
+    /earlier than expiresAt|before/i,
+  );
+});
