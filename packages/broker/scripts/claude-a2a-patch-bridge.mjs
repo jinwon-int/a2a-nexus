@@ -107,7 +107,7 @@ function safeText(value, fallback = "") {
 // Failure excerpt that keeps BOTH streams. Using stderr-or-stdout loses the
 // real failure detail whenever stderr carries only an informational warning
 // (observed: Claude CLI "no stdin data received" warning masking the actual
-// exit-1 cause across repeated dungae lane failures).
+// exit-1 cause across repeated environment-class failures on one worker class).
 function childOutputExcerpt(child, perStreamLimit = 2000) {
   const parts = [];
   const stderrText = safeText(child.stderr).trim();
