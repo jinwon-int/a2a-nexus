@@ -185,6 +185,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   finalizerVerdictEnforcement?: "off" | "warn" | "enforce";
   /**
+   * Accepted forward clock skew (seconds) on the A2A HTTP signature `created`
+   * timestamp (#1402). Falls back to A2A_SIGNATURE_CLOCK_SKEW_SEC (default 2).
+   * 0 restores strict zero-tolerance behavior; `expires` is always strict.
+   */
+  a2aSignatureClockSkewSeconds?: number;
+  /**
    * JSON finalizer keyring file ({ "keys": { "finalizer:<id>": "<SPKI PEM>" } })
    * for in-broker static-key verdict signature verification (#1383 V-c). Falls
    * back to A2A_FINALIZER_KEYRING_FILE. Invalid file fails startup loudly; unset

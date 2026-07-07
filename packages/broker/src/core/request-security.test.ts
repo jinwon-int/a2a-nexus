@@ -520,6 +520,31 @@ test("A2A HTTP Signature verifier accepts a deterministic Ed25519 signed worker 
   });
 });
 
+test("A2A HTTP Signature verifier tolerates small positive clock skew on created (#1402)", () => {
+  const signed = makeSignedA2ARequest(); // created=1770861600, expires=1770861660
+  const nowJustBeforeCreated = 1770861599; // worker 1s ahead of broker (sub-second drift at a second boundary)
+
+  // Zero tolerance (current default) rejects the otherwise-healthy request.
+  const strict = verifyA2AHttpSignature(signed, a2aKeyRegistry, { nowEpochSeconds: nowJustBeforeCreated });
+  assert.equal(strict.ok, false);
+  assert.equal(strict.code, "a2a_signature_time_invalid");
+
+  // A small skew window accepts created <= now + skew, keeping expires strict.
+  const tolerant = verifyA2AHttpSignature(signed, a2aKeyRegistry, {
+    nowEpochSeconds: nowJustBeforeCreated,
+    clockSkewSeconds: 2,
+  });
+  assert.equal(tolerant.ok, true, tolerant.ok ? "" : `${tolerant.code}: ${tolerant.message}`);
+
+  // Skew does NOT extend the expires side: an already-expired signature stays rejected.
+  const expired = verifyA2AHttpSignature(signed, a2aKeyRegistry, {
+    nowEpochSeconds: 1770861660, // == expires (expires <= now)
+    clockSkewSeconds: 2,
+  });
+  assert.equal(expired.ok, false);
+  assert.equal(expired.code, "a2a_signature_time_invalid");
+});
+
 test("A2A HTTP Signature verifier rejects a signed request after covered path mutation", () => {
   const signed = makeSignedA2ARequest();
   const result = verifyA2AHttpSignature({ ...signed, path: "/tasks/task-999/claim" }, a2aKeyRegistry, { nowEpochSeconds: 1770861620 });

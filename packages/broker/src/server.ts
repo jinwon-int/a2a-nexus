@@ -370,6 +370,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     ? "inline"
     : (a2aHttpSignatureKeyRegistryFile ? "file" : "empty");
   const a2aHttpSignatureReplayCache = new A2AHttpSignatureReplayCache();
+  // Small forward clock-skew tolerance on the signature `created` timestamp
+  // (#1402): absorbs sub-second worker/broker drift that otherwise flips
+  // a2a_signature_time_invalid at second boundaries. Default 2s; expires stays
+  // strict. A2A_SIGNATURE_CLOCK_SKEW_SEC overrides (0 restores strict behavior).
+  const a2aSignatureClockSkewSeconds = Math.max(
+    0,
+    Math.floor(
+      options.a2aSignatureClockSkewSeconds
+        ?? Number(process.env.A2A_SIGNATURE_CLOCK_SKEW_SEC ?? 2),
+    ) || 0,
+  );
   const allowInsecureDev = options.allowInsecureDev ?? resolveBooleanEnv(process.env.A2A_ALLOW_INSECURE_DEV, false);
   validateBrokerStartupSecurity({
     host,
@@ -862,7 +873,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       headers: requestHeadersForA2AHttpSignature(req),
       signatureInput: headerValue(req, "signature-input") ?? "",
       signature: headerValue(req, "signature"),
-    }, a2aHttpSignatureKeyRegistry);
+    }, a2aHttpSignatureKeyRegistry, { clockSkewSeconds: a2aSignatureClockSkewSeconds });
 
     if (!result.ok) {
       throw new BrokerError("unauthorized", `${result.code}: ${result.message}`);
