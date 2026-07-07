@@ -30,6 +30,9 @@ const SUBJECT_FIELDS = ["kind", "taskId", "taskIdHash", "intent", "status", "com
 const CONTRACT_FIELDS = ["acceptance", "declaredScope", "evidenceGate"];
 const EVIDENCE_FIELDS = ["redGreen", "validations", "failures", "provenance"];
 const VALIDATION_ROLES = new Set(["author", "reviewer", "unknown"]);
+const VERIFICATION_FIELDS = ["workerSig", "brokerCountersig"];
+const VERIFICATION_WORKER_VERDICTS = new Set(["verified", "invalid"]);
+const VERIFICATION_COUNTERSIG_VERDICTS = new Set(["verified", "invalid", "absent"]);
 
 function scanStrings(value, where, problems) {
   if (typeof value === "string") {
@@ -103,6 +106,27 @@ export function evaluateAttestationBundle(bundle) {
     if (!Array.isArray(evidence.failures)) problems.push("evidence.failures must be an array");
     if (evidence.redGreen === undefined) problems.push("evidence.redGreen must be present or the literal 'missing'");
     if (evidence.provenance === undefined) problems.push("evidence.provenance must be present or the literal 'missing'");
+    // Optional exporter-embedded verification verdict (#1356 G2-d): enum
+    // values only, fail-closed — free-form strings here could smuggle
+    // identifiers past the distillation rule.
+    const verification = evidence.provenance && typeof evidence.provenance === "object"
+      ? evidence.provenance.verification
+      : undefined;
+    if (verification !== undefined) {
+      if (!verification || typeof verification !== "object" || Array.isArray(verification)) {
+        problems.push("evidence.provenance.verification must be an object");
+      } else {
+        for (const key of Object.keys(verification)) {
+          if (!VERIFICATION_FIELDS.includes(key)) problems.push(`evidence.provenance.verification has unknown field '${key}' (fail-closed)`);
+        }
+        if (!VERIFICATION_WORKER_VERDICTS.has(verification.workerSig)) {
+          problems.push("evidence.provenance.verification.workerSig must be verified|invalid");
+        }
+        if (!VERIFICATION_COUNTERSIG_VERDICTS.has(verification.brokerCountersig)) {
+          problems.push("evidence.provenance.verification.brokerCountersig must be verified|invalid|absent");
+        }
+      }
+    }
   }
 
   const integrity = bundle.integrity;

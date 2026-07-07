@@ -95,3 +95,27 @@ test("missing or foreign integrity block fails closed", () => {
   const wrongAlg = { ...body, integrity: { alg: "sha1", hash: "00" } };
   assert.ok(evaluateAttestationBundle(wrongAlg).some((p) => /alg/.test(p)));
 });
+
+test("provenance verification verdict is enum-constrained, fail-closed (#1356 G2-d)", () => {
+  const withVerification = (verification) => {
+    const bundle = structuredClone(fixtureBundle());
+    delete bundle.integrity;
+    bundle.evidence.provenance.verification = verification;
+    return seal(bundle);
+  };
+  assert.deepEqual(
+    evaluateAttestationBundle(withVerification({ workerSig: "verified", brokerCountersig: "absent" })),
+    [],
+    "valid enum verdicts pass",
+  );
+  assert.ok(
+    evaluateAttestationBundle(withVerification({ workerSig: "maybe", brokerCountersig: "verified" }))
+      .some((p) => /verification\.workerSig/.test(p)),
+    "non-enum workerSig verdict fails closed",
+  );
+  assert.ok(
+    evaluateAttestationBundle(withVerification({ workerSig: "verified", brokerCountersig: "verified", extra: 1 }))
+      .some((p) => /verification.*unknown field 'extra'/.test(p)),
+    "unknown verification fields fail closed",
+  );
+});

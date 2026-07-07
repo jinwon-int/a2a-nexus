@@ -127,3 +127,59 @@ test("snapshot selection finds tasks by id and by parent round id", () => {
 test("exporter fails closed on a record without an id", () => {
   assert.throws(() => buildAttestationBundle({ status: "succeeded" }), /task\.id/);
 });
+
+test("with a keyring the bundle carries a cryptographic provenance verification verdict (#1356 G2-d)", async (t) => {
+  // Round-trip against the REAL broker signers (contrast pin: the offline
+  // verification the exporter embeds must accept dist-signed provenance).
+  let prov;
+  try {
+    prov = await import("../dist/core/provenance.js");
+  } catch {
+    return t.skip("broker dist not built — run `npm run build` for the G2-d verification round-trip");
+  }
+  const { generateKeyPairSync } = await import("node:crypto");
+  const mk = () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    return {
+      priv: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      pub: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    };
+  };
+  const worker = mk();
+  const broker = mk();
+  const keyring = { keys: { "worker:workeralpha:g2:v1": worker.pub, "broker:hubco:agent-card:v1": broker.pub } };
+
+  const task = fixtureTask();
+  const core = { summary: "signed analysis body" };
+  const signed = prov.signTaskResultProvenance(core, {
+    taskId: task.id,
+    claimedAt: "2026-07-07T00:00:00.000Z",
+    privateKeyPem: worker.priv,
+    workerKeyId: "worker:workeralpha:g2:v1",
+  });
+  const countersigned = prov.countersignTaskResultProvenance(signed, {
+    taskId: task.id,
+    verifiedAt: "2026-07-07T00:01:00.000Z",
+    privateKeyPem: broker.priv,
+    brokerKeyId: "broker:hubco:agent-card:v1",
+  });
+  const result = { ...core, provenance: countersigned };
+
+  const bundle = buildAttestationBundle({ ...task, result }, { keyring });
+  assert.deepEqual(
+    bundle.evidence.provenance.verification,
+    { workerSig: "verified", brokerCountersig: "verified" },
+    "keyring-backed export must embed the verification verdict",
+  );
+  // Anonymity: the verdict is enums only — no key ids, reasons, or signature
+  // material may enter the bundle (rule 4: key ids embed node names).
+  assert.deepEqual(Object.keys(bundle.evidence.provenance.verification).sort(), ["brokerCountersig", "workerSig"]);
+
+  // One tampered byte in the signed result flips the verdict.
+  const tampered = buildAttestationBundle({ ...task, result: { ...result, summary: "signed analysis body!" } }, { keyring });
+  assert.equal(tampered.evidence.provenance.verification.workerSig, "invalid");
+
+  // Without a keyring the bundle stays byte-identical to the pre-G2-d shape.
+  const plain = buildAttestationBundle({ ...task, result });
+  assert.equal(plain.evidence.provenance.verification, undefined);
+});

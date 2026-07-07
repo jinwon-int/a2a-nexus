@@ -61,6 +61,88 @@ function fail(checks, id, detail) { checks.push({ id, ok: false, detail }); }
 function pass(checks, id) { checks.push({ id, ok: true }); }
 
 /**
+ * Verify ONE result's provenance chain — the report bundle's checks 3-5
+ * (schema, resultHash binding, worker signature, broker countersignature) —
+ * against keyring keys `{ [keyId]: pemPublicKey }`. Exported standalone
+ * (#1356 G2-d) so bundle-shaped consumers (the M3 attestation exporter) reuse
+ * this exact verification instead of re-implementing it.
+ *
+ * Returns { checks, workerSig, brokerCountersig } where workerSig is
+ * "verified" | "invalid" (verified = schema + hash + signature all pass) and
+ * brokerCountersig is "verified" | "invalid" | "absent". A missing countersig
+ * is reported as "absent" AND as a failed check — report-bundle parity, where
+ * an incomplete chain is fail-closed; enum consumers decide how to surface it.
+ */
+export function verifyResultProvenance(result, taskId, keys) {
+  const checks = [];
+  const prov = result && typeof result === "object" ? result.provenance : undefined;
+  if (!prov || typeof prov !== "object") {
+    fail(checks, "provenance-schema", "missing result.provenance");
+    return { checks, workerSig: "invalid", brokerCountersig: "absent" };
+  }
+  if (prov.schemaVersion !== RESULT_PROVENANCE_SCHEMA || prov.canonicalization !== CANONICALIZATION) {
+    fail(checks, "provenance-schema", "unsupported provenance schema/canonicalization");
+  } else {
+    pass(checks, "provenance-schema");
+  }
+  const actualHash = hashTaskResult(result);
+  if (actualHash !== prov.resultHash) {
+    fail(checks, "result-hash", "resultHash does not match sha256(JCS(result sans provenance)) — result was altered");
+  } else {
+    pass(checks, "result-hash");
+  }
+  const workerPem = keys[prov.workerKeyId];
+  if (!workerPem) {
+    fail(checks, "worker-signature", `workerKeyId '${prov.workerKeyId}' not in keyring (fail-closed)`);
+  } else {
+    const payload = {
+      schemaVersion: RESULT_PROVENANCE_SCHEMA,
+      canonicalization: CANONICALIZATION,
+      taskId,
+      claimedAt: prov.claimedAt,
+      resultHash: prov.resultHash,
+    };
+    if (verifyJwsSignature(payload, prov.workerSig, workerPem)) {
+      pass(checks, "worker-signature");
+    } else {
+      fail(checks, "worker-signature", "worker signature failed verification");
+    }
+  }
+  const counter = prov.brokerCountersig;
+  let brokerCountersig;
+  if (!counter || typeof counter !== "object") {
+    fail(checks, "broker-countersignature", "missing brokerCountersig (fail-closed)");
+    brokerCountersig = "absent";
+  } else {
+    const brokerPem = keys[counter.brokerKeyId];
+    if (!brokerPem) {
+      fail(checks, "broker-countersignature", `brokerKeyId '${counter.brokerKeyId}' not in keyring (fail-closed)`);
+      brokerCountersig = "invalid";
+    } else {
+      const payload = {
+        schemaVersion: BROKER_COUNTERSIG_SCHEMA,
+        canonicalization: CANONICALIZATION,
+        taskId,
+        verifiedAt: counter.verifiedAt,
+        workerSig: prov.workerSig,
+      };
+      if (verifyJwsSignature(payload, counter.sig, brokerPem)) {
+        pass(checks, "broker-countersignature");
+        brokerCountersig = "verified";
+      } else {
+        fail(checks, "broker-countersignature", "broker countersignature failed verification");
+        brokerCountersig = "invalid";
+      }
+    }
+  }
+  const workerSig = ["provenance-schema", "result-hash", "worker-signature"]
+    .every((id) => checks.find((c) => c.id === id)?.ok)
+    ? "verified"
+    : "invalid";
+  return { checks, workerSig, brokerCountersig };
+}
+
+/**
  * Verify a report bundle against a keyring `{ keys: { [keyId]: pemPublicKey } }`.
  * Returns { green, checks: [{id, ok, detail?}] }. Never throws on a malformed
  * bundle — that is a fail-closed result, not a crash.
@@ -92,58 +174,9 @@ export function verifyReport(report, keyring) {
     pass(checks, "assurance-invariant");
   }
 
-  // 3-5. Result provenance: resultHash binding + worker signature + broker countersignature.
-  const prov = report.result.provenance;
-  if (prov.schemaVersion !== RESULT_PROVENANCE_SCHEMA || prov.canonicalization !== CANONICALIZATION) {
-    fail(checks, "provenance-schema", "unsupported provenance schema/canonicalization");
-  } else {
-    pass(checks, "provenance-schema");
-  }
-  const actualHash = hashTaskResult(report.result);
-  if (actualHash !== prov.resultHash) {
-    fail(checks, "result-hash", "resultHash does not match sha256(JCS(result sans provenance)) — result was altered");
-  } else {
-    pass(checks, "result-hash");
-  }
-  const workerPem = keys[prov.workerKeyId];
-  if (!workerPem) {
-    fail(checks, "worker-signature", `workerKeyId '${prov.workerKeyId}' not in keyring (fail-closed)`);
-  } else {
-    const payload = {
-      schemaVersion: RESULT_PROVENANCE_SCHEMA,
-      canonicalization: CANONICALIZATION,
-      taskId: report.taskId,
-      claimedAt: prov.claimedAt,
-      resultHash: prov.resultHash,
-    };
-    if (verifyJwsSignature(payload, prov.workerSig, workerPem)) {
-      pass(checks, "worker-signature");
-    } else {
-      fail(checks, "worker-signature", "worker signature failed verification");
-    }
-  }
-  const counter = prov.brokerCountersig;
-  if (!counter || typeof counter !== "object") {
-    fail(checks, "broker-countersignature", "missing brokerCountersig (fail-closed)");
-  } else {
-    const brokerPem = keys[counter.brokerKeyId];
-    if (!brokerPem) {
-      fail(checks, "broker-countersignature", `brokerKeyId '${counter.brokerKeyId}' not in keyring (fail-closed)`);
-    } else {
-      const payload = {
-        schemaVersion: BROKER_COUNTERSIG_SCHEMA,
-        canonicalization: CANONICALIZATION,
-        taskId: report.taskId,
-        verifiedAt: counter.verifiedAt,
-        workerSig: prov.workerSig,
-      };
-      if (verifyJwsSignature(payload, counter.sig, brokerPem)) {
-        pass(checks, "broker-countersignature");
-      } else {
-        fail(checks, "broker-countersignature", "broker countersignature failed verification");
-      }
-    }
-  }
+  // 3-5. Result provenance: resultHash binding + worker signature + broker
+  // countersignature — one source with the standalone verifier (#1356 G2-d).
+  checks.push(...verifyResultProvenance(report.result, report.taskId, keys).checks);
 
   // 6. Retrieval snapshots: each snapshot self-verifies (byteLen + contentHash + signature).
   // An empty sources array is allowed (analysis with no external source).
