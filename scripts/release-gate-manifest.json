@@ -411,6 +411,12 @@
       "note": "Unit tests for #1261 L1 release-gate manifest absence-sweep; keeps new scripts/*.test.mjs and scripts/lib/*.test.mjs registered."
     },
     {
+      "file": "scripts/check-broker-policy.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1355 G1 declarative worker-class policy engine validator (docs/ops/broker-policy.json schema a2a.broker.policy.v1)."
+    },
+    {
       "file": "scripts/check-dialectic-hygiene.test.mjs",
       "class": "gate",
       "round": null,
