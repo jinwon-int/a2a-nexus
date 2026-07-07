@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { computeVerdict, classify, citedEvidenceIds } from './a2ad-finalizer-gate.mjs';
+import { computeVerdict, classify, classifyLaneEvidence, citedEvidenceIds } from './a2ad-finalizer-gate.mjs';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const scriptPath = join(repoRoot, 'scripts', 'a2ad-finalizer-gate.mjs');
@@ -846,4 +846,57 @@ test('missing required flags fail loudly', () => {
   const noRound = spawnSync(process.execPath, [scriptPath, '--tasks', tasksFile], { encoding: 'utf8' });
   assert.equal(noRound.status, 2);
   assert.match(noRound.stderr, /--round/);
+});
+
+// ─── Broker conformance pin (#1357 G3-c classifier single-source) ────────────
+// The broker's wave quorum derives substantiveCount via
+// packages/broker/src/core/wave-evidence.ts. The gate stays deliberately
+// broker-independent (offline publication guard), so the single-source
+// contract is enforced here instead: the broker taxonomy must equal the
+// gate's EVIDENCE_CLASSES exactly, and both sides must count exactly the
+// 'substantive' class toward quorum. Runs when the broker dist is built (the
+// normal CI case after the release-gate build barrier); skips loudly otherwise.
+test('conformance: broker wave-evidence taxonomy and quorum predicate match the gate', async (t) => {
+  let mod;
+  try {
+    mod = await import('../packages/broker/dist/core/wave-evidence.js');
+  } catch {
+    return t.skip('broker dist not built — run `npm --workspace packages/broker run build` for the conformance pin');
+  }
+  const { EVIDENCE_CLASSES } = await import('./a2ad-finalizer-gate.mjs');
+
+  // Taxonomy: exact equality, order included (both lists are closed and curated).
+  assert.deepEqual([...mod.WAVE_LANE_EVIDENCE_CLASSES], EVIDENCE_CLASSES,
+    'broker WAVE_LANE_EVIDENCE_CLASSES must equal the gate EVIDENCE_CLASSES exactly');
+
+  // Predicate: for every known class, the broker counts it toward quorum iff
+  // the gate does (gate contract: only classifyLaneEvidence's 'substantive'
+  // return carries countsTowardQuorum true).
+  for (const evidenceClass of EVIDENCE_CLASSES) {
+    assert.equal(mod.isSubstantiveEvidenceClass(evidenceClass), evidenceClass === 'substantive',
+      `broker predicate disagrees with the gate on '${evidenceClass}'`);
+  }
+
+  // End-to-end: a clean succeeded lane classifies substantive in the gate and
+  // the broker counts it; a wrapper-only lane classifies non-substantive and
+  // the broker does not count it.
+  const substantiveLane = classifyLaneEvidence(lane('t-conf-1', 'succeeded', {
+    top: { output: { analysisStatus: 'done', findings: ['regression test gap in resume path'], recommendations: ['add a restart determinism test'], evidenceRefs: ['file.ts:1'] } },
+  }));
+  assert.equal(substantiveLane.evidenceClass, 'substantive');
+  assert.equal(substantiveLane.countsTowardQuorum, true);
+
+  const wrapperLane = classifyLaneEvidence(lane('t-conf-2', 'succeeded', {
+    top: { output: { evidenceClass: 'wrapper_only' } },
+  }));
+  assert.equal(wrapperLane.countsTowardQuorum, false);
+
+  assert.deepEqual(
+    mod.summarizeWaveStageEvidence([
+      { evidenceClass: substantiveLane.evidenceClass },
+      { evidenceClass: wrapperLane.evidenceClass },
+    ]),
+    { substantiveCount: 1 },
+    'broker-derived count must reflect exactly the gate-substantive lanes',
+  );
 });

@@ -117,6 +117,39 @@ test("a malformed spec is a 400 bad_request; a duplicate id is a 409", async () 
   );
 });
 
+test("evidence accepts lane evidence classes and derives the count via the canonical predicate", async () => {
+  const { route } = makeRouter();
+  await route("POST", "/wave-plans", spec);
+  await route("POST", "/wave-plans/wave-http-1/start", {});
+
+  // 2 substantive lanes among 4 -> quorum (minSubstantive 2) met via broker-derived count.
+  const evidenced = await route("POST", "/wave-plans/wave-http-1/evidence", {
+    lanes: [
+      { evidenceClass: "substantive" },
+      { evidenceClass: "wrapper_only" },
+      { evidenceClass: "substantive" },
+      { evidenceClass: "provider_or_model_failure" },
+    ],
+  });
+  assert.equal(evidenced.res.statusCode, 200);
+  assert.equal(evidenced.json.plan.state, "stage_ready");
+});
+
+test("evidence lanes fail closed: unknown class is 400, and lanes + substantiveCount together are 400", async () => {
+  const { route } = makeRouter();
+  await route("POST", "/wave-plans", spec);
+  await route("POST", "/wave-plans/wave-http-1/start", {});
+
+  await assert.rejects(
+    () => route("POST", "/wave-plans/wave-http-1/evidence", { lanes: [{ evidenceClass: "substantivee" }] }),
+    (e) => e instanceof BrokerError && e.code === "bad_request" && /substantivee/.test(e.message),
+  );
+  await assert.rejects(
+    () => route("POST", "/wave-plans/wave-http-1/evidence", { lanes: [{ evidenceClass: "substantive" }], substantiveCount: 5 }),
+    (e) => e instanceof BrokerError && e.code === "bad_request" && /not both/.test(e.message),
+  );
+});
+
 test("mutations require a hub/operator role when identity is enforced", async () => {
   const { route } = makeRouter();
   await assert.rejects(

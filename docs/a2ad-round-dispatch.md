@@ -554,5 +554,22 @@ The lifecycle is drivable over HTTP:
 hub/operator scope as the other mutations, and the state machine rejects an
 advance before the gate is met (`409 invalid_transition`). A malformed spec is
 `400 bad_request`; an unknown plan id is `404`; a duplicate create is `409`.
-The finalizer-gate substantive-classifier single-source wiring is the remaining
-G3 slice.
+
+### Substantive classifier single source (G3-c)
+
+The quorum gate's `substantiveCount` is broker-derived, not caller-asserted.
+`POST /wave-plans/{id}/evidence` accepts a `lanes` array of
+`{ evidenceClass }` records; the broker counts them through the canonical
+predicate in `wave-evidence.ts` — exactly the `substantive` class counts,
+identical to the offline finalizer gate (`scripts/a2ad-finalizer-gate.mjs`).
+Unknown evidence classes fail closed (`400`), and sending `lanes` together with
+an explicit `substantiveCount` is rejected as ambiguous (`400`). The raw
+`substantiveCount` field remains for callers that pre-aggregate.
+
+The finalizer gate stays deliberately broker-independent (it is the offline
+publication guard and must run without a broker build), so the single-source
+contract is enforced in reverse: a conformance test in
+`scripts/a2ad-finalizer-gate.test.mjs` pins the broker taxonomy
+(`WAVE_LANE_EVIDENCE_CLASSES`) to the gate's `EVIDENCE_CLASSES` exactly and
+asserts both sides count exactly `substantive` toward quorum — any drift fails
+CI.

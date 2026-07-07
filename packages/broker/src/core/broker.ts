@@ -140,6 +140,7 @@ import {
 import { ConferenceRoomManager } from "./conference-room.js";
 import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
 import type { WavePlan, WaveStageEvidence } from "./wave-plan.js";
+import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
 import {
   CrossBrokerTerminalBriefProjectionStore,
   type CrossBrokerTerminalBriefProjection,
@@ -460,6 +461,16 @@ export class InMemoryA2ABroker {
     const plan = this.wavePlans.reportEvidence(wavePlanId, evidence);
     this.persistState();
     return plan;
+  }
+
+  /**
+   * Report stage evidence from per-lane evidence classes: the broker derives
+   * `substantiveCount` via the canonical predicate (wave-evidence.ts, the
+   * finalizer-gate-conformant single source) instead of trusting a
+   * caller-asserted count. Unknown classes fail closed (wave_spec_invalid).
+   */
+  reportWaveStageLaneEvidence(wavePlanId: string, lanes: WaveLaneEvidence[]): WavePlan {
+    return this.reportWaveStageEvidence(wavePlanId, summarizeWaveStageEvidence(lanes));
   }
 
   advanceWavePlan(wavePlanId: string): WavePlan {
