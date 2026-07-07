@@ -316,6 +316,47 @@ the queue-drain stampede) with:
 
 Confirmation reads use `GET /tasks/:id` with the same auth headers.
 
+### Injected knowledge contract (#1373 K1)
+
+When a lane's payload sets `injectKnowledge: true` **and** the broker is
+configured with `A2A_INJECTED_KNOWLEDGE_FILE`, the broker (never the dispatch
+client) injects anonymous, counts-only hints into the created task:
+
+```jsonc
+"policyContext": {
+  "injectedKnowledge": {
+    "source": "reliability-ledger+taxonomy",
+    "asOf": "2026-07-07",
+    "hints": [
+      "adapterClass=hermes-analysis taskClass=analyze: substantive 4/10 last window",
+      "failureClass environment recurred 3 consecutive rounds"
+    ]
+  }
+}
+```
+
+Rules:
+
+- **Counts/sentence summaries only.** Worker names, node ids, URLs, secrets,
+  and private paths are rejected fail-closed: the full anonymity gate runs in
+  `scripts/build-injected-knowledge.mjs` at snapshot build time (reusing the M1
+  ledger gate's identifier rejection), and the broker re-runs a structural gate
+  when loading the snapshot — a violating snapshot fails broker startup.
+- **Deterministic.** The snapshot is pinned by `asOf`; replaying the same round
+  against the same snapshot yields the same hints (max 8, snapshot order,
+  matched by `taskClass` = task intent plus classless hints).
+- **Opt-in and fail-open.** No `injectKnowledge: true` (or no snapshot
+  configured) means the payload is byte-identical to today. A failed injection
+  never blocks the task — it proceeds hint-less and the skip is logged.
+- **K3 boundary (#1372).** Injected knowledge is worker-GENERATION input only.
+  Finalizer/verdict inputs never include it — the finalizer still verifies
+  independently from the repo. Do not cite injected hints as verdict evidence.
+- Sources today: M1 lane-reliability ledger + scorecard failure taxonomy. The
+  M2 risk-hint CLI (#1300) is a documented future source.
+- Measurement (#1373 K1-d): scorecard entries may carry
+  `knowledgeInjection: "on" | "off"` so injection waves cross-reference the H3
+  fields; injection-by-default requires measured improvement first.
+
 ## Lane classification
 
 | Classification         | When |

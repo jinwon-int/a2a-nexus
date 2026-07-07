@@ -417,6 +417,12 @@
       "note": "Unit tests for the #1355 G1 declarative worker-class policy engine validator (docs/ops/broker-policy.json schema a2a.broker.policy.v1)."
     },
     {
+      "file": "scripts/build-injected-knowledge.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1373 K1 broker-owned anonymous memory injection builder."
+    },
+    {
       "file": "scripts/check-dialectic-hygiene.test.mjs",
       "class": "gate",
       "round": null,

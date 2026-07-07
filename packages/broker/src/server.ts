@@ -112,6 +112,7 @@ import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode, type TaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "./core/broker-policy.js";
+import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,
@@ -390,6 +391,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // unset keeps legacy behavior (no policy evaluation).
   const brokerPolicyFile = options.brokerPolicyFile ?? process.env.A2A_BROKER_POLICY_FILE;
   const brokerPolicyDocument = brokerPolicyFile ? loadBrokerPolicyFile(brokerPolicyFile) : undefined;
+  // Anonymous knowledge injection snapshot (#1373 K1). Same stance as the
+  // policy file: configured-but-invalid fails startup loudly; unset keeps
+  // legacy behavior (no injection).
+  const injectedKnowledgeFile = options.injectedKnowledgeFile ?? process.env.A2A_INJECTED_KNOWLEDGE_FILE;
+  const injectedKnowledge = injectedKnowledgeFile ? loadInjectedKnowledgeFile(injectedKnowledgeFile) : undefined;
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxSnapshotBytes = Math.max(
     1,
@@ -537,6 +543,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       teamId,
       taskReadinessMode,
       policyDocument: brokerPolicyDocument,
+      injectedKnowledge,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {
