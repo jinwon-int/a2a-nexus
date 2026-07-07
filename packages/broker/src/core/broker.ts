@@ -99,7 +99,11 @@ import type { RoundStatusSummary } from "./round-status.js";
 
 import { normalizeTaskPolicyContext } from "./policy.js";
 import type { BrokerPolicyDocument } from "./broker-policy.js";
-import { selectInjectedKnowledge, type InjectedKnowledgeSnapshot } from "./broker-knowledge-injection.js";
+import {
+  resolveInjectedKnowledgeTaskClass,
+  selectInjectedKnowledge,
+  type InjectedKnowledgeSnapshot,
+} from "./broker-knowledge-injection.js";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
 import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
@@ -861,7 +865,10 @@ export class InMemoryA2ABroker {
     // only (K3 #1372: never a finalizer/verdict input).
     if (this.injectedKnowledge && normalizedRequest.payload?.["injectKnowledge"] === true) {
       try {
-        const injected = selectInjectedKnowledge(this.injectedKnowledge, normalizedRequest.intent);
+        const injected = selectInjectedKnowledge(
+          this.injectedKnowledge,
+          resolveInjectedKnowledgeTaskClass(normalizedRequest.intent, normalizedRequest.payload),
+        );
         if (injected) {
           policyContext = { ...(policyContext ?? {}), injectedKnowledge: injected };
         }

@@ -147,17 +147,37 @@ export function loadInjectedKnowledgeFile(path: string): InjectedKnowledgeSnapsh
 }
 
 /**
+ * Resolve the hint matching key for a task. The snapshot taskClass axis is a
+ * LANE classification (the M1 ledger axis), not the task intent: substantive
+ * review lanes dispatch as intent "analyze" (the worker analysis-bridge
+ * routing key) with the lane class declared in the payload. An explicit
+ * `payload.taskClass` therefore wins; the intent is the fallback so classless
+ * dispatches keep the original behavior. Fail-open: a malformed taskClass
+ * falls back to the intent instead of erroring.
+ */
+export function resolveInjectedKnowledgeTaskClass(
+  taskIntent: string,
+  payload: Record<string, unknown> | undefined,
+): string {
+  const declared = payload?.["taskClass"];
+  if (typeof declared === "string" && declared.trim()) {
+    return declared.trim();
+  }
+  return taskIntent;
+}
+
+/**
  * Deterministically select the hints for a task: hints whose taskClass matches
- * the task intent plus classless hints, in snapshot order, capped at
- * MAX_INJECTED_HINTS. Returns undefined when nothing applies (no empty blocks
- * on payloads).
+ * the task class key (resolveInjectedKnowledgeTaskClass) plus classless hints,
+ * in snapshot order, capped at MAX_INJECTED_HINTS. Returns undefined when
+ * nothing applies (no empty blocks on payloads).
  */
 export function selectInjectedKnowledge(
   snapshot: InjectedKnowledgeSnapshot,
-  taskIntent: string,
+  taskClassKey: string,
 ): InjectedKnowledgeContext | undefined {
   const hints = snapshot.hints
-    .filter((hint) => hint.taskClass === undefined || hint.taskClass === taskIntent)
+    .filter((hint) => hint.taskClass === undefined || hint.taskClass === taskClassKey)
     .slice(0, MAX_INJECTED_HINTS)
     .map((hint) => hint.text);
   if (hints.length === 0) {
