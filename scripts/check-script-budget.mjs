@@ -27,7 +27,7 @@ import { createDocCheckContext } from './lib/doc-check.mjs';
 // its regression test were added. Raising any budget is allowed but must be
 // deliberate — see a2a-nexus#882.
 export const BUDGETS = {
-  scriptsMjs: 150, // +3: #1300 M2 ledger consumers (lane-reliability-report, dispatch-risk-hints + tests) net of the #1373 K1 builder pair absorbed earlier — both issues explicitly scope these as new scripts/*.mjs surfaces
+  scriptsMjs: 152, // +2: #1301 M3-c attestation bundle checker + test — the issue explicitly scopes the consumer-side verifier as a new scripts/*.mjs surface (exporter lives in packages/broker)
   rootNpmScripts: 100, // ratcheted after C3 historical archive wrappers were consolidated under check:historical (#1201)
   brokerNpmScripts: 150, // includes broker clean:dist stale-build guard from #997/#999 closeout
 };

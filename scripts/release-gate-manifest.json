@@ -481,6 +481,12 @@
       "class": "gate",
       "round": null,
       "note": "Tests for #1383 V-d finalizer-verdict enforcement gate: independence/subject-binding/decision/registered-key, warn->enforce."
+    },
+    {
+      "file": "scripts/check-attestation-bundle.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1301 M3-c attestation bundle checker: fail-closed schema, sha256-jcs integrity recomputation, PII/identifier second-line scan."
     }
   ]
 }
