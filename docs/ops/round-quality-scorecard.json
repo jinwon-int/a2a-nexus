@@ -747,6 +747,7 @@
         "to": "2026-07-05"
       },
       "scope": "#1299 M1 lane reliability ledger (#1358) + two-team design round (finalizer consensus BLOCKED — classifier self-interference defect discovered, FG1 #1359)",
+      "knowledgeInjection": "off",
       "metrics": {
         "carryOverCount": 0,
         "falseFindingCount": 1,
@@ -1091,6 +1092,57 @@
         "External finalizer end-to-end verification of Wave 2: reconstructed the chain (signed snapshot -> isolated bridge consumption -> declared binding -> worker signature -> broker countersignature) and confirmed a source-grounded report verifies GREEN offline including the source-binding check; consumption-boundary revalidation rejected tampered content, unsigned snapshot, duplicate declaration, and over-cap, and an unbound snapshot was rejected RED by the offline verifier.",
         "Scope boundary: merge does not activate live fetch; live GitHub fetch over the deployed proxy still requires worker/runner redeploy plus an operator-gated live fetch canary (out of this record's scope). Dispatch friction: 4 lanes dispatched across the two waves' A2A rounds with 2 substantive lanes used as implementation input; no worker names, secrets, endpoints, or private keys recorded.",
         "Safety boundary: source refactor plus offline verifier/contract; no deploy/restart, DB/outbox/ACK/replay/prune/migration, provider send, release/tag/package publication, GitHub settings mutation, force-push/history rewrite, or raw sensitive-value recording."
+      ],
+      "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1373-k1d-injection-wave-20260707-r1",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1373 K1-d knowledge-injection wave r1 (4 review lanes, payload injectKnowledge opt-in) — injection path confirmed live, but the wave is NOT usable for on/off comparison due to a dispatch recipe defect fixed by #1420",
+      "knowledgeInjection": "on",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 0,
+        "dispatchedLaneCount": 4
+      },
+      "evidence": [
+        "injection confirmed live: lanes created with policyContext.injectedKnowledge pinned to the 2026-07-07 snapshot (source reliability-ledger+taxonomy, one intent-matched counts-only hint); the fail-open path never blocked a lane",
+        "4/4 lanes succeeded but 0/4 substantive: every result is the generic versioned-task-handler acceptance echo — the wave dispatched intent 'review' (the hint-matching key at the time), which no worker analysis branch recognizes, and the payload lacked the analysis-mode/sourceOnly recipe; the taskClass-vs-intent axis mismatch and its fix (payload.taskClass matching key with intent fallback) landed as #1420 and are documented in docs/a2ad-round-dispatch.md",
+        "measurement disposition: recorded honestly as knowledgeInjection=on with 0/4 substantive but EXCLUDED from on/off comparison — the r2 wave on the corrected recipe is the measurement wave",
+        "byproduct retained: one completed lane's provenance report was exported and offline-verified GREEN 5/5 under the enforce countersign posture with TOFU-pinned registered keys, and tamper/replay/wrong-key mutations all rejected RED (report sha256 36c262902c61748e93c0aae4be40244dcc7e84c71e7a1a094b20ed967b0f40b2) — closes the V0-c post-cutover new-completion acceptance piece (#1373 evidence comment)"
+      ],
+      "recordedAt": "2026-07-07"
+    },
+    {
+      "id": "a2a-nexus-1373-k1d-injection-wave-20260707-r2",
+      "window": {
+        "from": "2026-07-07",
+        "to": "2026-07-07"
+      },
+      "scope": "#1373 K1-d knowledge-injection measurement wave r2: 4 analyze-intent review-class lanes on the #1420 payload.taskClass matching key, base payload reused from the a2a-nexus-1299-m1-ledger-20260706-team2-r1 round family for a minimal-delta dispatch; off control pair: a2a-nexus-m1-ledger-20260705",
+      "knowledgeInjection": "on",
+      "metrics": {
+        "carryOverCount": 0,
+        "falseFindingCount": 0,
+        "reworkIssueCount": 0,
+        "substantiveLaneCount": 2,
+        "dispatchedLaneCount": 4
+      },
+      "failureBreakdown": {
+        "environment": 1
+      },
+      "evidence": [
+        "injection: all 4 lanes carry policyContext.injectedKnowledge with asOf 2026-07-07 and the single review-class hint (exact expected value), including the failed lane — injection is recorded at dispatch time regardless of lane outcome",
+        "substantive 2/4: one lane delivered an M1 ledger design analysis with 7 findings / 7 recommendations naming 4 concrete risk classes; a second delivered 6 findings with line-level citations into scripts/check-round-quality-scorecard.mjs; a third succeeded readiness-only (source/no-live meta checks, no task-specific findings — not substantive per the FG1-d criterion); the fourth failed (environment)",
+        "falseFindingCount 0 cross-check: the round's strongest claim (finalizer-gate visible exports are three status Sets only) is TRUE against that lane's pinned source bundle (a truncated 12KB projection); current main exports EVIDENCE_CLASSES since #1358 (2026-07-06) — a bundle-freshness limitation, not a false finding",
+        "reworkIssueCount 0: no rework issue originated from this round at snapshot time; the round's key recommendation (single-source taxonomy export) was already implemented by #1358",
+        "failure classification — environment 1: one lane failed openclaw_analysis_failed (worker execution environment, unrelated to the injection path); the real-cause excerpt was masked by the bridge no-stdin warning that #1421 (merged in this window) removes, and the same worker-class environment failure recurs in the base round family — refine this narrative when the next failure surfaces a clean excerpt",
+        "on/off pairing: compare against a2a-nexus-m1-ledger-20260705 (knowledgeInjection=off, substantive 7/10); one wave is a signal, not a promotion decision — injection-by-default remains a separate operator decision after more measured windows (#1373 K1-d contract)"
       ],
       "recordedAt": "2026-07-07"
     }
