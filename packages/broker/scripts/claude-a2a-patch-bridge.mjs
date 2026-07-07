@@ -41,7 +41,11 @@ function killProcessGroup(pid, signal = "SIGKILL") {
 // When the timeout fires, the ENTIRE process group is killed.
 function spawnWithProcessGroupKill(bin, args, opts) {
   const timeoutMs = opts.timeout;
-  const child = spawn(bin, args, { ...opts, detached: true, timeout: undefined });
+  // stdin is explicitly closed ("ignore"): no caller writes to it, and leaving
+  // it open as a never-written pipe makes Claude Code CLI stall ~3 s waiting
+  // for piped input and emit a "no stdin data received" warning on stderr that
+  // then masks the real failure output in error excerpts (#1337 ENV1 residual).
+  const child = spawn(bin, args, { ...opts, detached: true, timeout: undefined, stdio: ["ignore", "pipe", "pipe"] });
 
   let stdout = "";
   let stderr = "";
@@ -98,6 +102,19 @@ function sanitizeSessionSegment(id) {
 function safeText(value, fallback = "") {
   if (value === undefined || value === null) return fallback;
   return String(value);
+}
+
+// Failure excerpt that keeps BOTH streams. Using stderr-or-stdout loses the
+// real failure detail whenever stderr carries only an informational warning
+// (observed: Claude CLI "no stdin data received" warning masking the actual
+// exit-1 cause across repeated dungae lane failures).
+function childOutputExcerpt(child, perStreamLimit = 2000) {
+  const parts = [];
+  const stderrText = safeText(child.stderr).trim();
+  const stdoutText = safeText(child.stdout).trim();
+  if (stderrText) parts.push(`stderr: ${stderrText.slice(0, perStreamLimit)}`);
+  if (stdoutText) parts.push(`stdout: ${stdoutText.slice(0, perStreamLimit)}`);
+  return parts.join("\n") || "no output captured";
 }
 
 // Redact token-shaped strings and common auth assignments from any text we emit.
@@ -409,7 +426,7 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
     if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
     if (child.status !== 0) {
       const signal = child.signal ? ` signal=${child.signal}` : "";
-      throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+      throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
     }
     return child.stdout;
   } finally {
@@ -508,7 +525,7 @@ async function runClaudePatch(prompt, flags, env, cwd) {
   if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+    throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
   }
   return child.stdout;
 }
@@ -961,7 +978,7 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
   if (child.error) throw new Error(`Claude Code spawn failed: ${child.error.message}`);
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
-    throw new Error(`Claude Code exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`);
+    throw new Error(`Claude Code exited with ${child.status}${signal}: ${childOutputExcerpt(child)}`);
   }
   return child.stdout;
 }
