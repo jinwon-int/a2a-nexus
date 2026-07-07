@@ -8,14 +8,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { generateKeyPairSync, sign as cryptoSign, type KeyObject } from "node:crypto";
+
 import {
   FINALIZER_VERDICT_SCHEMA,
   resolveFinalizerVerdictEnforcement,
   evaluateFinalizerVerdictAdmission,
 } from "./finalizer-verdict-admission.js";
+import type { FinalizerKeyring } from "./finalizer-verdict-signature.js";
+import { canonicalizeJson } from "../a2a/agent-card-signing.js";
 import type { TaskRecord, TaskResult } from "./types.js";
 
 const ANCHOR = "sha256:deadbeefanchor";
+
+function signVerdictInPlace(verdict: Record<string, unknown>, privateKey: KeyObject, kid: string): Record<string, unknown> {
+  const header = { alg: "EdDSA", kid, typ: "JOSE" };
+  const protectedHeader = Buffer.from(canonicalizeJson(header)).toString("base64url");
+  const payload = Buffer.from(canonicalizeJson(verdict)).toString("base64url");
+  const signature = cryptoSign(null, Buffer.from(`${protectedHeader}.${payload}`, "utf8"), privateKey).toString("base64url");
+  return { ...verdict, sig: { protected: protectedHeader, signature } };
+}
 
 function task(payload: Record<string, unknown> = {}): TaskRecord {
   return {
@@ -102,6 +114,46 @@ test("independence: a finalizerKeyId in the worker namespace or equal to the pro
     {},
   );
   assert.ok(evaluateFinalizerVerdictAdmission({ task: t, result: dual, enforcement: "enforce" }).violations.some((v) => /independen/i.test(v)));
+});
+
+test("with a finalizer keyring, a validly signed static-key verdict passes signature verification", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": publicKey.export({ type: "spki", format: "pem" }).toString() } };
+  const t = task({ requireFinalizerVerdict: true });
+  const signed = signVerdictInPlace(
+    { schemaVersion: FINALIZER_VERDICT_SCHEMA, subject: { kind: "task-result", resultHash: ANCHOR }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    privateKey, "finalizer:panel:v1",
+  );
+  const result = {
+    summary: "done", provenance: { workerKeyId: "worker:alpha:g2:v1", resultHash: ANCHOR },
+    finalizerVerdict: signed,
+  } as unknown as TaskResult;
+  const out = evaluateFinalizerVerdictAdmission({ task: t, result, enforcement: "enforce", finalizerKeyring: keyring });
+  assert.equal(out.ok, true, JSON.stringify(out.violations));
+});
+
+test("with a finalizer keyring, a forged (unsigned/wrong-key) verdict is a signature violation the broker catches", () => {
+  const { publicKey } = generateKeyPairSync("ed25519");
+  const attacker = generateKeyPairSync("ed25519");
+  const keyring: FinalizerKeyring = { keys: { "finalizer:panel:v1": publicKey.export({ type: "spki", format: "pem" }).toString() } };
+  const t = task({ requireFinalizerVerdict: true });
+  const forged = signVerdictInPlace(
+    { schemaVersion: FINALIZER_VERDICT_SCHEMA, subject: { kind: "task-result", resultHash: ANCHOR }, decision: "go", finalizerKeyId: "finalizer:panel:v1" },
+    attacker.privateKey, "finalizer:panel:v1",
+  );
+  const result = {
+    summary: "done", provenance: { workerKeyId: "worker:alpha:g2:v1", resultHash: ANCHOR },
+    finalizerVerdict: forged,
+  } as unknown as TaskResult;
+  const out = evaluateFinalizerVerdictAdmission({ task: t, result, enforcement: "enforce", finalizerKeyring: keyring });
+  assert.ok(out.violations.some((v) => /signature_invalid/.test(v)), JSON.stringify(out.violations));
+});
+
+test("without a keyring, signature is not checked in-broker (deferred to the merge gate)", () => {
+  const t = task({ requireFinalizerVerdict: true });
+  // no sig at all, but structurally valid + bound + independent
+  const out = evaluateFinalizerVerdictAdmission({ task: t, result: resultWithVerdict(), enforcement: "enforce" });
+  assert.equal(out.ok, true, JSON.stringify(out.violations));
 });
 
 test("warn posture reports the same violations without marking them blocking (caller decides)", () => {

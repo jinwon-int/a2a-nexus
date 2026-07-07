@@ -185,6 +185,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   finalizerVerdictEnforcement?: "off" | "warn" | "enforce";
   /**
+   * JSON finalizer keyring file ({ "keys": { "finalizer:<id>": "<SPKI PEM>" } })
+   * for in-broker static-key verdict signature verification (#1383 V-c). Falls
+   * back to A2A_FINALIZER_KEYRING_FILE. Invalid file fails startup loudly; unset
+   * defers signature authenticity to the repo merge gate.
+   */
+  finalizerKeyringFile?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over
