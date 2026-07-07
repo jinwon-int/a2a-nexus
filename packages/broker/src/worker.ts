@@ -139,6 +139,58 @@ export class BrokerApiError extends Error {
   }
 }
 
+/** Ceiling for the jittered reconnect backoff (#1405). */
+export const MAX_RECONNECT_DELAY_MS = 30_000;
+
+const CONNECTION_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+/**
+ * Classify errors that mean "the broker connection went away" (#1405) —
+ * socket resets/refusals during a broker redeploy, plus the broker's own
+ * 503 broker_draining shutdown notice. These are the failures a fleet must
+ * retry with bounded jitter instead of reconnecting in lockstep.
+ */
+export function isBrokerConnectionError(error: unknown): boolean {
+  if (error instanceof BrokerApiError) {
+    return error.status === 503 && error.code === "broker_draining";
+  }
+  for (let cause: unknown = error; cause instanceof Error; cause = cause.cause) {
+    const code = (cause as Error & { code?: unknown }).code;
+    if (typeof code === "string" && CONNECTION_ERROR_CODES.has(code)) {
+      return true;
+    }
+    if (cause.name === "TimeoutError" || cause.name === "AbortError") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Bounded, jittered reconnect delay (#1405): exponential from the poll
+ * interval up to MAX_RECONNECT_DELAY_MS, with +/-25% jitter so a fleet whose
+ * broker restarted does not thundering-herd the fresh instance. Pure —
+ * `random` is injectable for tests.
+ */
+export function computeReconnectDelayMs(
+  baseMs: number,
+  consecutiveFailures: number,
+  random: () => number = Math.random,
+): number {
+  const attempt = Math.max(1, consecutiveFailures);
+  const exponential = Math.min(baseMs * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
+  const jitter = 1 + (random() * 0.5 - 0.25);
+  return Math.max(0, Math.round(exponential * jitter));
+}
+
 export class A2ABrokerWorker {
   private readonly brokerUrl: string;
   private readonly fetchImpl: FetchLike;
@@ -268,17 +320,30 @@ export class A2ABrokerWorker {
     this.startHeartbeatTimer();
 
     try {
+      let consecutiveConnectionFailures = 0;
       while (this.running) {
+        let nextDelayMs = this.config.pollIntervalMs;
         try {
           const processed = await this.runOnce();
+          consecutiveConnectionFailures = 0;
           if (processed > 0) {
             console.log(`[worker:${this.workerId}] processed ${processed} task(s)`);
           }
         } catch (error) {
           console.error(`[worker:${this.workerId}] poll loop error`, error);
+          // Broker went away (redeploy socket churn or a drain notice, #1405):
+          // back off with bounded jitter instead of hammering the fixed
+          // interval in lockstep with the rest of the fleet.
+          if (isBrokerConnectionError(error)) {
+            consecutiveConnectionFailures += 1;
+            nextDelayMs = computeReconnectDelayMs(this.config.pollIntervalMs, consecutiveConnectionFailures);
+            console.log(`[worker:${this.workerId}] broker connection error; reconnecting in ${nextDelayMs}ms (attempt ${consecutiveConnectionFailures})`);
+          } else {
+            consecutiveConnectionFailures = 0;
+          }
         }
 
-        await delay(this.config.pollIntervalMs, undefined, {
+        await delay(nextDelayMs, undefined, {
           signal: loopAbortController.signal,
         }).catch((error: unknown) => {
           if (this.running) {

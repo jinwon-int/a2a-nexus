@@ -277,6 +277,16 @@ export interface BrokerServerRuntime {
   server: Server;
   handler: RequestListener<typeof IncomingMessage, typeof ServerResponse>;
   broker: InMemoryA2ABroker;
+  /**
+   * Enter drain mode (#1405): every response gains `Connection: close`, task
+   * poll/claim are refused with 503 broker_draining + Retry-After, and idle
+   * keep-alive connections are closed. In-flight submission/lifecycle routes
+   * keep working. Idempotent. Driven by the SIGTERM drain window
+   * (A2A_SHUTDOWN_DRAIN_MS) in server-lifecycle.ts.
+   */
+  beginDrain: () => void;
+  /** Whether the server is currently draining for shutdown. */
+  isDraining: () => boolean;
   /** Run the stale-task reaper sweep once. Returns the number of requeued tasks. */
   runStaleReaperSweep: () => number;
   /** Stop the periodic stale-task reaper timer (if started). Safe to call multiple times. */
