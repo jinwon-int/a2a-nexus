@@ -98,6 +98,16 @@ async function handleLifecycle(ctx: WavePlanRouteContext, wavePlanId: string, ac
         break;
       case "evidence": {
         const body = await readJson<Record<string, unknown>>(ctx.req);
+        if (Array.isArray(body?.lanes)) {
+          // Lane-evidence path: the broker derives substantiveCount from the
+          // canonical predicate (wave-evidence.ts). A caller-asserted count
+          // alongside lanes is ambiguous — reject rather than pick a winner.
+          if (typeof body.substantiveCount === "number") {
+            throw new BrokerError("bad_request", "provide either lanes (broker-derived count) or substantiveCount, not both");
+          }
+          plan = ctx.broker.reportWaveStageLaneEvidence(wavePlanId, body.lanes as { evidenceClass?: string }[]);
+          break;
+        }
         plan = ctx.broker.reportWaveStageEvidence(wavePlanId, pickEvidence(body));
         break;
       }
