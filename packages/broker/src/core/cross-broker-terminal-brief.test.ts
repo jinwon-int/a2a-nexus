@@ -1641,3 +1641,44 @@ test("no-live harness: brokeralpha parent → brokerbeta Team2 child → brokera
     );
   }
 });
+
+test("cross-broker projections reach the canonical snapshot even when hot-persist is throttling (#1446)", () => {
+  // The hot-persist fast path (pending hot rows within the retention interval)
+  // writes only hot-table rows — and projections have no hot table. An ingest
+  // persist that rides that branch is ACKed but absent from the canonical
+  // blob, so a restart in the window loses the projection. Same class as the
+  // wave-plan G3-d canary fix: snapshot-only state must force the full save.
+  const saves: { kind: "full" | "hot"; briefs?: unknown[] }[] = [];
+  const stubStore: BrokerStateStore = {
+    load: () => emptySnapshot(),
+    save: (snapshot) => {
+      saves.push({ kind: "full", briefs: snapshot.crossBrokerTerminalBriefs });
+    },
+    saveHotEntities: () => {
+      saves.push({ kind: "hot" });
+    },
+  };
+  const broker = new InMemoryA2ABroker(stubStore, undefined, { brokerId: "parent-broker" });
+  createParentRound(broker);
+
+  // Simulate concurrent hot activity inside the persist throttle window:
+  // another operation's audit row is staged but not yet persisted when the
+  // projection arrives (a fresh broker always starts inside the window).
+  (broker as unknown as { pendingHot: { stageAuditEvent(event: unknown): void } }).pendingHot.stageAuditEvent({
+    id: "audit-pending-1",
+    actorId: "worker-child",
+    action: "worker.heartbeat",
+    targetType: "worker",
+    targetId: "worker-child",
+    createdAt: "2026-07-07T15:00:00.000Z",
+  });
+
+  saves.length = 0;
+  const result = broker.ingestCrossBrokerTerminalBriefProjection(projection());
+  assert.equal(result.accepted, true);
+
+  const fullSaves = saves.filter((entry) => entry.kind === "full");
+  assert.ok(fullSaves.length >= 1, "projection ingest must produce a full canonical save, not a hot-only save");
+  const briefs = fullSaves.at(-1)?.briefs as { parentRoundId?: string }[] | undefined;
+  assert.equal(briefs?.[0]?.parentRoundId, "round-parent", "the canonical save must carry the ingested projection");
+});

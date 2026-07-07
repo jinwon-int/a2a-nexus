@@ -425,7 +425,9 @@ export class InMemoryA2ABroker {
       if (!result.replayed) {
         this.terminalTaskEventOutbox.enqueueCrossBrokerProjection(result.record);
       }
-      this.persistState();
+      // Projections are snapshot-only (no hot table) — same forceFull rule as
+      // wave plans, or a hot-only save loses the projection on restart (#1446).
+      this.persistState(undefined, { forceFull: true });
     }
     return result;
   }
