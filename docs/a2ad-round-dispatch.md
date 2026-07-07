@@ -535,6 +535,10 @@ carries `wavePlans` from the canonical blob (like the push-notification-config
 sidecar), and every wave mutation persists with a forced **full** canonical
 save — the hot-entities fast path would otherwise ACK the mutation while
 leaving it out of the blob, losing it on a restart inside the throttle window.
+The same snapshot-only rule covers cross-broker Terminal Brief projections
+(#1446): the hot-tables load carries `crossBrokerTerminalBriefs` from the blob,
+projection ingest forces the full save, and a hint-carrying full save never
+skips rewriting the blob while it holds wave plans or projections.
 
 The store stamps a broker-clock `updatedAt` on every transition (outside the
 pure plan) for the **stale-wave reaper**: `sweepStalledWavePlans(staleAfterMs)`
