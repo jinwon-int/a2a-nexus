@@ -417,6 +417,18 @@
       "note": "Unit tests for the #1355 G1 declarative worker-class policy engine validator (docs/ops/broker-policy.json schema a2a.broker.policy.v1)."
     },
     {
+      "file": "scripts/lane-reliability-report.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1300 M2-a reputation report (small-sample insufficient_data guard, supersede-aware aggregation, anonymity pass-through)."
+    },
+    {
+      "file": "scripts/dispatch-risk-hints.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Unit tests for the #1300 M2-b pre-dispatch risk hints (ledger low-substantive warnings, taxonomy cumulative threshold, explicit no_data, anonymity gate)."
+    },
+    {
       "file": "scripts/build-injected-knowledge.test.mjs",
       "class": "gate",
       "round": null,
