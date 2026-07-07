@@ -25,12 +25,16 @@ function hasFlag(name) {
 
 function usage(exitCode = 0) {
   const stream = exitCode === 0 ? process.stdout : process.stderr;
-  stream.write(`Usage: node scripts/export-sqlite-state.mjs --db <state.sqlite> [--out <state.json>] [--max-bytes <bytes>]\n\n`);
+  stream.write(`Usage: node scripts/export-sqlite-state.mjs --db <state.sqlite> [--out <state.json>] [--max-bytes <bytes>] [--load-source snapshot|hot-tables]\n\n`);
   stream.write(`Options:\n`);
-  stream.write(`  --db          SQLite broker state DB. Defaults to BROKER_SQLITE_FILE or SQLITE_STATE_FILE.\n`);
-  stream.write(`  --out         Output JSON file. If omitted, writes canonical JSON to stdout.\n`);
-  stream.write(`  --max-bytes   Max snapshot size to read/write. Defaults to STATE_FILE_MAX_BYTES or store default.\n`);
-  stream.write(`  --help        Show this help.\n`);
+  stream.write(`  --db           SQLite broker state DB. Defaults to BROKER_SQLITE_FILE or SQLITE_STATE_FILE.\n`);
+  stream.write(`  --out          Output JSON file. If omitted, writes canonical JSON to stdout.\n`);
+  stream.write(`  --max-bytes    Max snapshot size to read/write. Defaults to STATE_FILE_MAX_BYTES or store default.\n`);
+  stream.write(`  --load-source  Where to read state from: snapshot (canonical blob, default) or hot-tables\n`);
+  stream.write(`                 (live per-entity tables — REQUIRED to see current state when the broker runs\n`);
+  stream.write(`                 with BROKER_SQLITE_LOAD_SOURCE=hot-tables, whose snapshot blob goes stale).\n`);
+  stream.write(`                 Defaults to BROKER_SQLITE_LOAD_SOURCE, matching the server runtime.\n`);
+  stream.write(`  --help         Show this help.\n`);
   process.exit(exitCode);
 }
 
@@ -45,6 +49,7 @@ if (!dbFile) {
 }
 
 const outFile = argValue('--out');
+const loadSourceValue = argValue('--load-source') ?? process.env.BROKER_SQLITE_LOAD_SOURCE;
 const maxBytesValue = argValue('--max-bytes') ?? process.env.STATE_FILE_MAX_BYTES;
 const maxBytes = maxBytesValue ? Number(maxBytesValue) : undefined;
 if (maxBytesValue && (!Number.isFinite(maxBytes) || maxBytes <= 0)) {
@@ -53,15 +58,20 @@ if (maxBytesValue && (!Number.isFinite(maxBytes) || maxBytes <= 0)) {
 }
 
 let storeModule;
+let persistenceOptionsModule;
 try {
   storeModule = await import(`${rootDir}/dist/core/store.js`);
+  persistenceOptionsModule = await import(`${rootDir}/dist/persistence-options.js`);
 } catch (error) {
-  process.stderr.write(`Failed to load dist/core/store.js. Run npm run build before exporting.\n${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`Failed to load dist modules. Run npm run build before exporting.\n${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
 }
 
 const { SqliteBrokerStateStore, serializeBrokerSnapshot, writeBrokerSnapshotFile } = storeModule;
-const store = new SqliteBrokerStateStore(dbFile, maxBytes ? { maxBytes } : {});
+// Same normalizer as the server runtime (#819): hot-table aliases accepted,
+// anything else falls back to the canonical snapshot blob.
+const loadSource = persistenceOptionsModule.normalizeSqliteLoadSource(loadSourceValue);
+const store = new SqliteBrokerStateStore(dbFile, { ...(maxBytes ? { maxBytes } : {}), loadSource });
 try {
   const snapshot = store.load();
   if (outFile) {
