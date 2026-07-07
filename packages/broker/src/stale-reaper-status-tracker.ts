@@ -14,6 +14,7 @@ export interface StaleReaperStatusBase {
   enabled: boolean;
   intervalSec: number;
   olderThanSec: number;
+  waveStaleAfterSec: number;
   maxRequeueAttempts: number;
 }
 
@@ -50,6 +51,7 @@ export class StaleReaperStatusTracker {
       enabled: base.enabled,
       intervalSec: base.intervalSec,
       olderThanSec: base.olderThanSec,
+      waveStaleAfterSec: base.waveStaleAfterSec,
       maxRequeueAttempts: base.maxRequeueAttempts,
       lastRunAt: this.lastRunAt,
       lastRequeued: this.lastRequeued,

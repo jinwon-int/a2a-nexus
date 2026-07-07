@@ -236,6 +236,8 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
   staleReaperEnabled?: boolean;
   staleReaperIntervalSec?: number;
   staleReaperOlderThanSec?: number;
+  /** Idle threshold before a live wave plan is flagged wave.stalled; 0 disables the wave sweep. */
+  waveStaleAfterSec?: number;
   /**
    * Max times the stale-task reaper (or manual requeue) may recycle a single task back to
    * `queued` before dead-lettering it to `failed`. `0` disables the cap. Env:
@@ -292,6 +294,7 @@ export interface BrokerStaleReaperStatus {
   enabled: boolean;
   intervalSec: number;
   olderThanSec: number;
+  waveStaleAfterSec: number;
   maxRequeueAttempts: number;
   lastRunAt?: string;
   lastRequeued?: number;
@@ -361,6 +364,7 @@ export interface BrokerServerRuntime {
     staleReaperEnabled: boolean;
     staleReaperIntervalSec: number;
     staleReaperOlderThanSec: number;
+    waveStaleAfterSec: number;
     maxRequeueAttempts: number;
     taskSubscribeHeartbeatSec: number;
     peerStatusEnabled: boolean;

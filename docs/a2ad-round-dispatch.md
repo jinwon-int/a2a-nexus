@@ -535,6 +535,11 @@ flags live (`running`/`stage_ready`) plans idle past the threshold and emits one
 `wave.stalled` warning audit event per stall (`targetType: "wave-plan"`),
 deduped until the plan next makes progress. The reaper **only warns** — it never
 auto-aborts; advancing or aborting a stalled wave stays the operator's call.
+In production the sweep rides the existing stale-task reaper interval
+(`STALE_REAPER_INTERVAL_SEC`), gated by `WAVE_STALE_AFTER_SEC` (default 21600 =
+6h; 0 disables the wave sweep). The threshold is visible at
+`/health` → `staleReaper.waveStaleAfterSec`, and each flagged wave logs one
+greppable `[a2a-broker] wave reaper flagged ...` line.
 
 ### HTTP surface (G3-c)
 

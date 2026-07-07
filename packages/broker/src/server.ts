@@ -448,6 +448,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       Math.max(workerOfflineAfterSec, 1),
     ),
   );
+  // Stale wave-plan sweep threshold (#1357 G3-c reaper wiring). Rides the same
+  // reaper interval; a live wave idle past this window gets one wave.stalled
+  // warning audit event (never an auto-abort). 0 disables the wave sweep.
+  const waveStaleAfterSec = Math.max(
+    0,
+    resolveIntegerOption(options.waveStaleAfterSec, process.env.WAVE_STALE_AFTER_SEC, 21_600),
+  );
   const maxRequeueAttempts = Math.max(
     0,
     resolveIntegerOption(
@@ -688,7 +695,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             .join(", ")}`,
         );
       }
-      if (requeued.length > 0 || deadLettered.length > 0) {
+      // Stale wave-plan sweep rides the same interval: warn-only wave.stalled
+      // audit events for live waves idle past the threshold (never auto-abort).
+      const stalledWaves = waveStaleAfterSec > 0 ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000) : [];
+      if (stalledWaves.length > 0) {
+        console.warn(
+          `[a2a-broker] wave reaper flagged ${stalledWaves.length} stalled wave plan(s): ${stalledWaves
+            .map((wave) => `${wave.wavePlanId}@${wave.stageId}`)
+            .join(", ")}`,
+        );
+      }
+      if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {
         publishOperatorEvents();
       }
       return requeued.length;
@@ -716,6 +733,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       enabled: staleReaperEnabled,
       intervalSec: staleReaperIntervalSec,
       olderThanSec: staleReaperOlderThanSec,
+      waveStaleAfterSec,
       maxRequeueAttempts,
     });
 
@@ -1903,6 +1921,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       staleReaperEnabled,
       staleReaperIntervalSec,
       staleReaperOlderThanSec,
+      waveStaleAfterSec,
       maxRequeueAttempts,
       taskSubscribeHeartbeatSec,
       peerStatusEnabled,
