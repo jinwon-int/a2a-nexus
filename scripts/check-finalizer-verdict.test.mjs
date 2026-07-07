@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 
-import { evaluateVerdictGate } from "./check-finalizer-verdict.mjs";
+import { evaluateVerdictGate, deriveProducingWorkerKeyIds } from "./check-finalizer-verdict.mjs";
 import { VERDICT_SCHEMA, CANONICALIZATION } from "./verify-finalizer-verdict.mjs";
 import { canonicalizeJson } from "./lib/a2a-offline-verify.mjs";
 import { execFileSync } from "node:child_process";
@@ -115,6 +115,57 @@ test("a verdict for a different head SHA is rejected (no stale/transplant)", () 
   });
   assert.equal(r.blocked, true);
   assert.ok(r.reasons.some((x) => /subject-binding/.test(x)));
+});
+
+test("deriveProducingWorkerKeyIds extracts workerKeyId from result/report provenance (#1383 V-c A2)", () => {
+  // bare result shape
+  assert.deepEqual(
+    deriveProducingWorkerKeyIds([{ provenance: { workerKeyId: "worker:alpha:g2:v1" } }]),
+    ["worker:alpha:g2:v1"],
+  );
+  // report-bundle shape { result: { provenance } }
+  assert.deepEqual(
+    deriveProducingWorkerKeyIds([{ result: { provenance: { workerKeyId: "worker:beta:g2:v1" } } }]),
+    ["worker:beta:g2:v1"],
+  );
+  // multiple reports, de-duplicated, provenance-less entries ignored
+  assert.deepEqual(
+    deriveProducingWorkerKeyIds([
+      { result: { provenance: { workerKeyId: "worker:a:v1" } } },
+      { provenance: { workerKeyId: "worker:a:v1" } },
+      { result: { summary: "no provenance" } },
+      { provenance: { workerKeyId: "worker:b:v1" } },
+    ]),
+    ["worker:a:v1", "worker:b:v1"],
+  );
+  assert.deepEqual(deriveProducingWorkerKeyIds([]), []);
+});
+
+test("a verdict self-certified by the producing worker key derived from provenance is blocked (A2 closure)", () => {
+  const shared = key();
+  // the verdict's finalizerKeyId equals the producing worker key that provenance records
+  const verdict = buildVerdict(shared.priv, "worker:alpha:g2:v1");
+  const derived = deriveProducingWorkerKeyIds([{ provenance: { workerKeyId: "worker:alpha:g2:v1" } }]);
+  const r = evaluateVerdictGate({
+    verdict, headSha: HEAD,
+    finalizerKeyring: { keys: { "worker:alpha:g2:v1": shared.pem } },
+    producingWorkerKeyIds: derived, // derived from signed provenance, not a hand-passed CLI list
+    mode: "enforce",
+  });
+  assert.equal(r.blocked, true);
+  assert.ok(r.reasons.some((x) => /independence/.test(x)), JSON.stringify(r.reasons));
+});
+
+test("enforce surfaces that independence is unverified when no producing key ids are known", () => {
+  const f = key();
+  const verdict = buildVerdict(f.priv, "finalizer-1");
+  const r = evaluateVerdictGate({
+    verdict, headSha: HEAD,
+    finalizerKeyring: { keys: { "finalizer-1": f.pem } },
+    producingWorkerKeyIds: [], // none passed AND none derivable
+    mode: "enforce",
+  });
+  assert.equal(r.producerIdentityKnown, false, "empty producing set must be surfaced, not silently vacuous");
 });
 
 test("self-certification (finalizer key produced the subject) is an independence violation", () => {

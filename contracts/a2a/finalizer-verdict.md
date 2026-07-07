@@ -194,6 +194,12 @@ operator still triggers the run and authors the judgment content.
   `{ pem, status: "active"|"revoked", notBefore, expiresAt }` — a revoked key is
   rejected immediately (closing the revocation-lag gap), and the verdict's
   `producedAt` must fall within the notBefore/expiresAt window.
-- **Auto-derived producing worker keys**: the gate should read the producing
-  worker key ids from the round's `result.provenance` rather than a CLI arg.
+- **Auto-derived producing worker keys** (landed, #1383 V-c A2): the gate's
+  `--result <report.json>` reads the producing worker key id from the analysis
+  result/report's signed `result.provenance.workerKeyId` (`deriveProducingWorkerKeyIds`),
+  so independence keys off signed provenance rather than a hand-passed
+  `--worker-keys` list a caller can omit. The gate result surfaces
+  `producerIdentityKnown`; an empty producing set means independence is
+  UNVERIFIED (vacuously not violated) — the CLI prints a NOTE so callers do not
+  mistake it for verified.
 - **Multi-finalizer panels** (M-of-N verdicts) for higher-stakes subjects.
