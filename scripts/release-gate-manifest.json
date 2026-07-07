@@ -489,6 +489,18 @@
       "note": "Tests for #1301 M3-c attestation bundle checker: fail-closed schema, sha256-jcs integrity recomputation, PII/identifier second-line scan."
     },
     {
+      "file": "scripts/check-cost-per-outcome.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1303 M5-a cost-per-outcome gate: fail-closed schema, currency-marker rejection, derived costPerAccepted with divide-by-zero marker, M1 anonymity axes, ledger-alignment warnings."
+    },
+    {
+      "file": "scripts/cost-per-outcome-aggregate.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Tests for #1303 M5-b cost join CLI: supersedes-aware ledger join, unmatched reporting, gate-checked output, idempotent merge."
+    },
+    {
       "file": "scripts/check-spec-broker-conformance.test.mjs",
       "class": "gate",
       "round": null,
